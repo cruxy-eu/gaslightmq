@@ -127,7 +127,7 @@ All layers are monomorphic — no `Box<dyn>` in the middleware chain. The only t
 let broker = gaslightmq::Broker::builder()
     .topic("orders", Buffer::new(3))
         .chaos(Api::Fetch, Delay::new(Duration::from_secs(2)))
-        .chaos(Api::Produce, ErrorResponse::new(ErrorCode::NotLeaderForPartition))
+        .chaos(Api::Produce, ErrorResponse::new(ResponseError::NotLeaderForPartition))
         .generator(JsonTemplate::new(r#"{"user_id": "{{uuid}}", "name": "{{name}}"}"#))
     .topic("events", BlackHole::new(1))
     .bind("127.0.0.1:0")

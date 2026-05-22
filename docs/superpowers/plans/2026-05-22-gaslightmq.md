@@ -20,7 +20,7 @@ gaslightmq/                        # workspace root
 │   ├── Cargo.toml
 │   └── src/
 │       ├── lib.rs                 # public re-exports
-│       ├── record.rs              # Record type, ProduceResult, FetchResult, ErrorCode
+│       ├── record.rs              # Record type, ProduceResult, FetchResult, ResponseError
 │       ├── topic.rs               # Topic trait (async via Pin<Box<dyn Future>>), BlackHole, Buffer
 │       ├── chaos.rs               # ChaosAction, ChaosBehavior trait, Delay, Timeout, ErrorResponse, Sequence
 │       ├── generator.rs           # Generator trait, RandomBytes, JsonTemplate
@@ -135,12 +135,15 @@ git commit -m "feat: scaffold workspace with gaslightmq lib and gmq binary"
 - Create: `gaslightmq/src/record.rs`
 - Modify: `gaslightmq/src/lib.rs`
 
-- [ ] **Step 1: Define Record, ProduceResult, FetchResult, ErrorCode**
+- [ ] **Step 1: Define Record, ProduceResult, FetchResult, Api**
+
+Uses `kafka_protocol::error::ResponseError` for error codes — no custom ResponseError enum needed.
 
 `gaslightmq/src/record.rs`:
 
 ```rust
 use bytes::Bytes;
+use kafka_protocol::error::ResponseError;
 use std::future::Future;
 use std::pin::Pin;
 
@@ -164,42 +167,17 @@ impl Record {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ErrorCode {
-    None,
-    OffsetOutOfRange,
-    CorruptMessage,
-    UnknownTopicOrPartition,
-    LeaderNotAvailable,
-    NotLeaderForPartition,
-    RequestTimedOut,
-}
-
-impl ErrorCode {
-    pub fn code(self) -> i16 {
-        match self {
-            Self::None => 0,
-            Self::OffsetOutOfRange => 1,
-            Self::CorruptMessage => 2,
-            Self::UnknownTopicOrPartition => 3,
-            Self::LeaderNotAvailable => 5,
-            Self::NotLeaderForPartition => 6,
-            Self::RequestTimedOut => 7,
-        }
-    }
-}
-
 #[derive(Debug, Clone, PartialEq)]
 pub enum ProduceResult {
     Success,
-    Error(ErrorCode),
+    Error(ResponseError),
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum FetchResult {
     Empty,
     Records(Vec<Record>),
-    Error(ErrorCode),
+    Error(ResponseError),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -225,7 +203,8 @@ pub type TopicFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
 ```rust
 pub mod record;
 
-pub use record::{Api, ErrorCode, FetchResult, ProduceResult, Record, TopicFuture};
+pub use record::{Api, FetchResult, ProduceResult, Record, TopicFuture};
+pub use kafka_protocol::error::ResponseError;
 ```
 
 - [ ] **Step 3: Verify it compiles**
@@ -237,7 +216,7 @@ Expected: compiles successfully
 
 ```bash
 git add gaslightmq/src/record.rs gaslightmq/src/lib.rs
-git commit -m "feat: add core types — Record, ErrorCode, ProduceResult, FetchResult, Api"
+git commit -m "feat: add core types — Record, ResponseError, ProduceResult, FetchResult, Api"
 ```
 
 ---
@@ -513,7 +492,7 @@ git commit -m "feat: add Buffer topic with in-memory per-partition storage"
 mod tests {
     use super::*;
     use std::time::Duration;
-    use crate::ErrorCode;
+    use crate::ResponseError;
 
     #[test]
     fn delay_returns_delay_action() {
@@ -529,10 +508,10 @@ mod tests {
 
     #[test]
     fn error_response_returns_error_action() {
-        let behavior = ErrorResponse::new(ErrorCode::NotLeaderForPartition);
+        let behavior = ErrorResponse::new(ResponseError::NotLeaderForPartition);
         assert_eq!(
             behavior.next_action(),
-            ChaosAction::Error(ErrorCode::NotLeaderForPartition)
+            ChaosAction::Error(ResponseError::NotLeaderForPartition)
         );
     }
 }
@@ -549,13 +528,13 @@ Add above the tests in `gaslightmq/src/chaos.rs`:
 
 ```rust
 use std::time::Duration;
-use crate::record::ErrorCode;
+use crate::record::ResponseError;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum ChaosAction {
     Proceed,
     Delay(Duration),
-    Error(ErrorCode),
+    Error(ResponseError),
     Timeout,
 }
 
@@ -588,11 +567,11 @@ impl ChaosBehavior for Timeout {
 }
 
 pub struct ErrorResponse {
-    code: ErrorCode,
+    code: ResponseError,
 }
 
 impl ErrorResponse {
-    pub fn new(code: ErrorCode) -> Self {
+    pub fn new(code: ResponseError) -> Self {
         Self { code }
     }
 }
@@ -643,13 +622,13 @@ Add to the `tests` module in `gaslightmq/src/chaos.rs`:
         let seq = Sequence::new(
             vec![
                 Step::new(ChaosAction::Proceed, 2),
-                Step::new(ChaosAction::Error(ErrorCode::RequestTimedOut), 1),
+                Step::new(ChaosAction::Error(ResponseError::RequestTimedOut), 1),
             ],
             AfterSequence::Stop,
         );
         assert_eq!(seq.next_action(), ChaosAction::Proceed);
         assert_eq!(seq.next_action(), ChaosAction::Proceed);
-        assert_eq!(seq.next_action(), ChaosAction::Error(ErrorCode::RequestTimedOut));
+        assert_eq!(seq.next_action(), ChaosAction::Error(ResponseError::RequestTimedOut));
         // After sequence, stop = proceed
         assert_eq!(seq.next_action(), ChaosAction::Proceed);
     }
@@ -800,7 +779,7 @@ git commit -m "feat: add Sequence chaos behavior with repeat and after_sequence 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{Api, BlackHole, Buffer, Delay, ErrorCode, ErrorResponse, FetchResult, ProduceResult, Record};
+    use crate::{Api, BlackHole, Buffer, Delay, ResponseError, ErrorResponse, FetchResult, ProduceResult, Record};
     use std::time::Duration;
 
     #[tokio::test]
@@ -811,11 +790,11 @@ mod tests {
         let chaos = ChaosLayer::new(
             topic,
             Api::Fetch,
-            ErrorResponse::new(ErrorCode::NotLeaderForPartition),
+            ErrorResponse::new(ResponseError::NotLeaderForPartition),
         );
 
         let result = chaos.on_fetch(0, 0).await;
-        assert_eq!(result, FetchResult::Error(ErrorCode::NotLeaderForPartition));
+        assert_eq!(result, FetchResult::Error(ResponseError::NotLeaderForPartition));
     }
 
     #[tokio::test]
@@ -826,7 +805,7 @@ mod tests {
         let chaos = ChaosLayer::new(
             topic,
             Api::Produce,
-            ErrorResponse::new(ErrorCode::NotLeaderForPartition),
+            ErrorResponse::new(ResponseError::NotLeaderForPartition),
         );
 
         // Chaos targets Produce, so Fetch should pass through
@@ -839,11 +818,11 @@ mod tests {
         let chaos = ChaosLayer::new(
             BlackHole::new(1),
             Api::Produce,
-            ErrorResponse::new(ErrorCode::RequestTimedOut),
+            ErrorResponse::new(ResponseError::RequestTimedOut),
         );
 
         let result = chaos.on_produce(0, &[Record::new("hello")]).await;
-        assert_eq!(result, ProduceResult::Error(ErrorCode::RequestTimedOut));
+        assert_eq!(result, ProduceResult::Error(ResponseError::RequestTimedOut));
     }
 
     #[tokio::test]
@@ -875,7 +854,7 @@ Add above the tests in `gaslightmq/src/layer.rs`:
 ```rust
 use crate::chaos::{ChaosAction, ChaosBehavior};
 use crate::generator::Generator;
-use crate::record::{Api, FetchResult, ProduceResult, Record, TopicFuture, ErrorCode};
+use crate::record::{Api, FetchResult, ProduceResult, Record, TopicFuture, ResponseError};
 use crate::topic::Topic;
 
 pub struct ChaosLayer<T, C> {
@@ -1246,7 +1225,7 @@ git commit -m "feat: add Generator trait, RandomBytes, JsonTemplate, and Generat
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{Api, BlackHole, Buffer, Delay, ErrorCode, ErrorResponse, RandomBytes};
+    use crate::{Api, BlackHole, Buffer, Delay, ResponseError, ErrorResponse, RandomBytes};
     use std::time::Duration;
 
     #[test]
@@ -1267,7 +1246,7 @@ mod tests {
         let config = BrokerBuilder::new()
             .topic("orders", Buffer::new(3))
                 .chaos(Api::Fetch, Delay::new(Duration::from_secs(2)))
-                .chaos(Api::Produce, ErrorResponse::new(ErrorCode::RequestTimedOut))
+                .chaos(Api::Produce, ErrorResponse::new(ResponseError::RequestTimedOut))
             .build_config();
 
         assert_eq!(config.topics.len(), 1);
@@ -2264,7 +2243,7 @@ use crate::builder::BrokerConfig;
 use crate::chaos::{self, AfterSequence, ChaosAction, Sequence, Step};
 use crate::generator::{JsonTemplate, RandomBytes};
 use crate::layer::{ChaosLayer, GeneratorLayer};
-use crate::record::{Api, ErrorCode};
+use crate::record::{Api, ResponseError};
 use crate::topic::{BlackHole, Buffer, Topic};
 use std::collections::HashMap;
 
@@ -2309,7 +2288,7 @@ pub enum AfterSequenceRef {
 
 #[derive(Debug, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
-pub enum ErrorCodeRef {
+pub enum ResponseErrorRef {
     OffsetOutOfRange,
     CorruptMessage,
     UnknownTopicOrPartition,
@@ -2340,7 +2319,7 @@ pub struct ChaosConfig {
     pub behavior: Option<BehaviorRef>,
     pub delay_ms: Option<u64>,
     pub timeout_ms: Option<u64>,
-    pub error_code: Option<ErrorCodeRef>,
+    pub error_code: Option<ResponseErrorRef>,
     pub repeat: Option<usize>,
     pub sequence: Option<Vec<SequenceStepConfig>>,
     pub after_sequence: Option<AfterSequenceRef>,
@@ -2351,7 +2330,7 @@ pub struct SequenceStepConfig {
     pub behavior: BehaviorRef,
     pub delay_ms: Option<u64>,
     pub timeout_ms: Option<u64>,
-    pub error_code: Option<ErrorCodeRef>,
+    pub error_code: Option<ResponseErrorRef>,
     #[serde(default = "default_repeat")]
     pub repeat: usize,
 }
@@ -2399,15 +2378,15 @@ impl Scenario {
     }
 }
 
-impl ErrorCodeRef {
-    fn to_error_code(&self) -> ErrorCode {
+impl ResponseErrorRef {
+    fn to_error_code(&self) -> ResponseError {
         match self {
-            Self::OffsetOutOfRange => ErrorCode::OffsetOutOfRange,
-            Self::CorruptMessage => ErrorCode::CorruptMessage,
-            Self::UnknownTopicOrPartition => ErrorCode::UnknownTopicOrPartition,
-            Self::LeaderNotAvailable => ErrorCode::LeaderNotAvailable,
-            Self::NotLeaderForPartition => ErrorCode::NotLeaderForPartition,
-            Self::RequestTimedOut => ErrorCode::RequestTimedOut,
+            Self::OffsetOutOfRange => ResponseError::OffsetOutOfRange,
+            Self::CorruptMessage => ResponseError::CorruptMessage,
+            Self::UnknownTopicOrPartition => ResponseError::UnknownTopicOrPartition,
+            Self::LeaderNotAvailable => ResponseError::LeaderNotAvailable,
+            Self::NotLeaderForPartition => ResponseError::NotLeaderForPartition,
+            Self::RequestTimedOut => ResponseError::RequestTimedOut,
         }
     }
 }
