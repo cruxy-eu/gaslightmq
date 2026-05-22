@@ -50,6 +50,8 @@ trait Topic: Send + Sync {
 }
 ```
 
+`FetchResult::Records` contains a `Vec<Record>` — a concrete batch, matching Kafka's Fetch response semantics.
+
 Built-in implementations:
 
 - **`BlackHole`** — accepts produces, returns nothing on fetch. Uses the defaults as-is.
@@ -81,20 +83,22 @@ Built-in implementations:
 
 ### Generator
 
-Produces records for consumers when a topic has no real data.
+Produces a stream of records for consumers when a topic has no real data. Returns a `Stream` instead of a `Vec` — enabling lazy, potentially infinite data generation.
 
 ```rust
+pub type RecordStream = Pin<Box<dyn Stream<Item = Record> + Send>>;
+
 trait Generator: Send + Sync {
-    fn generate(&self) -> Vec<Record>;
+    fn stream(&self) -> RecordStream;
 }
 ```
 
 Built-in implementations:
 
-- **`RandomBytes`** — fills record values with random bytes of a configurable size.
-- **`JsonTemplate`** — uses a template string with faker placeholders (e.g., `{{uuid}}`, `{{name}}`).
+- **`RandomBytes`** — yields an infinite stream of records with random byte values of a configurable size.
+- **`JsonTemplate`** — yields an infinite stream of records from a template string with faker placeholders (e.g., `{{uuid}}`, `{{name}}`).
 
-Users implement `Generator` for custom data shapes (protobuf, avro, etc.).
+Users implement `Generator` for custom data shapes (protobuf, avro, etc.). The protocol handler collects records from the stream until it fills the response (up to `max_bytes` / `max_wait_ms`).
 
 ## Composition Model
 
@@ -269,8 +273,9 @@ Scenario files only support built-in types (`Buffer`, `BlackHole`, built-in chao
 
 ## Key Dependencies
 
-- **`kafka-protocol`** — Kafka wire protocol encoding/decoding, message types
+- **`kafka-protocol`** — Kafka wire protocol encoding/decoding, message types, `ResponseError`
 - **`tokio`** — async runtime, TCP listener, task spawning
+- **`futures`** — `Stream` trait and combinators for `RecordStream` / `Generator`
 - **`serde` + `serde_yaml`** — scenario file deserialization
 - **`clap`** — CLI argument parsing (binary crate only)
 - **`fake`** — faker data generation for `JsonTemplate`

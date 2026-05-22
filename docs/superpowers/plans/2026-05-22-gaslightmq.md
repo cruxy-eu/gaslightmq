@@ -78,6 +78,7 @@ edition.workspace = true
 bytes = "1"
 kafka-protocol = "0.17"
 tokio = { version = "1", features = ["net", "io-util", "time", "rt-multi-thread", "macros", "sync"] }
+futures = "0.3"
 serde = { version = "1", features = ["derive"] }
 serde_yaml = "0.9"
 fake = { version = "3", features = ["derive"] }
@@ -143,6 +144,7 @@ Uses `kafka_protocol::error::ResponseError` for error codes — no custom Respon
 
 ```rust
 use bytes::Bytes;
+use futures::Stream;
 use kafka_protocol::error::ResponseError;
 use std::future::Future;
 use std::pin::Pin;
@@ -172,6 +174,8 @@ pub enum ProduceResult {
     Success,
     Error(ResponseError),
 }
+
+pub type RecordStream = Pin<Box<dyn Stream<Item = Record> + Send>>;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum FetchResult {
@@ -203,7 +207,7 @@ pub type TopicFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
 ```rust
 pub mod record;
 
-pub use record::{Api, FetchResult, ProduceResult, Record, TopicFuture};
+pub use record::{Api, FetchResult, ProduceResult, Record, RecordStream, TopicFuture};
 pub use kafka_protocol::error::ResponseError;
 ```
 
@@ -933,10 +937,10 @@ pub use layer::ChaosLayer;
 Note: also add `pub mod generator;` stub (empty file) since `layer.rs` imports it. Create `gaslightmq/src/generator.rs` with:
 
 ```rust
-use crate::record::Record;
+use crate::record::{Record, RecordStream};
 
 pub trait Generator: Send + Sync {
-    fn generate(&self) -> Vec<Record>;
+    fn stream(&self) -> RecordStream;
 }
 ```
 
@@ -969,32 +973,40 @@ Add to `gaslightmq/src/generator.rs`:
 #[cfg(test)]
 mod tests {
     use super::*;
+    use futures::StreamExt;
 
-    #[test]
-    fn random_bytes_generates_correct_size() {
+    #[tokio::test]
+    async fn random_bytes_stream_yields_correct_size() {
         let gen = RandomBytes::new(64);
-        let records = gen.generate();
-        assert_eq!(records.len(), 1);
-        assert_eq!(records[0].value.as_ref().unwrap().len(), 64);
-        assert!(records[0].key.is_none());
+        let record = gen.stream().next().await.unwrap();
+        assert_eq!(record.value.as_ref().unwrap().len(), 64);
+        assert!(record.key.is_some());
     }
 
-    #[test]
-    fn json_template_replaces_uuid_placeholder() {
-        let gen = JsonTemplate::new(r#"{"id": "{{uuid}}"}"#);
-        let records = gen.generate();
-        assert_eq!(records.len(), 1);
-        let value = std::str::from_utf8(records[0].value.as_ref().unwrap()).unwrap();
+    #[tokio::test]
+    async fn random_bytes_stream_is_infinite() {
+        let gen = RandomBytes::new(8);
+        let records: Vec<_> = gen.stream().take(100).collect().await;
+        assert_eq!(records.len(), 100);
+    }
+
+    #[tokio::test]
+    async fn json_template_replaces_uuid_placeholder() {
+        let gen = JsonTemplate::new(r#"{"id": "{{uuid}}"}"#)
+            .with_key("{{uuid}}");
+        let record = gen.stream().next().await.unwrap();
+        assert!(record.key.is_some());
+        let value = std::str::from_utf8(record.value.as_ref().unwrap()).unwrap();
         assert!(value.starts_with(r#"{"id": ""#));
         assert!(value.ends_with(r#""}"#));
         assert_ne!(value, r#"{"id": "{{uuid}}"}"#);
     }
 
-    #[test]
-    fn json_template_replaces_multiple_placeholders() {
+    #[tokio::test]
+    async fn json_template_replaces_multiple_placeholders() {
         let gen = JsonTemplate::new(r#"{"a": "{{uuid}}", "b": "{{uuid}}"}"#);
-        let records = gen.generate();
-        let value = std::str::from_utf8(records[0].value.as_ref().unwrap()).unwrap();
+        let record = gen.stream().next().await.unwrap();
+        let value = std::str::from_utf8(record.value.as_ref().unwrap()).unwrap();
         assert!(!value.contains("{{uuid}}"));
     }
 }
@@ -1011,15 +1023,16 @@ Replace `gaslightmq/src/generator.rs` contents (keep the trait, add impls):
 
 ```rust
 use bytes::Bytes;
-use crate::record::Record;
+use crate::record::{Record, RecordStream};
 use fake::Fake;
 use fake::faker::name::en::Name;
 use fake::faker::internet::en::SafeEmail;
 use fake::faker::lorem::en::{Word, Sentence};
+use futures::stream;
 use rand::rng;
 
 pub trait Generator: Send + Sync {
-    fn generate(&self) -> Vec<Record>;
+    fn stream(&self) -> RecordStream;
 }
 
 pub struct RandomBytes {
@@ -1033,44 +1046,53 @@ impl RandomBytes {
 }
 
 impl Generator for RandomBytes {
-    fn generate(&self) -> Vec<Record> {
-        use rand::Rng;
-        let mut rng = rng();
-        let bytes: Vec<u8> = (0..self.size).map(|_| rng.random()).collect();
-        vec![Record {
-            key: None,
-            value: Some(Bytes::from(bytes)),
-        }]
+    fn stream(&self) -> RecordStream {
+        let size = self.size;
+        Box::pin(stream::repeat_with(move || {
+            use rand::Rng;
+            let mut rng = rng();
+            Record {
+                key: Some(Bytes::from(rng.random::<u64>().to_be_bytes().to_vec())),
+                value: Some(Bytes::copy_from_slice(&(0..size).map(|_| rng.random::<u8>()).collect::<Vec<_>>())),
+            }
+        }))
     }
 }
 
 pub struct JsonTemplate {
     template: String,
+    key_template: Option<String>,
 }
 
 impl JsonTemplate {
     pub fn new(template: &str) -> Self {
         Self {
             template: template.to_string(),
+            key_template: None,
         }
     }
 
-    fn render(&self) -> String {
-        let mut result = self.template.clone();
+    pub fn with_key(mut self, key_template: &str) -> Self {
+        self.key_template = Some(key_template.to_string());
+        self
+    }
+
+    fn render(template: &str) -> Bytes {
+        let mut result = template.to_string();
         while let Some(start) = result.find("{{") {
             if let Some(end) = result[start..].find("}}") {
                 let end = start + end + 2;
                 let placeholder = &result[start + 2..end - 2];
-                let replacement = self.generate_value(placeholder);
+                let replacement = Self::generate_value(placeholder);
                 result.replace_range(start..end, &replacement);
             } else {
                 break;
             }
         }
-        result
+        Bytes::from(result)
     }
 
-    fn generate_value(&self, placeholder: &str) -> String {
+    fn generate_value(placeholder: &str) -> String {
         let mut rng = rng();
         match placeholder {
             "uuid" => uuid::Uuid::new_v4().to_string(),
@@ -1087,11 +1109,15 @@ impl JsonTemplate {
 }
 
 impl Generator for JsonTemplate {
-    fn generate(&self) -> Vec<Record> {
-        vec![Record {
-            key: None,
-            value: Some(Bytes::from(self.render())),
-        }]
+    fn stream(&self) -> RecordStream {
+        let template = self.template.clone();
+        let key_template = self.key_template.clone();
+        Box::pin(stream::repeat_with(move || {
+            Record {
+                key: key_template.as_deref().map(Self::render),
+                value: Some(Self::render(&template)),
+            }
+        }))
     }
 }
 ```
@@ -1179,7 +1205,13 @@ impl<T: Topic, G: Generator> Topic for GeneratorLayer<T, G> {
         Box::pin(async move {
             let result = self.inner.on_fetch(partition, offset).await;
             if result == FetchResult::Empty {
-                FetchResult::Records(self.generator.generate())
+                use futures::StreamExt;
+                let records: Vec<Record> = self.generator.stream().take(1).collect().await;
+                if records.is_empty() {
+                    FetchResult::Empty
+                } else {
+                    FetchResult::Records(records)
+                }
             } else {
                 result
             }
