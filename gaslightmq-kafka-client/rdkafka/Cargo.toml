@@ -1,0 +1,13 @@
+[package]
+name = "gaslightmq-kafka-client-rdkafka"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+gaslightmq-kernel = { path = "../../gaslightmq-kernel" }
+gaslightmq-testing = { path = "../../gaslightmq-testing" }
+async-trait = "0.1"
+bytes = "1"
+futures = "0.3"
+rdkafka = { version = "0.37", features = ["cmake-build"] }
+tokio = { version = "1", features = ["rt-multi-thread"] }
