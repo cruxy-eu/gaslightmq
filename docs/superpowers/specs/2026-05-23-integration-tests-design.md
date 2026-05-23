@@ -14,8 +14,8 @@ gaslightmq-testing/                  # test support library
   Cargo.toml                         # name = "gaslightmq-testing"
   src/
     lib.rs
-    record.rs                        # TestRecord, TestHeader
-    harness.rs                       # TestHarness
+    record.rs                        # Record, Header, Headers
+    harness.rs                       # Harness
     traits.rs                        # high-level traits: Producer, Consumer
 gaslightmq-kafka-client/             # directory grouping, not a crate
   api/                               # raw Kafka API traits + TCP client
@@ -95,17 +95,17 @@ pub trait FindCoordinator {
 
 ### High-Level Traits (`gaslightmq-testing`)
 
-Client-like abstractions using `TestRecord`. Both raw and rdkafka clients can implement these.
+Client-like abstractions using `Record`. Both raw and rdkafka clients can implement these.
 
 ```rust
 #[async_trait]
 pub trait Producer {
-    async fn send(&self, topic: &str, partition: Partition, records: &[TestRecord]) -> ProduceResult;
+    async fn send(&self, topic: &str, partition: Partition, records: &[Record]) -> ProduceResult;
 }
 
 #[async_trait]
 pub trait Consumer {
-    async fn fetch(&self, topic: &str, partition: Partition, offset: Offset) -> Vec<TestRecord>;
+    async fn fetch(&self, topic: &str, partition: Partition, offset: Offset) -> Vec<Record>;
     fn stream(&self, topic: &str, partition: Partition, offset: Offset) -> RecordStream;
     async fn join_group(&self, group_id: &str) -> JoinGroupResult;
     async fn sync_group(&self, group_id: &str) -> SyncGroupResult;
@@ -113,7 +113,7 @@ pub trait Consumer {
 }
 ```
 
-`RecordStream = Pin<Box<dyn Stream<Item = TestRecord> + Send>>`.
+`RecordStream = Pin<Box<dyn Stream<Item = Record> + Send>>`.
 
 Result types use `kafka_protocol::error::ResponseError` — `None` means success:
 
@@ -146,27 +146,29 @@ pub struct HeartbeatResult {
 ## Shared Types (`gaslightmq-testing`)
 
 ```rust
-pub struct TestHeader {
+pub struct Header {
     pub key: String,
-    pub value: Option<Vec<u8>>,
+    pub value: Option<Bytes>,
 }
 
-pub struct TestRecord {
-    pub key: Option<Vec<u8>>,
-    pub value: Option<Vec<u8>>,
-    pub headers: Vec<TestHeader>,
+pub type Headers = Vec<Header>;
+
+pub struct Record {
+    pub key: Option<Bytes>,
+    pub value: Option<Bytes>,
+    pub headers: Headers,
 }
 ```
 
-## TestHarness (`gaslightmq-testing`)
+## Harness (`gaslightmq-testing`)
 
 ```rust
-pub struct TestHarness<C> {
+pub struct Harness<C> {
     pub broker: Broker,
     pub client: C,
 }
 
-impl<C> TestHarness<C> {
+impl<C> Harness<C> {
     pub async fn start(
         builder: BrokerBuilder,
         make_client: impl FnOnce(SocketAddr) -> C,
@@ -274,10 +276,12 @@ pub struct Header {
     pub value: Option<Bytes>,
 }
 
+pub type Headers = Vec<Header>;
+
 pub struct Record {
     pub key: Option<Bytes>,
     pub value: Option<Bytes>,
-    pub headers: Vec<Header>,
+    pub headers: Headers,
 }
 ```
 
@@ -299,7 +303,9 @@ Update protocol handlers to encode/decode headers in record batches.
 gaslightmq = { path = "../gaslightmq" }
 gaslightmq-kernel = { path = "../gaslightmq-kernel" }
 async-trait = "0.1"
+bytes = "1"
 futures = "0.3"
+kafka-protocol = "0.17"
 tokio = { version = "1", features = ["net", "rt-multi-thread", "macros"] }
 ```
 

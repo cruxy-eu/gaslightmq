@@ -1,5 +1,5 @@
 [workspace]
-members = ["gaslightmq", "gmq"]
+members = ["gaslightmq", "bins/*"]
 resolver = "2"
 
 [workspace.package]

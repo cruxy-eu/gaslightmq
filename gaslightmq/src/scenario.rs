@@ -1,8 +1,10 @@
 use std::collections::HashMap;
+use std::fmt;
 use std::time::Duration;
 
 use kafka_protocol::error::ResponseError;
 use serde::Deserialize;
+use serde::de::{self, Visitor};
 
 use crate::builder::BrokerConfig;
 use crate::chaos::{AfterSequence, ChaosAction, Sequence, Step};
@@ -50,8 +52,8 @@ pub struct ChaosConfig {
     pub delay_ms: Option<u64>,
     #[serde(default)]
     pub timeout_ms: Option<u64>,
-    #[serde(default)]
-    pub error_code: Option<ResponseErrorRef>,
+    #[serde(default, deserialize_with = "deserialize_response_error_opt")]
+    pub error_code: Option<ResponseError>,
     #[serde(default = "default_repeat")]
     pub repeat: usize,
     /// Multi-step sequence (mutually exclusive with `behavior`).
@@ -67,8 +69,8 @@ pub struct SequenceStepConfig {
     pub delay_ms: Option<u64>,
     #[serde(default)]
     pub timeout_ms: Option<u64>,
-    #[serde(default)]
-    pub error_code: Option<ResponseErrorRef>,
+    #[serde(default, deserialize_with = "deserialize_response_error_opt")]
+    pub error_code: Option<ResponseError>,
     #[serde(default = "default_repeat")]
     pub repeat: usize,
 }
@@ -109,14 +111,51 @@ pub enum AfterSequenceRef {
     RepeatLast,
 }
 
-#[derive(Debug, Deserialize, Clone, Copy)]
-pub enum ResponseErrorRef {
-    OffsetOutOfRange,
-    CorruptMessage,
-    UnknownTopicOrPartition,
-    LeaderNotAvailable,
-    NotLeaderOrFollower,
-    RequestTimedOut,
+fn deserialize_response_error<'de, D>(deserializer: D) -> Result<ResponseError, D::Error>
+where
+    D: de::Deserializer<'de>,
+{
+    struct ResponseErrorVisitor;
+
+    impl<'de> Visitor<'de> for ResponseErrorVisitor {
+        type Value = ResponseError;
+
+        fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
+            write!(f, "a Kafka error name (e.g. \"CorruptMessage\") or error code (e.g. 2)")
+        }
+
+        fn visit_i64<E: de::Error>(self, v: i64) -> Result<ResponseError, E> {
+            ResponseError::try_from_code(v as i16)
+                .ok_or_else(|| E::custom(format!("error code {v} maps to success (0), not an error")))
+        }
+
+        fn visit_u64<E: de::Error>(self, v: u64) -> Result<ResponseError, E> {
+            self.visit_i64(v as i64)
+        }
+
+        fn visit_str<E: de::Error>(self, v: &str) -> Result<ResponseError, E> {
+            for code in -1..=200i16 {
+                if let Some(err) = ResponseError::try_from_code(code) {
+                    if err.to_string() == v {
+                        return Ok(err);
+                    }
+                }
+            }
+            Err(E::custom(format!("unknown Kafka error name: {v}")))
+        }
+    }
+
+    deserializer.deserialize_any(ResponseErrorVisitor)
+}
+
+fn deserialize_response_error_opt<'de, D>(deserializer: D) -> Result<Option<ResponseError>, D::Error>
+where
+    D: de::Deserializer<'de>,
+{
+    #[derive(Deserialize)]
+    struct Wrapper(#[serde(deserialize_with = "deserialize_response_error")] ResponseError);
+
+    Option::<Wrapper>::deserialize(deserializer).map(|opt| opt.map(|w| w.0))
 }
 
 // ── Conversions ───────────────────────────────────────────────────────────────
@@ -142,25 +181,12 @@ impl From<AfterSequenceRef> for AfterSequence {
     }
 }
 
-impl From<ResponseErrorRef> for ResponseError {
-    fn from(r: ResponseErrorRef) -> ResponseError {
-        match r {
-            ResponseErrorRef::OffsetOutOfRange => ResponseError::OffsetOutOfRange,
-            ResponseErrorRef::CorruptMessage => ResponseError::CorruptMessage,
-            ResponseErrorRef::UnknownTopicOrPartition => ResponseError::UnknownTopicOrPartition,
-            ResponseErrorRef::LeaderNotAvailable => ResponseError::LeaderNotAvailable,
-            ResponseErrorRef::NotLeaderOrFollower => ResponseError::NotLeaderOrFollower,
-            ResponseErrorRef::RequestTimedOut => ResponseError::RequestTimedOut,
-        }
-    }
-}
-
 // ── Helpers to build ChaosAction from config ──────────────────────────────────
 
 fn chaos_action_from_behavior(
     behavior: BehaviorRef,
     delay_ms: Option<u64>,
-    error_code: Option<ResponseErrorRef>,
+    error_code: Option<ResponseError>,
 ) -> ChaosAction {
     match behavior {
         BehaviorRef::Success => ChaosAction::Proceed,
@@ -170,10 +196,7 @@ fn chaos_action_from_behavior(
         }
         BehaviorRef::Timeout => ChaosAction::Timeout,
         BehaviorRef::Error => {
-            let code = error_code
-                .map(ResponseError::from)
-                .unwrap_or(ResponseError::UnknownServerError);
-            ChaosAction::Error(code)
+            ChaosAction::Error(error_code.unwrap_or(ResponseError::UnknownServerError))
         }
     }
 }
@@ -322,7 +345,7 @@ topics:
         assert!(matches!(produce_chaos.behavior, Some(BehaviorRef::Error)));
         assert!(matches!(
             produce_chaos.error_code,
-            Some(ResponseErrorRef::NotLeaderOrFollower)
+            Some(ResponseError::NotLeaderOrFollower)
         ));
 
         let events = &scenario.topics[1];
@@ -357,11 +380,29 @@ topics:
         assert!(matches!(sequence[2].behavior, BehaviorRef::Error));
         assert!(matches!(
             sequence[2].error_code,
-            Some(ResponseErrorRef::CorruptMessage)
+            Some(ResponseError::CorruptMessage)
         ));
         assert_eq!(sequence[2].repeat, 2);
 
         assert!(matches!(chaos.after_sequence, Some(AfterSequenceRef::Loop)));
+    }
+
+    #[test]
+    fn error_code_accepts_integer() {
+        let yaml = r#"
+topics:
+  - name: t
+    mode: blackhole
+    chaos:
+      - api: Fetch
+        behavior: error
+        error_code: 6
+"#;
+        let scenario = Scenario::from_yaml(yaml).expect("parse failed");
+        assert_eq!(
+            scenario.topics[0].chaos[0].error_code,
+            Some(ResponseError::NotLeaderOrFollower)
+        );
     }
 
     #[test]
