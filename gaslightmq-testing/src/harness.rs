@@ -1,26 +1,46 @@
 use std::net::SocketAddr;
+use std::sync::Mutex;
 
 use gaslightmq::broker::Broker;
-use gaslightmq::builder::BrokerConfig;
+use gaslightmq::builder::{BrokerBuilder, BrokerConfig};
+use tokio::sync::OnceCell;
 
-pub struct Harness<C> {
-    pub broker: Broker,
-    pub client: C,
+pub struct Harness {
+    config: Mutex<Option<BrokerConfig>>,
+    broker: OnceCell<Broker>,
 }
 
-impl<C> Harness<C> {
-    pub async fn start(
-        builder: impl Into<BrokerConfig>,
-        make_client: impl FnOnce(SocketAddr) -> C,
-    ) -> Self {
+impl Default for Harness {
+    fn default() -> Self {
+        Self::with(BrokerBuilder::new())
+    }
+}
+
+impl Harness {
+    pub fn with(builder: impl Into<BrokerConfig>) -> Self {
         let mut config = builder.into();
         config.bind_addr = "127.0.0.1:0".to_string();
-        let broker = Broker::start(config).await.unwrap();
-        let client = make_client(broker.addr());
-        Self { broker, client }
+        Self {
+            config: Mutex::new(Some(config)),
+            broker: OnceCell::new(),
+        }
+    }
+
+    pub async fn client<C: From<SocketAddr>>(&self) -> C {
+        let broker = self.broker.get_or_init(|| async {
+            let config = self.config.lock().unwrap().take().unwrap();
+            Broker::start(config).await.unwrap()
+        }).await;
+        C::from(broker.addr())
+    }
+
+    pub fn addr(&self) -> SocketAddr {
+        self.broker.get().expect("broker not started").addr()
     }
 
     pub async fn shutdown(self) {
-        self.broker.shutdown().await;
+        if let Some(broker) = self.broker.into_inner() {
+            broker.shutdown().await;
+        }
     }
 }

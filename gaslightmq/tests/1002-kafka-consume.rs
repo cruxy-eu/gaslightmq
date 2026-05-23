@@ -88,18 +88,15 @@ fn decode_fetch_values(
 
 #[tokio::test]
 async fn fetch_records_after_produce() {
-    let harness = Harness::start(
-        BrokerBuilder::new().topic("test", Buffer::new(1)),
-        RawKafkaClient::new,
-    )
-    .await;
+    let harness = Harness::with(BrokerBuilder::new().topic("test", Buffer::new(1)));
+    let client: RawKafkaClient = harness.client().await;
 
     let produce_req =
         make_produce_request("test", 0, &[make_record(b"msg-0"), make_record(b"msg-1")]);
-    harness.client.produce(produce_req).await;
+    client.produce(produce_req).await;
 
     let fetch_req = make_fetch_request("test", 0, 0);
-    let response = Fetch::fetch(&harness.client, fetch_req).await;
+    let response = Fetch::fetch(&client, fetch_req).await;
 
     let values = decode_fetch_values(&response);
     assert_eq!(values.len(), 2);
@@ -111,21 +108,18 @@ async fn fetch_records_after_produce() {
 
 #[tokio::test]
 async fn fetch_with_offset() {
-    let harness = Harness::start(
-        BrokerBuilder::new().topic("test", Buffer::new(1)),
-        RawKafkaClient::new,
-    )
-    .await;
+    let harness = Harness::with(BrokerBuilder::new().topic("test", Buffer::new(1)));
+    let client: RawKafkaClient = harness.client().await;
 
     let produce_req = make_produce_request(
         "test",
         0,
         &[make_record(b"a"), make_record(b"b"), make_record(b"c")],
     );
-    harness.client.produce(produce_req).await;
+    client.produce(produce_req).await;
 
     let fetch_req = make_fetch_request("test", 0, 2);
-    let response = Fetch::fetch(&harness.client, fetch_req).await;
+    let response = Fetch::fetch(&client, fetch_req).await;
 
     let values = decode_fetch_values(&response);
     assert_eq!(values.len(), 1);
@@ -136,14 +130,11 @@ async fn fetch_with_offset() {
 
 #[tokio::test]
 async fn fetch_from_empty_topic() {
-    let harness = Harness::start(
-        BrokerBuilder::new().topic("empty", Buffer::new(1)),
-        RawKafkaClient::new,
-    )
-    .await;
+    let harness = Harness::with(BrokerBuilder::new().topic("empty", Buffer::new(1)));
+    let client: RawKafkaClient = harness.client().await;
 
     let fetch_req = make_fetch_request("empty", 0, 0);
-    let response = Fetch::fetch(&harness.client, fetch_req).await;
+    let response = Fetch::fetch(&client, fetch_req).await;
 
     let values = decode_fetch_values(&response);
     assert!(values.is_empty());
@@ -155,16 +146,15 @@ async fn fetch_from_empty_topic() {
 async fn fetch_from_generator_topic() {
     use gaslightmq::RandomBytes;
 
-    let harness = Harness::start(
+    let harness = Harness::with(
         BrokerBuilder::new()
             .topic("generated", BlackHole::new(1))
             .generator(RandomBytes::new(64)),
-        RawKafkaClient::new,
-    )
-    .await;
+    );
+    let client: RawKafkaClient = harness.client().await;
 
     let fetch_req = make_fetch_request("generated", 0, 0);
-    let response = Fetch::fetch(&harness.client, fetch_req).await;
+    let response = Fetch::fetch(&client, fetch_req).await;
 
     let values = decode_fetch_values(&response);
     assert_eq!(values.len(), 1);
@@ -178,16 +168,15 @@ async fn fetch_with_chaos_error_injection() {
     use gaslightmq::{Api, ErrorResponse};
     use kafka_protocol::error::ResponseError;
 
-    let harness = Harness::start(
+    let harness = Harness::with(
         BrokerBuilder::new()
             .topic("chaos", Buffer::new(1))
             .chaos(Api::Fetch, ErrorResponse::new(ResponseError::OffsetOutOfRange)),
-        RawKafkaClient::new,
-    )
-    .await;
+    );
+    let client: RawKafkaClient = harness.client().await;
 
     let fetch_req = make_fetch_request("chaos", 0, 0);
-    let response = Fetch::fetch(&harness.client, fetch_req).await;
+    let response = Fetch::fetch(&client, fetch_req).await;
 
     let error_code = response.responses[0].partitions[0].error_code;
     assert_eq!(error_code, ResponseError::OffsetOutOfRange.code());
@@ -197,21 +186,18 @@ async fn fetch_with_chaos_error_injection() {
 
 #[tokio::test]
 async fn consumer_group_lifecycle() {
-    let harness = Harness::start(
-        BrokerBuilder::new().topic("group-test", Buffer::new(1)),
-        RawKafkaClient::new,
-    )
-    .await;
+    let harness = Harness::with(BrokerBuilder::new().topic("group-test", Buffer::new(1)));
+    let client: RawKafkaClient = harness.client().await;
 
-    let join = harness.client.join_group("test-group").await;
+    let join = client.join_group("test-group").await;
     assert!(join.error.is_none(), "join_group should succeed");
     assert!(!join.member_id.is_empty());
     assert!(!join.leader.is_empty());
 
-    let sync = harness.client.sync_group("test-group").await;
+    let sync = client.sync_group("test-group").await;
     assert!(sync.error.is_none(), "sync_group should succeed");
 
-    let hb = harness.client.heartbeat("test-group").await;
+    let hb = client.heartbeat("test-group").await;
     assert!(hb.error.is_none(), "heartbeat should succeed");
 
     harness.shutdown().await;

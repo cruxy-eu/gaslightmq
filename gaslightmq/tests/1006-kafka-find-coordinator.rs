@@ -6,19 +6,16 @@ use kafka_protocol::protocol::StrBytes;
 
 #[tokio::test]
 async fn find_coordinator_returns_self() {
-    let harness = Harness::start(
-        BrokerBuilder::new().topic("test", BlackHole::new(1)),
-        RawKafkaClient::new,
-    )
-    .await;
+    let harness = Harness::with(BrokerBuilder::new().topic("test", BlackHole::new(1)));
+    let client: RawKafkaClient = harness.client().await;
 
     let request =
         FindCoordinatorRequest::default().with_key(StrBytes::from_static_str("test-group"));
-    let response = harness.client.find_coordinator(request).await;
+    let response = client.find_coordinator(request).await;
 
     assert_eq!(response.error_code, 0);
     assert_eq!(response.node_id.0, 0);
-    assert_eq!(response.port, harness.broker.addr().port() as i32);
+    assert_eq!(response.port, harness.addr().port() as i32);
 
     harness.shutdown().await;
 }

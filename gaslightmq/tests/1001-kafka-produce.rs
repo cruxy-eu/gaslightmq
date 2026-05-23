@@ -71,14 +71,11 @@ fn make_produce_request(topic: &str, partition: i32, records: &[KafkaRecord]) ->
 
 #[tokio::test]
 async fn produce_single_record_to_buffer() {
-    let harness = Harness::start(
-        BrokerBuilder::new().topic("test", Buffer::new(1)),
-        RawKafkaClient::new,
-    )
-    .await;
+    let harness = Harness::with(BrokerBuilder::new().topic("test", Buffer::new(1)));
+    let client: RawKafkaClient = harness.client().await;
 
     let request = make_produce_request("test", 0, &[make_record(None, Some(b"hello"))]);
-    let response = harness.client.produce(request).await;
+    let response = client.produce(request).await;
 
     assert_eq!(response.responses.len(), 1);
     assert_eq!(response.responses[0].partition_responses[0].error_code, 0);
@@ -88,18 +85,15 @@ async fn produce_single_record_to_buffer() {
 
 #[tokio::test]
 async fn produce_multiple_records_to_multiple_partitions() {
-    let harness = Harness::start(
-        BrokerBuilder::new().topic("multi", Buffer::new(3)),
-        RawKafkaClient::new,
-    )
-    .await;
+    let harness = Harness::with(BrokerBuilder::new().topic("multi", Buffer::new(3)));
+    let client: RawKafkaClient = harness.client().await;
 
     let req0 = make_produce_request("multi", 0, &[make_record(None, Some(b"p0-msg"))]);
-    let resp0 = harness.client.produce(req0).await;
+    let resp0 = client.produce(req0).await;
     assert_eq!(resp0.responses[0].partition_responses[0].error_code, 0);
 
     let req1 = make_produce_request("multi", 1, &[make_record(None, Some(b"p1-msg"))]);
-    let resp1 = harness.client.produce(req1).await;
+    let resp1 = client.produce(req1).await;
     assert_eq!(resp1.responses[0].partition_responses[0].error_code, 0);
 
     harness.shutdown().await;
@@ -107,11 +101,8 @@ async fn produce_multiple_records_to_multiple_partitions() {
 
 #[tokio::test]
 async fn produce_with_keys_and_headers() {
-    let harness = Harness::start(
-        BrokerBuilder::new().topic("keyed", Buffer::new(1)),
-        RawKafkaClient::new,
-    )
-    .await;
+    let harness = Harness::with(BrokerBuilder::new().topic("keyed", Buffer::new(1)));
+    let client: RawKafkaClient = harness.client().await;
 
     let record = make_record_with_headers(
         Some(b"my-key"),
@@ -119,7 +110,7 @@ async fn produce_with_keys_and_headers() {
         vec![("trace-id", b"abc-123")],
     );
     let request = make_produce_request("keyed", 0, &[record]);
-    let response = harness.client.produce(request).await;
+    let response = client.produce(request).await;
 
     assert_eq!(response.responses[0].partition_responses[0].error_code, 0);
 
@@ -128,14 +119,11 @@ async fn produce_with_keys_and_headers() {
 
 #[tokio::test]
 async fn produce_to_blackhole_topic() {
-    let harness = Harness::start(
-        BrokerBuilder::new().topic("void", BlackHole::new(1)),
-        RawKafkaClient::new,
-    )
-    .await;
+    let harness = Harness::with(BrokerBuilder::new().topic("void", BlackHole::new(1)));
+    let client: RawKafkaClient = harness.client().await;
 
     let request = make_produce_request("void", 0, &[make_record(None, Some(b"gone"))]);
-    let response = harness.client.produce(request).await;
+    let response = client.produce(request).await;
 
     assert_eq!(response.responses[0].partition_responses[0].error_code, 0);
 
@@ -144,14 +132,11 @@ async fn produce_to_blackhole_topic() {
 
 #[tokio::test]
 async fn produce_to_nonexistent_topic() {
-    let harness = Harness::start(
-        BrokerBuilder::new().topic("exists", BlackHole::new(1)),
-        RawKafkaClient::new,
-    )
-    .await;
+    let harness = Harness::with(BrokerBuilder::new().topic("exists", BlackHole::new(1)));
+    let client: RawKafkaClient = harness.client().await;
 
     let request = make_produce_request("nope", 0, &[make_record(None, Some(b"fail"))]);
-    let response = harness.client.produce(request).await;
+    let response = client.produce(request).await;
 
     let error_code = response.responses[0].partition_responses[0].error_code;
     assert_ne!(error_code, 0, "should return error for unknown topic");
@@ -164,16 +149,15 @@ async fn produce_with_chaos_error_injection() {
     use gaslightmq::{Api, ErrorResponse};
     use kafka_protocol::error::ResponseError;
 
-    let harness = Harness::start(
+    let harness = Harness::with(
         BrokerBuilder::new()
             .topic("chaos", Buffer::new(1))
             .chaos(Api::Produce, ErrorResponse::new(ResponseError::NotLeaderOrFollower)),
-        RawKafkaClient::new,
-    )
-    .await;
+    );
+    let client: RawKafkaClient = harness.client().await;
 
     let request = make_produce_request("chaos", 0, &[make_record(None, Some(b"fail"))]);
-    let response = harness.client.produce(request).await;
+    let response = client.produce(request).await;
 
     let error_code = response.responses[0].partition_responses[0].error_code;
     assert_eq!(

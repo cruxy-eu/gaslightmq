@@ -5,16 +5,15 @@ use kafka_protocol::messages::metadata_request::MetadataRequest;
 
 #[tokio::test]
 async fn metadata_returns_all_topics() {
-    let harness = Harness::start(
+    let harness = Harness::with(
         BrokerBuilder::new()
             .topic("orders", Buffer::new(3))
             .topic("events", BlackHole::new(1)),
-        RawKafkaClient::new,
-    )
-    .await;
+    );
+    let client: RawKafkaClient = harness.client().await;
 
     let request = MetadataRequest::default().with_topics(None);
-    let response = harness.client.metadata(request).await;
+    let response = client.metadata(request).await;
 
     assert_eq!(response.topics.len(), 2);
 
@@ -31,16 +30,15 @@ async fn metadata_returns_all_topics() {
 
 #[tokio::test]
 async fn metadata_returns_correct_partition_counts() {
-    let harness = Harness::start(
+    let harness = Harness::with(
         BrokerBuilder::new()
             .topic("three", Buffer::new(3))
             .topic("five", Buffer::new(5)),
-        RawKafkaClient::new,
-    )
-    .await;
+    );
+    let client: RawKafkaClient = harness.client().await;
 
     let request = MetadataRequest::default().with_topics(None);
-    let response = harness.client.metadata(request).await;
+    let response = client.metadata(request).await;
 
     let three = response
         .topics
@@ -61,34 +59,25 @@ async fn metadata_returns_correct_partition_counts() {
 
 #[tokio::test]
 async fn metadata_returns_broker_info() {
-    let harness = Harness::start(
-        BrokerBuilder::new().topic("test", BlackHole::new(1)),
-        RawKafkaClient::new,
-    )
-    .await;
+    let harness = Harness::with(BrokerBuilder::new().topic("test", BlackHole::new(1)));
+    let client: RawKafkaClient = harness.client().await;
 
     let request = MetadataRequest::default().with_topics(None);
-    let response = harness.client.metadata(request).await;
+    let response = client.metadata(request).await;
 
     assert_eq!(response.brokers.len(), 1);
-    assert_eq!(
-        response.brokers[0].port,
-        harness.broker.addr().port() as i32
-    );
+    assert_eq!(response.brokers[0].port, harness.addr().port() as i32);
 
     harness.shutdown().await;
 }
 
 #[tokio::test]
 async fn metadata_all_partitions_led_by_single_broker() {
-    let harness = Harness::start(
-        BrokerBuilder::new().topic("test", Buffer::new(4)),
-        RawKafkaClient::new,
-    )
-    .await;
+    let harness = Harness::with(BrokerBuilder::new().topic("test", Buffer::new(4)));
+    let client: RawKafkaClient = harness.client().await;
 
     let request = MetadataRequest::default().with_topics(None);
-    let response = harness.client.metadata(request).await;
+    let response = client.metadata(request).await;
 
     let topic = &response.topics[0];
     for partition in &topic.partitions {

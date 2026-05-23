@@ -8,6 +8,66 @@ pub struct Header {
 
 pub type Headers = Vec<Header>;
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct Record {
+    pub key: Option<Bytes>,
+    pub value: Option<Bytes>,
+    pub headers: Headers,
+    pub offset: Option<Offset>,
+    pub timestamp: Option<i64>,
+}
+
+impl Record {
+    pub fn new(value: impl Into<Bytes>) -> Self {
+        Self {
+            key: None,
+            value: Some(value.into()),
+            headers: Vec::new(),
+            offset: None,
+            timestamp: None,
+        }
+    }
+
+    pub fn empty() -> Self {
+        Self {
+            key: None,
+            value: None,
+            headers: Vec::new(),
+            offset: None,
+            timestamp: None,
+        }
+    }
+
+    pub fn with_key(mut self, key: impl Into<Bytes>) -> Self {
+        self.key = Some(key.into());
+        self
+    }
+
+    pub fn with_header(mut self, key: impl Into<String>, value: impl Into<Bytes>) -> Self {
+        self.headers.push(Header {
+            key: key.into(),
+            value: Some(value.into()),
+        });
+        self
+    }
+
+    pub fn with_headers(mut self, headers: Headers) -> Self {
+        self.headers = headers;
+        self
+    }
+
+    pub fn with_offset(mut self, offset: impl Into<Offset>) -> Self {
+        self.offset = Some(offset.into());
+        self
+    }
+
+    pub fn with_timestamp(mut self, timestamp: i64) -> Self {
+        self.timestamp = Some(timestamp);
+        self
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Partition(u32);
 

@@ -4,7 +4,7 @@ use gaslightmq_kernel::{Offset, Partition};
 use kafka_protocol::error::ResponseError;
 use std::pin::Pin;
 
-use crate::record::Record;
+use gaslightmq_kernel::Record;
 
 pub type RecordStream = Pin<Box<dyn Stream<Item = Record> + Send>>;
 

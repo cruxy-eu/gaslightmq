@@ -26,13 +26,11 @@ impl Generator for RandomBytes {
         Box::pin(stream::repeat_with(move || {
             use rand::Rng;
             let mut rng = rand::rng();
-            Record {
-                key: Some(Bytes::from(rng.random::<u64>().to_be_bytes().to_vec())),
-                value: Some(Bytes::copy_from_slice(
-                    &(0..size).map(|_| rng.random::<u8>()).collect::<Vec<_>>(),
-                )),
-                headers: Vec::new(),
-            }
+            let value = Bytes::copy_from_slice(
+                &(0..size).map(|_| rng.random::<u8>()).collect::<Vec<_>>(),
+            );
+            let key = Bytes::from(rng.random::<u64>().to_be_bytes().to_vec());
+            Record::new(value).with_key(key)
         }))
     }
 }
@@ -91,10 +89,12 @@ impl Generator for JsonTemplate {
     fn stream(&self) -> RecordStream {
         let template = self.template.clone();
         let key_template = self.key_template.clone();
-        Box::pin(stream::repeat_with(move || Record {
-            key: key_template.as_deref().map(Self::render),
-            value: Some(Self::render(&template)),
-            headers: Vec::new(),
+        Box::pin(stream::repeat_with(move || {
+            let mut record = Record::new(Self::render(&template));
+            if let Some(ref key_tmpl) = key_template {
+                record = record.with_key(Self::render(key_tmpl));
+            }
+            record
         }))
     }
 }

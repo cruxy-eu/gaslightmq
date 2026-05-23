@@ -5,14 +5,11 @@ use kafka_protocol::messages::{ApiKey, ApiVersionsRequest};
 
 #[tokio::test]
 async fn api_versions_returns_all_supported_apis() {
-    let harness = Harness::start(
-        BrokerBuilder::new().topic("test", BlackHole::new(1)),
-        RawKafkaClient::new,
-    )
-    .await;
+    let harness = Harness::with(BrokerBuilder::new().topic("test", BlackHole::new(1)));
+    let client: RawKafkaClient = harness.client().await;
 
     let request = ApiVersionsRequest::default();
-    let response = harness.client.api_versions(request).await;
+    let response = client.api_versions(request).await;
 
     assert_eq!(response.error_code, 0);
 
@@ -32,14 +29,11 @@ async fn api_versions_returns_all_supported_apis() {
 
 #[tokio::test]
 async fn api_versions_correct_version_ranges() {
-    let harness = Harness::start(
-        BrokerBuilder::new().topic("test", BlackHole::new(1)),
-        RawKafkaClient::new,
-    )
-    .await;
+    let harness = Harness::with(BrokerBuilder::new().topic("test", BlackHole::new(1)));
+    let client: RawKafkaClient = harness.client().await;
 
     let request = ApiVersionsRequest::default();
-    let response = harness.client.api_versions(request).await;
+    let response = client.api_versions(request).await;
 
     let produce = response
         .api_keys

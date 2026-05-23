@@ -38,7 +38,7 @@ impl BrokerBuilder {
         self
     }
 
-    pub fn build_config(self) -> BrokerConfig {
+    fn build_config(self) -> BrokerConfig {
         BrokerConfig {
             topics: self.topics,
             bind_addr: self.bind_addr,
@@ -119,7 +119,7 @@ impl<T: Topic + 'static> TopicBuilder<T> {
         }
     }
 
-    pub fn build_config(mut self) -> BrokerConfig {
+    fn build_config(mut self) -> BrokerConfig {
         self.topics.insert(self.name, Box::new(self.topic));
         BrokerConfig {
             topics: self.topics,

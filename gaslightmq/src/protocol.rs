@@ -232,7 +232,6 @@ pub fn handle_metadata(
         .with_topics(response_topics))
 }
 
-/// Convert kafka-protocol records to our internal Record type.
 fn kafka_records_to_internal(kafka_records: &[KafkaRecord]) -> Vec<Record> {
     kafka_records
         .iter()
@@ -245,11 +244,13 @@ fn kafka_records_to_internal(kafka_records: &[KafkaRecord]) -> Vec<Record> {
                     value: v.clone(),
                 })
                 .collect();
-            Record {
-                key: r.key.clone(),
-                value: r.value.clone(),
-                headers,
-            }
+            let mut record = Record::empty()
+                .with_headers(headers)
+                .with_offset(Offset::from(r.offset))
+                .with_timestamp(r.timestamp);
+            record.key = r.key.clone();
+            record.value = r.value.clone();
+            record
         })
         .collect()
 }

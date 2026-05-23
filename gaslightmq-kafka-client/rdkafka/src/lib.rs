@@ -8,15 +8,21 @@ use gaslightmq_testing::traits::{
     Consumer, HeartbeatResult, JoinGroupResult, Producer, SyncGroupResult,
 };
 use gaslightmq_testing::{Header, Record, RecordStream};
+use rdkafka::Message;
 use rdkafka::config::ClientConfig;
 use rdkafka::consumer::{BaseConsumer, Consumer as RdConsumer};
 use rdkafka::producer::{BaseProducer, BaseRecord, Producer as RdProducer};
-use rdkafka::Message;
 
 pub struct RdkafkaClient {
     producer: BaseProducer,
     consumer: BaseConsumer,
     bootstrap: String,
+}
+
+impl From<SocketAddr> for RdkafkaClient {
+    fn from(addr: SocketAddr) -> Self {
+        Self::new(addr)
+    }
 }
 
 impl RdkafkaClient {
@@ -91,13 +97,12 @@ impl Consumer for RdkafkaClient {
 
         let mut records = Vec::new();
         while let Some(Ok(msg)) = self.consumer.poll(Duration::from_secs(1)) {
-            let key = msg.key().map(|k| Bytes::copy_from_slice(k));
-            let value = msg.payload().map(|v| Bytes::copy_from_slice(v));
-            records.push(Record {
-                key,
-                value,
-                headers: Vec::new(),
-            });
+            let key = msg.key().map(Bytes::copy_from_slice);
+            let value = msg.payload().map(Bytes::copy_from_slice);
+            let mut record = Record::empty();
+            record.key = key;
+            record.value = value;
+            records.push(record);
         }
         records
     }
@@ -106,6 +111,7 @@ impl Consumer for RdkafkaClient {
         Box::pin(futures::stream::empty())
     }
 
+    // REVIEW: This doesn't make sense
     async fn join_group(&self, _group_id: &str) -> JoinGroupResult {
         JoinGroupResult {
             error: None,
@@ -114,10 +120,12 @@ impl Consumer for RdkafkaClient {
         }
     }
 
+    // REVIEW: This doesn't make sense
     async fn sync_group(&self, _group_id: &str) -> SyncGroupResult {
         SyncGroupResult { error: None }
     }
 
+    // REVIEW: This doesn't make sense
     async fn heartbeat(&self, _group_id: &str) -> HeartbeatResult {
         HeartbeatResult { error: None }
     }

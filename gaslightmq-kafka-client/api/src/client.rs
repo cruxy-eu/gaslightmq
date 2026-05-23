@@ -47,6 +47,12 @@ pub struct RawKafkaClient {
     correlation_id: AtomicI32,
 }
 
+impl From<SocketAddr> for RawKafkaClient {
+    fn from(addr: SocketAddr) -> Self {
+        Self::new(addr)
+    }
+}
+
 impl RawKafkaClient {
     pub fn new(addr: SocketAddr) -> Self {
         Self {
@@ -179,11 +185,13 @@ fn kafka_records_to_testing(batch: &kafka_protocol::records::RecordSet) -> Vec<R
                     value: v.clone(),
                 })
                 .collect();
-            Record {
-                key: r.key.clone(),
-                value: r.value.clone(),
-                headers,
-            }
+            let mut record = Record::empty()
+                .with_headers(headers)
+                .with_offset(Offset::from(r.offset))
+                .with_timestamp(r.timestamp);
+            record.key = r.key.clone();
+            record.value = r.value.clone();
+            record
         })
         .collect()
 }
