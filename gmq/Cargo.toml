@@ -1,0 +1,9 @@
+[package]
+name = "gmq"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+gaslightmq = { path = "../gaslightmq" }
+clap = { version = "4", features = ["derive"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
