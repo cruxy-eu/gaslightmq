@@ -4,6 +4,7 @@ pub mod topic;
 pub mod chaos;
 pub mod generator;
 pub mod layer;
+pub mod protocol;
 
 pub use record::{Api, FetchResult, ProduceResult, Record, RecordStream, TopicFuture};
 pub use kafka_protocol::error::ResponseError;
