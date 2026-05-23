@@ -80,7 +80,7 @@ Client-like abstractions using `TestRecord`. Both raw and rdkafka clients can im
 ```rust
 #[async_trait]
 pub trait Producer {
-    async fn send(&self, topic: &str, partition: i32, records: &[TestRecord]) -> (i32, i64);
+    async fn send(&self, topic: &str, partition: i32, records: &[TestRecord]) -> ProduceResult;
 }
 
 #[async_trait]
@@ -95,21 +95,31 @@ pub trait Consumer {
 
 `RecordStream = Pin<Box<dyn Stream<Item = TestRecord> + Send>>`.
 
+Result types use `kafka_protocol::error::ResponseError` — `None` means success:
+
+```rust
+pub struct ProduceResult {
+    pub error: Option<ResponseError>,
+    pub partition: i32,
+    pub offset: i64,
+}
+```
+
 Consumer group result types:
 
 ```rust
 pub struct JoinGroupResult {
-    pub error_code: i16,
+    pub error: Option<ResponseError>,
     pub member_id: String,
     pub leader: String,
 }
 
 pub struct SyncGroupResult {
-    pub error_code: i16,
+    pub error: Option<ResponseError>,
 }
 
 pub struct HeartbeatResult {
-    pub error_code: i16,
+    pub error: Option<ResponseError>,
 }
 ```
 
