@@ -240,7 +240,7 @@ fn kafka_records_to_internal(kafka_records: &[KafkaRecord]) -> Vec<Record> {
             let headers = r
                 .headers
                 .iter()
-                .map(|(k, v)| crate::record::Header {
+                .map(|(k, v)| gaslightmq_kernel::Header {
                     key: k.as_str().to_string(),
                     value: v.clone(),
                 })

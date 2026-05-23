@@ -2,3 +2,6 @@
 name = "gaslightmq-kernel"
 version.workspace = true
 edition.workspace = true
+
+[dependencies]
+bytes = "1"

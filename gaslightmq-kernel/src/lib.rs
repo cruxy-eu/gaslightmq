@@ -1,3 +1,13 @@
+use bytes::Bytes;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Header {
+    pub key: String,
+    pub value: Option<Bytes>,
+}
+
+pub type Headers = Vec<Header>;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Partition(u32);
 

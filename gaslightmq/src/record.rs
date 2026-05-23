@@ -1,14 +1,9 @@
 use bytes::Bytes;
 use futures::Stream;
+use gaslightmq_kernel::Header;
 use kafka_protocol::error::ResponseError;
 use std::future::Future;
 use std::pin::Pin;
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Header {
-    pub key: String,
-    pub value: Option<Bytes>,
-}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Record {
