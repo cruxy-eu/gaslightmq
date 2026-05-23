@@ -12,6 +12,7 @@ serde = { version = "1", features = ["derive"] }
 serde_yaml = "0.9"
 fake = { version = "3", features = ["derive"] }
 rand = "0.9"
+uuid = { version = "1", features = ["v4"] }
 
 [dev-dependencies]
 tokio = { version = "1", features = ["test-util"] }
