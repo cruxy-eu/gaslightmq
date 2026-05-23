@@ -235,9 +235,20 @@ pub fn handle_metadata(
 fn kafka_records_to_internal(kafka_records: &[KafkaRecord]) -> Vec<Record> {
     kafka_records
         .iter()
-        .map(|r| Record {
-            key: r.key.clone(),
-            value: r.value.clone(),
+        .map(|r| {
+            let headers = r
+                .headers
+                .iter()
+                .map(|(k, v)| crate::record::Header {
+                    key: k.as_str().to_string(),
+                    value: v.clone(),
+                })
+                .collect();
+            Record {
+                key: r.key.clone(),
+                value: r.value.clone(),
+                headers,
+            }
         })
         .collect()
 }
@@ -247,19 +258,28 @@ fn internal_to_kafka_records(records: &[Record], base_offset: i64) -> Vec<KafkaR
     records
         .iter()
         .enumerate()
-        .map(|(i, r)| KafkaRecord {
-            transactional: false,
-            control: false,
-            partition_leader_epoch: NO_PARTITION_LEADER_EPOCH,
-            producer_id: NO_PRODUCER_ID,
-            producer_epoch: NO_PRODUCER_EPOCH,
-            timestamp_type: TimestampType::Creation,
-            offset: base_offset + i as i64,
-            sequence: NO_SEQUENCE,
-            timestamp: 0,
-            key: r.key.clone(),
-            value: r.value.clone(),
-            headers: IndexMap::new(),
+        .map(|(i, r)| {
+            let mut headers = IndexMap::new();
+            for h in &r.headers {
+                headers.insert(
+                    StrBytes::from_string(h.key.clone()),
+                    h.value.clone(),
+                );
+            }
+            KafkaRecord {
+                transactional: false,
+                control: false,
+                partition_leader_epoch: NO_PARTITION_LEADER_EPOCH,
+                producer_id: NO_PRODUCER_ID,
+                producer_epoch: NO_PRODUCER_EPOCH,
+                timestamp_type: TimestampType::Creation,
+                offset: base_offset + i as i64,
+                sequence: NO_SEQUENCE,
+                timestamp: 0,
+                key: r.key.clone(),
+                value: r.value.clone(),
+                headers,
+            }
         })
         .collect()
 }
