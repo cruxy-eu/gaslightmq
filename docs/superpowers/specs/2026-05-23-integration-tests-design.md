@@ -5,7 +5,11 @@ Structured integration test suites for all implemented Kafka API calls, with plu
 ## Crate Structure
 
 ```
-gaslightmq/                          # existing library crate (the broker)
+gaslightmq-kernel/                   # value objects: Partition, Offset, TopicName, etc.
+  Cargo.toml                         # name = "gaslightmq-kernel"
+  src/
+    lib.rs
+gaslightmq/                          # existing library crate (the broker), depends on gaslightmq-kernel
 gaslightmq-testing/                  # test support library
   Cargo.toml                         # name = "gaslightmq-testing"
   src/
@@ -31,7 +35,23 @@ gaslightmq-kafka-client/             # directory grouping, not a crate
       lib.rs                         # RdkafkaClient — impl of Producer, Consumer
 ```
 
-Workspace members addition: `"gaslightmq-testing"`, `"gaslightmq-kafka-client/*"`.
+Workspace members addition: `"gaslightmq-kernel"`, `"gaslightmq-testing"`, `"gaslightmq-kafka-client/*"`.
+
+## Kernel Value Objects (`gaslightmq-kernel`)
+
+Shared newtype wrappers used across all crates. No dependencies beyond std.
+
+```rust
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct Partition(u32);
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct Offset(u64);
+```
+
+Private inner value — accessed via `Partition::new(u32)` / `Partition::value(&self) -> u32` (and same for `Offset` with `u64`). Implement `From<i32> for Partition`, `From<Partition> for i32` (and `i64`↔`Offset`) for ergonomic conversion at kafka-protocol boundaries. `gaslightmq`, `gaslightmq-testing`, and the client crates all depend on `gaslightmq-kernel`.
+
+The existing `gaslightmq` crate is updated to use `Partition` and `Offset` in its public API (Topic trait, Record types, FetchResult, etc.).
 
 ## Two Trait Layers
 
@@ -80,13 +100,13 @@ Client-like abstractions using `TestRecord`. Both raw and rdkafka clients can im
 ```rust
 #[async_trait]
 pub trait Producer {
-    async fn send(&self, topic: &str, partition: i32, records: &[TestRecord]) -> ProduceResult;
+    async fn send(&self, topic: &str, partition: Partition, records: &[TestRecord]) -> ProduceResult;
 }
 
 #[async_trait]
 pub trait Consumer {
-    async fn fetch(&self, topic: &str, partition: i32, offset: i64) -> Vec<TestRecord>;
-    fn stream(&self, topic: &str, partition: i32, offset: i64) -> RecordStream;
+    async fn fetch(&self, topic: &str, partition: Partition, offset: Offset) -> Vec<TestRecord>;
+    fn stream(&self, topic: &str, partition: Partition, offset: Offset) -> RecordStream;
     async fn join_group(&self, group_id: &str) -> JoinGroupResult;
     async fn sync_group(&self, group_id: &str) -> SyncGroupResult;
     async fn heartbeat(&self, group_id: &str) -> HeartbeatResult;
@@ -100,8 +120,8 @@ Result types use `kafka_protocol::error::ResponseError` — `None` means success
 ```rust
 pub struct ProduceResult {
     pub error: Option<ResponseError>,
-    pub partition: i32,
-    pub offset: i64,
+    pub partition: Partition,
+    pub offset: Offset,
 }
 ```
 
@@ -265,11 +285,19 @@ Update protocol handlers to encode/decode headers in record batches.
 
 ## Dependencies
 
+### gaslightmq-kernel
+
+```toml
+[dependencies]
+# no external dependencies — std only
+```
+
 ### gaslightmq-testing
 
 ```toml
 [dependencies]
 gaslightmq = { path = "../gaslightmq" }
+gaslightmq-kernel = { path = "../gaslightmq-kernel" }
 async-trait = "0.1"
 futures = "0.3"
 tokio = { version = "1", features = ["net", "rt-multi-thread", "macros"] }
@@ -279,6 +307,7 @@ tokio = { version = "1", features = ["net", "rt-multi-thread", "macros"] }
 
 ```toml
 [dependencies]
+gaslightmq-kernel = { path = "../../gaslightmq-kernel" }
 gaslightmq-testing = { path = "../../gaslightmq-testing" }
 async-trait = "0.1"
 bytes = "1"
@@ -290,6 +319,7 @@ tokio = { version = "1", features = ["net", "io-util"] }
 
 ```toml
 [dependencies]
+gaslightmq-kernel = { path = "../../gaslightmq-kernel" }
 gaslightmq-testing = { path = "../../gaslightmq-testing" }
 async-trait = "0.1"
 rdkafka = { version = "0.37", features = ["cmake-build"] }
