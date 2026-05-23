@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use crate::broker::Broker;
 use crate::chaos::ChaosBehavior;
 use crate::generator::Generator;
 use crate::layer::{ChaosLayer, GeneratorLayer};
@@ -42,6 +43,10 @@ impl BrokerBuilder {
             topics: self.topics,
             bind_addr: self.bind_addr,
         }
+    }
+
+    pub async fn start(self) -> std::io::Result<Broker> {
+        Broker::start(self.build_config()).await
     }
 }
 
@@ -108,6 +113,10 @@ impl<T: Topic + 'static> TopicBuilder<T> {
             topics: self.topics,
             bind_addr: self.bind_addr,
         }
+    }
+
+    pub async fn start(self) -> std::io::Result<Broker> {
+        Broker::start(self.build_config()).await
     }
 }
 
