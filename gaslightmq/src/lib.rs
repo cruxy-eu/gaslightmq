@@ -8,6 +8,7 @@ pub mod layer;
 pub mod protocol;
 pub mod scenario;
 
+pub use gaslightmq_kernel::{Partition, Offset};
 pub use record::{Api, FetchResult, Header, ProduceResult, Record, RecordStream, TopicFuture};
 pub use kafka_protocol::error::ResponseError;
 pub use topic::{BlackHole, Buffer, Topic};

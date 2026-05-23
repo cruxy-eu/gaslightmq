@@ -1,3 +1,4 @@
+use gaslightmq_kernel::{Partition, Offset};
 use crate::chaos::{ChaosAction, ChaosBehavior};
 use crate::generator::Generator;
 use crate::record::{Api, FetchResult, ProduceResult, Record, TopicFuture};
@@ -22,7 +23,7 @@ impl<T: Topic, C: ChaosBehavior> Topic for ChaosLayer<T, C> {
 
     fn on_produce<'a>(
         &'a self,
-        partition: i32,
+        partition: Partition,
         records: &'a [Record],
     ) -> TopicFuture<'a, ProduceResult> {
         Box::pin(async move {
@@ -42,7 +43,7 @@ impl<T: Topic, C: ChaosBehavior> Topic for ChaosLayer<T, C> {
         })
     }
 
-    fn on_fetch(&self, partition: i32, offset: i64) -> TopicFuture<'_, FetchResult> {
+    fn on_fetch(&self, partition: Partition, offset: Offset) -> TopicFuture<'_, FetchResult> {
         Box::pin(async move {
             if self.api == Api::Fetch {
                 match self.behavior.next_action() {
@@ -79,13 +80,13 @@ impl<T: Topic, G: Generator> Topic for GeneratorLayer<T, G> {
 
     fn on_produce<'a>(
         &'a self,
-        partition: i32,
+        partition: Partition,
         records: &'a [Record],
     ) -> TopicFuture<'a, ProduceResult> {
         self.inner.on_produce(partition, records)
     }
 
-    fn on_fetch(&self, partition: i32, offset: i64) -> TopicFuture<'_, FetchResult> {
+    fn on_fetch(&self, partition: Partition, offset: Offset) -> TopicFuture<'_, FetchResult> {
         Box::pin(async move {
             let result = self.inner.on_fetch(partition, offset).await;
             if result == FetchResult::Empty {
@@ -108,13 +109,14 @@ mod tests {
     use super::*;
     use crate::{Api, BlackHole, Buffer, Delay, ErrorResponse, FetchResult, ProduceResult, Record};
     use crate::generator::RandomBytes;
+    use gaslightmq_kernel::{Partition, Offset};
     use kafka_protocol::error::ResponseError;
     use std::time::Duration;
 
     #[tokio::test]
     async fn chaos_layer_applies_error_on_matching_api() {
         let topic = Buffer::new(1);
-        topic.on_produce(0, &[Record::new("hello")]).await;
+        topic.on_produce(Partition::new(0), &[Record::new("hello")]).await;
 
         let chaos = ChaosLayer::new(
             topic,
@@ -122,14 +124,14 @@ mod tests {
             ErrorResponse::new(ResponseError::NotLeaderOrFollower),
         );
 
-        let result = chaos.on_fetch(0, 0).await;
+        let result = chaos.on_fetch(Partition::new(0), Offset::new(0)).await;
         assert_eq!(result, FetchResult::Error(ResponseError::NotLeaderOrFollower));
     }
 
     #[tokio::test]
     async fn chaos_layer_passes_through_on_non_matching_api() {
         let topic = Buffer::new(1);
-        topic.on_produce(0, &[Record::new("hello")]).await;
+        topic.on_produce(Partition::new(0), &[Record::new("hello")]).await;
 
         let chaos = ChaosLayer::new(
             topic,
@@ -138,7 +140,7 @@ mod tests {
         );
 
         // Chaos targets Produce, so Fetch should pass through
-        let result = chaos.on_fetch(0, 0).await;
+        let result = chaos.on_fetch(Partition::new(0), Offset::new(0)).await;
         assert_eq!(result, FetchResult::Records(vec![Record::new("hello")]));
     }
 
@@ -150,14 +152,14 @@ mod tests {
             ErrorResponse::new(ResponseError::RequestTimedOut),
         );
 
-        let result = chaos.on_produce(0, &[Record::new("hello")]).await;
+        let result = chaos.on_produce(Partition::new(0), &[Record::new("hello")]).await;
         assert_eq!(result, ProduceResult::Error(ResponseError::RequestTimedOut));
     }
 
     #[tokio::test]
     async fn chaos_layer_delay_still_returns_result() {
         let topic = Buffer::new(1);
-        topic.on_produce(0, &[Record::new("data")]).await;
+        topic.on_produce(Partition::new(0), &[Record::new("data")]).await;
 
         let chaos = ChaosLayer::new(
             topic,
@@ -165,7 +167,7 @@ mod tests {
             Delay::new(Duration::from_millis(1)),
         );
 
-        let result = chaos.on_fetch(0, 0).await;
+        let result = chaos.on_fetch(Partition::new(0), Offset::new(0)).await;
         assert_eq!(result, FetchResult::Records(vec![Record::new("data")]));
     }
 
@@ -174,7 +176,7 @@ mod tests {
         let topic = BlackHole::new(1);
         let layer = GeneratorLayer::new(topic, RandomBytes::new(32));
 
-        let result = layer.on_fetch(0, 0).await;
+        let result = layer.on_fetch(Partition::new(0), Offset::new(0)).await;
         match result {
             FetchResult::Records(records) => {
                 assert_eq!(records.len(), 1);
@@ -187,11 +189,11 @@ mod tests {
     #[tokio::test]
     async fn generator_layer_does_not_override_real_data() {
         let topic = Buffer::new(1);
-        topic.on_produce(0, &[Record::new("real-data")]).await;
+        topic.on_produce(Partition::new(0), &[Record::new("real-data")]).await;
 
         let layer = GeneratorLayer::new(topic, RandomBytes::new(32));
 
-        let result = layer.on_fetch(0, 0).await;
+        let result = layer.on_fetch(Partition::new(0), Offset::new(0)).await;
         assert_eq!(result, FetchResult::Records(vec![Record::new("real-data")]));
     }
 }

@@ -4,6 +4,7 @@ version.workspace = true
 edition.workspace = true
 
 [dependencies]
+gaslightmq-kernel = { path = "../gaslightmq-kernel" }
 anyhow = "1"
 bytes = "1"
 indexmap = "2"

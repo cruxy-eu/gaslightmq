@@ -36,6 +36,7 @@ use kafka_protocol::records::{
 };
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
+use gaslightmq_kernel::{Partition, Offset};
 use crate::record::{FetchResult, ProduceResult, Record};
 use crate::topic::Topic;
 
@@ -310,7 +311,7 @@ pub async fn handle_produce(
                     match RecordBatchDecoder::decode(&mut records_buf) {
                         Ok(record_set) => {
                             let internal_records = kafka_records_to_internal(&record_set.records);
-                            topic.on_produce(partition_idx, &internal_records).await
+                            topic.on_produce(Partition::from(partition_idx), &internal_records).await
                         }
                         Err(_) => {
                             // If we can't decode the records, still accept them
@@ -368,7 +369,7 @@ pub async fn handle_fetch(
             let fetch_offset = fetch_partition.fetch_offset;
 
             let (error_code, records_bytes) = if let Some(topic) = topics.get(&topic_name) {
-                let result = topic.on_fetch(partition_idx, fetch_offset).await;
+                let result = topic.on_fetch(Partition::from(partition_idx), Offset::from(fetch_offset)).await;
                 match result {
                     FetchResult::Empty => (0i16, None),
                     FetchResult::Records(records) => {
