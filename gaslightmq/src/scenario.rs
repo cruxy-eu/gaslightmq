@@ -135,11 +135,10 @@ where
 
         fn visit_str<E: de::Error>(self, v: &str) -> Result<ResponseError, E> {
             for code in -1..=200i16 {
-                if let Some(err) = ResponseError::try_from_code(code) {
-                    if err.to_string() == v {
+                if let Some(err) = ResponseError::try_from_code(code)
+                    && err.to_string() == v {
                         return Ok(err);
                     }
-                }
             }
             Err(E::custom(format!("unknown Kafka error name: {v}")))
         }

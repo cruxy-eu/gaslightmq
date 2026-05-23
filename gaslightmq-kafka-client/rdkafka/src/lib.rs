@@ -7,7 +7,7 @@ use gaslightmq_kernel::{Offset, Partition};
 use gaslightmq_testing::traits::{
     Consumer, HeartbeatResult, JoinGroupResult, Producer, SyncGroupResult,
 };
-use gaslightmq_testing::{Header, Record, RecordStream};
+use gaslightmq_testing::{Record, RecordStream};
 use rdkafka::Message;
 use rdkafka::config::ClientConfig;
 use rdkafka::consumer::{BaseConsumer, Consumer as RdConsumer};
@@ -60,7 +60,7 @@ impl Producer for RdkafkaClient {
         records: &[Record],
     ) -> gaslightmq_testing::ProduceResult {
         for record in records {
-            let mut base_record = BaseRecord::to(topic).partition(i32::from(partition) as i32);
+            let mut base_record = BaseRecord::to(topic).partition(i32::from(partition));
 
             if let Some(ref key) = record.key {
                 base_record = base_record.key(key.as_ref());

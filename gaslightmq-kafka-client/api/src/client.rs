@@ -330,7 +330,7 @@ impl Consumer for RawKafkaClient {
                     }
                 }
             })
-            .flat_map(|records| futures::stream::iter(records)),
+            .flat_map(futures::stream::iter),
         )
     }
 
