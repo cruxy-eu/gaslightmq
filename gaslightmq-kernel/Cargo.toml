@@ -1,0 +1,4 @@
+[package]
+name = "gaslightmq-kernel"
+version.workspace = true
+edition.workspace = true
