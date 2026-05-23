@@ -56,6 +56,18 @@ impl Default for BrokerBuilder {
     }
 }
 
+impl From<BrokerBuilder> for BrokerConfig {
+    fn from(b: BrokerBuilder) -> Self {
+        b.build_config()
+    }
+}
+
+impl<T: Topic + 'static> From<TopicBuilder<T>> for BrokerConfig {
+    fn from(b: TopicBuilder<T>) -> Self {
+        b.build_config()
+    }
+}
+
 pub struct TopicBuilder<T> {
     topics: HashMap<String, Box<dyn Topic>>,
     bind_addr: String,

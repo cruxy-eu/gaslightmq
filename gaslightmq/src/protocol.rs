@@ -32,7 +32,7 @@ use kafka_protocol::messages::{BrokerId, TopicName};
 use kafka_protocol::protocol::{Decodable, Encodable, StrBytes};
 use kafka_protocol::records::{
     Compression, Record as KafkaRecord, RecordBatchDecoder, RecordBatchEncoder, RecordEncodeOptions,
-    TimestampType, NO_PARTITION_LEADER_EPOCH, NO_PRODUCER_EPOCH, NO_PRODUCER_ID, NO_SEQUENCE,
+    TimestampType, NO_PARTITION_LEADER_EPOCH, NO_PRODUCER_EPOCH, NO_PRODUCER_ID,
 };
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
@@ -275,7 +275,7 @@ fn internal_to_kafka_records(records: &[Record], base_offset: i64) -> Vec<KafkaR
                 producer_epoch: NO_PRODUCER_EPOCH,
                 timestamp_type: TimestampType::Creation,
                 offset: base_offset + i as i64,
-                sequence: NO_SEQUENCE,
+                sequence: i as i32,
                 timestamp: 0,
                 key: r.key.clone(),
                 value: r.value.clone(),
