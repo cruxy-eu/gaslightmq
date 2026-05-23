@@ -6,6 +6,7 @@ pub mod chaos;
 pub mod generator;
 pub mod layer;
 pub mod protocol;
+pub mod scenario;
 
 pub use record::{Api, FetchResult, ProduceResult, Record, RecordStream, TopicFuture};
 pub use kafka_protocol::error::ResponseError;
@@ -15,3 +16,4 @@ pub use generator::{Generator, JsonTemplate, RandomBytes};
 pub use layer::{ChaosLayer, GeneratorLayer};
 pub use broker::Broker;
 pub use builder::BrokerBuilder;
+pub use scenario::Scenario;

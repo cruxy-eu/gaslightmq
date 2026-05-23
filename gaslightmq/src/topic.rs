@@ -20,6 +20,24 @@ pub trait Topic: Send + Sync {
     }
 }
 
+impl Topic for Box<dyn Topic> {
+    fn partitions(&self) -> i32 {
+        (**self).partitions()
+    }
+
+    fn on_produce<'a>(
+        &'a self,
+        partition: i32,
+        records: &'a [Record],
+    ) -> TopicFuture<'a, ProduceResult> {
+        (**self).on_produce(partition, records)
+    }
+
+    fn on_fetch(&self, partition: i32, offset: i64) -> TopicFuture<'_, FetchResult> {
+        (**self).on_fetch(partition, offset)
+    }
+}
+
 pub struct BlackHole {
     num_partitions: i32,
 }
