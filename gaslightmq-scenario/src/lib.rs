@@ -65,8 +65,8 @@ fn default_repeat() -> usize {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum ErrorCode {
-    Name(String),
     Code(i16),
+    Name(String),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -108,5 +108,119 @@ impl Scenario {
 
     pub fn to_yaml(&self) -> Result<String, serde_yaml::Error> {
         serde_yaml::to_string(self)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const BASIC_YAML: &str = r#"
+topics:
+  - name: orders
+    partitions: 3
+    mode: buffer
+    chaos:
+      - api: Fetch
+        behavior: delay
+        delay_ms: 2000
+        repeat: 5
+      - api: Produce
+        behavior: error
+        error_code: NotLeaderOrFollower
+    generators:
+      - format: json
+        template: '{"id": "{{uuid}}"}'
+  - name: events
+    partitions: 1
+    mode: blackhole
+"#;
+
+    const SEQUENCE_YAML: &str = r#"
+topics:
+  - name: events
+    partitions: 1
+    mode: blackhole
+    chaos:
+      - api: Fetch
+        sequence:
+          - behavior: success
+            repeat: 3
+          - behavior: timeout
+          - behavior: error
+            error_code: CorruptMessage
+            repeat: 2
+        after_sequence: loop
+"#;
+
+    #[test]
+    fn deserialize_basic_scenario() {
+        let scenario = Scenario::from_yaml(BASIC_YAML).unwrap();
+        assert_eq!(scenario.topics.len(), 2);
+
+        let orders = &scenario.topics[0];
+        assert_eq!(orders.name, "orders");
+        assert_eq!(orders.partitions, 3);
+        assert!(matches!(orders.mode, TopicMode::Buffer));
+        assert_eq!(orders.chaos.len(), 2);
+        assert_eq!(orders.generators.len(), 1);
+    }
+
+    #[test]
+    fn deserialize_sequence_scenario() {
+        let scenario = Scenario::from_yaml(SEQUENCE_YAML).unwrap();
+        assert_eq!(scenario.topics.len(), 1);
+
+        let chaos = &scenario.topics[0].chaos[0];
+        assert!(chaos.behavior.is_none());
+        let seq = chaos.sequence.as_ref().unwrap();
+        assert_eq!(seq.len(), 3);
+        assert!(matches!(chaos.after_sequence, Some(AfterSequenceRef::Loop)));
+    }
+
+    #[test]
+    fn error_code_deserializes_from_string() {
+        let scenario = Scenario::from_yaml(BASIC_YAML).unwrap();
+        let error_code = scenario.topics[0].chaos[1].error_code.as_ref().unwrap();
+        assert!(matches!(error_code, ErrorCode::Name(s) if s == "NotLeaderOrFollower"));
+    }
+
+    #[test]
+    fn error_code_deserializes_from_integer() {
+        let yaml = r#"
+topics:
+  - name: t
+    mode: blackhole
+    chaos:
+      - api: Fetch
+        behavior: error
+        error_code: 6
+"#;
+        let scenario = Scenario::from_yaml(yaml).unwrap();
+        let error_code = scenario.topics[0].chaos[0].error_code.as_ref().unwrap();
+        assert!(matches!(error_code, ErrorCode::Code(6)));
+    }
+
+    #[test]
+    fn default_partitions_is_one() {
+        let yaml = r#"
+topics:
+  - name: t
+    mode: buffer
+"#;
+        let scenario = Scenario::from_yaml(yaml).unwrap();
+        assert_eq!(scenario.topics[0].partitions, 1);
+    }
+
+    #[test]
+    fn serialize_then_deserialize_round_trip() {
+        let scenario = Scenario::from_yaml(BASIC_YAML).unwrap();
+        let yaml = scenario.to_yaml().unwrap();
+        let round_tripped = Scenario::from_yaml(&yaml).unwrap();
+
+        assert_eq!(round_tripped.topics.len(), 2);
+        assert_eq!(round_tripped.topics[0].name, "orders");
+        assert_eq!(round_tripped.topics[0].partitions, 3);
+        assert_eq!(round_tripped.topics[1].name, "events");
     }
 }
