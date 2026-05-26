@@ -7,6 +7,7 @@ pub mod generator;
 pub mod layer;
 pub mod protocol;
 pub mod scenario;
+pub mod registry;
 
 pub use gaslightmq_kernel::{Header, Headers, Offset, Partition, Record};
 pub use record::{Api, FetchResult, ProduceResult, RecordStream, TopicFuture};
@@ -18,3 +19,4 @@ pub use layer::{ChaosLayer, GeneratorLayer};
 pub use broker::Broker;
 pub use builder::BrokerBuilder;
 pub use gaslightmq_scenario::Scenario;
+pub use registry::{TopicRegistryHandle, CreateResult, DeleteResult};
