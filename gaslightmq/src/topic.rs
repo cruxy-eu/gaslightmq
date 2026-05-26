@@ -1,7 +1,7 @@
 use gaslightmq_kernel::{Partition, Offset};
 use crate::record::{FetchResult, ProduceResult, Record, TopicFuture};
 use std::collections::HashMap;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 pub trait Topic: Send + Sync {
     fn partitions(&self) -> i32 {
@@ -22,6 +22,24 @@ pub trait Topic: Send + Sync {
 }
 
 impl Topic for Box<dyn Topic> {
+    fn partitions(&self) -> i32 {
+        (**self).partitions()
+    }
+
+    fn on_produce<'a>(
+        &'a self,
+        partition: Partition,
+        records: &'a [Record],
+    ) -> TopicFuture<'a, ProduceResult> {
+        (**self).on_produce(partition, records)
+    }
+
+    fn on_fetch(&self, partition: Partition, offset: Offset) -> TopicFuture<'_, FetchResult> {
+        (**self).on_fetch(partition, offset)
+    }
+}
+
+impl Topic for Arc<dyn Topic> {
     fn partitions(&self) -> i32 {
         (**self).partitions()
     }

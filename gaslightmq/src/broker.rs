@@ -8,7 +8,7 @@ use tokio::sync::watch;
 
 use crate::builder::BrokerConfig;
 use crate::protocol;
-use crate::topic::Topic;
+use crate::registry::{TopicRegistry, TopicRegistryHandle};
 
 /// A running Kafka-protocol broker that accepts TCP connections and dispatches
 /// requests to the registered topic handlers.
@@ -26,11 +26,16 @@ impl Broker {
         let addr = listener.local_addr()?;
         let (shutdown_tx, shutdown_rx) = watch::channel(false);
 
-        let topics: Arc<HashMap<String, Box<dyn Topic>>> = Arc::new(config.topics);
+        let seed: HashMap<String, Arc<dyn crate::topic::Topic>> = config
+            .topics
+            .into_iter()
+            .map(|(k, v)| (k, Arc::from(v) as Arc<dyn crate::topic::Topic>))
+            .collect();
+        let registry = TopicRegistry::spawn(seed, config.default_topic_mode);
         let host = addr.ip().to_string();
         let port = addr.port() as i32;
 
-        let join_handle = tokio::spawn(accept_loop(listener, topics, host, port, shutdown_rx));
+        let join_handle = tokio::spawn(accept_loop(listener, registry, host, port, shutdown_rx));
 
         Ok(Broker {
             addr,
@@ -54,7 +59,7 @@ impl Broker {
 
 async fn accept_loop(
     listener: TcpListener,
-    topics: Arc<HashMap<String, Box<dyn Topic>>>,
+    registry: TopicRegistryHandle,
     host: String,
     port: i32,
     mut shutdown_rx: watch::Receiver<bool>,
@@ -64,10 +69,10 @@ async fn accept_loop(
             result = listener.accept() => {
                 match result {
                     Ok((stream, _peer)) => {
-                        let topics = Arc::clone(&topics);
+                        let registry = registry.clone();
                         let host = host.clone();
                         tokio::spawn(handle_connection(
-                            stream, topics, host, port, shutdown_rx.clone(),
+                            stream, registry, host, port, shutdown_rx.clone(),
                         ));
                     }
                     Err(_) => break,
@@ -82,7 +87,7 @@ async fn accept_loop(
 
 async fn handle_connection(
     stream: TcpStream,
-    topics: Arc<HashMap<String, Box<dyn Topic>>>,
+    registry: TopicRegistryHandle,
     host: String,
     port: i32,
     mut shutdown_rx: watch::Receiver<bool>,
@@ -116,28 +121,28 @@ async fn handle_connection(
                         match protocol::handle_metadata(
                             &mut body,
                             api_version,
-                            &topics,
+                            &registry,
                             &host,
                             port,
-                        ) {
+                        ).await {
                             Ok(resp) => protocol::encode_response_body(&resp, api_version),
                             Err(_) => continue,
                         }
                     }
                     Ok(ApiKey::Produce) => {
-                        match protocol::handle_produce(&mut body, api_version, &topics).await {
+                        match protocol::handle_produce(&mut body, api_version, &registry).await {
                             Ok(resp) => protocol::encode_response_body(&resp, api_version),
                             Err(_) => continue,
                         }
                     }
                     Ok(ApiKey::Fetch) => {
-                        match protocol::handle_fetch(&mut body, api_version, &topics).await {
+                        match protocol::handle_fetch(&mut body, api_version, &registry).await {
                             Ok(resp) => protocol::encode_response_body(&resp, api_version),
                             Err(_) => continue,
                         }
                     }
                     Ok(ApiKey::ListOffsets) => {
-                        match protocol::handle_list_offsets(&mut body, api_version, &topics).await {
+                        match protocol::handle_list_offsets(&mut body, api_version, &registry).await {
                             Ok(resp) => protocol::encode_response_body(&resp, api_version),
                             Err(_) => continue,
                         }

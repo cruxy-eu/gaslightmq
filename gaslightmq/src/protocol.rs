@@ -1,5 +1,3 @@
-use std::collections::HashMap;
-
 use anyhow::{bail, Result};
 use bytes::{Bytes, BytesMut};
 use indexmap::IndexMap;
@@ -38,7 +36,7 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 use gaslightmq_kernel::{Partition, Offset};
 use crate::record::{FetchResult, ProduceResult, Record};
-use crate::topic::Topic;
+use crate::registry::TopicRegistryHandle;
 
 // ---------------------------------------------------------------------------
 // Header version helpers
@@ -188,10 +186,10 @@ pub fn handle_api_versions(_api_version: i16) -> ApiVersionsResponse {
 
 /// Handle a Metadata request. Returns single broker, all registered topics
 /// with their partitions.
-pub fn handle_metadata(
+pub async fn handle_metadata(
     body: &mut Bytes,
     api_version: i16,
-    topics: &HashMap<String, Box<dyn Topic>>,
+    registry: &TopicRegistryHandle,
     host: &str,
     port: i32,
 ) -> Result<MetadataResponse> {
@@ -203,6 +201,7 @@ pub fn handle_metadata(
         .with_host(StrBytes::from_string(host.to_string()))
         .with_port(port);
 
+    let topics = registry.list_all().await;
     let response_topics: Vec<MetadataResponseTopic> = topics
         .iter()
         .map(|(name, topic)| {
@@ -291,7 +290,7 @@ fn internal_to_kafka_records(records: &[Record], base_offset: i64) -> Vec<KafkaR
 pub async fn handle_produce(
     body: &mut Bytes,
     api_version: i16,
-    topics: &HashMap<String, Box<dyn Topic>>,
+    registry: &TopicRegistryHandle,
 ) -> Result<ProduceResponse> {
     let request = ProduceRequest::decode(body, api_version)?;
 
@@ -305,7 +304,7 @@ pub async fn handle_produce(
         for partition_data in &topic_data.partition_data {
             let partition_idx = partition_data.index;
 
-            let result = if let Some(topic) = topics.get(&topic_name) {
+            let result = if let Some(topic) = registry.lookup(&topic_name).await {
                 // Decode records from the raw bytes
                 if let Some(ref raw_records) = partition_data.records {
                     let mut records_buf = raw_records.clone();
@@ -354,7 +353,7 @@ pub async fn handle_produce(
 pub async fn handle_fetch(
     body: &mut Bytes,
     api_version: i16,
-    topics: &HashMap<String, Box<dyn Topic>>,
+    registry: &TopicRegistryHandle,
 ) -> Result<FetchResponse> {
     let request = FetchRequest::decode(body, api_version)?;
 
@@ -369,7 +368,7 @@ pub async fn handle_fetch(
             let partition_idx = fetch_partition.partition;
             let fetch_offset = fetch_partition.fetch_offset;
 
-            let (error_code, records_bytes) = if let Some(topic) = topics.get(&topic_name) {
+            let (error_code, records_bytes) = if let Some(topic) = registry.lookup(&topic_name).await {
                 let result = topic.on_fetch(Partition::from(partition_idx), Offset::from(fetch_offset)).await;
                 match result {
                     FetchResult::Empty => (0i16, None),
@@ -416,7 +415,7 @@ pub async fn handle_fetch(
 pub async fn handle_list_offsets(
     body: &mut Bytes,
     api_version: i16,
-    _topics: &HashMap<String, Box<dyn Topic>>,
+    _registry: &TopicRegistryHandle,
 ) -> Result<ListOffsetsResponse> {
     let request = ListOffsetsRequest::decode(body, api_version)?;
 
@@ -496,6 +495,8 @@ pub fn encode_response_body<E: Encodable>(response: &E, api_version: i16) -> Res
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::HashMap;
+    use std::sync::Arc;
     use kafka_protocol::messages::ApiKey;
 
     #[test]
@@ -646,35 +647,28 @@ mod tests {
         assert!(!body.is_empty());
     }
 
-    #[test]
-    fn handle_metadata_returns_topics_and_broker() {
-        let mut topics: HashMap<String, Box<dyn Topic>> = HashMap::new();
-        topics.insert(
-            "orders".to_string(),
-            Box::new(crate::topic::BlackHole::new(3)),
-        );
-        topics.insert(
-            "events".to_string(),
-            Box::new(crate::topic::BlackHole::new(1)),
-        );
+    #[tokio::test]
+    async fn handle_metadata_returns_topics_and_broker() {
+        use crate::registry::TopicRegistry;
+        use gaslightmq_scenario::TopicMode;
 
-        // Build a MetadataRequest (version 1) body
+        let mut seed: HashMap<String, Arc<dyn crate::topic::Topic>> = HashMap::new();
+        seed.insert("orders".to_string(), Arc::new(crate::topic::BlackHole::new(3)));
+        seed.insert("events".to_string(), Arc::new(crate::topic::BlackHole::new(1)));
+        let registry = TopicRegistry::spawn(seed, TopicMode::Buffer);
+
         let metadata_req = MetadataRequest::default().with_topics(None);
         let mut body_buf = BytesMut::new();
         metadata_req.encode(&mut body_buf, 1).unwrap();
         let mut body = Bytes::from(body_buf);
 
-        let response = handle_metadata(&mut body, 1, &topics, "localhost", 9092).unwrap();
+        let response = handle_metadata(&mut body, 1, &registry, "localhost", 9092).await.unwrap();
 
-        // Should have 1 broker
         assert_eq!(response.brokers.len(), 1);
         assert_eq!(response.brokers[0].host.as_str(), "localhost");
         assert_eq!(response.brokers[0].port, 9092);
-
-        // Should have 2 topics
         assert_eq!(response.topics.len(), 2);
 
-        // Find "orders" topic
         let orders = response
             .topics
             .iter()
@@ -683,7 +677,6 @@ mod tests {
         assert_eq!(orders.partitions.len(), 3);
         assert_eq!(orders.error_code, 0);
 
-        // Find "events" topic
         let events = response
             .topics
             .iter()
@@ -691,7 +684,6 @@ mod tests {
             .unwrap();
         assert_eq!(events.partitions.len(), 1);
 
-        // Verify the response can be encoded at version 1
         let body = encode_response_body(&response, 1).unwrap();
         assert!(!body.is_empty());
     }
