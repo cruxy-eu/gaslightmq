@@ -25,7 +25,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .await?
     } else {
         gaslightmq::BrokerBuilder::new()
-            .topic("default", gaslightmq::BlackHole::new(1))
             .bind(&cli.bind)
             .start()
             .await?
