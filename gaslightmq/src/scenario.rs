@@ -3,7 +3,7 @@ use std::time::Duration;
 
 use gaslightmq_scenario::{
     AfterSequenceRef, ApiRef, BehaviorRef, ChaosConfig, ErrorCode, GeneratorConfig, Scenario,
-    SequenceStepConfig, TopicMode,
+    TopicMode,
 };
 use kafka_protocol::error::ResponseError;
 
