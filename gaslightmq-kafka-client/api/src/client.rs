@@ -39,7 +39,11 @@ use gaslightmq_testing::traits::{
 };
 use gaslightmq_testing::{Header, Record, RecordStream};
 
-use crate::{ApiVersions, Fetch, FindCoordinator, ListOffsets, Metadata, Produce};
+use kafka_protocol::messages::create_topics_request::CreateTopicsRequest;
+use kafka_protocol::messages::create_topics_response::CreateTopicsResponse;
+use kafka_protocol::messages::delete_topics_request::DeleteTopicsRequest;
+use kafka_protocol::messages::delete_topics_response::DeleteTopicsResponse;
+use crate::{ApiVersions, CreateTopics, DeleteTopics, Fetch, FindCoordinator, ListOffsets, Metadata, Produce};
 
 pub struct RawKafkaClient {
     addr: SocketAddr,
@@ -142,6 +146,20 @@ impl ListOffsets for RawKafkaClient {
 impl FindCoordinator for RawKafkaClient {
     async fn find_coordinator(&self, request: FindCoordinatorRequest) -> FindCoordinatorResponse {
         self.request(ApiKey::FindCoordinator, 0, &request).await
+    }
+}
+
+#[async_trait]
+impl CreateTopics for RawKafkaClient {
+    async fn create_topics(&self, request: CreateTopicsRequest) -> CreateTopicsResponse {
+        self.request(ApiKey::CreateTopics, 2, &request).await
+    }
+}
+
+#[async_trait]
+impl DeleteTopics for RawKafkaClient {
+    async fn delete_topics(&self, request: DeleteTopicsRequest) -> DeleteTopicsResponse {
+        self.request(ApiKey::DeleteTopics, 1, &request).await
     }
 }
 
