@@ -106,3 +106,75 @@ impl TryFrom<PathBuf> for GaslightMq {
         Self::try_from(path.as_path())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn default_has_no_scenario() {
+        let gmq = GaslightMq::default();
+        assert_eq!(gmq.tag, "latest");
+        assert!(gmq.copy_to.is_empty());
+        assert!(gmq.cmd.is_empty());
+    }
+
+    #[test]
+    fn from_string_sets_scenario() {
+        let yaml = "topics:\n  - name: t\n    mode: buffer".to_string();
+        let gmq = GaslightMq::from(yaml);
+        assert_eq!(gmq.copy_to.len(), 1);
+        assert_eq!(gmq.cmd, vec!["--scenario", SCENARIO_PATH]);
+    }
+
+    #[test]
+    fn from_str_sets_scenario() {
+        let gmq = GaslightMq::from("topics:\n  - name: t\n    mode: buffer");
+        assert_eq!(gmq.copy_to.len(), 1);
+        assert_eq!(gmq.cmd, vec!["--scenario", SCENARIO_PATH]);
+    }
+
+    #[test]
+    fn from_scenario_struct() {
+        let scenario = Scenario::from_yaml("topics:\n  - name: t\n    mode: buffer").unwrap();
+        let gmq = GaslightMq::from(scenario);
+        assert_eq!(gmq.copy_to.len(), 1);
+        assert_eq!(gmq.cmd, vec!["--scenario", SCENARIO_PATH]);
+    }
+
+    #[test]
+    fn with_tag_overrides_default() {
+        let gmq = GaslightMq::default().with_tag("0.2.0");
+        assert_eq!(gmq.tag, "0.2.0");
+    }
+
+    #[test]
+    fn try_from_path_reads_file() {
+        let dir = std::env::temp_dir().join("gaslightmq-test-scenario.yaml");
+        std::fs::write(&dir, "topics:\n  - name: t\n    mode: buffer").unwrap();
+
+        let gmq = GaslightMq::try_from(dir.as_path()).unwrap();
+        assert_eq!(gmq.copy_to.len(), 1);
+
+        std::fs::remove_file(&dir).ok();
+    }
+
+    #[test]
+    fn try_from_path_returns_error_for_missing_file() {
+        let result = GaslightMq::try_from(Path::new("/nonexistent/scenario.yaml"));
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn image_name_and_tag() {
+        let gmq = GaslightMq::default();
+        assert_eq!(gmq.name(), "ghcr.io/cruxy-eu/gaslightmq");
+        assert_eq!(gmq.tag(), "latest");
+    }
+
+    #[test]
+    fn image_exposes_9092() {
+        let gmq = GaslightMq::default();
+        assert_eq!(gmq.expose_ports(), &[GASLIGHTMQ_PORT]);
+    }
+}
