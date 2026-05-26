@@ -8,7 +8,7 @@ struct Cli {
     #[arg(short, long, help = "Path to YAML scenario file")]
     scenario: Option<PathBuf>,
 
-    #[arg(short, long, default_value = "127.0.0.1:9092", help = "Address to bind to")]
+    #[arg(short, long, default_value = "0.0.0.0:9092", help = "Address to bind to")]
     bind: String,
 }
 
