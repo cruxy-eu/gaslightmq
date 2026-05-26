@@ -1,163 +1,71 @@
 use std::collections::HashMap;
-use std::fmt;
 use std::time::Duration;
 
+use gaslightmq_scenario::{
+    AfterSequenceRef, ApiRef, BehaviorRef, ChaosConfig, ErrorCode, GeneratorConfig, Scenario,
+    TopicMode,
+};
 use kafka_protocol::error::ResponseError;
-use serde::Deserialize;
-use serde::de::{self, Visitor};
 
-use crate::builder::BrokerConfig;
+use crate::builder::BrokerBuilder;
 use crate::chaos::{AfterSequence, ChaosAction, Sequence, Step};
 use crate::generator::{JsonTemplate, RandomBytes};
 use crate::layer::{ChaosLayer, GeneratorLayer};
 use crate::record::Api;
 use crate::topic::{BlackHole, Buffer, Topic};
 
-// ── Serde models ─────────────────────────────────────────────────────────────
+impl From<Scenario> for BrokerBuilder {
+    fn from(scenario: Scenario) -> Self {
+        let mut topics: HashMap<String, Box<dyn Topic>> = HashMap::new();
 
-#[derive(Debug, Deserialize)]
-pub struct Scenario {
-    pub topics: Vec<TopicConfig>,
-}
+        for topic_cfg in scenario.topics {
+            let base: Box<dyn Topic> = match topic_cfg.mode {
+                TopicMode::Buffer => Box::new(Buffer::new(topic_cfg.partitions)),
+                TopicMode::BlackHole => Box::new(BlackHole::new(topic_cfg.partitions)),
+            };
 
-#[derive(Debug, Deserialize)]
-pub struct TopicConfig {
-    pub name: String,
-    #[serde(default = "default_partitions")]
-    pub partitions: i32,
-    pub mode: TopicMode,
-    #[serde(default)]
-    pub chaos: Vec<ChaosConfig>,
-    #[serde(default)]
-    pub generators: Vec<GeneratorConfig>,
-}
+            let mut topic: Box<dyn Topic> = base;
+            for chaos in &topic_cfg.chaos {
+                let api: Api = chaos.api.into();
+                let sequence = build_sequence_from_chaos(chaos);
+                topic = Box::new(ChaosLayer::new(topic, api, sequence));
+            }
 
-fn default_partitions() -> i32 {
-    1
-}
+            for gen_cfg in &topic_cfg.generators {
+                topic = match gen_cfg {
+                    GeneratorConfig::Json { template } => {
+                        Box::new(GeneratorLayer::new(topic, JsonTemplate::new(template)))
+                    }
+                    GeneratorConfig::RandomBytes { size } => {
+                        Box::new(GeneratorLayer::new(topic, RandomBytes::new(*size)))
+                    }
+                };
+            }
 
-#[derive(Debug, Deserialize, Clone, Copy)]
-#[serde(rename_all = "lowercase")]
-pub enum TopicMode {
-    Buffer,
-    BlackHole,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct ChaosConfig {
-    pub api: ApiRef,
-    /// Single behavior (mutually exclusive with `sequence`).
-    pub behavior: Option<BehaviorRef>,
-    #[serde(default)]
-    pub delay_ms: Option<u64>,
-    #[serde(default)]
-    pub timeout_ms: Option<u64>,
-    #[serde(default, deserialize_with = "deserialize_response_error_opt")]
-    pub error_code: Option<ResponseError>,
-    #[serde(default = "default_repeat")]
-    pub repeat: usize,
-    /// Multi-step sequence (mutually exclusive with `behavior`).
-    pub sequence: Option<Vec<SequenceStepConfig>>,
-    #[serde(default)]
-    pub after_sequence: Option<AfterSequenceRef>,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct SequenceStepConfig {
-    pub behavior: BehaviorRef,
-    #[serde(default)]
-    pub delay_ms: Option<u64>,
-    #[serde(default)]
-    pub timeout_ms: Option<u64>,
-    #[serde(default, deserialize_with = "deserialize_response_error_opt")]
-    pub error_code: Option<ResponseError>,
-    #[serde(default = "default_repeat")]
-    pub repeat: usize,
-}
-
-fn default_repeat() -> usize {
-    1
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(tag = "format", rename_all = "snake_case")]
-pub enum GeneratorConfig {
-    Json { template: String },
-    RandomBytes { size: usize },
-}
-
-#[derive(Debug, Deserialize, Clone, Copy, PartialEq, Eq)]
-pub enum ApiRef {
-    Produce,
-    Fetch,
-    ListOffsets,
-    Metadata,
-}
-
-#[derive(Debug, Deserialize, Clone, Copy)]
-#[serde(rename_all = "lowercase")]
-pub enum BehaviorRef {
-    Success,
-    Delay,
-    Timeout,
-    Error,
-}
-
-#[derive(Debug, Deserialize, Clone, Copy)]
-#[serde(rename_all = "snake_case")]
-pub enum AfterSequenceRef {
-    Loop,
-    Stop,
-    RepeatLast,
-}
-
-fn deserialize_response_error<'de, D>(deserializer: D) -> Result<ResponseError, D::Error>
-where
-    D: de::Deserializer<'de>,
-{
-    struct ResponseErrorVisitor;
-
-    impl<'de> Visitor<'de> for ResponseErrorVisitor {
-        type Value = ResponseError;
-
-        fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
-            write!(f, "a Kafka error name (e.g. \"CorruptMessage\") or error code (e.g. 2)")
+            topics.insert(topic_cfg.name, topic);
         }
 
-        fn visit_i64<E: de::Error>(self, v: i64) -> Result<ResponseError, E> {
-            ResponseError::try_from_code(v as i16)
-                .ok_or_else(|| E::custom(format!("error code {v} maps to success (0), not an error")))
-        }
+        BrokerBuilder::from_topics(topics)
+    }
+}
 
-        fn visit_u64<E: de::Error>(self, v: u64) -> Result<ResponseError, E> {
-            self.visit_i64(v as i64)
+fn resolve_error_code(code: &ErrorCode) -> ResponseError {
+    match code {
+        ErrorCode::Code(n) => {
+            ResponseError::try_from_code(*n).unwrap_or(ResponseError::UnknownServerError)
         }
-
-        fn visit_str<E: de::Error>(self, v: &str) -> Result<ResponseError, E> {
+        ErrorCode::Name(name) => {
             for code in -1..=200i16 {
                 if let Some(err) = ResponseError::try_from_code(code)
-                    && err.to_string() == v {
-                        return Ok(err);
-                    }
+                    && err.to_string() == *name
+                {
+                    return err;
+                }
             }
-            Err(E::custom(format!("unknown Kafka error name: {v}")))
+            ResponseError::UnknownServerError
         }
     }
-
-    deserializer.deserialize_any(ResponseErrorVisitor)
 }
-
-fn deserialize_response_error_opt<'de, D>(deserializer: D) -> Result<Option<ResponseError>, D::Error>
-where
-    D: de::Deserializer<'de>,
-{
-    #[derive(Deserialize)]
-    struct Wrapper(#[serde(deserialize_with = "deserialize_response_error")] ResponseError);
-
-    Option::<Wrapper>::deserialize(deserializer).map(|opt| opt.map(|w| w.0))
-}
-
-// ── Conversions ───────────────────────────────────────────────────────────────
 
 impl From<ApiRef> for Api {
     fn from(r: ApiRef) -> Api {
@@ -180,12 +88,10 @@ impl From<AfterSequenceRef> for AfterSequence {
     }
 }
 
-// ── Helpers to build ChaosAction from config ──────────────────────────────────
-
 fn chaos_action_from_behavior(
     behavior: BehaviorRef,
     delay_ms: Option<u64>,
-    error_code: Option<ResponseError>,
+    error_code: Option<&ErrorCode>,
 ) -> ChaosAction {
     match behavior {
         BehaviorRef::Success => ChaosAction::Proceed,
@@ -195,14 +101,16 @@ fn chaos_action_from_behavior(
         }
         BehaviorRef::Timeout => ChaosAction::Timeout,
         BehaviorRef::Error => {
-            ChaosAction::Error(error_code.unwrap_or(ResponseError::UnknownServerError))
+            let resolved = error_code
+                .map(resolve_error_code)
+                .unwrap_or(ResponseError::UnknownServerError);
+            ChaosAction::Error(resolved)
         }
     }
 }
 
 fn build_sequence_from_chaos(chaos: &ChaosConfig) -> Sequence {
     if let Some(steps) = &chaos.sequence {
-        // Multi-step sequence
         let after = chaos
             .after_sequence
             .map(AfterSequence::from)
@@ -211,15 +119,15 @@ fn build_sequence_from_chaos(chaos: &ChaosConfig) -> Sequence {
             .iter()
             .map(|s| {
                 let action =
-                    chaos_action_from_behavior(s.behavior, s.delay_ms, s.error_code);
+                    chaos_action_from_behavior(s.behavior, s.delay_ms, s.error_code.as_ref());
                 Step::new(action, s.repeat)
             })
             .collect();
         Sequence::new(steps, after)
     } else {
-        // Single behavior → one-step sequence
         let behavior = chaos.behavior.unwrap_or(BehaviorRef::Success);
-        let action = chaos_action_from_behavior(behavior, chaos.delay_ms, chaos.error_code);
+        let action =
+            chaos_action_from_behavior(behavior, chaos.delay_ms, chaos.error_code.as_ref());
         let step = Step::new(action, chaos.repeat);
         let after = chaos
             .after_sequence
@@ -228,55 +136,6 @@ fn build_sequence_from_chaos(chaos: &ChaosConfig) -> Sequence {
         Sequence::new(vec![step], after)
     }
 }
-
-// ── Scenario::from_yaml / into_broker_config ──────────────────────────────────
-
-impl Scenario {
-    pub fn from_yaml(yaml: &str) -> Result<Self, serde_yaml::Error> {
-        serde_yaml::from_str(yaml)
-    }
-
-    pub fn into_broker_config(self, bind_addr: &str) -> BrokerConfig {
-        let mut topics: HashMap<String, Box<dyn Topic>> = HashMap::new();
-
-        for topic_cfg in self.topics {
-            // 1. Base topic
-            let base: Box<dyn Topic> = match topic_cfg.mode {
-                TopicMode::Buffer => Box::new(Buffer::new(topic_cfg.partitions)),
-                TopicMode::BlackHole => Box::new(BlackHole::new(topic_cfg.partitions)),
-            };
-
-            // 2. Wrap with chaos layers
-            let mut topic: Box<dyn Topic> = base;
-            for chaos in &topic_cfg.chaos {
-                let api: Api = chaos.api.into();
-                let sequence = build_sequence_from_chaos(chaos);
-                topic = Box::new(ChaosLayer::new(topic, api, sequence));
-            }
-
-            // 3. Wrap with generator layers
-            for gen_cfg in &topic_cfg.generators {
-                topic = match gen_cfg {
-                    GeneratorConfig::Json { template } => {
-                        Box::new(GeneratorLayer::new(topic, JsonTemplate::new(template)))
-                    }
-                    GeneratorConfig::RandomBytes { size } => {
-                        Box::new(GeneratorLayer::new(topic, RandomBytes::new(*size)))
-                    }
-                };
-            }
-
-            topics.insert(topic_cfg.name, topic);
-        }
-
-        BrokerConfig {
-            topics,
-            bind_addr: bind_addr.to_string(),
-        }
-    }
-}
-
-// ── Tests ─────────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
 mod tests {
@@ -303,115 +162,21 @@ topics:
     mode: blackhole
 "#;
 
-    const SEQUENCE_YAML: &str = r#"
-topics:
-  - name: events
-    partitions: 1
-    mode: blackhole
-    chaos:
-      - api: Fetch
-        sequence:
-          - behavior: success
-            repeat: 3
-          - behavior: timeout
-          - behavior: error
-            error_code: CorruptMessage
-            repeat: 2
-        after_sequence: loop
-"#;
-
     #[test]
-    fn deserialize_basic_scenario() {
-        let scenario = Scenario::from_yaml(BASIC_YAML).expect("parse failed");
-
-        assert_eq!(scenario.topics.len(), 2);
-
-        let orders = &scenario.topics[0];
-        assert_eq!(orders.name, "orders");
-        assert_eq!(orders.partitions, 3);
-        assert!(matches!(orders.mode, TopicMode::Buffer));
-        assert_eq!(orders.chaos.len(), 2);
-        assert_eq!(orders.generators.len(), 1);
-
-        let fetch_chaos = &orders.chaos[0];
-        assert_eq!(fetch_chaos.api, ApiRef::Fetch);
-        assert!(matches!(fetch_chaos.behavior, Some(BehaviorRef::Delay)));
-        assert_eq!(fetch_chaos.delay_ms, Some(2000));
-        assert_eq!(fetch_chaos.repeat, 5);
-
-        let produce_chaos = &orders.chaos[1];
-        assert_eq!(produce_chaos.api, ApiRef::Produce);
-        assert!(matches!(produce_chaos.behavior, Some(BehaviorRef::Error)));
-        assert!(matches!(
-            produce_chaos.error_code,
-            Some(ResponseError::NotLeaderOrFollower)
-        ));
-
-        let events = &scenario.topics[1];
-        assert_eq!(events.name, "events");
-        assert_eq!(events.partitions, 1);
-        assert!(matches!(events.mode, TopicMode::BlackHole));
-        assert!(events.chaos.is_empty());
-        assert!(events.generators.is_empty());
+    fn scenario_converts_to_broker_builder() {
+        let scenario = Scenario::from_yaml(BASIC_YAML).unwrap();
+        let _builder = BrokerBuilder::from(scenario);
     }
 
     #[test]
-    fn deserialize_sequence_chaos() {
-        let scenario = Scenario::from_yaml(SEQUENCE_YAML).expect("parse failed");
-
-        assert_eq!(scenario.topics.len(), 1);
-        let topic = &scenario.topics[0];
-        assert_eq!(topic.chaos.len(), 1);
-
-        let chaos = &topic.chaos[0];
-        assert_eq!(chaos.api, ApiRef::Fetch);
-        assert!(chaos.behavior.is_none());
-
-        let sequence = chaos.sequence.as_ref().expect("sequence missing");
-        assert_eq!(sequence.len(), 3);
-
-        assert!(matches!(sequence[0].behavior, BehaviorRef::Success));
-        assert_eq!(sequence[0].repeat, 3);
-
-        assert!(matches!(sequence[1].behavior, BehaviorRef::Timeout));
-        assert_eq!(sequence[1].repeat, 1);
-
-        assert!(matches!(sequence[2].behavior, BehaviorRef::Error));
-        assert!(matches!(
-            sequence[2].error_code,
-            Some(ResponseError::CorruptMessage)
-        ));
-        assert_eq!(sequence[2].repeat, 2);
-
-        assert!(matches!(chaos.after_sequence, Some(AfterSequenceRef::Loop)));
+    fn resolve_error_code_by_name() {
+        let code = ErrorCode::Name("NotLeaderOrFollower".to_string());
+        assert_eq!(resolve_error_code(&code), ResponseError::NotLeaderOrFollower);
     }
 
     #[test]
-    fn error_code_accepts_integer() {
-        let yaml = r#"
-topics:
-  - name: t
-    mode: blackhole
-    chaos:
-      - api: Fetch
-        behavior: error
-        error_code: 6
-"#;
-        let scenario = Scenario::from_yaml(yaml).expect("parse failed");
-        assert_eq!(
-            scenario.topics[0].chaos[0].error_code,
-            Some(ResponseError::NotLeaderOrFollower)
-        );
-    }
-
-    #[test]
-    fn scenario_to_broker_config() {
-        let scenario = Scenario::from_yaml(BASIC_YAML).expect("parse failed");
-        let config = scenario.into_broker_config("127.0.0.1:9092");
-
-        assert_eq!(config.topics.len(), 2);
-        assert!(config.topics.contains_key("orders"));
-        assert!(config.topics.contains_key("events"));
-        assert_eq!(config.bind_addr, "127.0.0.1:9092");
+    fn resolve_error_code_by_number() {
+        let code = ErrorCode::Code(6);
+        assert_eq!(resolve_error_code(&code), ResponseError::NotLeaderOrFollower);
     }
 }

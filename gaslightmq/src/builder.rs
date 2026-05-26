@@ -24,6 +24,13 @@ impl BrokerBuilder {
         }
     }
 
+    pub(crate) fn from_topics(topics: HashMap<String, Box<dyn Topic>>) -> Self {
+        Self {
+            topics,
+            bind_addr: "127.0.0.1:9092".to_string(),
+        }
+    }
+
     pub fn topic<T: Topic + 'static>(self, name: &str, topic: T) -> TopicBuilder<T> {
         TopicBuilder {
             topics: self.topics,
