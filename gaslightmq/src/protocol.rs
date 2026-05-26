@@ -672,8 +672,7 @@ mod tests {
 
     #[tokio::test]
     async fn read_request_returns_none_on_eof() {
-        let (mut client, mut server) = tokio::io::duplex(1024);
-        drop(client); // immediately close
+        let (_client, mut server) = tokio::io::duplex(1024);
         let result = read_request(&mut server).await.unwrap();
         assert!(result.is_none());
     }

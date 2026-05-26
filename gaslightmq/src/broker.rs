@@ -208,7 +208,6 @@ async fn handle_connection(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use crate::{BlackHole, BrokerBuilder};
 
     #[tokio::test]

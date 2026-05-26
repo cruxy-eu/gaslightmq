@@ -1,4 +1,4 @@
-use gaslightmq::{BlackHole, BrokerBuilder, Buffer};
+use gaslightmq::{BrokerBuilder, Buffer};
 use gaslightmq_kafka_client_api::{CreateTopics, Produce, Fetch, RawKafkaClient};
 use gaslightmq_testing::Harness;
 use kafka_protocol::messages::create_topics_request::{CreatableTopic, CreateTopicsRequest};
