@@ -404,6 +404,7 @@ dependencies = [
  "futures",
  "gaslightmq-kafka-client-api",
  "gaslightmq-kernel",
+ "gaslightmq-scenario",
  "gaslightmq-testing",
  "indexmap",
  "kafka-protocol",
