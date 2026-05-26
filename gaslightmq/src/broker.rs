@@ -163,6 +163,18 @@ async fn handle_connection(
                         let resp = protocol::handle_heartbeat(api_version);
                         protocol::encode_response_body(&resp, api_version)
                     }
+                    Ok(ApiKey::CreateTopics) => {
+                        match protocol::handle_create_topics(&mut body, api_version, &registry).await {
+                            Ok(resp) => protocol::encode_response_body(&resp, api_version),
+                            Err(_) => continue,
+                        }
+                    }
+                    Ok(ApiKey::DeleteTopics) => {
+                        match protocol::handle_delete_topics(&mut body, api_version, &registry).await {
+                            Ok(resp) => protocol::encode_response_body(&resp, api_version),
+                            Err(_) => continue,
+                        }
+                    }
                     _ => {
                         // Unsupported API key, skip
                         continue;

@@ -36,7 +36,11 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 use gaslightmq_kernel::{Partition, Offset};
 use crate::record::{FetchResult, ProduceResult, Record};
-use crate::registry::TopicRegistryHandle;
+use crate::registry::{CreateResult, DeleteResult, TopicRegistryHandle};
+use kafka_protocol::messages::create_topics_request::CreateTopicsRequest;
+use kafka_protocol::messages::create_topics_response::{CreatableTopicResult, CreateTopicsResponse};
+use kafka_protocol::messages::delete_topics_request::DeleteTopicsRequest;
+use kafka_protocol::messages::delete_topics_response::{DeletableTopicResult, DeleteTopicsResponse};
 
 // ---------------------------------------------------------------------------
 // Header version helpers
@@ -167,6 +171,8 @@ pub fn handle_api_versions(_api_version: i16) -> ApiVersionsResponse {
         (ApiKey::SyncGroup as i16, 0, 3),
         (ApiKey::Heartbeat as i16, 0, 3),
         (ApiKey::ApiVersions as i16, 0, 3),
+        (ApiKey::CreateTopics as i16, 2, 7),
+        (ApiKey::DeleteTopics as i16, 1, 6),
     ];
 
     let api_keys: Vec<ApiVersion> = supported
@@ -482,6 +488,67 @@ pub fn handle_sync_group(_api_version: i16) -> SyncGroupResponse {
 /// Handle a Heartbeat request. Returns a minimal success stub.
 pub fn handle_heartbeat(_api_version: i16) -> HeartbeatResponse {
     HeartbeatResponse::default().with_error_code(0)
+}
+
+/// Handle a CreateTopics request. Creates topics via the registry and returns results.
+pub async fn handle_create_topics(
+    body: &mut Bytes,
+    api_version: i16,
+    registry: &TopicRegistryHandle,
+) -> Result<CreateTopicsResponse> {
+    let request = CreateTopicsRequest::decode(body, api_version)?;
+
+    let mut results = Vec::new();
+    for creatable in &request.topics {
+        let name = creatable.name.0.as_str().to_string();
+        let partitions = creatable.num_partitions.max(1);
+
+        let error_code = match registry.create(&name, partitions).await {
+            CreateResult::Success => 0,
+            CreateResult::TopicAlreadyExists => {
+                kafka_protocol::error::ResponseError::TopicAlreadyExists.code()
+            }
+        };
+
+        results.push(
+            CreatableTopicResult::default()
+                .with_name(creatable.name.clone())
+                .with_error_code(error_code)
+                .with_num_partitions(partitions)
+                .with_replication_factor(1),
+        );
+    }
+
+    Ok(CreateTopicsResponse::default().with_topics(results))
+}
+
+/// Handle a DeleteTopics request. Deletes topics via the registry and returns results.
+pub async fn handle_delete_topics(
+    body: &mut Bytes,
+    api_version: i16,
+    registry: &TopicRegistryHandle,
+) -> Result<DeleteTopicsResponse> {
+    let request = DeleteTopicsRequest::decode(body, api_version)?;
+
+    let mut results = Vec::new();
+    for topic_name in &request.topic_names {
+        let name = topic_name.0.as_str().to_string();
+
+        let error_code = match registry.delete(&name).await {
+            DeleteResult::Success => 0,
+            DeleteResult::UnknownTopicOrPartition => {
+                kafka_protocol::error::ResponseError::UnknownTopicOrPartition.code()
+            }
+        };
+
+        results.push(
+            DeletableTopicResult::default()
+                .with_name(Some(topic_name.clone()))
+                .with_error_code(error_code),
+        );
+    }
+
+    Ok(DeleteTopicsResponse::default().with_responses(results))
 }
 
 /// Encode a response body using the Encodable trait for the given api_version.
