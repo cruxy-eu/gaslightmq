@@ -1,0 +1,8 @@
+[package]
+name = "gaslightmq-testcontainers"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+gaslightmq-scenario = { path = "../gaslightmq-scenario" }
+testcontainers = "0.27"

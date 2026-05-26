@@ -1,5 +1,5 @@
 [workspace]
-members = ["gaslightmq", "bins/*", "gaslightmq-kernel", "gaslightmq-scenario", "gaslightmq-testing", "gaslightmq-kafka-client/*"]
+members = ["gaslightmq", "bins/*", "gaslightmq-kernel", "gaslightmq-scenario", "gaslightmq-testcontainers", "gaslightmq-testing", "gaslightmq-kafka-client/*"]
 resolver = "2"
 
 [workspace.package]
