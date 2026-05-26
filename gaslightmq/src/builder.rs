@@ -5,15 +5,18 @@ use crate::generator::Generator;
 use crate::layer::{ChaosLayer, GeneratorLayer};
 use crate::record::Api;
 use crate::topic::Topic;
+use gaslightmq_scenario::TopicMode;
 
 pub struct BrokerConfig {
     pub topics: HashMap<String, Box<dyn Topic>>,
     pub bind_addr: String,
+    pub default_topic_mode: TopicMode,
 }
 
 pub struct BrokerBuilder {
     topics: HashMap<String, Box<dyn Topic>>,
     bind_addr: String,
+    default_topic_mode: TopicMode,
 }
 
 impl BrokerBuilder {
@@ -21,6 +24,7 @@ impl BrokerBuilder {
         Self {
             topics: HashMap::new(),
             bind_addr: "127.0.0.1:9092".to_string(),
+            default_topic_mode: TopicMode::Buffer,
         }
     }
 
@@ -28,13 +32,20 @@ impl BrokerBuilder {
         Self {
             topics,
             bind_addr: "127.0.0.1:9092".to_string(),
+            default_topic_mode: TopicMode::Buffer,
         }
+    }
+
+    pub fn default_topic_mode(mut self, mode: TopicMode) -> Self {
+        self.default_topic_mode = mode;
+        self
     }
 
     pub fn topic<T: Topic + 'static>(self, name: &str, topic: T) -> TopicBuilder<T> {
         TopicBuilder {
             topics: self.topics,
             bind_addr: self.bind_addr,
+            default_topic_mode: self.default_topic_mode,
             name: name.to_string(),
             topic,
         }
@@ -45,10 +56,11 @@ impl BrokerBuilder {
         self
     }
 
-    fn build_config(self) -> BrokerConfig {
+    pub fn build_config(self) -> BrokerConfig {
         BrokerConfig {
             topics: self.topics,
             bind_addr: self.bind_addr,
+            default_topic_mode: self.default_topic_mode,
         }
     }
 
@@ -78,6 +90,7 @@ impl<T: Topic + 'static> From<TopicBuilder<T>> for BrokerConfig {
 pub struct TopicBuilder<T> {
     topics: HashMap<String, Box<dyn Topic>>,
     bind_addr: String,
+    default_topic_mode: TopicMode,
     name: String,
     topic: T,
 }
@@ -91,6 +104,7 @@ impl<T: Topic + 'static> TopicBuilder<T> {
         TopicBuilder {
             topics: self.topics,
             bind_addr: self.bind_addr,
+            default_topic_mode: self.default_topic_mode,
             name: self.name,
             topic: ChaosLayer::new(self.topic, api, behavior),
         }
@@ -103,6 +117,7 @@ impl<T: Topic + 'static> TopicBuilder<T> {
         TopicBuilder {
             topics: self.topics,
             bind_addr: self.bind_addr,
+            default_topic_mode: self.default_topic_mode,
             name: self.name,
             topic: GeneratorLayer::new(self.topic, generator),
         }
@@ -113,6 +128,7 @@ impl<T: Topic + 'static> TopicBuilder<T> {
         TopicBuilder {
             topics: self.topics,
             bind_addr: self.bind_addr,
+            default_topic_mode: self.default_topic_mode,
             name: name.to_string(),
             topic,
         }
@@ -123,14 +139,16 @@ impl<T: Topic + 'static> TopicBuilder<T> {
         BrokerBuilder {
             topics: self.topics,
             bind_addr: addr.to_string(),
+            default_topic_mode: self.default_topic_mode,
         }
     }
 
-    fn build_config(mut self) -> BrokerConfig {
+    pub fn build_config(mut self) -> BrokerConfig {
         self.topics.insert(self.name, Box::new(self.topic));
         BrokerConfig {
             topics: self.topics,
             bind_addr: self.bind_addr,
+            default_topic_mode: self.default_topic_mode,
         }
     }
 
@@ -143,6 +161,7 @@ impl<T: Topic + 'static> TopicBuilder<T> {
 mod tests {
     use super::*;
     use crate::{Api, BlackHole, Buffer, Delay, ErrorResponse, RandomBytes};
+    use gaslightmq_scenario::TopicMode;
     use kafka_protocol::error::ResponseError;
     use std::time::Duration;
 
@@ -188,5 +207,22 @@ mod tests {
             .build_config();
 
         assert_eq!(config.bind_addr, "127.0.0.1:9999");
+    }
+
+    #[test]
+    fn builder_default_topic_mode_defaults_to_buffer() {
+        let config = BrokerBuilder::new()
+            .topic("t", BlackHole::new(1))
+            .build_config();
+        assert_eq!(config.default_topic_mode, TopicMode::Buffer);
+    }
+
+    #[test]
+    fn builder_sets_custom_default_topic_mode() {
+        let config = BrokerBuilder::new()
+            .default_topic_mode(TopicMode::BlackHole)
+            .topic("t", BlackHole::new(1))
+            .build_config();
+        assert_eq!(config.default_topic_mode, TopicMode::BlackHole);
     }
 }

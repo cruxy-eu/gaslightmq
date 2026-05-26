@@ -21,7 +21,7 @@ fn default_partitions() -> i32 {
     1
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum TopicMode {
     Buffer,
