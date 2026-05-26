@@ -449,6 +449,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "gaslightmq-scenario"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_yaml",
+]
+
+[[package]]
 name = "gaslightmq-testing"
 version = "0.1.0"
 dependencies = [
