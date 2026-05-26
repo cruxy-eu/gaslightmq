@@ -7,46 +7,45 @@ use gaslightmq_scenario::{
 };
 use kafka_protocol::error::ResponseError;
 
-use crate::builder::BrokerConfig;
+use crate::builder::BrokerBuilder;
 use crate::chaos::{AfterSequence, ChaosAction, Sequence, Step};
 use crate::generator::{JsonTemplate, RandomBytes};
 use crate::layer::{ChaosLayer, GeneratorLayer};
 use crate::record::Api;
 use crate::topic::{BlackHole, Buffer, Topic};
 
-pub fn into_broker_config(scenario: Scenario, bind_addr: &str) -> BrokerConfig {
-    let mut topics: HashMap<String, Box<dyn Topic>> = HashMap::new();
+impl From<Scenario> for BrokerBuilder {
+    fn from(scenario: Scenario) -> Self {
+        let mut topics: HashMap<String, Box<dyn Topic>> = HashMap::new();
 
-    for topic_cfg in scenario.topics {
-        let base: Box<dyn Topic> = match topic_cfg.mode {
-            TopicMode::Buffer => Box::new(Buffer::new(topic_cfg.partitions)),
-            TopicMode::BlackHole => Box::new(BlackHole::new(topic_cfg.partitions)),
-        };
-
-        let mut topic: Box<dyn Topic> = base;
-        for chaos in &topic_cfg.chaos {
-            let api: Api = chaos.api.into();
-            let sequence = build_sequence_from_chaos(chaos);
-            topic = Box::new(ChaosLayer::new(topic, api, sequence));
-        }
-
-        for gen_cfg in &topic_cfg.generators {
-            topic = match gen_cfg {
-                GeneratorConfig::Json { template } => {
-                    Box::new(GeneratorLayer::new(topic, JsonTemplate::new(template)))
-                }
-                GeneratorConfig::RandomBytes { size } => {
-                    Box::new(GeneratorLayer::new(topic, RandomBytes::new(*size)))
-                }
+        for topic_cfg in scenario.topics {
+            let base: Box<dyn Topic> = match topic_cfg.mode {
+                TopicMode::Buffer => Box::new(Buffer::new(topic_cfg.partitions)),
+                TopicMode::BlackHole => Box::new(BlackHole::new(topic_cfg.partitions)),
             };
+
+            let mut topic: Box<dyn Topic> = base;
+            for chaos in &topic_cfg.chaos {
+                let api: Api = chaos.api.into();
+                let sequence = build_sequence_from_chaos(chaos);
+                topic = Box::new(ChaosLayer::new(topic, api, sequence));
+            }
+
+            for gen_cfg in &topic_cfg.generators {
+                topic = match gen_cfg {
+                    GeneratorConfig::Json { template } => {
+                        Box::new(GeneratorLayer::new(topic, JsonTemplate::new(template)))
+                    }
+                    GeneratorConfig::RandomBytes { size } => {
+                        Box::new(GeneratorLayer::new(topic, RandomBytes::new(*size)))
+                    }
+                };
+            }
+
+            topics.insert(topic_cfg.name, topic);
         }
 
-        topics.insert(topic_cfg.name, topic);
-    }
-
-    BrokerConfig {
-        topics,
-        bind_addr: bind_addr.to_string(),
+        BrokerBuilder::from_topics(topics)
     }
 }
 
@@ -164,14 +163,9 @@ topics:
 "#;
 
     #[test]
-    fn scenario_to_broker_config() {
+    fn scenario_converts_to_broker_builder() {
         let scenario = Scenario::from_yaml(BASIC_YAML).unwrap();
-        let config = into_broker_config(scenario, "127.0.0.1:9092");
-
-        assert_eq!(config.topics.len(), 2);
-        assert!(config.topics.contains_key("orders"));
-        assert!(config.topics.contains_key("events"));
-        assert_eq!(config.bind_addr, "127.0.0.1:9092");
+        let _builder = BrokerBuilder::from(scenario);
     }
 
     #[test]

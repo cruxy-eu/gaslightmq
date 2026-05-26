@@ -18,4 +18,3 @@ pub use layer::{ChaosLayer, GeneratorLayer};
 pub use broker::Broker;
 pub use builder::BrokerBuilder;
 pub use gaslightmq_scenario::Scenario;
-pub use scenario::into_broker_config;
