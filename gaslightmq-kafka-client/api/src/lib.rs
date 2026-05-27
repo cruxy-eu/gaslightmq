@@ -17,5 +17,5 @@ pub use list_offsets::ListOffsets;
 pub use find_coordinator::FindCoordinator;
 pub use create_topics::CreateTopics;
 pub use delete_topics::DeleteTopics;
-pub use traits::{Consumer, HeartbeatResult, JoinGroupResult, Producer, ProtocolConsumer, ProduceResult, RecordStream, SyncGroupResult};
+pub use traits::{Consumer, HeartbeatResult, JoinGroupResult, PartitionMetadata, Producer, ProtocolConsumer, ProduceResult, RecordStream, SyncGroupResult, TopicMetadata, Watermarks};
 pub use client::RawKafkaClient;

@@ -27,15 +27,15 @@ impl Harness {
     }
 
     pub async fn client<C: From<SocketAddr>>(&self) -> C {
+        C::from(self.addr().await)
+    }
+
+    pub async fn addr(&self) -> SocketAddr {
         let broker = self.broker.get_or_init(|| async {
             let config = self.config.lock().unwrap().take().unwrap();
             Broker::start(config).await.unwrap()
         }).await;
-        C::from(broker.addr())
-    }
-
-    pub fn addr(&self) -> SocketAddr {
-        self.broker.get().expect("broker not started").addr()
+        broker.addr()
     }
 
     pub async fn shutdown(self) {

@@ -3,7 +3,7 @@ use std::time::Duration;
 
 use bytes::Bytes;
 use gaslightmq_kernel::{Offset, Partition};
-use gaslightmq_kafka_client_api::Consumer;
+use gaslightmq_kafka_client_api::{Consumer, PartitionMetadata, TopicMetadata, Watermarks};
 use gaslightmq_kernel::Record;
 use rdkafka::Message;
 use rdkafka::config::ClientConfig;
@@ -57,5 +57,58 @@ impl Consumer for RdkafkaConsumer {
             records.push(record);
         }
         records
+    }
+
+    async fn metadata_for_topic(&self, topic: &str) -> TopicMetadata {
+        let metadata = self
+            .consumer
+            .fetch_metadata(Some(topic), Duration::from_secs(5))
+            .unwrap();
+
+        let t = &metadata.topics()[0];
+        TopicMetadata {
+            name: t.name().to_string(),
+            partitions: t
+                .partitions()
+                .iter()
+                .map(|p| PartitionMetadata {
+                    id: p.id().into(),
+                })
+                .collect(),
+        }
+    }
+
+    async fn metadata_for_all_topics(&self) -> Vec<TopicMetadata> {
+        let metadata = self
+            .consumer
+            .fetch_metadata(None, Duration::from_secs(5))
+            .unwrap();
+
+        metadata
+            .topics()
+            .iter()
+            .map(|t| TopicMetadata {
+                name: t.name().to_string(),
+                partitions: t
+                    .partitions()
+                    .iter()
+                    .map(|p| PartitionMetadata {
+                        id: p.id().into(),
+                    })
+                    .collect(),
+            })
+            .collect()
+    }
+
+    async fn watermarks(&self, topic: &str, partition: Partition) -> Watermarks {
+        let (low, high) = self
+            .consumer
+            .fetch_watermarks(topic, i32::from(partition), Duration::from_secs(5))
+            .unwrap();
+
+        Watermarks {
+            low: Offset::from(low),
+            high: Offset::from(high),
+        }
     }
 }
