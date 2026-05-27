@@ -769,6 +769,7 @@ dependencies = [
  "fake",
  "futures",
  "gaslightmq-kafka-client-api",
+ "gaslightmq-kafka-client-rdkafka",
  "gaslightmq-kernel",
  "gaslightmq-scenario",
  "gaslightmq-testing",
@@ -789,7 +790,6 @@ dependencies = [
  "bytes",
  "futures",
  "gaslightmq-kernel",
- "gaslightmq-testing",
  "indexmap 2.14.0",
  "kafka-protocol",
  "tokio",
@@ -802,8 +802,8 @@ dependencies = [
  "async-trait",
  "bytes",
  "futures",
+ "gaslightmq-kafka-client-api",
  "gaslightmq-kernel",
- "gaslightmq-testing",
  "rdkafka",
  "tokio",
 ]
@@ -835,12 +835,8 @@ dependencies = [
 name = "gaslightmq-testing"
 version = "0.1.0"
 dependencies = [
- "async-trait",
- "bytes",
- "futures",
  "gaslightmq",
  "gaslightmq-kernel",
- "kafka-protocol",
  "tokio",
 ]
 

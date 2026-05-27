@@ -5,7 +5,6 @@ edition.workspace = true
 
 [dependencies]
 gaslightmq-kernel = { path = "../../gaslightmq-kernel" }
-gaslightmq-testing = { path = "../../gaslightmq-testing" }
 async-trait = "0.1"
 bytes = "1"
 indexmap = "2"

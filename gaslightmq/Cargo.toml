@@ -3,6 +3,9 @@ name = "gaslightmq"
 version.workspace = true
 edition.workspace = true
 
+[features]
+rdkafka = []
+
 [dependencies]
 gaslightmq-kernel = { path = "../gaslightmq-kernel" }
 gaslightmq-scenario = { path = "../gaslightmq-scenario" }
@@ -22,6 +25,7 @@ uuid = { version = "1", features = ["v4"] }
 gaslightmq-kernel = { path = "../gaslightmq-kernel" }
 gaslightmq-testing = { path = "../gaslightmq-testing" }
 gaslightmq-kafka-client-api = { path = "../gaslightmq-kafka-client/api" }
+gaslightmq-kafka-client-rdkafka = { path = "../gaslightmq-kafka-client/rdkafka" }
 bytes = "1"
 indexmap = "2"
 kafka-protocol = "0.17"

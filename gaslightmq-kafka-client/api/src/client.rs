@@ -34,10 +34,11 @@ use tokio::sync::Mutex;
 
 use futures::StreamExt;
 use gaslightmq_kernel::{Offset, Partition};
-use gaslightmq_testing::traits::{
-    Consumer, HeartbeatResult, JoinGroupResult, Producer, SyncGroupResult,
+use crate::traits::{
+    Consumer, HeartbeatResult, JoinGroupResult, Producer, ProduceResult, RecordStream,
+    SyncGroupResult,
 };
-use gaslightmq_testing::{Header, Record, RecordStream};
+use gaslightmq_kernel::{Header, Record};
 
 use kafka_protocol::messages::create_topics_request::CreateTopicsRequest;
 use kafka_protocol::messages::create_topics_response::CreateTopicsResponse;
@@ -232,7 +233,7 @@ impl Producer for RawKafkaClient {
         topic: &str,
         partition: Partition,
         records: &[Record],
-    ) -> gaslightmq_testing::ProduceResult {
+    ) -> ProduceResult {
         let records_bytes = encode_records_batch(records);
         let request = ProduceRequest::default()
             .with_acks(-1)
@@ -248,7 +249,7 @@ impl Producer for RawKafkaClient {
         let partition_resp = &response.responses[0].partition_responses[0];
         let error = kafka_protocol::error::ResponseError::try_from_code(partition_resp.error_code);
 
-        gaslightmq_testing::ProduceResult {
+        ProduceResult {
             error,
             partition,
             offset: Offset::from(partition_resp.base_offset),

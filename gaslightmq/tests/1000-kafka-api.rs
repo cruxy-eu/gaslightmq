@@ -1,13 +1,17 @@
 use gaslightmq::{BrokerBuilder, Buffer};
 use gaslightmq_kernel::{Offset, Partition};
-use gaslightmq_kafka_client_api::RawKafkaClient;
-use gaslightmq_testing::traits::{Consumer, Producer};
+use gaslightmq_kafka_client_api::{Consumer, Producer};
 use gaslightmq_testing::{Harness, Record};
+
+#[cfg(not(feature = "rdkafka"))]
+type TestClient = gaslightmq_kafka_client_api::RawKafkaClient;
+#[cfg(feature = "rdkafka")]
+type TestClient = gaslightmq_kafka_client_rdkafka::RdkafkaClient;
 
 #[tokio::test]
 async fn smoke_test_produce_and_consume() {
     let harness = Harness::with(BrokerBuilder::new().topic("events", Buffer::new(1)));
-    let client: RawKafkaClient = harness.client().await;
+    let client: TestClient = harness.client().await;
 
     let records = vec![
         Record::new("msg-0"),
@@ -29,7 +33,7 @@ async fn smoke_test_produce_and_consume() {
 #[tokio::test]
 async fn smoke_test_produce_with_keys_and_headers() {
     let harness = Harness::with(BrokerBuilder::new().topic("orders", Buffer::new(1)));
-    let client: RawKafkaClient = harness.client().await;
+    let client: TestClient = harness.client().await;
 
     let records = vec![Record::new("payload")
         .with_key("order-123")
@@ -50,7 +54,7 @@ async fn smoke_test_produce_with_keys_and_headers() {
 #[tokio::test]
 async fn smoke_test_multiple_partitions() {
     let harness = Harness::with(BrokerBuilder::new().topic("multi", Buffer::new(3)));
-    let client: RawKafkaClient = harness.client().await;
+    let client: TestClient = harness.client().await;
 
     client.send("multi", Partition::new(0), &[Record::new("p0")]).await;
     client.send("multi", Partition::new(1), &[Record::new("p1")]).await;

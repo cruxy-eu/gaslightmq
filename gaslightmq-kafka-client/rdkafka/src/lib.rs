@@ -4,10 +4,11 @@ use std::time::Duration;
 use async_trait::async_trait;
 use bytes::Bytes;
 use gaslightmq_kernel::{Offset, Partition};
-use gaslightmq_testing::traits::{
-    Consumer, HeartbeatResult, JoinGroupResult, Producer, SyncGroupResult,
+use gaslightmq_kafka_client_api::{
+    Consumer, HeartbeatResult, JoinGroupResult, Producer, ProduceResult, RecordStream,
+    SyncGroupResult,
 };
-use gaslightmq_testing::{Record, RecordStream};
+use gaslightmq_kernel::Record;
 use rdkafka::Message;
 use rdkafka::config::ClientConfig;
 use rdkafka::consumer::{BaseConsumer, Consumer as RdConsumer};
@@ -58,7 +59,7 @@ impl Producer for RdkafkaClient {
         topic: &str,
         partition: Partition,
         records: &[Record],
-    ) -> gaslightmq_testing::ProduceResult {
+    ) -> ProduceResult {
         for record in records {
             let mut base_record = BaseRecord::to(topic).partition(i32::from(partition));
 
@@ -73,7 +74,7 @@ impl Producer for RdkafkaClient {
         }
         self.producer.flush(Duration::from_secs(5)).unwrap();
 
-        gaslightmq_testing::ProduceResult {
+        ProduceResult {
             error: None,
             partition,
             offset: Offset::new(0),
