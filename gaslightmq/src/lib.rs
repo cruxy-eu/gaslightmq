@@ -4,6 +4,7 @@ pub mod record;
 pub mod topic;
 pub mod chaos;
 pub mod generator;
+pub mod health;
 pub mod layer;
 pub mod protocol;
 pub mod scenario;

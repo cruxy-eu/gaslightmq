@@ -18,9 +18,13 @@ RUN cargo build --release --bin gmq
 FROM scratch
 
 COPY --from=builder /build/target/release/gmq /usr/local/bin/gmq
+COPY --from=builder --chown=65534:65534 /tmp /tmp
 
 USER 65534:65534
 
 EXPOSE 9092
+
+HEALTHCHECK --interval=5s --timeout=3s --start-period=3s --retries=3 \
+    CMD ["/usr/local/bin/gmq", "health"]
 
 ENTRYPOINT ["/usr/local/bin/gmq"]
