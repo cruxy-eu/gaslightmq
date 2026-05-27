@@ -375,8 +375,10 @@ pub async fn handle_fetch(
             let partition_idx = fetch_partition.partition;
             let fetch_offset = fetch_partition.fetch_offset;
 
-            let (error_code, records_bytes) = if let Some(topic) = registry.lookup(&topic_name).await {
-                let result = topic.on_fetch(Partition::from(partition_idx), Offset::from(fetch_offset)).await;
+            let (error_code, records_bytes, hw) = if let Some(topic) = registry.lookup(&topic_name).await {
+                let partition = Partition::from(partition_idx);
+                let hw = i64::from(topic.high_watermark(partition).await);
+                let result = topic.on_fetch(partition, Offset::from(fetch_offset)).await;
                 tracing::debug!(
                     topic = %topic_name,
                     partition = partition_idx,
@@ -393,9 +395,8 @@ pub async fn handle_fetch(
                     "fetch",
                 );
                 match result {
-                    FetchResult::Empty => (0i16, None),
+                    FetchResult::Empty => (0i16, Some(Bytes::new()), hw),
                     FetchResult::Records(records) => {
-                        // Encode records into kafka-protocol format
                         let kafka_records = internal_to_kafka_records(&records, fetch_offset);
                         let options = RecordEncodeOptions {
                             version: 2,
@@ -403,14 +404,15 @@ pub async fn handle_fetch(
                         };
                         let mut buf = BytesMut::new();
                         RecordBatchEncoder::encode(&mut buf, &kafka_records, &options)?;
-                        (0, Some(Bytes::from(buf)))
+                        (0, Some(Bytes::from(buf)), hw)
                     }
-                    FetchResult::Error(e) => (e.code(), None),
+                    FetchResult::Error(e) => (e.code(), Some(Bytes::new()), hw),
                 }
             } else {
                 (
                     kafka_protocol::error::ResponseError::UnknownTopicOrPartition.code(),
-                    None,
+                    Some(Bytes::new()),
+                    0,
                 )
             };
 
@@ -418,6 +420,9 @@ pub async fn handle_fetch(
                 PartitionData::default()
                     .with_partition_index(partition_idx)
                     .with_error_code(error_code)
+                    .with_high_watermark(hw)
+                    .with_last_stable_offset(hw)
+                    .with_log_start_offset(0)
                     .with_records(records_bytes),
             );
         }
