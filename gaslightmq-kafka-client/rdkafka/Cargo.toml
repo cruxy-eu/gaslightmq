@@ -4,7 +4,7 @@ version.workspace = true
 edition.workspace = true
 
 [dependencies]
-gaslightmq-kernel = { path = "../../gaslightmq-kernel" }
-gaslightmq-kafka-client-api = { path = "../api" }
-bytes = "1"
-rdkafka = { version = "0.37", features = ["cmake-build"] }
+gaslightmq-kernel.workspace = true
+gaslightmq-kafka-client-api.workspace = true
+bytes.workspace = true
+rdkafka = { workspace = true, features = ["cmake-build"] }

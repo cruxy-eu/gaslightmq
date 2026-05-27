@@ -6,6 +6,28 @@ resolver = "2"
 edition = "2024"
 version = "0.1.0"
 
+[workspace.dependencies]
+gaslightmq = { path = "gaslightmq" }
+gaslightmq-kernel = { path = "gaslightmq-kernel" }
+gaslightmq-scenario = { path = "gaslightmq-scenario" }
+gaslightmq-testing = { path = "gaslightmq-testing" }
+gaslightmq-kafka-client-api = { path = "gaslightmq-kafka-client/api" }
+gaslightmq-kafka-client-rdkafka = { path = "gaslightmq-kafka-client/rdkafka" }
+anyhow = "1"
+bytes = "1"
+clap = "4"
+fake = "3"
+futures = "0.3"
+indexmap = "2"
+kafka-protocol = "0.17"
+rand = "0.9"
+rdkafka = "0.37"
+serde = "1"
+serde_yaml = "0.9"
+testcontainers = "0.27"
+tokio = "1"
+uuid = "1"
+
 [profile.release]
 lto = true
 codegen-units = 1

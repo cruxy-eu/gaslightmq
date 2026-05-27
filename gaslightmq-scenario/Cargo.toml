@@ -4,5 +4,5 @@ version.workspace = true
 edition.workspace = true
 
 [dependencies]
-serde = { version = "1", features = ["derive"] }
-serde_yaml = "0.9"
+serde = { workspace = true, features = ["derive"] }
+serde_yaml.workspace = true

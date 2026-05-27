@@ -4,6 +4,6 @@ version.workspace = true
 edition.workspace = true
 
 [dependencies]
-gaslightmq = { path = "../gaslightmq" }
-gaslightmq-kernel = { path = "../gaslightmq-kernel" }
-tokio = { version = "1", features = ["net", "rt-multi-thread", "macros", "sync"] }
+gaslightmq.workspace = true
+gaslightmq-kernel.workspace = true
+tokio = { workspace = true, features = ["net", "rt-multi-thread", "macros", "sync"] }
