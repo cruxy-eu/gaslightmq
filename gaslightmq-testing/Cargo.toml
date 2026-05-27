@@ -6,4 +6,5 @@ edition.workspace = true
 [dependencies]
 gaslightmq.workspace = true
 gaslightmq-kernel.workspace = true
+gaslightmq-logging.workspace = true
 tokio = { workspace = true, features = ["net", "rt-multi-thread", "macros", "sync"] }

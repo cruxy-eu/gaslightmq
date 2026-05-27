@@ -1,5 +1,5 @@
 [workspace]
-members = ["gaslightmq", "bins/*", "gaslightmq-kernel", "gaslightmq-scenario", "gaslightmq-testcontainers", "gaslightmq-testing", "gaslightmq-kafka-client/*"]
+members = ["gaslightmq", "bins/*", "gaslightmq-kernel", "gaslightmq-logging", "gaslightmq-scenario", "gaslightmq-testcontainers", "gaslightmq-testing", "gaslightmq-kafka-client/*"]
 resolver = "2"
 
 [workspace.package]
@@ -13,6 +13,7 @@ gaslightmq-scenario = { path = "gaslightmq-scenario" }
 gaslightmq-testing = { path = "gaslightmq-testing" }
 gaslightmq-kafka-client-api = { path = "gaslightmq-kafka-client/api" }
 gaslightmq-kafka-client-rdkafka = { path = "gaslightmq-kafka-client/rdkafka" }
+gaslightmq-logging = { path = "gaslightmq-logging" }
 anyhow = "1"
 bytes = "1"
 clap = "4"
@@ -26,6 +27,8 @@ serde = "1"
 serde_yaml = "0.9"
 testcontainers = "0.27"
 tokio = "1"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 uuid = "1"
 
 [profile.release]

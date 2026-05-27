@@ -32,6 +32,7 @@ impl RdkafkaConsumer {
             .create()
             .expect("failed to create rdkafka consumer");
 
+        eprintln!("[rdkafka-consumer] created for {}", bootstrap);
         Self { consumer }
     }
 }

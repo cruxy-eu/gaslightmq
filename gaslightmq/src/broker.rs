@@ -5,13 +5,12 @@ use std::sync::Arc;
 use kafka_protocol::messages::ApiKey;
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::watch;
+use tracing::{debug, error, warn};
 
 use crate::builder::BrokerConfig;
 use crate::protocol;
 use crate::registry::{TopicRegistry, TopicRegistryHandle};
 
-/// A running Kafka-protocol broker that accepts TCP connections and dispatches
-/// requests to the registered topic handlers.
 pub struct Broker {
     addr: SocketAddr,
     shutdown_tx: watch::Sender<bool>,
@@ -19,8 +18,6 @@ pub struct Broker {
 }
 
 impl Broker {
-    /// Start a broker from the given configuration. Binds TCP, spawns the
-    /// accept loop, and returns immediately.
     pub async fn start(config: BrokerConfig) -> std::io::Result<Broker> {
         let listener = TcpListener::bind(&config.bind_addr).await?;
         let addr = listener.local_addr()?;
@@ -35,6 +32,7 @@ impl Broker {
         let host = addr.ip().to_string();
         let port = addr.port() as i32;
 
+        eprintln!("[broker] listening on {}", addr);
         let join_handle = tokio::spawn(accept_loop(listener, registry, host, port, shutdown_rx));
 
         Ok(Broker {
@@ -44,13 +42,10 @@ impl Broker {
         })
     }
 
-    /// Returns the actual bound address (useful when binding to port 0).
     pub fn addr(&self) -> SocketAddr {
         self.addr
     }
 
-    /// Gracefully shut down the broker. Signals all tasks to stop and waits
-    /// for the accept loop to finish.
     pub async fn shutdown(self) {
         let _ = self.shutdown_tx.send(true);
         let _ = self.join_handle.await;
@@ -68,14 +63,18 @@ async fn accept_loop(
         tokio::select! {
             result = listener.accept() => {
                 match result {
-                    Ok((stream, _peer)) => {
+                    Ok((stream, peer)) => {
+                        eprintln!("[broker] connection from {}", peer);
                         let registry = registry.clone();
                         let host = host.clone();
                         tokio::spawn(handle_connection(
                             stream, registry, host, port, shutdown_rx.clone(),
                         ));
                     }
-                    Err(_) => break,
+                    Err(e) => {
+                        error!(error = %e, "accept failed");
+                        break;
+                    }
                 }
             }
             _ = shutdown_rx.changed() => {
@@ -83,6 +82,12 @@ async fn accept_loop(
             }
         }
     }
+}
+
+fn api_key_name(api_key: i16) -> String {
+    ApiKey::try_from(api_key)
+        .map(|k| format!("{:?}", k))
+        .unwrap_or_else(|_| format!("Unknown({})", api_key))
 }
 
 async fn handle_connection(
@@ -99,52 +104,62 @@ async fn handle_connection(
             result = protocol::read_request(&mut reader) => {
                 let parsed = match result {
                     Ok(Some(p)) => p,
-                    Ok(None) => break, // clean disconnect
-                    Err(_) => break,   // protocol error, close connection
+                    Ok(None) => break,
+                    Err(e) => {
+                        warn!(error = %e, "failed to read request frame");
+                        continue;
+                    }
                 };
 
                 let api_key = parsed.api_key;
                 let api_version = parsed.api_version;
                 let correlation_id = parsed.header.correlation_id;
                 let mut body = parsed.body;
+                let api_name = api_key_name(api_key);
+
+                eprintln!("[broker] <-- {} v{} cid={}", api_name, api_version, correlation_id);
+                debug!(api = %api_name, version = api_version, cid = correlation_id, "request");
 
                 let response_body = match ApiKey::try_from(api_key) {
                     Ok(ApiKey::ApiVersions) => {
                         let resp = protocol::handle_api_versions(api_version);
-                        // ApiVersions response is always encoded at the requested version,
-                        // but capped at what we support. Use version 0 for safety when
-                        // client asks for version < 3 (pre-flexible).
                         let encode_version = api_version.min(3);
                         protocol::encode_response_body(&resp, encode_version)
                     }
                     Ok(ApiKey::Metadata) => {
-                        match protocol::handle_metadata(
-                            &mut body,
-                            api_version,
-                            &registry,
-                            &host,
-                            port,
-                        ).await {
+                        match protocol::handle_metadata(&mut body, api_version, &registry, &host, port).await {
                             Ok(resp) => protocol::encode_response_body(&resp, api_version),
-                            Err(_) => continue,
+                            Err(e) => {
+                                error!(api = %api_name, version = api_version, error = %e, "handler failed");
+                                continue;
+                            }
                         }
                     }
                     Ok(ApiKey::Produce) => {
                         match protocol::handle_produce(&mut body, api_version, &registry).await {
                             Ok(resp) => protocol::encode_response_body(&resp, api_version),
-                            Err(_) => continue,
+                            Err(e) => {
+                                error!(api = %api_name, version = api_version, error = %e, "handler failed");
+                                continue;
+                            }
                         }
                     }
                     Ok(ApiKey::Fetch) => {
                         match protocol::handle_fetch(&mut body, api_version, &registry).await {
                             Ok(resp) => protocol::encode_response_body(&resp, api_version),
-                            Err(_) => continue,
+                            Err(e) => {
+                                error!(api = %api_name, version = api_version, error = %e, "handler failed");
+                                continue;
+                            }
                         }
                     }
                     Ok(ApiKey::ListOffsets) => {
                         match protocol::handle_list_offsets(&mut body, api_version, &registry).await {
                             Ok(resp) => protocol::encode_response_body(&resp, api_version),
-                            Err(_) => continue,
+                            Err(e) => {
+                                error!(api = %api_name, version = api_version, error = %e, "handler failed");
+                                continue;
+                            }
                         }
                     }
                     Ok(ApiKey::FindCoordinator) => {
@@ -166,25 +181,36 @@ async fn handle_connection(
                     Ok(ApiKey::CreateTopics) => {
                         match protocol::handle_create_topics(&mut body, api_version, &registry).await {
                             Ok(resp) => protocol::encode_response_body(&resp, api_version),
-                            Err(_) => continue,
+                            Err(e) => {
+                                error!(api = %api_name, version = api_version, error = %e, "handler failed");
+                                continue;
+                            }
                         }
                     }
                     Ok(ApiKey::DeleteTopics) => {
                         match protocol::handle_delete_topics(&mut body, api_version, &registry).await {
                             Ok(resp) => protocol::encode_response_body(&resp, api_version),
-                            Err(_) => continue,
+                            Err(e) => {
+                                error!(api = %api_name, version = api_version, error = %e, "handler failed");
+                                continue;
+                            }
                         }
                     }
                     _ => {
-                        // Unsupported API key, skip
+                        warn!(api_key = api_key, "unsupported api key");
                         continue;
                     }
                 };
 
                 let response_bytes = match response_body {
                     Ok(b) => b,
-                    Err(_) => continue,
+                    Err(e) => {
+                        error!(api = %api_name, version = api_version, error = %e, "response encode failed");
+                        continue;
+                    }
                 };
+
+                debug!(api = %api_name, version = api_version, cid = correlation_id, bytes = response_bytes.len(), "response");
 
                 if protocol::write_response(
                     &mut writer,

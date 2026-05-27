@@ -3,7 +3,7 @@ use gaslightmq_kafka_client_api::Consumer;
 use gaslightmq_kafka_client_rdkafka::RdkafkaConsumer;
 use gaslightmq_testing::Harness;
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn describe_single_topic() {
     let harness = Harness::with(BrokerBuilder::new().topic("orders", Buffer::new(1)));
     let addr = harness.addr().await;
@@ -16,7 +16,7 @@ async fn describe_single_topic() {
     harness.shutdown().await;
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn describe_multi_partition_topic() {
     let harness = Harness::with(BrokerBuilder::new().topic("events", Buffer::new(5)));
     let addr = harness.addr().await;
@@ -29,7 +29,7 @@ async fn describe_multi_partition_topic() {
     harness.shutdown().await;
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn describe_multiple_topics() {
     let harness = Harness::with(
         BrokerBuilder::new()

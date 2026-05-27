@@ -4,7 +4,7 @@ use gaslightmq_kafka_client_rdkafka::{RdkafkaConsumer, RdkafkaProducer};
 use gaslightmq_kernel::{Offset, Partition};
 use gaslightmq_testing::{Harness, Record};
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn consume_after_produce() {
     let harness = Harness::with(BrokerBuilder::new().topic("events", Buffer::new(1)));
     let addr = harness.addr().await;
@@ -27,7 +27,7 @@ async fn consume_after_produce() {
     harness.shutdown().await;
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn consume_with_offset() {
     let harness = Harness::with(BrokerBuilder::new().topic("events", Buffer::new(1)));
     let addr = harness.addr().await;
@@ -48,7 +48,7 @@ async fn consume_with_offset() {
     harness.shutdown().await;
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn consume_from_empty_topic() {
     let harness = Harness::with(BrokerBuilder::new().topic("empty", Buffer::new(1)));
     let addr = harness.addr().await;
@@ -60,7 +60,7 @@ async fn consume_from_empty_topic() {
     harness.shutdown().await;
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn consume_from_multiple_partitions() {
     let harness = Harness::with(BrokerBuilder::new().topic("multi", Buffer::new(3)));
     let addr = harness.addr().await;

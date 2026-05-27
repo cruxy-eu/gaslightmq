@@ -60,6 +60,10 @@ impl<T: Topic, C: ChaosBehavior> Topic for ChaosLayer<T, C> {
             }
         })
     }
+
+    fn high_watermark(&self, partition: Partition) -> TopicFuture<'_, Offset> {
+        self.inner.high_watermark(partition)
+    }
 }
 
 pub struct GeneratorLayer<T, G> {
@@ -101,6 +105,10 @@ impl<T: Topic, G: Generator> Topic for GeneratorLayer<T, G> {
                 result
             }
         })
+    }
+
+    fn high_watermark(&self, partition: Partition) -> TopicFuture<'_, Offset> {
+        self.inner.high_watermark(partition)
     }
 }
 

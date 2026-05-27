@@ -19,6 +19,10 @@ pub trait Topic: Send + Sync {
     fn on_fetch(&self, _partition: Partition, _offset: Offset) -> TopicFuture<'_, FetchResult> {
         Box::pin(async { FetchResult::Empty })
     }
+
+    fn high_watermark(&self, _partition: Partition) -> TopicFuture<'_, Offset> {
+        Box::pin(async { Offset::new(0) })
+    }
 }
 
 impl Topic for Box<dyn Topic> {
@@ -37,6 +41,10 @@ impl Topic for Box<dyn Topic> {
     fn on_fetch(&self, partition: Partition, offset: Offset) -> TopicFuture<'_, FetchResult> {
         (**self).on_fetch(partition, offset)
     }
+
+    fn high_watermark(&self, partition: Partition) -> TopicFuture<'_, Offset> {
+        (**self).high_watermark(partition)
+    }
 }
 
 impl Topic for Arc<dyn Topic> {
@@ -54,6 +62,10 @@ impl Topic for Arc<dyn Topic> {
 
     fn on_fetch(&self, partition: Partition, offset: Offset) -> TopicFuture<'_, FetchResult> {
         (**self).on_fetch(partition, offset)
+    }
+
+    fn high_watermark(&self, partition: Partition) -> TopicFuture<'_, Offset> {
+        (**self).high_watermark(partition)
     }
 }
 
@@ -115,6 +127,14 @@ impl Topic for Buffer {
                 }
                 _ => FetchResult::Empty,
             }
+        })
+    }
+
+    fn high_watermark(&self, partition: Partition) -> TopicFuture<'_, Offset> {
+        Box::pin(async move {
+            let store = self.partitions.lock().unwrap();
+            let len = store.get(&partition).map_or(0, |r| r.len());
+            Offset::new(len as u64)
         })
     }
 }

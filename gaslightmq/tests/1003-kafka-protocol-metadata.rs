@@ -66,7 +66,7 @@ async fn metadata_returns_broker_info() {
     let response = client.metadata(request).await;
 
     assert_eq!(response.brokers.len(), 1);
-    assert_eq!(response.brokers[0].port, harness.addr().port() as i32);
+    assert_eq!(response.brokers[0].port, harness.addr().await.port() as i32);
 
     harness.shutdown().await;
 }

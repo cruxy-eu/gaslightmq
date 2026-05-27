@@ -27,6 +27,7 @@ impl RdkafkaProducer {
             .create()
             .expect("failed to create rdkafka producer");
 
+        eprintln!("[rdkafka-producer] created for {}", bootstrap);
         Self { producer }
     }
 }

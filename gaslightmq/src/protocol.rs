@@ -332,6 +332,7 @@ pub async fn handle_produce(
                 ProduceResult::Error(kafka_protocol::error::ResponseError::UnknownTopicOrPartition)
             };
 
+            tracing::debug!(topic = %topic_name, partition = partition_idx, result = ?result, "produce");
             let error_code = match &result {
                 ProduceResult::Success => 0,
                 ProduceResult::Error(e) => e.code(),
@@ -376,6 +377,21 @@ pub async fn handle_fetch(
 
             let (error_code, records_bytes) = if let Some(topic) = registry.lookup(&topic_name).await {
                 let result = topic.on_fetch(Partition::from(partition_idx), Offset::from(fetch_offset)).await;
+                tracing::debug!(
+                    topic = %topic_name,
+                    partition = partition_idx,
+                    offset = fetch_offset,
+                    result = match &result {
+                        FetchResult::Empty => "empty",
+                        FetchResult::Records(_) => "records",
+                        FetchResult::Error(_) => "error",
+                    },
+                    count = match &result {
+                        FetchResult::Records(r) => r.len(),
+                        _ => 0,
+                    },
+                    "fetch",
+                );
                 match result {
                     FetchResult::Empty => (0i16, None),
                     FetchResult::Records(records) => {
@@ -421,25 +437,27 @@ pub async fn handle_fetch(
 pub async fn handle_list_offsets(
     body: &mut Bytes,
     api_version: i16,
-    _registry: &TopicRegistryHandle,
+    registry: &TopicRegistryHandle,
 ) -> Result<ListOffsetsResponse> {
     let request = ListOffsetsRequest::decode(body, api_version)?;
 
     let mut response_topics = Vec::new();
 
     for topic in &request.topics {
-
+        let topic_name = topic.name.0.as_str().to_string();
         let mut partitions = Vec::new();
 
         for partition in &topic.partitions {
             let offset = match partition.timestamp {
-                -2 => 0i64, // earliest
+                -2 => 0i64,
                 -1 => {
-                    // latest: we don't track offsets, so return 0
-                    // (In a real impl, we'd query the buffer's length)
-                    0
+                    if let Some(t) = registry.lookup(&topic_name).await {
+                        i64::from(t.high_watermark(Partition::from(partition.partition_index)).await)
+                    } else {
+                        0
+                    }
                 }
-                ts => ts, // specific timestamp; just return 0
+                _ => 0,
             };
 
             partitions.push(

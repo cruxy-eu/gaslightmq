@@ -15,7 +15,7 @@ async fn find_coordinator_returns_self() {
 
     assert_eq!(response.error_code, 0);
     assert_eq!(response.node_id.0, 0);
-    assert_eq!(response.port, harness.addr().port() as i32);
+    assert_eq!(response.port, harness.addr().await.port() as i32);
 
     harness.shutdown().await;
 }

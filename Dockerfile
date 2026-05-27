@@ -10,6 +10,7 @@ COPY gaslightmq-kernel/ gaslightmq-kernel/
 COPY gaslightmq-scenario/ gaslightmq-scenario/
 COPY gaslightmq-testing/ gaslightmq-testing/
 COPY gaslightmq-testcontainers/ gaslightmq-testcontainers/
+COPY gaslightmq-logging/ gaslightmq-logging/
 COPY gaslightmq-kafka-client/ gaslightmq-kafka-client/
 COPY bins/ bins/
 

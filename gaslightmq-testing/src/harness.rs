@@ -18,6 +18,7 @@ impl Default for Harness {
 
 impl Harness {
     pub fn with(builder: impl Into<BrokerConfig>) -> Self {
+        gaslightmq_logging::init();
         let mut config = builder.into();
         config.bind_addr = "127.0.0.1:0".to_string();
         Self {
