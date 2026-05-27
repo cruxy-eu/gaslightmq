@@ -7,7 +7,9 @@ WORKDIR /build
 COPY Cargo.toml Cargo.lock rust-toolchain.toml ./
 COPY gaslightmq/ gaslightmq/
 COPY gaslightmq-kernel/ gaslightmq-kernel/
+COPY gaslightmq-scenario/ gaslightmq-scenario/
 COPY gaslightmq-testing/ gaslightmq-testing/
+COPY gaslightmq-testcontainers/ gaslightmq-testcontainers/
 COPY gaslightmq-kafka-client/ gaslightmq-kafka-client/
 COPY bins/ bins/
 
