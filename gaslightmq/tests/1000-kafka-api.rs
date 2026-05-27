@@ -1,12 +1,9 @@
 use gaslightmq::{BrokerBuilder, Buffer};
 use gaslightmq_kernel::{Offset, Partition};
-use gaslightmq_kafka_client_api::{Consumer, Producer};
+use gaslightmq_kafka_client_api::{Producer, ProtocolConsumer};
 use gaslightmq_testing::{Harness, Record};
 
-#[cfg(not(feature = "rdkafka"))]
 type TestClient = gaslightmq_kafka_client_api::RawKafkaClient;
-#[cfg(feature = "rdkafka")]
-type TestClient = gaslightmq_kafka_client_rdkafka::RdkafkaClient;
 
 #[tokio::test]
 async fn smoke_test_produce_and_consume() {

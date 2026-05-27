@@ -5,7 +5,6 @@ edition.workspace = true
 
 [dependencies]
 gaslightmq-kernel = { path = "../../gaslightmq-kernel" }
-async-trait = "0.1"
 bytes = "1"
 indexmap = "2"
 kafka-protocol = "0.17"

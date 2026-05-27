@@ -1,7 +1,6 @@
 use std::net::SocketAddr;
 use std::sync::atomic::{AtomicI32, Ordering};
 
-use async_trait::async_trait;
 use bytes::{Bytes, BytesMut};
 use indexmap::IndexMap;
 use kafka_protocol::messages::*;
@@ -35,8 +34,8 @@ use tokio::sync::Mutex;
 use futures::StreamExt;
 use gaslightmq_kernel::{Offset, Partition};
 use crate::traits::{
-    Consumer, HeartbeatResult, JoinGroupResult, Producer, ProduceResult, RecordStream,
-    SyncGroupResult,
+    HeartbeatResult, JoinGroupResult, Producer, ProtocolConsumer, ProduceResult,
+    RecordStream, SyncGroupResult,
 };
 use gaslightmq_kernel::{Header, Record};
 
@@ -108,56 +107,56 @@ impl RawKafkaClient {
     }
 }
 
-#[async_trait]
+
 impl Produce for RawKafkaClient {
     async fn produce(&self, request: ProduceRequest) -> ProduceResponse {
         self.request(ApiKey::Produce, 3, &request).await
     }
 }
 
-#[async_trait]
+
 impl Fetch for RawKafkaClient {
     async fn fetch(&self, request: FetchRequest) -> FetchResponse {
         self.request(ApiKey::Fetch, 4, &request).await
     }
 }
 
-#[async_trait]
+
 impl Metadata for RawKafkaClient {
     async fn metadata(&self, request: MetadataRequest) -> MetadataResponse {
         self.request(ApiKey::Metadata, 1, &request).await
     }
 }
 
-#[async_trait]
+
 impl ApiVersions for RawKafkaClient {
     async fn api_versions(&self, request: ApiVersionsRequest) -> ApiVersionsResponse {
         self.request(ApiKey::ApiVersions, 0, &request).await
     }
 }
 
-#[async_trait]
+
 impl ListOffsets for RawKafkaClient {
     async fn list_offsets(&self, request: ListOffsetsRequest) -> ListOffsetsResponse {
         self.request(ApiKey::ListOffsets, 1, &request).await
     }
 }
 
-#[async_trait]
+
 impl FindCoordinator for RawKafkaClient {
     async fn find_coordinator(&self, request: FindCoordinatorRequest) -> FindCoordinatorResponse {
         self.request(ApiKey::FindCoordinator, 0, &request).await
     }
 }
 
-#[async_trait]
+
 impl CreateTopics for RawKafkaClient {
     async fn create_topics(&self, request: CreateTopicsRequest) -> CreateTopicsResponse {
         self.request(ApiKey::CreateTopics, 2, &request).await
     }
 }
 
-#[async_trait]
+
 impl DeleteTopics for RawKafkaClient {
     async fn delete_topics(&self, request: DeleteTopicsRequest) -> DeleteTopicsResponse {
         self.request(ApiKey::DeleteTopics, 1, &request).await
@@ -226,7 +225,7 @@ fn encode_records_batch(records: &[Record]) -> Bytes {
     Bytes::from(buf)
 }
 
-#[async_trait]
+
 impl Producer for RawKafkaClient {
     async fn send(
         &self,
@@ -257,8 +256,8 @@ impl Producer for RawKafkaClient {
     }
 }
 
-#[async_trait]
-impl Consumer for RawKafkaClient {
+
+impl ProtocolConsumer for RawKafkaClient {
     async fn fetch(&self, topic: &str, partition: Partition, offset: Offset) -> Vec<Record> {
         let request = FetchRequest::default()
             .with_max_wait_ms(1000)

@@ -1,4 +1,3 @@
-use async_trait::async_trait;
 use futures::Stream;
 use gaslightmq_kernel::{Offset, Partition};
 use kafka_protocol::error::ResponseError;
@@ -32,13 +31,18 @@ pub struct HeartbeatResult {
     pub error: Option<ResponseError>,
 }
 
-#[async_trait]
+
 pub trait Producer {
     async fn send(&self, topic: &str, partition: Partition, records: &[Record]) -> ProduceResult;
 }
 
-#[async_trait]
+
 pub trait Consumer {
+    async fn fetch(&self, topic: &str, partition: Partition, offset: Offset) -> Vec<Record>;
+}
+
+
+pub trait ProtocolConsumer {
     async fn fetch(&self, topic: &str, partition: Partition, offset: Offset) -> Vec<Record>;
     fn stream(&self, topic: &str, partition: Partition, offset: Offset) -> RecordStream;
     async fn join_group(&self, group_id: &str) -> JoinGroupResult;

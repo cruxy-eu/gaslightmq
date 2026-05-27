@@ -2,7 +2,7 @@ use bytes::{Bytes, BytesMut};
 use gaslightmq::{BlackHole, BrokerBuilder, Buffer};
 use gaslightmq_kafka_client_api::{Fetch, Produce, RawKafkaClient};
 use gaslightmq_testing::Harness;
-use gaslightmq_kafka_client_api::Consumer;
+use gaslightmq_kafka_client_api::ProtocolConsumer;
 use indexmap::IndexMap;
 use kafka_protocol::messages::fetch_request::{FetchPartition, FetchTopic};
 use kafka_protocol::messages::produce_request::{

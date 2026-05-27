@@ -786,7 +786,6 @@ dependencies = [
 name = "gaslightmq-kafka-client-api"
 version = "0.1.0"
 dependencies = [
- "async-trait",
  "bytes",
  "futures",
  "gaslightmq-kernel",
@@ -799,13 +798,10 @@ dependencies = [
 name = "gaslightmq-kafka-client-rdkafka"
 version = "0.1.0"
 dependencies = [
- "async-trait",
  "bytes",
- "futures",
  "gaslightmq-kafka-client-api",
  "gaslightmq-kernel",
  "rdkafka",
- "tokio",
 ]
 
 [[package]]
