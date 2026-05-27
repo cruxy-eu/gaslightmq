@@ -172,7 +172,7 @@ pub fn handle_api_versions(_api_version: i16) -> ApiVersionsResponse {
         (ApiKey::Heartbeat as i16, 0, 3),
         (ApiKey::ApiVersions as i16, 0, 3),
         (ApiKey::CreateTopics as i16, 2, 7),
-        (ApiKey::DeleteTopics as i16, 1, 6),
+        (ApiKey::DeleteTopics as i16, 1, 5),
     ];
 
     let api_keys: Vec<ApiVersion> = supported
