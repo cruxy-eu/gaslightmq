@@ -1,4 +1,5 @@
 mod consumer;
+mod context;
 mod producer;
 
 pub use consumer::RdkafkaConsumer;

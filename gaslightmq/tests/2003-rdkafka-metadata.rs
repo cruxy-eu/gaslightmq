@@ -12,6 +12,7 @@ async fn fetch_all_topics_metadata() {
     let topics = consumer.metadata_for_all_topics().await;
     assert!(!topics.is_empty());
 
+    consumer.assert_no_errors();
     harness.shutdown().await;
 }
 
@@ -25,5 +26,6 @@ async fn fetch_topic_metadata() {
     assert_eq!(topic.name, "events");
     assert_eq!(topic.partitions.len(), 3);
 
+    consumer.assert_no_errors();
     harness.shutdown().await;
 }

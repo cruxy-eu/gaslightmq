@@ -25,6 +25,8 @@ async fn produce_and_consume() {
     assert_eq!(fetched[1].value.as_deref(), Some(b"msg-1".as_slice()));
     assert_eq!(fetched[2].value.as_deref(), Some(b"msg-2".as_slice()));
 
+    producer.assert_no_errors();
+    consumer.assert_no_errors();
     harness.shutdown().await;
 }
 
@@ -44,6 +46,8 @@ async fn produce_and_consume_with_keys() {
     assert_eq!(fetched[0].key.as_deref(), Some(b"order-123".as_slice()));
     assert_eq!(fetched[0].value.as_deref(), Some(b"payload".as_slice()));
 
+    producer.assert_no_errors();
+    consumer.assert_no_errors();
     harness.shutdown().await;
 }
 
@@ -69,5 +73,7 @@ async fn produce_and_consume_multiple_partitions() {
     assert_eq!(r1[0].value.as_deref(), Some(b"p1".as_slice()));
     assert_eq!(r2[0].value.as_deref(), Some(b"p2".as_slice()));
 
+    producer.assert_no_errors();
+    consumer.assert_no_errors();
     harness.shutdown().await;
 }

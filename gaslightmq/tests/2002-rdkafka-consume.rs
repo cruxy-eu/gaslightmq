@@ -24,6 +24,8 @@ async fn consume_after_produce() {
     assert_eq!(fetched[1].value.as_deref(), Some(b"msg-1".as_slice()));
     assert_eq!(fetched[2].value.as_deref(), Some(b"msg-2".as_slice()));
 
+    producer.assert_no_errors();
+    consumer.assert_no_errors();
     harness.shutdown().await;
 }
 
@@ -45,6 +47,8 @@ async fn consume_with_offset() {
     assert_eq!(fetched.len(), 1);
     assert_eq!(fetched[0].value.as_deref(), Some(b"c".as_slice()));
 
+    producer.assert_no_errors();
+    consumer.assert_no_errors();
     harness.shutdown().await;
 }
 
@@ -57,6 +61,7 @@ async fn consume_from_empty_topic() {
     let fetched = consumer.fetch("empty", Partition::new(0), Offset::new(0)).await;
     assert!(fetched.is_empty());
 
+    consumer.assert_no_errors();
     harness.shutdown().await;
 }
 
@@ -82,5 +87,7 @@ async fn consume_from_multiple_partitions() {
     assert_eq!(r1[0].value.as_deref(), Some(b"p1".as_slice()));
     assert_eq!(r2[0].value.as_deref(), Some(b"p2".as_slice()));
 
+    producer.assert_no_errors();
+    consumer.assert_no_errors();
     harness.shutdown().await;
 }

@@ -13,6 +13,7 @@ async fn produce_single_record() {
     let result = producer.send("events", Partition::new(0), &[Record::new("hello")]).await;
     assert!(result.error.is_none());
 
+    producer.assert_no_errors();
     harness.shutdown().await;
 }
 
@@ -30,6 +31,7 @@ async fn produce_multiple_records() {
     let result = producer.send("events", Partition::new(0), &records).await;
     assert!(result.error.is_none());
 
+    producer.assert_no_errors();
     harness.shutdown().await;
 }
 
@@ -43,6 +45,7 @@ async fn produce_with_key() {
     let result = producer.send("orders", Partition::new(0), &records).await;
     assert!(result.error.is_none());
 
+    producer.assert_no_errors();
     harness.shutdown().await;
 }
 
@@ -60,5 +63,6 @@ async fn produce_to_multiple_partitions() {
     assert!(r1.error.is_none());
     assert!(r2.error.is_none());
 
+    producer.assert_no_errors();
     harness.shutdown().await;
 }

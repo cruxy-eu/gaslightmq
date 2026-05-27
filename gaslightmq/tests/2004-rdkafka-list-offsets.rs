@@ -14,6 +14,7 @@ async fn watermarks_empty_topic() {
     assert_eq!(wm.low, Offset::new(0));
     assert_eq!(wm.high, Offset::new(0));
 
+    consumer.assert_no_errors();
     harness.shutdown().await;
 }
 
@@ -31,5 +32,7 @@ async fn watermarks_after_produce() {
     assert_eq!(wm.low, Offset::new(0));
     assert_eq!(wm.high, Offset::new(3));
 
+    producer.assert_no_errors();
+    consumer.assert_no_errors();
     harness.shutdown().await;
 }

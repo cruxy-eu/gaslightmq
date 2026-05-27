@@ -7,8 +7,11 @@ use gaslightmq_kernel::Record;
 use rdkafka::config::ClientConfig;
 use rdkafka::producer::{BaseProducer, BaseRecord, Producer as RdProducer};
 
+use crate::context::TestContext;
+
 pub struct RdkafkaProducer {
-    producer: BaseProducer,
+    producer: BaseProducer<TestContext>,
+    context: TestContext,
 }
 
 impl From<SocketAddr> for RdkafkaProducer {
@@ -20,15 +23,21 @@ impl From<SocketAddr> for RdkafkaProducer {
 impl RdkafkaProducer {
     pub fn new(addr: SocketAddr) -> Self {
         let bootstrap = addr.to_string();
+        let context = TestContext::new();
 
-        let producer: BaseProducer = ClientConfig::new()
+        let producer: BaseProducer<TestContext> = ClientConfig::new()
             .set("bootstrap.servers", &bootstrap)
             .set("message.timeout.ms", "5000")
-            .create()
+            .set("log_level", "7")
+            .create_with_context(context.clone())
             .expect("failed to create rdkafka producer");
 
         eprintln!("[rdkafka-producer] created for {}", bootstrap);
-        Self { producer }
+        Self { producer, context }
+    }
+
+    pub fn assert_no_errors(&self) {
+        self.context.assert_no_errors();
     }
 }
 

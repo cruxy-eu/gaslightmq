@@ -13,6 +13,7 @@ async fn describe_single_topic() {
     assert_eq!(topic.name, "orders");
     assert_eq!(topic.partitions.len(), 1);
 
+    consumer.assert_no_errors();
     harness.shutdown().await;
 }
 
@@ -26,6 +27,7 @@ async fn describe_multi_partition_topic() {
     assert_eq!(topic.name, "events");
     assert_eq!(topic.partitions.len(), 5);
 
+    consumer.assert_no_errors();
     harness.shutdown().await;
 }
 
@@ -46,5 +48,6 @@ async fn describe_multiple_topics() {
     assert!(names.contains(&"orders"));
     assert!(names.contains(&"events"));
 
+    consumer.assert_no_errors();
     harness.shutdown().await;
 }

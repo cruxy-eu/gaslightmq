@@ -10,8 +10,11 @@ use rdkafka::config::ClientConfig;
 use rdkafka::consumer::{BaseConsumer, Consumer as RdConsumer};
 use rdkafka::topic_partition_list::TopicPartitionList;
 
+use crate::context::TestContext;
+
 pub struct RdkafkaConsumer {
-    consumer: BaseConsumer,
+    consumer: BaseConsumer<TestContext>,
+    context: TestContext,
 }
 
 impl From<SocketAddr> for RdkafkaConsumer {
@@ -23,17 +26,23 @@ impl From<SocketAddr> for RdkafkaConsumer {
 impl RdkafkaConsumer {
     pub fn new(addr: SocketAddr) -> Self {
         let bootstrap = addr.to_string();
+        let context = TestContext::new();
 
-        let consumer: BaseConsumer = ClientConfig::new()
+        let consumer: BaseConsumer<TestContext> = ClientConfig::new()
             .set("bootstrap.servers", &bootstrap)
             .set("group.id", "gaslightmq-test")
             .set("auto.offset.reset", "earliest")
             .set("enable.auto.commit", "false")
-            .create()
+            .set("log_level", "7")
+            .create_with_context(context.clone())
             .expect("failed to create rdkafka consumer");
 
         eprintln!("[rdkafka-consumer] created for {}", bootstrap);
-        Self { consumer }
+        Self { consumer, context }
+    }
+
+    pub fn assert_no_errors(&self) {
+        self.context.assert_no_errors();
     }
 }
 
