@@ -18,4 +18,4 @@ serde_json.workspace = true
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 gloo-net.workspace = true
 gloo-timers.workspace = true
-web-sys = { workspace = true, features = ["Element", "PointerEvent"] }
+web-sys.workspace = true

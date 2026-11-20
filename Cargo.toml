@@ -1,31 +1,31 @@
 [workspace]
 members = [
-    "gaslightmq",
+    "crates/gaslightmq",
     "bins/*",
-    "gaslightmq-kernel",
-    "gaslightmq-logging",
-    "gaslightmq-wire",
-    "gaslightmq-proxy",
-    "gaslightmq-proxy-api",
-    "gaslightmq-proxy-ui",
-    "gaslightmq-scenario",
-    "gaslightmq-testcontainers",
-    "gaslightmq-testing",
-    "gaslightmq-kafka-client/*",
+    "crates/gaslightmq-kernel",
+    "crates/gaslightmq-logging",
+    "crates/gaslightmq-wire",
+    "crates/gaslightmq-proxy",
+    "crates/gaslightmq-proxy-api",
+    "crates/gaslightmq-proxy-ui",
+    "crates/gaslightmq-scenario",
+    "crates/gaslightmq-testcontainers",
+    "crates/gaslightmq-testing",
+    "crates/gaslightmq-kafka-client/*",
 ]
 # The UI is a wasm app built with `dx`; keep it out of plain `cargo build`.
 default-members = [
-    "gaslightmq",
+    "crates/gaslightmq",
     "bins/*",
-    "gaslightmq-kernel",
-    "gaslightmq-logging",
-    "gaslightmq-wire",
-    "gaslightmq-proxy",
-    "gaslightmq-proxy-api",
-    "gaslightmq-scenario",
-    "gaslightmq-testcontainers",
-    "gaslightmq-testing",
-    "gaslightmq-kafka-client/*",
+    "crates/gaslightmq-kernel",
+    "crates/gaslightmq-logging",
+    "crates/gaslightmq-wire",
+    "crates/gaslightmq-proxy",
+    "crates/gaslightmq-proxy-api",
+    "crates/gaslightmq-scenario",
+    "crates/gaslightmq-testcontainers",
+    "crates/gaslightmq-testing",
+    "crates/gaslightmq-kafka-client/*",
 ]
 resolver = "2"
 
@@ -34,17 +34,16 @@ edition = "2024"
 version = "0.1.0"
 
 [workspace.dependencies]
-gaslightmq = { path = "gaslightmq" }
-gaslightmq-kernel = { path = "gaslightmq-kernel" }
-gaslightmq-scenario = { path = "gaslightmq-scenario" }
-gaslightmq-testing = { path = "gaslightmq-testing" }
-gaslightmq-kafka-client-api = { path = "gaslightmq-kafka-client/api" }
-gaslightmq-kafka-client-rdkafka = { path = "gaslightmq-kafka-client/rdkafka" }
-gaslightmq-kafka-client-native = { path = "gaslightmq-kafka-client/native" }
-gaslightmq-logging = { path = "gaslightmq-logging" }
-gaslightmq-wire = { path = "gaslightmq-wire" }
-gaslightmq-proxy = { path = "gaslightmq-proxy" }
-gaslightmq-proxy-api = { path = "gaslightmq-proxy-api" }
+gaslightmq = { path = "crates/gaslightmq" }
+gaslightmq-kernel = { path = "crates/gaslightmq-kernel" }
+gaslightmq-scenario = { path = "crates/gaslightmq-scenario" }
+gaslightmq-testing = { path = "crates/gaslightmq-testing" }
+gaslightmq-kafka-client-api = { path = "crates/gaslightmq-kafka-client/api" }
+gaslightmq-kafka-client-native = { path = "crates/gaslightmq-kafka-client/native" }
+gaslightmq-logging = { path = "crates/gaslightmq-logging" }
+gaslightmq-wire = { path = "crates/gaslightmq-wire" }
+gaslightmq-proxy = { path = "crates/gaslightmq-proxy" }
+gaslightmq-proxy-api = { path = "crates/gaslightmq-proxy-api" }
 anyhow = "1"
 axum = { version = "0.8", features = ["ws"] }
 bytes = "1"
@@ -57,7 +56,6 @@ gloo-timers = { version = "0.3", features = ["futures"] }
 indexmap = "2"
 kafka-protocol = "0.17"
 rand = "0.9"
-rdkafka = "0.37"
 rust-embed = "8"
 serde = "1"
 serde_json = "1"
@@ -75,3 +73,11 @@ lto = true
 codegen-units = 1
 strip = true
 panic = "abort"
+
+# Used by `dx build --release --platform web`. `strip = true` would make dx
+# run `objcopy --strip-all` on the wasm, which drops wasm-bindgen's custom
+# sections ("import ... doesn't have an adapter listed").
+[profile.wasm-release]
+inherits = "release"
+opt-level = "s"
+strip = "debuginfo"

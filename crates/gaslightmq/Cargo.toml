@@ -4,7 +4,6 @@ version.workspace = true
 edition.workspace = true
 
 [features]
-rdkafka = []
 # Embed the proxy web UI (built with `just ui`).
 proxy-ui = ["gaslightmq-proxy/proxy-ui"]
 
@@ -33,7 +32,6 @@ gaslightmq-kernel.workspace = true
 gaslightmq-testing.workspace = true
 gaslightmq-kafka-client-api.workspace = true
 gaslightmq-kafka-client-native.workspace = true
-gaslightmq-kafka-client-rdkafka.workspace = true
 bytes.workspace = true
 indexmap.workspace = true
 kafka-protocol.workspace = true

@@ -1,0 +1,4 @@
+.git
+target/
+crates/gaslightmq-proxy/ui-dist/
+.claude/
