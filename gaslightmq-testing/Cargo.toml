@@ -7,4 +7,9 @@ edition.workspace = true
 gaslightmq.workspace = true
 gaslightmq-kernel.workspace = true
 gaslightmq-logging.workspace = true
-tokio = { workspace = true, features = ["net", "rt-multi-thread", "macros", "sync"] }
+gaslightmq-wire.workspace = true
+anyhow.workspace = true
+bytes.workspace = true
+indexmap.workspace = true
+kafka-protocol.workspace = true
+tokio = { workspace = true, features = ["net", "rt-multi-thread", "macros", "sync", "time"] }

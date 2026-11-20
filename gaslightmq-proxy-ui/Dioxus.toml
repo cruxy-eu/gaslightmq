@@ -1,0 +1,12 @@
+[application]
+name = "gaslightmq-proxy-ui"
+
+[web.app]
+title = "GaslightMQ Proxy"
+# No `base_path`: assets are served from the root (`/assets/...`), which is
+# where the proxy binary serves the embedded bundle.
+
+# `dx serve` forwards /api/* (including the /api/ws WebSocket) to a proxy
+# running on :9000.
+[[web.proxy]]
+backend = "http://localhost:9000/api/"

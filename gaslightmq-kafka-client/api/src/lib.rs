@@ -6,6 +6,7 @@ pub mod list_offsets;
 pub mod find_coordinator;
 pub mod create_topics;
 pub mod delete_topics;
+pub mod records;
 pub mod traits;
 pub mod client;
 
@@ -17,5 +18,5 @@ pub use list_offsets::ListOffsets;
 pub use find_coordinator::FindCoordinator;
 pub use create_topics::CreateTopics;
 pub use delete_topics::DeleteTopics;
-pub use traits::{Consumer, HeartbeatResult, JoinGroupResult, PartitionMetadata, Producer, ProtocolConsumer, ProduceResult, RecordStream, SyncGroupResult, TopicMetadata, Watermarks};
+pub use traits::{Admin, Consumer, TopicConfigs, HeartbeatResult, JoinGroupResult, PartitionMetadata, Producer, ProtocolConsumer, ProduceResult, RecordStream, SyncGroupResult, TopicMetadata, Watermarks};
 pub use client::RawKafkaClient;

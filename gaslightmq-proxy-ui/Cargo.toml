@@ -1,0 +1,21 @@
+[package]
+name = "gaslightmq-proxy-ui"
+version.workspace = true
+edition.workspace = true
+publish = false
+
+[features]
+default = []
+# Enabled by `dx build --platform web`.
+web = ["dioxus/web"]
+
+[dependencies]
+gaslightmq-proxy-api.workspace = true
+dioxus.workspace = true
+futures.workspace = true
+serde_json.workspace = true
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+gloo-net.workspace = true
+gloo-timers.workspace = true
+web-sys = { workspace = true, features = ["Element", "PointerEvent"] }

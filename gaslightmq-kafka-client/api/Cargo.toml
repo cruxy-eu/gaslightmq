@@ -8,5 +8,5 @@ gaslightmq-kernel.workspace = true
 bytes.workspace = true
 indexmap.workspace = true
 kafka-protocol.workspace = true
-tokio = { workspace = true, features = ["net", "io-util"] }
+tokio = { workspace = true, features = ["net", "io-util", "sync"] }
 futures.workspace = true

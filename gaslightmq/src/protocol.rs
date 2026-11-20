@@ -1,4 +1,4 @@
-use anyhow::{bail, Result};
+use anyhow::Result;
 use bytes::{Bytes, BytesMut};
 use indexmap::IndexMap;
 use kafka_protocol::messages::api_versions_response::ApiVersion;
@@ -24,135 +24,30 @@ use kafka_protocol::messages::sync_group_response::SyncGroupResponse;
 use kafka_protocol::messages::ApiKey;
 use kafka_protocol::messages::ApiVersionsResponse;
 use kafka_protocol::messages::FetchRequest;
-use kafka_protocol::messages::RequestHeader;
-use kafka_protocol::messages::ResponseHeader;
 use kafka_protocol::messages::{BrokerId, TopicName};
-use kafka_protocol::protocol::{Decodable, Encodable, StrBytes};
+use kafka_protocol::protocol::{Decodable, StrBytes};
 use kafka_protocol::records::{
     Compression, Record as KafkaRecord, RecordBatchDecoder, RecordBatchEncoder, RecordEncodeOptions,
     TimestampType, NO_PARTITION_LEADER_EPOCH, NO_PRODUCER_EPOCH, NO_PRODUCER_ID,
 };
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 use gaslightmq_kernel::{Partition, Offset};
+use crate::cluster::ClusterView;
 use crate::record::{FetchResult, ProduceResult, Record};
 use crate::registry::{CreateResult, DeleteResult, TopicRegistryHandle};
 use kafka_protocol::messages::create_topics_request::CreateTopicsRequest;
 use kafka_protocol::messages::create_topics_response::{CreatableTopicResult, CreateTopicsResponse};
 use kafka_protocol::messages::delete_topics_request::DeleteTopicsRequest;
+use kafka_protocol::messages::describe_configs_request::DescribeConfigsRequest;
+use kafka_protocol::messages::describe_configs_response::{
+    DescribeConfigsResourceResult, DescribeConfigsResponse, DescribeConfigsResult,
+};
 use kafka_protocol::messages::delete_topics_response::{DeletableTopicResult, DeleteTopicsResponse};
 
-// ---------------------------------------------------------------------------
-// Header version helpers
-// ---------------------------------------------------------------------------
-
-/// Returns the header version to use when decoding a request for the given
-/// API key and API version. ApiVersions v3+ uses header v2, everything else v1.
-pub fn request_header_version(api_key: i16, api_version: i16) -> i16 {
-    if let Ok(key) = ApiKey::try_from(api_key) {
-        key.request_header_version(api_version)
-    } else {
-        1 // default to v1 for unknown keys
-    }
-}
-
-/// Returns the header version to use when encoding a response for the given
-/// API key and API version. ApiVersions v3+ uses header v1, everything else v0.
-pub fn response_header_version(api_key: i16, api_version: i16) -> i16 {
-    if let Ok(key) = ApiKey::try_from(api_key) {
-        key.response_header_version(api_version)
-    } else {
-        0
-    }
-}
-
-// ---------------------------------------------------------------------------
-// ParsedRequest
-// ---------------------------------------------------------------------------
-
-/// A parsed Kafka request frame containing the decoded header, the API key
-/// and version extracted from it, and the remaining body bytes.
-pub struct ParsedRequest {
-    pub header: RequestHeader,
-    pub api_key: i16,
-    pub api_version: i16,
-    pub body: Bytes,
-}
-
-// ---------------------------------------------------------------------------
-// Sync frame parsing (for easy unit testing)
-// ---------------------------------------------------------------------------
-
-/// Parse a single Kafka request frame from raw bytes (without the 4-byte
-/// length prefix). Returns a `ParsedRequest`.
-pub fn parse_request(data: &[u8]) -> Result<ParsedRequest> {
-    let mut buf = Bytes::copy_from_slice(data);
-    let header = kafka_protocol::protocol::decode_request_header_from_buffer(&mut buf)?;
-    let api_key = header.request_api_key;
-    let api_version = header.request_api_version;
-    let body = buf;
-    Ok(ParsedRequest {
-        header,
-        api_key,
-        api_version,
-        body,
-    })
-}
-
-// ---------------------------------------------------------------------------
-// Async framing: read_request / write_response
-// ---------------------------------------------------------------------------
-
-/// Read a length-prefixed Kafka request frame from an async reader.
-/// Returns `None` on clean EOF (connection closed).
-pub async fn read_request<R: AsyncReadExt + Unpin>(reader: &mut R) -> Result<Option<ParsedRequest>> {
-    // Read 4-byte big-endian length prefix.
-    let len = match reader.read_u32().await {
-        Ok(n) => n as usize,
-        Err(e) if e.kind() == std::io::ErrorKind::UnexpectedEof => return Ok(None),
-        Err(e) => return Err(e.into()),
-    };
-
-    if len == 0 {
-        bail!("received zero-length frame");
-    }
-
-    let mut frame = vec![0u8; len];
-    reader.read_exact(&mut frame).await?;
-
-    parse_request(&frame).map(Some)
-}
-
-/// Write a length-prefixed Kafka response frame.
-///
-/// Encodes the `ResponseHeader` followed by the `body` (which should already
-/// be the encoded response message), prepends a 4-byte length, and writes
-/// everything to the writer.
-pub async fn write_response<W: AsyncWriteExt + Unpin>(
-    writer: &mut W,
-    api_key: i16,
-    api_version: i16,
-    correlation_id: i32,
-    body: &[u8],
-) -> Result<()> {
-    let resp_header_version = response_header_version(api_key, api_version);
-
-    let header = ResponseHeader::default().with_correlation_id(correlation_id);
-
-    let header_size = header.compute_size(resp_header_version)?;
-    let total = header_size + body.len();
-
-    let mut frame = BytesMut::with_capacity(4 + total);
-    // Length prefix
-    frame.extend_from_slice(&(total as u32).to_be_bytes());
-    // Header
-    header.encode(&mut frame, resp_header_version)?;
-    // Body
-    frame.extend_from_slice(body);
-
-    writer.write_all(&frame).await?;
-    Ok(())
-}
+pub use gaslightmq_wire::{
+    ParsedRequest, encode_response_body, parse_request, read_request, request_header_version,
+    response_header_version, write_response,
+};
 
 // ---------------------------------------------------------------------------
 // Protocol handlers
@@ -173,6 +68,7 @@ pub fn handle_api_versions(_api_version: i16) -> ApiVersionsResponse {
         (ApiKey::ApiVersions as i16, 0, 3),
         (ApiKey::CreateTopics as i16, 2, 7),
         (ApiKey::DeleteTopics as i16, 1, 5),
+        (ApiKey::DescribeConfigs as i16, 1, 4),
     ];
 
     let api_keys: Vec<ApiVersion> = supported
@@ -190,35 +86,56 @@ pub fn handle_api_versions(_api_version: i16) -> ApiVersionsResponse {
         .with_api_keys(api_keys)
 }
 
-/// Handle a Metadata request. Returns single broker, all registered topics
-/// with their partitions.
+/// Handle a Metadata request. Returns the cluster's brokers and the requested
+/// topics (all of them if none are listed). Unknown topics get
+/// UNKNOWN_TOPIC_OR_PARTITION.
 pub async fn handle_metadata(
     body: &mut Bytes,
     api_version: i16,
     registry: &TopicRegistryHandle,
-    host: &str,
-    port: i32,
+    cluster: &ClusterView,
 ) -> Result<MetadataResponse> {
     // Decode the request body.
-    let _request = MetadataRequest::decode(body, api_version)?;
+    let request = MetadataRequest::decode(body, api_version)?;
 
-    let broker = MetadataResponseBroker::default()
-        .with_node_id(BrokerId(0))
-        .with_host(StrBytes::from_string(host.to_string()))
-        .with_port(port);
+    let brokers: Vec<MetadataResponseBroker> = cluster
+        .nodes
+        .iter()
+        .map(|n| {
+            MetadataResponseBroker::default()
+                .with_node_id(BrokerId(n.node_id))
+                .with_host(StrBytes::from_string(n.host.clone()))
+                .with_port(n.port)
+        })
+        .collect();
 
     let topics = registry.list_all().await;
-    let response_topics: Vec<MetadataResponseTopic> = topics
+    let requested: Option<Vec<String>> = request
+        .topics
+        .map(|ts| ts.into_iter().filter_map(|t| t.name.map(|n| n.0.to_string())).collect());
+    let unknown: Vec<MetadataResponseTopic> = requested
         .iter()
+        .flatten()
+        .filter(|name| !topics.contains_key(*name))
+        .map(|name| {
+            MetadataResponseTopic::default()
+                .with_error_code(kafka_protocol::error::ResponseError::UnknownTopicOrPartition.code())
+                .with_name(Some(TopicName(StrBytes::from_string(name.clone()))))
+        })
+        .collect();
+    let mut response_topics: Vec<MetadataResponseTopic> = topics
+        .iter()
+        .filter(|(name, _)| requested.as_ref().is_none_or(|r| r.contains(name)))
         .map(|(name, topic)| {
             let partitions: Vec<MetadataResponsePartition> = (0..topic.partitions())
                 .map(|i| {
+                    let leader = BrokerId(cluster.leader_for(i));
                     MetadataResponsePartition::default()
                         .with_error_code(0)
                         .with_partition_index(i)
-                        .with_leader_id(BrokerId(0))
-                        .with_replica_nodes(vec![BrokerId(0)])
-                        .with_isr_nodes(vec![BrokerId(0)])
+                        .with_leader_id(leader)
+                        .with_replica_nodes(vec![leader])
+                        .with_isr_nodes(vec![leader])
                 })
                 .collect();
 
@@ -229,11 +146,12 @@ pub async fn handle_metadata(
                 .with_partitions(partitions)
         })
         .collect();
+    response_topics.extend(unknown);
 
     Ok(MetadataResponse::default()
-        .with_brokers(vec![broker])
+        .with_brokers(brokers)
         .with_cluster_id(Some(StrBytes::from_static_str("gaslightmq")))
-        .with_controller_id(BrokerId(0))
+        .with_controller_id(BrokerId(cluster.controller_id()))
         .with_topics(response_topics))
 }
 
@@ -292,12 +210,12 @@ fn internal_to_kafka_records(records: &[Record], base_offset: i64) -> Vec<KafkaR
 }
 
 /// Handle a Produce request. Decodes record batches, calls topic.on_produce(),
-/// and builds a response.
+/// and builds a response. Returns `None` for acks=0, which gets no response.
 pub async fn handle_produce(
     body: &mut Bytes,
     api_version: i16,
     registry: &TopicRegistryHandle,
-) -> Result<ProduceResponse> {
+) -> Result<Option<ProduceResponse>> {
     let request = ProduceRequest::decode(body, api_version)?;
 
     let mut response_topics = Vec::new();
@@ -352,7 +270,11 @@ pub async fn handle_produce(
         );
     }
 
-    Ok(ProduceResponse::default().with_responses(response_topics))
+    // With acks=0 the client expects no response at all.
+    if request.acks == 0 {
+        return Ok(None);
+    }
+    Ok(Some(ProduceResponse::default().with_responses(response_topics)))
 }
 
 /// Handle a Fetch request. Calls topic.on_fetch() and encodes records into
@@ -485,12 +407,13 @@ pub async fn handle_list_offsets(
 }
 
 /// Handle a FindCoordinator request. Returns self as the coordinator.
-pub fn handle_find_coordinator(host: &str, port: i32) -> FindCoordinatorResponse {
+pub fn handle_find_coordinator(cluster: &ClusterView) -> FindCoordinatorResponse {
+    let node = cluster.this_node();
     FindCoordinatorResponse::default()
         .with_error_code(0)
-        .with_node_id(BrokerId(0))
-        .with_host(StrBytes::from_string(host.to_string()))
-        .with_port(port)
+        .with_node_id(BrokerId(node.node_id))
+        .with_host(StrBytes::from_string(node.host.clone()))
+        .with_port(node.port)
 }
 
 /// Handle a JoinGroup request. Returns a minimal success stub.
@@ -545,6 +468,57 @@ pub async fn handle_create_topics(
     Ok(CreateTopicsResponse::default().with_topics(results))
 }
 
+/// Topic configs reported by DescribeConfigs: Kafka's defaults for the
+/// settings clients usually look at.
+const TOPIC_CONFIG_DEFAULTS: &[(&str, &str)] = &[
+    ("cleanup.policy", "delete"),
+    ("max.message.bytes", "1048588"),
+    ("retention.bytes", "-1"),
+    ("retention.ms", "604800000"),
+];
+
+/// Resource type of a topic in DescribeConfigs.
+const RESOURCE_TOPIC: i8 = 2;
+
+/// Handle a DescribeConfigs request. Topics report Kafka's default configs;
+/// unknown topics get UNKNOWN_TOPIC_OR_PARTITION, other resource types
+/// INVALID_REQUEST.
+pub async fn handle_describe_configs(
+    body: &mut Bytes,
+    api_version: i16,
+    registry: &TopicRegistryHandle,
+) -> Result<DescribeConfigsResponse> {
+    use kafka_protocol::error::ResponseError;
+    let request = DescribeConfigsRequest::decode(body, api_version)?;
+    let mut results = Vec::new();
+    for resource in request.resources {
+        let result = DescribeConfigsResult::default()
+            .with_resource_type(resource.resource_type)
+            .with_resource_name(resource.resource_name.clone());
+        let result = if resource.resource_type != RESOURCE_TOPIC {
+            result.with_error_code(ResponseError::InvalidRequest.code())
+        } else if registry.lookup(resource.resource_name.as_str()).await.is_none() {
+            result.with_error_code(ResponseError::UnknownTopicOrPartition.code())
+        } else {
+            let wanted = resource.configuration_keys.as_ref();
+            result.with_configs(
+                TOPIC_CONFIG_DEFAULTS
+                    .iter()
+                    .filter(|(k, _)| wanted.is_none_or(|w| w.iter().any(|key| key.as_str() == *k)))
+                    .map(|(k, v)| {
+                        DescribeConfigsResourceResult::default()
+                            .with_name(StrBytes::from_static_str(k))
+                            .with_value(Some(StrBytes::from_static_str(v)))
+                            .with_config_source(5) // DEFAULT_CONFIG
+                    })
+                    .collect(),
+            )
+        };
+        results.push(result);
+    }
+    Ok(DescribeConfigsResponse::default().with_results(results))
+}
+
 /// Handle a DeleteTopics request. Deletes topics via the registry and returns results.
 pub async fn handle_delete_topics(
     body: &mut Bytes,
@@ -575,131 +549,20 @@ pub async fn handle_delete_topics(
 }
 
 /// Encode a response body using the Encodable trait for the given api_version.
-pub fn encode_response_body<E: Encodable>(response: &E, api_version: i16) -> Result<Vec<u8>> {
-    let size = response.compute_size(api_version)?;
-    let mut buf = BytesMut::with_capacity(size);
-    response.encode(&mut buf, api_version)?;
-    Ok(buf.to_vec())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn localhost_cluster() -> ClusterView {
+        ClusterView {
+            node_id: 0,
+            nodes: vec![crate::cluster::Node { node_id: 0, host: "localhost".into(), port: 9092 }],
+        }
+    }
+    use kafka_protocol::protocol::Encodable;
     use std::collections::HashMap;
     use std::sync::Arc;
     use kafka_protocol::messages::ApiKey;
-
-    #[test]
-    fn request_header_version_api_versions_v3_returns_2() {
-        assert_eq!(request_header_version(ApiKey::ApiVersions as i16, 3), 2);
-    }
-
-    #[test]
-    fn request_header_version_api_versions_v2_returns_1() {
-        assert_eq!(request_header_version(ApiKey::ApiVersions as i16, 2), 1);
-    }
-
-    #[test]
-    fn request_header_version_metadata_v1_returns_1() {
-        assert_eq!(request_header_version(ApiKey::Metadata as i16, 1), 1);
-    }
-
-    #[test]
-    fn request_header_version_metadata_v9_returns_2() {
-        assert_eq!(request_header_version(ApiKey::Metadata as i16, 9), 2);
-    }
-
-    #[test]
-    fn response_header_version_api_versions_always_0() {
-        // ApiVersionsResponse.header_version always returns 0
-        assert_eq!(response_header_version(ApiKey::ApiVersions as i16, 0), 0);
-        assert_eq!(response_header_version(ApiKey::ApiVersions as i16, 3), 0);
-    }
-
-    #[test]
-    fn response_header_version_metadata_v9_returns_1() {
-        assert_eq!(response_header_version(ApiKey::Metadata as i16, 9), 1);
-    }
-
-    #[test]
-    fn response_header_version_metadata_v1_returns_0() {
-        assert_eq!(response_header_version(ApiKey::Metadata as i16, 1), 0);
-    }
-
-    #[test]
-    fn parse_request_decodes_header() {
-        // Build a raw frame: RequestHeader (v1) for Metadata v1
-        let api_key: i16 = ApiKey::Metadata as i16; // 3
-        let api_version: i16 = 1;
-        let correlation_id: i32 = 42;
-        let client_id = Some(StrBytes::from_static_str("test-client"));
-
-        let header = RequestHeader::default()
-            .with_request_api_key(api_key)
-            .with_request_api_version(api_version)
-            .with_correlation_id(correlation_id)
-            .with_client_id(client_id);
-
-        let header_version = request_header_version(api_key, api_version);
-        let mut buf = BytesMut::new();
-        header.encode(&mut buf, header_version).unwrap();
-        // Add some body bytes
-        buf.extend_from_slice(&[0xDE, 0xAD]);
-
-        let parsed = parse_request(&buf).unwrap();
-        assert_eq!(parsed.api_key, api_key);
-        assert_eq!(parsed.api_version, api_version);
-        assert_eq!(parsed.header.correlation_id, 42);
-        assert_eq!(
-            parsed.header.client_id.as_deref(),
-            Some("test-client")
-        );
-        assert_eq!(parsed.body.as_ref(), &[0xDE, 0xAD]);
-    }
-
-    #[tokio::test]
-    async fn read_request_parses_length_prefixed_frame() {
-        // Build a complete frame with length prefix
-        let api_key: i16 = ApiKey::ApiVersions as i16; // 18
-        let api_version: i16 = 0;
-        let correlation_id: i32 = 7;
-
-        let header = RequestHeader::default()
-            .with_request_api_key(api_key)
-            .with_request_api_version(api_version)
-            .with_correlation_id(correlation_id)
-            .with_client_id(None);
-
-        let header_version = request_header_version(api_key, api_version);
-        let mut payload = BytesMut::new();
-        header.encode(&mut payload, header_version).unwrap();
-
-        // Build the length-prefixed wire format
-        let len = payload.len() as u32;
-        let mut wire = Vec::new();
-        wire.extend_from_slice(&len.to_be_bytes());
-        wire.extend_from_slice(&payload);
-
-        // Use a tokio duplex channel as our async reader
-        let (mut client, mut server) = tokio::io::duplex(1024);
-        tokio::spawn(async move {
-            client.write_all(&wire).await.unwrap();
-            // Dropping client closes the write half
-        });
-
-        let parsed = read_request(&mut server).await.unwrap().unwrap();
-        assert_eq!(parsed.api_key, api_key);
-        assert_eq!(parsed.api_version, api_version);
-        assert_eq!(parsed.header.correlation_id, 7);
-    }
-
-    #[tokio::test]
-    async fn read_request_returns_none_on_eof() {
-        let (client, mut server) = tokio::io::duplex(1024);
-        drop(client);
-        let result = read_request(&mut server).await.unwrap();
-        assert!(result.is_none());
-    }
 
     #[test]
     fn handle_api_versions_returns_supported_keys() {
@@ -752,7 +615,7 @@ mod tests {
         metadata_req.encode(&mut body_buf, 1).unwrap();
         let mut body = Bytes::from(body_buf);
 
-        let response = handle_metadata(&mut body, 1, &registry, "localhost", 9092).await.unwrap();
+        let response = handle_metadata(&mut body, 1, &registry, &localhost_cluster()).await.unwrap();
 
         assert_eq!(response.brokers.len(), 1);
         assert_eq!(response.brokers[0].host.as_str(), "localhost");
@@ -780,7 +643,7 @@ mod tests {
 
     #[test]
     fn handle_find_coordinator_returns_self() {
-        let response = handle_find_coordinator("localhost", 9092);
+        let response = handle_find_coordinator(&localhost_cluster());
         assert_eq!(response.error_code, 0);
         assert_eq!(response.host.as_str(), "localhost");
         assert_eq!(response.port, 9092);
