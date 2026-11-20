@@ -12,7 +12,7 @@ mod ws;
 
 use dioxus::prelude::*;
 
-use components::{broker::BrokerStrip, grid::PadGrid, transport::TransportBar};
+use components::{brokers::Brokers, header::Header, rows::Rows};
 use state::{AppState, Ctl};
 
 const MAIN_CSS: Asset = asset!("/assets/main.css");
@@ -35,14 +35,13 @@ fn App() -> Element {
     let tx = use_coroutine(move |rx| ws::run(state, rx));
     use_context_provider(|| Ctl { state, tx });
 
-    let live = state.conn.read().is_live();
     rsx! {
         document::Stylesheet { href: MAIN_CSS }
         document::Title { "GaslightMQ Proxy" }
-        div { class: "surface", class: if !live { "offline" },
-            TransportBar {}
-            BrokerStrip {}
-            PadGrid {}
+        main { class: if !state.conn.read().is_live() { "offline" },
+            Header {}
+            Rows {}
+            Brokers {}
         }
     }
 }

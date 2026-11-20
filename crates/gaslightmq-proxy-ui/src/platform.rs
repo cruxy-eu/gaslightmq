@@ -7,12 +7,6 @@ pub async fn sleep_ms(ms: u32) {
     gloo_timers::future::TimeoutFuture::new(ms).await;
 }
 
-/// Native builds never run the UI, so there is nothing to wake up for.
-#[cfg(not(target_arch = "wasm32"))]
-pub async fn sleep_ms(_ms: u32) {
-    std::future::pending::<()>().await;
-}
-
 /// `true` when the page was opened with `?demo`.
 #[cfg(target_arch = "wasm32")]
 pub fn is_demo() -> bool {

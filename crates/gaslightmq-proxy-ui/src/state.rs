@@ -1,14 +1,9 @@
 //! Client-side mirror of the proxy state, shared through context.
 
-use std::collections::HashMap;
-
 use dioxus::prelude::*;
 use gaslightmq_proxy_api::{
     ApiCatalogEntry, ApiRow, BootstrapInfo, ClientMsg, NodeInfo, NodeState, ServerMsg, StatsTick,
 };
-
-/// Weight of the newest sample in the smoothed req/s readouts.
-const RATE_SMOOTHING: f64 = 0.35;
 
 /// State of the control-plane connection.
 // Only the wasm socket loop constructs the connected states.
@@ -40,9 +35,6 @@ pub struct AppState {
     /// One row per catalog entry, in catalog order.
     pub rows: Signal<Vec<ApiRow>>,
     pub nodes: Signal<Vec<NodeInfo>>,
-    pub tick: Signal<Option<StatsTick>>,
-    /// Smoothed requests per second, by API key.
-    pub rates: Signal<HashMap<i16, f64>>,
 }
 
 impl AppState {
@@ -54,8 +46,6 @@ impl AppState {
             catalog: Signal::new(Vec::new()),
             rows: Signal::new(Vec::new()),
             nodes: Signal::new(Vec::new()),
-            tick: Signal::new(None),
-            rates: Signal::new(HashMap::new()),
         }
     }
 
@@ -78,7 +68,6 @@ impl AppState {
                 self.catalog.set(snapshot.catalog);
                 self.nodes.set(snapshot.nodes);
                 self.bootstrap.set(Some(snapshot.bootstrap));
-                self.rates.write().clear();
             }
             ServerMsg::RowChanged(row) => {
                 // Peek first: echoes of our own edits shouldn't re-render.
@@ -97,27 +86,33 @@ impl AppState {
                 }
             }
             ServerMsg::Nodes { nodes } => self.nodes.set(nodes),
-            ServerMsg::Stats(tick) => {
-                self.update_rates(&tick);
-                self.tick.set(Some(tick));
-            }
+            ServerMsg::Stats(tick) => self.update_connections(&tick),
         }
     }
 
-    fn update_rates(&mut self, tick: &StatsTick) {
-        let interval = f64::from(tick.interval_ms.max(1));
-        let catalog = self.catalog.peek();
-        let mut rates = self.rates.write();
-        for entry in catalog.iter() {
-            let requests = tick
-                .apis
+    /// Stats arrive every 100 ms; only touch the signals when a connection
+    /// count actually changed, so the page doesn't re-render for nothing.
+    fn update_connections(&mut self, tick: &StatsTick) {
+        let bootstrap_changed = self
+            .bootstrap
+            .peek()
+            .as_ref()
+            .is_some_and(|b| b.connections != tick.bootstrap_connections);
+        if bootstrap_changed && let Some(b) = self.bootstrap.write().as_mut() {
+            b.connections = tick.bootstrap_connections;
+        }
+
+        let changed = |n: &NodeInfo| {
+            tick.nodes
                 .iter()
-                .find(|a| a.api_key == entry.api_key)
-                .map_or(0, |a| a.requests);
-            let instant = requests as f64 * 1000.0 / interval;
-            let prev = rates.get(&entry.api_key).copied().unwrap_or(instant);
-            let smoothed = prev + (instant - prev) * RATE_SMOOTHING;
-            rates.insert(entry.api_key, if smoothed < 0.05 { 0.0 } else { smoothed });
+                .any(|t| t.node_id == n.node_id && t.connections != n.connections)
+        };
+        if self.nodes.peek().iter().any(changed) {
+            for node in self.nodes.write().iter_mut() {
+                if let Some(t) = tick.nodes.iter().find(|t| t.node_id == node.node_id) {
+                    node.connections = t.connections;
+                }
+            }
         }
     }
 }
