@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use std::net::SocketAddr;
-use std::sync::Arc;
+use std::sync::{Arc, RwLock};
 
 use kafka_protocol::messages::ApiKey;
 use tokio::net::{TcpListener, TcpStream};
@@ -8,11 +8,13 @@ use tokio::sync::watch;
 use tracing::{debug, error, warn};
 
 use crate::builder::BrokerConfig;
+use crate::cluster::ClusterView;
 use crate::protocol;
 use crate::registry::{TopicRegistry, TopicRegistryHandle};
 
 pub struct Broker {
     addr: SocketAddr,
+    cluster: Arc<RwLock<ClusterView>>,
     shutdown_tx: watch::Sender<bool>,
     join_handle: tokio::task::JoinHandle<()>,
 }
@@ -29,14 +31,15 @@ impl Broker {
             .map(|(k, v)| (k, Arc::from(v) as Arc<dyn crate::topic::Topic>))
             .collect();
         let registry = TopicRegistry::spawn(seed, config.default_topic_mode);
-        let host = addr.ip().to_string();
-        let port = addr.port() as i32;
+        let cluster = Arc::new(RwLock::new(ClusterView::single(addr)));
 
         eprintln!("[broker] listening on {}", addr);
-        let join_handle = tokio::spawn(accept_loop(listener, registry, host, port, shutdown_rx));
+        let join_handle =
+            tokio::spawn(accept_loop(listener, registry, cluster.clone(), shutdown_rx));
 
         Ok(Broker {
             addr,
+            cluster,
             shutdown_tx,
             join_handle,
         })
@@ -44,6 +47,13 @@ impl Broker {
 
     pub fn addr(&self) -> SocketAddr {
         self.addr
+    }
+
+    /// Replace the cluster this broker advertises in Metadata and
+    /// FindCoordinator responses. Lets several in-process brokers pose as
+    /// one multi-node cluster.
+    pub fn set_cluster(&self, view: ClusterView) {
+        *self.cluster.write().unwrap() = view;
     }
 
     pub async fn shutdown(self) {
@@ -55,8 +65,7 @@ impl Broker {
 async fn accept_loop(
     listener: TcpListener,
     registry: TopicRegistryHandle,
-    host: String,
-    port: i32,
+    cluster: Arc<RwLock<ClusterView>>,
     mut shutdown_rx: watch::Receiver<bool>,
 ) {
     loop {
@@ -66,9 +75,9 @@ async fn accept_loop(
                     Ok((stream, peer)) => {
                         eprintln!("[broker] connection from {}", peer);
                         let registry = registry.clone();
-                        let host = host.clone();
+                        let cluster = cluster.clone();
                         tokio::spawn(handle_connection(
-                            stream, registry, host, port, shutdown_rx.clone(),
+                            stream, registry, cluster, shutdown_rx.clone(),
                         ));
                     }
                     Err(e) => {
@@ -93,8 +102,7 @@ fn api_key_name(api_key: i16) -> String {
 async fn handle_connection(
     stream: TcpStream,
     registry: TopicRegistryHandle,
-    host: String,
-    port: i32,
+    cluster: Arc<RwLock<ClusterView>>,
     mut shutdown_rx: watch::Receiver<bool>,
 ) {
     let (mut reader, mut writer) = stream.into_split();
@@ -127,7 +135,8 @@ async fn handle_connection(
                         protocol::encode_response_body(&resp, encode_version)
                     }
                     Ok(ApiKey::Metadata) => {
-                        match protocol::handle_metadata(&mut body, api_version, &registry, &host, port).await {
+                        let view = cluster.read().unwrap().clone();
+                        match protocol::handle_metadata(&mut body, api_version, &registry, &view).await {
                             Ok(resp) => protocol::encode_response_body(&resp, api_version),
                             Err(e) => {
                                 error!(api = %api_name, version = api_version, error = %e, "handler failed");
@@ -137,7 +146,8 @@ async fn handle_connection(
                     }
                     Ok(ApiKey::Produce) => {
                         match protocol::handle_produce(&mut body, api_version, &registry).await {
-                            Ok(resp) => protocol::encode_response_body(&resp, api_version),
+                            Ok(Some(resp)) => protocol::encode_response_body(&resp, api_version),
+                            Ok(None) => continue,
                             Err(e) => {
                                 error!(api = %api_name, version = api_version, error = %e, "handler failed");
                                 continue;
@@ -163,7 +173,8 @@ async fn handle_connection(
                         }
                     }
                     Ok(ApiKey::FindCoordinator) => {
-                        let resp = protocol::handle_find_coordinator(&host, port);
+                        let view = cluster.read().unwrap().clone();
+                        let resp = protocol::handle_find_coordinator(&view);
                         protocol::encode_response_body(&resp, api_version)
                     }
                     Ok(ApiKey::JoinGroup) => {
@@ -189,6 +200,15 @@ async fn handle_connection(
                     }
                     Ok(ApiKey::DeleteTopics) => {
                         match protocol::handle_delete_topics(&mut body, api_version, &registry).await {
+                            Ok(resp) => protocol::encode_response_body(&resp, api_version),
+                            Err(e) => {
+                                error!(api = %api_name, version = api_version, error = %e, "handler failed");
+                                continue;
+                            }
+                        }
+                    }
+                    Ok(ApiKey::DescribeConfigs) => {
+                        match protocol::handle_describe_configs(&mut body, api_version, &registry).await {
                             Ok(resp) => protocol::encode_response_body(&resp, api_version),
                             Err(e) => {
                                 error!(api = %api_name, version = api_version, error = %e, "handler failed");

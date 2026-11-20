@@ -61,6 +61,19 @@ pub trait Consumer {
 }
 
 
+/// Configuration of a topic, as returned by DescribeConfigs.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TopicConfigs {
+    pub error: Option<ResponseError>,
+    pub configs: std::collections::BTreeMap<String, Option<String>>,
+}
+
+pub trait Admin {
+    /// Describe the configuration of `topic`. `keys` limits the result to
+    /// those config names; empty means all.
+    fn describe_topic_configs(&self, topic: &str, keys: &[&str]) -> impl Future<Output = TopicConfigs> + Send;
+}
+
 pub trait ProtocolConsumer {
     fn fetch(&self, topic: &str, partition: Partition, offset: Offset) -> impl Future<Output = Vec<Record>> + Send;
     fn stream(&self, topic: &str, partition: Partition, offset: Offset) -> RecordStream;

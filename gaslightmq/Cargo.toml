@@ -5,10 +5,14 @@ edition.workspace = true
 
 [features]
 rdkafka = []
+# Embed the proxy web UI (built with `just ui`).
+proxy-ui = ["gaslightmq-proxy/proxy-ui"]
 
 [dependencies]
 gaslightmq-kernel.workspace = true
 gaslightmq-scenario.workspace = true
+gaslightmq-wire.workspace = true
+gaslightmq-proxy.workspace = true
 anyhow.workspace = true
 bytes.workspace = true
 indexmap.workspace = true
@@ -23,9 +27,12 @@ uuid = { workspace = true, features = ["v4"] }
 tracing.workspace = true
 
 [dev-dependencies]
+serde_json.workspace = true
+tokio-tungstenite.workspace = true
 gaslightmq-kernel.workspace = true
 gaslightmq-testing.workspace = true
 gaslightmq-kafka-client-api.workspace = true
+gaslightmq-kafka-client-native.workspace = true
 gaslightmq-kafka-client-rdkafka.workspace = true
 bytes.workspace = true
 indexmap.workspace = true

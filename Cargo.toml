@@ -1,5 +1,32 @@
 [workspace]
-members = ["gaslightmq", "bins/*", "gaslightmq-kernel", "gaslightmq-logging", "gaslightmq-scenario", "gaslightmq-testcontainers", "gaslightmq-testing", "gaslightmq-kafka-client/*"]
+members = [
+    "gaslightmq",
+    "bins/*",
+    "gaslightmq-kernel",
+    "gaslightmq-logging",
+    "gaslightmq-wire",
+    "gaslightmq-proxy",
+    "gaslightmq-proxy-api",
+    "gaslightmq-proxy-ui",
+    "gaslightmq-scenario",
+    "gaslightmq-testcontainers",
+    "gaslightmq-testing",
+    "gaslightmq-kafka-client/*",
+]
+# The UI is a wasm app built with `dx`; keep it out of plain `cargo build`.
+default-members = [
+    "gaslightmq",
+    "bins/*",
+    "gaslightmq-kernel",
+    "gaslightmq-logging",
+    "gaslightmq-wire",
+    "gaslightmq-proxy",
+    "gaslightmq-proxy-api",
+    "gaslightmq-scenario",
+    "gaslightmq-testcontainers",
+    "gaslightmq-testing",
+    "gaslightmq-kafka-client/*",
+]
 resolver = "2"
 
 [workspace.package]
@@ -13,23 +40,35 @@ gaslightmq-scenario = { path = "gaslightmq-scenario" }
 gaslightmq-testing = { path = "gaslightmq-testing" }
 gaslightmq-kafka-client-api = { path = "gaslightmq-kafka-client/api" }
 gaslightmq-kafka-client-rdkafka = { path = "gaslightmq-kafka-client/rdkafka" }
+gaslightmq-kafka-client-native = { path = "gaslightmq-kafka-client/native" }
 gaslightmq-logging = { path = "gaslightmq-logging" }
+gaslightmq-wire = { path = "gaslightmq-wire" }
+gaslightmq-proxy = { path = "gaslightmq-proxy" }
+gaslightmq-proxy-api = { path = "gaslightmq-proxy-api" }
 anyhow = "1"
+axum = { version = "0.8", features = ["ws"] }
 bytes = "1"
 clap = "4"
+dioxus = "0.7.10"
 fake = "3"
 futures = "0.3"
+gloo-net = { version = "0.6", default-features = false, features = ["websocket"] }
+gloo-timers = { version = "0.3", features = ["futures"] }
 indexmap = "2"
 kafka-protocol = "0.17"
 rand = "0.9"
 rdkafka = "0.37"
+rust-embed = "8"
 serde = "1"
+serde_json = "1"
 serde_yaml = "0.9"
 testcontainers = "0.27"
 tokio = "1"
+tokio-tungstenite = "0.29"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 uuid = "1"
+web-sys = { version = "0.3", features = ["Window", "Location"] }
 
 [profile.release]
 lto = true

@@ -2,7 +2,6 @@ use std::net::SocketAddr;
 use std::sync::atomic::{AtomicI32, Ordering};
 
 use bytes::{Bytes, BytesMut};
-use indexmap::IndexMap;
 use kafka_protocol::messages::*;
 use kafka_protocol::messages::fetch_request::{FetchPartition, FetchTopic};
 use kafka_protocol::messages::find_coordinator_request::FindCoordinatorRequest;
@@ -22,11 +21,7 @@ use kafka_protocol::messages::fetch_response::FetchResponse;
 use kafka_protocol::messages::sync_group_request::SyncGroupRequest;
 use kafka_protocol::messages::sync_group_response::SyncGroupResponse;
 use kafka_protocol::protocol::{Decodable, Encodable, StrBytes};
-use kafka_protocol::records::{
-    Compression, Record as KafkaRecord, RecordBatchDecoder, RecordBatchEncoder,
-    RecordEncodeOptions, TimestampType, NO_PARTITION_LEADER_EPOCH,
-    NO_PRODUCER_EPOCH, NO_PRODUCER_ID,
-};
+use kafka_protocol::records::RecordBatchDecoder;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 use tokio::sync::Mutex;
@@ -37,7 +32,7 @@ use crate::traits::{
     HeartbeatResult, JoinGroupResult, Producer, ProtocolConsumer, ProduceResult,
     RecordStream, SyncGroupResult,
 };
-use gaslightmq_kernel::{Header, Record};
+use gaslightmq_kernel::Record;
 
 use kafka_protocol::messages::create_topics_request::CreateTopicsRequest;
 use kafka_protocol::messages::create_topics_response::CreateTopicsResponse;
@@ -163,69 +158,6 @@ impl DeleteTopics for RawKafkaClient {
     }
 }
 
-fn testing_records_to_kafka(records: &[Record]) -> Vec<KafkaRecord> {
-    records
-        .iter()
-        .enumerate()
-        .map(|(i, r)| {
-            let mut headers = IndexMap::new();
-            for h in &r.headers {
-                headers.insert(StrBytes::from_string(h.key.clone()), h.value.clone());
-            }
-            KafkaRecord {
-                transactional: false,
-                control: false,
-                partition_leader_epoch: NO_PARTITION_LEADER_EPOCH,
-                producer_id: NO_PRODUCER_ID,
-                producer_epoch: NO_PRODUCER_EPOCH,
-                timestamp_type: TimestampType::Creation,
-                offset: i as i64,
-                sequence: i as i32,
-                timestamp: 0,
-                key: r.key.clone(),
-                value: r.value.clone(),
-                headers,
-            }
-        })
-        .collect()
-}
-
-fn kafka_records_to_testing(batch: &kafka_protocol::records::RecordSet) -> Vec<Record> {
-    batch
-        .records
-        .iter()
-        .map(|r| {
-            let headers = r
-                .headers
-                .iter()
-                .map(|(k, v)| Header {
-                    key: k.as_str().to_string(),
-                    value: v.clone(),
-                })
-                .collect();
-            let mut record = Record::empty()
-                .with_headers(headers)
-                .with_offset(Offset::from(r.offset))
-                .with_timestamp(r.timestamp);
-            record.key = r.key.clone();
-            record.value = r.value.clone();
-            record
-        })
-        .collect()
-}
-
-fn encode_records_batch(records: &[Record]) -> Bytes {
-    let kafka_records = testing_records_to_kafka(records);
-    let options = RecordEncodeOptions {
-        version: 2,
-        compression: Compression::None,
-    };
-    let mut buf = BytesMut::new();
-    RecordBatchEncoder::encode(&mut buf, &kafka_records, &options).unwrap();
-    Bytes::from(buf)
-}
-
-
 impl Producer for RawKafkaClient {
     async fn send(
         &self,
@@ -233,7 +165,7 @@ impl Producer for RawKafkaClient {
         partition: Partition,
         records: &[Record],
     ) -> ProduceResult {
-        let records_bytes = encode_records_batch(records);
+        let records_bytes = crate::records::encode_batch(records);
         let request = ProduceRequest::default()
             .with_acks(-1)
             .with_timeout_ms(5000)
@@ -278,7 +210,7 @@ impl ProtocolConsumer for RawKafkaClient {
                 if let Some(ref raw) = partition_resp.records {
                     let mut buf = raw.clone();
                     if let Ok(batch) = RecordBatchDecoder::decode(&mut buf) {
-                        records.extend(kafka_records_to_testing(&batch));
+                        records.extend(crate::records::from_kafka(&batch));
                     }
                 }
             }
@@ -334,7 +266,7 @@ impl ProtocolConsumer for RawKafkaClient {
                             if let Some(ref raw) = partition_resp.records {
                                 let mut rbuf = raw.clone();
                                 if let Ok(batch) = RecordBatchDecoder::decode(&mut rbuf) {
-                                    records.extend(kafka_records_to_testing(&batch));
+                                    records.extend(crate::records::from_kafka(&batch));
                                 }
                             }
                         }
