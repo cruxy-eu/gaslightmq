@@ -1,0 +1,1108 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GaslightMQ Proxy — UI mockups</title>
+<link rel="stylesheet" href="https://rsms.me/inter/inter.css">
+<style>
+:root{
+  --bg:#08090a; --bg2:#0c0d0f; --panel:#0f1012; --surface:#16171a; --surface2:#1c1d21; --surface3:#24252a;
+  --hover:rgba(255,255,255,.035); --sel:rgba(255,255,255,.06);
+  --border:rgba(255,255,255,.065); --border2:rgba(255,255,255,.1); --border3:rgba(255,255,255,.17);
+  --t1:#f7f8f8; --t2:#d0d6e0; --t3:#8a8f98; --t4:#62666d; --t5:#3e4147;
+  --accent:#7170ff; --accent2:#5e6ad2;
+  --red:#eb5757; --orange:#f2994a; --violet:#a78bfa; --blue:#4ea7fc; --green:#4cb782; --yellow:#f2c94c; --teal:#2dd4bf;
+  --mono:"JetBrains Mono","SF Mono",ui-monospace,Menlo,monospace;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%;background:#000;color:var(--t2);font:13px/1.45 "Inter var",Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;-webkit-font-smoothing:antialiased;font-feature-settings:"cv01","cv11","ss03";overflow:hidden}
+button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
+input{font:inherit;color:inherit;background:none;border:0;outline:0}
+.i{flex:none;display:block}
+.mono{font-family:var(--mono);font-size:11.5px;letter-spacing:0}
+.t1{color:var(--t1)} .t2{color:var(--t2)} .t3{color:var(--t3)} .t4{color:var(--t4)} .t5{color:var(--t5)}
+.sp{flex:1}
+::-webkit-scrollbar{width:10px;height:10px}
+::-webkit-scrollbar-thumb{background:#26272b;border-radius:10px;border:3px solid transparent;background-clip:padding-box}
+::-webkit-scrollbar-corner{background:transparent}
+
+/* ── mockup switcher (not part of the design) ── */
+.mbar{height:46px;display:flex;align-items:center;gap:14px;padding:0 14px;border-bottom:1px solid #161616;background:#000}
+.mbar .brand{font-weight:600;color:var(--t1);font-size:12.5px;white-space:nowrap}
+.mbar .brand small{color:var(--t4);font-weight:500;margin-left:6px}
+.mtabs{display:flex;gap:2px;background:#0d0d0e;border:1px solid #1d1d1f;border-radius:8px;padding:2px}
+.mtabs button{height:28px;padding:0 10px;border-radius:6px;color:var(--t3);font-size:12.5px;display:flex;align-items:center;gap:7px;white-space:nowrap}
+.mtabs button:hover{color:var(--t1)}
+.mtabs button.on{background:#1f2023;color:var(--t1)}
+.mtabs .n{font:500 10.5px var(--mono);color:var(--t4)}
+.mdesc{color:var(--t3);font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1}
+#stage{height:calc(100vh - 46px);padding:8px}
+
+/* ── app shell ── */
+.app{height:100%;display:grid;grid-template-columns:226px minmax(0,1fr);background:var(--bg);border:1px solid #17181a;border-radius:10px;overflow:hidden;position:relative}
+.side{display:flex;flex-direction:column;padding:10px 8px;min-height:0;overflow:auto}
+.ws{display:flex;align-items:center;gap:8px;padding:2px 4px 2px 6px;height:32px}
+.logo{width:20px;height:20px;border-radius:5px;background:linear-gradient(135deg,#7170ff,#c084fc 55%,#f2994a);flex:none}
+.ws b{color:var(--t1);font-weight:600;font-size:13px}
+.ib{width:26px;height:26px;display:grid;place-items:center;border-radius:6px;color:var(--t3);flex:none}
+.ib:hover{background:var(--hover);color:var(--t1)}
+.recbtn{margin:8px 2px 12px;height:30px;border-radius:7px;border:1px solid var(--border2);background:var(--surface);display:flex;align-items:center;gap:8px;padding:0 10px;color:var(--t2);font-size:12.5px;font-weight:500}
+.recbtn:hover{background:var(--surface2)}
+.recbtn .dot{width:8px;height:8px;border-radius:50%;background:var(--t4)}
+.recbtn.on .dot{background:var(--red);box-shadow:0 0 0 3px rgba(235,87,87,.2);animation:pulse 1.6s infinite}
+.recbtn .mono{margin-left:auto;color:var(--t3)}
+@keyframes pulse{50%{box-shadow:0 0 0 5px rgba(235,87,87,.04)}}
+.nav{display:flex;align-items:center;gap:9px;height:28px;padding:0 8px;border-radius:6px;color:var(--t2);cursor:pointer;white-space:nowrap}
+.nav:hover{background:var(--hover)}
+.nav.on{background:var(--sel);color:var(--t1)}
+.nav .i{color:var(--t3)} .nav.on .i{color:var(--t1)}
+.nav .cnt{margin-left:auto;font-size:11.5px;color:var(--t4)}
+.sec{font-size:11.5px;font-weight:500;color:var(--t4);padding:16px 8px 5px;display:flex;align-items:center;gap:6px}
+.sdot{width:8px;height:8px;border-radius:50%;flex:none;display:inline-block}
+.sfoot{margin-top:auto;padding:14px 2px 2px;display:flex;flex-direction:column;gap:8px}
+.hw{border:1px solid var(--border);border-radius:8px;padding:9px 10px;background:var(--bg2);display:flex;gap:10px;align-items:center;cursor:pointer}
+.hw:hover{border-color:var(--border2)}
+.mini{display:grid;grid-template-columns:repeat(8,4px);gap:2px;flex:none}
+.mini i{width:4px;height:4px;border-radius:1px;background:#25262b}
+.addr{display:flex;align-items:center;gap:7px;font:11px var(--mono);color:var(--t4);padding:0 8px}
+.addr i{width:6px;height:6px;border-radius:50%;background:var(--green)}
+
+.main{margin:8px 8px 8px 0;background:var(--panel);border:1px solid var(--border);border-radius:8px;display:flex;flex-direction:column;min-width:0;min-height:0;overflow:hidden;position:relative}
+.hdr{height:44px;flex:none;display:flex;align-items:center;gap:8px;padding:0 12px 0 16px;border-bottom:1px solid var(--border)}
+.crumb{display:flex;align-items:center;gap:7px;color:var(--t1);font-weight:500;white-space:nowrap}
+.crumb .i{color:var(--t3)}
+.btn{height:26px;padding:0 9px;border-radius:6px;border:1px solid var(--border2);background:var(--surface);color:var(--t2);font-size:12px;font-weight:500;display:inline-flex;align-items:center;gap:6px;white-space:nowrap;flex:none}
+.btn:hover{background:var(--surface2);color:var(--t1)}
+.btn.primary{background:var(--accent2);border-color:rgba(255,255,255,.1);color:#fff}
+.btn.primary:hover{background:#6973e3}
+.btn.ghost{border-color:transparent;background:transparent;color:var(--t3)}
+.btn.ghost:hover{background:var(--hover);color:var(--t1)}
+.btn .kbd{margin-left:2px}
+.btn.primary .kbd{color:rgba(255,255,255,.7);border-color:rgba(255,255,255,.25)}
+.kbd{font:500 10.5px var(--mono);color:var(--t3);border:1px solid var(--border2);border-radius:4px;padding:0 4px;height:17px;display:inline-flex;align-items:center;background:rgba(255,255,255,.02)}
+.seg{display:inline-flex;background:var(--bg2);border:1px solid var(--border);border-radius:7px;padding:2px;gap:2px;flex:none}
+.seg button{height:22px;padding:0 9px;border-radius:5px;font-size:12px;color:var(--t3);display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
+.seg button:hover{color:var(--t1)}
+.seg button.on{background:var(--surface3);color:var(--t1);box-shadow:0 0 0 1px var(--border) inset}
+.seg.f button.on{background:color-mix(in srgb,var(--c) 18%,transparent);color:var(--c);box-shadow:0 0 0 1px color-mix(in srgb,var(--c) 40%,transparent) inset}
+.tab{height:26px;padding:0 10px;border-radius:6px;font-size:12.5px;color:var(--t3);border:1px solid transparent;display:inline-flex;align-items:center;gap:6px}
+.tab:hover{color:var(--t1)}
+.tab.on{color:var(--t1);border-color:var(--border2);background:var(--surface)}
+.tab .t4{font-size:11.5px}
+
+.api{display:inline-flex;align-items:center;gap:6px;height:20px;padding:0 7px 0 6px;border-radius:5px;border:1px solid var(--border);background:rgba(255,255,255,.025);font-size:11.5px;color:var(--t2);white-space:nowrap;font-weight:500;flex:none}
+.api i{width:6px;height:6px;border-radius:2px;background:var(--c)}
+.api .v{color:var(--t4);font-weight:400;font-family:var(--mono);font-size:10.5px}
+.tag{display:inline-flex;align-items:center;gap:5px;height:20px;padding:0 7px;border-radius:5px;background:rgba(255,255,255,.045);font-size:11.5px;color:var(--t2);white-space:nowrap;flex:none}
+.tag .i{color:var(--t4)}
+.fault{display:inline-flex;align-items:center;gap:6px;height:20px;padding:0 7px;border-radius:5px;font-size:11.5px;font-weight:500;color:var(--c);background:color-mix(in srgb,var(--c) 13%,transparent);white-space:nowrap;flex:none}
+.fault b{font-weight:500;color:var(--t2)}
+.fault::before{content:"";width:6px;height:6px;border-radius:50%;background:var(--c)}
+
+.chip{display:inline-flex;align-items:stretch;height:24px;border:1px solid var(--border2);border-radius:6px;background:var(--surface);font-size:12px;overflow:hidden;flex:none}
+.chip > span{display:flex;align-items:center;padding:0 7px;border-right:1px solid var(--border);white-space:nowrap}
+.chip .f{color:var(--t2);gap:6px}
+.chip .f .i{color:var(--t4)}
+.chip .o{color:var(--t4)}
+.chip .v{color:var(--t1)}
+.chip .x{padding:0 5px;color:var(--t4);border-right:0;cursor:pointer}
+.chip .x:hover{color:var(--t1);background:var(--hover)}
+.chip > span:last-child{border-right:0}
+
+.menu{position:fixed;z-index:60;min-width:220px;background:#1b1c20;border:1px solid var(--border2);border-radius:9px;box-shadow:0 16px 40px rgba(0,0,0,.55);padding:4px;animation:tin .12s ease-out}
+.menu .mi{display:flex;align-items:center;gap:9px;height:30px;padding:0 9px;border-radius:6px;color:var(--t2);font-size:12.5px;cursor:pointer}
+.menu .mi:hover{background:rgba(255,255,255,.06);color:var(--t1)}
+.menu .mi .d{margin-left:auto;color:var(--t4);font-size:11.5px}
+.menu .ms{font-size:11px;color:var(--t4);padding:6px 9px 3px}
+#toasts{position:fixed;right:22px;bottom:22px;display:flex;flex-direction:column;gap:8px;z-index:100}
+.toast{background:#1c1d21;border:1px solid var(--border2);border-radius:9px;padding:10px 14px;color:var(--t1);font-size:12.5px;box-shadow:0 10px 30px rgba(0,0,0,.5);display:flex;align-items:center;gap:10px;animation:tin .2s ease-out;max-width:420px}
+.toast .i{color:var(--green)}
+@keyframes tin{from{opacity:0;transform:translateY(6px)}}
+
+/* ── record ── */
+.fbar{min-height:42px;flex:none;display:flex;align-items:center;gap:6px;padding:8px 12px 8px 16px;border-bottom:1px solid var(--border);flex-wrap:wrap}
+.fbar .hint{color:var(--t4);font-size:12px}
+.rgrid{flex:1;min-height:0;display:grid;grid-template-columns:232px minmax(0,1fr) 292px}
+.rgrid.sel{grid-template-columns:232px minmax(0,1fr) 430px}
+.pane{min-height:0;overflow:auto;border-right:1px solid var(--border);position:relative}
+.pane:last-child{border-right:0}
+.ph{position:sticky;top:0;z-index:3;background:var(--panel);height:34px;display:flex;align-items:center;gap:8px;padding:0 14px;font-size:12px;color:var(--t3);font-weight:500;border-bottom:1px solid var(--border);white-space:nowrap}
+.ph .t4{font-weight:400}
+.tree .cl{display:flex;align-items:center;gap:8px;height:30px;padding:0 12px 0 14px;color:var(--t1);cursor:pointer;font-weight:500;margin-top:4px}
+.tree .cl .mono{margin-left:auto;color:var(--t4);font-weight:400;font-size:11px}
+.tree .sub{font:10.5px var(--mono);color:var(--t4);padding:0 14px 4px 30px;margin-top:-6px}
+.tree .cl:hover,.tree .cn:hover{background:var(--hover)}
+.tree .cn{display:grid;grid-template-columns:28px 1fr auto 36px;align-items:center;gap:6px;height:25px;padding:0 12px 0 30px;cursor:pointer;color:var(--t3);font-size:12px}
+.tree .cn .mono{font-size:11px}
+.tree .cn .n{text-align:right;color:var(--t4);font:11px var(--mono)}
+.tree .on{background:rgba(113,112,255,.09)!important}
+.act{display:flex;gap:1px;align-items:flex-end;height:12px}
+.act i{width:2px;background:#33353b;border-radius:1px}
+.srow{display:grid;grid-template-columns:84px 150px 24px 170px minmax(0,1fr) 92px 196px;align-items:center;gap:10px;height:32px;padding:0 14px;border-bottom:1px solid rgba(255,255,255,.03);font-size:12px;cursor:pointer;position:relative}
+.srow:hover{background:var(--hover)}
+.srow.new{animation:flash 1.4s ease-out}
+@keyframes flash{from{background:rgba(113,112,255,.13)}to{background:transparent}}
+.srow.m::before{content:"";position:absolute;left:0;top:7px;bottom:7px;width:2px;border-radius:2px;background:rgba(113,112,255,.7)}
+.srow.dim{opacity:.38}
+.srow.selected{background:rgba(113,112,255,.12)!important;box-shadow:inset 2px 0 0 var(--accent)}
+.thead{position:sticky;top:0;z-index:2;background:var(--panel);height:32px;border-bottom:1px solid var(--border);color:var(--t4);font-size:11.5px;cursor:default}
+.thead:hover{background:var(--panel)}
+.who{display:flex;align-items:center;gap:7px;min-width:0;color:var(--t2)}
+.who span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.who .mono{color:var(--t4);flex:none}
+.det{display:flex;align-items:center;gap:6px;min-width:0;overflow:hidden;white-space:nowrap;color:var(--t3)}
+.det .tp{color:var(--t2)}
+.det .pp{color:var(--t4);font-family:var(--mono);font-size:10.5px}
+[data-ff]{cursor:pointer}
+.det [data-ff]:hover,.who[data-ff]:hover span{color:var(--t1);text-decoration:underline;text-decoration-color:var(--t4);text-underline-offset:3px}
+.lat{display:flex;align-items:center;gap:7px;justify-content:flex-end;font-family:var(--mono);font-size:11px;color:var(--t3)}
+.lat i{height:3px;border-radius:2px;background:#3a3c42;display:block}
+.out{display:flex;align-items:center;gap:6px;font-size:11.5px;white-space:nowrap;overflow:hidden}
+.out .ok{color:var(--t5);font-family:var(--mono);font-size:11px}
+.out .r{color:var(--t4);font-family:var(--mono);font-size:10.5px}
+.newpill{position:sticky;top:40px;z-index:4;margin:0 auto -26px;width:max-content;display:none;height:26px;padding:0 10px;border-radius:13px;background:var(--accent2);color:#fff;font-size:12px;font-weight:500;align-items:center;gap:6px;box-shadow:0 6px 18px rgba(0,0,0,.4)}
+.newpill.show{display:flex}
+.facet{padding:12px 14px 8px;border-bottom:1px solid var(--border)}
+.facet h4{font-size:12px;font-weight:500;color:var(--t2);display:flex;align-items:center;gap:6px;margin-bottom:6px}
+.facet h4 .t4{font-weight:400}
+.fv{position:relative;display:flex;align-items:center;gap:8px;height:24px;padding:0 6px;margin:0 -6px;border-radius:5px;font-size:12px;color:var(--t2)}
+.fv:hover{background:var(--hover)}
+.fv .bar{position:absolute;left:0;top:3px;bottom:3px;border-radius:4px;background:rgba(255,255,255,.04);z-index:0}
+.fv > *{position:relative;z-index:1}
+.fv .nm{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.fv .c{margin-left:auto;font-family:var(--mono);font-size:11px;color:var(--t4)}
+.fv.on{color:var(--t1)}
+.fv.on .bar{background:rgba(113,112,255,.2)}
+.fv .ck{width:12px;height:12px;border-radius:3px;border:1px solid var(--border3);display:grid;place-items:center;flex:none;color:#fff}
+.fv.on .ck{background:var(--accent2);border-color:var(--accent2)}
+.fv.pat .nm{color:#b4b3ff;font-family:var(--mono);font-size:11.5px}
+.ixnote{padding:10px 14px;font-size:11.5px;color:var(--t4);line-height:1.5;border-bottom:1px solid var(--border)}
+
+/* selector sheet */
+.sheet{background:var(--bg2)}
+.sh-h{padding:14px 16px 12px;border-bottom:1px solid var(--border)}
+.fgrp{font-size:11px;color:var(--t4);padding:12px 16px 4px;font-weight:500;display:flex;gap:6px}
+.fld{display:grid;grid-template-columns:14px minmax(0,1fr) auto;align-items:center;gap:10px;min-height:30px;padding:2px 16px;cursor:pointer}
+.fld:hover{background:var(--hover)}
+.fld .k{font-family:var(--mono);font-size:11.5px;color:var(--t3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.fld .val{display:flex;align-items:center;gap:6px;font-family:var(--mono);font-size:11.5px;color:var(--t2)}
+.fld.on .k{color:var(--t1)}
+.fld.info{cursor:default}
+.fld.info .k{color:var(--t4)}
+.fld.info .val{color:var(--t4)}
+.cb{width:14px;height:14px;border-radius:4px;border:1px solid var(--border3);display:grid;place-items:center;color:#fff}
+.fld.on .cb{background:var(--accent2);border-color:var(--accent2)}
+.gen{font-family:var(--mono);font-size:11px;height:20px;padding:0 6px;border-radius:4px;border:1px dashed var(--border3);color:var(--t3)}
+.gen:hover{color:var(--t1)}
+.gen.on{border-style:solid;border-color:rgba(113,112,255,.6);color:#c4c3ff;background:rgba(113,112,255,.12)}
+.mcard{margin:14px 16px 12px;border:1px solid var(--border2);border-radius:10px;background:var(--surface);padding:14px}
+.big{font-size:26px;font-weight:600;color:var(--t1);letter-spacing:-.02em;line-height:1.1}
+.big span{font-size:12.5px;font-weight:400;color:var(--t3);letter-spacing:0;margin-left:4px}
+.bd{display:grid;grid-template-columns:104px 1fr 42px;gap:10px;align-items:center;font-size:12px;height:22px;color:var(--t2)}
+.bd .b{height:5px;border-radius:3px;background:var(--surface3);overflow:hidden}
+.bd .b i{display:block;height:100%;border-radius:3px}
+.bd .n{text-align:right;font:11px var(--mono);color:var(--t4)}
+.selx{font-family:var(--mono);font-size:11.5px;line-height:1.75;color:var(--t2);background:#08090a;border:1px solid var(--border);border-radius:8px;padding:10px 12px;margin:0 16px;white-space:pre}
+.selx .k{color:#b4b3ff} .selx .s{color:#8fd6a8} .selx .c{color:var(--t4)}
+
+/* ── rules ── */
+.lgrp{display:flex;align-items:center;gap:8px;height:36px;padding:0 14px 0 16px;background:#121316;border-bottom:1px solid var(--border);color:var(--t1);font-weight:500;font-size:12.5px;position:sticky;top:0;z-index:1}
+.lgrp .t4{font-weight:400;font-size:12px}
+.rrow{display:grid;grid-template-columns:16px 56px minmax(0,1fr) auto 38px 64px 30px 30px;align-items:center;gap:12px;height:40px;padding:0 16px 0 24px;border-bottom:1px solid rgba(255,255,255,.035);cursor:pointer}
+.rrow:hover{background:var(--hover)}
+.rrow.on{background:var(--sel)}
+.rrow .ttl{display:flex;align-items:center;gap:8px;min-width:0;overflow:hidden}
+.rrow .ttl b{font-weight:500;color:var(--t1);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:0 1 auto;min-width:60px}
+.rrow.off .ttl b{color:var(--t3)}
+.padref{font:500 10.5px var(--mono);color:var(--t3);border:1px solid var(--border2);border-radius:4px;height:18px;display:grid;place-items:center}
+.sw{width:26px;height:15px;border-radius:10px;background:var(--surface3);position:relative;transition:.15s;border:1px solid var(--border);cursor:pointer}
+.sw::after{content:"";position:absolute;top:1px;left:1px;width:11px;height:11px;border-radius:50%;background:#8d9198;transition:.15s}
+.sw.on{background:var(--accent2)}
+.sw.on::after{left:12px;background:#fff}
+.insp{border-left:1px solid var(--border);overflow:auto;min-height:0}
+.insp-in{padding:16px 20px 30px}
+.insp h2{font-size:18px;font-weight:600;color:var(--t1);letter-spacing:-.015em;margin:10px 0 4px;outline:0}
+.insp p.d{color:var(--t3);font-size:12.5px;margin-bottom:16px}
+.prop{display:grid;grid-template-columns:88px minmax(0,1fr);gap:10px;align-items:start;min-height:32px;padding:2px 0}
+.prop > label{color:var(--t3);font-size:12.5px;padding-top:6px}
+.prop .pv{display:flex;flex-wrap:wrap;gap:6px;align-items:center;min-height:30px}
+.pv.col{flex-direction:column;align-items:flex-start}
+.slider{position:relative;height:28px;flex:1;cursor:ew-resize;display:flex;align-items:center;min-width:120px;touch-action:none}
+.slider .tr{position:absolute;left:0;right:0;height:4px;border-radius:2px;background:var(--surface3)}
+.slider .fi{position:absolute;left:0;height:4px;border-radius:2px;background:var(--c,var(--accent))}
+.slider .th{position:absolute;width:12px;height:12px;border-radius:50%;background:#fff;transform:translateX(-50%);box-shadow:0 1px 4px rgba(0,0,0,.6)}
+.sval{font-family:var(--mono);font-size:12px;color:var(--t1);width:72px;text-align:right}
+.sel-btn{height:28px;display:inline-flex;align-items:center;gap:7px;padding:0 9px;border-radius:6px;color:var(--t2);font-size:12.5px;border:1px solid transparent}
+.sel-btn:hover{background:var(--hover);border-color:var(--border)}
+.hr{height:1px;background:var(--border);margin:18px 0}
+.insp h3{font-size:12.5px;font-weight:500;color:var(--t1);display:flex;align-items:center;gap:8px}
+.chart{display:flex;align-items:flex-end;gap:2px;height:46px;margin:12px 0 8px}
+.chart div{flex:1;display:flex;flex-direction:column-reverse;gap:1px;height:100%}
+.chart i{display:block;border-radius:1px}
+.stats{display:flex;gap:18px;font-size:12px;color:var(--t3)}
+.stats b{color:var(--t1);font-weight:500;font-family:var(--mono);font-size:12px}
+.feed{display:flex;flex-direction:column;gap:14px;margin-top:18px}
+.feed .it{display:grid;grid-template-columns:18px 1fr auto;gap:10px;font-size:12.5px;color:var(--t3);align-items:start}
+.feed .it b{color:var(--t2);font-weight:500}
+.feed .ts{color:var(--t4);font-size:11.5px}
+.av{width:18px;height:18px;border-radius:50%;display:grid;place-items:center;font-size:9.5px;font-weight:600;color:#fff;flex:none}
+.minigrid{display:grid;grid-template-columns:repeat(8,9px);gap:3px;padding:6px;border:1px solid var(--border);border-radius:6px;background:var(--bg2)}
+.minigrid i{width:9px;height:9px;border-radius:2px;background:#202126}
+
+/* ── pads ── */
+.pads-wrap{flex:1;overflow:auto;display:flex;justify-content:center;padding:20px 24px 26px;min-height:0}
+.pads{display:grid;grid-template-columns:216px repeat(8,68px) 44px;gap:8px;align-content:start}
+.deck{grid-column:2 / span 8;display:grid;grid-template-columns:repeat(8,68px);gap:8px;padding:12px 0 10px;border:1px solid var(--border);border-radius:12px;background:linear-gradient(180deg,#131417,#0f1012)}
+.knob{display:flex;flex-direction:column;align-items:center;gap:3px;cursor:ns-resize;user-select:none;touch-action:none}
+.knob label{font-size:10.5px;color:var(--t3);cursor:ns-resize;white-space:nowrap}
+.knob .kv{font:500 10.5px var(--mono);color:var(--t1);white-space:nowrap;max-width:66px;overflow:hidden;text-overflow:ellipsis}
+.knob.na{opacity:.25;cursor:default}
+.knob.na label{cursor:default}
+.focuscard{border:1px solid var(--border);border-radius:12px;background:var(--surface);padding:12px 14px;display:flex;flex-direction:column;gap:7px;justify-content:center;min-width:0}
+.focuscard .t4{font-size:11px}
+.focuscard b{color:var(--t1);font-weight:500;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.colh{font-size:11.5px;color:var(--t2);font-weight:500;line-height:1.25;padding:8px 2px 2px;display:flex;flex-direction:column;justify-content:flex-end}
+.colh small{color:var(--t4);font-weight:400;font-size:10.5px}
+.colh::before{content:"";width:14px;height:3px;border-radius:2px;background:var(--c);margin-bottom:7px}
+.rowh{display:flex;flex-direction:column;justify-content:center;gap:4px;padding:0 10px;border-radius:9px;cursor:pointer;height:54px;min-width:0}
+.rowh:hover{background:var(--hover)}
+.rowh.on{background:var(--sel)}
+.rowh b{color:var(--t1);font-weight:500;font-size:12.5px;display:flex;align-items:center;gap:7px;white-space:nowrap}
+.rowh .meta{font-size:11px;color:var(--t4);display:flex;gap:6px;align-items:center;white-space:nowrap;overflow:hidden}
+.rowh .rate{font-family:var(--mono);font-size:10.5px}
+.rowh .key{font:500 10px var(--mono);color:var(--t4);width:14px}
+.pad{height:54px;border-radius:9px;background:color-mix(in srgb,var(--c) 7%,#121316);border:1px solid color-mix(in srgb,var(--c) 17%,transparent);position:relative;overflow:hidden;cursor:pointer;transition:background .12s,box-shadow .15s,transform .06s,border-color .12s;user-select:none}
+.pad:hover{background:color-mix(in srgb,var(--c) 14%,#121316)}
+.pad:active{transform:scale(.965)}
+.pad .lv{position:absolute;left:0;right:0;bottom:0;background:linear-gradient(180deg,color-mix(in srgb,var(--c) 80%,#fff 0%),color-mix(in srgb,var(--c) 60%,#000));opacity:0;transition:height .15s}
+.pad.on{border-color:color-mix(in srgb,var(--c) 80%,#fff);box-shadow:0 0 24px -6px var(--c),inset 0 1px 0 rgba(255,255,255,.2);background:color-mix(in srgb,var(--c) 30%,#121316)}
+.pad.on .lv{opacity:1}
+.pad .pl{position:absolute;left:7px;bottom:5px;font:600 10.5px var(--mono);color:rgba(255,255,255,.95);opacity:0;text-shadow:0 1px 2px rgba(0,0,0,.4)}
+.pad.on .pl{opacity:1}
+.pad .o{position:absolute;top:6px;right:6px;width:5px;height:5px;border-radius:50%;background:color-mix(in srgb,var(--c) 60%,#fff);opacity:.5}
+.pad.paused{border-style:dashed;border-color:color-mix(in srgb,var(--c) 45%,transparent)}
+.pad.focus{outline:1.5px solid rgba(255,255,255,.85);outline-offset:2px}
+.pad.muted{filter:saturate(.15) brightness(.7)}
+.pad.fire{animation:fire .32s ease-out}
+@keyframes fire{0%{filter:brightness(2) saturate(1.3)}100%{filter:none}}
+.scene{width:30px;height:30px;border-radius:50%;border:1px solid var(--border2);align-self:center;justify-self:center;display:grid;place-items:center;color:var(--t4)}
+.scene:hover{color:var(--t1);border-color:var(--border3)}
+.scene.mut{color:var(--orange);border-color:rgba(242,153,74,.5);background:rgba(242,153,74,.1)}
+.scopelbl{display:flex;flex-direction:column;justify-content:center;padding:0 10px;font-size:11.5px;color:var(--t4)}
+.scopebtn{height:34px;border-radius:8px;border:1px solid var(--border2);background:var(--surface);font-size:10.5px;color:var(--t3);display:flex;flex-direction:column;align-items:center;justify-content:center;white-space:nowrap;overflow:hidden;padding:0 4px;line-height:1.2;position:relative}
+.scopebtn:hover{color:var(--t1)}
+.scopebtn.on{color:var(--t1);border-color:color-mix(in srgb,var(--c) 70%,transparent);background:color-mix(in srgb,var(--c) 12%,var(--surface))}
+.scopebtn .n{font:10px var(--mono);color:var(--t4)}
+.scopebtn.empty{border-style:dashed;background:transparent;color:var(--t5)}
+.legend{grid-column:1 / -1;display:flex;gap:18px;align-items:center;flex-wrap:wrap;color:var(--t4);font-size:11.5px;padding-top:12px;border-top:1px solid var(--border);margin-top:8px}
+.legend .sw2{display:inline-flex;align-items:center;gap:6px}
+.legend .sq{width:10px;height:10px;border-radius:3px;display:inline-block}
+
+/* ── clients board ── */
+.board{flex:1;display:flex;gap:14px;overflow:auto;padding:14px 16px;min-height:0;align-items:flex-start}
+.bcol{width:296px;flex:none;display:flex;flex-direction:column;gap:8px;border-radius:10px;padding:4px;transition:background .15s;min-height:200px}
+.bcol.over{background:rgba(113,112,255,.07);box-shadow:0 0 0 1px rgba(113,112,255,.45) inset}
+.bch{display:flex;align-items:center;gap:8px;height:30px;padding:0 4px 0 6px;color:var(--t1);font-weight:500}
+.bch .t4{font-weight:400}
+.ccard{background:var(--bg2);border:1px solid var(--border);border-radius:9px;padding:10px 12px;font-size:12px;display:flex;flex-direction:column;gap:8px}
+.ccard .row{display:flex;flex-wrap:wrap;gap:5px;align-items:center}
+.ccard .lbl{font-size:11px;color:var(--t4);width:100%}
+.card{background:var(--surface);border:1px solid var(--border2);border-radius:8px;padding:10px 12px;display:flex;flex-direction:column;gap:8px;cursor:grab;box-shadow:0 1px 2px rgba(0,0,0,.3)}
+.card:hover{border-color:var(--border3)}
+.card.dragging{opacity:.35}
+.card .top{display:flex;align-items:center;gap:8px}
+.card b{color:var(--t1);font-weight:500;font-size:12.5px}
+.card .row{display:flex;flex-wrap:wrap;gap:5px;align-items:center}
+.addcard{border:1px dashed var(--border2);border-radius:8px;height:34px;display:flex;align-items:center;justify-content:center;gap:6px;color:var(--t4);font-size:12px}
+.addcard:hover{color:var(--t2);border-color:var(--border3)}
+.bcard{background:var(--surface);border:1px solid var(--border2);border-radius:8px;padding:10px 12px;display:flex;flex-direction:column;gap:9px}
+.bcard .seg{align-self:flex-start}
+
+/* ── palette ── */
+.overlay{position:absolute;inset:0;background:rgba(0,0,0,.55);backdrop-filter:blur(1.5px);display:flex;justify-content:center;align-items:flex-start;padding-top:11vh;z-index:20}
+.palette{width:700px;background:rgba(25,26,30,.985);border:1px solid var(--border2);border-radius:12px;box-shadow:0 30px 80px rgba(0,0,0,.65),0 0 0 1px rgba(0,0,0,.5);overflow:hidden}
+.pal-top{display:flex;align-items:center;gap:6px;padding:12px 14px 0}
+.pal-in{display:flex;align-items:center;gap:10px;padding:8px 16px 14px;border-bottom:1px solid var(--border)}
+.pal-in input{flex:1;font-size:16px;color:var(--t1);caret-color:var(--accent)}
+.pal-in input::placeholder{color:var(--t4)}
+.pal-prev{padding:12px 16px;border-bottom:1px solid var(--border);display:flex;flex-wrap:wrap;align-items:center;gap:5px;font-size:13px;color:var(--t3);line-height:2;background:rgba(255,255,255,.012)}
+.tok{display:inline-flex;align-items:center;gap:5px;height:22px;padding:0 7px;border-radius:5px;background:rgba(255,255,255,.07);color:var(--t1);font-weight:500;font-size:12.5px}
+.tok.def{background:transparent;border:1px dashed var(--border3);color:var(--t3);font-weight:400}
+.tok.fault{height:22px;font-size:12.5px}
+.pal-prev .est{margin-left:auto;font-size:12px;color:var(--t4)}
+.pal-prev .est b{color:var(--t2);font-weight:500;font-family:var(--mono);font-size:11.5px}
+.pal-list{max-height:340px;overflow:auto;padding:6px}
+.pal-sec{font-size:11.5px;color:var(--t4);padding:8px 10px 4px}
+.pal-it{display:flex;align-items:center;gap:10px;height:36px;padding:0 10px;border-radius:7px;color:var(--t2);cursor:pointer}
+.pal-it .i{color:var(--t3)}
+.pal-it.on{background:rgba(255,255,255,.06);color:var(--t1)}
+.pal-it .d{color:var(--t4);font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pal-it .r{margin-left:auto;display:flex;gap:4px}
+.pal-foot{display:flex;gap:16px;align-items:center;padding:9px 14px;border-top:1px solid var(--border);font-size:11.5px;color:var(--t4)}
+.pal-foot span{display:inline-flex;gap:6px;align-items:center}
+</style>
+</head>
+<body>
+<div class="mbar">
+  <div class="brand">GaslightMQ Proxy UI<small>mockups</small></div>
+  <div class="mtabs" id="mtabs"></div>
+  <div class="mdesc" id="mdesc"></div>
+</div>
+<div id="stage"></div>
+<div id="toasts"></div>
+
+<script>
+/* ════════════════════════ helpers ════════════════════════ */
+const $=(s,e=document)=>e.querySelector(s), $$=(s,e=document)=>[...e.querySelectorAll(s)];
+let seed=1337; const rnd=()=>(seed=(seed*16807)%2147483647)/2147483647;
+const int=n=>Math.floor(rnd()*n), pick=a=>a[int(a.length)];
+const wpick=a=>{let s=a.reduce((x,y)=>x+y[0],0),r=rnd()*s;for(const it of a){if((r-=it[0])<=0)return it[1]}return a[a.length-1][1]};
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const fmtN=n=>n.toLocaleString('en-US');
+const fmtMs=v=>v>=1000?(v%1000===0?v/1000:(v/1000).toFixed(v%100===0?1:2))+' s':v+' ms';
+const fmtB=b=>b>=1024?(b/1024).toFixed(1)+' KB':b+' B';
+const fmtT=ms=>{const h=Math.floor(ms/3600000),m=Math.floor(ms/60000)%60,s=Math.floor(ms/1000)%60,x=ms%1000;return `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}.${String(x).padStart(3,'0')}`};
+
+const I={
+ rec:'<circle cx="8" cy="8" r="5.5"/><circle cx="8" cy="8" r="2.2" fill="currentColor" stroke="none"/>',
+ zap:'<path d="M8.8 1.8 3.5 9h4l-.6 5.2L12.5 7h-4z"/>',
+ grid:'<rect x="2.5" y="2.5" width="4.5" height="4.5" rx="1"/><rect x="9" y="2.5" width="4.5" height="4.5" rx="1"/><rect x="2.5" y="9" width="4.5" height="4.5" rx="1"/><rect x="9" y="9" width="4.5" height="4.5" rx="1"/>',
+ users:'<circle cx="6" cy="5.5" r="2.5"/><path d="M1.8 13.5c.5-2.3 2.2-3.5 4.2-3.5s3.7 1.2 4.2 3.5"/><path d="M10.5 3.2a2.4 2.4 0 0 1 0 4.6M12 10.2c1.2.5 2 1.6 2.3 3.3"/>',
+ server:'<rect x="2.5" y="2.5" width="11" height="4.5" rx="1.2"/><rect x="2.5" y="9" width="11" height="4.5" rx="1.2"/><circle cx="5" cy="4.75" r=".7" fill="currentColor"/><circle cx="5" cy="11.25" r=".7" fill="currentColor"/>',
+ hash:'<path d="M3 6h10.5M2.5 10H13M6.5 2.5 5.5 13.5M10.5 2.5l-1 11"/>',
+ search:'<circle cx="7" cy="7" r="4.5"/><path d="m10.5 10.5 3 3"/>',
+ plus:'<path d="M8 3v10M3 8h10"/>',
+ chev:'<path d="m4.5 6.5 3.5 3.5 3.5-3.5"/>',
+ chevr:'<path d="m6.5 4.5 3.5 3.5-3.5 3.5"/>',
+ filter:'<path d="M2.5 4h11M4.5 8h7M6.5 12h3"/>',
+ sliders:'<path d="M2.5 5h6M11.5 5h2M2.5 11h2M7.5 11h6"/><circle cx="10" cy="5" r="1.5"/><circle cx="6" cy="11" r="1.5"/>',
+ x:'<path d="m4.5 4.5 7 7M11.5 4.5l-7 7"/>',
+ check:'<path d="m3.5 8.5 3 3 6-7"/>',
+ globe:'<circle cx="8" cy="8" r="5.5"/><path d="M2.5 8h11M8 2.5c1.6 1.6 2.3 3.5 2.3 5.5S9.6 11.9 8 13.5C6.4 11.9 5.7 10 5.7 8S6.4 4.1 8 2.5z"/>',
+ link:'<path d="M7 9a2.5 2.5 0 0 0 3.5 0l2-2A2.5 2.5 0 0 0 9 3.5l-.7.7M9 7a2.5 2.5 0 0 0-3.5 0l-2 2A2.5 2.5 0 0 0 7 12.5l.7-.7"/>',
+ more:'<circle cx="3.5" cy="8" r=".9" fill="currentColor"/><circle cx="8" cy="8" r=".9" fill="currentColor"/><circle cx="12.5" cy="8" r=".9" fill="currentColor"/>',
+ pause:'<path d="M6 4v8M10 4v8"/>',
+ edit:'<path d="M10.5 2.5l3 3-8 8h-3v-3z"/>',
+ play:'<path d="M5.5 3.8v8.4l6.5-4.2z"/>',
+ topic:'<path d="M3 4.5h10M3 8h10M3 11.5h6"/>',
+ conn:'<path d="M2.5 8h3M10.5 8h3"/><circle cx="8" cy="8" r="2.5"/>',
+ group:'<circle cx="5" cy="6" r="2"/><circle cx="11" cy="6" r="2"/><path d="M2 12.5c.4-1.6 1.5-2.5 3-2.5s2.6.9 3 2.5M8 12.5c.4-1.6 1.5-2.5 3-2.5s2.6.9 3 2.5"/>',
+ txn:'<path d="M3 5.5h8.5L9.5 3.5M13 10.5H4.5l2 2"/>',
+ out:'<circle cx="8" cy="8" r="5.5"/><path d="M8 5v3.2l2 1.3"/>',
+ cmd:'<path d="M6 6V4.5a1.5 1.5 0 1 0-1.5 1.5H11.5a1.5 1.5 0 1 0-1.5-1.5V11.5a1.5 1.5 0 1 0 1.5-1.5H4.5A1.5 1.5 0 1 0 6 11.5z"/>',
+ midi:'<rect x="1.5" y="4" width="13" height="8" rx="1.8"/><path d="M4.5 8h.01M7 8h.01M9.5 8h.01M12 8h.01"/>',
+ spark:'<path d="M8 2v3M8 11v3M2 8h3M11 8h3M3.8 3.8l2 2M10.2 10.2l2 2M3.8 12.2l2-2M10.2 5.8l2-2"/>',
+ sel:'<path d="M3 3h4M3 3v4M13 3H9M13 3v4M3 13h4M3 13V9M13 13H9M13 13V9"/>',
+ drag:'<circle cx="6" cy="4" r=".8" fill="currentColor"/><circle cx="10" cy="4" r=".8" fill="currentColor"/><circle cx="6" cy="8" r=".8" fill="currentColor"/><circle cx="10" cy="8" r=".8" fill="currentColor"/><circle cx="6" cy="12" r=".8" fill="currentColor"/><circle cx="10" cy="12" r=".8" fill="currentColor"/>',
+};
+const ic=(n,s=14)=>`<svg class="i" width="${s}" height="${s}" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">${I[n]}</svg>`;
+
+function toast(html){const t=document.createElement('div');t.className='toast';t.innerHTML=ic('check')+`<div>${html}</div>`;$('#toasts').appendChild(t);setTimeout(()=>{t.style.transition='.3s';t.style.opacity=0},2600);setTimeout(()=>t.remove(),3000)}
+function menu(anchor,items,onPick){
+  $$('.menu').forEach(m=>m.remove());
+  const m=document.createElement('div');m.className='menu';
+  m.innerHTML=items.map((it,i)=>it.sec?`<div class="ms">${it.sec}</div>`:`<div class="mi" data-i="${i}">${it.icon||''}${it.label}${it.d?`<span class="d">${it.d}</span>`:''}</div>`).join('');
+  document.body.appendChild(m);
+  const r=anchor.getBoundingClientRect();
+  m.style.top=(r.bottom+6)+'px';
+  m.style.left=Math.min(r.left,innerWidth-m.offsetWidth-12)+'px';
+  m.addEventListener('click',e=>{const mi=e.target.closest('.mi');if(!mi)return;m.remove();onPick(items[+mi.dataset.i])});
+  setTimeout(()=>document.addEventListener('click',function off(e){if(!m.contains(e.target)){m.remove();document.removeEventListener('click',off)}}),0);
+}
+
+/* ════════════════════════ domain data ════════════════════════ */
+const API={0:['Produce',11,'produce'],1:['Fetch',16,'fetch'],2:['ListOffsets',8,'fetch'],3:['Metadata',12,'meta'],8:['OffsetCommit',9,'group'],9:['OffsetFetch',9,'group'],10:['FindCoordinator',5,'group'],11:['JoinGroup',9,'group'],12:['Heartbeat',4,'group'],14:['SyncGroup',5,'group'],18:['ApiVersions',3,'meta'],22:['InitProducerId',5,'txn'],24:['AddPartitionsToTxn',4,'txn'],26:['EndTxn',4,'txn'],32:['DescribeConfigs',4,'admin']};
+const CAT={produce:'#4cb782',fetch:'#4ea7fc',meta:'#8a8f98',group:'#f2c94c',txn:'#c084fc',admin:'#e879a6'};
+const API_NAMES=Object.values(API).map(a=>a[0]);
+const apiCat=name=>{const e=Object.values(API).find(a=>a[0]===name);return e?CAT[e[2]]:'#8a8f98'};
+const apiPill=(name,ver)=>`<span class="api" style="--c:${apiCat(name)}" data-ff="api" data-fv="${name}"><i></i>${name}${ver!=null?`<span class="v">v${ver}</span>`:''}</span>`;
+
+const CLIENTS=[
+ {id:'order-ingest',sw:'apache-kafka-java 3.8.0',color:'#4cb782',conns:[{id:4,b:1},{id:5,b:2},{id:6,b:3},{id:7,b:2}],w:5},
+ {id:'payments-svc',sw:'librdkafka 2.6.1',color:'#4ea7fc',conns:[{id:1,b:1},{id:2,b:3},{id:3,b:2}],w:3},
+ {id:'analytics-etl',sw:'franz-go 1.18.0',color:'#f2c94c',conns:[{id:8,b:1},{id:9,b:3}],w:3},
+ {id:'kafka-ui',sw:'apache-kafka-java 3.7.1',color:'#e879a6',conns:[{id:10,b:1}],w:.8},
+];
+const CL=Object.fromEntries(CLIENTS.map(c=>[c.id,c]));
+const BROKERS=[{id:1,up:'kafka-1:9092',port:19092,state:'live'},{id:2,up:'kafka-2:9092',port:19093,state:'live'},{id:3,up:'kafka-3:9092',port:19094,state:'live'}];
+const TOPICS=['orders.eu','orders.us','payments.settled','inventory.changes','audit.log'];
+const CODES=[
+ ['NOT_LEADER_OR_FOLLOWER',6,'NOT_LEADER',1],['LEADER_NOT_AVAILABLE',5,'LEADER_NA',1],['REQUEST_TIMED_OUT',7,'TIMED_OUT',1],
+ ['NOT_ENOUGH_REPLICAS',19,'NOT_ENOUGH_REP',1],['COORDINATOR_NOT_AVAILABLE',15,'COORD_NA',1],['NOT_COORDINATOR',16,'NOT_COORD',1],
+ ['UNKNOWN_TOPIC_OR_PARTITION',3,'UNKNOWN_TP',1],['REBALANCE_IN_PROGRESS',27,'REBALANCING',1],['KAFKA_STORAGE_ERROR',56,'STORAGE',1],
+ ['TOPIC_AUTHORIZATION_FAILED',29,'TOPIC_AUTHZ',0],['INVALID_PRODUCER_EPOCH',47,'INV_EPOCH',0],['PRODUCER_FENCED',90,'FENCED',0],
+ ['CLUSTER_AUTHORIZATION_FAILED',31,'CLUSTER_AUTHZ',0],['MESSAGE_TOO_LARGE',10,'TOO_LARGE',0],['UNKNOWN_SERVER_ERROR',-1,'UNKNOWN',0],
+];
+const codeInfo=n=>CODES.find(c=>c[0]===n)||[n,'?',n,0];
+const FAULT={error:{l:'Error',c:'#eb5757'},delay:{l:'Delay',c:'#f2994a'},blackhole:{l:'Blackhole',c:'#a78bfa'},disconnect:{l:'Disconnect',c:'#4ea7fc'},throttle:{l:'Throttle',c:'#2dd4bf'},unresponsive:{l:'Unresponsive',c:'#9ca3af'}};
+
+/* ── traffic generator ── */
+let clock=(14*3600+2*60+11)*1000, SEQ=48000;
+const parts=n=>{const s=new Set(),k=1+int(n);while(s.size<k)s.add(int(6));return [...s].sort((a,b)=>a-b)};
+const some=a=>{const r=a.filter(()=>rnd()<.5);return r.length?r:[pick(a)]};
+const PROFILES={
+ 'order-ingest':[
+   [8,()=>({api:0,topics:[{name:pick(['orders.eu','orders.eu','orders.us']),p:parts(2)}],acks:-1,records:1+int(40)})],
+   [1,()=>({api:3,topics:[{name:'orders.eu',p:[]},{name:'orders.us',p:[]}]})],
+   [.25,()=>({api:18})]],
+ 'payments-svc':[
+   [3,()=>({api:0,topics:[{name:'payments.settled',p:parts(1)}],acks:-1,txn:'payments-tx-1',records:1+int(5)})],
+   [1,()=>({api:24,txn:'payments-tx-1',topics:[{name:'payments.settled',p:parts(1)}]})],
+   [1,()=>({api:26,txn:'payments-tx-1'})],
+   [.2,()=>({api:22,txn:'payments-tx-1'})],
+   [3,()=>({api:1,group:'payments',topics:[{name:'orders.eu',p:parts(3)}]})],
+   [1.2,()=>({api:12,group:'payments'})],
+   [1,()=>({api:8,group:'payments',topics:[{name:'orders.eu',p:parts(2)}]})],
+   [.4,()=>({api:3,topics:[{name:'payments.settled',p:[]},{name:'orders.eu',p:[]}]})]],
+ 'analytics-etl':[
+   [5,()=>({api:1,group:'analytics-etl',topics:some(['orders.eu','orders.us','payments.settled','inventory.changes']).map(n=>({name:n,p:parts(3)}))})],
+   [1.5,()=>({api:12,group:'analytics-etl'})],
+   [1,()=>({api:8,group:'analytics-etl',topics:[{name:'orders.eu',p:parts(2)}]})],
+   [.15,()=>({api:11,group:'analytics-etl'})],[.15,()=>({api:14,group:'analytics-etl'})],
+   [.3,()=>({api:10,group:'analytics-etl'})],[.4,()=>({api:3,topics:[]})]],
+ 'kafka-ui':[
+   [1,()=>({api:3,topics:[]})],[1,()=>({api:2,topics:[{name:pick(TOPICS),p:parts(3)}]})],
+   [.6,()=>({api:32,topics:[{name:pick(TOPICS),p:[]}]})],[.5,()=>({api:9,group:pick(['payments','analytics-etl'])})]],
+};
+const BASELAT={produce:[3,12],fetch:[2,480],meta:[1,4],group:[1,6],txn:[2,9],admin:[2,12]};
+function genReq(){
+  const c=wpick(CLIENTS.map(c=>[c.w,c])), cn=pick(c.conns), b=wpick(PROFILES[c.id])();
+  const r={seq:++SEQ,t:(clock+=3+int(36)),client:c.id,sw:c.sw,conn:cn.id,broker:cn.b,ver:API[b.api][1],topics:[],...b};
+  const [lo,hi]=BASELAT[API[r.api][2]]; r.lat=lo+int(hi-lo);
+  r.bytes=r.api===0?r.records*(900+int(900)):r.api===1?int(65536):120+int(500);
+  const orders=r.topics.some(t=>t.name.startsWith('orders.'));
+  let o={k:'ok'};
+  if(r.api===0&&r.client==='order-ingest'&&orders&&rnd()<.4){const d=550+int(400);o={k:'delay',txt:'+'+d+' ms',rule:14};r.lat+=d}
+  else if(r.api===1&&r.client==='analytics-etl'&&orders&&rnd()<.3)o={k:'throttle',txt:'throttled 2 s',rule:15};
+  else if(r.api===1&&rnd()<.1)o={k:'error',txt:'NOT_LEADER_OR_FOLLOWER',rule:13};
+  else if(r.api===10&&rnd()<.25)o={k:'error',txt:'COORDINATOR_NOT_AVAILABLE',rule:11};
+  else if(r.api===26&&rnd()<.05)o={k:'error',txt:'INVALID_PRODUCER_EPOCH',rule:8};
+  r.out=o; return r;
+}
+const REQS=[]; for(let i=0;i<2400;i++)REQS.push(genReq());
+
+/* ── field model shared by filters, selectors and rules ── */
+const FIELD={
+ api:r=>[API[r.api][0]], ver:r=>[String(r.ver)], client:r=>[r.client], sw:r=>[r.sw], conn:r=>['#'+r.conn], broker:r=>['b'+r.broker],
+ acks:r=>r.acks!=null?[String(r.acks)]:[], txn:r=>r.txn?[r.txn]:[], group:r=>r.group?[r.group]:[],
+ topic:r=>r.topics.map(t=>t.name), partition:r=>r.topics.flatMap(t=>t.p.map(String)), outcome:r=>[r.out.k],
+};
+const FL={api:'API',ver:'Version',client:'Client',sw:'Software',conn:'Connection',broker:'Broker',acks:'acks',txn:'Txn ID',group:'Group',topic:'Topic',partition:'Partition',outcome:'Outcome'};
+const FIC={api:'zap',client:'users',conn:'conn',broker:'server',topic:'topic',group:'group',txn:'txn',outcome:'out',partition:'hash',ver:'hash',sw:'hash',acks:'hash'};
+const reCache={};
+const glob=(p,x)=>{if(!p.includes('*'))return p===x;const re=reCache[p]||(reCache[p]=new RegExp('^'+p.split('*').map(s=>s.replace(/[.+?^${}()|[\]\\]/g,'\\$&')).join('.*')+'$'));return re.test(x)};
+const matchAll=(r,fl,ex)=>fl.every(f=>f.f===ex||FIELD[f.f](r).some(x=>f.vals.some(v=>glob(v,x))));
+const opOf=fl=>fl.vals.length>1?'is any of':fl.vals[0].includes('*')?'matches':'is';
+const chipHtml=(fl,rm=true)=>`<div class="chip"><span class="f">${ic(FIC[fl.f]||'hash',12)}${FL[fl.f]}</span><span class="o">${opOf(fl)}</span><span class="v">${esc(fl.vals.join(', '))}</span>${rm?`<span class="x" data-rm="${fl.f}">${ic('x',12)}</span>`:''}</div>`;
+
+/* ── rules ── */
+const PADROW='ABCDEFGH';
+let RID=15;
+const RULES=[
+ {id:14,title:'Slow down order producers',desc:'Simulates a slow partition leader for the ingest service.',scope:'order-ingest',match:[{f:'api',vals:['Produce']},{f:'topic',vals:['orders.*']}],fault:'delay',ms:750,jitter:200,prob:40,status:'active',pad:[0,3],dur:'Until disabled'},
+ {id:13,title:'Leader churn on Fetch',desc:'Every consumer sees leadership moving around.',scope:'all',match:[{f:'api',vals:['Fetch']}],fault:'error',code:'NOT_LEADER_OR_FOLLOWER',prob:10,status:'active',pad:[1,0],dur:'Until disabled'},
+ {id:15,title:'Throttle analytics fetches',desc:'Quota pressure on the ETL consumer only.',scope:'analytics-etl',match:[{f:'api',vals:['Fetch']},{f:'topic',vals:['orders.*']}],fault:'throttle',thr:2000,prob:30,status:'active',pad:[1,7],dur:'Until disabled'},
+ {id:11,title:'Coordinator flaps',desc:'',scope:'all',match:[{f:'api',vals:['FindCoordinator']}],fault:'error',code:'COORDINATOR_NOT_AVAILABLE',prob:25,status:'active',pad:[3,0],dur:'Until disabled'},
+ {id:8,title:'Fence the transactional producer',desc:'',scope:'payments-svc',match:[{f:'api',vals:['EndTxn']}],fault:'error',code:'INVALID_PRODUCER_EPOCH',prob:5,status:'active',pad:[7,1],dur:'Until disabled'},
+ {id:12,title:'Lose heartbeats',desc:'Forces a session timeout and rebalance.',scope:'analytics-etl',match:[{f:'api',vals:['Heartbeat']},{f:'group',vals:['analytics-etl']}],fault:'blackhole',prob:100,status:'paused',pad:[5,5],dur:'30 s'},
+ {id:10,title:'Metadata takes 3 s',desc:'',scope:'order-ingest',match:[{f:'api',vals:['Metadata']}],fault:'delay',ms:3000,jitter:0,prob:100,status:'draft',pad:null,dur:'Until disabled'},
+ {id:9,title:'Broker 2 goes unresponsive',desc:'Accepts connections, never answers.',scope:'broker',match:[{f:'broker',vals:['b2']}],fault:'unresponsive',prob:100,status:'scheduled',pad:null,dur:'30 s at 14:05'},
+];
+const ruleById=id=>RULES.find(r=>r.id===id);
+const ruleMatches=(rule,r)=>(rule.scope==='all'||rule.scope==='broker'||r.client===rule.scope)&&matchAll(r,rule.match);
+const faultSummary=r=>({error:r.code,delay:fmtMs(r.ms||0)+(r.jitter?` ±${fmtMs(r.jitter)}`:''),blackhole:'no response',disconnect:'close socket',throttle:fmtMs(r.thr||0),unresponsive:r.dur}[r.fault]);
+const faultBadge=r=>`<span class="fault" style="--c:${FAULT[r.fault].c}">${FAULT[r.fault].l} <b>${esc(faultSummary(r))}</b></span>`;
+const scopeName=s=>s==='all'?'All clients':s==='broker'?'Brokers':s;
+const scopeDot=s=>s==='all'?`<span class="t3">${ic('globe',13)}</span>`:s==='broker'?`<span class="t3">${ic('server',13)}</span>`:`<span class="sdot" style="background:${CL[s].color}"></span>`;
+function statusIcon(s,size=14){
+  const o=`width="${size}" height="${size}" viewBox="0 0 14 14" fill="none" class="i"`;
+  if(s==='active')return `<svg ${o}><circle cx="7" cy="7" r="5.5" stroke="#4cb782" stroke-width="1.5"/><circle cx="7" cy="7" r="2.6" fill="#4cb782"/></svg>`;
+  if(s==='paused')return `<svg ${o}><circle cx="7" cy="7" r="5.5" stroke="#8a8f98" stroke-width="1.5"/><path d="M5.6 5v4M8.4 5v4" stroke="#8a8f98" stroke-width="1.4" stroke-linecap="round"/></svg>`;
+  if(s==='draft')return `<svg ${o}><circle cx="7" cy="7" r="5.5" stroke="#62666d" stroke-width="1.5" stroke-dasharray="2 2.2"/></svg>`;
+  return `<svg ${o}><circle cx="7" cy="7" r="5.5" stroke="#4ea7fc" stroke-width="1.5"/><path d="M7 4.3V7l1.8 1.2" stroke="#4ea7fc" stroke-width="1.4" stroke-linecap="round"/></svg>`;
+}
+const STATUS_L={active:'Active',paused:'Paused',draft:'Draft',scheduled:'Scheduled'};
+function sparkVals(id,n=32,active=true){let s=id*9301+49297;const v=[];for(let i=0;i<n;i++){s=(s*9301+49297)%233280;v.push(active?.25+.75*(s/233280):.05+.08*(s/233280))}return v}
+function spark(id,w,h,c,active){const v=sparkVals(id,24,active);return `<svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}"><polyline fill="none" stroke="${active?c:'#3e4147'}" stroke-width="1.4" stroke-linejoin="round" points="${v.map((x,i)=>`${(i/(v.length-1)*w).toFixed(1)},${(h-1-x*(h-3)).toFixed(1)}`).join(' ')}"/></svg>`}
+
+/* ── pad grid model (pads are rules with a pad position) ── */
+const PROWS=[
+ {name:'Produce',sub:'orders.*',match:[{f:'api',vals:['Produce']},{f:'topic',vals:['orders.*']}]},
+ {name:'Fetch',sub:'all topics',match:[{f:'api',vals:['Fetch']}]},
+ {name:'Metadata',sub:'',match:[{f:'api',vals:['Metadata']}]},
+ {name:'FindCoordinator',sub:'',match:[{f:'api',vals:['FindCoordinator']}]},
+ {name:'Join + Sync',sub:'group protocol',match:[{f:'api',vals:['JoinGroup','SyncGroup']}]},
+ {name:'Heartbeat',sub:'',match:[{f:'api',vals:['Heartbeat']}]},
+ {name:'OffsetCommit',sub:'',match:[{f:'api',vals:['OffsetCommit']}]},
+ {name:'Transactions',sub:'InitPid · AddParts · EndTxn',match:[{f:'api',vals:['InitProducerId','AddPartitionsToTxn','EndTxn']}]},
+];
+const PCOLS=[
+ {name:'Error',sub:'retriable',c:'#eb5757',fault:'error',code:'NOT_LEADER_OR_FOLLOWER'},
+ {name:'Error',sub:'fatal',c:'#d6456f',fault:'error',code:'TOPIC_AUTHORIZATION_FAILED'},
+ {name:'Delay',sub:'100 ms',c:'#f2994a',fault:'delay',ms:100},
+ {name:'Delay',sub:'1 s',c:'#f2994a',fault:'delay',ms:1000},
+ {name:'Delay',sub:'10 s',c:'#f2994a',fault:'delay',ms:10000},
+ {name:'Blackhole',sub:'timeout',c:'#a78bfa',fault:'blackhole'},
+ {name:'Disconnect',sub:'close socket',c:'#4ea7fc',fault:'disconnect'},
+ {name:'Throttle',sub:'throttle_time',c:'#2dd4bf',fault:'throttle',thr:2000},
+];
+const PSCOPES=[{id:'all',l:'All clients',c:'#7170ff'},...CLIENTS.map(c=>({id:c.id,l:c.id,c:c.color}))];
+const padRule=(scope,r,c)=>RULES.find(x=>x.scope===scope&&x.pad&&x.pad[0]===r&&x.pad[1]===c);
+const DRAFTS={};
+function padParams(scope,r,c){
+  const ru=padRule(scope,r,c); if(ru)return ru;
+  const k=scope+':'+r+','+c, col=PCOLS[c];
+  return DRAFTS[k]||(DRAFTS[k]={fault:col.fault,code:col.code,ms:col.ms||0,jitter:0,thr:col.thr||0,prob:100,burst:0,hold:0,ramp:0});
+}
+function ensurePadRule(scope,r,c){
+  let ru=padRule(scope,r,c); if(ru)return ru;
+  const p=padParams(scope,r,c), row=PROWS[r], col=PCOLS[c];
+  ru={id:++RID,title:`${col.name} ${col.sub} on ${row.name}${row.sub&&row.sub!=='all topics'&&!row.sub.includes('·')?' '+row.sub:''}`,desc:'Created from the pad grid.',scope,match:JSON.parse(JSON.stringify(row.match)),
+      fault:col.fault,code:p.code,ms:p.ms,jitter:p.jitter,thr:p.thr,prob:p.prob,burst:p.burst,hold:p.hold,ramp:p.ramp,status:'paused',pad:[r,c],dur:'Until disabled'};
+  RULES.push(ru); return ru;
+}
+
+/* ── shared UI state ── */
+let recording=true, recStart=Date.now()-134000;
+let filters=[{f:'client',vals:['order-ingest','payments-svc']}];
+let selRule=14, selReq=null, selFields=null;
+let pScope='all', pFocus=[1,0], pMode='latch'; const pMuted=new Set();
+const SELECTORS=[
+ {n:'Order producers',m:[{f:'api',vals:['Produce']},{f:'topic',vals:['orders.*']}]},
+ {n:'Payments transactions',m:[{f:'client',vals:['payments-svc']},{f:'txn',vals:['payments-tx-1']}]},
+ {n:'Group coordination',m:[{f:'api',vals:['FindCoordinator','JoinGroup','SyncGroup','Heartbeat']}]},
+ {n:'Analytics fetchers',m:[{f:'client',vals:['analytics-etl']},{f:'api',vals:['Fetch']}]},
+];
+const elapsed=()=>{const s=Math.floor((Date.now()-recStart)/1000);return `${String(Math.floor(s/60)).padStart(2,'0')}:${String(s%60).padStart(2,'0')}`};
+
+/* ════════════════════════ sidebar ════════════════════════ */
+function sidebar(active){
+  const nAct=RULES.filter(r=>r.status==='active').length;
+  const nav=[['record','rec','Live traffic',fmtN(REQS.length)],['rules','zap','Rules',nAct],['pads','grid','Pads',''],['clients','users','Clients',CLIENTS.length],['brokers','server','Brokers',BROKERS.length]];
+  return `<aside class="side">
+   <div class="ws"><div class="logo"></div><b>gaslightmq</b><span class="t4">${ic('chev',12)}</span><span class="sp"></span>
+     <button class="ib" data-go="palette" title="Quick inject ⌘K">${ic('search')}</button><button class="ib" data-go="palette" title="New rule">${ic('edit')}</button></div>
+   <button class="recbtn ${recording?'on':''}" data-rec><span class="dot"></span>${recording?'Recording':'Start recording'}<span class="mono" data-elapsed>${recording?elapsed():'R'}</span></button>
+   ${nav.map(([k,i,l,c])=>`<div class="nav ${active===k?'on':''}" data-go="${k==='brokers'?'clients':k}">${ic(i,15)}${l}<span class="cnt">${c}</span></div>`).join('')}
+   <div class="sec">Scopes</div>
+   <div class="nav" data-go="clients">${ic('globe',15)}All clients<span class="cnt">${RULES.filter(r=>r.scope==='all').length}</span></div>
+   ${CLIENTS.map(c=>`<div class="nav" data-go="clients"><span style="width:15px;display:grid;place-items:center"><span class="sdot" style="background:${c.color}"></span></span>${c.id}<span class="cnt">${c.conns.length} conn</span></div>`).join('')}
+   <div class="sec">Selectors</div>
+   ${SELECTORS.map(s=>`<div class="nav" title="${esc(s.m.map(f=>FL[f.f]+' '+opOf(f)+' '+f.vals.join(', ')).join(' · '))}"><span class="t4">${ic('hash',15)}</span>${esc(s.n)}</div>`).join('')}
+   <div class="sfoot">
+     <div class="hw" data-go="pads"><div class="mini">${miniCells(pScope)}</div><div style="min-width:0"><div class="t1" style="font-size:12px;font-weight:500">Push 2</div><div class="t4" style="font-size:11px">connected · ${scopeName(pScope)}</div></div></div>
+     <div class="addr"><i></i>:9092 → kafka-1:9092</div>
+   </div></aside>`;
+}
+function miniCells(scope){let h='';for(let r=0;r<8;r++)for(let c=0;c<8;c++){const ru=padRule(scope,r,c);h+=`<i style="${ru&&ru.status==='active'?`background:${PCOLS[c].c}`:ru?`background:${PCOLS[c].c}55`:''}"></i>`}return h}
+function bindSidebar(app){
+  app.querySelector('.side').addEventListener('click',e=>{
+    const g=e.target.closest('[data-go]'); if(g){show(VIEWS.findIndex(v=>v.k===g.dataset.go));return}
+    if(e.target.closest('[data-rec]')){recording=!recording;if(recording)recStart=Date.now();show(cur)}
+  });
+}
+
+/* ════════════════════════ view: record / selector ════════════════════════ */
+function renderRecord(stage,mode){
+  const sel=mode==='select';
+  if(sel&&!selReq){selReq=REQS.slice().reverse().find(r=>r.api===0&&r.client==='order-ingest'&&r.topics[0].name==='orders.eu');selFields=fieldsOf(selReq)}
+  stage.innerHTML=`<div class="app">${sidebar('record')}<main class="main">
+   <div class="hdr"><div class="crumb">${ic('rec',15)}Live traffic</div><span class="t4">·</span><span class="t3" id="rcount" style="font-size:12px"></span>
+     <span class="sp"></span>
+     <div class="seg"><button class="on">Stream</button><button>By connection</button><button>API × topic</button></div>
+     <button class="btn ghost">${ic('sliders')}Display</button>
+     <button class="btn" data-rec>${recording?`<span class="sdot" style="background:var(--red)"></span>Stop <span class="kbd">R</span>`:`<span class="sdot" style="background:var(--t4)"></span>Record <span class="kbd">R</span>`}</button>
+   </div>
+   <div class="fbar" id="fbar"></div>
+   <div class="rgrid ${sel?'sel':''}">
+     <div class="pane tree" id="tree"></div>
+     <div class="pane" id="stream"></div>
+     <div class="pane ${sel?'sheet':''}" id="right"></div>
+   </div></main></div>`;
+  const app=stage.firstElementChild; bindSidebar(app);
+  let lastSeen=REQS.at(-1).seq;
+  const selector=()=>selFields.filter(f=>f.on&&f.f).reduce((a,f)=>{const v=f.gen?f.alt:f.v;const ex=a.find(x=>x.f===f.f);ex?ex.vals.includes(v)||ex.vals.push(v):a.push({f:f.f,vals:[v]});return a},[]);
+
+  function paintCount(){$('#rcount',app).textContent=`${fmtN(REQS.length)} calls · ${CLIENTS.reduce((a,c)=>a+c.conns.length,0)} connections · ${recording?'recording '+elapsed():'paused'}`}
+  function paintFbar(){
+    const el=$('#fbar',app);
+    if(sel){
+      const s=selector(), n=REQS.filter(r=>matchAll(r,s)).length;
+      el.innerHTML=`<span class="t3" style="font-size:12px;display:flex;align-items:center;gap:6px;margin-right:4px">${ic('sel')}Draft selector</span>${s.map(f=>chipHtml(f,false)).join('')||'<span class="hint">Tick fields on the right to build a selector</span>'}<span class="sp"></span><span class="mono t3">${fmtN(n)} matches</span>`;
+      return;
+    }
+    const n=REQS.filter(r=>matchAll(r,filters)).length;
+    el.innerHTML=`${filters.map(f=>chipHtml(f)).join('')}<button class="btn ghost" id="addf">${ic('filter')}Filter</button>${filters.length?'':'<span class="hint">Click any client, topic, API or index value to filter. Click a row to build a selector from it.</span>'}
+      <span class="sp"></span><span class="mono t4" style="margin-right:6px">${fmtN(n)} / ${fmtN(REQS.length)}</span>
+      <button class="btn" id="saveSel" ${filters.length?'':'disabled style="opacity:.4"'}>${ic('hash')}Save as selector</button>
+      <button class="btn primary" id="inject" ${filters.length?'':'disabled style="opacity:.4"'}>${ic('zap')}Inject…</button>`;
+  }
+  function rowHtml(r,cls){
+    const det=r.topics.length?r.topics.map(t=>`<span class="tp" data-ff="topic" data-fv="${t.name}">${t.name}</span>${t.p.length?`<span class="pp">[${t.p.join(',')}]</span>`:''}`).join('<span class="t5">·</span>')
+      :r.api===3?'<span class="t4">all topics</span>':'';
+    const extra=[r.records?`<span class="t4">${r.records} rec · ${fmtB(r.bytes)}</span>`:'',r.group?`<span data-ff="group" data-fv="${r.group}">grp ${r.group}</span>`:'',r.txn&&!r.records?`<span data-ff="txn" data-fv="${r.txn}">${r.txn}</span>`:''].filter(Boolean).join('<span class="t5">·</span>');
+    const out=r.out.k==='ok'?'<span class="ok">ok</span>':`<span class="fault" style="--c:${FAULT[r.out.k].c}">${r.out.txt}</span><span class="r">GMQ-${r.out.rule}</span>`;
+    const w=Math.min(36,3+Math.log2(r.lat+1)*3.6);
+    return `<div class="srow ${cls}" data-seq="${r.seq}"><span class="mono t4">${fmtT(r.t)}</span>
+      <div class="who" data-ff="client" data-fv="${r.client}"><i class="sdot" style="background:${CL[r.client].color}"></i><span>${r.client}</span><span class="mono" data-ff="conn" data-fv="#${r.conn}">#${r.conn}</span></div>
+      <span class="mono t4" data-ff="broker" data-fv="b${r.broker}">b${r.broker}</span>
+      <div>${apiPill(API[r.api][0],r.ver)}</div>
+      <div class="det">${det}${det&&extra?'<span class="t5">·</span>':''}${extra}</div>
+      <div class="lat"><i style="width:${w}px;${r.out.k==='delay'?'background:#f2994a':''}"></i>${r.lat}ms</div>
+      <div class="out">${out}</div></div>`;
+  }
+  function paintStream(force){
+    const el=$('#stream',app);
+    if(!force&&(el.scrollTop>30||el.matches(':hover'))){const p=$('.newpill',el);if(p){p.classList.add('show');p.querySelector('b').textContent=REQS.at(-1).seq-lastSeen}return}
+    let rows,cls;
+    if(sel){const s=selector();rows=REQS.slice(-180).reverse();cls=r=>(r===selReq?'selected ':'')+(s.length&&matchAll(r,s)?'m':'dim')}
+    else{rows=REQS.filter(r=>matchAll(r,filters)).slice(-160).reverse();cls=r=>r.seq>lastSeen?'new':''}
+    el.innerHTML=`<button class="newpill">Paused · <b>0</b> new calls ↑</button>
+      <div class="srow thead"><span>Time</span><span>Client · conn</span><span></span><span>API</span><span>Topics · details</span><span style="text-align:right">Latency</span><span>Outcome</span></div>`+rows.map(r=>rowHtml(r,cls(r))).join('');
+    lastSeen=REQS.at(-1).seq;
+    $('.newpill',el).onclick=()=>{el.scrollTop=0;paintStream(true)};
+  }
+  function paintTree(){
+    const by={}; for(const r of REQS){by[r.client]=(by[r.client]||0)+1;by['#'+r.conn]=(by['#'+r.conn]||0)+1}
+    const t0=REQS[0].t,t1=REQS.at(-1).t, buckets={};
+    for(const r of REQS){const b=Math.min(13,Math.floor((r.t-t0)/(t1-t0+1)*14));(buckets[r.conn]||(buckets[r.conn]=Array(14).fill(0)))[b]++}
+    const on=(f,v)=>!sel&&filters.some(x=>x.f===f&&x.vals.includes(v))?'on':'';
+    $('#tree',app).innerHTML=`<div class="ph">Connections<span class="t4">${CLIENTS.reduce((a,c)=>a+c.conns.length,0)}</span><span class="sp"></span>${ic('sliders',13)}</div>`+
+      CLIENTS.map(c=>`<div class="cl ${on('client',c.id)}" data-ff="client" data-fv="${c.id}"><span class="sdot" style="background:${c.color}"></span>${c.id}<span class="mono">${fmtN(by[c.id]||0)}</span></div><div class="sub">${c.sw}</div>`+
+        c.conns.map(cn=>{const bk=buckets[cn.id]||Array(14).fill(0),mx=Math.max(...bk,1);return `<div class="cn ${on('conn','#'+cn.id)}" data-ff="conn" data-fv="#${cn.id}"><span class="mono">#${cn.id}</span><span class="mono t4">→ b${cn.b}</span><span class="act">${bk.map(v=>`<i style="height:${2+v/mx*10}px"></i>`).join('')}</span><span class="n">${fmtN(by['#'+cn.id]||0)}</span></div>`}).join('')).join('')+
+      `<div class="ph" style="margin-top:10px;position:static">Brokers<span class="t4">3</span></div>`+
+      BROKERS.map(b=>`<div class="cn ${on('broker','b'+b.id)}" data-ff="broker" data-fv="b${b.id}" style="padding-left:14px;grid-template-columns:28px 1fr auto"><span class="mono">b${b.id}</span><span class="mono t4">${b.up}</span><span class="sdot" style="background:${b.state==='live'?'var(--green)':b.state==='down'?'var(--red)':'var(--orange)'}"></span></div>`).join('');
+  }
+  function paintIndex(){
+    const FACETS=[['topic','Topics'],['api','APIs'],['group','Consumer groups'],['txn','Transactional IDs'],['client','Client IDs'],['broker','Brokers'],['outcome','Outcome']];
+    const html=FACETS.map(([f,l])=>{
+      const pool=REQS.filter(r=>matchAll(r,filters,f)), cnt={};
+      for(const r of pool)for(const v of new Set(FIELD[f](r)))cnt[v]=(cnt[v]||0)+1;
+      let vals=Object.entries(cnt).sort((a,b)=>b[1]-a[1]);
+      if(!vals.length)return '';
+      const mx=vals[0][1], cur=(filters.find(x=>x.f===f)||{vals:[]}).vals;
+      let pats=[];
+      if(f==='topic'){const pre={};for(const [v] of vals){const p=v.split('.')[0];(pre[p]=pre[p]||[]).push(v)}
+        pats=Object.entries(pre).filter(([,v])=>v.length>1).map(([p])=>{const pat=p+'.*';return [pat,pool.filter(r=>FIELD.topic(r).some(x=>glob(pat,x))).length]})}
+      const row=(v,c,pat)=>`<div class="fv ${cur.includes(v)?'on':''} ${pat?'pat':''}" data-ff="${f}" data-fv="${esc(v)}"><span class="bar" style="width:${Math.max(2,c/Math.max(mx,...pats.map(p=>p[1]))*100)}%"></span><span class="ck">${cur.includes(v)?ic('check',10):''}</span>${f==='api'?`<span class="sdot" style="width:6px;height:6px;border-radius:2px;background:${apiCat(v)}"></span>`:f==='client'?`<span class="sdot" style="background:${CL[v].color}"></span>`:f==='outcome'&&v!=='ok'?`<span class="sdot" style="background:${FAULT[v].c}"></span>`:''}<span class="nm">${esc(v)}</span><span class="c">${fmtN(c)}</span></div>`;
+      return `<div class="facet"><h4>${l}<span class="t4">${vals.length}</span></h4>${pats.map(([p,c])=>row(p,c,true)).join('')}${vals.slice(0,f==='api'?8:6).map(([v,c])=>row(v,c)).join('')}${vals.length>(f==='api'?8:6)?`<div class="t4" style="font-size:11.5px;padding:3px 0">Show ${vals.length-(f==='api'?8:6)} more</div>`:''}</div>`;
+    }).join('');
+    const nT=new Set(REQS.flatMap(FIELD.topic)).size,nA=new Set(REQS.map(r=>r.api)).size;
+    $('#right',app).innerHTML=`<div class="ph">Index<span class="t4">auto-built while recording</span></div><div class="ixnote">Indexed <span class="t2">${nT} topics</span>, <span class="t2">${nA} APIs</span>, 2 groups and 1 transactional id from ${fmtN(REQS.length)} calls. Counts respect the other active filters.</div>${html}`;
+  }
+  function paintSheet(){
+    const s=selector(), m=REQS.filter(r=>s.length&&matchAll(r,s));
+    const byC={}; m.forEach(r=>byC[r.client]=(byC[r.client]||0)+1);
+    const conns=new Set(m.map(r=>r.conn)).size;
+    const groups=[['header','Request header'],['conn','Connection'],['body',`Body · ${API[selReq.api][0]}Request v${selReq.ver}`]];
+    const yaml=s.length?s.map(f=>`  <span class="k">${{api:'api',client:'client_id',topic:'topic',conn:'connection',broker:'broker',acks:'acks',txn:'transactional_id',group:'group_id',partition:'partition',ver:'api_version',sw:'client_software'}[f.f]}</span>: ${f.vals.length>1?'['+f.vals.map(v=>`<span class="s">"${esc(v)}"</span>`).join(', ')+']':`<span class="s">"${esc(f.vals[0])}"</span>`}`).join('\n'):'  <span class="c"># nothing selected</span>';
+    $('#right',app).innerHTML=`<div class="sh-h"><div style="display:flex;gap:8px;align-items:center">${apiPill(API[selReq.api][0],selReq.ver)}<span class="mono t4">#${selReq.seq}</span><span class="sp"></span><button class="ib" title="Copy as JSON">${ic('link')}</button><button class="ib" data-close>${ic('x')}</button></div>
+        <div class="t1" style="font-size:15px;font-weight:600;margin-top:12px;letter-spacing:-.01em">Selector from this request</div>
+        <div class="t3" style="font-size:12px;margin-top:3px">Tick the fields that identify “calls like this one”. Matching rows light up in the stream.</div>
+        <div class="t4 mono" style="font-size:11px;margin-top:8px">${fmtT(selReq.t)} · ${selReq.client} #${selReq.conn} → b${selReq.broker} · ${selReq.lat} ms</div></div>
+      ${groups.map(([g,l])=>`<div class="fgrp">${l}</div>`+selFields.map((f,i)=>f.g!==g?'':`<div class="fld ${f.on?'on':''} ${f.f?'':'info'}" data-fi="${i}" style="padding-left:${16+f.depth*14}px">${f.f?`<span class="cb">${f.on?ic('check',10):''}</span>`:'<span></span>'}<span class="k">${f.k}</span><span class="val">${f.alt?`<button class="gen ${f.gen?'on':''}" data-gen="${i}" title="Generalise">${esc(f.gen?f.alt:f.alt)}</button>`:''}${f.gen?`<span class="t4" style="text-decoration:line-through">${esc(f.d||f.v)}</span>`:esc(f.d||f.v)}</span></div>`).join('')).join('')}
+      <div class="mcard"><div class="t3" style="font-size:12px;margin-bottom:4px">Matches in this recording</div>
+        <div class="big">${fmtN(m.length)}<span>of ${fmtN(REQS.length)} calls · ${(m.length/REQS.length*100).toFixed(1)}% · ${conns} connections</span></div>
+        <div style="margin-top:12px;display:flex;flex-direction:column;gap:2px">${Object.entries(byC).sort((a,b)=>b[1]-a[1]).map(([c,n])=>`<div class="bd"><span style="display:flex;gap:7px;align-items:center"><span class="sdot" style="background:${CL[c].color}"></span>${c}</span><span class="b"><i style="width:${n/m.length*100}%;background:${CL[c].color}"></i></span><span class="n">${fmtN(n)}</span></div>`).join('')||'<span class="t4" style="font-size:12px">No matches.</span>'}</div></div>
+      <div class="selx"><span class="c"># selector</span>\n<span class="k">match</span>:\n${yaml}</div>
+      <div style="display:flex;gap:8px;padding:14px 16px 20px;flex-wrap:wrap"><button class="btn primary" id="ssave">${ic('hash')}Save selector</button><button class="btn" id="sinj">${ic('zap')}Inject on match…</button><button class="btn ghost" id="spad">${ic('grid')}Assign to pad row</button></div>`;
+  }
+  const repaint=()=>{paintFbar();paintStream(true);paintTree();sel?paintSheet():paintIndex()};
+  paintCount();repaint();
+
+  app.addEventListener('click',e=>{
+    const rm=e.target.closest('[data-rm]'); if(rm){filters=filters.filter(f=>f.f!==rm.dataset.rm);repaint();return}
+    if(e.target.closest('.main [data-rec]')){recording=!recording;if(recording)recStart=Date.now();show(cur);return}
+    if(e.target.closest('[data-close]')){show(VIEWS.findIndex(v=>v.k==='record'));return}
+    const gen=e.target.closest('[data-gen]'); if(gen){const f=selFields[+gen.dataset.gen];f.gen=!f.gen;f.on=true;repaint();return}
+    const fi=e.target.closest('[data-fi]'); if(fi){const f=selFields[+fi.dataset.fi];if(f.f){f.on=!f.on;repaint()}return}
+    const ff=e.target.closest('[data-ff]');
+    if(ff&&!sel){const f=ff.dataset.ff,v=ff.dataset.fv,ex=filters.find(x=>x.f===f);
+      if(ex){ex.vals.includes(v)?ex.vals.splice(ex.vals.indexOf(v),1):ex.vals.push(v);if(!ex.vals.length)filters.splice(filters.indexOf(ex),1)}else filters.push({f,vals:[v]});
+      repaint();return}
+    const row=e.target.closest('.srow[data-seq]');
+    if(row){selReq=REQS.find(r=>r.seq===+row.dataset.seq);selFields=fieldsOf(selReq);sel?repaint():show(VIEWS.findIndex(v=>v.k==='selector'));return}
+    if(e.target.closest('#saveSel')||e.target.closest('#ssave')){
+      const m=sel?selector():JSON.parse(JSON.stringify(filters)); const n=m.map(f=>f.vals.join('/')).join(' · ');
+      SELECTORS.push({n,m}); toast(`Saved selector <b>${esc(n)}</b>`); app.querySelector('.side').outerHTML=sidebar('record'); bindSidebar(app); return}
+    const inj=e.target.closest('#inject')||e.target.closest('#sinj')||e.target.closest('#spad');
+    if(inj){
+      const m=sel?selector():JSON.parse(JSON.stringify(filters));
+      if(inj.id==='spad'){menu(inj,PROWS.map((r,i)=>({label:`Row ${PADROW[i]} · replace “${r.name}”`,icon:`<span class="mono t4">${PADROW[i]}</span>`,i})),it=>{PROWS[it.i]={name:m.map(f=>f.vals.join('/')).join(' · ').slice(0,22),sub:'from selector',match:m};toast(`Pad row ${PADROW[it.i]} now targets this selector`)});return}
+      menu(inj,[{sec:'Inject on matching calls'},...['error','delay','blackhole','disconnect','throttle'].map(k=>({label:FAULT[k].l,k,icon:`<span class="sdot" style="background:${FAULT[k].c}"></span>`,d:{error:'NOT_LEADER',delay:'500 ms',blackhole:'never answer',disconnect:'close socket',throttle:'2 s'}[k]}))],it=>{
+        const cl=m.find(f=>f.f==='client'&&f.vals.length===1);
+        const r={id:++RID,title:`${FAULT[it.k].l} on ${m.filter(f=>f.f!=='client').map(f=>f.vals.join('/')).join(' · ')||'selected calls'}`,desc:'Created from recorded traffic.',scope:cl?cl.vals[0]:'all',match:m.filter(f=>f!==cl),fault:it.k,code:'NOT_LEADER_OR_FOLLOWER',ms:500,jitter:0,thr:2000,prob:100,status:'active',pad:null,dur:'Until disabled'};
+        RULES.push(r); selRule=r.id; toast(`Created <b>GMQ-${r.id}</b> · ${FAULT[it.k].l} for ${scopeName(r.scope)} <span class="t4">— open Rules (3)</span>`)});
+      return}
+    if(e.target.closest('#addf')){menu(e.target.closest('#addf'),Object.keys(FL).filter(k=>!['ver','sw','acks'].includes(k)).map(k=>({label:FL[k],icon:ic(FIC[k]),k})),it=>{toast(`Pick a ${FL[it.k].toLowerCase()} from the index on the right`)})}
+  });
+
+  timers.push(setInterval(()=>{
+    if(!recording)return;
+    const n=1+int(3);for(let i=0;i<n;i++)REQS.push(genReq());
+    if(REQS.length>6000)REQS.splice(0,REQS.length-6000);
+    paintCount(); const nav=$('.nav[data-go="record"] .cnt',app); if(nav)nav.textContent=fmtN(REQS.length);
+    if(!sel){paintStream();tickN++;if(tickN%5===0){const idle=id=>!$(id,app).matches(':hover');if(idle('#right'))paintIndex();if(idle('#tree'))paintTree();if(idle('#fbar'))paintFbar()}}
+  },450));
+}
+let tickN=0;
+function fieldsOf(r){
+  const F=[],add=(g,f,k,v,o={})=>F.push({g,f,k,v,on:false,gen:false,depth:0,...o});
+  const name=API[r.api][0];
+  add('header','api','api_key',name,{d:`${name} (${r.api})`,on:true});
+  add('header','ver','api_version',String(r.ver));
+  add('header','client','client_id',r.client,{on:true});
+  add('header','sw','client_software',r.sw);
+  add('conn','conn','connection','#'+r.conn,{d:`#${r.conn} · 10.0.4.${20+r.conn}:5${1200+r.conn*37}`});
+  add('conn','broker','broker','b'+r.broker,{d:`b${r.broker} · ${BROKERS[r.broker-1].up}`});
+  if(r.acks!=null)add('body','acks','acks',String(r.acks));
+  if(r.api===0||r.txn)add('body','txn','transactional_id',r.txn||'null',{f:r.txn?'txn':null});
+  if(r.group)add('body','group','group_id',r.group,{on:r.api!==1});
+  r.topics.forEach((t,i)=>{
+    const pre=t.name.split('.')[0], alt=TOPICS.filter(x=>x.startsWith(pre+'.')).length>1?pre+'.*':null;
+    add('body','topic',`topics[${i}].name`,t.name,{alt,gen:!!alt,on:i===0});
+    t.p.forEach(p=>add('body','partition',`partitions[].index`,String(p),{depth:1}));
+  });
+  if(r.records)add('body',null,'records',`${r.records} · ${fmtB(r.bytes)}`);
+  return F;
+}
+
+/* ════════════════════════ view: rules ════════════════════════ */
+function renderRules(stage){
+  stage.innerHTML=`<div class="app">${sidebar('rules')}<main class="main">
+   <div class="hdr"><div class="crumb">${ic('zap',15)}Rules</div>
+     <div style="display:flex;gap:2px;margin-left:10px"><button class="tab">Active <span class="t4">${RULES.filter(r=>r.status==='active').length}</span></button><button class="tab on">All <span class="t4">${RULES.length}</span></button><button class="tab">Drafts <span class="t4">${RULES.filter(r=>r.status==='draft').length}</span></button></div>
+     <span class="sp"></span><button class="btn ghost">${ic('filter')}Filter</button><button class="btn ghost">${ic('sliders')}Display</button>
+     <button class="btn" data-go2="palette">${ic('zap')}Quick inject <span class="kbd">⌘K</span></button>
+     <button class="btn primary" id="newRule">${ic('plus')}New rule <span class="kbd">C</span></button></div>
+   <div style="flex:1;display:grid;grid-template-columns:minmax(0,1fr) 380px;min-height:0">
+     <div class="pane" id="rlist"></div><div class="insp" id="insp"></div>
+   </div></main></div>`;
+  const app=stage.firstElementChild; bindSidebar(app);
+  function paintList(){
+    const order=['all',...CLIENTS.map(c=>c.id),'broker'];
+    $('#rlist',app).innerHTML=order.map(s=>{
+      const rs=RULES.filter(r=>r.scope===s); if(!rs.length&&s!=='all')return '';
+      const conns=s==='all'?CLIENTS.reduce((a,c)=>a+c.conns.length,0):s==='broker'?3:CL[s].conns.length;
+      return `<div class="lgrp">${scopeDot(s)}${scopeName(s)}<span class="t4">${rs.length}</span><span class="t4" style="margin-left:6px">· ${conns} ${s==='broker'?'brokers':'connections'}</span><span class="sp"></span><button class="ib">${ic('plus')}</button></div>`+
+       rs.map(r=>`<div class="rrow ${r.id===selRule?'on':''} ${r.status==='active'?'':'off'}" data-id="${r.id}">${statusIcon(r.status)}<span class="mono t4">GMQ-${r.id}</span>
+         <div class="ttl"><b>${esc(r.title)}</b>${r.match.map(f=>f.f==='api'?f.vals.map(v=>apiPill(v)).join(''):`<span class="tag">${ic(FIC[f.f],11)}${esc(f.vals.join(', '))}</span>`).join('')}</div>
+         ${faultBadge(r)}<span class="mono t3" style="text-align:right">${r.prob}%</span>${spark(r.id,64,18,FAULT[r.fault].c,r.status==='active')}
+         <span class="padref" title="Pad">${r.pad?PADROW[r.pad[0]]+(r.pad[1]+1):'—'}</span><span class="sw ${r.status==='active'?'on':''}" data-tog="${r.id}"></span></div>`).join('');
+    }).join('');
+  }
+  function slider(k,min,max,step,val,fmt,c){return `<div class="slider" data-k="${k}" data-min="${min}" data-max="${max}" data-step="${step}" style="--c:${c}"><div class="tr"></div><div class="fi" style="width:${(val-min)/(max-min)*100}%"></div><div class="th" style="left:${(val-min)/(max-min)*100}%"></div></div><span class="sval" data-out="${k}">${fmt(val)}</span>`}
+  const FMT={ms:fmtMs,jitter:v=>'±'+fmtMs(v),thr:fmtMs,prob:v=>v+'%'};
+  function paintInsp(){
+    const r=ruleById(selRule); if(!r){$('#insp',app).innerHTML='';return}
+    const c=FAULT[r.fault].c, matched=REQS.filter(q=>ruleMatches(r,q)).length, fired=r.status==='active'?Math.round(matched*r.prob/100):0;
+    const ci=codeInfo(r.code);
+    const params={
+      error:`<div class="prop"><label>Error code</label><div class="pv"><button class="sel-btn mono" id="codeBtn" style="font-size:12px">${r.code} <span class="t4">${ci[1]}</span>${ic('chev',12)}</button><span class="tag">${ci[3]?'retriable':'fatal'}</span></div></div>`,
+      delay:`<div class="prop"><label>Delay</label><div class="pv">${slider('ms',0,10000,50,r.ms||0,FMT.ms,c)}</div></div><div class="prop"><label>Jitter</label><div class="pv">${slider('jitter',0,2000,10,r.jitter||0,FMT.jitter,c)}</div></div>`,
+      throttle:`<div class="prop"><label>Throttle</label><div class="pv">${slider('thr',0,30000,100,r.thr||0,FMT.thr,c)}</div></div>`,
+      blackhole:`<div class="prop"><label>Behaviour</label><div class="pv t3" style="font-size:12.5px">Request is read but never answered. The client hits <span class="mono t2">request.timeout.ms</span>.</div></div>`,
+      disconnect:`<div class="prop"><label>When</label><div class="pv"><div class="seg"><button class="on">Before forwarding</button><button>After response</button></div></div></div>`,
+      unresponsive:`<div class="prop"><label>Broker</label><div class="pv"><div class="seg"><button>Live</button><button class="on">Unresponsive</button><button>Down</button></div></div></div>`,
+    }[r.fault];
+    const bars=sparkVals(r.id,40,r.status==='active');
+    $('#insp',app).innerHTML=`<div class="insp-in">
+      <div style="display:flex;align-items:center;gap:6px" class="t4"><span class="mono">GMQ-${r.id}</span><span class="sp"></span><button class="ib">${ic('link')}</button><button class="ib">${ic('more')}</button></div>
+      <h2 contenteditable spellcheck="false" id="ttl">${esc(r.title)}</h2>
+      <p class="d">${esc(r.desc||'Add a description…')}</p>
+      <div class="prop"><label>Status</label><div class="pv"><button class="sel-btn" id="stBtn">${statusIcon(r.status)}${STATUS_L[r.status]}</button></div></div>
+      <div class="prop"><label>Scope</label><div class="pv"><button class="sel-btn" id="scBtn">${scopeDot(r.scope)}${scopeName(r.scope)}${ic('chev',12)}</button></div></div>
+      <div class="prop"><label>Match</label><div class="pv col">${r.match.map(f=>chipHtml(f,false)).join('')}<button class="btn ghost" style="margin-left:-8px">${ic('plus',12)}Condition</button><span class="t4" style="font-size:11.5px">${fmtN(matched)} matching calls in the current recording</span></div></div>
+      <div class="hr" style="margin:12px 0"></div>
+      ${r.fault==='unresponsive'?'':`<div class="prop"><label>Fault</label><div class="pv"><div class="seg f" style="--c:${c}">${['error','delay','blackhole','disconnect','throttle'].map(k=>`<button class="${r.fault===k?'on':''}" data-fault="${k}">${FAULT[k].l}</button>`).join('')}</div></div></div>`}
+      ${params}
+      <div class="prop"><label>Probability</label><div class="pv">${slider('prob',0,100,1,r.prob,FMT.prob,c)}</div></div>
+      <div class="prop"><label>Duration</label><div class="pv"><div class="seg">${['Until disabled','30 s','5 min','Next 100 calls'].map(d=>`<button class="${r.dur===d?'on':''}" data-dur="${d}">${d}</button>`).join('')}</div></div></div>
+      <div class="prop"><label>Pad</label><div class="pv" style="gap:12px"><div class="minigrid">${Array.from({length:64},(_,i)=>{const pr=Math.floor(i/8),pc=i%8,me=r.pad&&r.pad[0]===pr&&r.pad[1]===pc;return `<i style="${me?`background:${c};box-shadow:0 0 6px ${c}`:''}"></i>`}).join('')}</div><div style="font-size:12px"><div class="t2">${r.pad?`Row ${PADROW[r.pad[0]]} · pad ${r.pad[1]+1}`:'Not on the grid'}</div><div class="t4">${r.pad?'Push 2 · '+scopeName(r.scope):'<span style="color:#b4b3ff;cursor:pointer">Assign to a pad…</span>'}</div></div></div></div>
+      <div class="hr"></div>
+      <h3>Activity<span class="t4" style="font-weight:400;font-size:12px">last 2 min</span></h3>
+      <div class="chart">${bars.map(v=>`<div><i style="height:${v*100}%;background:#2a2b30"></i><i style="height:${r.status==='active'?v*r.prob:0}%;background:${c}"></i></div>`).join('')}</div>
+      <div class="stats"><span><b>${fmtN(fired)}</b> fired</span><span><b>${fmtN(matched)}</b> matched</span><span><b>${matched?(fired/matched*100).toFixed(1):0}%</b> rate</span></div>
+      <div class="feed">
+        <div class="it"><span class="av" style="background:#5e6ad2">Y</span><div><b>You</b> enabled via <b>Push pad ${r.pad?PADROW[r.pad[0]]+(r.pad[1]+1):'—'}</b></div><span class="ts">2m</span></div>
+        <div class="it"><span class="av" style="background:#2a2b30;color:var(--t3)">${ic('sliders',10)}</span><div>Probability <b>25%</b> → <b>${r.prob}%</b> via encoder 1</div><span class="ts">4m</span></div>
+        <div class="it"><span class="av" style="background:#2a2b30;color:var(--t3)">${ic('rec',10)}</span><div>Created from selector <b>${esc(SELECTORS[0].n)}</b> in a recording</div><span class="ts">9m</span></div>
+      </div></div>`;
+  }
+  paintList();paintInsp();
+  app.addEventListener('click',e=>{
+    const go=e.target.closest('[data-go2]'); if(go){show(VIEWS.findIndex(v=>v.k===go.dataset.go2));return}
+    const tg=e.target.closest('[data-tog]'); if(tg){const r=ruleById(+tg.dataset.tog);r.status=r.status==='active'?'paused':'active';paintList();paintInsp();return}
+    const row=e.target.closest('.rrow'); if(row){selRule=+row.dataset.id;paintList();paintInsp();return}
+    const r=ruleById(selRule);
+    const fb=e.target.closest('[data-fault]'); if(fb){r.fault=fb.dataset.fault;r.code=r.code||'NOT_LEADER_OR_FOLLOWER';r.ms=r.ms||500;r.thr=r.thr||2000;paintList();paintInsp();return}
+    const db=e.target.closest('[data-dur]'); if(db){r.dur=db.dataset.dur;paintInsp();return}
+    if(e.target.closest('#codeBtn')){menu(e.target.closest('#codeBtn'),[{sec:'Retriable'},...CODES.filter(c=>c[3]).map(c=>({label:`<span class="mono">${c[0]}</span>`,d:c[1],c:c[0]})),{sec:'Fatal'},...CODES.filter(c=>!c[3]).map(c=>({label:`<span class="mono">${c[0]}</span>`,d:c[1],c:c[0]}))],it=>{r.code=it.c;paintList();paintInsp()});return}
+    if(e.target.closest('#stBtn')){menu(e.target.closest('#stBtn'),Object.keys(STATUS_L).map(s=>({label:STATUS_L[s],icon:statusIcon(s),s})),it=>{r.status=it.s;paintList();paintInsp()});return}
+    if(e.target.closest('#scBtn')){menu(e.target.closest('#scBtn'),PSCOPES.map(s=>({label:s.l,icon:scopeDot(s.id),s:s.id})),it=>{r.scope=it.s;paintList();paintInsp()});return}
+    if(e.target.closest('#newRule')){const n={id:++RID,title:'Untitled rule',desc:'',scope:'all',match:[{f:'api',vals:['Produce']}],fault:'delay',ms:500,jitter:0,prob:100,status:'draft',pad:null,dur:'Until disabled'};RULES.push(n);selRule=n.id;paintList();paintInsp();$('#ttl',app).focus()}
+  });
+  app.addEventListener('input',e=>{if(e.target.id==='ttl'){ruleById(selRule).title=e.target.textContent;const b=$(`.rrow[data-id="${selRule}"] b`,app);if(b)b.textContent=e.target.textContent}});
+  app.addEventListener('pointerdown',e=>{
+    const s=e.target.closest('.slider'); if(!s)return;
+    const r=ruleById(selRule),k=s.dataset.k,min=+s.dataset.min,max=+s.dataset.max,st=+s.dataset.step;
+    const set=ev=>{const b=s.getBoundingClientRect();let v=min+Math.max(0,Math.min(1,(ev.clientX-b.left)/b.width))*(max-min);v=Math.round(v/st)*st;r[k]=v;const p=(v-min)/(max-min)*100;s.querySelector('.fi').style.width=p+'%';s.querySelector('.th').style.left=p+'%';$(`[data-out="${k}"]`,app).textContent=FMT[k](v)};
+    set(e);s.setPointerCapture(e.pointerId);s.onpointermove=set;s.onpointerup=()=>{s.onpointermove=null;paintList()};
+  });
+  return app;
+}
+
+/* ════════════════════════ view: pads ════════════════════════ */
+const KNOBS=[
+ {k:'prob',l:'Probability',min:0,max:100,step:1,fmt:v=>v+'%'},
+ {k:'ms',l:'Delay',min:0,max:30000,step:50,fmt:fmtMs,f:['delay']},
+ {k:'jitter',l:'Jitter',min:0,max:5000,step:25,fmt:v=>'±'+fmtMs(v),f:['delay']},
+ {k:'code',l:'Error code',en:true,f:['error']},
+ {k:'thr',l:'Throttle',min:0,max:30000,step:100,fmt:fmtMs,f:['throttle']},
+ {k:'burst',l:'Burst',min:0,max:500,step:1,fmt:v=>v?v+' calls':'∞'},
+ {k:'hold',l:'Hold',min:0,max:4,step:1,fmt:v=>['∞','5 s','30 s','1 min','5 min'][v]},
+ {k:'ramp',l:'Ramp in',min:0,max:60,step:1,fmt:v=>v?v+' s':'off'},
+];
+function knobSvg(frac,color){
+  const r=15,cx=20,cy=20,a0=135,sw=270,pt=a=>{const t=a*Math.PI/180;return [cx+r*Math.cos(t),cy+r*Math.sin(t)]};
+  const arc=(f,t)=>{const [x1,y1]=pt(f),[x2,y2]=pt(t);return `M${x1.toFixed(2)} ${y1.toFixed(2)} A${r} ${r} 0 ${t-f>180?1:0} 1 ${x2.toFixed(2)} ${y2.toFixed(2)}`};
+  const end=a0+sw*Math.max(.001,Math.min(1,frac)),[hx,hy]=pt(end);
+  return `<svg width="40" height="40" viewBox="0 0 40 40"><path d="${arc(a0,a0+sw)}" stroke="#25262b" stroke-width="3" fill="none" stroke-linecap="round"/>${frac>0?`<path d="${arc(a0,end)}" stroke="${color}" stroke-width="3" fill="none" stroke-linecap="round"/>`:''}<circle cx="20" cy="20" r="10.5" fill="#1b1c20" stroke="rgba(255,255,255,.09)"/><line x1="20" y1="20" x2="${(20+(hx-20)*.6).toFixed(2)}" y2="${(20+(hy-20)*.6).toFixed(2)}" stroke="#e8e9ec" stroke-width="1.7" stroke-linecap="round"/></svg>`;
+}
+function renderPads(stage){
+  stage.innerHTML=`<div class="app">${sidebar('pads')}<main class="main">
+   <div class="hdr"><div class="crumb">${ic('grid',15)}Pads</div><span class="t4">·</span><span class="t3" style="font-size:12px">rows are selectors, columns are faults, the bottom row picks who it applies to</span>
+     <span class="sp"></span>
+     <div class="seg" id="pmode"><button class="${pMode==='latch'?'on':''}" data-m="latch">Latch</button><button class="${pMode==='hold'?'on':''}" data-m="hold">Hold to inject</button></div>
+     <button class="btn ghost">${ic('midi')}Push 2 <span class="sdot" style="background:var(--green);width:6px;height:6px"></span></button>
+     <button class="btn ghost">${ic('sliders')}Edit layout</button>
+     <button class="btn" id="pclear">Clear scope</button></div>
+   <div class="pads-wrap"><div class="pads" id="pads"></div></div></main></div>`;
+  const app=stage.firstElementChild; bindSidebar(app);
+  const rate=r=>{const n=REQS.filter(q=>(pScope==='all'||q.client===pScope)&&matchAll(q,PROWS[r].match)).length;return (n/((REQS.at(-1).t-REQS[0].t)/1000)).toFixed(n>100?0:1)};
+  function paint(){
+    const [fr,fc]=pFocus, fp=padParams(pScope,fr,fc), col=PCOLS[fc], ru=padRule(pScope,fr,fc), sc=PSCOPES.find(s=>s.id===pScope);
+    let h=`<div class="focuscard"><span class="t4">Encoders → pad ${PADROW[fr]}${fc+1}</span><b>${esc(PROWS[fr].name)} <span class="t3" style="font-weight:400">${esc(PROWS[fr].sub)}</span></b><div style="display:flex;gap:6px;flex-wrap:wrap"><span class="fault" style="--c:${col.c}">${col.name} <b>${col.sub}</b></span></div><span class="t4">${ru?`GMQ-${ru.id} · ${STATUS_L[ru.status].toLowerCase()}`:'not created yet'} · ${sc.l}</span></div>`;
+    h+=`<div class="deck">${KNOBS.map((k,i)=>{const na=k.f&&!k.f.includes(col.fault);let frac,val;
+      if(k.en){const list=CODES.filter(c=>c[3]===(fc===0?1:0));const idx=Math.max(0,list.findIndex(c=>c[0]===fp.code));frac=idx/(list.length-1);val=codeInfo(fp.code)[2]}
+      else{const v=fp[k.k]||0;frac=(v-k.min)/(k.max-k.min);val=k.fmt(v)}
+      return `<div class="knob ${na?'na':''}" data-knob="${i}" title="Encoder ${i+1}${k.en?' · '+fp.code:''}"><label>${k.l}</label>${knobSvg(na?0:frac,col.c)}<span class="kv">${na?'—':val}</span></div>`}).join('')}</div><div></div>`;
+    h+=`<div></div>${PCOLS.map(c=>`<div class="colh" style="--c:${c.c}">${c.name}<small>${c.sub}</small></div>`).join('')}<div class="colh" style="--c:transparent;align-items:center"><small>mute</small></div>`;
+    PROWS.forEach((row,r)=>{
+      h+=`<div class="rowh ${r===fr?'on':''}" data-row="${r}"><b><span class="key">${PADROW[r]}</span>${esc(row.name)}</b><span class="meta" style="padding-left:21px">${row.sub?`<span>${esc(row.sub)}</span><span class="t5">·</span>`:''}<span class="rate">${rate(r)}/s</span></span></div>`;
+      PCOLS.forEach((c,ci)=>{
+        const x=padRule(pScope,r,ci), on=x&&x.status==='active', p=padParams(pScope,r,ci);
+        const other=PSCOPES.some(s=>s.id!==pScope&&(padRule(s.id,r,ci)||{}).status==='active');
+        h+=`<div class="pad ${on?'on':''} ${x&&!on?'paused':''} ${r===fr&&ci===fc?'focus':''} ${pMuted.has(pScope+':'+r)?'muted':''}" data-r="${r}" data-c="${ci}" style="--c:${c.c}" title="${esc(row.name)} × ${c.name} ${c.sub}${on?` · ${p.prob}%`:''}${other?' · active in another scope':''}"><div class="lv" style="height:${on?p.prob:0}%"></div>${other?'<i class="o"></i>':''}<span class="pl">${p.prob}%</span></div>`;
+      });
+      h+=`<button class="scene ${pMuted.has(pScope+':'+r)?'mut':''}" data-mute="${r}" title="Mute row">${ic(pMuted.has(pScope+':'+r)?'play':'pause',12)}</button>`;
+    });
+    h+=`<div class="scopelbl"><span class="t2" style="font-weight:500">Scope</span>who the grid applies to</div>`+
+      [...PSCOPES,null,null,null].map(s=>s?`<button class="scopebtn ${s.id===pScope?'on':''}" data-scope="${s.id}" style="--c:${s.c}"><span>${s.id==='all'?'All':s.l.split('-')[0]}</span><span class="n">${RULES.filter(r=>r.scope===s.id&&r.status==='active'&&r.pad).length||'·'}</span></button>`:`<button class="scopebtn empty">+</button>`).join('')+'<div></div>';
+    h+=`<div class="legend"><span class="sw2"><span class="sq" style="background:#f2994a;box-shadow:0 0 8px #f2994a"></span>lit = injecting, fill = probability</span><span class="sw2"><span class="sq" style="border:1px dashed #f2994a88"></span>dashed = rule exists, paused</span><span class="sw2"><span class="sdot" style="width:5px;height:5px;background:#aaa"></span>active in another scope</span><span class="sw2"><span class="kbd">←↑→↓</span> move <span class="kbd">space</span> toggle <span class="kbd">1–5</span> scope</span><span class="sp"></span><span>Push 2: 8×8 pads · encoders 1–8 · scene buttons = mute · track select = scope</span></div>`;
+    $('#pads',app).innerHTML=h;
+    app.querySelector('.hw .mini').innerHTML=miniCells(pScope);
+  }
+  const toggle=(r,c,force)=>{const ru=ensurePadRule(pScope,r,c);const want=force??(ru.status!=='active');ru.status=want?'active':'paused';pFocus=[r,c];paint()};
+  paint();
+  app.addEventListener('click',e=>{
+    const m=e.target.closest('[data-m]'); if(m){pMode=m.dataset.m;$$('#pmode button',app).forEach(b=>b.classList.toggle('on',b===m));return}
+    const pad=e.target.closest('.pad'); if(pad&&pMode==='latch'){toggle(+pad.dataset.r,+pad.dataset.c);return}
+    const rh=e.target.closest('[data-row]'); if(rh){pFocus=[+rh.dataset.row,pFocus[1]];paint();return}
+    const sc=e.target.closest('[data-scope]'); if(sc){pScope=sc.dataset.scope;paint();return}
+    const mu=e.target.closest('[data-mute]'); if(mu){const k=pScope+':'+mu.dataset.mute;pMuted.has(k)?pMuted.delete(k):pMuted.add(k);paint();return}
+    if(e.target.closest('#pclear')){RULES.filter(r=>r.scope===pScope&&r.pad).forEach(r=>r.status='paused');paint();toast(`Paused every pad for ${scopeName(pScope)}`)}
+  });
+  app.addEventListener('pointerdown',e=>{
+    const pad=e.target.closest('.pad');
+    if(pad&&pMode==='hold'){const r=+pad.dataset.r,c=+pad.dataset.c;toggle(r,c,true);const up=()=>{toggle(r,c,false);removeEventListener('pointerup',up)};addEventListener('pointerup',up);return}
+    const kn=e.target.closest('.knob:not(.na)'); if(!kn)return;
+    const K=KNOBS[+kn.dataset.knob], [r,c]=pFocus, p=padParams(pScope,r,c); let y0=e.clientY, acc=0;
+    e.preventDefault();
+    const mv=ev=>{acc+=(y0-ev.clientY);y0=ev.clientY;const steps=Math.trunc(acc/4);if(!steps)return;acc-=steps*4;
+      if(K.en){const list=CODES.filter(x=>x[3]===(c===0?1:0));let i=Math.max(0,list.findIndex(x=>x[0]===p.code));i=Math.max(0,Math.min(list.length-1,i+Math.sign(steps)));p.code=list[i][0]}
+      else{const mult=K.k==='ms'||K.k==='thr'?(p[K.k]>=1000?4:1):1;p[K.k]=Math.max(K.min,Math.min(K.max,(p[K.k]||0)+steps*K.step*mult))}
+      paint()};
+    const up=()=>{removeEventListener('pointermove',mv);removeEventListener('pointerup',up)};
+    addEventListener('pointermove',mv);addEventListener('pointerup',up);
+  });
+  app.addEventListener('wheel',e=>{const kn=e.target.closest('.knob:not(.na)');if(!kn)return;e.preventDefault();const K=KNOBS[+kn.dataset.knob],p=padParams(pScope,...pFocus);if(K.en)return;p[K.k]=Math.max(K.min,Math.min(K.max,(p[K.k]||0)-Math.sign(e.deltaY)*K.step));paint()},{passive:false});
+  padKeys=e=>{
+    const [r,c]=pFocus;
+    if(e.key==='ArrowUp')pFocus=[Math.max(0,r-1),c];else if(e.key==='ArrowDown')pFocus=[Math.min(7,r+1),c];
+    else if(e.key==='ArrowLeft')pFocus=[r,Math.max(0,c-1)];else if(e.key==='ArrowRight')pFocus=[r,Math.min(7,c+1)];
+    else if(e.key===' '){toggle(r,c)}else return false;
+    e.preventDefault();paint();return true;
+  };
+  timers.push(setInterval(()=>{
+    $$('.pad.on:not(.muted)',app).forEach(el=>{const p=padParams(pScope,+el.dataset.r,+el.dataset.c);if(rnd()<.06+p.prob/100*.35){el.classList.remove('fire');void el.offsetWidth;el.classList.add('fire')}});
+  },160));
+}
+let padKeys=null;
+
+/* ════════════════════════ view: clients board ════════════════════════ */
+function renderClients(stage){
+  stage.innerHTML=`<div class="app">${sidebar('clients')}<main class="main">
+   <div class="hdr"><div class="crumb">${ic('users',15)}Clients</div><span class="t4">·</span><span class="t3" style="font-size:12px">drag a rule between columns to change who it applies to</span>
+     <span class="sp"></span><div class="seg"><button class="on">Board</button><button>List</button></div><button class="btn ghost">${ic('sliders')}Display</button></div>
+   <div class="board" id="board"></div></main></div>`;
+  const app=stage.firstElementChild; bindSidebar(app);
+  function card(r){return `<div class="card" draggable="true" data-rid="${r.id}"><div class="top">${statusIcon(r.status)}<span class="mono t4">GMQ-${r.id}</span><span class="sp"></span>${r.pad?`<span class="padref" style="width:26px">${PADROW[r.pad[0]]}${r.pad[1]+1}</span>`:''}<span class="sw ${r.status==='active'?'on':''}" data-tog="${r.id}"></span></div><b>${esc(r.title)}</b><div class="row">${r.match.map(f=>f.f==='api'?f.vals.map(v=>apiPill(v)).join(''):`<span class="tag">${esc(f.vals.join(', '))}</span>`).join('')}</div><div class="row">${faultBadge(r)}<span class="mono t3">${r.prob}%</span><span class="sp"></span>${spark(r.id,52,14,FAULT[r.fault].c,r.status==='active')}</div></div>`}
+  function paint(){
+    const cols=['all',...CLIENTS.map(c=>c.id)];
+    $('#board',app).innerHTML=cols.map(s=>{
+      const rs=RULES.filter(r=>r.scope===s);
+      let head;
+      if(s==='all')head=`<div class="ccard"><span class="t3">Applies to every connection through the proxy.</span><div class="row"><span class="tag">${CLIENTS.reduce((a,c)=>a+c.conns.length,0)} connections</span><span class="tag">${CLIENTS.length} clients</span><span class="tag">3 brokers</span></div></div>`;
+      else{const c=CL[s],mine=REQS.filter(r=>r.client===s),cnt={};mine.forEach(r=>{const n=API[r.api][0];cnt[n]=(cnt[n]||0)+1});
+        const tps=[...new Set(mine.flatMap(FIELD.topic))];
+        head=`<div class="ccard"><div style="display:flex;align-items:center;gap:8px"><span class="mono t3">${c.sw}</span><span class="sp"></span>${spark(c.conns.length*7,56,14,c.color,true)}</div>
+          <div class="row"><span class="lbl">Connections</span>${c.conns.map(cn=>`<span class="tag mono" style="font-size:11px">#${cn.id} → b${cn.b}</span>`).join('')}</div>
+          <div class="row"><span class="lbl">Seen APIs</span>${Object.entries(cnt).sort((a,b)=>b[1]-a[1]).slice(0,6).map(([n])=>apiPill(n)).join('')}</div>
+          <div class="row"><span class="lbl">Topics</span>${tps.slice(0,4).map(t=>`<span class="tag">${t}</span>`).join('')}</div></div>`}
+      return `<div class="bcol" data-scope="${s}"><div class="bch">${scopeDot(s)}${scopeName(s)}<span class="t4">${rs.length}</span><span class="sp"></span><button class="ib">${ic('more')}</button><button class="ib">${ic('plus')}</button></div>${head}${rs.map(card).join('')}<div class="addcard">${ic('plus',12)}Add rule for ${s==='all'?'everyone':s}</div></div>`;
+    }).join('')+`<div class="bcol"><div class="bch">${ic('server',13)}Brokers<span class="t4">3</span></div>${BROKERS.map(b=>`<div class="bcard"><div style="display:flex;align-items:center;gap:8px"><span class="t1" style="font-weight:500">Broker ${b.id}</span><span class="mono t4">${b.up}</span><span class="sp"></span><span class="mono t3">:${b.port}</span></div><div class="seg">${['live','unresponsive','down'].map(st=>`<button class="${b.state===st?'on':''}" data-bs="${b.id}:${st}" style="${b.state===st&&st!=='live'?`color:${st==='down'?'var(--red)':'var(--orange)'}`:''}">${st[0].toUpperCase()+st.slice(1)}</button>`).join('')}</div><span class="t4" style="font-size:11.5px">${CLIENTS.flatMap(c=>c.conns).filter(cn=>cn.b===b.id).length} client connections</span></div>`).join('')}${RULES.filter(r=>r.scope==='broker').map(card).join('')}</div>`;
+  }
+  paint();
+  let drag=null;
+  app.addEventListener('dragstart',e=>{const c=e.target.closest('.card');if(!c)return;drag=+c.dataset.rid;c.classList.add('dragging');e.dataTransfer.effectAllowed='move'});
+  app.addEventListener('dragend',()=>{$$('.dragging,.over',app).forEach(x=>x.classList.remove('dragging','over'))});
+  app.addEventListener('dragover',e=>{const col=e.target.closest('.bcol[data-scope]');if(!col||drag==null)return;e.preventDefault();$$('.over',app).forEach(x=>x!==col&&x.classList.remove('over'));col.classList.add('over')});
+  app.addEventListener('drop',e=>{const col=e.target.closest('.bcol[data-scope]');if(!col||drag==null)return;e.preventDefault();const r=ruleById(drag),s=col.dataset.scope;
+    if(r.scope!==s){if(r.pad&&padRule(s,...r.pad))r.pad=null;r.scope=s;toast(`<b>GMQ-${r.id}</b> now applies to ${scopeName(s)}`)}drag=null;paint()});
+  app.addEventListener('click',e=>{
+    const tg=e.target.closest('[data-tog]'); if(tg){const r=ruleById(+tg.dataset.tog);r.status=r.status==='active'?'paused':'active';paint();return}
+    const bs=e.target.closest('[data-bs]'); if(bs){const [id,st]=bs.dataset.bs.split(':');BROKERS[id-1].state=st;paint();toast(`Broker ${id} → ${st}`);return}
+    const c=e.target.closest('.card'); if(c){selRule=+c.dataset.rid;show(VIEWS.findIndex(v=>v.k==='rules'))}
+  });
+}
+
+/* ════════════════════════ view: quick inject (⌘K) ════════════════════════ */
+const TEMPLATES=[
+ ['Leader election','error produce fetch NOT_LEADER_OR_FOLLOWER 30% for 20s','Producers and consumers see the partition leader move'],
+ ['Rebalance storm','error heartbeat REBALANCE_IN_PROGRESS analytics-etl 60%','Group members are told to rejoin over and over'],
+ ['Slow broker','delay b2 2s 100%','Every call to broker 2 takes two seconds'],
+ ['Fence the producer','error endtxn PRODUCER_FENCED payments-svc','Transactional producer gets fenced on commit'],
+ ['Coordinator moves','error offsetcommit NOT_COORDINATOR 50% for 30s','Commits bounce while the coordinator moves'],
+];
+function parseCmd(s){
+  const o={apis:[]}, toks=s.trim().split(/\s+/).filter(Boolean);
+  const toMs=t=>{const m=t.match(/^(\d+(?:\.\d+)?)(ms|s|m)$/);return m?Math.round(+m[1]*({ms:1,s:1000,m:60000}[m[2]])):null};
+  for(let i=0;i<toks.length;i++){
+    const t=toks[i], l=t.toLowerCase(); let x;
+    if(/^(delay|slow|lag|latency)$/.test(l))o.fault='delay';
+    else if(/^(error|err|fail)$/.test(l))o.fault='error';
+    else if(/^(blackhole|hang|timeout|drop)$/.test(l))o.fault='blackhole';
+    else if(/^(disconnect|kill|close|reset)$/.test(l))o.fault='disconnect';
+    else if(/^(throttle|quota)$/.test(l))o.fault='throttle';
+    else if(l==='for'&&toks[i+1]){o.dur=toks[++i]}
+    else if(toMs(l)!=null){o.fault==='throttle'?o.thr=toMs(l):o.ms=toMs(l)}
+    else if(/^\d+%$/.test(l))o.prob=parseInt(l);
+    else if(/^b\d$/.test(l))o.broker=l;
+    else if((x=API_NAMES.find(a=>a.toLowerCase()===l||(l.length>=4&&a.toLowerCase().startsWith(l)))))o.apis.push(x);
+    else if(l.length>=5&&(x=CODES.find(c=>c[0].toLowerCase().startsWith(l.replace(/-/g,'_')))))o.code=x[0];
+    else if(l.length>=3&&(x=CLIENTS.find(c=>c.id.startsWith(l))))o.client=x.id;
+    else if(l.includes('*')||TOPICS.includes(l))o.topic=l;
+    else if((x=TOPICS.filter(tp=>tp.startsWith(l))).length&&l.length>=3)o.topic=x.length>1?(x.every(tp=>tp.startsWith(l.replace(/\.$/,'')+'.'))?l.replace(/\.$/,'')+'.*':l+'*'):x[0];
+    else (o.unk=o.unk||[]).push(t);
+  }
+  if(o.code&&!o.fault)o.fault='error';
+  return o;
+}
+function renderPalette(stage){
+  renderRules(stage);
+  const app=stage.firstElementChild;
+  const ov=document.createElement('div');ov.className='overlay';
+  ov.innerHTML=`<div class="palette"><div class="pal-top"><span class="tag">${ic('zap',11)}Quick inject</span><span class="tag t3">New rule</span></div>
+    <div class="pal-in">${ic('search',16)}<input id="cmd" autocomplete="off" spellcheck="false" placeholder="delay produce orders.* 750ms 40% order-ingest" value="delay produce orders.* 750ms 40% order-ingest"></div>
+    <div class="pal-prev" id="pprev"></div><div class="pal-list" id="plist"></div>
+    <div class="pal-foot"><span><span class="kbd">↑</span><span class="kbd">↓</span>navigate</span><span><span class="kbd">↵</span>create &amp; enable</span><span><span class="kbd">⇧↵</span>save as draft</span><span><span class="kbd">⇥</span>complete</span><span class="sp"></span><span><span class="kbd">esc</span>close</span></div></div>`;
+  app.appendChild(ov);
+  const inp=$('#cmd',ov); let items=[], hi=0;
+  const defCode=o=>o.code||(o.apis.some(a=>['FindCoordinator','JoinGroup','SyncGroup','Heartbeat','OffsetCommit'].includes(a))?'COORDINATOR_NOT_AVAILABLE':'NOT_LEADER_OR_FOLLOWER');
+  function toRule(o,status){
+    const m=[];if(o.apis.length)m.push({f:'api',vals:o.apis});if(o.topic)m.push({f:'topic',vals:[o.topic]});if(o.broker)m.push({f:'broker',vals:[o.broker]});
+    const f=o.fault||'delay';
+    return {id:++RID,title:`${FAULT[f].l} ${o.apis.join(' + ')||(o.broker?'broker '+o.broker.slice(1):'all calls')}${o.topic?' on '+o.topic:''}`,desc:`Created with ⌘K: “${inp.value.trim()}”`,scope:o.client||'all',match:m.length?m:[{f:'api',vals:API_NAMES}],fault:f,code:defCode(o),ms:o.ms??500,jitter:0,thr:o.thr??2000,prob:o.prob??100,status,pad:null,dur:o.dur?o.dur:'Until disabled'};
+  }
+  function paint(){
+    const o=parseCmd(inp.value), f=o.fault;
+    const T=(txt,def,extra='')=>`<span class="tok ${def?'def':''}" ${extra}>${txt}</span>`;
+    let h=f?`<span class="fault tok" style="--c:${FAULT[f].c}">${FAULT[f].l}</span>`:T('fault?',1);
+    h+=o.apis.length?o.apis.map(a=>apiPill(a)).join(''):o.broker?'':T('any API',1);
+    if(o.broker)h+=`<span>on</span>`+T(ic('server',11)+'broker '+o.broker.slice(1));
+    h+=`<span>on</span>`+(o.topic?T(ic('topic',11)+esc(o.topic)):T('any topic',1));
+    h+=`<span>for</span>`+(o.client?T(`<span class="sdot" style="background:${CL[o.client].color}"></span>${o.client}`):T('all clients',1));
+    if(f==='delay')h+=`<span>by</span>`+(o.ms!=null?T(fmtMs(o.ms)):T('500 ms',1));
+    if(f==='throttle')h+=`<span>by</span>`+(o.thr!=null?T(fmtMs(o.thr)):T('2 s',1));
+    if(f==='error')h+=`<span>with</span>`+T(`<span class="mono">${defCode(o)}</span>`,!o.code);
+    h+=`<span>·</span>`+(o.prob!=null?T(o.prob+'%'):T('100%',1))+`<span>·</span>`+(o.dur?T('for '+esc(o.dur)):T('until disabled',1));
+    const sim=toRule(o,'draft');RID--;
+    const n=REQS.filter(q=>(sim.scope==='all'||q.client===sim.scope)&&matchAll(q,sim.match)).length;
+    h+=`<span class="est">≈ <b>${fmtN(n)}</b> recorded calls match${o.unk?` · <span style="color:var(--orange)">ignored: ${esc(o.unk.join(' '))}</span>`:''}</span>`;
+    $('#pprev',ov).innerHTML=h;
+    const last=inp.value.endsWith(' ')?'':(inp.value.trim().split(/\s+/).pop()||'').toLowerCase();
+    const comp=last.length>=1?[
+      ...['delay','error','blackhole','disconnect','throttle'].filter(x=>x.startsWith(last)&&x!==last).map(x=>({t:'fault',v:x,l:FAULT[x].l,d:'fault'})),
+      ...API_NAMES.filter(a=>a.toLowerCase().startsWith(last)&&a.toLowerCase()!==last).map(a=>({t:'api',v:a.toLowerCase(),l:apiPill(a),d:'Kafka API'})),
+      ...TOPICS.filter(t=>t.startsWith(last)&&t!==last).map(t=>({t:'topic',v:t,l:esc(t),d:'topic · seen in recording'})),
+      ...CLIENTS.filter(c=>c.id.startsWith(last)&&c.id!==last).map(c=>({t:'client',v:c.id,l:c.id,d:'client.id · '+c.conns.length+' connections'})),
+      ...CODES.filter(c=>last.length>=3&&c[0].toLowerCase().startsWith(last)).map(c=>({t:'code',v:c[0],l:`<span class="mono">${c[0]}</span>`,d:'error '+c[1]})),
+    ].slice(0,5):[];
+    items=[{a:'create',l:`Create <b class="t1">${esc(sim.title)}</b>`,d:scopeName(sim.scope),icon:ic('plus'),k:['↵']},...comp.map(c=>({a:'comp',...c,icon:ic('chevr'),k:['⇥']})),...TEMPLATES.map((t,i)=>({a:'tpl',l:t[0],d:t[2],cmd:t[1],icon:ic('spark'),k:[]})),{a:'go',l:'Open pad grid',d:'Pads',v:'pads',icon:ic('grid'),k:[]},{a:'go',l:'Build selector from recorded traffic',d:'Live traffic',v:'record',icon:ic('rec'),k:[]}];
+    if(hi>=items.length)hi=0;
+    let lastSec='';
+    $('#plist',ov).innerHTML=items.map((it,i)=>{const sec={create:'',comp:'Complete',tpl:'Scenarios',go:'Jump to'}[it.a];const sh=sec&&sec!==lastSec?`<div class="pal-sec">${sec}</div>`:'';lastSec=sec;
+      return sh+`<div class="pal-it ${i===hi?'on':''}" data-i="${i}">${it.icon}<span>${it.l}</span><span class="d">${esc(it.d||'')}${it.cmd?` — <span class="mono">${esc(it.cmd)}</span>`:''}</span><span class="r">${it.k.map(k=>`<span class="kbd">${k}</span>`).join('')}</span></div>`}).join('');
+  }
+  function run(it,shift){
+    if(it.a==='create'){const r=toRule(parseCmd(inp.value),shift?'draft':'active');RULES.push(r);selRule=r.id;toast(`Created <b>GMQ-${r.id}</b> · ${esc(r.title)}`);show(VIEWS.findIndex(v=>v.k==='rules'))}
+    else if(it.a==='comp'){const p=inp.value.replace(/\S*$/,'');inp.value=p+it.v+' ';hi=0;paint();inp.focus()}
+    else if(it.a==='tpl'){inp.value=it.cmd;hi=0;paint();inp.focus()}
+    else if(it.a==='go')show(VIEWS.findIndex(v=>v.k===it.v));
+  }
+  inp.addEventListener('input',()=>{hi=0;paint()});
+  inp.addEventListener('keydown',e=>{
+    if(e.key==='ArrowDown'){hi=(hi+1)%items.length;paint();e.preventDefault()}
+    else if(e.key==='ArrowUp'){hi=(hi-1+items.length)%items.length;paint();e.preventDefault()}
+    else if(e.key==='Enter'){run(items[hi],e.shiftKey);e.preventDefault()}
+    else if(e.key==='Tab'){const c=items.find(x=>x.a==='comp');if(c)run(c);e.preventDefault()}
+    else if(e.key==='Escape'){show(VIEWS.findIndex(v=>v.k==='rules'))}
+  });
+  ov.addEventListener('click',e=>{const it=e.target.closest('.pal-it');if(it){run(items[+it.dataset.i]);return}if(e.target===ov)show(VIEWS.findIndex(v=>v.k==='rules'))});
+  paint(); setTimeout(()=>{inp.focus();inp.setSelectionRange(inp.value.length,inp.value.length)},30);
+}
+
+/* ════════════════════════ mockup switcher ════════════════════════ */
+const VIEWS=[
+ {k:'record',name:'Record',desc:'Live traffic per connection with an auto-built index of topics, APIs, groups. Click anything to filter, then save as selector or inject.',render:s=>renderRecord(s,'live')},
+ {k:'selector',name:'Selector from request',desc:'Click a recorded call, tick the fields that identify “calls like this one”, generalise orders.eu → orders.*, see matches light up.',render:s=>renderRecord(s,'select')},
+ {k:'rules',name:'Rules',desc:'Linear-style list grouped by scope (all clients / per client / brokers) with an inspector to tune fault, probability, duration and pad.',render:renderRules},
+ {k:'pads',name:'Pads',desc:'8×8 pad grid for a Push-style controller: rows = selectors, columns = faults, encoders tune the focused pad, bottom row = scope.',render:renderPads},
+ {k:'clients',name:'Clients',desc:'Board with one column per client (plus everyone and brokers). Drag rules between columns to re-scope them.',render:renderClients},
+ {k:'palette',name:'Quick inject ⌘K',desc:'Type a sentence, get a rule: “delay produce orders.* 750ms 40% order-ingest”. Scenario templates for common failure stories.',render:renderPalette},
+];
+let cur=0, timers=[];
+function show(i){
+  if(i<0)i=0; timers.forEach(clearInterval); timers=[]; padKeys=null; $$('.menu').forEach(m=>m.remove());
+  cur=i; $$('#mtabs button').forEach((b,j)=>b.classList.toggle('on',j===i)); $('#mdesc').textContent=VIEWS[i].desc;
+  VIEWS[i].render($('#stage')); history.replaceState(null,'','#'+VIEWS[i].k);
+}
+$('#mtabs').innerHTML=VIEWS.map((v,i)=>`<button data-v="${i}"><span class="n">${i+1}</span>${v.name}</button>`).join('');
+$('#mtabs').addEventListener('click',e=>{const b=e.target.closest('[data-v]');if(b)show(+b.dataset.v)});
+document.addEventListener('keydown',e=>{
+  const typing=e.target.closest('input,[contenteditable]');
+  if((e.metaKey||e.ctrlKey)&&e.key.toLowerCase()==='k'){e.preventDefault();show(VIEWS.findIndex(v=>v.k==='palette'));return}
+  if(typing)return;
+  if(VIEWS[cur].k==='pads'&&/^[1-5]$/.test(e.key)){pScope=PSCOPES[+e.key-1].id;show(cur);return}
+  if(padKeys&&padKeys(e))return;
+  if(/^[1-6]$/.test(e.key)){show(+e.key-1);return}
+  if(e.key.toLowerCase()==='r'&&!e.metaKey){recording=!recording;if(recording)recStart=Date.now();show(cur)}
+  if(e.key.toLowerCase()==='c'&&VIEWS[cur].k==='rules'){$('#newRule')?.click();e.preventDefault()}
+});
+setInterval(()=>$$('[data-elapsed]').forEach(el=>{if(recording)el.textContent=elapsed()}),1000);
+show(Math.max(0,VIEWS.findIndex(v=>'#'+v.k===location.hash)));
+</script>
+</body>
+</html>
