@@ -5,6 +5,7 @@ members = [
     "crates/gaslightmq_incident",
     "crates/gaslightmq_kernel",
     "crates/gaslightmq_lie",
+    "crates/gaslightmq_selector",
     "crates/gaslightmq_wire",
     "crates/gaslightmq_kafka_client/*",
 ]
