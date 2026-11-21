@@ -1,0 +1,5 @@
+name: Slow analytics
+mode: chain
+seed: 42
+rules:
+  - Order fetches are slow for analytics

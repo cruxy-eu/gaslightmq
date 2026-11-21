@@ -1,0 +1,11 @@
+name: shop
+seed: 7
+start: 2026-01-01T00:00:00Z
+brokers: 1
+topics:
+  - name: orders
+    partitions: 3
+    records:
+      format: avro
+      schema: schemas/order.avsc     # no template: every field is made up from its type
+      existing: 1000000

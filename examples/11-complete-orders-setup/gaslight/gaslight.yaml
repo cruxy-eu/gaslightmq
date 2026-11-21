@@ -1,0 +1,13 @@
+# Workspace settings.
+
+# The environments that `gmq start` starts when no --env is given.
+environments: [orders-sim]
+
+# The seed for dice when no scenario is active.
+seed: 1337
+
+control:
+  listen: 0.0.0.0:8080
+
+recordings:
+  directory: recordings

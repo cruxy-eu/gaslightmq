@@ -1,0 +1,7 @@
+name: shop
+seed: 7
+start: 2026-01-01T00:00:00Z
+brokers: 3
+topics:
+  - name: orders
+    partitions: 3

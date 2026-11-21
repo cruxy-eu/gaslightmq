@@ -1,0 +1,5 @@
+# A selector has a name, so rules and filters can share it.
+- name: Order fetches
+  match:
+    api: Fetch
+    topic: orders

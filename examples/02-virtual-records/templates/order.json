@@ -1,0 +1,6 @@
+{
+  "id": "order-{{seq}}",
+  "customer": "{{pick customers}}",
+  "amount": "{{number 5 500}}",
+  "placed_at": "{{timestamp}}"
+}

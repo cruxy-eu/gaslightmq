@@ -1,0 +1,50 @@
+# The fake cluster: its broker nodes, its topics and where their records come from.
+name: orders-sim
+
+# The seed and the start time make the data the same in every run.
+seed: 7
+start: 2026-01-01T00:00:00Z
+
+brokers: 3
+
+# Named lists for {{pick ...}} in templates.
+lists:
+  customers: [acme, globex, initech, umbrella, hooli]
+  currencies: [EUR, USD, GBP]
+
+topics:
+  # A giant topic that is already there, with live traffic on top.
+  # The broker makes up each order when a consumer asks for it.
+  - name: orders.eu
+    partitions: 6
+    replication: 3
+    records:
+      format: avro
+      schema: schemas/order.avsc
+      template: templates/order.json
+      key: "order-{{seq}}"
+      existing: 100000000        # already in the topic when the World starts
+      arriving: 50/s             # keeps arriving while the clock runs
+
+  # No template: the broker makes up every field from the schema.
+  - name: orders.us
+    partitions: 6
+    replication: 3
+    records:
+      format: avro
+      schema: schemas/order.avsc
+      existing: 5000000
+
+  # A fixed set: exactly the records in the file.
+  - name: payments.settled
+    partitions: 3
+    records:
+      format: json
+      file: data/payments.jsonl
+
+  # No records: the topic holds what clients produce.
+  - name: audit.log
+    partitions: 1
+
+groups:
+  - name: analytics-etl

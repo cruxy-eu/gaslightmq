@@ -1,0 +1,22 @@
+# A proxy in front of a real cluster. The same rules and scenarios apply.
+name: staging-proxy
+
+proxy:
+  upstream:
+    bootstrap: kafka-1.staging.internal:9092
+    tls:
+      ca: /run/secrets/kafka/ca.pem
+    sasl:
+      mechanism: SCRAM-SHA-512
+      username: gaslight
+      # A reference, never the value. Kubernetes mounts the secret at this path.
+      password: { file: /run/secrets/kafka/password }
+  listen:
+    bootstrap: 0.0.0.0:9092
+    brokers: 0.0.0.0:19092-19191   # brokers are discovered, one port each
+    advertise: gaslightmq.staging.svc.cluster.local
+  recording: metadata-only         # real traffic: keep record payloads off the disk
+
+# The real registry. The proxy reads schemas from it to decode records for data lies.
+schema_registry:
+  url: https://schema-registry.staging.internal:8081

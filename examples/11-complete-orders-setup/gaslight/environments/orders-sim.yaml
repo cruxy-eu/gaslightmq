@@ -1,0 +1,17 @@
+# A fake cluster that lies: a broker, a schema registry and a proxy in front.
+name: orders-sim
+
+# The broker owns the data. It answers truthfully from its World.
+broker:
+  world: orders-sim
+
+# A built-in registry that serves the files in schemas/.
+schema_registry:
+  listen: 0.0.0.0:8081
+
+# The proxy owns the lies. It has no upstream, so it stands in front of the broker above.
+proxy:
+  listen:
+    bootstrap: 0.0.0.0:9092
+    brokers: 0.0.0.0:19092-19094   # one port per broker node of the World
+    advertise: gaslightmq          # the host clients see in Metadata

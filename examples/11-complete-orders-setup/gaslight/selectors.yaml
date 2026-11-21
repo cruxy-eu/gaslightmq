@@ -1,0 +1,15 @@
+# Which calls. Rules and filters refer to these by name.
+
+- name: Order producers
+  match:
+    api: Produce
+    topic: "orders.*"
+
+- name: Order fetches
+  match:
+    api: Fetch
+    topic: "orders.*"
+
+- name: Group coordination
+  match:
+    api: [FindCoordinator, JoinGroup, SyncGroup, Heartbeat, ConsumerGroupHeartbeat]

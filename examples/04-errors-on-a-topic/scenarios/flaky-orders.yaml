@@ -1,0 +1,5 @@
+name: Flaky orders
+mode: chain
+seed: 42
+rules:
+  - Orders sometimes fail

@@ -1,0 +1,13 @@
+# A fake cluster and a schema registry. No proxy: nothing lies.
+name: shop
+
+broker:
+  world: shop
+  listen:
+    bootstrap: 0.0.0.0:9092
+    brokers: 0.0.0.0:19092
+    advertise: localhost
+
+# A built-in registry that serves the files in schemas/.
+schema_registry:
+  listen: 0.0.0.0:8081

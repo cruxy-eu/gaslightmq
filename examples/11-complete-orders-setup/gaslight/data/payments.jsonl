@@ -1,0 +1,4 @@
+{"key": "pay-1001", "value": {"order": "order-17", "amount": 129.5, "currency": "EUR", "status": "settled"}}
+{"key": "pay-1002", "value": {"order": "order-18", "amount": 42.0, "currency": "USD", "status": "settled"}}
+{"key": "pay-1003", "value": {"order": "order-21", "amount": 310.75, "currency": "EUR", "status": "refunded"}}
+{"key": "pay-1004", "value": {"order": "order-25", "amount": 8.9, "currency": "GBP", "status": "settled"}}

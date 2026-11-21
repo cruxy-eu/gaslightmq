@@ -1,0 +1,13 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: staging
+
+resources:
+  - gaslightmq.yaml
+
+# The upstream credentials. In a real setup they come from your secret manager.
+secretGenerator:
+  - name: gaslightmq-kafka
+    files:
+      - password=secrets/kafka-password
+      - ca.pem=secrets/kafka-ca.pem

@@ -1,0 +1,5 @@
+name: Lost acknowledgements
+mode: chain
+seed: 42
+rules:
+  - Order acknowledgements get lost
