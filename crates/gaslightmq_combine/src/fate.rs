@@ -70,7 +70,7 @@ impl<Id> Loss<Id> {
 ///
 /// // Shadowed on one partition and applied on another: one firing.
 /// assert!(fate.counts());
-/// # Ok::<(), FieldError>(())
+/// # Ok::<(), PartError>(())
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Fate<Id> {

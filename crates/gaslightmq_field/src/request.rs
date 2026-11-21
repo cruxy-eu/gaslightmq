@@ -3,8 +3,7 @@
 use std::fmt;
 use std::str::FromStr;
 
-use crate::FieldError;
-use crate::text::{self, number_form};
+use crate::text::{self, Flaw, number_form};
 
 /// The version of the API a request uses, which is the value of the field `api.version`.
 ///
@@ -19,23 +18,24 @@ use crate::text::{self, number_form};
 /// assert_eq!(ApiVersion::try_from(11_i16)?, version);
 /// assert!(ApiVersion::try_from(-1_i16).is_err());
 /// assert!(ApiVersion::from(9) < version);
-/// # Ok::<(), FieldError>(())
+/// # Ok::<(), Box<dyn std::error::Error>>(())
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ApiVersion(u16);
 
 impl ApiVersion {
-    const WHAT: &'static str = "API version";
     const MAX_VALUE: u16 = i16::MAX as u16;
 
     /// Check that `version` is at most [`i16::MAX`], and keep it.
     ///
     /// # Errors
     ///
-    /// [`FieldError::OutOfRange`] when `version` is above that.
-    pub fn new(version: u16) -> Result<Self, FieldError> {
+    /// [`ApiVersionError::OutOfRange`] when `version` is above that.
+    pub fn new(version: u16) -> Result<Self, ApiVersionError> {
         if version > Self::MAX_VALUE {
-            return Err(FieldError::out_of_range(Self::WHAT, version, 0, Self::MAX_VALUE.into()));
+            return Err(ApiVersionError::OutOfRange {
+                input: version.to_string(),
+            });
         }
         Ok(Self(version))
     }
@@ -53,7 +53,7 @@ impl From<u8> for ApiVersion {
 }
 
 impl TryFrom<u16> for ApiVersion {
-    type Error = FieldError;
+    type Error = ApiVersionError;
 
     fn try_from(version: u16) -> Result<Self, Self::Error> {
         Self::new(version)
@@ -62,12 +62,12 @@ impl TryFrom<u16> for ApiVersion {
 
 /// Reads the type Kafka writes an API version as, and rejects every negative number.
 impl TryFrom<i16> for ApiVersion {
-    type Error = FieldError;
+    type Error = ApiVersionError;
 
     fn try_from(raw: i16) -> Result<Self, Self::Error> {
         u16::try_from(raw)
             .map(Self)
-            .map_err(|_| FieldError::out_of_range(Self::WHAT, raw, 0, Self::MAX_VALUE.into()))
+            .map_err(|_| ApiVersionError::OutOfRange { input: raw.to_string() })
     }
 }
 
@@ -87,10 +87,15 @@ impl From<ApiVersion> for i16 {
 
 /// Reads an API version from decimal digits, as [`Display`](fmt::Display) writes it.
 impl FromStr for ApiVersion {
-    type Err = FieldError;
+    type Err = ApiVersionError;
 
     fn from_str(text: &str) -> Result<Self, Self::Err> {
-        text::number(Self::WHAT, text, 0, Self::MAX_VALUE.into()).map(Self)
+        text::number(text, 0, Self::MAX_VALUE.into())
+            .map(Self)
+            .map_err(|flaw| match flaw {
+                Flaw::Malformed => ApiVersionError::Malformed { input: text.to_owned() },
+                Flaw::OutOfRange => ApiVersionError::OutOfRange { input: text.to_owned() },
+            })
     }
 }
 
@@ -100,7 +105,28 @@ impl fmt::Display for ApiVersion {
     }
 }
 
-number_form!(ApiVersion, u16, "an API version such as 11");
+number_form!(ApiVersion, ApiVersionError, u16, "an API version such as 11");
+
+/// Why a number or a text is not an [`ApiVersion`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum ApiVersionError {
+    /// The text is not a whole number.
+    Malformed { input: String },
+    /// The number is below zero or above [`i16::MAX`].
+    OutOfRange { input: String },
+}
+
+impl fmt::Display for ApiVersionError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Malformed { input } => write!(f, "API version {input:?} does not have the form a whole number"),
+            Self::OutOfRange { input } => write!(f, "API version {input} is not between 0 and {}", i16::MAX),
+        }
+    }
+}
+
+impl std::error::Error for ApiVersionError {}
 
 /// The acknowledgements a Produce request asks for, which is the value of the field `acks`.
 ///
@@ -119,7 +145,7 @@ number_form!(ApiVersion, u16, "an API version such as 11");
 /// assert_eq!("-1".parse::<Acks>()?, Acks::ALL);
 /// assert_eq!("all".parse::<Acks>()?, Acks::ALL);
 /// assert_eq!(Acks::from(1), Acks::LEADER);
-/// # Ok::<(), FieldError>(())
+/// # Ok::<(), Box<dyn std::error::Error>>(())
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Acks(i16);
@@ -131,8 +157,6 @@ impl Acks {
     pub const NONE: Acks = Acks(0);
     /// `1`: the leader has the records before the broker answers.
     pub const LEADER: Acks = Acks(1);
-
-    const WHAT: &'static str = "acks";
 
     /// The acks with that number, as a Produce request carries it.
     pub const fn new(acks: i16) -> Self {
@@ -159,13 +183,18 @@ impl From<Acks> for i16 {
 
 /// Reads the number, or `all` for `-1`.
 impl FromStr for Acks {
-    type Err = FieldError;
+    type Err = AcksError;
 
     fn from_str(text: &str) -> Result<Self, Self::Err> {
         if text == "all" {
             return Ok(Acks::ALL);
         }
-        text::number(Self::WHAT, text, i16::MIN.into(), i16::MAX.unsigned_abs().into()).map(Self)
+        text::number(text, i16::MIN.into(), i16::MAX.unsigned_abs().into())
+            .map(Self)
+            .map_err(|flaw| match flaw {
+                Flaw::Malformed => AcksError::Malformed { input: text.to_owned() },
+                Flaw::OutOfRange => AcksError::OutOfRange { input: text.to_owned() },
+            })
     }
 }
 
@@ -175,7 +204,35 @@ impl fmt::Display for Acks {
     }
 }
 
-number_form!(Acks, i16, "the acks of a Produce request, such as -1 or \"all\"");
+number_form!(
+    Acks,
+    AcksError,
+    i16,
+    "the acks of a Produce request, such as -1 or \"all\""
+);
+
+/// Why a text is not an [`Acks`].
+///
+/// Every `i16` is a value of `acks`, so only a text can fail.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum AcksError {
+    /// The text is not `all`, and not a whole number.
+    Malformed { input: String },
+    /// The number does not fit an `i16`.
+    OutOfRange { input: String },
+}
+
+impl fmt::Display for AcksError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Malformed { input } => write!(f, "acks {input:?} does not have the form a whole number"),
+            Self::OutOfRange { input } => write!(f, "acks {input} is not between {} and {}", i16::MIN, i16::MAX),
+        }
+    }
+}
+
+impl std::error::Error for AcksError {}
 
 #[cfg(test)]
 mod tests {
@@ -187,15 +244,19 @@ mod tests {
         assert_eq!(ApiVersion::new(32_767).map(ApiVersion::value), Ok(32_767));
         assert_eq!(
             ApiVersion::new(32_768),
-            Err(FieldError::out_of_range("API version", 32_768, 0, 32_767))
+            Err(ApiVersionError::OutOfRange {
+                input: "32768".to_owned()
+            })
         );
         assert_eq!(
             ApiVersion::try_from(40_000_u16),
-            Err(FieldError::out_of_range("API version", 40_000, 0, 32_767))
+            Err(ApiVersionError::OutOfRange {
+                input: "40000".to_owned()
+            })
         );
         assert_eq!(
             ApiVersion::try_from(-1_i16),
-            Err(FieldError::out_of_range("API version", -1, 0, 32_767))
+            Err(ApiVersionError::OutOfRange { input: "-1".to_owned() })
         );
     }
 
@@ -215,15 +276,19 @@ mod tests {
         assert_eq!("11".parse(), Ok(ApiVersion::from(11)));
         assert_eq!(
             "v11".parse::<ApiVersion>(),
-            Err(FieldError::malformed("API version", "v11", "a whole number"))
+            Err(ApiVersionError::Malformed {
+                input: "v11".to_owned()
+            })
         );
         assert_eq!(
             "-1".parse::<ApiVersion>(),
-            Err(FieldError::out_of_range("API version", "-1", 0, 32_767))
+            Err(ApiVersionError::OutOfRange { input: "-1".to_owned() })
         );
         assert_eq!(
             "32768".parse::<ApiVersion>(),
-            Err(FieldError::out_of_range("API version", "32768", 0, 32_767))
+            Err(ApiVersionError::OutOfRange {
+                input: "32768".to_owned()
+            })
         );
     }
 
@@ -252,17 +317,21 @@ mod tests {
         for text in ["", "ALL", "none", "leader", "1.0"] {
             assert_eq!(
                 text.parse::<Acks>(),
-                Err(FieldError::malformed("acks", text, "a whole number")),
+                Err(AcksError::Malformed { input: text.to_owned() }),
                 "{text:?}"
             );
         }
         assert_eq!(
             "40000".parse::<Acks>(),
-            Err(FieldError::out_of_range("acks", "40000", -32_768, 32_767))
+            Err(AcksError::OutOfRange {
+                input: "40000".to_owned()
+            })
         );
         assert_eq!(
             "-40000".parse::<Acks>(),
-            Err(FieldError::out_of_range("acks", "-40000", -32_768, 32_767))
+            Err(AcksError::OutOfRange {
+                input: "-40000".to_owned()
+            })
         );
     }
 }

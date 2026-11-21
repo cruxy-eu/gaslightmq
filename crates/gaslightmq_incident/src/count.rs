@@ -1,10 +1,10 @@
 //! How many of something an incident adds.
 
-/// Define a count that holds `1..=max`.
+/// Define a count that holds `1..=max`, and the error that says why a number is not one.
 macro_rules! count_value {
     (
         $(#[$meta:meta])*
-        $name:ident, $what:literal, value: $value:ty, max: $max:expr
+        $name:ident, $error:ident, $what:literal, value: $value:ty, max: $max:expr
     ) => {
         $(#[$meta])*
         #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -21,11 +21,10 @@ macro_rules! count_value {
             ///
             /// # Errors
             ///
-            /// [`IncidentError::CountOutOfRange`](crate::IncidentError::CountOutOfRange) when `value` is outside that range.
-            pub fn new(value: $value) -> Result<Self, $crate::IncidentError> {
+            #[doc = concat!("[`", stringify!($error), "::OutOfRange`] when `value` is outside that range.")]
+            pub fn new(value: $value) -> Result<Self, $error> {
                 if !(1..=Self::MAX.0).contains(&value) {
-                    return Err($crate::IncidentError::CountOutOfRange {
-                        what: $what,
+                    return Err($error::OutOfRange {
                         value: value.into(),
                         max: Self::MAX.0.into(),
                     });
@@ -39,6 +38,26 @@ macro_rules! count_value {
             }
         }
 
+        #[doc = concat!("Why a number is not a [`", stringify!($name), "`].")]
+        #[derive(Debug, Clone, PartialEq, Eq)]
+        #[non_exhaustive]
+        pub enum $error {
+            #[doc = concat!("The number is zero, or above the highest ", $what, ".")]
+            OutOfRange { value: u64, max: u64 },
+        }
+
+        impl std::fmt::Display for $error {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                match self {
+                    Self::OutOfRange { value, max } => {
+                        write!(f, concat!($what, " {} is not between 1 and {}"), value, max)
+                    }
+                }
+            }
+        }
+
+        impl std::error::Error for $error {}
+
         /// One.
         impl Default for $name {
             fn default() -> Self {
@@ -47,7 +66,7 @@ macro_rules! count_value {
         }
 
         impl TryFrom<$value> for $name {
-            type Error = $crate::IncidentError;
+            type Error = $error;
 
             fn try_from(value: $value) -> Result<Self, Self::Error> {
                 Self::new(value)
@@ -95,9 +114,9 @@ count_value! {
     /// assert_eq!(PartitionCount::new(3)?.value(), 3);
     /// assert_eq!(PartitionCount::default(), PartitionCount::ONE);
     /// assert!(PartitionCount::new(0).is_err());
-    /// # Ok::<(), IncidentError>(())
+    /// # Ok::<(), PartitionCountError>(())
     /// ```
-    PartitionCount, "partition count", value: u32, max: i32::MAX as u32
+    PartitionCount, PartitionCountError, "partition count", value: u32, max: i32::MAX as u32
 }
 
 count_value! {
@@ -112,15 +131,14 @@ count_value! {
     /// assert_eq!(RecordCount::new(500)?.value(), 500);
     /// assert_eq!(RecordCount::default(), RecordCount::ONE);
     /// assert!(RecordCount::new(0).is_err());
-    /// # Ok::<(), IncidentError>(())
+    /// # Ok::<(), RecordCountError>(())
     /// ```
-    RecordCount, "record count", value: u64, max: i64::MAX as u64
+    RecordCount, RecordCountError, "record count", value: u64, max: i64::MAX as u64
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::IncidentError;
 
     #[test]
     fn a_count_is_at_least_one() {
@@ -128,16 +146,14 @@ mod tests {
         assert_eq!(RecordCount::new(1), Ok(RecordCount::ONE));
         assert_eq!(
             PartitionCount::new(0),
-            Err(IncidentError::CountOutOfRange {
-                what: "partition count",
+            Err(PartitionCountError::OutOfRange {
                 value: 0,
                 max: 2_147_483_647
             }),
         );
         assert_eq!(
             RecordCount::new(0),
-            Err(IncidentError::CountOutOfRange {
-                what: "record count",
+            Err(RecordCountError::OutOfRange {
                 value: 0,
                 max: i64::MAX as u64
             }),
@@ -150,20 +166,47 @@ mod tests {
         assert_eq!(RecordCount::new(i64::MAX as u64), Ok(RecordCount::MAX));
         assert_eq!(
             PartitionCount::new(i32::MAX as u32 + 1),
-            Err(IncidentError::CountOutOfRange {
-                what: "partition count",
+            Err(PartitionCountError::OutOfRange {
                 value: 2_147_483_648,
                 max: 2_147_483_647
             }),
         );
         assert_eq!(
             RecordCount::try_from(u64::MAX),
-            Err(IncidentError::CountOutOfRange {
-                what: "record count",
+            Err(RecordCountError::OutOfRange {
                 value: u64::MAX,
                 max: i64::MAX as u64
             }),
         );
+    }
+
+    #[test]
+    fn the_error_of_a_count_names_the_count_the_number_and_the_range() {
+        use std::error::Error;
+
+        let cases: [(Box<dyn Error>, &str); 4] = [
+            (
+                Box::new(PartitionCount::new(0).unwrap_err()),
+                "partition count 0 is not between 1 and 2147483647",
+            ),
+            (
+                Box::new(PartitionCount::new(u32::MAX).unwrap_err()),
+                "partition count 4294967295 is not between 1 and 2147483647",
+            ),
+            (
+                Box::new(RecordCount::new(0).unwrap_err()),
+                "record count 0 is not between 1 and 9223372036854775807",
+            ),
+            (
+                Box::new(RecordCount::new(u64::MAX).unwrap_err()),
+                "record count 18446744073709551615 is not between 1 and 9223372036854775807",
+            ),
+        ];
+
+        for (error, message) in cases {
+            assert_eq!(error.to_string(), message);
+            assert!(error.source().is_none(), "the message is complete: {error}");
+        }
     }
 
     #[test]

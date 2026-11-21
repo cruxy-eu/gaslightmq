@@ -15,12 +15,12 @@ number_value! {
     /// let producer = ProducerId::from_wire(4000)?;
     /// assert_eq!(producer, Some(ProducerId::from(4000)));
     /// assert_eq!(ProducerId::from_wire(-1)?, None);
-    /// # Ok::<(), KernelError>(())
+    /// # Ok::<(), Box<dyn std::error::Error>>(())
     /// ```
-    ProducerId, "producer ID", value: u64, wire: i64, small: u32
+    ProducerId, ProducerIdError, "producer ID", value: u64, wire: i64, small: u32
 }
 
-number_sentinel!(ProducerId, "producer ID", wire: i64, none: "\"no producer ID\"");
+number_sentinel!(ProducerId, ProducerIdError, "producer ID", wire: i64, none: "\"no producer ID\"");
 
 number_value! {
     /// The epoch of a producer ID.
@@ -37,12 +37,12 @@ number_value! {
     /// let epoch = ProducerEpoch::from(0);
     /// assert_eq!(epoch.checked_next(), Some(ProducerEpoch::from(1)));
     /// assert_eq!(ProducerEpoch::from_wire(-1)?, None);
-    /// # Ok::<(), KernelError>(())
+    /// # Ok::<(), Box<dyn std::error::Error>>(())
     /// ```
-    ProducerEpoch, "producer epoch", value: u16, wire: i16, small: u8
+    ProducerEpoch, ProducerEpochError, "producer epoch", value: u16, wire: i16, small: u8
 }
 
-number_sentinel!(ProducerEpoch, "producer epoch", wire: i16, none: "\"no producer epoch\"");
+number_sentinel!(ProducerEpoch, ProducerEpochError, "producer epoch", wire: i16, none: "\"no producer epoch\"");
 
 impl ProducerEpoch {
     /// The epoch after this one, or `None` when this is the highest epoch.
@@ -66,15 +66,14 @@ text_value! {
     /// let transactional = TransactionalId::new("payments-tx-1")?;
     /// assert_eq!(transactional, "payments-tx-1");
     /// assert!(TransactionalId::new("").is_err());
-    /// # Ok::<(), KernelError>(())
+    /// # Ok::<(), Box<dyn std::error::Error>>(())
     /// ```
-    TransactionalId, "transactional ID", max: text::MAX_STRING_LEN, rule: text::non_empty
+    TransactionalId, TransactionalIdError, "transactional ID", max: text::MAX_STRING_LEN, rule: non_empty
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::KernelError;
 
     const MAX_ID: u64 = i64::MAX as u64;
     const MAX_EPOCH: u16 = i16::MAX as u16;
@@ -85,8 +84,7 @@ mod tests {
         assert_eq!(ProducerId::new(MAX_ID).map(ProducerId::value), Ok(MAX_ID));
         assert_eq!(
             ProducerId::new(MAX_ID + 1),
-            Err(KernelError::TooLarge {
-                what: "producer ID",
+            Err(ProducerIdError::TooLarge {
                 value: MAX_ID + 1,
                 max: MAX_ID
             })
@@ -102,10 +100,7 @@ mod tests {
         assert_eq!(ProducerId::try_from(4000_i64), Ok(producer));
         assert_eq!(
             ProducerId::try_from(-1_i64),
-            Err(KernelError::Negative {
-                what: "producer ID",
-                value: -1
-            })
+            Err(ProducerIdError::Negative { value: -1 })
         );
         assert!(ProducerId::try_from(u64::MAX).is_err());
         assert_eq!(producer.value(), 4000);
@@ -117,13 +112,7 @@ mod tests {
     fn the_wire_writes_no_producer_id_as_minus_one() {
         assert_eq!(ProducerId::from_wire(-1), Ok(None));
         assert_eq!(ProducerId::from_wire(4000), Ok(Some(ProducerId::from(4000))));
-        assert_eq!(
-            ProducerId::from_wire(-2),
-            Err(KernelError::Negative {
-                what: "producer ID",
-                value: -2
-            })
-        );
+        assert_eq!(ProducerId::from_wire(-2), Err(ProducerIdError::Negative { value: -2 }));
         assert_eq!(ProducerId::to_wire(None), -1);
         assert_eq!(ProducerId::to_wire(Some(ProducerId::from(4000))), 4000);
     }
@@ -141,8 +130,7 @@ mod tests {
         assert_eq!(ProducerEpoch::new(MAX_EPOCH).map(ProducerEpoch::value), Ok(MAX_EPOCH));
         assert_eq!(
             ProducerEpoch::new(MAX_EPOCH + 1),
-            Err(KernelError::TooLarge {
-                what: "producer epoch",
+            Err(ProducerEpochError::TooLarge {
                 value: 32_768,
                 max: 32_767
             })
@@ -158,10 +146,7 @@ mod tests {
         assert_eq!(ProducerEpoch::try_from(5_i16), Ok(epoch));
         assert_eq!(
             ProducerEpoch::try_from(-1_i16),
-            Err(KernelError::Negative {
-                what: "producer epoch",
-                value: -1
-            })
+            Err(ProducerEpochError::Negative { value: -1 })
         );
         assert!(ProducerEpoch::try_from(u16::MAX).is_err());
         assert_eq!(epoch.value(), 5);
@@ -176,10 +161,7 @@ mod tests {
         assert_eq!(ProducerEpoch::from_wire(5), Ok(Some(ProducerEpoch::from(5))));
         assert_eq!(
             ProducerEpoch::from_wire(-2),
-            Err(KernelError::Negative {
-                what: "producer epoch",
-                value: -2
-            })
+            Err(ProducerEpochError::Negative { value: -2 })
         );
         assert_eq!(ProducerEpoch::to_wire(None), -1);
         assert_eq!(ProducerEpoch::to_wire(Some(ProducerEpoch::from(5))), 5);
@@ -191,8 +173,7 @@ mod tests {
         assert_eq!(ProducerEpoch::from(5).to_string(), "5");
         assert_eq!(
             "32768".parse::<ProducerEpoch>(),
-            Err(KernelError::TooLarge {
-                what: "producer epoch",
+            Err(ProducerEpochError::TooLarge {
                 value: 32_768,
                 max: 32_767
             })
@@ -209,17 +190,11 @@ mod tests {
     #[test]
     fn a_transactional_id_takes_any_text_but_none() {
         assert_eq!(TransactionalId::new("payments tx/1").unwrap().as_str(), "payments tx/1");
-        assert_eq!(
-            TransactionalId::new(""),
-            Err(KernelError::Empty {
-                what: "transactional ID"
-            })
-        );
+        assert_eq!(TransactionalId::new(""), Err(TransactionalIdError::Empty));
         assert_eq!(TransactionalId::MAX_LEN, 32_767);
         assert_eq!(
             TransactionalId::new("a".repeat(32_768)),
-            Err(KernelError::TooLong {
-                what: "transactional ID",
+            Err(TransactionalIdError::TooLong {
                 len: 32_768,
                 max: 32_767
             })

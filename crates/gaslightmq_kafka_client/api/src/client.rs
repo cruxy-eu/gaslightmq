@@ -20,7 +20,7 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 use tokio::sync::Mutex;
 
-use crate::traits::{
+use crate::application::{
     HeartbeatResult, JoinGroupResult, ProduceResult, Producer, ProtocolConsumer, RecordStream, SyncGroupResult,
 };
 use crate::{ApiVersions, CreateTopics, DeleteTopics, Fetch, FindCoordinator, ListOffsets, Metadata, Produce};

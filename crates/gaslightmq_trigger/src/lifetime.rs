@@ -5,7 +5,7 @@ use std::str::FromStr;
 
 use gaslightmq_clock::{Instant, TimeSpan};
 
-use crate::{Count, TriggerError};
+use crate::{Count, CountError};
 
 /// When an armed rule disarms itself.
 ///
@@ -28,7 +28,7 @@ use crate::{Count, TriggerError};
 /// assert_eq!("100 matches".parse(), Ok(Lifetime::Matches(Count::new(100)?)));
 /// assert_eq!("1 firing".parse(), Ok(Lifetime::Firings(Count::ONE)));
 /// assert_eq!(Lifetime::Firings(Count::new(3)?).to_string(), "3 firings");
-/// # Ok::<(), TriggerError>(())
+/// # Ok::<(), CountError>(())
 /// ```
 ///
 /// With the `serde` feature, a lifetime serializes as its text.
@@ -60,9 +60,9 @@ impl Lifetime {
 ///
 /// A count of one also reads as `1 match` and `1 firing`.
 impl FromStr for Lifetime {
-    type Err = TriggerError;
+    type Err = LifetimeError;
 
-    fn from_str(text: &str) -> Result<Lifetime, TriggerError> {
+    fn from_str(text: &str) -> Result<Lifetime, LifetimeError> {
         if text == "until disarmed" {
             return Ok(Lifetime::UntilDisarmed);
         }
@@ -74,14 +74,14 @@ impl FromStr for Lifetime {
             digits.then(|| number.parse::<u64>().ok()).flatten()
         };
         if let Some(matches) = counted("matches", "match") {
-            return Count::new(matches).map(Lifetime::Matches);
+            return Ok(Lifetime::Matches(Count::new(matches)?));
         }
         if let Some(firings) = counted("firings", "firing") {
-            return Count::new(firings).map(Lifetime::Firings);
+            return Ok(Lifetime::Firings(Count::new(firings)?));
         }
         text.parse::<TimeSpan>()
             .map(Lifetime::Duration)
-            .map_err(|_| TriggerError::InvalidLifetime { text: text.to_owned() })
+            .map_err(|_| LifetimeError::Malformed { input: text.to_owned() })
     }
 }
 
@@ -98,6 +98,49 @@ impl fmt::Display for Lifetime {
             Lifetime::Firings(Count::ONE) => f.write_str("1 firing"),
             Lifetime::Firings(count) => write!(f, "{count} firings"),
         }
+    }
+}
+
+/// Why a text is not a [`Lifetime`].
+///
+/// A text that counts matches or firings has a count, and the error keeps what is wrong with that count.
+/// Its message is the message of the count's error.
+///
+/// ```
+/// use gaslightmq_trigger::prelude::*;
+///
+/// let error = "0 firings".parse::<Lifetime>().unwrap_err();
+/// assert_eq!(error, LifetimeError::InvalidCount { error: CountError::Zero });
+/// assert_eq!(error.to_string(), "a count is at least one");
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum LifetimeError {
+    /// The text is not `until disarmed`, not a time span, and not a count of matches or firings.
+    Malformed { input: String },
+    /// The number of matches or firings is not a count.
+    InvalidCount { error: CountError },
+}
+
+impl fmt::Display for LifetimeError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Malformed { input } => write!(
+                f,
+                "`{input}` is not a lifetime: expected `until disarmed`, a time span such as `30s`, \
+                 or a count such as `100 matches` or `3 firings`"
+            ),
+            Self::InvalidCount { error } => fmt::Display::fmt(error, f),
+        }
+    }
+}
+
+/// The message is complete, so no variant has a source.
+impl std::error::Error for LifetimeError {}
+
+impl From<CountError> for LifetimeError {
+    fn from(error: CountError) -> Self {
+        Self::InvalidCount { error }
     }
 }
 
@@ -168,7 +211,7 @@ mod tests {
         ] {
             assert_eq!(
                 text.parse::<Lifetime>(),
-                Err(TriggerError::InvalidLifetime { text: text.into() }),
+                Err(LifetimeError::Malformed { input: text.into() }),
                 "`{text}`"
             );
         }
@@ -176,14 +219,36 @@ mod tests {
 
     #[test]
     fn a_budget_of_zero_is_an_error() {
+        let zero = LifetimeError::InvalidCount {
+            error: CountError::Zero,
+        };
+        assert_eq!("0 matches".parse::<Lifetime>(), Err(zero.clone()));
+        assert_eq!("0 firings".parse::<Lifetime>(), Err(zero));
+    }
+
+    #[test]
+    fn a_lifetime_error_says_what_is_wrong() {
+        let malformed = LifetimeError::Malformed {
+            input: "forever".into(),
+        };
         assert_eq!(
-            "0 matches".parse::<Lifetime>(),
-            Err(TriggerError::Zero { what: "count" })
+            malformed.to_string(),
+            "`forever` is not a lifetime: expected `until disarmed`, a time span such as `30s`, \
+             or a count such as `100 matches` or `3 firings`",
         );
         assert_eq!(
-            "0 firings".parse::<Lifetime>(),
-            Err(TriggerError::Zero { what: "count" })
+            LifetimeError::from(CountError::Zero).to_string(),
+            "a count is at least one"
         );
+    }
+
+    #[test]
+    fn a_lifetime_error_writes_its_cause_once_and_has_no_source() {
+        use std::error::Error;
+
+        let error = "0 matches".parse::<Lifetime>().unwrap_err();
+        assert_eq!(error.to_string(), CountError::Zero.to_string());
+        assert!(error.source().is_none());
     }
 
     #[test]

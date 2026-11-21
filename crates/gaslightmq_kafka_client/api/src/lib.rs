@@ -9,6 +9,7 @@
 //!   it is given, to one address, at a fixed version.
 
 pub mod api_versions;
+pub mod application;
 pub mod client;
 pub mod create_topics;
 pub mod delete_topics;
@@ -17,9 +18,12 @@ pub mod find_coordinator;
 pub mod list_offsets;
 pub mod metadata;
 pub mod produce;
-pub mod traits;
 
 pub use api_versions::ApiVersions;
+pub use application::{
+    Admin, Consumer, HeartbeatResult, JoinGroupResult, PartitionMetadata, ProduceResult, Producer, ProtocolConsumer,
+    RecordStream, SyncGroupResult, TopicConfigs, TopicMetadata, Watermarks,
+};
 pub use client::RawKafkaClient;
 pub use create_topics::CreateTopics;
 pub use delete_topics::DeleteTopics;
@@ -28,7 +32,3 @@ pub use find_coordinator::FindCoordinator;
 pub use list_offsets::ListOffsets;
 pub use metadata::Metadata;
 pub use produce::Produce;
-pub use traits::{
-    Admin, Consumer, HeartbeatResult, JoinGroupResult, PartitionMetadata, ProduceResult, Producer, ProtocolConsumer,
-    RecordStream, SyncGroupResult, TopicConfigs, TopicMetadata, Watermarks,
-};

@@ -5,7 +5,6 @@ use std::str::FromStr;
 
 use gaslightmq_clock::{Duration, TimeSpan};
 
-use crate::FieldError;
 use crate::text::text_form;
 
 /// How the backend answered, which is the value of the field `outcome`.
@@ -20,7 +19,7 @@ use crate::text::text_form;
 /// let outcome: Outcome = "timeout".parse()?;
 /// assert_eq!(outcome, Outcome::Timeout);
 /// assert_eq!(Outcome::Ok.to_string(), "ok");
-/// # Ok::<(), FieldError>(())
+/// # Ok::<(), Box<dyn std::error::Error>>(())
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Outcome {
@@ -48,13 +47,13 @@ impl Outcome {
 
 /// Reads the name of an outcome, as [`Display`](fmt::Display) writes it.
 impl FromStr for Outcome {
-    type Err = FieldError;
+    type Err = OutcomeError;
 
     fn from_str(text: &str) -> Result<Self, Self::Err> {
         Outcome::ALL
             .into_iter()
             .find(|outcome| outcome.name() == text)
-            .ok_or_else(|| FieldError::unknown_name("outcome", text))
+            .ok_or_else(|| OutcomeError::Unknown { name: text.to_owned() })
     }
 }
 
@@ -64,7 +63,25 @@ impl fmt::Display for Outcome {
     }
 }
 
-text_form!(Outcome);
+text_form!(Outcome, OutcomeError);
+
+/// Why a text is not an [`Outcome`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum OutcomeError {
+    /// No outcome has this name.
+    Unknown { name: String },
+}
+
+impl fmt::Display for OutcomeError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Unknown { name } => write!(f, "unknown outcome: {name:?}"),
+        }
+    }
+}
+
+impl std::error::Error for OutcomeError {}
 
 /// How long the backend took to answer, which is the value of the field `latency`.
 ///
@@ -81,7 +98,7 @@ text_form!(Outcome);
 /// assert_eq!(measured.to_string(), "14ms");
 /// assert_eq!("14 ms".parse::<Latency>()?, measured);
 /// assert!(measured < Latency::from_millis(15));
-/// # Ok::<(), FieldError>(())
+/// # Ok::<(), Box<dyn std::error::Error>>(())
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Latency(TimeSpan);
@@ -135,12 +152,12 @@ impl From<Latency> for Duration {
 
 /// Reads a whole number and a unit, as a [`TimeSpan`] does: `14ms`, `2s`, `1m` or `1h`.
 impl FromStr for Latency {
-    type Err = FieldError;
+    type Err = LatencyError;
 
     fn from_str(text: &str) -> Result<Self, Self::Err> {
         text.parse::<TimeSpan>()
             .map(Self)
-            .map_err(|_| FieldError::malformed("latency", text, "a whole number and a unit, such as 14ms"))
+            .map_err(|_| LatencyError::Malformed { input: text.to_owned() })
     }
 }
 
@@ -150,7 +167,28 @@ impl fmt::Display for Latency {
     }
 }
 
-text_form!(Latency);
+text_form!(Latency, LatencyError);
+
+/// Why a text is not a [`Latency`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum LatencyError {
+    /// The text is not a whole number and a unit: `ms`, `s`, `m` or `h`.
+    Malformed { input: String },
+}
+
+impl fmt::Display for LatencyError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Malformed { input } => write!(
+                f,
+                "latency {input:?} does not have the form a whole number and a unit, such as 14ms"
+            ),
+        }
+    }
+}
+
+impl std::error::Error for LatencyError {}
 
 #[cfg(test)]
 mod tests {
@@ -165,7 +203,7 @@ mod tests {
         for text in ["", "OK", "Ok", "success", "delayed", "throttled", "ok "] {
             assert_eq!(
                 text.parse::<Outcome>(),
-                Err(FieldError::unknown_name("outcome", text)),
+                Err(OutcomeError::Unknown { name: text.to_owned() }),
                 "{text:?}"
             );
         }
@@ -197,11 +235,7 @@ mod tests {
         for text in ["", "14", "ms", "1.5s", "14 parsecs", "-1ms"] {
             assert_eq!(
                 text.parse::<Latency>(),
-                Err(FieldError::malformed(
-                    "latency",
-                    text,
-                    "a whole number and a unit, such as 14ms"
-                )),
+                Err(LatencyError::Malformed { input: text.to_owned() }),
                 "{text:?}"
             );
         }

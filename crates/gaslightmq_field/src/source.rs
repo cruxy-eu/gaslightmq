@@ -139,7 +139,7 @@ impl<T> From<Option<T>> for Reading<T> {
 ///     .filter(|part| is(part, eu.clone().into()) && is(part, PartitionNumber::from(3).into()))
 ///     .map(|part| part.part().clone());
 /// assert_eq!(Target::of_parts(matched), None);
-/// # Ok::<(), FieldError>(())
+/// # Ok::<(), Box<dyn std::error::Error>>(())
 /// ```
 pub trait FieldSource {
     /// What the call as a whole has for `field`.

@@ -33,7 +33,7 @@ const MILLIS_PER_HOUR: u64 = 60 * MILLIS_PER_MINUTE;
 /// // The text names the largest unit that fits exactly.
 /// assert_eq!("120 s".parse::<TimeSpan>()?.to_string(), "2m");
 /// assert_eq!(TimeSpan::from_millis(1500).to_string(), "1500ms");
-/// # Ok::<(), gaslightmq_clock::ParseTimeSpanError>(())
+/// # Ok::<(), gaslightmq_clock::TimeSpanError>(())
 /// ```
 ///
 /// With the `serde` feature, a time span serializes as its text.
@@ -88,33 +88,35 @@ impl From<TimeSpan> for Duration {
 /// A space between the number and the unit is optional.
 /// A fraction such as `1.5s` and a compound such as `1m30s` are errors.
 impl FromStr for TimeSpan {
-    type Err = ParseTimeSpanError;
+    type Err = TimeSpanError;
 
-    fn from_str(text: &str) -> Result<TimeSpan, ParseTimeSpanError> {
-        let fail = |reason| ParseTimeSpanError {
-            text: text.to_owned(),
-            reason,
-        };
+    fn from_str(text: &str) -> Result<TimeSpan, TimeSpanError> {
+        let input = || text.to_owned();
 
         let digits = text.bytes().take_while(u8::is_ascii_digit).count();
         let (number, rest) = text.split_at(digits);
         if number.is_empty() {
-            return Err(fail(Reason::NoNumber));
+            return Err(TimeSpanError::NoNumber { input: input() });
         }
         let millis_per_unit = match rest.trim_start_matches(' ') {
             "ms" => 1,
             "s" => MILLIS_PER_SECOND,
             "m" => MILLIS_PER_MINUTE,
             "h" => MILLIS_PER_HOUR,
-            "" => return Err(fail(Reason::NoUnit)),
-            unit => return Err(fail(Reason::UnknownUnit(unit.to_owned()))),
+            "" => return Err(TimeSpanError::NoUnit { input: input() }),
+            unit => {
+                return Err(TimeSpanError::UnknownUnit {
+                    input: input(),
+                    unit: unit.to_owned(),
+                });
+            }
         };
         number
             .parse::<u64>()
             .ok()
             .and_then(|count| count.checked_mul(millis_per_unit))
             .map(TimeSpan)
-            .ok_or_else(|| fail(Reason::TooLong))
+            .ok_or_else(|| TimeSpanError::TooLong { input: input() })
     }
 }
 
@@ -140,9 +142,9 @@ impl fmt::Display for TimeSpan {
 
 #[cfg(feature = "serde")]
 impl TryFrom<String> for TimeSpan {
-    type Error = ParseTimeSpanError;
+    type Error = TimeSpanError;
 
-    fn try_from(text: String) -> Result<TimeSpan, ParseTimeSpanError> {
+    fn try_from(text: String) -> Result<TimeSpan, TimeSpanError> {
         text.parse()
     }
 }
@@ -166,34 +168,37 @@ impl From<TimeSpan> for String {
 /// );
 /// ```
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct ParseTimeSpanError {
-    text: String,
-    reason: Reason,
+#[non_exhaustive]
+pub enum TimeSpanError {
+    /// The text does not start with a whole number.
+    NoNumber { input: String },
+    /// The text is a number without a unit.
+    NoUnit { input: String },
+    /// The text after the number is not `ms`, `s`, `m` or `h`.
+    UnknownUnit { input: String, unit: String },
+    /// The time span is more milliseconds than a `u64` holds.
+    TooLong { input: String },
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
-enum Reason {
-    NoNumber,
-    NoUnit,
-    UnknownUnit(String),
-    TooLong,
-}
-
-impl fmt::Display for ParseTimeSpanError {
+impl fmt::Display for TimeSpanError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "invalid time span `{}`: ", self.text)?;
-        match &self.reason {
-            Reason::NoNumber => write!(f, "expected a whole number and a unit, such as `10s`"),
-            Reason::NoUnit => write!(f, "missing unit, expected ms, s, m or h"),
-            Reason::UnknownUnit(unit) => {
+        let (Self::NoNumber { input }
+        | Self::NoUnit { input }
+        | Self::UnknownUnit { input, .. }
+        | Self::TooLong { input }) = self;
+        write!(f, "invalid time span `{input}`: ")?;
+        match self {
+            Self::NoNumber { .. } => write!(f, "expected a whole number and a unit, such as `10s`"),
+            Self::NoUnit { .. } => write!(f, "missing unit, expected ms, s, m or h"),
+            Self::UnknownUnit { unit, .. } => {
                 write!(f, "unknown unit `{unit}`, expected ms, s, m or h")
             }
-            Reason::TooLong => write!(f, "too long"),
+            Self::TooLong { .. } => write!(f, "too long"),
         }
     }
 }
 
-impl core::error::Error for ParseTimeSpanError {}
+impl core::error::Error for TimeSpanError {}
 
 #[cfg(test)]
 mod tests {
@@ -204,10 +209,27 @@ mod tests {
             .unwrap_or_else(|error| panic!("`{text}` should parse: {error}"))
     }
 
-    fn reason(text: &str) -> Reason {
-        let error = text.parse::<TimeSpan>().expect_err("the text should not parse");
-        assert_eq!(error.text, text);
-        error.reason
+    fn error(text: &str) -> TimeSpanError {
+        text.parse::<TimeSpan>().expect_err("the text should not parse")
+    }
+
+    fn no_number(text: &str) -> TimeSpanError {
+        TimeSpanError::NoNumber { input: text.to_owned() }
+    }
+
+    fn no_unit(text: &str) -> TimeSpanError {
+        TimeSpanError::NoUnit { input: text.to_owned() }
+    }
+
+    fn unknown_unit(text: &str, unit: &str) -> TimeSpanError {
+        TimeSpanError::UnknownUnit {
+            input: text.to_owned(),
+            unit: unit.to_owned(),
+        }
+    }
+
+    fn too_long(text: &str) -> TimeSpanError {
+        TimeSpanError::TooLong { input: text.to_owned() }
     }
 
     #[test]
@@ -292,14 +314,14 @@ mod tests {
     #[test]
     fn rejects_a_text_without_a_number() {
         for text in ["", " ", "s", "ms", "-5s", "+5s", " 5s", ".5s", "ten s"] {
-            assert_eq!(reason(text), Reason::NoNumber, "`{text}`");
+            assert_eq!(error(text), no_number(text), "`{text}`");
         }
     }
 
     #[test]
     fn rejects_a_number_without_a_unit() {
         for text in ["10", "0", "10 ", "10   "] {
-            assert_eq!(reason(text), Reason::NoUnit, "`{text}`");
+            assert_eq!(error(text), no_unit(text), "`{text}`");
         }
     }
 
@@ -317,31 +339,35 @@ mod tests {
             ("10\ts", "\ts"),
             ("10 m s", "m s"),
         ] {
-            assert_eq!(reason(text), Reason::UnknownUnit(unit.to_owned()), "`{text}`");
+            assert_eq!(error(text), unknown_unit(text, unit), "`{text}`");
         }
     }
 
     #[test]
     fn rejects_fractions_and_compounds() {
-        assert_eq!(reason("1.5s"), Reason::UnknownUnit(".5s".to_owned()));
-        assert_eq!(reason("1,5s"), Reason::UnknownUnit(",5s".to_owned()));
-        assert_eq!(reason("1m30s"), Reason::UnknownUnit("m30s".to_owned()));
-        assert_eq!(reason("1m 30s"), Reason::UnknownUnit("m 30s".to_owned()));
+        assert_eq!(error("1.5s"), unknown_unit("1.5s", ".5s"));
+        assert_eq!(error("1,5s"), unknown_unit("1,5s", ",5s"));
+        assert_eq!(error("1m30s"), unknown_unit("1m30s", "m30s"));
+        assert_eq!(error("1m 30s"), unknown_unit("1m 30s", "m 30s"));
     }
 
     #[test]
     fn rejects_a_time_span_that_does_not_fit() {
         assert_eq!(parse("18446744073709551615ms").as_millis(), u64::MAX);
-        assert_eq!(reason("18446744073709551616ms"), Reason::TooLong);
-        assert_eq!(reason("18446744073709551615s"), Reason::TooLong);
-        assert_eq!(reason("99999999999999999999999999h"), Reason::TooLong);
+        assert_eq!(error("18446744073709551616ms"), too_long("18446744073709551616ms"));
+        assert_eq!(error("18446744073709551615s"), too_long("18446744073709551615s"));
+        assert_eq!(
+            error("99999999999999999999999999h"),
+            too_long("99999999999999999999999999h")
+        );
 
         let most_hours = u64::MAX / MILLIS_PER_HOUR;
         assert_eq!(
             parse(&format!("{most_hours}h")).as_millis(),
             most_hours * MILLIS_PER_HOUR
         );
-        assert_eq!(reason(&format!("{}h", most_hours + 1)), Reason::TooLong);
+        let one_more = format!("{}h", most_hours + 1);
+        assert_eq!(error(&one_more), too_long(&one_more));
     }
 
     #[test]

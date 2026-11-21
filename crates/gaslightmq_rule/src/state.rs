@@ -1,8 +1,6 @@
 use std::fmt;
 use std::str::FromStr;
 
-use crate::RuleError;
-
 /// The state of a rule: whether it is being written, evaluated, or kept.
 ///
 /// | State | Means |
@@ -34,7 +32,7 @@ use crate::RuleError;
 ///
 /// // Arming resets a rule, so arming an armed rule is not a change: disarm it first.
 /// assert!(RuleState::Armed.arm().is_err());
-/// # Ok::<(), RuleError>(())
+/// # Ok::<(), Box<dyn std::error::Error>>(())
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum RuleState {
@@ -68,8 +66,8 @@ impl RuleState {
     ///
     /// # Errors
     ///
-    /// [`RuleError::InvalidStateChange`] when the rule is armed already.
-    pub fn arm(self) -> Result<RuleState, RuleError> {
+    /// [`RuleStateError::InvalidChange`] when the rule is armed already.
+    pub fn arm(self) -> Result<RuleState, RuleStateError> {
         match self {
             RuleState::Draft | RuleState::Disarmed => Ok(RuleState::Armed),
             RuleState::Armed => Err(self.cannot("arm")),
@@ -80,8 +78,8 @@ impl RuleState {
     ///
     /// # Errors
     ///
-    /// [`RuleError::InvalidStateChange`] when the rule is not armed.
-    pub fn disarm(self) -> Result<RuleState, RuleError> {
+    /// [`RuleStateError::InvalidChange`] when the rule is not armed.
+    pub fn disarm(self) -> Result<RuleState, RuleStateError> {
         match self {
             RuleState::Armed => Ok(RuleState::Disarmed),
             RuleState::Draft | RuleState::Disarmed => Err(self.cannot("disarm")),
@@ -92,16 +90,16 @@ impl RuleState {
     ///
     /// # Errors
     ///
-    /// [`RuleError::InvalidStateChange`] when the rule is not a draft.
-    pub fn save(self) -> Result<RuleState, RuleError> {
+    /// [`RuleStateError::InvalidChange`] when the rule is not a draft.
+    pub fn save(self) -> Result<RuleState, RuleStateError> {
         match self {
             RuleState::Draft => Ok(RuleState::Disarmed),
             RuleState::Armed | RuleState::Disarmed => Err(self.cannot("save")),
         }
     }
 
-    fn cannot(self, change: &'static str) -> RuleError {
-        RuleError::InvalidStateChange { from: self, change }
+    fn cannot(self, change: &'static str) -> RuleStateError {
+        RuleStateError::InvalidChange { from: self, change }
     }
 }
 
@@ -113,20 +111,41 @@ impl fmt::Display for RuleState {
 
 /// Reads the name of a state.
 impl FromStr for RuleState {
-    type Err = RuleError;
+    type Err = RuleStateError;
 
     fn from_str(text: &str) -> Result<Self, Self::Err> {
         let state = RuleState::ALL.into_iter().find(|state| state.name() == text);
-        state.ok_or_else(|| RuleError::UnknownState { name: text.to_owned() })
+        state.ok_or_else(|| RuleStateError::Unknown { name: text.to_owned() })
     }
 }
+
+/// Why a text is not a [`RuleState`], or why a rule cannot leave the state it is in.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum RuleStateError {
+    /// No state has this name.
+    Unknown { name: String },
+    /// A rule in this state cannot take this change, where `change` is `arm`, `disarm` or `save`.
+    InvalidChange { from: RuleState, change: &'static str },
+}
+
+impl fmt::Display for RuleStateError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Unknown { name } => write!(f, "no state is called {name:?}"),
+            Self::InvalidChange { from, change } => write!(f, "a rule that is {from} cannot {change}"),
+        }
+    }
+}
+
+impl std::error::Error for RuleStateError {}
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    fn cannot(from: RuleState, change: &'static str) -> Result<RuleState, RuleError> {
-        Err(RuleError::InvalidStateChange { from, change })
+    fn cannot(from: RuleState, change: &'static str) -> Result<RuleState, RuleStateError> {
+        Err(RuleStateError::InvalidChange { from, change })
     }
 
     #[test]
@@ -170,7 +189,7 @@ mod tests {
         assert_eq!(format!("{:>9}|", RuleState::Armed), "    armed|");
         assert_eq!(
             "Armed".parse::<RuleState>(),
-            Err(RuleError::UnknownState { name: "Armed".into() })
+            Err(RuleStateError::Unknown { name: "Armed".into() })
         );
     }
 }

@@ -3,7 +3,7 @@ use std::str::FromStr;
 
 use crate::number::number_value;
 use crate::text::text_form;
-use crate::{KernelError, Offset, TopicName};
+use crate::{Offset, OffsetError, TopicName, TopicNameError};
 
 number_value! {
     /// The number of a partition within its topic.
@@ -18,9 +18,9 @@ number_value! {
     /// assert_eq!(partition, PartitionNumber::from(3));
     /// assert_eq!(i32::from(partition), 3);
     /// assert!(PartitionNumber::try_from(-1_i32).is_err());
-    /// # Ok::<(), KernelError>(())
+    /// # Ok::<(), Box<dyn std::error::Error>>(())
     /// ```
-    PartitionNumber, "partition number", value: u32, wire: i32, small: u16
+    PartitionNumber, PartitionNumberError, "partition number", value: u32, wire: i32, small: u16
 }
 
 impl PartitionNumber {
@@ -44,7 +44,7 @@ impl PartitionNumber {
 /// assert_eq!(partition.topic(), "orders.eu");
 /// assert_eq!(partition.partition(), PartitionNumber::from(3));
 /// assert_eq!(partition.to_string(), "orders.eu/3");
-/// # Ok::<(), KernelError>(())
+/// # Ok::<(), Box<dyn std::error::Error>>(())
 /// ```
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct TopicPartition {
@@ -53,9 +53,6 @@ pub struct TopicPartition {
 }
 
 impl TopicPartition {
-    const WHAT: &'static str = "topic partition";
-    const FORM: &'static str = "topic/partition";
-
     pub fn new(topic: TopicName, partition: PartitionNumber) -> Self {
         Self { topic, partition }
     }
@@ -92,10 +89,17 @@ impl From<TopicPartition> for (TopicName, PartitionNumber) {
 
 /// Reads the text form `topic/partition`.
 impl FromStr for TopicPartition {
-    type Err = KernelError;
+    type Err = TopicPartitionError;
 
     fn from_str(text: &str) -> Result<Self, Self::Err> {
-        let (topic, partition) = split(text, '/', Self::WHAT, Self::FORM)?;
+        if text.is_empty() {
+            return Err(TopicPartitionError::Empty);
+        }
+        // Only the last part of a form is always a number,
+        // so the last separator is the right one even when the first part is not valid.
+        let (topic, partition) = text
+            .rsplit_once('/')
+            .ok_or_else(|| TopicPartitionError::Malformed { input: text.to_owned() })?;
         Ok(Self::new(topic.parse()?, partition.parse()?))
     }
 }
@@ -112,7 +116,52 @@ impl fmt::Debug for TopicPartition {
     }
 }
 
-text_form!(TopicPartition);
+text_form!(TopicPartition, TopicPartitionError);
+
+/// Why a text is not a [`TopicPartition`].
+///
+/// The text has two parts, and the error says which one is wrong.
+/// Its message is the message of that part's error.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum TopicPartitionError {
+    /// The text has no characters.
+    Empty,
+    /// The text has no `/` between a topic and a partition.
+    Malformed { input: String },
+    /// The text before the last `/` is not a topic name.
+    InvalidTopic { error: TopicNameError },
+    /// The text after the last `/` is not a partition number.
+    InvalidPartition { error: PartitionNumberError },
+}
+
+impl fmt::Display for TopicPartitionError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Empty => f.write_str("topic partition is empty"),
+            Self::Malformed { input } => {
+                write!(f, "topic partition {input:?} does not have the form topic/partition")
+            }
+            Self::InvalidTopic { error } => fmt::Display::fmt(error, f),
+            Self::InvalidPartition { error } => fmt::Display::fmt(error, f),
+        }
+    }
+}
+
+/// The message is complete, so no variant has a source.
+impl std::error::Error for TopicPartitionError {}
+
+impl From<TopicNameError> for TopicPartitionError {
+    fn from(error: TopicNameError) -> Self {
+        Self::InvalidTopic { error }
+    }
+}
+
+impl From<PartitionNumberError> for TopicPartitionError {
+    fn from(error: PartitionNumberError) -> Self {
+        Self::InvalidPartition { error }
+    }
+}
 
 /// An offset in one partition of a topic that the context names.
 ///
@@ -126,7 +175,7 @@ text_form!(TopicPartition);
 /// let position: PartitionOffset = "3@42".parse()?;
 /// assert_eq!(position.offset(), Offset::from(42));
 /// assert_eq!(position.in_topic(&TopicName::new("orders.eu")?).to_string(), "orders.eu/3@42");
-/// # Ok::<(), KernelError>(())
+/// # Ok::<(), Box<dyn std::error::Error>>(())
 /// ```
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct PartitionOffset {
@@ -135,9 +184,6 @@ pub struct PartitionOffset {
 }
 
 impl PartitionOffset {
-    const WHAT: &'static str = "partition offset";
-    const FORM: &'static str = "partition@offset";
-
     pub fn new(partition: PartitionNumber, offset: Offset) -> Self {
         Self { partition, offset }
     }
@@ -174,10 +220,15 @@ impl From<PartitionOffset> for (PartitionNumber, Offset) {
 
 /// Reads the text form `partition@offset`.
 impl FromStr for PartitionOffset {
-    type Err = KernelError;
+    type Err = PartitionOffsetError;
 
     fn from_str(text: &str) -> Result<Self, Self::Err> {
-        let (partition, offset) = split(text, '@', Self::WHAT, Self::FORM)?;
+        if text.is_empty() {
+            return Err(PartitionOffsetError::Empty);
+        }
+        let (partition, offset) = text
+            .rsplit_once('@')
+            .ok_or_else(|| PartitionOffsetError::Malformed { input: text.to_owned() })?;
         Ok(Self::new(partition.parse()?, offset.parse()?))
     }
 }
@@ -194,7 +245,52 @@ impl fmt::Debug for PartitionOffset {
     }
 }
 
-text_form!(PartitionOffset);
+text_form!(PartitionOffset, PartitionOffsetError);
+
+/// Why a text is not a [`PartitionOffset`].
+///
+/// The text has two parts, and the error says which one is wrong.
+/// Its message is the message of that part's error.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum PartitionOffsetError {
+    /// The text has no characters.
+    Empty,
+    /// The text has no `@` between a partition and an offset.
+    Malformed { input: String },
+    /// The text before the last `@` is not a partition number.
+    InvalidPartition { error: PartitionNumberError },
+    /// The text after the last `@` is not an offset.
+    InvalidOffset { error: OffsetError },
+}
+
+impl fmt::Display for PartitionOffsetError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Empty => f.write_str("partition offset is empty"),
+            Self::Malformed { input } => {
+                write!(f, "partition offset {input:?} does not have the form partition@offset")
+            }
+            Self::InvalidPartition { error } => fmt::Display::fmt(error, f),
+            Self::InvalidOffset { error } => fmt::Display::fmt(error, f),
+        }
+    }
+}
+
+/// The message is complete, so no variant has a source.
+impl std::error::Error for PartitionOffsetError {}
+
+impl From<PartitionNumberError> for PartitionOffsetError {
+    fn from(error: PartitionNumberError) -> Self {
+        Self::InvalidPartition { error }
+    }
+}
+
+impl From<OffsetError> for PartitionOffsetError {
+    fn from(error: OffsetError) -> Self {
+        Self::InvalidOffset { error }
+    }
+}
 
 /// An offset in one partition of one topic: the place of one record in a cluster.
 ///
@@ -210,7 +306,7 @@ text_form!(PartitionOffset);
 /// let position = orders.partition(PartitionNumber::from(3)).at(Offset::from(42));
 /// assert_eq!(position.to_string(), "orders.eu/3@42");
 /// assert_eq!("orders.eu/3@42".parse::<TopicPartitionOffset>()?, position);
-/// # Ok::<(), KernelError>(())
+/// # Ok::<(), Box<dyn std::error::Error>>(())
 /// ```
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct TopicPartitionOffset {
@@ -219,9 +315,6 @@ pub struct TopicPartitionOffset {
 }
 
 impl TopicPartitionOffset {
-    const WHAT: &'static str = "topic partition offset";
-    const FORM: &'static str = "topic/partition@offset";
-
     pub fn new(topic_partition: TopicPartition, offset: Offset) -> Self {
         Self {
             topic_partition,
@@ -282,16 +375,15 @@ impl From<TopicPartitionOffset> for (TopicName, PartitionNumber, Offset) {
 
 /// Reads the text form `topic/partition@offset`.
 impl FromStr for TopicPartitionOffset {
-    type Err = KernelError;
+    type Err = TopicPartitionOffsetError;
 
     fn from_str(text: &str) -> Result<Self, Self::Err> {
-        let (topic_partition, offset) = split(text, '@', Self::WHAT, Self::FORM)?;
-        let (topic, partition) =
-            split(topic_partition, '/', Self::WHAT, Self::FORM).map_err(|_| KernelError::Malformed {
-                what: Self::WHAT,
-                input: text.to_owned(),
-                expected: Self::FORM,
-            })?;
+        if text.is_empty() {
+            return Err(TopicPartitionOffsetError::Empty);
+        }
+        let malformed = || TopicPartitionOffsetError::Malformed { input: text.to_owned() };
+        let (topic_partition, offset) = text.rsplit_once('@').ok_or_else(malformed)?;
+        let (topic, partition) = topic_partition.rsplit_once('/').ok_or_else(malformed)?;
         Ok(Self::new(
             TopicPartition::new(topic.parse()?, partition.parse()?),
             offset.parse()?,
@@ -311,26 +403,61 @@ impl fmt::Debug for TopicPartitionOffset {
     }
 }
 
-text_form!(TopicPartitionOffset);
+text_form!(TopicPartitionOffset, TopicPartitionOffsetError);
 
-/// Cut a text form in two at its last separator.
+/// Why a text is not a [`TopicPartitionOffset`].
 ///
-/// Only the last part of a form is always a number, so the last separator is the right one
-/// even when the first part is not valid.
-fn split<'a>(
-    text: &'a str,
-    separator: char,
-    what: &'static str,
-    expected: &'static str,
-) -> Result<(&'a str, &'a str), KernelError> {
-    if text.is_empty() {
-        return Err(KernelError::Empty { what });
+/// The text has three parts, and the error says which one is wrong.
+/// Its message is the message of that part's error.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum TopicPartitionOffsetError {
+    /// The text has no characters.
+    Empty,
+    /// The text has no `@` before an offset, or no `/` between a topic and a partition.
+    Malformed { input: String },
+    /// The text before the last `/` is not a topic name.
+    InvalidTopic { error: TopicNameError },
+    /// The text between the last `/` and the last `@` is not a partition number.
+    InvalidPartition { error: PartitionNumberError },
+    /// The text after the last `@` is not an offset.
+    InvalidOffset { error: OffsetError },
+}
+
+impl fmt::Display for TopicPartitionOffsetError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Empty => f.write_str("topic partition offset is empty"),
+            Self::Malformed { input } => write!(
+                f,
+                "topic partition offset {input:?} does not have the form topic/partition@offset"
+            ),
+            Self::InvalidTopic { error } => fmt::Display::fmt(error, f),
+            Self::InvalidPartition { error } => fmt::Display::fmt(error, f),
+            Self::InvalidOffset { error } => fmt::Display::fmt(error, f),
+        }
     }
-    text.rsplit_once(separator).ok_or_else(|| KernelError::Malformed {
-        what,
-        input: text.to_owned(),
-        expected,
-    })
+}
+
+/// The message is complete, so no variant has a source.
+impl std::error::Error for TopicPartitionOffsetError {}
+
+impl From<TopicNameError> for TopicPartitionOffsetError {
+    fn from(error: TopicNameError) -> Self {
+        Self::InvalidTopic { error }
+    }
+}
+
+impl From<PartitionNumberError> for TopicPartitionOffsetError {
+    fn from(error: PartitionNumberError) -> Self {
+        Self::InvalidPartition { error }
+    }
+}
+
+impl From<OffsetError> for TopicPartitionOffsetError {
+    fn from(error: OffsetError) -> Self {
+        Self::InvalidOffset { error }
+    }
 }
 
 #[cfg(test)]
@@ -355,8 +482,7 @@ mod tests {
         assert_eq!(PartitionNumber::new(MAX).map(PartitionNumber::value), Ok(MAX));
         assert_eq!(
             PartitionNumber::new(MAX + 1),
-            Err(KernelError::TooLarge {
-                what: "partition number",
+            Err(PartitionNumberError::TooLarge {
                 value: u64::from(MAX) + 1,
                 max: u64::from(MAX)
             })
@@ -374,10 +500,7 @@ mod tests {
         assert!(PartitionNumber::try_from(u32::MAX).is_err());
         assert_eq!(
             PartitionNumber::try_from(-1_i32),
-            Err(KernelError::Negative {
-                what: "partition number",
-                value: -1
-            })
+            Err(PartitionNumberError::Negative { value: -1 })
         );
     }
 
@@ -398,25 +521,18 @@ mod tests {
         assert_eq!(format!("{:?}", partition(3)), "PartitionNumber(3)");
         assert_eq!(
             "2147483648".parse::<PartitionNumber>(),
-            Err(KernelError::TooLarge {
-                what: "partition number",
+            Err(PartitionNumberError::TooLarge {
                 value: 2_147_483_648,
                 max: 2_147_483_647
             })
         );
         assert_eq!(
             "-1".parse::<PartitionNumber>(),
-            Err(KernelError::Negative {
-                what: "partition number",
-                value: -1
-            })
+            Err(PartitionNumberError::Negative { value: -1 })
         );
         assert_eq!(
             "three".parse::<PartitionNumber>(),
-            Err(KernelError::NotANumber {
-                what: "partition number",
-                input: "three".into()
-            })
+            Err(PartitionNumberError::NotANumber { input: "three".into() })
         );
     }
 
@@ -456,29 +572,24 @@ mod tests {
     #[test]
     fn a_topic_partition_needs_both_parts() {
         let malformed = |input: &str| {
-            Err(KernelError::Malformed {
-                what: "topic partition",
+            Err(TopicPartitionError::Malformed {
                 input: input.to_owned(),
-                expected: "topic/partition",
             })
         };
 
         assert_eq!("orders.eu".parse::<TopicPartition>(), malformed("orders.eu"));
         assert_eq!("3".parse::<TopicPartition>(), malformed("3"));
+        assert_eq!("".parse::<TopicPartition>(), Err(TopicPartitionError::Empty));
         assert_eq!(
-            "".parse::<TopicPartition>(),
-            Err(KernelError::Empty {
-                what: "topic partition"
+            "/3".parse::<TopicPartition>(),
+            Err(TopicPartitionError::InvalidTopic {
+                error: TopicNameError::Empty
             })
         );
         assert_eq!(
-            "/3".parse::<TopicPartition>(),
-            Err(KernelError::Empty { what: "topic name" })
-        );
-        assert_eq!(
             "orders.eu/".parse::<TopicPartition>(),
-            Err(KernelError::Empty {
-                what: "partition number"
+            Err(TopicPartitionError::InvalidPartition {
+                error: PartitionNumberError::Empty
             })
         );
     }
@@ -487,39 +598,38 @@ mod tests {
     fn a_topic_partition_checks_both_parts() {
         assert_eq!(
             "orders.*/3".parse::<TopicPartition>(),
-            Err(KernelError::InvalidCharacter {
-                what: "topic name",
-                character: '*',
-                position: 7
+            Err(TopicPartitionError::InvalidTopic {
+                error: TopicNameError::InvalidCharacter {
+                    character: '*',
+                    position: 7
+                }
             })
         );
         assert_eq!(
             "orders/eu/3".parse::<TopicPartition>(),
-            Err(KernelError::InvalidCharacter {
-                what: "topic name",
-                character: '/',
-                position: 6
+            Err(TopicPartitionError::InvalidTopic {
+                error: TopicNameError::InvalidCharacter {
+                    character: '/',
+                    position: 6
+                }
             })
         );
         assert_eq!(
             "orders.eu/x".parse::<TopicPartition>(),
-            Err(KernelError::NotANumber {
-                what: "partition number",
-                input: "x".into()
+            Err(TopicPartitionError::InvalidPartition {
+                error: PartitionNumberError::NotANumber { input: "x".into() }
             })
         );
         assert_eq!(
             "orders.eu/-1".parse::<TopicPartition>(),
-            Err(KernelError::Negative {
-                what: "partition number",
-                value: -1
+            Err(TopicPartitionError::InvalidPartition {
+                error: PartitionNumberError::Negative { value: -1 }
             })
         );
         assert_eq!(
             "orders.eu/3@42".parse::<TopicPartition>(),
-            Err(KernelError::NotANumber {
-                what: "partition number",
-                input: "3@42".into()
+            Err(TopicPartitionError::InvalidPartition {
+                error: PartitionNumberError::NotANumber { input: "3@42".into() }
             })
         );
     }
@@ -566,47 +676,39 @@ mod tests {
     fn a_partition_offset_needs_and_checks_both_parts() {
         assert_eq!(
             "3".parse::<PartitionOffset>(),
-            Err(KernelError::Malformed {
-                what: "partition offset",
-                input: "3".into(),
-                expected: "partition@offset"
-            })
+            Err(PartitionOffsetError::Malformed { input: "3".into() })
         );
-        assert_eq!(
-            "".parse::<PartitionOffset>(),
-            Err(KernelError::Empty {
-                what: "partition offset"
-            })
-        );
+        assert_eq!("".parse::<PartitionOffset>(), Err(PartitionOffsetError::Empty));
         assert_eq!(
             "@42".parse::<PartitionOffset>(),
-            Err(KernelError::Empty {
-                what: "partition number"
+            Err(PartitionOffsetError::InvalidPartition {
+                error: PartitionNumberError::Empty
             })
         );
         assert_eq!(
             "3@".parse::<PartitionOffset>(),
-            Err(KernelError::Empty { what: "offset" })
+            Err(PartitionOffsetError::InvalidOffset {
+                error: OffsetError::Empty
+            })
         );
         assert_eq!(
             "3@-1".parse::<PartitionOffset>(),
-            Err(KernelError::Negative {
-                what: "offset",
-                value: -1
+            Err(PartitionOffsetError::InvalidOffset {
+                error: OffsetError::Negative { value: -1 }
             })
         );
         assert_eq!(
             "x@42".parse::<PartitionOffset>(),
-            Err(KernelError::NotANumber {
-                what: "partition number",
-                input: "x".into()
+            Err(PartitionOffsetError::InvalidPartition {
+                error: PartitionNumberError::NotANumber { input: "x".into() }
             })
         );
         assert_eq!(
             "orders.eu/3@42".parse::<PartitionOffset>(),
-            Err(KernelError::NotANumber {
-                what: "partition number",
-                input: "orders.eu/3".into()
+            Err(PartitionOffsetError::InvalidPartition {
+                error: PartitionNumberError::NotANumber {
+                    input: "orders.eu/3".into()
+                }
             })
         );
     }
@@ -669,10 +771,8 @@ mod tests {
     #[test]
     fn a_topic_partition_offset_needs_all_three_parts() {
         let malformed = |input: &str| {
-            Err(KernelError::Malformed {
-                what: "topic partition offset",
+            Err(TopicPartitionOffsetError::Malformed {
                 input: input.to_owned(),
-                expected: "topic/partition@offset",
             })
         };
 
@@ -685,9 +785,7 @@ mod tests {
         assert_eq!("orders.eu".parse::<TopicPartitionOffset>(), malformed("orders.eu"));
         assert_eq!(
             "".parse::<TopicPartitionOffset>(),
-            Err(KernelError::Empty {
-                what: "topic partition offset"
-            })
+            Err(TopicPartitionOffsetError::Empty)
         );
     }
 
@@ -695,39 +793,38 @@ mod tests {
     fn a_topic_partition_offset_checks_all_three_parts() {
         assert_eq!(
             "orders eu/3@42".parse::<TopicPartitionOffset>(),
-            Err(KernelError::InvalidCharacter {
-                what: "topic name",
-                character: ' ',
-                position: 6
+            Err(TopicPartitionOffsetError::InvalidTopic {
+                error: TopicNameError::InvalidCharacter {
+                    character: ' ',
+                    position: 6
+                }
             })
         );
         assert_eq!(
             "orders.eu/x@42".parse::<TopicPartitionOffset>(),
-            Err(KernelError::NotANumber {
-                what: "partition number",
-                input: "x".into()
+            Err(TopicPartitionOffsetError::InvalidPartition {
+                error: PartitionNumberError::NotANumber { input: "x".into() }
             })
         );
         assert_eq!(
             "orders.eu/3@latest".parse::<TopicPartitionOffset>(),
-            Err(KernelError::NotANumber {
-                what: "offset",
-                input: "latest".into()
+            Err(TopicPartitionOffsetError::InvalidOffset {
+                error: OffsetError::NotANumber { input: "latest".into() }
             })
         );
         assert_eq!(
             "orders.eu/3@-1".parse::<TopicPartitionOffset>(),
-            Err(KernelError::Negative {
-                what: "offset",
-                value: -1
+            Err(TopicPartitionOffsetError::InvalidOffset {
+                error: OffsetError::Negative { value: -1 }
             })
         );
         assert_eq!(
             "orders@eu/3@42".parse::<TopicPartitionOffset>(),
-            Err(KernelError::InvalidCharacter {
-                what: "topic name",
-                character: '@',
-                position: 6
+            Err(TopicPartitionOffsetError::InvalidTopic {
+                error: TopicNameError::InvalidCharacter {
+                    character: '@',
+                    position: 6
+                }
             })
         );
     }
@@ -739,5 +836,42 @@ mod tests {
         assert!(position("orders.eu/9@100") < position("orders.eu/10@0"));
         assert!(position("orders.eu/3@9") < position("orders.eu/3@10"));
         assert!(position("orders.eu/3@9") < position("payments/0@0"));
+    }
+
+    #[test]
+    fn the_error_of_a_position_says_which_part_is_wrong_once() {
+        use std::error::Error;
+
+        let cases: [(Box<dyn Error>, &str); 6] = [
+            (
+                Box::new("orders".parse::<TopicPartition>().unwrap_err()),
+                "topic partition \"orders\" does not have the form topic/partition",
+            ),
+            (
+                Box::new("orders eu/3".parse::<TopicPartition>().unwrap_err()),
+                "topic name has the invalid character ' ' at position 6",
+            ),
+            (
+                Box::new("3".parse::<PartitionOffset>().unwrap_err()),
+                "partition offset \"3\" does not have the form partition@offset",
+            ),
+            (
+                Box::new("3@-1".parse::<PartitionOffset>().unwrap_err()),
+                "offset cannot be negative: -1",
+            ),
+            (
+                Box::new("orders.eu@42".parse::<TopicPartitionOffset>().unwrap_err()),
+                "topic partition offset \"orders.eu@42\" does not have the form topic/partition@offset",
+            ),
+            (
+                Box::new("orders.eu/x@42".parse::<TopicPartitionOffset>().unwrap_err()),
+                "partition number is not a number: \"x\"",
+            ),
+        ];
+
+        for (error, message) in cases {
+            assert_eq!(error.to_string(), message);
+            assert!(error.source().is_none(), "the message is complete: {error}");
+        }
     }
 }

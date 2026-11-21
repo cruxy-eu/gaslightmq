@@ -260,7 +260,7 @@ impl From<Incident> for IncidentDefinition {
 }
 
 /// A definition that names every subject is one incident.
-/// One that leaves a subject out is an [`IncidentError::MissingSubject`].
+/// One that leaves a subject out is an [`IncidentError::MissingSubject`], because no call fills it in.
 impl TryFrom<IncidentDefinition> for Incident {
     type Error = IncidentError;
 

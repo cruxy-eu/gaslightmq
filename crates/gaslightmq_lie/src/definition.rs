@@ -4,7 +4,7 @@ use gaslightmq_clock::TimeSpan;
 use gaslightmq_field::prelude::*;
 use gaslightmq_kernel::prelude::*;
 
-use crate::{Aspect, CombinationClass, LieError, LieKind, Stage, TargetedLie};
+use crate::{Aspect, CombinationClass, LieKind, Stage, TargetedLie, TargetedLieError};
 
 /// A refusal: the client is told that the request failed.
 ///
@@ -75,7 +75,7 @@ impl fmt::Display for RefusalLie {
 /// The `with_` methods never fail.
 /// A value that is too long stops at the longest one that holds, as [`TimeSpan::from_secs`] stops at the longest time span.
 /// Code that builds a lie has no user to report an error to, and a chain of `with_` calls stays a `const` expression.
-/// Reading a file is different: with the `serde` feature, a value that is too long is an error,
+/// Reading a file is different: with the `serde` feature, a value that is too long is a [`TimingLieError`],
 /// because the person who wrote it meant something else.
 ///
 /// ```
@@ -126,20 +126,20 @@ impl TimingLie {
     ///
     /// # Errors
     ///
-    /// - [`LieError::JitterExceedsDelay`] when `jitter` is longer than `delay`.
-    /// - [`LieError::ThrottleTooLong`] when `throttle` is longer than [`MAX_THROTTLE`](Self::MAX_THROTTLE).
+    /// - [`TimingLieError::JitterExceedsDelay`] when `jitter` is longer than `delay`.
+    /// - [`TimingLieError::ThrottleTooLong`] when `throttle` is longer than [`MAX_THROTTLE`](Self::MAX_THROTTLE).
     #[cfg(feature = "serde")]
     pub(crate) fn checked(
         delay: TimeSpan,
         jitter: TimeSpan,
         throttle: TimeSpan,
         stage: Stage,
-    ) -> Result<Self, LieError> {
+    ) -> Result<Self, TimingLieError> {
         if jitter > delay {
-            return Err(LieError::JitterExceedsDelay { jitter, delay });
+            return Err(TimingLieError::JitterExceedsDelay { jitter, delay });
         }
         if throttle > Self::MAX_THROTTLE {
-            return Err(LieError::ThrottleTooLong { throttle });
+            return Err(TimingLieError::ThrottleTooLong { throttle });
         }
         Ok(Self {
             delay,
@@ -252,6 +252,47 @@ impl fmt::Display for TimingLie {
         AtStage::of(LieKind::Timing, self.stage).fmt(f)
     }
 }
+
+/// Why the parameters that a file writes are not a [`TimingLie`].
+///
+/// Only reading returns it, with the `serde` feature.
+/// The `with_` methods never fail, because they stop a value at the longest one that holds.
+///
+/// ```
+/// use gaslightmq_clock::TimeSpan;
+/// use gaslightmq_lie::prelude::*;
+///
+/// let error = TimingLieError::JitterExceedsDelay {
+///     jitter: TimeSpan::from_millis(200),
+///     delay: TimeSpan::ZERO,
+/// };
+/// assert_eq!(error.to_string(), "a jitter of 200ms is longer than the delay of 0s");
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum TimingLieError {
+    /// The jitter is longer than the delay, so the shortest wait would be less than no time.
+    JitterExceedsDelay { jitter: TimeSpan, delay: TimeSpan },
+    /// The throttle is longer than [`TimingLie::MAX_THROTTLE`].
+    ThrottleTooLong { throttle: TimeSpan },
+}
+
+impl fmt::Display for TimingLieError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::JitterExceedsDelay { jitter, delay } => {
+                write!(f, "a jitter of {jitter} is longer than the delay of {delay}")
+            }
+            Self::ThrottleTooLong { throttle } => write!(
+                f,
+                "a throttle of {throttle} is longer than {}, the longest that Kafka can tell a client",
+                TimingLie::MAX_THROTTLE
+            ),
+        }
+    }
+}
+
+impl std::error::Error for TimingLieError {}
 
 /// A hang-up: the connection closes.
 ///
@@ -382,8 +423,8 @@ impl LieDefinition {
     ///
     /// # Errors
     ///
-    /// [`LieError::EmptyTarget`] when `target` is a set of parts without a part.
-    pub fn on(self, target: Target) -> Result<TargetedLie, LieError> {
+    /// [`TargetedLieError::EmptyTarget`] when `target` is a set of parts without a part.
+    pub fn on(self, target: Target) -> Result<TargetedLie, TargetedLieError> {
         TargetedLie::new(self, target)
     }
 }
@@ -567,6 +608,29 @@ mod tests {
         assert_eq!(lie.with_throttle(millis(u64::MAX)).throttle(), longest);
         // The delay has no such bound.
         assert_eq!(lie.with_delay(millis(u64::MAX)).delay(), millis(u64::MAX));
+    }
+
+    #[test]
+    fn a_timing_lie_error_says_what_is_wrong() {
+        let cases = [
+            (
+                TimingLieError::JitterExceedsDelay {
+                    jitter: millis(200),
+                    delay: TimeSpan::ZERO,
+                },
+                "a jitter of 200ms is longer than the delay of 0s",
+            ),
+            (
+                TimingLieError::ThrottleTooLong {
+                    throttle: TimeSpan::from_secs(3_000_000),
+                },
+                "a throttle of 50000m is longer than 2147483647ms, the longest that Kafka can tell a client",
+            ),
+        ];
+
+        for (error, message) in cases {
+            assert_eq!(error.to_string(), message);
+        }
     }
 
     #[test]

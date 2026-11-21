@@ -3,16 +3,14 @@ use std::fmt;
 use std::str::FromStr;
 use std::sync::Arc;
 
-use gaslightmq_selector::SelectorName;
+use gaslightmq_selector::{SelectorName, SelectorNameError};
 use gaslightmq_trigger::DiceKey;
-
-use crate::RuleError;
 
 /// Define a name: text that something else references a definition by.
 macro_rules! name {
     (
         $(#[$meta:meta])*
-        $name:ident, $what:literal
+        $name:ident, $error:ident, $what:literal
     ) => {
         $(#[$meta])*
         #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -23,17 +21,19 @@ macro_rules! name {
             ///
             /// # Errors
             ///
-            /// [`RuleError::InvalidName`] when the text is empty, starts or ends with white space,
+            /// The error of the name, which says which part of the rule the text breaks: the text is empty, starts or ends with white space,
             /// or holds a control character or a format character.
-            pub fn new(name: impl AsRef<str>) -> Result<Self, RuleError> {
+            pub fn new(name: impl AsRef<str>) -> Result<Self, $error> {
                 let name = name.as_ref();
-                match SelectorName::broken_rule(name) {
-                    None => Ok(Self(name.into())),
-                    Some(reason) => Err(RuleError::InvalidName {
-                        what: $what,
-                        input: name.to_owned(),
-                        reason,
-                    }),
+                // A selector name has the one rule for names, and its error has a variant for every part of it.
+                match SelectorName::new(name) {
+                    Ok(_) => Ok(Self(name.into())),
+                    Err(SelectorNameError::Empty) => Err($error::Empty),
+                    Err(SelectorNameError::SurroundingWhiteSpace { input }) => {
+                        Err($error::SurroundingWhiteSpace { input })
+                    }
+                    Err(SelectorNameError::ControlCharacter { input }) => Err($error::ControlCharacter { input }),
+                    Err(SelectorNameError::FormatCharacter { input }) => Err($error::FormatCharacter { input }),
                 }
             }
 
@@ -44,7 +44,7 @@ macro_rules! name {
         }
 
         impl FromStr for $name {
-            type Err = RuleError;
+            type Err = $error;
 
             fn from_str(text: &str) -> Result<Self, Self::Err> {
                 Self::new(text)
@@ -52,7 +52,7 @@ macro_rules! name {
         }
 
         impl TryFrom<&str> for $name {
-            type Error = RuleError;
+            type Error = $error;
 
             fn try_from(text: &str) -> Result<Self, Self::Error> {
                 Self::new(text)
@@ -60,12 +60,47 @@ macro_rules! name {
         }
 
         impl TryFrom<String> for $name {
-            type Error = RuleError;
+            type Error = $error;
 
             fn try_from(text: String) -> Result<Self, Self::Error> {
                 Self::new(text)
             }
         }
+
+        #[doc = concat!("Why a text is not a [`", stringify!($name), "`]: the part of the rule for names it breaks.")]
+        ///
+        /// The variants are those of [`SelectorNameError`], because every name takes the same rule.
+        #[derive(Debug, Clone, PartialEq, Eq)]
+        #[non_exhaustive]
+        pub enum $error {
+            /// The text has no character.
+            Empty,
+            /// The text starts or ends with white space.
+            SurroundingWhiteSpace { input: String },
+            /// The text holds a control character, such as a line break.
+            ControlCharacter { input: String },
+            /// The text holds a format character, such as a zero-width space, which nobody sees.
+            FormatCharacter { input: String },
+        }
+
+        impl fmt::Display for $error {
+            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                match self {
+                    Self::Empty => f.write_str(concat!($what, " \"\" is empty")),
+                    Self::SurroundingWhiteSpace { input } => {
+                        write!(f, concat!($what, " {:?} starts or ends with white space"), input)
+                    }
+                    Self::ControlCharacter { input } => {
+                        write!(f, concat!($what, " {:?} holds a control character"), input)
+                    }
+                    Self::FormatCharacter { input } => {
+                        write!(f, concat!($what, " {:?} holds a format character"), input)
+                    }
+                }
+            }
+        }
+
+        impl std::error::Error for $error {}
 
         impl From<$name> for String {
             fn from(name: $name) -> Self {
@@ -144,9 +179,9 @@ name! {
     /// assert!(RuleName::new(" Slow down").is_err());
     /// // A zero-width space hides between the two words.
     /// assert!(RuleName::new("Slow\u{200b}down").is_err());
-    /// # Ok::<(), RuleError>(())
+    /// # Ok::<(), Box<dyn std::error::Error>>(())
     /// ```
-    RuleName, "rule name"
+    RuleName, RuleNameError, "rule name"
 }
 
 name! {
@@ -165,9 +200,9 @@ name! {
     /// let name: PresetName = "Delay 1 s".parse()?;
     /// assert_eq!(name, "Delay 1 s");
     /// assert!(PresetName::new("Delay 1 s\n").is_err());
-    /// # Ok::<(), RuleError>(())
+    /// # Ok::<(), Box<dyn std::error::Error>>(())
     /// ```
-    PresetName, "preset name"
+    PresetName, PresetNameError, "preset name"
 }
 
 impl RuleName {
@@ -227,24 +262,36 @@ mod tests {
 
         for (text, reason) in cases {
             assert_eq!(
-                RuleName::new(text),
-                Err(RuleError::InvalidName {
-                    what: "rule name",
-                    input: text.to_owned(),
-                    reason
-                }),
-                "{text:?}"
+                RuleName::new(text).unwrap_err().to_string(),
+                format!("rule name {text:?} {reason}")
             );
             assert_eq!(
-                PresetName::new(text),
-                Err(RuleError::InvalidName {
-                    what: "preset name",
-                    input: text.to_owned(),
-                    reason
-                }),
-                "{text:?}"
+                PresetName::new(text).unwrap_err().to_string(),
+                format!("preset name {text:?} {reason}")
             );
         }
+    }
+
+    #[test]
+    fn every_name_has_its_own_error_with_a_variant_for_each_part_of_the_rule() {
+        let input = || "Delay\n1 s".to_owned();
+
+        assert_eq!(RuleName::new(""), Err(RuleNameError::Empty));
+        assert_eq!(
+            RuleName::new(" x"),
+            Err(RuleNameError::SurroundingWhiteSpace { input: " x".to_owned() })
+        );
+        assert_eq!(
+            RuleName::new(input()),
+            Err(RuleNameError::ControlCharacter { input: input() })
+        );
+        assert_eq!(PresetName::new(""), Err(PresetNameError::Empty));
+        assert_eq!(
+            PresetName::new("x\u{200b}"),
+            Err(PresetNameError::FormatCharacter {
+                input: "x\u{200b}".to_owned()
+            })
+        );
     }
 
     #[test]

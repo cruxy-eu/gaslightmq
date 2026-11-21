@@ -1,3 +1,5 @@
+use std::fmt;
+
 use gaslightmq_kernel::prelude::*;
 
 use crate::{IncidentKind, PartitionCount, RecordCount};
@@ -89,6 +91,35 @@ impl Incident {
     }
 }
 
+/// Why an [`IncidentDefinition`](crate::IncidentDefinition) does not become an [`Incident`].
+///
+/// An incident names what it changes, and a definition may leave that to the call that fires the rule.
+/// The definition does not become an incident when it names no subject and the call offers none.
+/// [`IncidentDefinition::resolve`](crate::IncidentDefinition::resolve) returns this error then.
+/// The `TryFrom` that reads a definition as one incident has no call, so it returns it for any subject left out.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum IncidentError {
+    /// The incident needs a `subject`, such as a partition or a group.
+    /// The definition names none, and the call that fired it offers none.
+    MissingSubject {
+        incident: IncidentKind,
+        subject: &'static str,
+    },
+}
+
+impl fmt::Display for IncidentError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::MissingSubject { incident, subject } => {
+                write!(f, "{incident} needs a {subject}, and none is named")
+            }
+        }
+    }
+}
+
+impl std::error::Error for IncidentError {}
+
 /// Whose coordinator: the one of a consumer group, or the one of a transactional producer.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Coordinator {
@@ -107,5 +138,36 @@ impl From<GroupId> for Coordinator {
 impl From<TransactionalId> for Coordinator {
     fn from(transactional_id: TransactionalId) -> Self {
         Self::Transaction(transactional_id)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_error_of_an_incident_names_the_incident_and_the_subject_it_misses() {
+        let cases = [
+            (
+                IncidentKind::Rebalance,
+                "group",
+                "rebalance needs a group, and none is named",
+            ),
+            (
+                IncidentKind::LeaderMoves,
+                "partition",
+                "leader-moves needs a partition, and none is named",
+            ),
+            (
+                IncidentKind::CoordinatorMoves,
+                "group or transactional ID",
+                "coordinator-moves needs a group or transactional ID, and none is named",
+            ),
+        ];
+
+        for (incident, subject, message) in cases {
+            let error = IncidentError::MissingSubject { incident, subject };
+            assert_eq!(error.to_string(), message);
+        }
     }
 }

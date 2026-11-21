@@ -1,8 +1,6 @@
 use std::fmt;
 use std::str::FromStr;
 
-use crate::IncidentError;
-
 /// An incident without its parameters: which of the thirteen incidents it is.
 ///
 /// A backend declares its [`IncidentSupport`](crate::IncidentSupport) per kind,
@@ -104,15 +102,33 @@ impl fmt::Display for IncidentKind {
 
 /// Reads the name a file uses, as [`Display`](fmt::Display) writes it.
 impl FromStr for IncidentKind {
-    type Err = IncidentError;
+    type Err = IncidentKindError;
 
     fn from_str(name: &str) -> Result<Self, Self::Err> {
         Self::ALL
             .into_iter()
             .find(|kind| kind.name() == name)
-            .ok_or_else(|| IncidentError::UnknownIncident { name: name.to_owned() })
+            .ok_or_else(|| IncidentKindError::Unknown { name: name.to_owned() })
     }
 }
+
+/// Why a text is not an [`IncidentKind`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum IncidentKindError {
+    /// No incident has this name.
+    Unknown { name: String },
+}
+
+impl fmt::Display for IncidentKindError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Unknown { name } => write!(f, "no incident is called {name:?}"),
+        }
+    }
+}
+
+impl std::error::Error for IncidentKindError {}
 
 #[cfg(test)]
 mod tests {
@@ -165,8 +181,22 @@ mod tests {
         for name in ["leader-move", "Leader moves", "LEADER-MOVES", ""] {
             assert_eq!(
                 name.parse::<IncidentKind>(),
-                Err(IncidentError::UnknownIncident { name: name.to_owned() }),
+                Err(IncidentKindError::Unknown { name: name.to_owned() }),
             );
+        }
+    }
+
+    #[test]
+    fn the_error_of_a_kind_quotes_the_name_that_no_incident_has() {
+        let cases = [
+            ("leader-move", "no incident is called \"leader-move\""),
+            ("Leader moves", "no incident is called \"Leader moves\""),
+            ("", "no incident is called \"\""),
+        ];
+
+        for (name, message) in cases {
+            let error = name.parse::<IncidentKind>().unwrap_err();
+            assert_eq!(error.to_string(), message);
         }
     }
 }

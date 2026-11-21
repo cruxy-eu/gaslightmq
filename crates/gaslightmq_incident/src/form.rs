@@ -13,8 +13,8 @@ use serde::de::{self, Deserialize, Deserializer, MapAccess, Visitor};
 use serde::ser::{Serialize, SerializeMap, Serializer};
 
 use crate::{
-    Consequence, Coordinator, ExpandedIncident, Incident, IncidentDefinition, IncidentError, IncidentKind,
-    IncidentSupport, PartitionCount, RecordCount, Support,
+    Consequence, Coordinator, ExpandedIncident, Incident, IncidentDefinition, IncidentKind, IncidentSupport,
+    PartitionCount, PartitionCountError, RecordCount, Support,
 };
 
 const INCIDENT: &str = "incident";
@@ -178,8 +178,7 @@ impl Fields {
         let Some(to) = self.to.take() else {
             return Ok(None);
         };
-        let too_large = || KernelError::TooLarge {
-            what: "broker ID",
+        let too_large = || BrokerIdError::TooLarge {
             value: to,
             max: i32::MAX as u64,
         };
@@ -197,8 +196,7 @@ impl Fields {
         let Some(count) = self.count.take() else {
             return Ok(PartitionCount::ONE);
         };
-        let out_of_range = || IncidentError::CountOutOfRange {
-            what: "partition count",
+        let out_of_range = || PartitionCountError::OutOfRange {
             value: count,
             max: PartitionCount::MAX.value().into(),
         };

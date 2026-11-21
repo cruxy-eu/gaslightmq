@@ -47,7 +47,7 @@ use crate::{
 /// let answered = fetch.with(Outcome::Ok).with(Latency::from_millis(14));
 /// assert_eq!(answered.read(Field::Outcome), Reading::Present(FieldValues::one(Outcome::Ok)));
 /// assert_eq!(answered.read(Field::ErrorCode), Reading::Absent);
-/// # Ok::<(), FieldError>(())
+/// # Ok::<(), Box<dyn std::error::Error>>(())
 /// ```
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Fields {

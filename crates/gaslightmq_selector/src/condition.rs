@@ -3,7 +3,7 @@ use std::str::FromStr;
 
 use gaslightmq_field::prelude::*;
 
-use crate::{Glob, SelectorError};
+use crate::Glob;
 
 /// How a condition tests its field.
 ///
@@ -66,13 +66,13 @@ impl Operator {
 
 /// Reads the name of an operator in a sentence, as [`Display`](fmt::Display) writes it.
 impl FromStr for Operator {
-    type Err = SelectorError;
+    type Err = OperatorError;
 
     fn from_str(text: &str) -> Result<Self, Self::Err> {
         Operator::ALL
             .into_iter()
             .find(|operator| operator.name() == text)
-            .ok_or_else(|| SelectorError::UnknownOperator { name: text.to_owned() })
+            .ok_or_else(|| OperatorError::Unknown { name: text.to_owned() })
     }
 }
 
@@ -81,6 +81,24 @@ impl fmt::Display for Operator {
         f.pad(self.name())
     }
 }
+
+/// Why a text is not an [`Operator`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum OperatorError {
+    /// No operator has this name.
+    Unknown { name: String },
+}
+
+impl fmt::Display for OperatorError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Unknown { name } => write!(f, "no operator is named {name:?}"),
+        }
+    }
+}
+
+impl std::error::Error for OperatorError {}
 
 /// One or more values of one field, for a condition to test against.
 ///
@@ -97,8 +115,8 @@ impl fmt::Display for Operator {
 /// assert_eq!(group_apis.to_string(), "JoinGroup, SyncGroup");
 /// assert!(group_apis.contains(&ApiKey::JOIN_GROUP.into()));
 ///
-/// assert_eq!(ValueSet::new(Vec::<ApiKey>::new()), Err(SelectorError::NoValues));
-/// # Ok::<(), SelectorError>(())
+/// assert_eq!(ValueSet::new(Vec::<ApiKey>::new()), Err(ValueSetError::Empty));
+/// # Ok::<(), Box<dyn std::error::Error>>(())
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ValueSet(Vec<FieldValue>);
@@ -108,13 +126,13 @@ impl ValueSet {
     ///
     /// # Errors
     ///
-    /// [`SelectorError::NoValues`] when there is no value,
-    /// and [`SelectorError::MixedFields`] when the values belong to different fields.
-    pub fn new<V: Into<FieldValue>>(values: impl IntoIterator<Item = V>) -> Result<Self, SelectorError> {
+    /// [`ValueSetError::Empty`] when there is no value,
+    /// and [`ValueSetError::MixedFields`] when the values belong to different fields.
+    pub fn new<V: Into<FieldValue>>(values: impl IntoIterator<Item = V>) -> Result<Self, ValueSetError> {
         let mut values: Vec<FieldValue> = values.into_iter().map(Into::into).collect();
-        let first = values.first().ok_or(SelectorError::NoValues)?.field();
+        let first = values.first().ok_or(ValueSetError::Empty)?.field();
         if let Some(other) = values.iter().map(FieldValue::field).find(|field| *field != first) {
-            return Err(SelectorError::MixedFields { first, other });
+            return Err(ValueSetError::MixedFields { first, other });
         }
         values.sort();
         values.dedup();
@@ -188,6 +206,41 @@ impl fmt::Display for ValueSet {
     }
 }
 
+/// Why values are not a [`ValueSet`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum ValueSetError {
+    /// There is no value, so a condition would have nothing to test against.
+    Empty,
+    /// The values belong to different fields, and one condition tests one field.
+    MixedFields { first: Field, other: Field },
+    /// A list of values holds a pattern.
+    /// Only `matches` reads a pattern, and it takes one.
+    /// Only reading returns it, with the `serde` feature: a typed value is never a pattern.
+    PatternAmongValues { field: Field, pattern: String },
+}
+
+impl fmt::Display for ValueSetError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Empty => f.write_str("a condition needs at least one value"),
+            Self::MixedFields { first, other } => {
+                write!(
+                    f,
+                    "one condition tests one field, and its values are of {first} and of {other}"
+                )
+            }
+            Self::PatternAmongValues { field, pattern } => write!(
+                f,
+                "{field}: {pattern:?} is a pattern, and a list holds values. \
+                 Write the pattern alone, or use is-any-of for the text itself"
+            ),
+        }
+    }
+}
+
+impl std::error::Error for ValueSetError {}
+
 /// One clause of a selector: a field, an operator, and what the operator tests against.
 ///
 /// A value is typed by its field, so a condition never tests a field against a value of another one.
@@ -217,7 +270,7 @@ impl fmt::Display for ValueSet {
 ///
 /// let not_the_ui = Condition::is_not(ClientId::new("kafka-ui").expect("a client ID"));
 /// assert_eq!(not_the_ui.to_string(), "client.id is not kafka-ui");
-/// # Ok::<(), SelectorError>(())
+/// # Ok::<(), Box<dyn std::error::Error>>(())
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Condition {
@@ -242,7 +295,7 @@ impl Condition {
     /// # Errors
     ///
     /// The error of [`ValueSet::new`], when there is no value or the values belong to different fields.
-    pub fn is_any_of<V: Into<FieldValue>>(values: impl IntoIterator<Item = V>) -> Result<Self, SelectorError> {
+    pub fn is_any_of<V: Into<FieldValue>>(values: impl IntoIterator<Item = V>) -> Result<Self, ValueSetError> {
         ValueSet::new(values).map(Condition::IsAnyOf)
     }
 
@@ -272,20 +325,19 @@ impl Condition {
     ///
     /// // `Prodcue` is an error, and not a selector that never matches.
     /// assert!(Condition::parse(Field::Api, "Prodcue").is_err());
-    /// # Ok::<(), SelectorError>(())
+    /// # Ok::<(), Box<dyn std::error::Error>>(())
     /// ```
     ///
     /// # Errors
     ///
-    /// [`SelectorError::Value`] when the text has no wildcard and is not a value of the field.
-    pub fn parse(field: Field, text: &str) -> Result<Self, SelectorError> {
-        if Glob::is_pattern(text) {
-            Glob::new(text).map(|pattern| Condition::Matches(field, pattern))
-        } else {
-            field
+    /// [`ConditionError::InvalidValue`] when the text has no wildcard and is not a value of the field.
+    pub fn parse(field: Field, text: &str) -> Result<Self, ConditionError> {
+        match Glob::new(text) {
+            Ok(pattern) if pattern.has_wildcard() => Ok(Condition::Matches(field, pattern)),
+            _ => field
                 .parse_value(text)
                 .map(Condition::Is)
-                .map_err(|error| SelectorError::Value { field, error })
+                .map_err(|error| ConditionError::InvalidValue { error }),
         }
     }
 
@@ -385,6 +437,41 @@ impl Holds {
     }
 }
 
+/// Why a text is not a [`Condition`] on a field.
+///
+/// ```
+/// use gaslightmq_field::prelude::*;
+/// use gaslightmq_kernel::prelude::*;
+/// use gaslightmq_selector::prelude::*;
+///
+/// let error = Condition::parse(Field::Api, "Prodcue").unwrap_err();
+/// assert_eq!(
+///     error,
+///     ConditionError::InvalidValue {
+///         error: FieldValueError::Api { error: ApiKeyError::UnknownName { input: "Prodcue".to_owned() } },
+///     },
+/// );
+/// assert_eq!(error.to_string(), "api: unknown API key: \"Prodcue\"");
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum ConditionError {
+    /// The text has no wildcard, and it is not a value of the field.
+    /// `error` names the field and says why.
+    InvalidValue { error: FieldValueError },
+}
+
+impl fmt::Display for ConditionError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::InvalidValue { error } => write!(f, "{}: {error}", error.field()),
+        }
+    }
+}
+
+/// The message is complete, so no variant has a source.
+impl std::error::Error for ConditionError {}
+
 #[cfg(test)]
 mod tests {
     use gaslightmq_kernel::prelude::*;
@@ -416,7 +503,7 @@ mod tests {
         for text in ["", "Is", "is-not", "isnot", "is  not"] {
             assert_eq!(
                 text.parse::<Operator>(),
-                Err(SelectorError::UnknownOperator { name: text.to_owned() }),
+                Err(OperatorError::Unknown { name: text.to_owned() }),
                 "{text:?}"
             );
         }
@@ -451,14 +538,14 @@ mod tests {
 
     #[test]
     fn a_value_set_needs_a_value() {
-        assert_eq!(ValueSet::new(Vec::<FieldValue>::new()), Err(SelectorError::NoValues));
+        assert_eq!(ValueSet::new(Vec::<FieldValue>::new()), Err(ValueSetError::Empty));
     }
 
     #[test]
     fn a_value_set_is_of_one_field() {
         assert_eq!(
             ValueSet::new([topic("orders.eu"), ApiKey::PRODUCE.into()]),
-            Err(SelectorError::MixedFields {
+            Err(ValueSetError::MixedFields {
                 first: Field::Topic,
                 other: Field::Api
             })
@@ -564,8 +651,7 @@ mod tests {
         for (field, text) in [(Field::Api, "Prodcue"), (Field::Partition, "three"), (Field::Topic, "")] {
             assert_eq!(
                 Condition::parse(field, text),
-                Err(SelectorError::Value {
-                    field,
+                Err(ConditionError::InvalidValue {
                     error: field.parse_value(text).unwrap_err()
                 }),
                 "{field}: {text:?}"

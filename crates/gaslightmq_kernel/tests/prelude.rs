@@ -1,4 +1,4 @@
-//! The prelude holds every value object and the error, and its names clash with none of `std`.
+//! The prelude holds every value object and its error, and its names clash with none of `std`.
 
 /// Imports the prelude next to the standard prelude and the modules of `std` that code imports most.
 ///
@@ -35,7 +35,6 @@ mod next_to_std {
         let topic_partition = TopicPartition::new(topic.clone(), partition);
         let partition_offset = PartitionOffset::new(partition, offset);
         let position = TopicPartitionOffset::new(topic_partition.clone(), offset);
-        let error: KernelError = TopicName::new("").unwrap_err();
 
         vec![
             topic.to_string(),
@@ -56,7 +55,30 @@ mod next_to_std {
             ProducerEpoch::from(5).to_string(),
             ApiKey::PRODUCE.to_string(),
             ErrorCode::NOT_LEADER_OR_FOLLOWER.to_string(),
-            error.to_string(),
+        ]
+    }
+
+    /// One error of every type of the prelude, each named without a path.
+    pub fn every_error() -> Vec<String> {
+        vec![
+            TopicNameError::Empty.to_string(),
+            TopicIdError::Empty.to_string(),
+            PartitionNumberError::Empty.to_string(),
+            OffsetError::Empty.to_string(),
+            TopicPartitionError::Empty.to_string(),
+            PartitionOffsetError::Empty.to_string(),
+            TopicPartitionOffsetError::Empty.to_string(),
+            BrokerIdError::Empty.to_string(),
+            LeaderEpochError::Empty.to_string(),
+            ClientIdError::TooLong { len: 2, max: 1 }.to_string(),
+            GroupIdError::Empty.to_string(),
+            MemberIdError::Empty.to_string(),
+            GroupInstanceIdError::Empty.to_string(),
+            TransactionalIdError::Empty.to_string(),
+            ProducerIdError::Empty.to_string(),
+            ProducerEpochError::Empty.to_string(),
+            ApiKeyError::Empty.to_string(),
+            ErrorCodeError::Empty.to_string(),
         ]
     }
 }
@@ -66,7 +88,7 @@ mod alone {
     use gaslightmq_kernel::prelude::*;
 
     /// The names of the standard prelude still mean what they mean everywhere.
-    pub fn std_names_keep_their_meaning() -> Result<Option<String>, KernelError> {
+    pub fn std_names_keep_their_meaning() -> Result<Option<String>, TopicNameError> {
         let topic: TopicName = TryFrom::try_from("orders.eu")?;
         let position = topic.partition(From::from(3_u16)).at(Offset::ZERO);
         let boxed: Box<TopicPartitionOffset> = Box::new(position.clone());
@@ -76,7 +98,7 @@ mod alone {
 }
 
 #[test]
-fn the_prelude_holds_every_value_object_and_the_error() {
+fn the_prelude_holds_every_value_object() {
     assert_eq!(
         next_to_std::every_item(),
         [
@@ -98,7 +120,33 @@ fn the_prelude_holds_every_value_object_and_the_error() {
             "5",
             "Produce",
             "NOT_LEADER_OR_FOLLOWER",
+        ]
+    );
+}
+
+#[test]
+fn the_prelude_holds_the_error_of_every_value_object() {
+    assert_eq!(
+        next_to_std::every_error(),
+        [
             "topic name is empty",
+            "topic ID is empty",
+            "partition number is empty",
+            "offset is empty",
+            "topic partition is empty",
+            "partition offset is empty",
+            "topic partition offset is empty",
+            "broker ID is empty",
+            "leader epoch is empty",
+            "client ID of 2 bytes exceeds the limit of 1",
+            "group ID is empty",
+            "member ID is empty",
+            "group instance ID is empty",
+            "transactional ID is empty",
+            "producer ID is empty",
+            "producer epoch is empty",
+            "API key is empty",
+            "error code is empty",
         ]
     );
 }

@@ -56,7 +56,6 @@ mod next_to_the_others {
         let effect: &Effect<&str> = call.after_response();
         let winners: &Winners<&str> = effect.refusals();
         let delay: Delay = effect.delay();
-        let error: CombineError = CombineError::NoAspect { kind: LieKind::Data };
 
         vec![
             priority.position().to_string(),
@@ -66,8 +65,25 @@ mod next_to_the_others {
             effect.terminal().unwrap().to_string(),
             winners.is_empty().to_string(),
             delay.to_string(),
-            error.to_string(),
         ]
+    }
+
+    /// One error of every type of the prelude, each named without a path.
+    ///
+    /// A message says everything, so no error has a source.
+    pub fn every_error() -> Vec<String> {
+        let errors: Vec<Box<dyn std::error::Error>> = vec![
+            Box::new(ClaimError::NoAspect { kind: LieKind::Data }),
+            Box::new(ClaimError::NoTiming { kind: LieKind::Timing }),
+        ];
+
+        errors
+            .iter()
+            .map(|error| {
+                assert!(error.source().is_none(), "{error}");
+                error.to_string()
+            })
+            .collect()
     }
 }
 
@@ -85,7 +101,17 @@ fn the_prelude_names_every_type_next_to_the_other_preludes() {
             "Late disconnect",
             "true",
             "+0 s",
+        ]
+    );
+}
+
+#[test]
+fn the_prelude_names_the_error_of_every_type() {
+    assert_eq!(
+        next_to_the_others::every_error(),
+        [
             "a data lie rewrites, and its definition names no aspect",
+            "a timing lie is a modifier, and its definition holds no timing",
         ]
     );
 }

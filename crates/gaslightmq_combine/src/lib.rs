@@ -18,9 +18,8 @@
 //! | [`Effect`] | What the lies that apply do to the call at one stage. |
 //! | [`Winners`] | Which lie holds each target, among lies that conflict there. |
 //! | [`Delay`] | How long the call waits at one stage. |
-//! | [`CombineError`] | Why a lie cannot become a claim. |
 //!
-//! The [`prelude`] holds all of them.
+//! The [`prelude`] holds all of them, with the one [error](#errors).
 //!
 //! # The rules
 //!
@@ -133,6 +132,15 @@
 //! A lie that is shadowed on one partition and applies on another counts as one firing.
 //! A lie that was shadowed or pre-empted on every target gives its firing back to the budget.
 //!
+//! # Errors
+//!
+//! Combining never fails: every lie gets a [`Fate`], and a lie that loses is no error.
+//! Only [`Claim`] checks a value, so it has the one error of the crate, [`ClaimError`].
+//! A [`TargetedLie`](gaslightmq_lie::TargetedLie) does not become a claim when its definition breaks its own word:
+//! it is a rewrite without an aspect, or a modifier without a timing.
+//! No definition of today's `gaslightmq_lie` does.
+//! The message of the error is complete, so it has no [`source`](std::error::Error::source).
+//!
 //! # No `serde` feature
 //!
 //! Nothing in this crate is a definition, and nothing travels in a recording.
@@ -150,18 +158,16 @@ mod board;
 mod claim;
 mod combination;
 mod effect;
-mod error;
 mod fate;
 mod priority;
 
-pub use claim::{Claim, FiredLie};
+pub use claim::{Claim, ClaimError, FiredLie};
 pub use combination::{Combination, RequestPass};
 pub use effect::{Delay, Effect, Winners};
-pub use error::CombineError;
 pub use fate::{Fate, Loss};
 pub use priority::Priority;
 
-/// Every type of this crate.
+/// Every type of this crate, with the error of a claim.
 ///
 /// Import it whole wherever code combines lies, next to the preludes of `gaslightmq_field` and `gaslightmq_lie`.
 /// No name in it is a name of those preludes or of the standard one, so the import shadows nothing.
@@ -176,6 +182,6 @@ pub use priority::Priority;
 pub mod prelude {
     #[doc(no_inline)]
     pub use crate::{
-        Claim, Combination, CombineError, Delay, Effect, Fate, FiredLie, Loss, Priority, RequestPass, Winners,
+        Claim, ClaimError, Combination, Delay, Effect, Fate, FiredLie, Loss, Priority, RequestPass, Winners,
     };
 }

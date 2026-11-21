@@ -3,20 +3,22 @@
 /// Give a type that has a text form the conversions from and to owned text, and the text form in `serde`.
 ///
 /// The type implements `FromStr` and `Display`, and this macro builds on both.
+///
+/// `error` is the error of the type's `FromStr`.
 macro_rules! text_form {
-    ($name:ident) => {
+    ($name:ident, $error:ident) => {
         impl TryFrom<&str> for $name {
-            type Error = $crate::SelectorError;
+            type Error = $error;
 
-            fn try_from(text: &str) -> Result<Self, $crate::SelectorError> {
+            fn try_from(text: &str) -> Result<Self, $error> {
                 text.parse()
             }
         }
 
         impl TryFrom<String> for $name {
-            type Error = $crate::SelectorError;
+            type Error = $error;
 
-            fn try_from(text: String) -> Result<Self, $crate::SelectorError> {
+            fn try_from(text: String) -> Result<Self, $error> {
                 text.parse()
             }
         }

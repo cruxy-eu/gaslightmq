@@ -1,61 +1,39 @@
 //! What the text types share: the rules for names and IDs, the conversions and the `serde` form.
 
-use crate::KernelError;
-
 /// The most bytes a string has in a Kafka message, which writes the length as an `i16`.
 pub(crate) const MAX_STRING_LEN: usize = 32_767;
 
 /// The most characters Kafka gives a topic name.
 pub(crate) const MAX_NAME_LEN: usize = 249;
 
-/// Kafka's rule for a topic name, which it also applies to a group instance ID:
-/// 1 to 249 characters of `[a-zA-Z0-9._-]`, and not `.` or `..`.
-pub(crate) fn name(what: &'static str, value: &str, max: usize) -> Result<(), KernelError> {
-    non_empty(what, value, max)?;
-    let allowed = |character: char| character.is_ascii_alphanumeric() || matches!(character, '.' | '_' | '-');
-    if let Some((position, character)) = value.chars().enumerate().find(|(_, character)| !allowed(*character)) {
-        return Err(KernelError::InvalidCharacter {
-            what,
-            character,
-            position,
-        });
-    }
-    if matches!(value, "." | "..") {
-        return Err(KernelError::Reserved {
-            what,
-            value: value.to_owned(),
-        });
-    }
-    Ok(())
-}
-
-/// The rule for an ID that Kafka does not restrict: at least one byte, and no more than a message can carry.
-pub(crate) fn non_empty(what: &'static str, value: &str, max: usize) -> Result<(), KernelError> {
-    if value.is_empty() {
-        return Err(KernelError::Empty { what });
-    }
-    any(what, value, max)
-}
-
-/// The rule for an ID that may be empty: no more bytes than a message can carry.
-pub(crate) fn any(what: &'static str, value: &str, max: usize) -> Result<(), KernelError> {
-    if value.len() > max {
-        return Err(KernelError::TooLong {
-            what,
-            len: value.len(),
-            max,
-        });
-    }
-    Ok(())
-}
-
-/// Define a name or an ID that holds checked text.
+/// The first character that Kafka does not allow in a topic name, with its position counted from zero.
 ///
-/// `rule` is one of the functions of this module.
+/// Kafka allows `[a-zA-Z0-9._-]`, and it applies the same rule to a group instance ID.
+pub(crate) fn invalid_character(value: &str) -> Option<(usize, char)> {
+    let allowed = |character: char| character.is_ascii_alphanumeric() || matches!(character, '.' | '_' | '-');
+    value.chars().enumerate().find(|(_, character)| !allowed(*character))
+}
+
+/// Whether Kafka reserves the name: `.` and `..` are paths, and never names.
+pub(crate) fn is_reserved(value: &str) -> bool {
+    matches!(value, "." | "..")
+}
+
+/// Define a name or an ID that holds checked text, and the error that says how a text breaks its rule.
+///
+/// `rule` is one of three:
+///
+/// | Rule | Takes |
+/// |---|---|
+/// | `name` | Kafka's rule for a topic name: 1 to `max` characters of `[a-zA-Z0-9._-]`, and not `.` or `..`. |
+/// | `non_empty` | An ID that Kafka does not restrict: at least one byte, and no more than `max`. |
+/// | `any` | An ID that may be empty: no more bytes than `max`. |
+///
+/// The error only has the variants that the rule can give.
 macro_rules! text_value {
     (
         $(#[$meta:meta])*
-        $name:ident, $what:literal, max: $max:expr, rule: $rule:path
+        $name:ident, $error:ident, $what:literal, max: $max:expr, rule: $rule:ident
     ) => {
         $(#[$meta])*
         #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -69,10 +47,10 @@ macro_rules! text_value {
             ///
             /// # Errors
             ///
-            /// The [`KernelError`](crate::KernelError) that says how `value` breaks the rule.
-            pub fn new(value: impl AsRef<str>) -> Result<Self, $crate::KernelError> {
+            #[doc = concat!("The [`", stringify!($error), "`] that says how `value` breaks the rule.")]
+            pub fn new(value: impl AsRef<str>) -> Result<Self, $error> {
                 let value = value.as_ref();
-                $rule($what, value, Self::MAX_LEN)?;
+                $crate::text::text_rule!($rule, $error, value, Self::MAX_LEN);
                 Ok(Self(value.into()))
             }
 
@@ -82,8 +60,10 @@ macro_rules! text_value {
             }
         }
 
+        $crate::text::text_error!($rule, $name, $error, $what);
+
         impl std::str::FromStr for $name {
-            type Err = $crate::KernelError;
+            type Err = $error;
 
             fn from_str(text: &str) -> Result<Self, Self::Err> {
                 Self::new(text)
@@ -91,7 +71,7 @@ macro_rules! text_value {
         }
 
         impl TryFrom<&str> for $name {
-            type Error = $crate::KernelError;
+            type Error = $error;
 
             fn try_from(value: &str) -> Result<Self, Self::Error> {
                 Self::new(value)
@@ -99,7 +79,7 @@ macro_rules! text_value {
         }
 
         impl TryFrom<String> for $name {
-            type Error = $crate::KernelError;
+            type Error = $error;
 
             fn try_from(value: String) -> Result<Self, Self::Error> {
                 Self::new(value)
@@ -171,12 +151,138 @@ macro_rules! text_value {
     };
 }
 
+/// Check a text against one of the rules of [`text_value`], and return the error of the type when it breaks the rule.
+macro_rules! text_rule {
+    (name, $error:ident, $value:ident, $max:expr) => {
+        $crate::text::text_rule!(non_empty, $error, $value, $max);
+        if let Some((position, character)) = $crate::text::invalid_character($value) {
+            return Err($error::InvalidCharacter { character, position });
+        }
+        if $crate::text::is_reserved($value) {
+            return Err($error::Reserved {
+                value: $value.to_owned(),
+            });
+        }
+    };
+    (non_empty, $error:ident, $value:ident, $max:expr) => {
+        if $value.is_empty() {
+            return Err($error::Empty);
+        }
+        $crate::text::text_rule!(any, $error, $value, $max);
+    };
+    (any, $error:ident, $value:ident, $max:expr) => {
+        if $value.len() > $max {
+            return Err($error::TooLong {
+                len: $value.len(),
+                max: $max,
+            });
+        }
+    };
+}
+
+/// Define the error of a text type, with the variants that its rule can give.
+macro_rules! text_error {
+    (name, $name:ident, $error:ident, $what:literal) => {
+        #[doc = concat!("Why a text is not a [`", stringify!($name), "`].")]
+        #[derive(Debug, Clone, PartialEq, Eq)]
+        #[non_exhaustive]
+        pub enum $error {
+            /// The text has no characters.
+            Empty,
+            #[doc = concat!("The text has more bytes than a ", $what, " has at most.")]
+            TooLong { len: usize, max: usize },
+            #[doc = concat!("The text has a character that Kafka does not allow in a ", $what, ".")]
+            /// `position` counts characters from zero.
+            InvalidCharacter { character: char, position: usize },
+            /// Kafka reserves the text: `.` and `..` are paths.
+            Reserved { value: String },
+        }
+
+        impl std::fmt::Display for $error {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                match self {
+                    Self::Empty => f.write_str(concat!($what, " is empty")),
+                    Self::TooLong { len, max } => {
+                        write!(
+                            f,
+                            concat!($what, " of {} bytes exceeds the limit of {}"),
+                            len, max
+                        )
+                    }
+                    Self::InvalidCharacter { character, position } => write!(
+                        f,
+                        concat!($what, " has the invalid character {:?} at position {}"),
+                        character, position
+                    ),
+                    Self::Reserved { value } => write!(f, concat!($what, " cannot be {:?}"), value),
+                }
+            }
+        }
+
+        impl std::error::Error for $error {}
+    };
+    (non_empty, $name:ident, $error:ident, $what:literal) => {
+        #[doc = concat!("Why a text is not a [`", stringify!($name), "`].")]
+        #[derive(Debug, Clone, PartialEq, Eq)]
+        #[non_exhaustive]
+        pub enum $error {
+            /// The text has no characters.
+            Empty,
+            #[doc = concat!("The text has more bytes than a ", $what, " has at most.")]
+            TooLong { len: usize, max: usize },
+        }
+
+        impl std::fmt::Display for $error {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                match self {
+                    Self::Empty => f.write_str(concat!($what, " is empty")),
+                    Self::TooLong { len, max } => {
+                        write!(
+                            f,
+                            concat!($what, " of {} bytes exceeds the limit of {}"),
+                            len, max
+                        )
+                    }
+                }
+            }
+        }
+
+        impl std::error::Error for $error {}
+    };
+    (any, $name:ident, $error:ident, $what:literal) => {
+        #[doc = concat!("Why a text is not a [`", stringify!($name), "`].")]
+        #[derive(Debug, Clone, PartialEq, Eq)]
+        #[non_exhaustive]
+        pub enum $error {
+            #[doc = concat!("The text has more bytes than a ", $what, " has at most.")]
+            TooLong { len: usize, max: usize },
+        }
+
+        impl std::fmt::Display for $error {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                match self {
+                    Self::TooLong { len, max } => {
+                        write!(
+                            f,
+                            concat!($what, " of {} bytes exceeds the limit of {}"),
+                            len, max
+                        )
+                    }
+                }
+            }
+        }
+
+        impl std::error::Error for $error {}
+    };
+}
+
 /// Give a type that has a text form the conversions from and to owned text, and the text form in `serde`.
 ///
 /// The type implements `FromStr` and `Display`, and this macro builds on both.
+/// `error` is the error of the type's `FromStr`.
 macro_rules! text_form {
-    ($name:ident) => {
-        $crate::text::text_conversions!($name);
+    ($name:ident, $error:ident) => {
+        $crate::text::text_conversions!($name, $error);
         $crate::text::text_serde!($name);
     };
 }
@@ -184,10 +290,11 @@ macro_rules! text_form {
 /// Give a type that has a text form the conversions from and to owned text.
 ///
 /// The type implements `FromStr` and `Display`, and this macro builds on both.
+/// `error` is the error of the type's `FromStr`.
 macro_rules! text_conversions {
-    ($name:ident) => {
+    ($name:ident, $error:ident) => {
         impl TryFrom<&str> for $name {
-            type Error = $crate::KernelError;
+            type Error = $error;
 
             fn try_from(text: &str) -> Result<Self, Self::Error> {
                 text.parse()
@@ -195,7 +302,7 @@ macro_rules! text_conversions {
         }
 
         impl TryFrom<String> for $name {
-            type Error = $crate::KernelError;
+            type Error = $error;
 
             fn try_from(text: String) -> Result<Self, Self::Error> {
                 text.parse()
@@ -232,37 +339,33 @@ macro_rules! text_serde {
     };
 }
 
-pub(crate) use {text_conversions, text_form, text_serde, text_value};
+pub(crate) use {text_conversions, text_error, text_form, text_rule, text_serde, text_value};
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use crate::{
+        ClientId, ClientIdError, GroupId, GroupIdError, GroupInstanceId, GroupInstanceIdError, TopicName,
+        TopicNameError,
+    };
 
     #[test]
     fn a_name_takes_letters_digits_dots_underscores_and_hyphens() {
         for value in ["orders.eu", "a", "A-Z_0.9", "...", "__consumer_offsets", "-", "_"] {
-            assert_eq!(name("topic name", value, MAX_NAME_LEN), Ok(()), "{value:?}");
+            assert!(TopicName::new(value).is_ok(), "{value:?}");
         }
     }
 
     #[test]
     fn a_name_is_not_empty() {
-        assert_eq!(
-            name("topic name", "", MAX_NAME_LEN),
-            Err(KernelError::Empty { what: "topic name" })
-        );
+        assert_eq!(TopicName::new(""), Err(TopicNameError::Empty));
     }
 
     #[test]
     fn a_name_has_at_most_249_characters() {
-        assert_eq!(name("topic name", &"a".repeat(249), MAX_NAME_LEN), Ok(()));
+        assert!(TopicName::new("a".repeat(249)).is_ok());
         assert_eq!(
-            name("topic name", &"a".repeat(250), MAX_NAME_LEN),
-            Err(KernelError::TooLong {
-                what: "topic name",
-                len: 250,
-                max: 249
-            })
+            TopicName::new("a".repeat(250)),
+            Err(TopicNameError::TooLong { len: 250, max: 249 })
         );
     }
 
@@ -276,12 +379,8 @@ mod tests {
             ("ordérs", 'é', 3),
         ] {
             assert_eq!(
-                name("topic name", value, MAX_NAME_LEN),
-                Err(KernelError::InvalidCharacter {
-                    what: "topic name",
-                    character,
-                    position
-                }),
+                TopicName::new(value),
+                Err(TopicNameError::InvalidCharacter { character, position }),
                 "{value:?}"
             );
         }
@@ -291,9 +390,8 @@ mod tests {
     fn a_name_is_not_one_or_two_dots() {
         for value in [".", ".."] {
             assert_eq!(
-                name("topic name", value, MAX_NAME_LEN),
-                Err(KernelError::Reserved {
-                    what: "topic name",
+                TopicName::new(value),
+                Err(TopicNameError::Reserved {
                     value: value.to_owned()
                 })
             );
@@ -301,38 +399,81 @@ mod tests {
     }
 
     #[test]
-    fn a_free_id_takes_any_text_that_fits_a_message() {
-        assert_eq!(non_empty("group ID", "analytics etl/é", MAX_STRING_LEN), Ok(()));
-        assert_eq!(non_empty("group ID", &"a".repeat(32_767), MAX_STRING_LEN), Ok(()));
+    fn every_type_with_the_rule_for_names_has_its_own_error() {
+        assert_eq!(GroupInstanceId::new(""), Err(GroupInstanceIdError::Empty));
         assert_eq!(
-            non_empty("group ID", &"a".repeat(32_768), MAX_STRING_LEN),
-            Err(KernelError::TooLong {
-                what: "group ID",
-                len: 32_768,
-                max: 32_767
+            GroupInstanceId::new("etl 0"),
+            Err(GroupInstanceIdError::InvalidCharacter {
+                character: ' ',
+                position: 3
             })
-        );
-        assert_eq!(
-            non_empty("group ID", "", MAX_STRING_LEN),
-            Err(KernelError::Empty { what: "group ID" })
         );
     }
 
     #[test]
-    fn the_limit_counts_bytes() {
-        assert_eq!(any("client ID", "ééé", 6), Ok(()));
+    fn a_free_id_takes_any_text_that_fits_a_message() {
+        assert!(GroupId::new("analytics etl/é").is_ok());
+        assert!(GroupId::new("a".repeat(32_767)).is_ok());
         assert_eq!(
-            any("client ID", "éééé", 6),
-            Err(KernelError::TooLong {
-                what: "client ID",
-                len: 8,
-                max: 6
+            GroupId::new("a".repeat(32_768)),
+            Err(GroupIdError::TooLong {
+                len: 32_768,
+                max: 32_767
+            })
+        );
+        assert_eq!(GroupId::new(""), Err(GroupIdError::Empty));
+    }
+
+    #[test]
+    fn the_limit_counts_bytes() {
+        assert!(ClientId::new("é".repeat(16_383)).is_ok());
+        assert_eq!(
+            ClientId::new("é".repeat(16_384)),
+            Err(ClientIdError::TooLong {
+                len: 32_768,
+                max: 32_767
             })
         );
     }
 
     #[test]
     fn an_id_that_may_be_empty_takes_no_text() {
-        assert_eq!(any("client ID", "", MAX_STRING_LEN), Ok(()));
+        assert!(ClientId::new("").is_ok());
+    }
+
+    #[test]
+    fn an_error_names_the_value_and_what_is_wrong_with_it() {
+        let cases = [
+            (TopicNameError::Empty.to_string(), "topic name is empty"),
+            (
+                TopicNameError::TooLong { len: 250, max: 249 }.to_string(),
+                "topic name of 250 bytes exceeds the limit of 249",
+            ),
+            (
+                TopicNameError::InvalidCharacter {
+                    character: '/',
+                    position: 6,
+                }
+                .to_string(),
+                "topic name has the invalid character '/' at position 6",
+            ),
+            (
+                TopicNameError::Reserved { value: "..".into() }.to_string(),
+                "topic name cannot be \"..\"",
+            ),
+            (GroupIdError::Empty.to_string(), "group ID is empty"),
+            (
+                ClientIdError::TooLong {
+                    len: 32_768,
+                    max: 32_767,
+                }
+                .to_string(),
+                "client ID of 32768 bytes exceeds the limit of 32767",
+            ),
+        ];
+
+        for (message, expected) in cases {
+            assert_eq!(message, expected);
+        }
     }
 }

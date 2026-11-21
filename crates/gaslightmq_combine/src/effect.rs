@@ -31,7 +31,7 @@ use gaslightmq_lie::prelude::*;
 /// assert_eq!(refusals.of(&three), Some(&"Leader flap"));
 /// assert_eq!(refusals.of(&four), None);
 /// assert_eq!(refusals.of_call(), None);
-/// # Ok::<(), FieldError>(())
+/// # Ok::<(), PartError>(())
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Winners<Id> {
@@ -229,7 +229,7 @@ const fn sum(one: TimeSpan, other: TimeSpan) -> TimeSpan {
 /// assert_eq!(after.rewrite(Aspect::HighWatermark, &four), Some(&"Stale watermark"));
 /// assert_eq!(after.delay().length(), TimeSpan::from_secs(1));
 /// assert_eq!(after.terminal(), None);
-/// # Ok::<(), FieldError>(())
+/// # Ok::<(), PartError>(())
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Effect<Id> {

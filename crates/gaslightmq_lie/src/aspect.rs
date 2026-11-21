@@ -1,7 +1,7 @@
 use std::fmt;
 use std::str::FromStr;
 
-use crate::{LieError, LieKind};
+use crate::LieKind;
 
 /// What a rewrite changes about its target.
 ///
@@ -89,18 +89,41 @@ impl fmt::Display for Aspect {
 
 /// Reads the name a file uses, as [`Display`](fmt::Display) writes it.
 impl FromStr for Aspect {
-    type Err = LieError;
+    type Err = AspectError;
 
     fn from_str(name: &str) -> Result<Self, Self::Err> {
         Self::ALL
             .into_iter()
             .find(|aspect| aspect.name() == name)
-            .ok_or_else(|| LieError::UnknownName {
-                what: "aspect",
-                name: name.to_owned(),
-            })
+            .ok_or_else(|| AspectError::Unknown { name: name.to_owned() })
     }
 }
+
+/// Why a text is not an [`Aspect`].
+///
+/// ```
+/// use gaslightmq_lie::prelude::*;
+///
+/// let error = "watermark".parse::<Aspect>().unwrap_err();
+/// assert_eq!(error, AspectError::Unknown { name: "watermark".to_owned() });
+/// assert_eq!(error.to_string(), "no aspect is called \"watermark\"");
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum AspectError {
+    /// No aspect has this name.
+    Unknown { name: String },
+}
+
+impl fmt::Display for AspectError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Unknown { name } => write!(f, "no aspect is called {name:?}"),
+        }
+    }
+}
+
+impl std::error::Error for AspectError {}
 
 #[cfg(test)]
 mod tests {
@@ -158,11 +181,17 @@ mod tests {
         for name in ["Leader", "high watermark", "watermark", ""] {
             assert_eq!(
                 name.parse::<Aspect>(),
-                Err(LieError::UnknownName {
-                    what: "aspect",
-                    name: name.to_owned()
-                }),
+                Err(AspectError::Unknown { name: name.to_owned() }),
             );
         }
+    }
+
+    #[test]
+    fn an_aspect_error_says_what_is_wrong() {
+        let error = AspectError::Unknown {
+            name: "watermark".into(),
+        };
+
+        assert_eq!(error.to_string(), "no aspect is called \"watermark\"");
     }
 }

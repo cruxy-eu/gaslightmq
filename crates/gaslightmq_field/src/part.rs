@@ -5,7 +5,7 @@ use std::str::FromStr;
 use gaslightmq_kernel::prelude::*;
 
 use crate::text::text_form;
-use crate::{Field, FieldError, FieldValue, Outcome, Reading};
+use crate::{Field, FieldValue, Outcome, Reading};
 
 /// One piece of a call that a lie can change on its own: a topic, or one partition of a topic.
 ///
@@ -28,7 +28,7 @@ use crate::{Field, FieldError, FieldValue, Outcome, Reading};
 /// let topic = Part::from(TopicName::new("orders.eu")?);
 /// assert_eq!(topic.partition(), None);
 /// assert_eq!(topic.to_string(), "orders.eu");
-/// # Ok::<(), FieldError>(())
+/// # Ok::<(), Box<dyn std::error::Error>>(())
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Part {
@@ -75,7 +75,7 @@ impl From<TopicPartition> for Part {
 
 /// Reads `orders.eu/3` as a partition, and text without a `/` as a topic.
 impl FromStr for Part {
-    type Err = FieldError;
+    type Err = PartError;
 
     fn from_str(text: &str) -> Result<Self, Self::Err> {
         if text.contains('/') {
@@ -95,7 +95,44 @@ impl fmt::Display for Part {
     }
 }
 
-text_form!(Part);
+text_form!(Part, PartError);
+
+/// Why a text is not a [`Part`].
+///
+/// A part is a topic or a partition of a topic, and the error says which of the two the text failed to be.
+/// Its message is the message of that error.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum PartError {
+    /// The text has no `/`, and it is not a topic name.
+    InvalidTopic { error: TopicNameError },
+    /// The text has a `/`, and it is not a topic partition.
+    InvalidPartition { error: TopicPartitionError },
+}
+
+impl fmt::Display for PartError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::InvalidTopic { error } => fmt::Display::fmt(error, f),
+            Self::InvalidPartition { error } => fmt::Display::fmt(error, f),
+        }
+    }
+}
+
+/// The message is complete, so no variant has a source.
+impl std::error::Error for PartError {}
+
+impl From<TopicNameError> for PartError {
+    fn from(error: TopicNameError) -> Self {
+        Self::InvalidTopic { error }
+    }
+}
+
+impl From<TopicPartitionError> for PartError {
+    fn from(error: TopicPartitionError) -> Self {
+        Self::InvalidPartition { error }
+    }
+}
 
 /// A part of a call as a [`FieldSource`](crate::FieldSource) shows it:
 /// which part it is, and the truth of that part once there is one.
@@ -125,7 +162,7 @@ text_form!(Part);
 /// // After the answer, it has a truth of its own.
 /// let answered = asked.failed(ErrorCode::NOT_LEADER_OR_FOLLOWER);
 /// assert_eq!(answered.own(Field::Outcome), Some(Reading::Present(Outcome::Error.into())));
-/// # Ok::<(), FieldError>(())
+/// # Ok::<(), Box<dyn std::error::Error>>(())
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct PartFields {
@@ -252,7 +289,7 @@ impl From<TopicPartition> for PartFields {
 ///
 /// assert!(Target::Call.covers(&settled));
 /// assert_eq!(Target::of_parts([]), None);
-/// # Ok::<(), FieldError>(())
+/// # Ok::<(), Box<dyn std::error::Error>>(())
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize), serde(rename_all = "lowercase"))]
@@ -367,13 +404,28 @@ mod tests {
         for text in ["orders.eu", "orders.eu/3", "__consumer_offsets/49"] {
             assert_eq!(part(text).to_string(), text);
         }
-        assert!(matches!(
+        assert_eq!(
             "".parse::<Part>(),
-            Err(FieldError::Kernel(KernelError::Empty { .. }))
+            Err(PartError::InvalidTopic {
+                error: TopicNameError::Empty
+            })
+        );
+        assert_eq!(
+            "orders.eu/".parse::<Part>(),
+            Err(PartError::InvalidPartition {
+                error: TopicPartitionError::InvalidPartition {
+                    error: PartitionNumberError::Empty
+                }
+            })
+        );
+        assert!(matches!(
+            "orders.eu/x".parse::<Part>(),
+            Err(PartError::InvalidPartition { .. })
         ));
-        assert!(matches!("orders.eu/".parse::<Part>(), Err(FieldError::Kernel(_))));
-        assert!(matches!("orders.eu/x".parse::<Part>(), Err(FieldError::Kernel(_))));
-        assert!(matches!("orders eu".parse::<Part>(), Err(FieldError::Kernel(_))));
+        assert!(matches!(
+            "orders eu".parse::<Part>(),
+            Err(PartError::InvalidTopic { .. })
+        ));
     }
 
     #[test]

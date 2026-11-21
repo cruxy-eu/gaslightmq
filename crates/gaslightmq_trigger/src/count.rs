@@ -3,13 +3,11 @@
 use std::fmt;
 use std::num::NonZeroU64;
 
-use crate::TriggerError;
-
-/// Define a number that is at least one.
+/// Define a number that is at least one, and the error that says why a number is not one.
 macro_rules! positive_number {
     (
         $(#[$meta:meta])*
-        $name:ident, $what:literal, $(#[$one_meta:meta])* $one:ident
+        $name:ident, $error:ident, $what:literal, $(#[$one_meta:meta])* $one:ident
     ) => {
         $(#[$meta])*
         #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -23,9 +21,9 @@ macro_rules! positive_number {
             ///
             /// # Errors
             ///
-            /// [`TriggerError::Zero`] when `value` is zero.
-            pub fn new(value: u64) -> Result<$name, TriggerError> {
-                NonZeroU64::new(value).map($name).ok_or(TriggerError::Zero { what: $what })
+            #[doc = concat!("[`", stringify!($error), "::Zero`] when `value` is zero.")]
+            pub fn new(value: u64) -> Result<$name, $error> {
+                NonZeroU64::new(value).map($name).ok_or($error::Zero)
             }
 
             #[doc = concat!("The ", $what, " as a plain number.")]
@@ -34,10 +32,28 @@ macro_rules! positive_number {
             }
         }
 
-        impl TryFrom<u64> for $name {
-            type Error = TriggerError;
+        #[doc = concat!("Why a number is not a [`", stringify!($name), "`].")]
+        #[derive(Debug, Clone, PartialEq, Eq)]
+        #[non_exhaustive]
+        pub enum $error {
+            #[doc = concat!("The number is zero, and a ", $what, " is at least one.")]
+            Zero,
+        }
 
-            fn try_from(value: u64) -> Result<$name, TriggerError> {
+        impl fmt::Display for $error {
+            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                match self {
+                    Self::Zero => f.write_str(concat!("a ", $what, " is at least one")),
+                }
+            }
+        }
+
+        impl std::error::Error for $error {}
+
+        impl TryFrom<u64> for $name {
+            type Error = $error;
+
+            fn try_from(value: u64) -> Result<$name, $error> {
                 $name::new(value)
             }
         }
@@ -67,12 +83,12 @@ positive_number! {
     ///
     /// assert_eq!(Count::new(10)?.value(), 10);
     /// assert_eq!(Count::ONE.to_string(), "1");
-    /// assert!(Count::new(0).is_err());
-    /// # Ok::<(), TriggerError>(())
+    /// assert_eq!(Count::new(0), Err(CountError::Zero));
+    /// # Ok::<(), CountError>(())
     /// ```
     ///
     /// With the `serde` feature, a count serializes as a number.
-    Count, "count",
+    Count, CountError, "count",
     /// One.
     ONE
 }
@@ -90,12 +106,12 @@ positive_number! {
     /// let third = MatchNumber::new(3)?;
     /// assert!(MatchNumber::FIRST < third);
     /// assert_eq!(third.value(), 3);
-    /// assert!(MatchNumber::new(0).is_err());
-    /// # Ok::<(), TriggerError>(())
+    /// assert_eq!(MatchNumber::new(0), Err(MatchNumberError::Zero));
+    /// # Ok::<(), MatchNumberError>(())
     /// ```
     ///
     /// With the `serde` feature, a match number serializes as a number.
-    MatchNumber, "match number",
+    MatchNumber, MatchNumberError, "match number",
     /// The first match.
     FIRST
 }
@@ -114,17 +130,25 @@ mod tests {
     #[test]
     fn a_count_is_at_least_one() {
         assert_eq!(Count::new(1), Ok(Count::ONE));
-        assert_eq!(Count::new(0), Err(TriggerError::Zero { what: "count" }));
+        assert_eq!(Count::new(0), Err(CountError::Zero));
+        assert_eq!(Count::try_from(0), Err(CountError::Zero));
         assert_eq!(Count::try_from(u64::MAX).unwrap().value(), u64::MAX);
     }
 
     #[test]
     fn the_first_match_has_number_one() {
         assert_eq!(MatchNumber::new(1), Ok(MatchNumber::FIRST));
-        assert_eq!(MatchNumber::new(0), Err(TriggerError::Zero { what: "match number" }));
+        assert_eq!(MatchNumber::new(0), Err(MatchNumberError::Zero));
+        assert_eq!(MatchNumber::try_from(0), Err(MatchNumberError::Zero));
         assert_eq!(MatchNumber::following(0), MatchNumber::FIRST);
         assert_eq!(MatchNumber::following(2).value(), 3);
         assert_eq!(MatchNumber::following(u64::MAX).value(), u64::MAX);
+    }
+
+    #[test]
+    fn each_error_says_what_is_wrong() {
+        assert_eq!(CountError::Zero.to_string(), "a count is at least one");
+        assert_eq!(MatchNumberError::Zero.to_string(), "a match number is at least one");
     }
 
     #[test]

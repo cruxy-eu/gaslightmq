@@ -3,15 +3,16 @@ use std::fmt;
 use gaslightmq_kernel::prelude::*;
 
 use crate::{
-    Acks, ApiVersion, ClientAddress, ClientHost, ClientSoftware, ConnectionNumber, Endpoint, Field, FieldError,
-    Latency, Outcome,
+    Acks, AcksError, ApiVersion, ApiVersionError, ClientAddress, ClientAddressError, ClientHost, ClientHostError,
+    ClientSoftware, ClientSoftwareError, ConnectionNumber, ConnectionNumberError, Endpoint, EndpointError, Field,
+    Latency, LatencyError, Outcome, OutcomeError,
 };
 
-/// Defines [`FieldValue`] from the type that each field holds.
+/// Defines [`FieldValue`] from the type that each field holds, and [`FieldValueError`] from the error of that type.
 ///
-/// A variant has the name of its field, so one list keeps the value, its field and its text form together.
+/// A variant has the name of its field, so one list keeps the value, its field, its text form and its error together.
 macro_rules! field_values {
-    ($($(#[$meta:meta])* $variant:ident($type:ty),)*) => {
+    ($($(#[$meta:meta])* $variant:ident($type:ty, $error:ty),)*) => {
         /// One value of one field, such as the topic `orders.eu`.
         ///
         /// Every field has its own variant with its own type, so a value always fits its field.
@@ -32,7 +33,7 @@ macro_rules! field_values {
         /// // A selector that says `api: Produce` reads the value through its field.
         /// assert_eq!(Field::Api.parse_value("Produce")?, FieldValue::Api(ApiKey::PRODUCE));
         /// assert!(Field::Api.parse_value("Prodcue").is_err());
-        /// # Ok::<(), FieldError>(())
+        /// # Ok::<(), Box<dyn std::error::Error>>(())
         /// ```
         #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
         pub enum FieldValue {
@@ -73,13 +74,64 @@ macro_rules! field_values {
             ///
             /// # Errors
             ///
-            /// The [`FieldError`] of the field's type, when `text` is not a value of it.
-            pub fn parse_value(self, text: &str) -> Result<FieldValue, FieldError> {
+            /// The [`FieldValueError`] of this field, when `text` is not a value of it.
+            pub fn parse_value(self, text: &str) -> Result<FieldValue, FieldValueError> {
                 match self {
-                    $(Field::$variant => Ok(FieldValue::$variant(text.parse::<$type>()?)),)*
+                    $(
+                        Field::$variant => text
+                            .parse::<$type>()
+                            .map(FieldValue::$variant)
+                            .map_err(|error| FieldValueError::$variant { error }),
+                    )*
                 }
             }
         }
+
+        /// Why a text is not a value of a field.
+        ///
+        /// Every field has its own variant, with the name of the field and the error of the type that the field holds.
+        /// The message is the message of that error, which names the value: `topic name is empty`.
+        ///
+        /// ```
+        /// use gaslightmq_field::prelude::*;
+        /// use gaslightmq_kernel::prelude::*;
+        ///
+        /// let error = Field::Topic.parse_value("orders/eu").unwrap_err();
+        /// assert_eq!(error.field(), Field::Topic);
+        /// assert_eq!(
+        ///     error,
+        ///     FieldValueError::Topic { error: TopicNameError::InvalidCharacter { character: '/', position: 6 } },
+        /// );
+        /// assert_eq!(error.to_string(), "topic name has the invalid character '/' at position 6");
+        /// ```
+        #[derive(Debug, Clone, PartialEq, Eq)]
+        #[non_exhaustive]
+        pub enum FieldValueError {
+            $(
+                #[doc = concat!("The text is not a value of [`Field::", stringify!($variant), "`].")]
+                $variant { error: $error },
+            )*
+        }
+
+        impl FieldValueError {
+            /// The field the text is not a value of.
+            pub const fn field(&self) -> Field {
+                match self {
+                    $(FieldValueError::$variant { .. } => Field::$variant,)*
+                }
+            }
+        }
+
+        impl fmt::Display for FieldValueError {
+            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                match self {
+                    $(FieldValueError::$variant { error } => fmt::Display::fmt(error, f),)*
+                }
+            }
+        }
+
+        /// The message is complete, so no variant has a source.
+        impl std::error::Error for FieldValueError {}
 
         #[cfg(feature = "serde")]
         impl FieldValue {
@@ -107,41 +159,41 @@ macro_rules! field_values {
 
 field_values! {
     /// A value of `connection`.
-    Connection(ConnectionNumber),
+    Connection(ConnectionNumber, ConnectionNumberError),
     /// A value of `address`.
-    Address(ClientAddress),
+    Address(ClientAddress, ClientAddressError),
     /// A value of `host`.
-    Host(ClientHost),
+    Host(ClientHost, ClientHostError),
     /// A value of `endpoint`.
-    Endpoint(Endpoint),
+    Endpoint(Endpoint, EndpointError),
     /// A value of `client.id`.
-    ClientId(ClientId),
+    ClientId(ClientId, ClientIdError),
     /// A value of `client.software`.
-    ClientSoftware(ClientSoftware),
+    ClientSoftware(ClientSoftware, ClientSoftwareError),
     /// A value of `api`.
-    Api(ApiKey),
+    Api(ApiKey, ApiKeyError),
     /// A value of `api.version`.
-    ApiVersion(ApiVersion),
+    ApiVersion(ApiVersion, ApiVersionError),
     /// A value of `topic`.
-    Topic(TopicName),
+    Topic(TopicName, TopicNameError),
     /// A value of `partition`.
-    Partition(PartitionNumber),
+    Partition(PartitionNumber, PartitionNumberError),
     /// A value of `acks`.
-    Acks(Acks),
+    Acks(Acks, AcksError),
     /// A value of `group`.
-    Group(GroupId),
+    Group(GroupId, GroupIdError),
     /// A value of `member.id`.
-    MemberId(MemberId),
+    MemberId(MemberId, MemberIdError),
     /// A value of `group.instance.id`.
-    GroupInstanceId(GroupInstanceId),
+    GroupInstanceId(GroupInstanceId, GroupInstanceIdError),
     /// A value of `transactional.id`.
-    TransactionalId(TransactionalId),
+    TransactionalId(TransactionalId, TransactionalIdError),
     /// A value of `outcome`.
-    Outcome(Outcome),
+    Outcome(Outcome, OutcomeError),
     /// A value of `error.code`.
-    ErrorCode(ErrorCode),
+    ErrorCode(ErrorCode, ErrorCodeError),
     /// A value of `latency`.
-    Latency(Latency),
+    Latency(Latency, LatencyError),
 }
 
 mod sealed {
@@ -231,7 +283,7 @@ pub enum Origin {
 /// assert_eq!(learned.to_string(), "analytics-etl, payments");
 ///
 /// assert_eq!(FieldValues::of(Vec::<GroupId>::new()), None);
-/// # Ok::<(), FieldError>(())
+/// # Ok::<(), Box<dyn std::error::Error>>(())
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct FieldValues {
@@ -426,21 +478,23 @@ mod tests {
     }
 
     #[test]
-    fn the_error_of_a_kernel_type_names_that_type() {
+    fn the_error_of_a_value_names_its_field_and_what_is_wrong() {
         assert_eq!(
             Field::Topic.parse_value("orders/eu"),
-            Err(FieldError::Kernel(KernelError::InvalidCharacter {
-                what: "topic name",
-                character: '/',
-                position: 6
-            }))
+            Err(FieldValueError::Topic {
+                error: TopicNameError::InvalidCharacter {
+                    character: '/',
+                    position: 6
+                }
+            })
         );
         assert_eq!(
             Field::Api.parse_value("Prodcue"),
-            Err(FieldError::Kernel(KernelError::UnknownName {
-                what: "API key",
-                input: "Prodcue".to_owned()
-            }))
+            Err(FieldValueError::Api {
+                error: ApiKeyError::UnknownName {
+                    input: "Prodcue".to_owned()
+                }
+            })
         );
     }
 

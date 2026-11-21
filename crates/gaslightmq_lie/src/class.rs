@@ -1,8 +1,6 @@
 use std::fmt;
 use std::str::FromStr;
 
-use crate::LieError;
-
 /// How a lie combines with the other lies on the same call.
 ///
 /// | Class | Lies | Combination |
@@ -58,18 +56,41 @@ impl fmt::Display for CombinationClass {
 
 /// Reads the name a file uses, as [`Display`](fmt::Display) writes it.
 impl FromStr for CombinationClass {
-    type Err = LieError;
+    type Err = CombinationClassError;
 
     fn from_str(name: &str) -> Result<Self, Self::Err> {
         Self::ALL
             .into_iter()
             .find(|class| class.name() == name)
-            .ok_or_else(|| LieError::UnknownName {
-                what: "combination class",
-                name: name.to_owned(),
-            })
+            .ok_or_else(|| CombinationClassError::Unknown { name: name.to_owned() })
     }
 }
+
+/// Why a text is not a [`CombinationClass`].
+///
+/// ```
+/// use gaslightmq_lie::prelude::*;
+///
+/// let error = "rewrites".parse::<CombinationClass>().unwrap_err();
+/// assert_eq!(error, CombinationClassError::Unknown { name: "rewrites".to_owned() });
+/// assert_eq!(error.to_string(), "no combination class is called \"rewrites\"");
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum CombinationClassError {
+    /// No combination class has this name.
+    Unknown { name: String },
+}
+
+impl fmt::Display for CombinationClassError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Unknown { name } => write!(f, "no combination class is called {name:?}"),
+        }
+    }
+}
+
+impl std::error::Error for CombinationClassError {}
 
 #[cfg(test)]
 mod tests {
@@ -97,11 +118,17 @@ mod tests {
         for name in ["Modifier", "rewrites", ""] {
             assert_eq!(
                 name.parse::<CombinationClass>(),
-                Err(LieError::UnknownName {
-                    what: "combination class",
-                    name: name.to_owned()
-                }),
+                Err(CombinationClassError::Unknown { name: name.to_owned() }),
             );
         }
+    }
+
+    #[test]
+    fn a_class_error_says_what_is_wrong() {
+        let error = CombinationClassError::Unknown {
+            name: "rewrites".into(),
+        };
+
+        assert_eq!(error.to_string(), "no combination class is called \"rewrites\"");
     }
 }

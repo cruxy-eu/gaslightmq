@@ -1,10 +1,11 @@
+use std::fmt;
 use std::sync::Arc;
 
 use gaslightmq_clock::Instant;
-use gaslightmq_incident::{Incident, Subjects};
+use gaslightmq_incident::{Incident, IncidentError, Subjects};
 use gaslightmq_trigger::{Arming, Firing};
 
-use crate::{Action, ResolvedRule, RuleError, RuleName};
+use crate::{Action, ResolvedRule, RuleName};
 
 /// An armed rule: what the rule says, and the live state of this arming.
 ///
@@ -107,10 +108,10 @@ impl ArmedRule {
     ///
     /// # Errors
     ///
-    /// [`RuleError::NoCallForIncident`] when the rule is still armed and its incident leaves its subject to the call.
+    /// [`HandFiringError::NoCallForIncident`] when the rule is still armed and its incident leaves its subject to the call.
     /// A hand firing has no call, so nothing can say which partition or group is meant.
     /// The rule takes no firing from its budget then.
-    pub fn fire_by_hand(&self, now: Instant) -> Result<HandFiring, RuleError> {
+    pub fn fire_by_hand(&self, now: Instant) -> Result<HandFiring, HandFiringError> {
         let arming = self.arming();
         // The lifetime comes first: a rule that has ended does nothing, so it has nothing to get wrong.
         if arming.has_ended(now) {
@@ -118,12 +119,13 @@ impl ArmedRule {
         }
         match self.rule().action() {
             Action::Incident(definition) => {
-                let incidents = definition
-                    .resolve(&Subjects::new())
-                    .map_err(|error| RuleError::NoCallForIncident {
-                        rule: self.name().clone(),
-                        error,
-                    })?;
+                let incidents =
+                    definition
+                        .resolve(&Subjects::new())
+                        .map_err(|error| HandFiringError::NoCallForIncident {
+                            rule: self.name().clone(),
+                            error,
+                        })?;
                 Ok(match arming.fire_now(now) {
                     Some(firing) => HandFiring::Incidents { incidents, firing },
                     None => HandFiring::NotFired,
@@ -165,6 +167,32 @@ impl HandFiring {
         !matches!(self, HandFiring::NotFired)
     }
 }
+
+/// Why a rule does not fire by hand.
+///
+/// The variant writes the error of the incident into its own message, once,
+/// so it has no [`source`](std::error::Error::source).
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum HandFiringError {
+    /// The incident of the rule takes a subject from the call, and a hand firing has no call.
+    NoCallForIncident { rule: RuleName, error: IncidentError },
+}
+
+impl fmt::Display for HandFiringError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::NoCallForIncident { rule, error } => write!(
+                f,
+                "rule {:?} cannot fire by hand, because there is no call: {error}",
+                rule.as_str()
+            ),
+        }
+    }
+}
+
+/// The message is complete, so the variant has no source.
+impl std::error::Error for HandFiringError {}
 
 #[cfg(test)]
 mod tests {
@@ -308,7 +336,7 @@ mod tests {
 
         assert_eq!(
             error,
-            RuleError::NoCallForIncident {
+            HandFiringError::NoCallForIncident {
                 rule: "Leader election".parse().unwrap(),
                 error: IncidentError::MissingSubject {
                     incident: IncidentKind::LeaderMoves,
@@ -374,7 +402,7 @@ mod tests {
         // While the rule is armed, the hand firing is an error: there is no call to take the partition from.
         assert!(matches!(
             armed.fire_by_hand(NOW),
-            Err(RuleError::NoCallForIncident { .. })
+            Err(HandFiringError::NoCallForIncident { .. })
         ));
         // Once the lifetime ended, the rule just does not fire, like every other rule.
         let later = NOW + TimeSpan::from_secs(30);

@@ -41,6 +41,27 @@ Two crates stand apart: the facade is plain `gaslightmq`, and the binary is `gmq
   It shares the engine's definition types.
   It runs none of the engine's behaviour and none of the Kafka codec.
   See [what compiles to WebAssembly](#what-compiles-to-webassembly).
+- **A name says what a thing means.**
+  A type, a variant, a method or a module carries a word of the [glossary](../domains/README.md#glossary),
+  or it says what it holds or what went wrong.
+  It never says which crate, module or type a thing came from, and it never says how the thing is built.
+  A partition number that is not a number is an `InvalidPartition`, and not a `Kernel` error.
+- **A value object owns its error.**
+  A type that checks its value has an error type of its own, named after it:
+  `TopicName` has `TopicNameError`, and `Offset` has `OffsetError`.
+  Its constructor, its `TryFrom`, its `FromStr` and its `serde` form all return that type.
+  The error holds only what can go wrong with that value, and each variant says what is wrong:
+  a topic name is `Empty` or `TooLong`, and an offset is `Negative`.
+  A type made of parts says which part failed, and it keeps the error of that part:
+  `TopicPartitionError::InvalidPartition` holds a `PartitionNumberError`.
+  A whole that checks its members does the same: `SelectorSet` has `SelectorSetError`.
+  No crate has one error type for everything in it.
+  Types may share their checks as private helpers.
+- **An error says everything in one message.**
+  A file reader, the control plane and the UI show one line, and not a chain of causes.
+  A variant that holds another error writes that error into its own message, once.
+  Its `source()` returns `None`, because a reporter that walks the chain would print the cause twice.
+  The variant keeps the other error in a field, named `error`, for code that wants to look at it.
 
 The workspace rules apply to every crate:
 Rust edition 2024, native async traits and workspace dependency versions.

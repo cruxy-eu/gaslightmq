@@ -2,7 +2,7 @@ use std::fmt;
 
 use gaslightmq_field::prelude::*;
 
-use crate::{LieDefinition, LieError};
+use crate::{LieDefinition, LieKind};
 
 /// A lie with the target it applies to: one line of a verdict.
 ///
@@ -51,16 +51,17 @@ impl TargetedLie {
     ///
     /// Reading a targeted lie is stricter.
     /// With the `serde` feature, a map is a line of a verdict, so its `target` key says what the lie changed.
-    /// A delay with parts there is a line that nothing writes, and reading rejects it.
+    /// A delay with parts there is a line that nothing writes,
+    /// and reading rejects it with [`TargetedLieError::PartsNotAllowed`].
     ///
     /// # Errors
     ///
-    /// [`LieError::EmptyTarget`] when `target` is a set of parts without a part, whatever the kind of the lie.
+    /// [`TargetedLieError::EmptyTarget`] when `target` is a set of parts without a part, whatever the kind of the lie.
     /// A selector that matches no part does not match the call, so there is no lie to tell.
     /// [`Target::of_parts`] never yields such a target.
-    pub fn new(lie: impl Into<LieDefinition>, target: Target) -> Result<Self, LieError> {
+    pub fn new(lie: impl Into<LieDefinition>, target: Target) -> Result<Self, TargetedLieError> {
         if !target.is_call() && target.parts().next().is_none() {
-            return Err(LieError::EmptyTarget);
+            return Err(TargetedLieError::EmptyTarget);
         }
         let lie = lie.into();
         let target = if lie.kind().targets_whole_call() {
@@ -93,6 +94,41 @@ impl fmt::Display for TargetedLie {
         }
     }
 }
+
+/// Why a lie and a target are not a [`TargetedLie`].
+///
+/// ```
+/// use std::collections::BTreeSet;
+///
+/// use gaslightmq_field::prelude::*;
+/// use gaslightmq_lie::prelude::*;
+///
+/// // `Target::of_parts` never yields this target, and whoever builds it by hand can.
+/// let error = LieDefinition::Silence.on(Target::Parts(BTreeSet::new())).unwrap_err();
+/// assert_eq!(error, TargetedLieError::EmptyTarget);
+/// assert_eq!(error.to_string(), "a target needs at least one part");
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum TargetedLieError {
+    /// The target is a set of parts without a part, so the lie would change nothing.
+    EmptyTarget,
+    /// The target is a set of parts, and a lie of this kind always targets the whole call.
+    /// Only reading returns it, with the `serde` feature.
+    /// [`TargetedLie::new`] gives such a lie the whole call instead.
+    PartsNotAllowed { kind: LieKind },
+}
+
+impl fmt::Display for TargetedLieError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::EmptyTarget => f.write_str("a target needs at least one part"),
+            Self::PartsNotAllowed { kind } => write!(f, "{kind} always targets the whole call"),
+        }
+    }
+}
+
+impl std::error::Error for TargetedLieError {}
 
 #[cfg(test)]
 mod tests {
@@ -175,10 +211,33 @@ mod tests {
         for lie in lies {
             assert_eq!(
                 TargetedLie::new(lie.clone(), empty.clone()),
-                Err(LieError::EmptyTarget),
+                Err(TargetedLieError::EmptyTarget),
                 "{lie}"
             );
-            assert_eq!(lie.clone().on(empty.clone()), Err(LieError::EmptyTarget), "{lie}");
+            assert_eq!(
+                lie.clone().on(empty.clone()),
+                Err(TargetedLieError::EmptyTarget),
+                "{lie}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_targeted_lie_error_says_what_is_wrong() {
+        let cases = [
+            (TargetedLieError::EmptyTarget, "a target needs at least one part"),
+            (
+                TargetedLieError::PartsNotAllowed { kind: LieKind::Timing },
+                "timing always targets the whole call",
+            ),
+            (
+                TargetedLieError::PartsNotAllowed { kind: LieKind::HangUp },
+                "hang-up always targets the whole call",
+            ),
+        ];
+
+        for (error, message) in cases {
+            assert_eq!(error.to_string(), message);
         }
     }
 

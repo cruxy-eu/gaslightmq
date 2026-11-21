@@ -54,7 +54,7 @@
 //!
 //! // The budget is shared, so its second call finds the lifetime over.
 //! assert_eq!(arming.evaluate(now, &mut second).rolled().outcome(), TriggerOutcome::LifetimeOver);
-//! # Ok::<(), TriggerError>(())
+//! # Ok::<(), Box<dyn std::error::Error>>(())
 //! ```
 //!
 //! # Definitions and live state
@@ -109,6 +109,38 @@
 //! A [`Chance`] and a [`Roll`] are whole parts per million.
 //! `40%` is 400 000 parts per million, and a roll fires when it is under the chance.
 //!
+//! # Errors
+//!
+//! Every type that checks its value has an error of its own, named after it.
+//! The error holds only what can go wrong with that value.
+//!
+//! | Type | Error | What is wrong |
+//! |---|---|---|
+//! | [`Chance`] | [`ChanceError`] | The text is not a percentage, it has more than four decimals, or the chance is above `100%`. |
+//! | [`Roll`] | [`RollError`] | The number is one million or more. |
+//! | [`Count`] | [`CountError`] | The number is zero. |
+//! | [`MatchNumber`] | [`MatchNumberError`] | The number is zero. |
+//! | [`TimeWindow`] | [`TimeWindowError`] | The window closes before it opens, or at the moment it opens. |
+//! | [`Per`] | [`PerError`] | The text is not `rule` and not `session`. |
+//! | [`Lifetime`] | [`LifetimeError`] | The text is not a lifetime, or it counts zero matches or firings. |
+//! | [`DiceKey`] | [`DiceKeyError`] | The text has no characters. |
+//! | [`CounterKey`] | [`CounterKeyError`] | The text has no characters. |
+//!
+//! A type made of parts says which part is wrong, and keeps the error of that part:
+//! [`LifetimeError::InvalidCount`] holds a [`CountError`].
+//! The message of every error is complete, so no error has a [`source`](std::error::Error::source).
+//!
+//! ```
+//! use gaslightmq_trigger::prelude::*;
+//!
+//! assert_eq!(Count::new(0), Err(CountError::Zero));
+//! assert_eq!(
+//!     "0 firings".parse::<Lifetime>(),
+//!     Err(LifetimeError::InvalidCount { error: CountError::Zero }),
+//! );
+//! assert_eq!("0 firings".parse::<Lifetime>().unwrap_err().to_string(), "a count is at least one");
+//! ```
+//!
 //! # The `serde` feature
 //!
 //! With the `serde` feature, every definition type has a `serde` form.
@@ -138,7 +170,6 @@ mod chance;
 mod count;
 mod counter;
 mod dice;
-mod error;
 mod hand;
 mod lifetime;
 #[cfg(feature = "serde")]
@@ -148,16 +179,15 @@ mod window;
 
 pub use arming::{Arming, Confirmed, Evaluation, Firing, Rolled, TriggerOutcome};
 pub use budget::{Budget, BudgetReading, Reservation, Spent};
-pub use chance::{Chance, Roll};
-pub use count::{Count, MatchNumber};
+pub use chance::{Chance, ChanceError, Roll, RollError};
+pub use count::{Count, CountError, MatchNumber, MatchNumberError};
 pub use counter::{Counter, SessionCounters};
-pub use dice::{CounterKey, DiceKey, Die, Seed};
-pub use error::TriggerError;
-pub use lifetime::Lifetime;
-pub use trigger::{Per, Trigger, TriggerParts};
-pub use window::TimeWindow;
+pub use dice::{CounterKey, CounterKeyError, DiceKey, DiceKeyError, Die, Seed};
+pub use lifetime::{Lifetime, LifetimeError};
+pub use trigger::{Per, PerError, Trigger, TriggerParts};
+pub use window::{TimeWindow, TimeWindowError};
 
-/// Every item of this crate.
+/// Every item of this crate, and the error of each type that checks its value.
 ///
 /// Import it whole wherever code speaks in triggers.
 /// No name in it is a name of the standard prelude or of the kernel's prelude, so the import shadows nothing.
@@ -165,15 +195,16 @@ pub use window::TimeWindow;
 /// ```
 /// use gaslightmq_trigger::prelude::*;
 ///
-/// let chance: Result<Chance, TriggerError> = "40%".parse();
+/// let chance: Result<Chance, ChanceError> = "40%".parse();
 /// assert_eq!(chance?.ppm(), 400_000);
-/// # Ok::<(), TriggerError>(())
+/// # Ok::<(), ChanceError>(())
 /// ```
 pub mod prelude {
     #[doc(no_inline)]
     pub use crate::{
-        Arming, Budget, BudgetReading, Chance, Confirmed, Count, Counter, CounterKey, DiceKey, Die, Evaluation, Firing,
-        Lifetime, MatchNumber, Per, Reservation, Roll, Rolled, Seed, SessionCounters, Spent, TimeWindow, Trigger,
-        TriggerError, TriggerOutcome, TriggerParts,
+        Arming, Budget, BudgetReading, Chance, ChanceError, Confirmed, Count, CountError, Counter, CounterKey,
+        CounterKeyError, DiceKey, DiceKeyError, Die, Evaluation, Firing, Lifetime, LifetimeError, MatchNumber,
+        MatchNumberError, Per, PerError, Reservation, Roll, RollError, Rolled, Seed, SessionCounters, Spent,
+        TimeWindow, TimeWindowError, Trigger, TriggerOutcome, TriggerParts,
     };
 }

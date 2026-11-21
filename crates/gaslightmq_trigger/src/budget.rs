@@ -38,7 +38,7 @@ use crate::Count;
 /// // The next call takes it, and that spends the budget.
 /// assert!(budget.take().expect("one unit is free").is_last());
 /// assert!(budget.is_spent());
-/// # Ok::<(), TriggerError>(())
+/// # Ok::<(), CountError>(())
 /// ```
 #[derive(Clone, Debug)]
 pub struct Budget {

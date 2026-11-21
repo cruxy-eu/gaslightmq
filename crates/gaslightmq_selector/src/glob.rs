@@ -1,7 +1,6 @@
 use std::fmt;
 use std::str::FromStr;
 
-use crate::SelectorError;
 use crate::text::text_form;
 
 /// A glob pattern, such as `orders.*`.
@@ -29,7 +28,7 @@ use crate::text::text_form;
 /// // A text with a wildcard is a pattern, and any other text is a value.
 /// assert!(Glob::is_pattern("orders.*"));
 /// assert!(!Glob::is_pattern("orders.eu"));
-/// # Ok::<(), SelectorError>(())
+/// # Ok::<(), Box<dyn std::error::Error>>(())
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Glob(String);
@@ -42,11 +41,11 @@ impl Glob {
     ///
     /// # Errors
     ///
-    /// [`SelectorError::EmptyPattern`] when the pattern has no character.
-    pub fn new(pattern: impl Into<String>) -> Result<Self, SelectorError> {
+    /// [`GlobError::Empty`] when the pattern has no character.
+    pub fn new(pattern: impl Into<String>) -> Result<Self, GlobError> {
         let pattern = pattern.into();
         if pattern.is_empty() {
-            return Err(SelectorError::EmptyPattern);
+            return Err(GlobError::Empty);
         }
         Ok(Self(pattern))
     }
@@ -104,7 +103,7 @@ impl Glob {
 }
 
 impl FromStr for Glob {
-    type Err = SelectorError;
+    type Err = GlobError;
 
     fn from_str(text: &str) -> Result<Self, Self::Err> {
         Self::new(text)
@@ -123,7 +122,33 @@ impl AsRef<str> for Glob {
     }
 }
 
-text_form!(Glob);
+text_form!(Glob, GlobError);
+
+/// Why a text is not a [`Glob`].
+///
+/// ```
+/// use gaslightmq_selector::prelude::*;
+///
+/// let error = "".parse::<Glob>().unwrap_err();
+/// assert_eq!(error, GlobError::Empty);
+/// assert_eq!(error.to_string(), "a pattern is empty");
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum GlobError {
+    /// The pattern has no character, so it matches no value.
+    Empty,
+}
+
+impl fmt::Display for GlobError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Empty => f.write_str("a pattern is empty"),
+        }
+    }
+}
+
+impl std::error::Error for GlobError {}
 
 #[cfg(test)]
 mod tests {
@@ -204,8 +229,8 @@ mod tests {
 
     #[test]
     fn an_empty_pattern_is_an_error() {
-        assert_eq!(Glob::new(""), Err(SelectorError::EmptyPattern));
-        assert_eq!("".parse::<Glob>(), Err(SelectorError::EmptyPattern));
+        assert_eq!(Glob::new(""), Err(GlobError::Empty));
+        assert_eq!("".parse::<Glob>(), Err(GlobError::Empty));
     }
 
     #[test]

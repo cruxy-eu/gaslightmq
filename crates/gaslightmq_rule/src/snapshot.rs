@@ -7,7 +7,7 @@ use gaslightmq_kernel::prelude::*;
 use gaslightmq_selector::{ApiIndex, Pass};
 use gaslightmq_trigger::SessionCounters;
 
-use crate::{ArmedRule, PassEvaluation, RuleError, RuleEvaluation, RuleName};
+use crate::{ArmedRule, PassEvaluation, RuleEvaluation, RuleName};
 
 /// Where a rule stands among the armed rules: its position in the [`Snapshot`], counted from zero.
 ///
@@ -140,15 +140,15 @@ impl Snapshot {
     ///
     /// # Errors
     ///
-    /// [`RuleError::DuplicateRule`] when two of the rules have one name.
+    /// [`SnapshotError::DuplicateName`] when two of the rules have one name.
     /// An explanation names a rule, so one name is one rule.
-    pub fn new(rules: impl IntoIterator<Item = ArmedRule>) -> Result<Self, RuleError> {
+    pub fn new(rules: impl IntoIterator<Item = ArmedRule>) -> Result<Self, SnapshotError> {
         let rules: Vec<ArmedRule> = rules.into_iter().collect();
 
         let mut by_name = BTreeMap::new();
         for (position, rule) in rules.iter().enumerate() {
             if by_name.insert(rule.name().clone(), Priority::new(position)).is_some() {
-                return Err(RuleError::DuplicateRule {
+                return Err(SnapshotError::DuplicateName {
                     name: rule.name().clone(),
                 });
             }
@@ -280,6 +280,24 @@ impl<'a> IntoIterator for &'a Snapshot {
         self.iter()
     }
 }
+
+/// Why armed rules are not a [`Snapshot`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum SnapshotError {
+    /// Two of the rules have the same name.
+    DuplicateName { name: RuleName },
+}
+
+impl fmt::Display for SnapshotError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::DuplicateName { name } => write!(f, "two rules are named {:?}", name.as_str()),
+        }
+    }
+}
+
+impl std::error::Error for SnapshotError {}
 
 #[cfg(test)]
 mod tests {
@@ -466,7 +484,7 @@ mod tests {
 
         let error = Snapshot::new([arm(&refuse), arm(&twice)]).unwrap_err();
 
-        assert_eq!(error, RuleError::DuplicateRule { name: name("Refuse") });
+        assert_eq!(error, SnapshotError::DuplicateName { name: name("Refuse") });
     }
 
     #[test]

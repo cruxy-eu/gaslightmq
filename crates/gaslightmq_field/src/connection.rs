@@ -7,7 +7,6 @@ use std::sync::Arc;
 
 use gaslightmq_kernel::prelude::*;
 
-use crate::FieldError;
 use crate::text::{number_form, text_form};
 
 /// The number of a connection, which is the value of the field `connection`.
@@ -25,14 +24,12 @@ use crate::text::{number_form, text_form};
 /// assert_eq!(connection.to_string(), "#7");
 /// assert_eq!("#7".parse::<ConnectionNumber>()?, connection);
 /// assert_eq!("7".parse::<ConnectionNumber>()?, connection);
-/// # Ok::<(), FieldError>(())
+/// # Ok::<(), Box<dyn std::error::Error>>(())
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ConnectionNumber(u64);
 
 impl ConnectionNumber {
-    const WHAT: &'static str = "connection number";
-
     /// The connection with that number.
     pub const fn new(number: u64) -> Self {
         Self(number)
@@ -58,17 +55,17 @@ impl From<ConnectionNumber> for u64 {
 
 /// Reads `#7` or `7`.
 impl FromStr for ConnectionNumber {
-    type Err = FieldError;
+    type Err = ConnectionNumberError;
 
     fn from_str(text: &str) -> Result<Self, Self::Err> {
         let digits = text.strip_prefix('#').unwrap_or(text);
         if digits.is_empty() || !digits.bytes().all(|byte| byte.is_ascii_digit()) {
-            return Err(FieldError::malformed(Self::WHAT, text, "#N"));
+            return Err(ConnectionNumberError::Malformed { input: text.to_owned() });
         }
         digits
             .parse()
             .map(Self)
-            .map_err(|_| FieldError::out_of_range(Self::WHAT, text, 0, u64::MAX))
+            .map_err(|_| ConnectionNumberError::OutOfRange { input: text.to_owned() })
     }
 }
 
@@ -78,7 +75,33 @@ impl fmt::Display for ConnectionNumber {
     }
 }
 
-number_form!(ConnectionNumber, u64, "a connection number such as 7 or \"#7\"");
+number_form!(
+    ConnectionNumber,
+    ConnectionNumberError,
+    u64,
+    "a connection number such as 7 or \"#7\""
+);
+
+/// Why a text is not a [`ConnectionNumber`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum ConnectionNumberError {
+    /// The text is not digits, with or without a `#` before them.
+    Malformed { input: String },
+    /// The number is more than a `u64` holds.
+    OutOfRange { input: String },
+}
+
+impl fmt::Display for ConnectionNumberError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Malformed { input } => write!(f, "connection number {input:?} does not have the form #N"),
+            Self::OutOfRange { input } => write!(f, "connection number {input} is not between 0 and {}", u64::MAX),
+        }
+    }
+}
+
+impl std::error::Error for ConnectionNumberError {}
 
 /// The address a client connects from, which is the value of the field `address`.
 ///
@@ -98,7 +121,7 @@ number_form!(ConnectionNumber, u64, "a connection number such as 7 or \"#7\"");
 ///
 /// let mapped: ClientAddress = "[::ffff:10.0.4.27]:51459".parse()?;
 /// assert_eq!(mapped, address);
-/// # Ok::<(), FieldError>(())
+/// # Ok::<(), Box<dyn std::error::Error>>(())
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ClientAddress(SocketAddr);
@@ -139,16 +162,12 @@ impl From<ClientAddress> for SocketAddr {
 
 /// Reads an IP address and a port, such as `10.0.4.27:51459`.
 impl FromStr for ClientAddress {
-    type Err = FieldError;
+    type Err = ClientAddressError;
 
     fn from_str(text: &str) -> Result<Self, Self::Err> {
-        text.parse::<SocketAddr>().map(Self::new).map_err(|_| {
-            FieldError::malformed(
-                "client address",
-                text,
-                "an IP address and a port, such as 10.0.4.27:51459",
-            )
-        })
+        text.parse::<SocketAddr>()
+            .map(Self::new)
+            .map_err(|_| ClientAddressError::Malformed { input: text.to_owned() })
     }
 }
 
@@ -158,7 +177,28 @@ impl fmt::Display for ClientAddress {
     }
 }
 
-text_form!(ClientAddress);
+text_form!(ClientAddress, ClientAddressError);
+
+/// Why a text is not a [`ClientAddress`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum ClientAddressError {
+    /// The text is not an IP address and a port.
+    Malformed { input: String },
+}
+
+impl fmt::Display for ClientAddressError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Malformed { input } => write!(
+                f,
+                "client address {input:?} does not have the form an IP address and a port, such as 10.0.4.27:51459"
+            ),
+        }
+    }
+}
+
+impl std::error::Error for ClientAddressError {}
 
 /// The IP address a client connects from, which is the value of the field `host`.
 ///
@@ -177,7 +217,7 @@ text_form!(ClientAddress);
 /// let host: ClientHost = "10.0.4.27".parse()?;
 /// assert_eq!(host.ip(), IpAddr::V4(Ipv4Addr::new(10, 0, 4, 27)));
 /// assert_eq!("::ffff:10.0.4.27".parse::<ClientHost>()?, host);
-/// # Ok::<(), FieldError>(())
+/// # Ok::<(), Box<dyn std::error::Error>>(())
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ClientHost(IpAddr);
@@ -208,12 +248,12 @@ impl From<ClientHost> for IpAddr {
 
 /// Reads an IP address, such as `10.0.4.27`.
 impl FromStr for ClientHost {
-    type Err = FieldError;
+    type Err = ClientHostError;
 
     fn from_str(text: &str) -> Result<Self, Self::Err> {
         text.parse::<IpAddr>()
             .map(Self::new)
-            .map_err(|_| FieldError::malformed("client host", text, "an IP address, such as 10.0.4.27"))
+            .map_err(|_| ClientHostError::Malformed { input: text.to_owned() })
     }
 }
 
@@ -223,7 +263,28 @@ impl fmt::Display for ClientHost {
     }
 }
 
-text_form!(ClientHost);
+text_form!(ClientHost, ClientHostError);
+
+/// Why a text is not a [`ClientHost`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum ClientHostError {
+    /// The text is not an IP address.
+    Malformed { input: String },
+}
+
+impl fmt::Display for ClientHostError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Malformed { input } => write!(
+                f,
+                "client host {input:?} does not have the form an IP address, such as 10.0.4.27"
+            ),
+        }
+    }
+}
+
+impl std::error::Error for ClientHostError {}
 
 /// The endpoint a client connected to, which is the value of the field `endpoint`.
 ///
@@ -240,7 +301,7 @@ text_form!(ClientHost);
 /// assert_eq!(endpoint, Endpoint::Broker(BrokerId::from(2)));
 /// assert_eq!(endpoint.broker(), Some(BrokerId::from(2)));
 /// assert_eq!(Endpoint::Bootstrap.to_string(), "bootstrap");
-/// # Ok::<(), FieldError>(())
+/// # Ok::<(), Box<dyn std::error::Error>>(())
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Endpoint {
@@ -271,7 +332,7 @@ impl From<BrokerId> for Endpoint {
 
 /// Reads `bootstrap`, or `broker` and a broker ID with one space between them.
 impl FromStr for Endpoint {
-    type Err = FieldError;
+    type Err = EndpointError;
 
     fn from_str(text: &str) -> Result<Self, Self::Err> {
         if text == Self::BOOTSTRAP {
@@ -279,7 +340,7 @@ impl FromStr for Endpoint {
         }
         match text.strip_prefix(Self::BROKER) {
             Some(broker) => Ok(Endpoint::Broker(broker.parse()?)),
-            None => Err(FieldError::malformed("endpoint", text, "bootstrap or broker N")),
+            None => Err(EndpointError::Malformed { input: text.to_owned() }),
         }
     }
 }
@@ -293,7 +354,35 @@ impl fmt::Display for Endpoint {
     }
 }
 
-text_form!(Endpoint);
+text_form!(Endpoint, EndpointError);
+
+/// Why a text is not an [`Endpoint`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum EndpointError {
+    /// The text is not `bootstrap`, and it does not start with `broker` and one space.
+    Malformed { input: String },
+    /// The text after `broker` is not a broker ID.
+    InvalidBroker { error: BrokerIdError },
+}
+
+impl fmt::Display for EndpointError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Malformed { input } => write!(f, "endpoint {input:?} does not have the form bootstrap or broker N"),
+            Self::InvalidBroker { error } => fmt::Display::fmt(error, f),
+        }
+    }
+}
+
+/// The message is complete, so no variant has a source.
+impl std::error::Error for EndpointError {}
+
+impl From<BrokerIdError> for EndpointError {
+    fn from(error: BrokerIdError) -> Self {
+        Self::InvalidBroker { error }
+    }
+}
 
 /// The client library of a connection, which is the value of the field `client.software`.
 ///
@@ -312,7 +401,7 @@ text_form!(Endpoint);
 /// let software: ClientSoftware = "librdkafka 2.6.1".parse()?;
 /// assert_eq!(software.name(), "librdkafka");
 /// assert_eq!(software.version(), "2.6.1");
-/// # Ok::<(), FieldError>(())
+/// # Ok::<(), Box<dyn std::error::Error>>(())
 /// ```
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ClientSoftware {
@@ -323,21 +412,18 @@ pub struct ClientSoftware {
 }
 
 impl ClientSoftware {
-    const WHAT: &'static str = "client software";
-    const FORM: &'static str = "a name and a version, such as librdkafka 2.6.1";
-
     /// Check the name and the version, and keep them.
     ///
     /// # Errors
     ///
-    /// [`FieldError::Malformed`] when the name or the version is empty,
+    /// [`ClientSoftwareError::Malformed`] when the name or the version is empty,
     /// or holds whitespace or a control character.
-    pub fn new(name: impl AsRef<str>, version: impl AsRef<str>) -> Result<Self, FieldError> {
+    pub fn new(name: impl AsRef<str>, version: impl AsRef<str>) -> Result<Self, ClientSoftwareError> {
         let (name, version) = (name.as_ref(), version.as_ref());
         let text = format!("{name} {version}");
         let valid = |part: &str| !part.is_empty() && !part.chars().any(|c| c.is_whitespace() || c.is_control());
         if !valid(name) || !valid(version) {
-            return Err(FieldError::malformed(Self::WHAT, &text, Self::FORM));
+            return Err(ClientSoftwareError::Malformed { input: text });
         }
         Ok(Self {
             text: text.into(),
@@ -364,12 +450,12 @@ impl ClientSoftware {
 
 /// Reads a name and a version with one space between them.
 impl FromStr for ClientSoftware {
-    type Err = FieldError;
+    type Err = ClientSoftwareError;
 
     fn from_str(text: &str) -> Result<Self, Self::Err> {
         match text.split_once(' ') {
             Some((name, version)) => Self::new(name, version),
-            None => Err(FieldError::malformed(Self::WHAT, text, Self::FORM)),
+            None => Err(ClientSoftwareError::Malformed { input: text.to_owned() }),
         }
     }
 }
@@ -386,7 +472,29 @@ impl fmt::Debug for ClientSoftware {
     }
 }
 
-text_form!(ClientSoftware);
+text_form!(ClientSoftware, ClientSoftwareError);
+
+/// Why a text is not a [`ClientSoftware`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum ClientSoftwareError {
+    /// The text is not a name, one space and a version.
+    /// The name or the version is empty, or one of them has white space or a control character.
+    Malformed { input: String },
+}
+
+impl fmt::Display for ClientSoftwareError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Malformed { input } => write!(
+                f,
+                "client software {input:?} does not have the form a name and a version, such as librdkafka 2.6.1"
+            ),
+        }
+    }
+}
+
+impl std::error::Error for ClientSoftwareError {}
 
 #[cfg(test)]
 mod tests {
@@ -410,18 +518,15 @@ mod tests {
         for text in ["", "#", "##7", "# 7", "#-7", "-7", "#7 ", "seven", "#7.0"] {
             assert_eq!(
                 text.parse::<ConnectionNumber>(),
-                Err(FieldError::malformed("connection number", text, "#N")),
+                Err(ConnectionNumberError::Malformed { input: text.to_owned() }),
                 "{text:?}"
             );
         }
         assert_eq!(
             "#18446744073709551616".parse::<ConnectionNumber>(),
-            Err(FieldError::out_of_range(
-                "connection number",
-                "#18446744073709551616",
-                0,
-                u64::MAX
-            ))
+            Err(ConnectionNumberError::OutOfRange {
+                input: "#18446744073709551616".to_owned()
+            })
         );
     }
 
@@ -484,11 +589,7 @@ mod tests {
         ] {
             assert_eq!(
                 text.parse::<ClientAddress>(),
-                Err(FieldError::malformed(
-                    "client address",
-                    text,
-                    "an IP address and a port, such as 10.0.4.27:51459"
-                )),
+                Err(ClientAddressError::Malformed { input: text.to_owned() }),
                 "{text:?}"
             );
         }
@@ -503,11 +604,7 @@ mod tests {
         for text in ["", "localhost", "10.0.4", "10.0.4.27:51459", "10.0.4.*"] {
             assert_eq!(
                 text.parse::<ClientHost>(),
-                Err(FieldError::malformed(
-                    "client host",
-                    text,
-                    "an IP address, such as 10.0.4.27"
-                )),
+                Err(ClientHostError::Malformed { input: text.to_owned() }),
                 "{text:?}"
             );
         }
@@ -528,7 +625,7 @@ mod tests {
         for text in ["", "Bootstrap", "broker", "broker2", "2", "bootstrap ", "Broker 2"] {
             assert_eq!(
                 text.parse::<Endpoint>(),
-                Err(FieldError::malformed("endpoint", text, "bootstrap or broker N")),
+                Err(EndpointError::Malformed { input: text.to_owned() }),
                 "{text:?}"
             );
         }
@@ -538,17 +635,15 @@ mod tests {
     fn the_broker_of_an_endpoint_is_a_broker_id() {
         assert_eq!(
             "broker -1".parse::<Endpoint>(),
-            Err(FieldError::Kernel(KernelError::Negative {
-                what: "broker ID",
-                value: -1
-            }))
+            Err(EndpointError::InvalidBroker {
+                error: BrokerIdError::Negative { value: -1 }
+            })
         );
         assert_eq!(
             "broker  2".parse::<Endpoint>(),
-            Err(FieldError::Kernel(KernelError::NotANumber {
-                what: "broker ID",
-                input: " 2".to_owned()
-            }))
+            Err(EndpointError::InvalidBroker {
+                error: BrokerIdError::NotANumber { input: " 2".to_owned() }
+            })
         );
     }
 
@@ -581,13 +676,7 @@ mod tests {
 
     #[test]
     fn client_software_needs_a_name_and_a_version_without_whitespace() {
-        let malformed = |text: &str| {
-            Err(FieldError::malformed(
-                "client software",
-                text,
-                "a name and a version, such as librdkafka 2.6.1",
-            ))
-        };
+        let malformed = |text: &str| Err(ClientSoftwareError::Malformed { input: text.to_owned() });
 
         for text in [
             "",

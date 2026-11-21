@@ -21,9 +21,29 @@
 //! | [`PassEvaluation`] | What one evaluation pass gave for one call: every rule that matched. |
 //! | [`RuleEvaluation`] | One of those rules: its target, what its trigger rolled, and what it fired. |
 //! | [`Effect`] | What a rule that fired does: its lie on its target, or its incidents. |
-//! | [`RuleError`] | Why a value cannot become a part of a rule, or why a rule does not resolve. |
 //!
-//! The [`prelude`] holds all of them.
+//! The [`prelude`] holds all of them, and the error of each.
+//!
+//! # Errors
+//!
+//! Every type that checks its value has an error of its own, named after it.
+//!
+//! | Type | Error | What is wrong |
+//! |---|---|---|
+//! | [`RuleName`], [`PresetName`] | [`RuleNameError`], [`PresetNameError`] | The text breaks a part of the rule for names. |
+//! | [`RuleSet`] | [`RuleSetError`] | Two rules share a name, or no rule has a name. |
+//! | [`PresetSet`] | [`PresetSetError`] | Two presets share a name. |
+//! | [`RuleState`] | [`RuleStateError`] | No state has this name, or a rule cannot leave its state this way. |
+//! | [`ResolvedRule`] | [`ResolvedRuleError`] | The rule names a selector or a preset that does not exist, or it could never work. |
+//! | [`HandFiring`] | [`HandFiringError`] | The rule cannot fire by hand, because its incident needs a call. |
+//! | [`Snapshot`] | [`SnapshotError`] | Two armed rules share a name. |
+//!
+//! The message of an error is complete.
+//! A variant that holds the error of another crate writes that error into its own message,
+//! because a file reader and the UI show one line, and not a chain.
+//! No error therefore has a [`source`](std::error::Error::source):
+//! a reporter that walks the chain would print the inner message twice.
+//! The inner error is the `error` field of its variant, for code that wants to look at it.
 //!
 //! # From a definition to a firing
 //!
@@ -161,7 +181,6 @@
 
 mod action;
 mod armed;
-mod error;
 mod evaluation;
 mod name;
 mod preset;
@@ -174,16 +193,15 @@ mod snapshot;
 mod state;
 
 pub use action::{Action, ActionRef};
-pub use armed::{ArmedRule, HandFiring};
-pub use error::RuleError;
+pub use armed::{ArmedRule, HandFiring, HandFiringError};
 pub use evaluation::{Effect, PassEvaluation, RuleEvaluation};
-pub use name::{PresetName, RuleName};
-pub use preset::{Preset, PresetSet};
-pub use resolved::ResolvedRule;
+pub use name::{PresetName, PresetNameError, RuleName, RuleNameError};
+pub use preset::{Preset, PresetSet, PresetSetError};
+pub use resolved::{ResolvedRule, ResolvedRuleError};
 pub use rule::Rule;
-pub use set::RuleSet;
-pub use snapshot::{Priority, Snapshot};
-pub use state::RuleState;
+pub use set::{RuleSet, RuleSetError};
+pub use snapshot::{Priority, Snapshot, SnapshotError};
+pub use state::{RuleState, RuleStateError};
 
 /// Every item of this crate.
 ///
@@ -195,14 +213,15 @@ pub use state::RuleState;
 /// use gaslightmq_rule::prelude::*;
 /// use gaslightmq_selector::prelude::*;
 ///
-/// let rule: Result<Rule, RuleError> = "Blackhole".parse().map(|name| Rule::new(name, Conditions::new(), LieDefinition::Silence));
+/// let rule: Result<Rule, RuleNameError> = "Blackhole".parse().map(|name| Rule::new(name, Conditions::new(), LieDefinition::Silence));
 /// assert_eq!(rule?.name(), "Blackhole");
-/// # Ok::<(), RuleError>(())
+/// # Ok::<(), Box<dyn std::error::Error>>(())
 /// ```
 pub mod prelude {
     #[doc(no_inline)]
     pub use crate::{
-        Action, ActionRef, ArmedRule, Effect, HandFiring, PassEvaluation, Preset, PresetName, PresetSet, Priority,
-        ResolvedRule, Rule, RuleError, RuleEvaluation, RuleName, RuleSet, RuleState, Snapshot,
+        Action, ActionRef, ArmedRule, Effect, HandFiring, HandFiringError, PassEvaluation, Preset, PresetName,
+        PresetNameError, PresetSet, PresetSetError, Priority, ResolvedRule, ResolvedRuleError, Rule, RuleEvaluation,
+        RuleName, RuleNameError, RuleSet, RuleSetError, RuleState, RuleStateError, Snapshot, SnapshotError,
     };
 }

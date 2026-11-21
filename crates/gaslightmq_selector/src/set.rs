@@ -1,7 +1,8 @@
 use std::collections::BTreeMap;
 use std::collections::btree_map;
+use std::fmt;
 
-use crate::{EffectiveSelector, Selector, SelectorError, SelectorName, SelectorRef};
+use crate::{EffectiveSelector, Selector, SelectorName, SelectorRef};
 
 /// The selectors of a workspace by name, which resolves what a selector includes.
 ///
@@ -41,7 +42,7 @@ use crate::{EffectiveSelector, Selector, SelectorError, SelectorName, SelectorRe
 ///     effective.to_string(),
 ///     "api is Produce and topic matches orders.* and client.id is order-ingest"
 /// );
-/// # Ok::<(), SelectorError>(())
+/// # Ok::<(), Box<dyn std::error::Error>>(())
 /// ```
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct SelectorSet {
@@ -53,14 +54,14 @@ impl SelectorSet {
     ///
     /// # Errors
     ///
-    /// - [`SelectorError::DuplicateName`] when two selectors have one name.
-    /// - [`SelectorError::UnknownInclude`] when a selector includes a name that no selector has.
-    /// - [`SelectorError::IncludeCycle`] when a selector includes itself, directly or through others.
-    pub fn new(selectors: impl IntoIterator<Item = Selector>) -> Result<Self, SelectorError> {
+    /// - [`SelectorSetError::DuplicateName`] when two selectors have one name.
+    /// - [`SelectorSetError::UnknownInclude`] when a selector includes a name that no selector has.
+    /// - [`SelectorSetError::IncludeCycle`] when a selector includes itself, directly or through others.
+    pub fn new(selectors: impl IntoIterator<Item = Selector>) -> Result<Self, SelectorSetError> {
         let mut by_name = BTreeMap::new();
         for selector in selectors {
             if let Some(twice) = by_name.insert(selector.name().clone(), selector) {
-                return Err(SelectorError::DuplicateName {
+                return Err(SelectorSetError::DuplicateName {
                     name: twice.name().clone(),
                 });
             }
@@ -101,11 +102,11 @@ impl SelectorSet {
     ///
     /// # Errors
     ///
-    /// [`SelectorError::UnknownSelector`] when no selector has this name.
-    pub fn effective(&self, name: &SelectorName) -> Result<EffectiveSelector, SelectorError> {
+    /// [`SelectorSetError::UnknownSelector`] when no selector has this name.
+    pub fn effective(&self, name: &SelectorName) -> Result<EffectiveSelector, SelectorSetError> {
         let selector = self
             .get(name)
-            .ok_or_else(|| SelectorError::UnknownSelector { name: name.clone() })?;
+            .ok_or_else(|| SelectorSetError::UnknownSelector { name: name.clone() })?;
         let chain = self.with_included(selector)?;
         Ok(chain
             .into_iter()
@@ -118,8 +119,8 @@ impl SelectorSet {
     ///
     /// # Errors
     ///
-    /// [`SelectorError::UnknownSelector`] when the reference names a selector that the set does not have.
-    pub fn resolve(&self, selector: &SelectorRef) -> Result<EffectiveSelector, SelectorError> {
+    /// [`SelectorSetError::UnknownSelector`] when the reference names a selector that the set does not have.
+    pub fn resolve(&self, selector: &SelectorRef) -> Result<EffectiveSelector, SelectorSetError> {
         match selector {
             SelectorRef::Named(name) => self.effective(name),
             SelectorRef::Inline(conditions) => Ok(conditions.clone().into()),
@@ -132,17 +133,17 @@ impl SelectorSet {
     ///
     /// # Errors
     ///
-    /// [`SelectorError::UnknownSelector`] when no selector is named `from`,
-    /// and [`SelectorError::DuplicateName`] when another selector is named `to` already.
-    pub fn rename(&mut self, from: &SelectorName, to: SelectorName) -> Result<(), SelectorError> {
+    /// [`SelectorSetError::UnknownSelector`] when no selector is named `from`,
+    /// and [`SelectorSetError::DuplicateName`] when another selector is named `to` already.
+    pub fn rename(&mut self, from: &SelectorName, to: SelectorName) -> Result<(), SelectorSetError> {
         if !self.contains(from) {
-            return Err(SelectorError::UnknownSelector { name: from.clone() });
+            return Err(SelectorSetError::UnknownSelector { name: from.clone() });
         }
         if *from == to {
             return Ok(());
         }
         if self.contains(&to) {
-            return Err(SelectorError::DuplicateName { name: to });
+            return Err(SelectorSetError::DuplicateName { name: to });
         }
         if let Some(selector) = self.by_name.remove(from) {
             self.by_name.insert(to.clone(), selector.renamed(to.clone()));
@@ -156,17 +157,17 @@ impl SelectorSet {
     }
 
     /// `selector`, the selector it includes, the one that one includes, and so on.
-    fn with_included<'a>(&'a self, selector: &'a Selector) -> Result<Vec<&'a Selector>, SelectorError> {
+    fn with_included<'a>(&'a self, selector: &'a Selector) -> Result<Vec<&'a Selector>, SelectorSetError> {
         let mut chain = vec![selector];
         let mut last = selector;
         while let Some(include) = last.include() {
-            let included = self.get(include).ok_or_else(|| SelectorError::UnknownInclude {
+            let included = self.get(include).ok_or_else(|| SelectorSetError::UnknownInclude {
                 selector: last.name().clone(),
                 include: include.clone(),
             })?;
             if let Some(start) = chain.iter().position(|seen| seen.name() == included.name()) {
                 let circle = chain[start..].iter().chain([&included]);
-                return Err(SelectorError::IncludeCycle {
+                return Err(SelectorSetError::IncludeCycle {
                     path: circle.map(|selector| selector.name().clone()).collect(),
                 });
             }
@@ -194,6 +195,51 @@ impl IntoIterator for SelectorSet {
         self.by_name.into_values()
     }
 }
+
+/// Why selectors are not a [`SelectorSet`], or why the set does not have what it is asked for.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum SelectorSetError {
+    /// Two selectors have the same name.
+    DuplicateName { name: SelectorName },
+    /// No selector of the set has this name.
+    UnknownSelector { name: SelectorName },
+    /// A selector includes a name that no selector of the set has.
+    UnknownInclude {
+        selector: SelectorName,
+        include: SelectorName,
+    },
+    /// A selector includes itself, directly or through other selectors.
+    /// The path starts and ends with the same name.
+    IncludeCycle { path: Vec<SelectorName> },
+}
+
+impl fmt::Display for SelectorSetError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::DuplicateName { name } => write!(f, "two selectors are named {:?}", name.as_str()),
+            Self::UnknownSelector { name } => write!(f, "no selector is named {:?}", name.as_str()),
+            Self::UnknownInclude { selector, include } => write!(
+                f,
+                "selector {:?} includes {:?}, and no selector has that name",
+                selector.as_str(),
+                include.as_str()
+            ),
+            Self::IncludeCycle { path } => {
+                f.write_str("selectors include each other in a circle: ")?;
+                for (index, name) in path.iter().enumerate() {
+                    if index > 0 {
+                        f.write_str(" includes ")?;
+                    }
+                    write!(f, "{:?}", name.as_str())?;
+                }
+                Ok(())
+            }
+        }
+    }
+}
+
+impl std::error::Error for SelectorSetError {}
 
 #[cfg(test)]
 mod tests {
@@ -270,7 +316,7 @@ mod tests {
     fn two_selectors_with_one_name_are_an_error() {
         assert_eq!(
             SelectorSet::new([produce(), order_producers(), link("Produce", None)]),
-            Err(SelectorError::DuplicateName { name: name("Produce") })
+            Err(SelectorSetError::DuplicateName { name: name("Produce") })
         );
     }
 
@@ -278,14 +324,14 @@ mod tests {
     fn an_include_that_names_no_selector_is_an_error() {
         assert_eq!(
             SelectorSet::new([order_producers()]),
-            Err(SelectorError::UnknownInclude {
+            Err(SelectorSetError::UnknownInclude {
                 selector: name("Order producers"),
                 include: name("Produce"),
             })
         );
         assert_eq!(
             SelectorSet::new([from_ingest(), order_producers()]),
-            Err(SelectorError::UnknownInclude {
+            Err(SelectorSetError::UnknownInclude {
                 selector: name("Order producers"),
                 include: name("Produce"),
             })
@@ -296,7 +342,7 @@ mod tests {
     fn a_selector_that_includes_itself_is_an_error() {
         assert_eq!(
             SelectorSet::new([link("A", Some("A"))]),
-            Err(SelectorError::IncludeCycle {
+            Err(SelectorSetError::IncludeCycle {
                 path: names(&["A", "A"])
             })
         );
@@ -306,13 +352,13 @@ mod tests {
     fn selectors_that_include_each_other_in_a_circle_are_an_error() {
         assert_eq!(
             SelectorSet::new([link("A", Some("B")), link("B", Some("A"))]),
-            Err(SelectorError::IncludeCycle {
+            Err(SelectorSetError::IncludeCycle {
                 path: names(&["A", "B", "A"])
             })
         );
         assert_eq!(
             SelectorSet::new([link("C", Some("A")), link("A", Some("B")), link("B", Some("C"))]),
-            Err(SelectorError::IncludeCycle {
+            Err(SelectorSetError::IncludeCycle {
                 path: names(&["A", "B", "C", "A"])
             })
         );
@@ -322,7 +368,7 @@ mod tests {
     fn a_selector_that_leads_into_a_circle_names_the_circle_only() {
         assert_eq!(
             SelectorSet::new([link("A", Some("X")), link("X", Some("Y")), link("Y", Some("X"))]),
-            Err(SelectorError::IncludeCycle {
+            Err(SelectorSetError::IncludeCycle {
                 path: names(&["X", "Y", "X"])
             })
         );
@@ -384,7 +430,7 @@ mod tests {
     #[test]
     fn a_name_that_no_selector_has_does_not_resolve() {
         let set = SelectorSet::new([produce()]).unwrap();
-        let unknown = SelectorError::UnknownSelector {
+        let unknown = SelectorSetError::UnknownSelector {
             name: name("Order producers"),
         };
 
@@ -423,13 +469,13 @@ mod tests {
 
         assert_eq!(
             set.rename(&name("Order consumers"), name("Consumers")),
-            Err(SelectorError::UnknownSelector {
+            Err(SelectorSetError::UnknownSelector {
                 name: name("Order consumers")
             })
         );
         assert_eq!(
             set.rename(&name("Order producers"), name("Produce")),
-            Err(SelectorError::DuplicateName { name: name("Produce") })
+            Err(SelectorSetError::DuplicateName { name: name("Produce") })
         );
         assert_eq!(set.rename(&name("Produce"), name("Produce")), Ok(()));
         assert_eq!(set, before);
