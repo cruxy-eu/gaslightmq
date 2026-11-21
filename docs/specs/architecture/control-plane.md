@@ -24,12 +24,13 @@ It is then set up by flags and files alone.
 | `scenarios` | List, get, create, update, rename, delete. Activate, deactivate, step. |
 | `layouts` | List, get, create, update, rename, delete. |
 | `sessions` | List the open sessions with their identity. Close one. |
-| `recordings` | Start, stop, list, open. Query calls with a selector. Get the index. |
-| `world` | Only for an environment with a broker. Get state, apply an event, save as a world definition, set the clock. |
+| `recordings` | Start, stop, list, open. Query calls with a selector, saved or [draft](#drafts). Get the index. |
+| `world` | Only for an environment with a broker. Get state, apply an event, save as a world definition, set the clock. [Preview the records](#drafts) at an offset. |
 | `backend` | Get the backend kind, its endpoints and its capabilities. |
 | `environments` | List and get the environments of the workspace. Start and stop one. |
 | `journal` | Query what changed: arms, disarms, parameter changes, steps and events. |
 | `capture` | Start, stop and save as a scenario. |
+| `quick-inject` | [Parse a ⌘K sentence](#drafts) into a rule definition, with completions. |
 
 Create and update operations on definitions write to the workspace files.
 Live rules are the exception.
@@ -39,6 +40,29 @@ They stay in memory until *keep* saves them as workspace rules.
 An event fires immediately.
 A lie applies to the next call the rule matches.
 See [manual firing](../domains/rules.md#manual-firing).
+
+## Drafts
+
+A control surface holds none of the engine's logic.
+It shares the engine's definition types,
+and it asks the control plane for whatever needs the engine's behaviour.
+See [what compiles to WebAssembly](crates.md#what-compiles-to-webassembly).
+
+Three operations answer while someone is still typing.
+They change nothing: no file, no rule and no live state.
+
+| Operation | Takes | Returns |
+|---|---|---|
+| **Query with a draft selector** | A recording, and a selector definition that nobody saved yet. | The calls the draft matches, and their count over the whole recording. |
+| **Parse a ⌘K sentence** | The text typed so far. | The rule definition the sentence gives, the completions for the next word, and what the parser could not read. |
+| **Preview records** | A topic and a partition of the World, an offset and a count. | The records from that offset on, decoded with the topic's [schema](../domains/world.md#schemas). |
+
+The engine answers from the whole recording and the whole workspace.
+A browser only holds a window of both, so it cannot give these answers itself.
+
+A parsed sentence is only a rule definition.
+The surface creates the live rule with the `rules` resource.
+The CLI and tests use the same three operations.
 
 ## Live stream
 
