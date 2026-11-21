@@ -496,7 +496,7 @@ const CODES=[
  ['CLUSTER_AUTHORIZATION_FAILED',31,'CLUSTER_AUTHZ',0],['MESSAGE_TOO_LARGE',10,'TOO_LARGE',0],['UNKNOWN_SERVER_ERROR',-1,'UNKNOWN',0],
 ];
 const codeInfo=n=>CODES.find(c=>c[0]===n)||[n,'?',n,0];
-const FAULT={error:{l:'Refusal',c:'#eb5757'},delay:{l:'Delay',c:'#f2994a'},blackhole:{l:'Silence',c:'#a78bfa'},disconnect:{l:'Hang-up',c:'#4ea7fc'},throttle:{l:'Throttle',c:'#2dd4bf'},unresponsive:{l:'Event',c:'#9ca3af'}};
+const FAULT={error:{l:'Refusal',c:'#eb5757'},delay:{l:'Delay',c:'#f2994a'},blackhole:{l:'Silence',c:'#a78bfa'},disconnect:{l:'Hang-up',c:'#4ea7fc'},throttle:{l:'Throttle',c:'#2dd4bf'},unresponsive:{l:'Incident',c:'#9ca3af'}};
 
 /* ── traffic generator ── */
 let clock=(14*3600+2*60+11)*1000, SEQ=48000;
@@ -574,11 +574,11 @@ const RULES=[
  {id:8,title:'Fence the transactional producer',desc:'Live rule from the pad grid.',scope:'payments-svc',match:[{f:'api',vals:['EndTxn']}],fault:'error',stage:'after',code:'INVALID_PRODUCER_EPOCH',prob:5,status:'armed',pad:[7,1],dur:'Until disarmed',live:true,armedAt:2},
  {id:12,title:'Lose heartbeats',desc:'Forces a session timeout and a real rebalance.',scope:'analytics-etl',match:[{f:'api',vals:['Heartbeat']},{f:'group',vals:['analytics-etl']}],fault:'blackhole',prob:100,status:'disarmed',pad:[5,5],dur:'30 s',file:'rules/group-trouble.yaml'},
  {id:10,title:'Metadata takes 3 s',desc:'',scope:'order-ingest',match:[{f:'api',vals:['Metadata']}],fault:'delay',stage:'after',ms:3000,jitter:0,prob:100,status:'draft',pad:null,dur:'Until disarmed'},
- {id:9,title:'Broker 2 goes unresponsive',desc:'Accepts connections, never answers.',scope:'all',match:[],event:'broker 2 unresponsive',fault:'unresponsive',prob:100,status:'disarmed',pad:null,dur:'30 s',file:'rules/broker-trouble.yaml'},
+ {id:9,title:'Broker 2 goes unresponsive',desc:'Accepts connections, never answers.',scope:'all',match:[],incident:'broker 2 unresponsive',fault:'unresponsive',prob:100,status:'disarmed',pad:null,dur:'30 s',file:'rules/broker-trouble.yaml'},
 ];
 const ruleById=id=>RULES.find(r=>r.id===id);
-const ruleMatches=(rule,r)=>!rule.event&&(rule.scope==='all'||r.client===rule.scope)&&matchAll(r,rule.match);
-const faultSummary=r=>({error:r.code,delay:fmtMs(r.ms||0)+(r.jitter?` ±${fmtMs(r.jitter)}`:''),blackhole:'no response',disconnect:'close socket',throttle:fmtMs(r.thr||0),unresponsive:r.event}[r.fault]);
+const ruleMatches=(rule,r)=>!rule.incident&&(rule.scope==='all'||r.client===rule.scope)&&matchAll(r,rule.match);
+const faultSummary=r=>({error:r.code,delay:fmtMs(r.ms||0)+(r.jitter?` ±${fmtMs(r.jitter)}`:''),blackhole:'no response',disconnect:'close socket',throttle:fmtMs(r.thr||0),unresponsive:r.incident}[r.fault]);
 const faultBadge=r=>`<span class="fault" style="--c:${FAULT[r.fault].c}">${FAULT[r.fault].l} <b>${esc(faultSummary(r))}</b></span>`;
 const scopeName=s=>s==='all'?'All clients':s==='broker'?'Brokers':s;
 const scopeDot=s=>s==='all'?`<span class="t3">${ic('globe',13)}</span>`:s==='broker'?`<span class="t3">${ic('server',13)}</span>`:`<span class="sdot" style="background:${CL[s].color}"></span>`;
@@ -624,7 +624,7 @@ for(const g of WORLD.gens){const tp=WORLD.topics.find(x=>x.n===g.topic);if(g.exi
 const wlog=t=>{WORLD.log.unshift({t:WORLD.clock,txt:t});if(WORLD.log.length>40)WORLD.log.pop()};
 const liveBrokers=()=>BROKERS.filter(b=>b.state==='live').map(b=>b.id);
 function moveLeader(tp,p,why=''){const c=p.isr.filter(id=>id!==p.leader&&liveBrokers().includes(id));if(!c.length){p.leader=null;wlog(`${tp.n}/${p.i} has no leader`);return}p.leader=c[0];p.epoch++;wlog(`leader moves · ${tp.n}/${p.i} → broker ${p.leader}, epoch ${p.epoch}${why}`)}
-/* a broker's state is an event; on the fake broker its consequences change the World */
+/* a broker's state is an incident; on the fake broker its consequences change the World */
 function setBroker(id,st,failover){const b=BROKERS[id-1];if(b.state===st)return;b.state=st;if(ENV!=='fake')return;
   wlog(`broker ${id} ${{live:'comes back',unresponsive:'goes unresponsive',down:'goes down'}[st]}${st==='down'?(failover?' · with failover':' · no failover'):''}`);
   if(st!=='down')return;
@@ -709,7 +709,7 @@ function sidebar(active){
 function miniCells(scope){let h='';for(let r=0;r<8;r++)for(let c=0;c<8;c++){const ru=padRule(scope,r,c);h+=`<i style="${ru&&ru.status==='armed'?`background:${PCOLS[c].c}`:ru?`background:${PCOLS[c].c}55`:''}"></i>`}return h}
 function bindSidebar(app){
   app.querySelector('.side').addEventListener('click',e=>{
-    const env=e.target.closest('[data-env]'); if(env){const no='<span style="width:14px"></span>';menu(env,[{sec:'Environment'},{label:'Proxy · kafka-1:9092',d:'Upstream',env:'proxy',icon:ENV==='proxy'?ic('check'):no},{label:'Fake broker · orders-sim',d:'Simulated',env:'fake',icon:ENV==='fake'?ic('check'):no}],it=>{if(it.env===ENV)return;setEnv(it.env);toast(ENV==='fake'?'Switched to the fake broker. Same rules and scenarios, plus the World view. Events are real here, not emulated.':'Switched to the proxy. The World view is gone, and events are emulated.');show(ENV==='proxy'&&VIEWS[cur].k==='world'?0:cur)});return}
+    const env=e.target.closest('[data-env]'); if(env){const no='<span style="width:14px"></span>';menu(env,[{sec:'Environment'},{label:'Proxy · kafka-1:9092',d:'Upstream',env:'proxy',icon:ENV==='proxy'?ic('check'):no},{label:'Fake broker · orders-sim',d:'Simulated',env:'fake',icon:ENV==='fake'?ic('check'):no}],it=>{if(it.env===ENV)return;setEnv(it.env);toast(ENV==='fake'?'Switched to the fake broker. Same rules and scenarios, plus the World view. Incidents are real here, not emulated.':'Switched to the proxy. The World view is gone, and incidents are emulated.');show(ENV==='proxy'&&VIEWS[cur].k==='world'?0:cur)});return}
     const g=e.target.closest('[data-go]'); if(g){show(VIEWS.findIndex(v=>v.k===g.dataset.go));return}
     if(e.target.closest('[data-rec]')){recording=!recording;if(recording)recStart=Date.now();show(cur)}
   });
@@ -929,8 +929,8 @@ function renderRules(stage){
       const conns=s==='all'?CLIENTS.reduce((a,c)=>a+c.conns.length,0):CL[s].conns.length;
       return `<div class="lgrp">${scopeDot(s)}${scopeName(s)}<span class="t4">${list.length}</span><span class="t4" style="margin-left:6px">· ${conns} connections</span><span class="sp"></span><button class="ib">${ic('plus')}</button></div>`+
        list.map(r=>`<div class="rrow ${r.id===selRule?'on':''} ${r.status==='armed'?'':'off'}" data-id="${r.id}">${statusIcon(r.status)}${srcTag(r)}
-         <div class="ttl"><b>${esc(r.title)}</b>${r.match.map(f=>f.f==='api'?f.vals.map(v=>apiPill(v)).join(''):`<span class="tag">${ic(FIC[f.f],11)}${esc(f.vals.join(', '))}</span>`).join('')}${r.event?'<span class="emu">emulated</span>':''}</div>
-         ${faultBadge(r)}<span class="mono t3" style="text-align:right">${r.event?'':r.prob+'%'}</span>${spark(r.id,64,18,FAULT[r.fault].c,r.status==='armed')}
+         <div class="ttl"><b>${esc(r.title)}</b>${r.match.map(f=>f.f==='api'?f.vals.map(v=>apiPill(v)).join(''):`<span class="tag">${ic(FIC[f.f],11)}${esc(f.vals.join(', '))}</span>`).join('')}${r.incident?'<span class="emu">emulated</span>':''}</div>
+         ${faultBadge(r)}<span class="mono t3" style="text-align:right">${r.incident?'':r.prob+'%'}</span>${spark(r.id,64,18,FAULT[r.fault].c,r.status==='armed')}
          <span class="padref" title="Pad">${r.pad?PADROW[r.pad[0]]+(r.pad[1]+1):'—'}</span><span class="sw ${r.status==='armed'?'on':''}" data-tog="${r.id}"></span></div>`).join('');
     }).join('');
   }
@@ -949,7 +949,7 @@ function renderRules(stage){
       blackhole:`<div class="prop"><label>Behaviour</label><div class="pv note">The request is read but never answered, and the connection stalls. Later requests on it are not forwarded. The client hits <span class="mono t2">request.timeout.ms</span>.</div></div>`,
       disconnect:'', unresponsive:'',
     }[r.fault]+stageProp;
-    const action=r.event?`<div class="prop"><label>Action</label><div class="pv col"><div style="display:flex;gap:6px;align-items:center">${faultBadge(r)}<span class="emu">emulated</span></div><span class="note">An event changes the truth for every client. ${ENV==='fake'?'The World applies this one: broker 2 accepts connections and never answers.':'The proxy emulates this one in its overlay: broker 2 accepts connections and never answers. Rules cannot tell it from a real event.'}</span></div></div>
+    const action=r.incident?`<div class="prop"><label>Action</label><div class="pv col"><div style="display:flex;gap:6px;align-items:center">${faultBadge(r)}<span class="emu">emulated</span></div><span class="note">An incident changes the truth for every client. ${ENV==='fake'?'The World applies this one: broker 2 accepts connections and never answers.':'The proxy emulates this one in its overlay: broker 2 accepts connections and never answers. Rules cannot tell it from a real incident.'}</span></div></div>
       <div class="prop"><label>Trigger</label><div class="pv"><span class="tag">Manual</span><button class="btn" id="fire">${ic('play',12)}Fire</button></div></div>`
      :`<div class="prop"><label>Lie</label><div class="pv"><div class="seg f" style="--c:${c}">${['error','delay','blackhole','disconnect','throttle'].map(k=>`<button class="${r.fault===k?'on':''}" data-fault="${k}">${FAULT[k].l}</button>`).join('')}</div></div></div>
       ${params}
@@ -964,7 +964,7 @@ function renderRules(stage){
       <p class="d">${esc(r.desc||'Add a description…')}</p>
       <div class="prop"><label>State</label><div class="pv"><button class="sel-btn" id="stBtn">${statusIcon(r.status)}${STATUS_L[r.status]}</button>${armed?`<span class="tag">${si>=0?`#${si+1} in ${esc(asc.n)}`:'live set'}</span>`:''}</div></div>
       <div class="prop"><label>Scope</label><div class="pv"><button class="sel-btn" id="scBtn">${scopeDot(r.scope)}${scopeName(r.scope)}${ic('chev',12)}</button></div></div>
-      <div class="prop"><label>Selector</label><div class="pv col">${r.match.map(f=>chipHtml(f,false)).join('')||'<span class="note" style="padding-top:6px">No selector. This rule only fires by hand.</span>'}<button class="btn ghost" style="margin-left:-8px">${ic('plus',12)}Condition</button>${r.event?'':`<span class="t4" style="font-size:11.5px">${fmtN(matched)} matching calls in the current recording</span>`}</div></div>
+      <div class="prop"><label>Selector</label><div class="pv col">${r.match.map(f=>chipHtml(f,false)).join('')||'<span class="note" style="padding-top:6px">No selector. This rule only fires by hand.</span>'}<button class="btn ghost" style="margin-left:-8px">${ic('plus',12)}Condition</button>${r.incident?'':`<span class="t4" style="font-size:11.5px">${fmtN(matched)} matching calls in the current recording</span>`}</div></div>
       <div class="hr" style="margin:12px 0"></div>
       ${action}
       <div class="prop"><label>Lifetime</label><div class="pv col"><div class="seg">${LIFE.map(x=>`<button class="${r.dur===x?'on':''}" data-dur="${x}">${x}</button>`).join('')}</div>${/matches|firings/.test(r.dur)?'<span class="note">A budget, shared by every connection. It never yields one more than it says.</span>':''}</div></div>
@@ -991,7 +991,7 @@ function renderRules(stage){
     const pb=e.target.closest('[data-per]'); if(pb){r.per=!!pb.dataset.per;paintInsp();return}
     const db=e.target.closest('[data-dur]'); if(db){r.dur=db.dataset.dur;paintInsp();return}
     if(e.target.closest('#keep')){r.live=false;r.file='rules/kept.yaml';toast(`Kept <b>${esc(r.title)}</b> as a workspace rule`);paintList();paintInsp();return}
-    if(e.target.closest('#fire')){setBroker(2,'unresponsive');toast(`Fired <b>${esc(r.title)}</b> · event in force <span class="emu">emulated</span>`);return}
+    if(e.target.closest('#fire')){setBroker(2,'unresponsive');toast(`Fired <b>${esc(r.title)}</b> · incident in force <span class="emu">emulated</span>`);return}
     if(e.target.closest('#saveSc')){const a=RULES.filter(x=>x.status==='armed').sort((x,y)=>(y.armedAt||0)-(x.armedAt||0));SCENARIOS.push({n:'Saved '+fmtT(clock).slice(0,5),mode:'chain',seed:1337,rules:a.map(x=>x.id),desc:'Saved from the armed rules, most recently armed first.'});toast(`Saved ${a.length} armed rules as a Chain scenario, most recently armed first`);return}
     if(e.target.closest('#codeBtn')){menu(e.target.closest('#codeBtn'),[{sec:'Retriable'},...CODES.filter(c=>c[3]).map(c=>({label:`<span class="mono">${c[0]}</span>`,d:c[1],c:c[0]})),{sec:'Fatal'},...CODES.filter(c=>!c[3]).map(c=>({label:`<span class="mono">${c[0]}</span>`,d:c[1],c:c[0]}))],it=>{r.code=it.c;paintList();paintInsp()});return}
     if(e.target.closest('#stBtn')){menu(e.target.closest('#stBtn'),Object.keys(STATUS_L).map(s=>({label:STATUS_L[s],icon:statusIcon(s),s})),it=>{it.s==='armed'?arm(r,true):r.status=it.s;paintList();paintInsp()});return}
@@ -1109,7 +1109,7 @@ function renderClients(stage){
   function paint(){
     const cols=['all',...CLIENTS.map(c=>c.id)];
     $('#board',app).innerHTML=cols.map(s=>{
-      const rs=RULES.filter(r=>r.scope===s&&!r.event);
+      const rs=RULES.filter(r=>r.scope===s&&!r.incident);
       let head;
       if(s==='all')head=`<div class="ccard"><span class="t3">Applies to every connection through the proxy.</span><div class="row"><span class="tag">${CLIENTS.reduce((a,c)=>a+c.conns.length,0)} connections</span><span class="tag">${CLIENTS.length} clients</span><span class="tag">3 brokers</span></div></div>`;
       else{const c=CL[s],mine=REQS.filter(r=>r.client===s),cnt={};mine.forEach(r=>{const n=API[r.api][0];cnt[n]=(cnt[n]||0)+1});
@@ -1119,7 +1119,7 @@ function renderClients(stage){
           <div class="row"><span class="lbl">Seen APIs</span>${Object.entries(cnt).sort((a,b)=>b[1]-a[1]).slice(0,6).map(([n])=>apiPill(n)).join('')}</div>
           <div class="row"><span class="lbl">Topics</span>${tps.slice(0,4).map(t=>`<span class="tag">${t}</span>`).join('')}</div></div>`}
       return `<div class="bcol" data-scope="${s}"><div class="bch">${scopeDot(s)}${scopeName(s)}<span class="t4">${rs.length}</span><span class="sp"></span><button class="ib">${ic('more')}</button><button class="ib">${ic('plus')}</button></div>${head}${rs.map(card).join('')}<div class="addcard">${ic('plus',12)}Add rule for ${s==='all'?'everyone':s}</div></div>`;
-    }).join('')+`<div class="bcol"><div class="bch">${ic('server',13)}Brokers<span class="t4">3</span><span class="sp"></span><span class="emu">emulated</span></div><div class="ccard"><span class="t3">A broker's state is an event. It changes the truth for every client, and ${ENV==='fake'?'the World applies it':'the proxy emulates it in its overlay'}.</span></div>${BROKERS.map(b=>`<div class="bcard"><div style="display:flex;align-items:center;gap:8px"><span class="t1" style="font-weight:500">Broker ${b.id}</span><span class="mono t4">${b.up}</span><span class="sp"></span><span class="mono t3">:${b.port}</span></div><div class="seg">${['live','unresponsive','down'].map(st=>`<button class="${b.state===st?'on':''}" data-bs="${b.id}:${st}" style="${b.state===st&&st!=='live'?`color:${st==='down'?'var(--red)':'var(--orange)'}`:''}">${st[0].toUpperCase()+st.slice(1)}</button>`).join('')}</div>${b.state==='down'?`<span class="note">${ENV==='fake'?'Without failover, the partitions this broker led have no leader until a “leader moves” event.':'No failover on the proxy: the partitions this broker led have no leader.'}</span>`:''}<span class="t4" style="font-size:11.5px">${CLIENTS.flatMap(c=>c.conns).filter(cn=>cn.b===b.id).length} client connections</span></div>`).join('')}${RULES.filter(r=>r.event).map(card).join('')}</div>`;
+    }).join('')+`<div class="bcol"><div class="bch">${ic('server',13)}Brokers<span class="t4">3</span><span class="sp"></span><span class="emu">emulated</span></div><div class="ccard"><span class="t3">A broker's state is an incident. It changes the truth for every client, and ${ENV==='fake'?'the World applies it':'the proxy emulates it in its overlay'}.</span></div>${BROKERS.map(b=>`<div class="bcard"><div style="display:flex;align-items:center;gap:8px"><span class="t1" style="font-weight:500">Broker ${b.id}</span><span class="mono t4">${b.up}</span><span class="sp"></span><span class="mono t3">:${b.port}</span></div><div class="seg">${['live','unresponsive','down'].map(st=>`<button class="${b.state===st?'on':''}" data-bs="${b.id}:${st}" style="${b.state===st&&st!=='live'?`color:${st==='down'?'var(--red)':'var(--orange)'}`:''}">${st[0].toUpperCase()+st.slice(1)}</button>`).join('')}</div>${b.state==='down'?`<span class="note">${ENV==='fake'?'Without failover, the partitions this broker led have no leader until a “leader moves” incident.':'No failover on the proxy: the partitions this broker led have no leader.'}</span>`:''}<span class="t4" style="font-size:11.5px">${CLIENTS.flatMap(c=>c.conns).filter(cn=>cn.b===b.id).length} client connections</span></div>`).join('')}${RULES.filter(r=>r.incident).map(card).join('')}</div>`;
   }
   paint();
   let drag=null;
@@ -1130,7 +1130,7 @@ function renderClients(stage){
     if(r.scope!==s){if(r.pad&&padRule(s,...r.pad))r.pad=null;r.scope=s;toast(`<b>${esc(r.title)}</b> now applies to ${scopeName(s)}`)}drag=null;paint()});
   app.addEventListener('click',e=>{
     const tg=e.target.closest('[data-tog]'); if(tg){arm(ruleById(+tg.dataset.tog));paint();return}
-    const bs=e.target.closest('[data-bs]'); if(bs){const [id,st]=bs.dataset.bs.split(':');setBroker(+id,st,WORLD.failover);paint();toast(`Event · broker ${id} ${{live:'comes back',unresponsive:'goes unresponsive',down:'goes down'}[st]} <span class="emu">emulated</span>`);return}
+    const bs=e.target.closest('[data-bs]'); if(bs){const [id,st]=bs.dataset.bs.split(':');setBroker(+id,st,WORLD.failover);paint();toast(`Incident · broker ${id} ${{live:'comes back',unresponsive:'goes unresponsive',down:'goes down'}[st]} <span class="emu">emulated</span>`);return}
     const c=e.target.closest('.card'); if(c){selRule=+c.dataset.rid;show(VIEWS.findIndex(v=>v.k==='rules'))}
   });
 }
@@ -1252,7 +1252,7 @@ function renderScenarios(stage){
     }else if(sc.mode==='chain'){
       body=`<h3 class="sch">Rules in order<span class="t4">every rule that fires applies · order only decides between rules that conflict</span></h3>`+rs.map((r,i)=>{
         const above=r.id?rs.slice(0,i).filter(a=>a.id&&conflicts(a,r)):[], eff=r.id?r.prob*above.reduce((p,a)=>p*(1-a.prob/100),1):0;
-        return `<div class="crow"><span class="mono t4">${i+1}</span><span class="t4">${ic('drag',12)}</span><b>${esc(r.title)}</b>${r.id?faultBadge(r):`<span class="tag">${i?'lie · topology':'event · leader moves'}</span>`}<span class="eff">${r.id?(above.length?`<s>${r.prob}%</s> → ${eff.toFixed(1)}% effective`:r.prob+'%'):''}</span></div>`+
+        return `<div class="crow"><span class="mono t4">${i+1}</span><span class="t4">${ic('drag',12)}</span><b>${esc(r.title)}</b>${r.id?faultBadge(r):`<span class="tag">${i?'lie · topology':'incident · leader moves'}</span>`}<span class="eff">${r.id?(above.length?`<s>${r.prob}%</s> → ${eff.toFixed(1)}% effective`:r.prob+'%'):''}</span></div>`+
           (above.length?`<div class="note" style="padding:4px 10px 2px 56px">Conflicts with <b>${esc(above[0].title)}</b> above. Both fail the call, so this rule only applies when that one did not fire.</div>`:'')}).join('');
     }else{
       body=`<h3 class="sch">Rules<span class="t4">a conflict goes to the rule armed most recently</span></h3>`+rs.map(r=>`<div class="crow" style="grid-template-columns:14px minmax(0,1fr)">${statusIcon('disarmed',12)}<b>${esc(r.title)}</b></div>`).join('')+`<div class="note" style="margin-top:8px">Activating arms the rules in this order, so the last one counts as armed most recently. Live mode follows the person at the controls. It is not meant to be reproducible.</div>`;
@@ -1260,7 +1260,7 @@ function renderScenarios(stage){
     $('#scd',app).innerHTML=`<div style="display:flex;align-items:center;gap:8px"><span class="mode" style="--c:${M.c}">${M.l}</span><span class="t4 mono">scenarios/${sc.n.toLowerCase().replace(/[^a-z0-9]+/g,'-')}.yaml</span><span class="sp"></span>${sc.steps&&act?`<button class="btn" id="stepB">Step ${ic('chevr',12)}</button>`:''}${act?'<span class="st ok">active</span>':`<button class="btn primary" id="actB" ${sc.needs&&ENV==='proxy'?'disabled style="opacity:.4;cursor:default"':''}>Activate</button>`}</div>
       <h2 style="margin-top:12px">${esc(sc.n)}</h2><p class="t3" style="font-size:12.5px;margin-bottom:8px">${esc(sc.desc||'')}</p>
       <div class="stats"><span>seed <b>${sc.seed}</b></span><span>a conflict goes to <b>${sc.mode==='live'?'the rule armed most recently':'the rule listed first'}</b></span></div>
-      ${sc.needs&&ENV==='proxy'?`<div class="ccard" style="margin-top:12px"><span class="t2">Needs the event “${sc.needs}”.</span><span class="note">The proxy does not emulate it. Run this scenario on the fake broker, or use the <b>Leader flap</b> preset: a refusal with NOT_LEADER_OR_FOLLOWER and truthful Metadata.</span></div>`:sc.needs?`<div class="note" style="margin-top:10px">Uses the event “${sc.needs}”. On the fake broker the World applies it for real.</div>`:''}
+      ${sc.needs&&ENV==='proxy'?`<div class="ccard" style="margin-top:12px"><span class="t2">Needs the incident “${sc.needs}”.</span><span class="note">The proxy does not emulate it. Run this scenario on the fake broker, or use the <b>Leader flap</b> preset: a refusal with NOT_LEADER_OR_FOLLOWER and truthful Metadata.</span></div>`:sc.needs?`<div class="note" style="margin-top:10px">Uses the incident “${sc.needs}”. On the fake broker the World applies it for real.</div>`:''}
       ${body}`;
     const ls=liveSet();
     $('#lset',app).innerHTML=`<div class="t1" style="font-weight:500;display:flex;align-items:center;gap:8px">Live set<span class="t4" style="font-weight:400">${ls.length}</span></div><div class="note" style="margin-top:4px">Rules armed by hand. They win conflicts with the scenario. Among themselves, the most recently armed rule wins.</div>`+
@@ -1296,17 +1296,17 @@ function renderWorld(stage){
   function paintLeft(){
     $('#wleft',app).innerHTML=`<div class="ph">Brokers<span class="t4">${BROKERS.length}</span></div><div class="wcol">`+BROKERS.map(b=>`<div class="bcard"><div style="display:flex;align-items:center;gap:8px"><span class="t1" style="font-weight:500">Broker ${b.id}</span><span class="sp"></span><span class="t4" style="font-size:11.5px">leads ${WORLD.topics.reduce((a,tp)=>a+tp.parts.filter(p=>p.leader===b.id).length,0)} partitions</span></div><div class="seg">${['live','unresponsive','down'].map(st=>`<button class="${b.state===st?'on':''}" data-wbs="${b.id}:${st}" style="${b.state===st&&st!=='live'?`color:${st==='down'?'var(--red)':'var(--orange)'}`:''}">${st[0].toUpperCase()+st.slice(1)}</button>`).join('')}</div></div>`).join('')+
       `<div class="note" id="wfo" style="display:flex;gap:8px;align-items:center;cursor:pointer;color:var(--t2)"><span class="cb" style="flex:none;${WORLD.failover?'background:var(--accent2);border-color:var(--accent2)':''}">${WORLD.failover?ic('check',10):''}</span>Going down moves leaders and coordinators</div>
-       <div class="note">Without failover, a broker that goes down leaves its partitions leaderless. The World does not react to an event by itself. A broker that comes back is a replica again, and leaders stay where they are.</div></div>
+       <div class="note">Without failover, a broker that goes down leaves its partitions leaderless. The World does not react to an incident by itself. A broker that comes back is a replica again, and leaders stay where they are.</div></div>
       <div class="ph" style="position:static">Virtual records<span class="t4">${WORLD.gens.length}</span></div><div class="wcol">`+WORLD.gens.map((g,i)=>`<div class="bcard"><div style="display:flex;align-items:center;gap:8px"><span class="t1" style="font-weight:500">${g.topic}</span><span class="sp"></span><span class="sw ${g.on?'on':''}" data-wgen="${i}"></span></div><span class="mono t3">${g.existing?fmtN(g.existing)+' existing · ':''}${g.rate}/s arriving</span><span class="mono t4">${g.tpl}</span></div>`).join('')+`<div class="note">The broker makes up each record when a consumer asks for it. Nothing is stored, and the same partition and offset always give the same record.</div></div>`;
   }
   function paintTopics(){
     $('#wtopics',app).innerHTML=`<div class="prow h"><span>Partition</span><span>Leader</span><span>Epoch</span><span>In sync</span><span>Log start</span><span>High watermark</span><span></span></div>`+WORLD.topics.map((tp,ti)=>{const g=WORLD.gens.find(x=>x.topic===tp.n&&x.on);
-      return `<div class="lgrp" style="top:32px">${ic('topic',13)}${tp.n}<span class="t4">${tp.parts.length} partitions</span>${g?`<span class="tag">${g.existing?'virtual · ':''}${g.rate}/s arriving</span>`:''}<span class="sp"></span><button class="ib" data-tev="${ti}" title="Topic events">${ic('more')}</button></div>`+
-        tp.parts.map(p=>`<div class="prow"><span class="mono">${tp.n}/${p.i}</span><span>${p.leader?'broker '+p.leader:red('none')}</span><span class="mono t3">${p.epoch}</span><span class="mono t3">${p.isr.filter(id=>BROKERS[id-1].state!=='down').join(' ')||'—'}</span><span class="mono t3">${fmtN(p.start)}</span><span class="mono" data-hw="${ti}:${p.i}">${fmtN(Math.floor(p.hw))}</span><button class="ib" data-pev="${ti}:${p.i}" title="Partition events">${ic('zap',13)}</button></div>`).join('')}).join('');
+      return `<div class="lgrp" style="top:32px">${ic('topic',13)}${tp.n}<span class="t4">${tp.parts.length} partitions</span>${g?`<span class="tag">${g.existing?'virtual · ':''}${g.rate}/s arriving</span>`:''}<span class="sp"></span><button class="ib" data-tev="${ti}" title="Topic incidents">${ic('more')}</button></div>`+
+        tp.parts.map(p=>`<div class="prow"><span class="mono">${tp.n}/${p.i}</span><span>${p.leader?'broker '+p.leader:red('none')}</span><span class="mono t3">${p.epoch}</span><span class="mono t3">${p.isr.filter(id=>BROKERS[id-1].state!=='down').join(' ')||'—'}</span><span class="mono t3">${fmtN(p.start)}</span><span class="mono" data-hw="${ti}:${p.i}">${fmtN(Math.floor(p.hw))}</span><button class="ib" data-pev="${ti}:${p.i}" title="Partition incidents">${ic('zap',13)}</button></div>`).join('')}).join('');
   }
   function paintRight(){
     $('#wright',app).innerHTML=`<div class="ph">Consumer groups<span class="t4">${WORLD.groups.length}</span></div><div class="wcol">`+WORLD.groups.map((g,i)=>`<div class="bcard"><div style="display:flex;align-items:center;gap:8px"><span class="t1" style="font-weight:500">${g.n}</span><span class="sp"></span><span class="kind">${g.proto} protocol</span></div><span class="mono t3">${g.proto==='classic'?'generation':'group epoch'} ${g.epoch} · ${g.members} members · coordinator ${g.coord?'broker '+g.coord:red('none')}</span><div style="display:flex;gap:6px;flex-wrap:wrap"><button class="btn" data-gev="${i}:rebalance">Rebalance</button><button class="btn" data-gev="${i}:coord">Coordinator moves</button><button class="btn ghost" data-gev="${i}:reset">Reset offsets</button></div></div>`).join('')+`</div>
-      <div class="ph" style="position:static">Events<span class="t4">newest first</span></div><div class="wcol" style="gap:0">${WORLD.log.map(l=>`<div class="wlog"><span class="t4">${fmtT(l.t).slice(0,8)}</span><span>${esc(l.txt)}</span></div>`).join('')||'<div class="note">No events yet. Use the buttons here, or let a rule fire one. Events are the only way the World changes, apart from the clients\' own calls.</div>'}</div>`;
+      <div class="ph" style="position:static">Incidents<span class="t4">newest first</span></div><div class="wcol" style="gap:0">${WORLD.log.map(l=>`<div class="wlog"><span class="t4">${fmtT(l.t).slice(0,8)}</span><span>${esc(l.txt)}</span></div>`).join('')||'<div class="note">No incidents yet. Use the buttons here, or let a rule fire one. Incidents are the only way the World changes, apart from the clients\' own calls.</div>'}</div>`;
   }
   const paint=()=>{paintClock();paintLeft();paintTopics();paintRight()};
   function tick(ms){
@@ -1329,13 +1329,13 @@ function renderWorld(stage){
       else wlog(`committed offset reset · ${g.n} on orders.eu → earliest`);
       paint();return}
     const pe=e.target.closest('[data-pev]'); if(pe){const [ti,pi]=pe.dataset.pev.split(':').map(Number),tp=WORLD.topics[ti],p=tp.parts[pi];
-      menu(pe,[{sec:`Event on ${tp.n}/${p.i}`},{label:'Leader moves',d:'new leader, new epoch',k:'lead'},{label:'Records expired',d:'log start moves forward',k:'exp'},{label:'Log truncated',d:'end offset moves back',k:'trunc'}],it=>{
+      menu(pe,[{sec:`Incident on ${tp.n}/${p.i}`},{label:'Leader moves',d:'new leader, new epoch',k:'lead'},{label:'Records expired',d:'log start moves forward',k:'exp'},{label:'Log truncated',d:'end offset moves back',k:'trunc'}],it=>{
         if(it.k==='lead')moveLeader(tp,p);
         else if(it.k==='exp'){p.start=Math.max(p.start,Math.floor(p.hw)-2000);wlog(`records expired · ${tp.n}/${p.i} log start → ${fmtN(p.start)}`)}
         else{p.hw=Math.max(p.start,p.hw-500);p.epoch++;wlog(`log truncated · ${tp.n}/${p.i} end → ${fmtN(Math.floor(p.hw))}`)}
         paint()});return}
     const te=e.target.closest('[data-tev]'); if(te){const ti=+te.dataset.tev,tp=WORLD.topics[ti];
-      menu(te,[{sec:`Event on ${tp.n}`},{label:'Partition added',k:'add'},{label:'Topic deleted',k:'del'}],it=>{
+      menu(te,[{sec:`Incident on ${tp.n}`},{label:'Partition added',k:'add'},{label:'Topic deleted',k:'del'}],it=>{
         if(it.k==='add'){const i=tp.parts.length;tp.parts.push({i,leader:liveBrokers()[0]||null,epoch:0,isr:[1,2,3],start:0,hw:0});wlog(`partition added · ${tp.n}/${i}`)}
         else{WORLD.topics.splice(ti,1);wlog(`topic deleted · ${tp.n}`)}
         paint()});return}
@@ -1349,9 +1349,9 @@ const VIEWS=[
  {k:'selector',name:'Selector from call',desc:'Click a recorded call. Its verdict is explained per rule: matched, rolled, fired, applied, shadowed or pre-empted. Then tick fields to build a selector.',render:s=>renderRecord(s,'select')},
  {k:'rules',name:'Rules',desc:'Rules by name, grouped by scope. The inspector sets lie, stage, trigger, counter and lifetime. Live rules stay in memory until kept.',render:renderRules},
  {k:'pads',name:'Pads',desc:'Rows = selectors, columns = presets, bottom row = layer. Pads arm live rules, and every encoder maps to a real rule parameter.',render:renderPads},
- {k:'clients',name:'Clients',desc:'One column per scope. Drag rules between columns to re-scope them. Broker states are events, emulated on the proxy.',render:renderClients},
+ {k:'clients',name:'Clients',desc:'One column per scope. Drag rules between columns to re-scope them. Broker states are incidents, emulated on the proxy.',render:renderClients},
  {k:'scenarios',name:'Scenarios',desc:'Live, Chain and Sequence scenarios with the live set on top: effective probabilities, steps with exact budgets, capture.',render:renderScenarios},
- {k:'world',name:'World',desc:'Only with the fake broker. Broker nodes, topics, partitions, groups and virtual records on a virtual clock. Events really happen here. Switch environment in the sidebar footer.',render:s=>{if(ENV!=='fake'){setEnv('fake');toast('Switched to the fake broker. The World view only exists there. Switch back in the sidebar footer.')}renderWorld(s)}},
+ {k:'world',name:'World',desc:'Only with the fake broker. Broker nodes, topics, partitions, groups and virtual records on a virtual clock. Incidents really happen here. Switch environment in the sidebar footer.',render:s=>{if(ENV!=='fake'){setEnv('fake');toast('Switched to the fake broker. The World view only exists there. Switch back in the sidebar footer.')}renderWorld(s)}},
  {k:'palette',name:'Quick inject ⌘K',desc:'Type a sentence, get a live rule: “delay produce orders.* 750ms 40% order-ingest”. Kinds are labelled where names mix.',render:renderPalette},
 ];
 let cur=0, timers=[];

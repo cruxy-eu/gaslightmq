@@ -12,7 +12,7 @@ flowchart TB
   B --> C["3 · Identify<br/>update session identity and client context"]
   C --> D["4 · Match<br/>armed rules whose selector matches, with targets"]
   D --> E["5 · Trigger<br/>count, roll dice, check time, take from budgets"]
-  E --> F["6 · Resolve<br/>fire events, resolve conflicts by priority"]
+  E --> F["6 · Resolve<br/>fire incidents, resolve conflicts by priority"]
   F --> G{"7 · Before forwarding<br/>does a lie end the call?"}
   G -->|silence| S["Never answer, stall the connection"]
   G -->|hang up| H["Close the connection"]
@@ -31,10 +31,10 @@ flowchart TB
 | **1 · Receive** | Reads one frame from the client. |
 | **2 · Decode** | Decodes the request header and the fields selectors need. Decoding is lazy: the pipeline only decodes the body when an armed rule tests a body field, when the backend's overlay needs it, or when recording is on. |
 | **3 · Identify** | Moves the session from Opened to Identified on its first request, and records the client software from `ApiVersions`. Updates the [client context](../domains/session.md#client-context) with a group or transactional ID the request names. |
-| **4 · Match** | Finds the armed rules whose effective selector matches, and each rule's [target](../domains/lies-and-events.md#target). The rule snapshot keeps an index by API, so most calls test only a few rules. |
+| **4 · Match** | Finds the armed rules whose effective selector matches, and each rule's [target](../domains/lies-and-incidents.md#target). The rule snapshot keeps an index by API, so most calls test only a few rules. |
 | **5 · Trigger** | Evaluates each matching rule's trigger: increments the rule's counter, rolls its die, checks its time window. A rule that fires takes from its budget, and does not fire when the budget is empty. |
-| **6 · Resolve** | Hands the events of firing rules to the scenario runner. Lets lies that do not conflict through. Resolves conflicts with the snapshot's priority order: the live set first, then the scenario's mode. Marks the losers as shadowed or pre-empted. |
-| **7 · Before forwarding** | Applies lies of the before-forwarding [stage](../domains/lies-and-events.md#stage). A silence or a hang-up ends the call. A delay holds the request back. A refusal removes its partitions from the request. A request rewrite changes the request. |
+| **6 · Resolve** | Hands the incidents of firing rules to the scenario runner. Lets lies that do not conflict through. Resolves conflicts with the snapshot's priority order: the live set first, then the scenario's mode. Marks the losers as shadowed or pre-empted. |
+| **7 · Before forwarding** | Applies lies of the before-forwarding [stage](../domains/lies-and-incidents.md#stage). A silence or a hang-up ends the call. A delay holds the request back. A refusal removes its partitions from the request. A request rewrite changes the request. |
 | **8 · Backend** | Forwards what is left of the request to the real cluster, or hands it to the broker in memory. The response is the truth. The backend does not see a request whose partitions were all refused. |
 | **9 · After the response** | Merges the refusals of stage 7 into the response. Runs the response pass. Applies rewrites and after-response refusals per target. Then applies modifiers: the summed delay and the maximum throttle. A hang-up at this stage closes the connection instead of sending. |
 | **10 · Send** | Writes the delivered response to the client, in the order the client sent its requests. |
@@ -50,7 +50,7 @@ At these points the session acts for the pipeline:
 | Stage | The pipeline | The session |
 |---|---|---|
 | 1 · Receive | Takes the bytes it is given. | Reads them from the transport. |
-| 6 · Resolve | Hands out the events of firing rules. | Passes them to the scenario runner. |
+| 6 · Resolve | Hands out the incidents of firing rules. | Passes them to the scenario runner. |
 | 7 and 9 · Delay | Asks for a timer, and continues when the timer fires. | Waits on the engine's clock. |
 | 7 and 9 · Hang-up | Asks to close the connection. | Closes the transport, which ends the session. |
 | 8 · Backend | Hands out the request, and continues when the answer arrives. | Passes the request to the backend, and waits for the answer. |
@@ -104,10 +104,10 @@ Between the passes, the stage decides:
 This is the only place where a rule with a lower priority can beat a higher one.
 A live rule that waits for the truth does not stop a scenario rule from ending the call first.
 
-## Events
+## Incidents
 
-Events that rules fire go to the scenario runner during resolve.
-The runner adds their [consequences](../domains/lies-and-events.md#consequences)
+Incidents that rules fire go to the scenario runner during resolve.
+The runner adds their [consequences](../domains/lies-and-incidents.md#consequences)
 and hands them to the backend.
 They take effect on the World or the overlay after this call,
 not during it.

@@ -11,7 +11,7 @@ A rule has:
 |---|---|
 | **Name** | Unique among rules. Other things reference the rule by this name. |
 | **Selector** | Which calls the rule considers. A selector name, or inline conditions. |
-| **Action** | What happens when the rule fires: a lie or an event. A preset name, or inline. |
+| **Action** | What happens when the rule fires: a lie or an incident. A preset name, or inline. |
 | **Trigger** | When the rule fires among the calls its selector matches. |
 | **Lifetime** | How long the rule stays armed. |
 
@@ -41,11 +41,11 @@ The rule's effective selector is the selector **and** the scope.
 
 ## Action
 
-An action is either a lie or an event.
-See [lies and events](lies-and-events.md).
+An action is either a lie or an incident.
+See [lies and incidents](lies-and-incidents.md).
 
-- A **lie** applies to its [target](lies-and-events.md#target) on the call that fired the rule.
-- An **event** changes the world.
+- A **lie** applies to its [target](lies-and-incidents.md#target) on the call that fired the rule.
+- An **incident** changes the world.
   The call that fired the rule passes through unchanged,
   unless another rule lies about it.
 
@@ -67,7 +67,7 @@ Triggers combine.
 All parts of a combined trigger must agree.
 
 A count trigger counts matching calls, whatever happens to them afterwards.
-When a rule fires on its 3rd match and another rule [shadows](lies-and-events.md#how-lies-combine) it,
+When a rule fires on its 3rd match and another rule [shadows](lies-and-incidents.md#how-lies-combine) it,
 that firing is spent.
 The explanation shows it.
 
@@ -79,13 +79,13 @@ The [lifetime](#lifetime) decides when a rule stops.
 
 Firing a rule by hand skips its trigger once.
 
-- A rule with an **event** fires the event immediately.
+- A rule with an **incident** fires the incident immediately.
 - A rule with a **lie** has no call to lie about yet.
   It lies on the next call its selector matches, once.
 
 ### Reacting to other things
 
-A rule cannot trigger on another rule or on an event.
+A rule cannot trigger on another rule or on an incident.
 A [Sequence](scenarios.md#sequence) step expresses "when this happened, arm that":
 the step ends on a number of calls or firings, and the next step arms the reaction.
 
@@ -182,10 +182,10 @@ Changing a parameter of an armed rule resets nothing.
 For each call, the session:
 
 1. Collects every armed rule whose effective selector matches the call,
-   and works out each rule's [target](lies-and-events.md#target).
+   and works out each rule's [target](lies-and-incidents.md#target).
 2. Evaluates each rule's trigger with the rule's counter and die,
    and takes from the rule's budget when it fires.
-3. Fires the events of the rules that fired.
+3. Fires the incidents of the rules that fired.
 4. Lets the lies that do not conflict apply,
    and resolves conflicts by priority:
    the [live set](scenarios.md#the-live-set) first, then the active scenario's [mode](scenarios.md#modes).

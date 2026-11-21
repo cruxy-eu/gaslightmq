@@ -114,7 +114,7 @@ so it ends the session like any other close.
 
 | What happens | The session |
 |---|---|
-| A [hang-up](lies-and-events.md#lies) fires. | Closes, and records that a lie closed it. |
+| A [hang-up](lies-and-incidents.md#lies) fires. | Closes, and records that a lie closed it. |
 | A broker goes down. | Closes, together with every other session on that broker's endpoint. The endpoint refuses new connections until the broker is back. |
 | A silence fires, or the broker is unresponsive. | Stays open and never answers. It closes when the client gives up. |
 

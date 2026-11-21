@@ -15,7 +15,7 @@ flowchart TB
   subgraph core["Core"]
     SC["Scenarios<br/>mode · steps · seed · live set"]
     IN["Injection<br/>rules · triggers · counters · dice"]
-    LE["Lies and events<br/>stages · targets · presets"]
+    LI["Lies and incidents<br/>stages · targets · presets"]
   end
 
   subgraph support["Supporting"]
@@ -34,7 +34,7 @@ flowchart TB
   CS -->|commands| SC
   CS -->|commands| IN
   SC -->|arms and fires| IN
-  IN -->|acts through| LE
+  IN -->|acts through| LI
   IN -->|uses| TG
   SE -->|evaluates| IN
   SE -->|uses| TG
@@ -56,7 +56,7 @@ flowchart TB
 |---|---|---|---|
 | [Scenarios](../domains/scenarios.md) | Core | Scenario, Mode, Step, Live set, Capture | Tells failure stories over time and resolves conflicts between rules. |
 | [Injection](../domains/rules.md) | Core | Rule, Action, Trigger, Counter, Dice, Lifetime, Budget | Decides what happens to a call or to the world. |
-| [Lies and events](../domains/lies-and-events.md) | Core | Truth, Lie, Stage, Target, Event, Consequence, Preset | Defines the vocabulary of everything GaslightMQ can make a client believe. |
+| [Lies and incidents](../domains/lies-and-incidents.md) | Core | Truth, Lie, Stage, Target, Incident, Consequence, Preset | Defines the vocabulary of everything GaslightMQ can make a client believe. |
 | [Targeting](../domains/targeting.md) | Supporting | Field, Learned field, Condition, Selector, Scope | Provides one predicate language for filtering, targeting and indexing. |
 | [Session](../domains/session.md) | Supporting | Session, Identity, Client context | Runs every connection and holds the state rules need per connection and per client. |
 | [Observation](../domains/observation.md) | Supporting | Call, Verdict, Explanation, Recording, Journal, Index | Shows what happened and why. |
@@ -100,12 +100,12 @@ Injection publishes a new snapshot whenever a rule changes.
 
 ### Backends sit behind an anti-corruption layer
 
-Injection speaks in lies and events.
-A backend translates an event into something it can do.
-The Simulated backend applies the event to the World.
-The Upstream backend emulates the event inside its overlay on the real cluster.
+Injection speaks in lies and incidents.
+A backend translates an incident into something it can do.
+The Simulated backend applies the incident to the World.
+The Upstream backend emulates the incident inside its overlay on the real cluster.
 Neither backend leaks its internals back into Injection:
-what a backend answers is the truth, and rules cannot tell an emulated event from a real one.
+what a backend answers is the truth, and rules cannot tell an emulated incident from a real one.
 
 ### Observation is downstream of everything
 
@@ -137,11 +137,11 @@ and a layout only maps positions to names.
   A layer is a page of the pad grid for one scope.
   The live set is the rules someone armed by hand.
 - **Broker state is not a separate concept.**
-  In the World, a broker going down is an event.
+  In the World, a broker going down is an incident.
   On the proxy, the Upstream backend emulates it by refusing and dropping connections.
 - **A lie is not always a fault.**
   A lie is anything the client is told that differs from the truth,
   including a different leader and altered data.
 - **The overlay is not a lie.**
-  The proxy's address translation and its emulated events are part of the truth.
+  The proxy's address translation and its emulated incidents are part of the truth.
   Rules and explanations treat them like the real cluster's answers.

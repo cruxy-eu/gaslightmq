@@ -12,7 +12,7 @@ The second part lists the decisions that were settled, with the reason and the s
   The rewrite needs a check against KIP-227 and against the Java client and librdkafka,
   including the extra bandwidth for clients with many partitions.
 - **Does the forced rejoin behave the same for both group protocols?**
-  [Emulating a rebalance](architecture/backends.md#emulating-events) relies on how clients react to
+  [Emulating a rebalance](architecture/backends.md#emulating-incidents) relies on how clients react to
   `REBALANCE_IN_PROGRESS` and `FENCED_MEMBER_EPOCH`.
   Both need a test against real clients.
 
@@ -36,7 +36,7 @@ The second part lists the decisions that were settled, with the reason and the s
   so a step that ends after a number of calls may reproduce better.
 - **When does a rule need to react to another rule?**
   Sequence steps cover "when this happened, arm that".
-  A trigger that reacts to rules or events would also work in Live and Chain mode,
+  A trigger that reacts to rules or incidents would also work in Live and Chain mode,
   but it needs an answer to *same call or next call?* and *for how long?*
 
 ### World data
@@ -73,7 +73,7 @@ The second part lists the decisions that were settled, with the reason and the s
   which gives up the rule that the proxy never changes the real cluster.
 - **When do transactions come to the fake broker?**
   They bring "producer fenced" to the Simulated backend,
-  and events for a transaction that hangs or times out.
+  and incidents for a transaction that hangs or times out.
 - **Does a session get its own connections to the real cluster?**
   The Upstream backend connects with the proxy's own credentials.
   One upstream connection per session keeps a client's requests in order without extra work.
@@ -88,7 +88,7 @@ The second part lists the decisions that were settled, with the reason and the s
 |---|---|---|
 | Does scope specificity come before the mode? | No. Scope gives no priority. The live set resolves conflicts by recency, a scenario by its mode. See [modes](domains/scenarios.md#modes). | Specificity has no definition for arbitrary selectors, and it contradicts "follows what the person just did". |
 | What does a chance trigger mean in Chain mode? | Each rule rolls its own die. See [Chain](domains/scenarios.md#chain). | Slices of one roll couple the rules. Only rules that really conflict lose probability. |
-| Can rewrites of the same target merge? | No. One wins and the other is shadowed. Different aspects of one partition do not conflict. See [how lies combine](domains/lies-and-events.md#how-lies-combine). | Chaining needs an order that Live mode does not have. |
+| Can rewrites of the same target merge? | No. One wins and the other is shadowed. Different aspects of one partition do not conflict. See [how lies combine](domains/lies-and-incidents.md#how-lies-combine). | Chaining needs an order that Live mode does not have. |
 | Do delays add up or take the maximum? | They add up. | Every rule that fired changes something, and the explanation sums up. |
 | Does priority hold across the two passes? | No. A lie that ends the call before forwarding pre-empts a rule that waits for the truth. See [two evaluation passes](architecture/request-pipeline.md#two-evaluation-passes). | The truth does not exist yet. Forwarding first would turn "refused, nothing written" into "written, then refused". |
 
@@ -110,7 +110,7 @@ The second part lists the decisions that were settled, with the reason and the s
 
 | Question | Decision | Reason |
 |---|---|---|
-| How far does event emulation go on Upstream? | As far as the overlay can hold all the state: broker down, unresponsive and back, rebalance as a forced rejoin, records expired, committed offset reset, producer fenced. See [capabilities](architecture/backends.md#capabilities). | Anything more needs split routing or epoch translation. |
+| How far does incident emulation go on Upstream? | As far as the overlay can hold all the state: broker down, unresponsive and back, rebalance as a forced rejoin, records expired, committed offset reset, producer fenced. See [capabilities](architecture/backends.md#capabilities). | Anything more needs split routing or epoch translation. |
 | Can a proxy front a fake broker? | Yes. That is how a fake cluster lies: a proxy in front of a [broker](architecture/backends.md#a-broker-never-lies), in one process, without a socket. | A broker never lies, so lies still happen in one place. |
 
 ### Runtime
