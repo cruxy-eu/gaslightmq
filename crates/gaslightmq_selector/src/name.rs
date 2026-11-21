@@ -48,17 +48,37 @@ impl SelectorName {
     /// it is empty, starts or ends with white space, or holds a control character or a format character.
     pub fn new(name: impl AsRef<str>) -> Result<Self, SelectorNameError> {
         let name = name.as_ref();
-        let input = || name.to_owned();
-        if name.is_empty() {
+        Self::check(name)?;
+        Ok(Self(name.into()))
+    }
+
+    /// Checks `text` against the [rule for names](Self#the-rule-for-names), and keeps nothing.
+    ///
+    /// Whatever else has a name takes it by this one rule, without building a selector name:
+    /// a rule and a preset do, and they say the same in an error of their own.
+    ///
+    /// ```
+    /// use gaslightmq_selector::prelude::*;
+    ///
+    /// assert_eq!(SelectorName::check("Order producers"), Ok(()));
+    /// assert_eq!(SelectorName::check(""), Err(SelectorNameError::Empty));
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// The [`SelectorNameError`] that says which part of the rule the text breaks.
+    pub fn check(text: &str) -> Result<(), SelectorNameError> {
+        let input = || text.to_owned();
+        if text.is_empty() {
             Err(SelectorNameError::Empty)
-        } else if name.trim() != name {
+        } else if text.trim() != text {
             Err(SelectorNameError::SurroundingWhiteSpace { input: input() })
-        } else if name.chars().any(char::is_control) {
+        } else if text.chars().any(char::is_control) {
             Err(SelectorNameError::ControlCharacter { input: input() })
-        } else if name.chars().any(is_format) {
+        } else if text.chars().any(is_format) {
             Err(SelectorNameError::FormatCharacter { input: input() })
         } else {
-            Ok(Self(name.into()))
+            Ok(())
         }
     }
 

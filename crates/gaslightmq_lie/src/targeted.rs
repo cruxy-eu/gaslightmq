@@ -55,7 +55,7 @@ impl TargetedLie {
     /// and reading rejects it with [`TargetedLieError::PartsNotAllowed`].
     ///
     /// Every target takes a lie.
-    /// A target always has a part, because a selector that matches no part does not match the call.
+    /// Every target is the whole call or at least one part, because a selector that matches no part does not match the call.
     pub fn new(lie: impl Into<LieDefinition>, target: Target) -> Self {
         let lie = lie.into();
         let target = if lie.kind().targets_whole_call() {

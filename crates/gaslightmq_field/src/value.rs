@@ -90,7 +90,8 @@ macro_rules! field_values {
         /// Why a text is not a value of a field.
         ///
         /// Every field has its own variant, with the name of the field and the error of the type that the field holds.
-        /// The message is the message of that error, which names the value: `topic name is empty`.
+        /// The message names the field, and then says what is wrong with the value: `topic: topic name is empty`.
+        /// The error it holds read the same text, so that error names the text.
         ///
         /// ```
         /// use gaslightmq_field::prelude::*;
@@ -100,9 +101,9 @@ macro_rules! field_values {
         /// assert_eq!(error.field(), Field::Topic);
         /// assert_eq!(
         ///     error,
-        ///     FieldValueError::Topic { error: TopicNameError::InvalidCharacter { character: '/', position: 6 } },
+        ///     FieldValueError::Topic { error: TopicNameError::InvalidCharacter { input: "orders/eu".to_owned(), character: '/', position: 6 } },
         /// );
-        /// assert_eq!(error.to_string(), "topic name has the invalid character '/' at position 6");
+        /// assert_eq!(error.to_string(), "topic: topic name \"orders/eu\" has the invalid character '/' at position 6");
         /// ```
         #[derive(Debug, Clone, PartialEq, Eq)]
         #[non_exhaustive]
@@ -125,7 +126,7 @@ macro_rules! field_values {
         impl fmt::Display for FieldValueError {
             fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
                 match self {
-                    $(FieldValueError::$variant { error } => fmt::Display::fmt(error, f),)*
+                    $(FieldValueError::$variant { error } => write!(f, "{}: {error}", self.field()),)*
                 }
             }
         }
@@ -483,6 +484,7 @@ mod tests {
             Field::Topic.parse_value("orders/eu"),
             Err(FieldValueError::Topic {
                 error: TopicNameError::InvalidCharacter {
+                    input: "orders/eu".to_owned(),
                     character: '/',
                     position: 6
                 }

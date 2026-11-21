@@ -44,7 +44,7 @@ impl FiredAction {
     /// What `action` does when its rule fires on `call`, where the rule's selector matched `target`.
     fn of<S: FieldSource + ?Sized>(action: &Action, call: &S, target: &Target) -> Result<FiredAction, IncidentError> {
         match action {
-            // Every target has a part, so every target takes the lie.
+            // Every target is the whole call or at least one part, so every target takes the lie.
             Action::Lie(lie) => Ok(FiredAction::Lie(lie.clone().on(target.clone()))),
             Action::Incident(incident) => {
                 let incidents = incident.resolve(&Self::subjects(call, target))?;

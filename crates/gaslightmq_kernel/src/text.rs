@@ -156,7 +156,11 @@ macro_rules! text_rule {
     (name, $error:ident, $value:ident, $max:expr) => {
         $crate::text::text_rule!(non_empty, $error, $value, $max);
         if let Some((position, character)) = $crate::text::invalid_character($value) {
-            return Err($error::InvalidCharacter { character, position });
+            return Err($error::InvalidCharacter {
+                input: $value.to_owned(),
+                character,
+                position,
+            });
         }
         if $crate::text::is_reserved($value) {
             return Err($error::Reserved {
@@ -193,7 +197,11 @@ macro_rules! text_error {
             TooLong { len: usize, max: usize },
             #[doc = concat!("The text has a character that Kafka does not allow in a ", $what, ".")]
             /// `position` counts characters from zero.
-            InvalidCharacter { character: char, position: usize },
+            InvalidCharacter {
+                input: String,
+                character: char,
+                position: usize,
+            },
             /// Kafka reserves the text: `.` and `..` are paths.
             Reserved { value: String },
         }
@@ -209,10 +217,14 @@ macro_rules! text_error {
                             len, max
                         )
                     }
-                    Self::InvalidCharacter { character, position } => write!(
+                    Self::InvalidCharacter {
+                        input,
+                        character,
+                        position,
+                    } => write!(
                         f,
-                        concat!($what, " has the invalid character {:?} at position {}"),
-                        character, position
+                        concat!($what, " {:?} has the invalid character {:?} at position {}"),
+                        input, character, position
                     ),
                     Self::Reserved { value } => write!(f, concat!($what, " cannot be {:?}"), value),
                 }
@@ -380,7 +392,11 @@ mod tests {
         ] {
             assert_eq!(
                 TopicName::new(value),
-                Err(TopicNameError::InvalidCharacter { character, position }),
+                Err(TopicNameError::InvalidCharacter {
+                    input: value.to_owned(),
+                    character,
+                    position
+                }),
                 "{value:?}"
             );
         }
@@ -404,6 +420,7 @@ mod tests {
         assert_eq!(
             GroupInstanceId::new("etl 0"),
             Err(GroupInstanceIdError::InvalidCharacter {
+                input: "etl 0".to_owned(),
                 character: ' ',
                 position: 3
             })
@@ -451,11 +468,12 @@ mod tests {
             ),
             (
                 TopicNameError::InvalidCharacter {
+                    input: "orders/eu".to_owned(),
                     character: '/',
                     position: 6,
                 }
                 .to_string(),
-                "topic name has the invalid character '/' at position 6",
+                "topic name \"orders/eu\" has the invalid character '/' at position 6",
             ),
             (
                 TopicNameError::Reserved { value: "..".into() }.to_string(),

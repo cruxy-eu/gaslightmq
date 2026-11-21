@@ -73,11 +73,17 @@ impl FromStr for Lifetime {
             // A text of digits that does not fit `u64` is not a count anyone can reach.
             digits.then(|| number.parse::<u64>().ok()).flatten()
         };
+        let count = |number: u64| {
+            Count::new(number).map_err(|error| LifetimeError::InvalidCount {
+                input: text.to_owned(),
+                error,
+            })
+        };
         if let Some(matches) = counted("matches", "match") {
-            return Ok(Lifetime::Matches(Count::new(matches)?));
+            return count(matches).map(Lifetime::Matches);
         }
         if let Some(firings) = counted("firings", "firing") {
-            return Ok(Lifetime::Firings(Count::new(firings)?));
+            return count(firings).map(Lifetime::Firings);
         }
         text.parse::<TimeSpan>()
             .map(Lifetime::Duration)
@@ -104,14 +110,14 @@ impl fmt::Display for Lifetime {
 /// Why a text is not a [`Lifetime`].
 ///
 /// A text that counts matches or firings has a count, and the error keeps what is wrong with that count.
-/// Its message is the message of the count's error.
+/// Its message names the whole text first, and then says what is wrong with the count.
 ///
 /// ```
 /// use gaslightmq_trigger::prelude::*;
 ///
 /// let error = "0 firings".parse::<Lifetime>().unwrap_err();
-/// assert_eq!(error, LifetimeError::InvalidCount { error: CountError::Zero });
-/// assert_eq!(error.to_string(), "a count is at least one");
+/// assert_eq!(error, LifetimeError::InvalidCount { input: "0 firings".to_owned(), error: CountError::Zero });
+/// assert_eq!(error.to_string(), "lifetime `0 firings`: a count is at least one");
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
@@ -119,7 +125,7 @@ pub enum LifetimeError {
     /// The text is not `until disarmed`, not a time span, and not a count of matches or firings.
     Malformed { input: String },
     /// The number of matches or firings is not a count.
-    InvalidCount { error: CountError },
+    InvalidCount { input: String, error: CountError },
 }
 
 impl fmt::Display for LifetimeError {
@@ -130,19 +136,13 @@ impl fmt::Display for LifetimeError {
                 "`{input}` is not a lifetime: expected `until disarmed`, a time span such as `30s`, \
                  or a count such as `100 matches` or `3 firings`"
             ),
-            Self::InvalidCount { error } => fmt::Display::fmt(error, f),
+            Self::InvalidCount { input, error } => write!(f, "lifetime `{input}`: {error}"),
         }
     }
 }
 
 /// The message is complete, so no variant has a source.
 impl std::error::Error for LifetimeError {}
-
-impl From<CountError> for LifetimeError {
-    fn from(error: CountError) -> Self {
-        Self::InvalidCount { error }
-    }
-}
 
 #[cfg(test)]
 mod tests {
@@ -219,11 +219,15 @@ mod tests {
 
     #[test]
     fn a_budget_of_zero_is_an_error() {
-        let zero = LifetimeError::InvalidCount {
-            error: CountError::Zero,
-        };
-        assert_eq!("0 matches".parse::<Lifetime>(), Err(zero.clone()));
-        assert_eq!("0 firings".parse::<Lifetime>(), Err(zero));
+        for text in ["0 matches", "0 firings"] {
+            assert_eq!(
+                text.parse::<Lifetime>(),
+                Err(LifetimeError::InvalidCount {
+                    input: text.to_owned(),
+                    error: CountError::Zero,
+                })
+            );
+        }
     }
 
     #[test]
@@ -237,8 +241,8 @@ mod tests {
              or a count such as `100 matches` or `3 firings`",
         );
         assert_eq!(
-            LifetimeError::from(CountError::Zero).to_string(),
-            "a count is at least one"
+            "0 firings".parse::<Lifetime>().unwrap_err().to_string(),
+            "lifetime `0 firings`: a count is at least one"
         );
     }
 
@@ -247,7 +251,7 @@ mod tests {
         use std::error::Error;
 
         let error = "0 matches".parse::<Lifetime>().unwrap_err();
-        assert_eq!(error.to_string(), CountError::Zero.to_string());
+        assert_eq!(error.to_string(), format!("lifetime `0 matches`: {}", CountError::Zero));
         assert!(error.source().is_none());
     }
 

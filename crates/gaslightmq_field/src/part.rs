@@ -100,7 +100,8 @@ text_form!(Part, PartError);
 /// Why a text is not a [`Part`].
 ///
 /// A part is a topic or a partition of a topic, and the error says which of the two the text failed to be.
-/// Its message is the message of that error.
+/// Its message says that a part is wrong, and then what is wrong with it.
+/// The error it holds read the same text, so that error names the text.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum PartError {
@@ -113,8 +114,8 @@ pub enum PartError {
 impl fmt::Display for PartError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::InvalidTopic { error } => fmt::Display::fmt(error, f),
-            Self::InvalidPartition { error } => fmt::Display::fmt(error, f),
+            Self::InvalidTopic { error } => write!(f, "part: {error}"),
+            Self::InvalidPartition { error } => write!(f, "part: {error}"),
         }
     }
 }
@@ -275,7 +276,7 @@ impl From<TopicPartition> for PartFields {
 ///
 /// A match always has a target with at least one part.
 /// A selector that matches no part does not match the call, which is what [`of_parts`](Self::of_parts) says.
-/// A [`PartSet`] always has a part, so no target is a target of nothing.
+/// A [`PartSet`] always has a part, so every target is the whole call or at least one part.
 ///
 /// ```
 /// use gaslightmq_field::prelude::*;
@@ -514,6 +515,7 @@ mod tests {
             "orders.eu/".parse::<Part>(),
             Err(PartError::InvalidPartition {
                 error: TopicPartitionError::InvalidPartition {
+                    input: "orders.eu/".to_owned(),
                     error: PartitionNumberError::Empty
                 }
             })

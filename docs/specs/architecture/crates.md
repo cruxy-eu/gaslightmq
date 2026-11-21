@@ -59,7 +59,9 @@ Two crates stand apart: the facade is plain `gaslightmq`, and the binary is `gmq
   Types may share their checks as private helpers.
 - **An error says everything in one message.**
   A file reader, the control plane and the UI show one line, and not a chain of causes.
-  A variant that holds another error writes that error into its own message, once.
+  A variant that holds another error names its own value first, and then writes that error, once.
+  It names the text it read too, when the other error read only a part of it:
+  ``lifetime `0 firings`: a count is at least one``.
   Its `source()` returns `None`, because a reporter that walks the chain would print the cause twice.
   The variant keeps the other error in a field, named `error`, for code that wants to look at it.
 

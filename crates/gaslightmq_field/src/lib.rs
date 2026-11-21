@@ -91,6 +91,8 @@
 //! The error holds only what can go wrong with that value.
 //! [`FieldValueError`] is the error of [`Field::parse_value`].
 //! It has a variant for each field, with the error of the type that the field holds.
+//! Its message names the field first: `topic: topic name is empty`.
+//! An error that holds another error always names its own value first, and then says what the other error says.
 //! The message of every error is complete, so no error has a [`source`](std::error::Error::source).
 //!
 //! # The `serde` feature

@@ -95,6 +95,7 @@ mod next_to_std_the_clock_and_the_kernel {
             }
             .to_string(),
             LifetimeError::InvalidCount {
+                input: "0 firings".into(),
                 error: CountError::Zero,
             }
             .to_string(),
@@ -155,7 +156,7 @@ fn the_prelude_holds_the_error_of_every_type() {
             "counters are per `rule` or per `session`, not per `connection`",
             "`forever` is not a lifetime: expected `until disarmed`, a time span such as `30s`, \
              or a count such as `100 matches` or `3 firings`",
-            "a count is at least one",
+            "lifetime `0 firings`: a count is at least one",
             "a dice key is not empty",
             "a counter key is not empty",
         ]
@@ -183,7 +184,7 @@ fn every_error_is_a_standard_error_with_a_complete_message() {
             "counters are per `rule` or per `session`, not per `connection`",
             "`forever` is not a lifetime: expected `until disarmed`, a time span such as `30s`, \
              or a count such as `100 matches` or `3 firings`",
-            "a count is at least one",
+            "lifetime `0 firings`: a count is at least one",
             "a dice key is not empty",
             "a counter key is not empty",
         ]

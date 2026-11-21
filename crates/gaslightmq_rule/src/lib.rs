@@ -30,7 +30,7 @@
 //! | Type | Error | What is wrong |
 //! |---|---|---|
 //! | [`RuleName`], [`PresetName`] | [`RuleNameError`], [`PresetNameError`] | The text breaks a part of the rule for names. |
-//! | [`RuleSet`] | [`RuleSetError`] | Two rules share a name, or no rule has a name. |
+//! | [`RuleSet`] | [`RuleSetError`] | Two rules share a name, or no rule has that name. |
 //! | [`PresetSet`] | [`PresetSetError`] | Two presets share a name. |
 //! | [`RuleState`] | [`RuleStateError`] | No state has this name, or a rule cannot leave its state this way. |
 //! | [`ResolvedRule`] | [`ResolvedRuleError`] | The rule names a selector or a preset that does not exist, or it could never work. |

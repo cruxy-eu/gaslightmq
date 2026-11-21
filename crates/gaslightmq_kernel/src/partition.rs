@@ -100,7 +100,15 @@ impl FromStr for TopicPartition {
         let (topic, partition) = text
             .rsplit_once('/')
             .ok_or_else(|| TopicPartitionError::Malformed { input: text.to_owned() })?;
-        Ok(Self::new(topic.parse()?, partition.parse()?))
+        let input = || text.to_owned();
+        Ok(Self::new(
+            topic
+                .parse()
+                .map_err(|error| TopicPartitionError::InvalidTopic { input: input(), error })?,
+            partition
+                .parse()
+                .map_err(|error| TopicPartitionError::InvalidPartition { input: input(), error })?,
+        ))
     }
 }
 
@@ -121,7 +129,7 @@ text_form!(TopicPartition, TopicPartitionError);
 /// Why a text is not a [`TopicPartition`].
 ///
 /// The text has two parts, and the error says which one is wrong.
-/// Its message is the message of that part's error.
+/// Its message names the whole text, and then says what is wrong with that part.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum TopicPartitionError {
@@ -130,9 +138,9 @@ pub enum TopicPartitionError {
     /// The text has no `/` between a topic and a partition.
     Malformed { input: String },
     /// The text before the last `/` is not a topic name.
-    InvalidTopic { error: TopicNameError },
+    InvalidTopic { input: String, error: TopicNameError },
     /// The text after the last `/` is not a partition number.
-    InvalidPartition { error: PartitionNumberError },
+    InvalidPartition { input: String, error: PartitionNumberError },
 }
 
 impl fmt::Display for TopicPartitionError {
@@ -142,26 +150,14 @@ impl fmt::Display for TopicPartitionError {
             Self::Malformed { input } => {
                 write!(f, "topic partition {input:?} does not have the form topic/partition")
             }
-            Self::InvalidTopic { error } => fmt::Display::fmt(error, f),
-            Self::InvalidPartition { error } => fmt::Display::fmt(error, f),
+            Self::InvalidTopic { input, error } => write!(f, "topic partition {input:?}: {error}"),
+            Self::InvalidPartition { input, error } => write!(f, "topic partition {input:?}: {error}"),
         }
     }
 }
 
 /// The message is complete, so no variant has a source.
 impl std::error::Error for TopicPartitionError {}
-
-impl From<TopicNameError> for TopicPartitionError {
-    fn from(error: TopicNameError) -> Self {
-        Self::InvalidTopic { error }
-    }
-}
-
-impl From<PartitionNumberError> for TopicPartitionError {
-    fn from(error: PartitionNumberError) -> Self {
-        Self::InvalidPartition { error }
-    }
-}
 
 /// An offset in one partition of a topic that the context names.
 ///
@@ -229,7 +225,15 @@ impl FromStr for PartitionOffset {
         let (partition, offset) = text
             .rsplit_once('@')
             .ok_or_else(|| PartitionOffsetError::Malformed { input: text.to_owned() })?;
-        Ok(Self::new(partition.parse()?, offset.parse()?))
+        let input = || text.to_owned();
+        Ok(Self::new(
+            partition
+                .parse()
+                .map_err(|error| PartitionOffsetError::InvalidPartition { input: input(), error })?,
+            offset
+                .parse()
+                .map_err(|error| PartitionOffsetError::InvalidOffset { input: input(), error })?,
+        ))
     }
 }
 
@@ -250,7 +254,7 @@ text_form!(PartitionOffset, PartitionOffsetError);
 /// Why a text is not a [`PartitionOffset`].
 ///
 /// The text has two parts, and the error says which one is wrong.
-/// Its message is the message of that part's error.
+/// Its message names the whole text, and then says what is wrong with that part.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum PartitionOffsetError {
@@ -259,9 +263,9 @@ pub enum PartitionOffsetError {
     /// The text has no `@` between a partition and an offset.
     Malformed { input: String },
     /// The text before the last `@` is not a partition number.
-    InvalidPartition { error: PartitionNumberError },
+    InvalidPartition { input: String, error: PartitionNumberError },
     /// The text after the last `@` is not an offset.
-    InvalidOffset { error: OffsetError },
+    InvalidOffset { input: String, error: OffsetError },
 }
 
 impl fmt::Display for PartitionOffsetError {
@@ -271,26 +275,14 @@ impl fmt::Display for PartitionOffsetError {
             Self::Malformed { input } => {
                 write!(f, "partition offset {input:?} does not have the form partition@offset")
             }
-            Self::InvalidPartition { error } => fmt::Display::fmt(error, f),
-            Self::InvalidOffset { error } => fmt::Display::fmt(error, f),
+            Self::InvalidPartition { input, error } => write!(f, "partition offset {input:?}: {error}"),
+            Self::InvalidOffset { input, error } => write!(f, "partition offset {input:?}: {error}"),
         }
     }
 }
 
 /// The message is complete, so no variant has a source.
 impl std::error::Error for PartitionOffsetError {}
-
-impl From<PartitionNumberError> for PartitionOffsetError {
-    fn from(error: PartitionNumberError) -> Self {
-        Self::InvalidPartition { error }
-    }
-}
-
-impl From<OffsetError> for PartitionOffsetError {
-    fn from(error: OffsetError) -> Self {
-        Self::InvalidOffset { error }
-    }
-}
 
 /// An offset in one partition of one topic: the place of one record in a cluster.
 ///
@@ -384,9 +376,19 @@ impl FromStr for TopicPartitionOffset {
         let malformed = || TopicPartitionOffsetError::Malformed { input: text.to_owned() };
         let (topic_partition, offset) = text.rsplit_once('@').ok_or_else(malformed)?;
         let (topic, partition) = topic_partition.rsplit_once('/').ok_or_else(malformed)?;
+        let input = || text.to_owned();
         Ok(Self::new(
-            TopicPartition::new(topic.parse()?, partition.parse()?),
-            offset.parse()?,
+            TopicPartition::new(
+                topic
+                    .parse()
+                    .map_err(|error| TopicPartitionOffsetError::InvalidTopic { input: input(), error })?,
+                partition
+                    .parse()
+                    .map_err(|error| TopicPartitionOffsetError::InvalidPartition { input: input(), error })?,
+            ),
+            offset
+                .parse()
+                .map_err(|error| TopicPartitionOffsetError::InvalidOffset { input: input(), error })?,
         ))
     }
 }
@@ -408,7 +410,7 @@ text_form!(TopicPartitionOffset, TopicPartitionOffsetError);
 /// Why a text is not a [`TopicPartitionOffset`].
 ///
 /// The text has three parts, and the error says which one is wrong.
-/// Its message is the message of that part's error.
+/// Its message names the whole text, and then says what is wrong with that part.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum TopicPartitionOffsetError {
@@ -417,11 +419,11 @@ pub enum TopicPartitionOffsetError {
     /// The text has no `@` before an offset, or no `/` between a topic and a partition.
     Malformed { input: String },
     /// The text before the last `/` is not a topic name.
-    InvalidTopic { error: TopicNameError },
+    InvalidTopic { input: String, error: TopicNameError },
     /// The text between the last `/` and the last `@` is not a partition number.
-    InvalidPartition { error: PartitionNumberError },
+    InvalidPartition { input: String, error: PartitionNumberError },
     /// The text after the last `@` is not an offset.
-    InvalidOffset { error: OffsetError },
+    InvalidOffset { input: String, error: OffsetError },
 }
 
 impl fmt::Display for TopicPartitionOffsetError {
@@ -432,33 +434,15 @@ impl fmt::Display for TopicPartitionOffsetError {
                 f,
                 "topic partition offset {input:?} does not have the form topic/partition@offset"
             ),
-            Self::InvalidTopic { error } => fmt::Display::fmt(error, f),
-            Self::InvalidPartition { error } => fmt::Display::fmt(error, f),
-            Self::InvalidOffset { error } => fmt::Display::fmt(error, f),
+            Self::InvalidTopic { input, error } => write!(f, "topic partition offset {input:?}: {error}"),
+            Self::InvalidPartition { input, error } => write!(f, "topic partition offset {input:?}: {error}"),
+            Self::InvalidOffset { input, error } => write!(f, "topic partition offset {input:?}: {error}"),
         }
     }
 }
 
 /// The message is complete, so no variant has a source.
 impl std::error::Error for TopicPartitionOffsetError {}
-
-impl From<TopicNameError> for TopicPartitionOffsetError {
-    fn from(error: TopicNameError) -> Self {
-        Self::InvalidTopic { error }
-    }
-}
-
-impl From<PartitionNumberError> for TopicPartitionOffsetError {
-    fn from(error: PartitionNumberError) -> Self {
-        Self::InvalidPartition { error }
-    }
-}
-
-impl From<OffsetError> for TopicPartitionOffsetError {
-    fn from(error: OffsetError) -> Self {
-        Self::InvalidOffset { error }
-    }
-}
 
 #[cfg(test)]
 mod tests {
@@ -583,12 +567,14 @@ mod tests {
         assert_eq!(
             "/3".parse::<TopicPartition>(),
             Err(TopicPartitionError::InvalidTopic {
+                input: "/3".to_owned(),
                 error: TopicNameError::Empty
             })
         );
         assert_eq!(
             "orders.eu/".parse::<TopicPartition>(),
             Err(TopicPartitionError::InvalidPartition {
+                input: "orders.eu/".to_owned(),
                 error: PartitionNumberError::Empty
             })
         );
@@ -599,7 +585,9 @@ mod tests {
         assert_eq!(
             "orders.*/3".parse::<TopicPartition>(),
             Err(TopicPartitionError::InvalidTopic {
+                input: "orders.*/3".to_owned(),
                 error: TopicNameError::InvalidCharacter {
+                    input: "orders.*".to_owned(),
                     character: '*',
                     position: 7
                 }
@@ -608,7 +596,9 @@ mod tests {
         assert_eq!(
             "orders/eu/3".parse::<TopicPartition>(),
             Err(TopicPartitionError::InvalidTopic {
+                input: "orders/eu/3".to_owned(),
                 error: TopicNameError::InvalidCharacter {
+                    input: "orders/eu".to_owned(),
                     character: '/',
                     position: 6
                 }
@@ -617,18 +607,21 @@ mod tests {
         assert_eq!(
             "orders.eu/x".parse::<TopicPartition>(),
             Err(TopicPartitionError::InvalidPartition {
+                input: "orders.eu/x".to_owned(),
                 error: PartitionNumberError::NotANumber { input: "x".into() }
             })
         );
         assert_eq!(
             "orders.eu/-1".parse::<TopicPartition>(),
             Err(TopicPartitionError::InvalidPartition {
+                input: "orders.eu/-1".to_owned(),
                 error: PartitionNumberError::Negative { value: -1 }
             })
         );
         assert_eq!(
             "orders.eu/3@42".parse::<TopicPartition>(),
             Err(TopicPartitionError::InvalidPartition {
+                input: "orders.eu/3@42".to_owned(),
                 error: PartitionNumberError::NotANumber { input: "3@42".into() }
             })
         );
@@ -682,30 +675,35 @@ mod tests {
         assert_eq!(
             "@42".parse::<PartitionOffset>(),
             Err(PartitionOffsetError::InvalidPartition {
+                input: "@42".to_owned(),
                 error: PartitionNumberError::Empty
             })
         );
         assert_eq!(
             "3@".parse::<PartitionOffset>(),
             Err(PartitionOffsetError::InvalidOffset {
+                input: "3@".to_owned(),
                 error: OffsetError::Empty
             })
         );
         assert_eq!(
             "3@-1".parse::<PartitionOffset>(),
             Err(PartitionOffsetError::InvalidOffset {
+                input: "3@-1".to_owned(),
                 error: OffsetError::Negative { value: -1 }
             })
         );
         assert_eq!(
             "x@42".parse::<PartitionOffset>(),
             Err(PartitionOffsetError::InvalidPartition {
+                input: "x@42".to_owned(),
                 error: PartitionNumberError::NotANumber { input: "x".into() }
             })
         );
         assert_eq!(
             "orders.eu/3@42".parse::<PartitionOffset>(),
             Err(PartitionOffsetError::InvalidPartition {
+                input: "orders.eu/3@42".to_owned(),
                 error: PartitionNumberError::NotANumber {
                     input: "orders.eu/3".into()
                 }
@@ -794,7 +792,9 @@ mod tests {
         assert_eq!(
             "orders eu/3@42".parse::<TopicPartitionOffset>(),
             Err(TopicPartitionOffsetError::InvalidTopic {
+                input: "orders eu/3@42".to_owned(),
                 error: TopicNameError::InvalidCharacter {
+                    input: "orders eu".to_owned(),
                     character: ' ',
                     position: 6
                 }
@@ -803,25 +803,30 @@ mod tests {
         assert_eq!(
             "orders.eu/x@42".parse::<TopicPartitionOffset>(),
             Err(TopicPartitionOffsetError::InvalidPartition {
+                input: "orders.eu/x@42".to_owned(),
                 error: PartitionNumberError::NotANumber { input: "x".into() }
             })
         );
         assert_eq!(
             "orders.eu/3@latest".parse::<TopicPartitionOffset>(),
             Err(TopicPartitionOffsetError::InvalidOffset {
+                input: "orders.eu/3@latest".to_owned(),
                 error: OffsetError::NotANumber { input: "latest".into() }
             })
         );
         assert_eq!(
             "orders.eu/3@-1".parse::<TopicPartitionOffset>(),
             Err(TopicPartitionOffsetError::InvalidOffset {
+                input: "orders.eu/3@-1".to_owned(),
                 error: OffsetError::Negative { value: -1 }
             })
         );
         assert_eq!(
             "orders@eu/3@42".parse::<TopicPartitionOffset>(),
             Err(TopicPartitionOffsetError::InvalidTopic {
+                input: "orders@eu/3@42".to_owned(),
                 error: TopicNameError::InvalidCharacter {
+                    input: "orders@eu".to_owned(),
                     character: '@',
                     position: 6
                 }
@@ -839,7 +844,7 @@ mod tests {
     }
 
     #[test]
-    fn the_error_of_a_position_says_which_part_is_wrong_once() {
+    fn the_error_of_a_position_names_the_text_and_says_which_part_is_wrong_once() {
         use std::error::Error;
 
         let cases: [(Box<dyn Error>, &str); 6] = [
@@ -849,7 +854,7 @@ mod tests {
             ),
             (
                 Box::new("orders eu/3".parse::<TopicPartition>().unwrap_err()),
-                "topic name has the invalid character ' ' at position 6",
+                "topic partition \"orders eu/3\": topic name \"orders eu\" has the invalid character ' ' at position 6",
             ),
             (
                 Box::new("3".parse::<PartitionOffset>().unwrap_err()),
@@ -857,7 +862,7 @@ mod tests {
             ),
             (
                 Box::new("3@-1".parse::<PartitionOffset>().unwrap_err()),
-                "offset cannot be negative: -1",
+                "partition offset \"3@-1\": offset cannot be negative: -1",
             ),
             (
                 Box::new("orders.eu@42".parse::<TopicPartitionOffset>().unwrap_err()),
@@ -865,7 +870,7 @@ mod tests {
             ),
             (
                 Box::new("orders.eu/x@42".parse::<TopicPartitionOffset>().unwrap_err()),
-                "partition number is not a number: \"x\"",
+                "topic partition offset \"orders.eu/x@42\": partition number is not a number: \"x\"",
             ),
         ];
 

@@ -188,6 +188,7 @@ mod tests {
         assert_eq!(
             GroupInstanceId::new("etl 0"),
             Err(GroupInstanceIdError::InvalidCharacter {
+                input: "etl 0".to_owned(),
                 character: ' ',
                 position: 3
             })

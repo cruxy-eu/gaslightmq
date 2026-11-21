@@ -30,6 +30,7 @@
 //! A topic name is empty, too long, reserved or has an invalid character, and an offset is negative or too large.
 //! A type made of parts says which part is wrong, and keeps the error of that part:
 //! [`TopicPartitionError::InvalidPartition`] holds a [`PartitionNumberError`].
+//! Its message names the whole text first, and then says what is wrong with the part.
 //! The message of every error is complete, so no error has a [`source`](std::error::Error::source).
 //!
 //! The [`prelude`] holds every type of the table and its error.
@@ -50,11 +51,10 @@
 //!
 //! // A value that breaks the rule never becomes a value object.
 //! assert!(TopicName::new("orders/eu").is_err());
-//! assert_eq!(TopicName::new("orders/eu").unwrap_err().to_string(), "topic name has the invalid character '/' at position 6");
-//! assert_eq!(
-//!     "orders.eu/-1".parse::<TopicPartition>(),
-//!     Err(TopicPartitionError::InvalidPartition { error: PartitionNumberError::Negative { value: -1 } }),
-//! );
+//! assert_eq!(TopicName::new("orders/eu").unwrap_err().to_string(), "topic name \"orders/eu\" has the invalid character '/' at position 6");
+//! let error = "orders.eu/-1".parse::<TopicPartition>().unwrap_err();
+//! assert!(matches!(error, TopicPartitionError::InvalidPartition { .. }));
+//! assert_eq!(error.to_string(), "topic partition \"orders.eu/-1\": partition number cannot be negative: -1");
 //! # Ok::<(), Box<dyn std::error::Error>>(())
 //! ```
 //!

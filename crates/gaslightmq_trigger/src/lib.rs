@@ -128,17 +128,16 @@
 //!
 //! A type made of parts says which part is wrong, and keeps the error of that part:
 //! [`LifetimeError::InvalidCount`] holds a [`CountError`].
+//! Its message names the whole text first, and then says what is wrong with the part.
 //! The message of every error is complete, so no error has a [`source`](std::error::Error::source).
 //!
 //! ```
 //! use gaslightmq_trigger::prelude::*;
 //!
 //! assert_eq!(Count::new(0), Err(CountError::Zero));
-//! assert_eq!(
-//!     "0 firings".parse::<Lifetime>(),
-//!     Err(LifetimeError::InvalidCount { error: CountError::Zero }),
-//! );
-//! assert_eq!("0 firings".parse::<Lifetime>().unwrap_err().to_string(), "a count is at least one");
+//! let error = "0 firings".parse::<Lifetime>().unwrap_err();
+//! assert_eq!(error, LifetimeError::InvalidCount { input: "0 firings".to_owned(), error: CountError::Zero });
+//! assert_eq!(error.to_string(), "lifetime `0 firings`: a count is at least one");
 //! ```
 //!
 //! # The `serde` feature

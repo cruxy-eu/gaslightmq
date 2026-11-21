@@ -339,7 +339,13 @@ impl FromStr for Endpoint {
             return Ok(Endpoint::Bootstrap);
         }
         match text.strip_prefix(Self::BROKER) {
-            Some(broker) => Ok(Endpoint::Broker(broker.parse()?)),
+            Some(broker) => broker
+                .parse()
+                .map(Endpoint::Broker)
+                .map_err(|error| EndpointError::InvalidBroker {
+                    input: text.to_owned(),
+                    error,
+                }),
             None => Err(EndpointError::Malformed { input: text.to_owned() }),
         }
     }
@@ -363,26 +369,20 @@ pub enum EndpointError {
     /// The text is not `bootstrap`, and it does not start with `broker` and one space.
     Malformed { input: String },
     /// The text after `broker` is not a broker ID.
-    InvalidBroker { error: BrokerIdError },
+    InvalidBroker { input: String, error: BrokerIdError },
 }
 
 impl fmt::Display for EndpointError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Malformed { input } => write!(f, "endpoint {input:?} does not have the form bootstrap or broker N"),
-            Self::InvalidBroker { error } => fmt::Display::fmt(error, f),
+            Self::InvalidBroker { input, error } => write!(f, "endpoint {input:?}: {error}"),
         }
     }
 }
 
 /// The message is complete, so no variant has a source.
 impl std::error::Error for EndpointError {}
-
-impl From<BrokerIdError> for EndpointError {
-    fn from(error: BrokerIdError) -> Self {
-        Self::InvalidBroker { error }
-    }
-}
 
 /// The client library of a connection, which is the value of the field `client.software`.
 ///
@@ -636,12 +636,14 @@ mod tests {
         assert_eq!(
             "broker -1".parse::<Endpoint>(),
             Err(EndpointError::InvalidBroker {
+                input: "broker -1".to_owned(),
                 error: BrokerIdError::Negative { value: -1 }
             })
         );
         assert_eq!(
             "broker  2".parse::<Endpoint>(),
             Err(EndpointError::InvalidBroker {
+                input: "broker  2".to_owned(),
                 error: BrokerIdError::NotANumber { input: " 2".to_owned() }
             })
         );

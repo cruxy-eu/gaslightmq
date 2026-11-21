@@ -81,12 +81,16 @@ impl TopicId {
     }
 
     /// The six bits that one character of the text form stands for.
-    fn sextet(character: char, position: usize) -> Result<u8, TopicIdError> {
+    fn sextet(text: &str, character: char, position: usize) -> Result<u8, TopicIdError> {
         let byte = u8::try_from(character).ok();
         (0u8..)
             .zip(ALPHABET)
             .find_map(|(index, &letter)| (Some(letter) == byte).then_some(index))
-            .ok_or(TopicIdError::InvalidCharacter { character, position })
+            .ok_or_else(|| TopicIdError::InvalidCharacter {
+                input: text.to_owned(),
+                character,
+                position,
+            })
     }
 }
 
@@ -132,7 +136,7 @@ impl FromStr for TopicId {
         let mut sextets = [0u8; TEXT_LEN];
         let mut count = 0;
         for (position, character) in text.chars().enumerate() {
-            let sextet = Self::sextet(character, position)?;
+            let sextet = Self::sextet(text, character, position)?;
             *sextets.get_mut(position).ok_or_else(malformed)? = sextet;
             count += 1;
         }
@@ -191,7 +195,11 @@ pub enum TopicIdError {
     Empty,
     /// The text has a character that URL-safe base64 does not have.
     /// `position` counts characters from zero.
-    InvalidCharacter { character: char, position: usize },
+    InvalidCharacter {
+        input: String,
+        character: char,
+        position: usize,
+    },
     /// The text is not 22 characters of URL-safe base64 that stand for 16 bytes.
     Malformed { input: String },
     /// The UUID is all zeros, which Kafka writes for "no topic ID".
@@ -202,10 +210,14 @@ impl fmt::Display for TopicIdError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Empty => f.write_str("topic ID is empty"),
-            Self::InvalidCharacter { character, position } => {
+            Self::InvalidCharacter {
+                input,
+                character,
+                position,
+            } => {
                 write!(
                     f,
-                    "topic ID has the invalid character {character:?} at position {position}"
+                    "topic ID {input:?} has the invalid character {character:?} at position {position}"
                 )
             }
             Self::Malformed { input } => write!(f, "topic ID {input:?} does not have the form {TEXT_FORM}"),
@@ -251,6 +263,7 @@ mod tests {
         assert_eq!(
             TopicName::new("orders.*"),
             Err(TopicNameError::InvalidCharacter {
+                input: "orders.*".to_owned(),
                 character: '*',
                 position: 7
             })
@@ -404,7 +417,11 @@ mod tests {
         ] {
             assert_eq!(
                 text.parse::<TopicId>(),
-                Err(TopicIdError::InvalidCharacter { character, position }),
+                Err(TopicIdError::InvalidCharacter {
+                    input: text.to_owned(),
+                    character,
+                    position
+                }),
                 "{text:?}"
             );
         }
@@ -431,10 +448,11 @@ mod tests {
             (TopicIdError::Empty, "topic ID is empty"),
             (
                 TopicIdError::InvalidCharacter {
+                    input: "Zm9+".into(),
                     character: '+',
                     position: 3,
                 },
-                "topic ID has the invalid character '+' at position 3",
+                "topic ID \"Zm9+\" has the invalid character '+' at position 3",
             ),
             (
                 TopicIdError::Malformed { input: "Zm9v".into() },

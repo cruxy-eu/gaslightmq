@@ -26,8 +26,8 @@ macro_rules! name {
             pub fn new(name: impl AsRef<str>) -> Result<Self, $error> {
                 let name = name.as_ref();
                 // A selector name has the one rule for names, and its error has a variant for every part of it.
-                match SelectorName::new(name) {
-                    Ok(_) => Ok(Self(name.into())),
+                match SelectorName::check(name) {
+                    Ok(()) => Ok(Self(name.into())),
                     Err(SelectorNameError::Empty) => Err($error::Empty),
                     Err(SelectorNameError::SurroundingWhiteSpace { input }) => {
                         Err($error::SurroundingWhiteSpace { input })

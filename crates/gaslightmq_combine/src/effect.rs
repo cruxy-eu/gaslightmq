@@ -7,7 +7,7 @@ use gaslightmq_lie::prelude::*;
 
 /// Which lie won each target, among lies that conflict there.
 ///
-/// An [`StageEffect`] holds one for the refusals of its stage, and one for every aspect that a rewrite changes.
+/// A [`StageEffect`] holds one for the refusals of its stage, and one for every aspect that a rewrite changes.
 /// Either one lie holds the whole call, or lies hold parts of it, and never both:
 /// a lie on the whole call is one target, so it wins or loses all of it.
 ///

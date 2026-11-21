@@ -464,7 +464,7 @@ pub enum ConditionError {
 impl fmt::Display for ConditionError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::InvalidValue { error } => write!(f, "{}: {error}", error.field()),
+            Self::InvalidValue { error } => fmt::Display::fmt(error, f),
         }
     }
 }

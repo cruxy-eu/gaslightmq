@@ -97,6 +97,7 @@ mod next_to_the_others {
             Box::new(ClientHostError::Malformed { input: input() }),
             Box::new(EndpointError::Malformed { input: input() }),
             Box::new(EndpointError::InvalidBroker {
+                input: "broker -1".to_owned(),
                 error: BrokerIdError::Negative { value: -1 },
             }),
             Box::new(ClientSoftwareError::Malformed { input: input() }),
@@ -170,7 +171,7 @@ fn the_prelude_names_the_error_of_every_type() {
             "client address \"x\" does not have the form an IP address and a port, such as 10.0.4.27:51459",
             "client host \"x\" does not have the form an IP address, such as 10.0.4.27",
             "endpoint \"x\" does not have the form bootstrap or broker N",
-            "broker ID cannot be negative: -1",
+            "endpoint \"broker -1\": broker ID cannot be negative: -1",
             "client software \"x\" does not have the form a name and a version, such as librdkafka 2.6.1",
             "API version \"x\" does not have the form a whole number",
             "API version 40000 is not between 0 and 32767",
@@ -178,9 +179,9 @@ fn the_prelude_names_the_error_of_every_type() {
             "acks 40000 is not between -32768 and 32767",
             "unknown outcome: \"x\"",
             "latency \"x\" does not have the form a whole number and a unit, such as 14ms",
-            "topic name is empty",
-            "topic partition \"x\" does not have the form topic/partition",
-            "topic name is empty",
+            "part: topic name is empty",
+            "part: topic partition \"x\" does not have the form topic/partition",
+            "topic: topic name is empty",
             "a target needs at least one part",
         ]
     );
