@@ -44,7 +44,7 @@ Rust edition 2024, native async traits and workspace dependency versions.
 
 ```mermaid
 flowchart BT
-  V["Vocabulary<br/>field · clock · wire · lie · event · call"]
+  V["Vocabulary<br/>kernel · field · clock · wire · lie · event · call"]
   T["Targeting and injection<br/>selector · trigger · rule · combine · wire_edit · lie_*"]
   P["Session and pipeline<br/>session · pipeline"]
   S["Scenarios<br/>scenario"]
@@ -93,7 +93,8 @@ Every other crate speaks in them.
 
 | Crate | Holds | Depends on |
 |---|---|---|
-| `field` | The [field vocabulary](../domains/targeting.md#fields): field names, values, and the `FieldSource` trait that a live call and a recorded call both implement. This is the shared kernel of the town plan. | — |
+| `kernel` | The value objects of Kafka: topic names and IDs, partition numbers, offsets, positions such as `orders.eu/3`, broker IDs, epochs, and the IDs of clients, groups and producers. Each type only holds valid values. | — |
+| `field` | The [field vocabulary](../domains/targeting.md#fields): field names, values, and the `FieldSource` trait that a live call and a recorded call both implement. Every district of the town plan [shares this vocabulary](../townplan/README.md#targeting-is-a-shared-kernel). | — |
 | `clock` | The [clock](README.md#clock): a `Clock` trait, the virtual clock, and instants that do not come from the system. | — |
 | `wire` | The Kafka codec: frames, headers, lazily decoded bodies and record batches. | — |
 | `lie` | The [lie](../domains/lies-and-events.md#lies) vocabulary: kind, stage, target, combination class, the `Lie` trait, and the effect a lie asks the pipeline for. | `field`, `wire` |
@@ -374,6 +375,7 @@ It reuses the engine's own logic instead of a second implementation in the front
 
 | Crate | The UI uses it to |
 |---|---|
+| `kernel` | Check and show topic names, partitions and offsets with the engine's own types. |
 | `field`, `selector` | Highlight the recorded calls a draft selector matches, while someone types. |
 | `call` | Render verdicts and explanations. |
 | `lie`, `event`, `rule`, `trigger`, `scenario` | Edit definitions with the engine's own types and validation. |
@@ -401,7 +403,7 @@ The crates arrive in the order the [first version](../README.md#first-version) n
 
 | Step | Crates | Result |
 |---|---|---|
-| 1 | `field`, `clock`, `wire`, `selector`, `lie`, `trigger`, `rule`, `combine` | Rules evaluate against hand-written calls in tests. |
+| 1 | `kernel`, `field`, `clock`, `wire`, `selector`, `lie`, `trigger`, `rule`, `combine` | Rules evaluate against hand-written calls in tests. |
 | 2 | `wire_edit`, `lie_refusal`, `session`, `call`, `pipeline` | The pipeline runs in tests, with partial refusals and explanations. |
 | 3 | `event`, `environment`, `backend`, `overlay`, `backend_upstream`, `listener`, `engine` | A proxy that lies. |
 | 4 | `host`, `control_api`, `control_server`, `control_client`, `traffic`, `index`, `surface`, `quick_inject`, `ui` | The UI with live traffic, rules, pads and ⌘K. |

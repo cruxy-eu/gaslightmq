@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/gaslightmq_clock", "crates/gaslightmq_wire", "crates/gaslightmq_kafka_client/*"]
+members = ["crates/gaslightmq_clock", "crates/gaslightmq_kernel", "crates/gaslightmq_wire", "crates/gaslightmq_kafka_client/*"]
 resolver = "2"
 
 [workspace.package]
