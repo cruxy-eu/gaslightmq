@@ -43,16 +43,17 @@ flowchart BT
   T["Targeting and injection<br/>selector · trigger · rule · combine · wire-edit · lie-*"]
   P["Session and pipeline<br/>session · pipeline"]
   S["Scenarios<br/>scenario"]
-  O["Observation<br/>traffic · index · recording"]
-  W["World and backends<br/>backend · world · sim-* · overlay"]
-  F["Workspace<br/>workspace"]
+  O["Observation<br/>journal · traffic · index · recording"]
+  W["World and backends<br/>backend · virtual-log · world · sim-* · broker · overlay"]
+  F["Workspace<br/>environment · workspace"]
   C["Control<br/>surface · quick-inject · control-api · control-client"]
-  IO["IO edge<br/>engine · backend-upstream · backend-simulated · workspace-fs · control-server"]
+  IO["IO edge<br/>listener · engine · host · backend-upstream · workspace-fs · control-server"]
   A["Applications<br/>gmq · ui · test · testcontainers"]
 
   T --> V
   P --> T
   S --> T
+  S --> O
   O --> V
   O --> T
   W --> V
@@ -104,7 +105,7 @@ Every other crate speaks in them.
 | `wire-edit` | Surgery on requests and responses: remove partitions, merge responses, synthesize an error response for any API, map topic IDs to names. | `wire` |
 | `lie-refusal` | Refusals for every API, before forwarding and after the response. | `lie`, `wire-edit` |
 | `lie-topology` | Rewrites of Metadata, `FindCoordinator` and `DescribeCluster`. | `lie`, `wire-edit` |
-| `lie-data` | Altered, dropped, duplicated, reordered and corrupted records. | `lie`, `wire-edit` |
+| `lie-data` | Altered, dropped, duplicated, reordered and corrupted records. | `lie`, `wire-edit`, `schema` |
 | `lie-progress` | Rewrites of watermarks, log start offsets and committed offsets. | `lie`, `wire-edit` |
 | `lie-config` | Rewrites of `DescribeConfigs` responses. | `lie`, `wire-edit` |
 
@@ -119,7 +120,7 @@ Every other crate speaks in them.
 
 | Crate | Holds | Depends on |
 |---|---|---|
-| `scenario` | The [scenario](../domains/scenarios.md) definition, modes as priority orders, the step machine of a Sequence, the live set and capture. It consumes call records and time, and it emits arm and disarm commands. | `rule`, `trigger`, `call`, `event`, `clock` |
+| `scenario` | The [scenario](../domains/scenarios.md) definition, modes as priority orders, the step machine of a Sequence, the live set and capture. It consumes call records, journal entries and time, and it emits arm and disarm commands. | `rule`, `trigger`, `call`, `journal`, `event`, `clock` |
 
 ### Observation
 
@@ -127,19 +128,23 @@ Every other crate speaks in them.
 |---|---|---|
 | `traffic` | The live window of recent calls, subscriptions by selector, and statistics per rule and per API. | `call`, `selector` |
 | `index` | The [index](../domains/observation.md#index): facets, counts under the active filters, suggested patterns. | `call`, `selector` |
-| `recording` | The [recording](storage.md#recordings) format: append-only chunks, metadata-only mode, a reader and a writer over `std::io`. | `call`, `wire` |
+| `journal` | The [journal](../domains/observation.md#journal): its entries, and the window of recent entries the engine keeps in memory. | `event`, `clock` |
+| `recording` | The [recording](storage.md#recordings) format: append-only chunks with summaries, calls and journal entries, metadata-only mode, blanked credentials, a reader and a writer over `std::io`. | `call`, `journal`, `wire` |
 
 ### World and backends
 
 | Crate | Holds | Depends on |
 |---|---|---|
 | `backend` | The [backend contract](backends.md#contract) as a trait: answer a request, apply an event, report endpoints. | `wire`, `event`, `clock` |
-| `world` | The [World](../domains/world.md): its state, world definitions, how each event changes it, and generators. | `wire`, `event`, `clock` |
+| `schema` | Record [formats and schemas](../domains/world.md#schemas): encode and decode JSON, Avro and Protobuf, one feature per format. | — |
+| `virtual-log` | [Virtual records](../domains/world.md#virtual-records): the record at a partition and offset as a pure function of the definition, templates, stable batches, and the mapping between offsets and time. | `wire`, `clock`, `schema` |
+| `schema-registry` | The built-in [schema registry](backends.md#schema-registry) and a client for a real one. This crate does IO. | `schema` |
+| `world` | The [World](../domains/world.md): its state, world definitions, how each event changes it, and where each topic's records come from. | `wire`, `event`, `clock`, `virtual-log` |
 | `world-seed` | Seeding a world definition from a recording. | `world`, `index`, `recording` |
 | `sim-log` | Produce, Fetch, offsets and idempotent producers against the World. | `world`, `wire` |
 | `sim-group` | Group coordination against the World, for the classic and the consumer protocol. | `world`, `wire`, `clock` |
 | `overlay` | The Upstream [overlay](backends.md#overlay): address translation, emulated events and sessionless Fetch. It rewrites requests and responses, and it opens no connection. | `wire`, `wire-edit`, `event` |
-| `backend-simulated` | The Simulated backend: routes each request to a `sim-*` crate and applies events to the World. | `backend`, `world`, `sim-log`, `sim-group` |
+| `broker` | The broker instance as a state machine: it routes each request to a `sim-*` crate, applies events to the World and owns the virtual clock. It implements the backend contract, so a proxy calls it directly. | `backend`, `world`, `sim-log`, `sim-group`, `clock` |
 | `backend-upstream` | The Upstream backend: connections to the real cluster, with the overlay around them. This crate does IO. | `backend`, `overlay` |
 
 Transactions arrive later as `sim-txn`, next to `sim-log` and `sim-group`.
@@ -148,8 +153,9 @@ Transactions arrive later as `sim-txn`, next to `sim-log` and `sim-group`.
 
 | Crate | Holds | Depends on |
 |---|---|---|
-| `workspace` | The whole set of definitions as one model: cross-reference validation, renames that cascade, and the YAML layout of the [workspace](storage.md#workspace). It works on file contents, not on files. | `selector`, `lie`, `event`, `rule`, `scenario`, `surface`, `world` |
-| `workspace-fs` | Loading, watching and writing back. This crate does IO. | `workspace` |
+| `environment` | [Environments](storage.md#environments), [secret references](storage.md#secrets), and the order in which flags, variables and files set a value. It never reads a secret. | — |
+| `workspace` | The whole set of definitions as one model: cross-reference validation, renames that cascade, and the YAML layout of the [workspace](storage.md#workspace). It works on file contents, not on files. | `selector`, `lie`, `event`, `rule`, `scenario`, `surface`, `world`, `environment` |
+| `workspace-fs` | Loading, watching and writing back, the scratch file, and reading the files that secret references name. This crate does IO. | `workspace` |
 
 ### Control
 
@@ -158,20 +164,22 @@ Transactions arrive later as `sim-txn`, next to `sim-log` and `sim-group`.
 | `surface` | [Pad layouts](../domains/control-surfaces.md#pad-layout), layers, pads as positions, the encoder mapping, and the intents a surface sends. | `rule` |
 | `hardware-push2` | The Push 2 mapping: controller messages to surface intents, and rule state back to pad colours. | `surface` |
 | `quick-inject` | The ⌘K sentence parser: text to a rule definition, with completions. | `selector`, `lie`, `rule` |
-| `control-api` | The [control plane](control-plane.md) as types: resources, commands and stream messages. | `call`, `rule`, `scenario`, `selector`, `surface`, `world`, `event` |
+| `control-api` | The [control plane](control-plane.md) as types: resources, commands and stream messages. | `call`, `journal`, `rule`, `scenario`, `selector`, `surface`, `world`, `event`, `environment` |
 | `control-client` | A client for the control plane, for native targets and for WebAssembly. | `control-api` |
-| `control-server` | The HTTP and WebSocket server in front of the engine. This crate does IO. | `engine`, `control-api` |
+| `control-server` | The HTTP and WebSocket server in front of the host. This crate does IO. | `host`, `control-api` |
 
 ### Runtime and applications
 
 | Crate | Holds | Depends on |
 |---|---|---|
-| `engine` | The runtime: listeners, one task per session that drives a pipeline, the rule store, the scenario runner, the event bus, the recorder and the indexer. This crate does IO. | `pipeline`, `session`, `rule`, `scenario`, `traffic`, `index`, `recording`, `backend`, `workspace`, `clock` |
+| `engine` | The runtime of one proxy: one task per session that drives a pipeline, the rule store, the scenario runner, the event bus, the journal, the recorder and the indexer. This crate does IO. | `pipeline`, `session`, `rule`, `scenario`, `journal`, `traffic`, `index`, `recording`, `backend`, `listener`, `workspace`, `environment`, `clock` |
 | `ui` | The web UI, a Dioxus application. | `control-client`, `surface`, `hardware-push2`, `quick-inject`, `selector`, `call` |
-| `test` | The test library: start an engine, activate a scenario, assert on the recording. | `engine`, `control-client`, `backend-simulated`, `backend-upstream` |
+| `listener` | Kafka on a socket: accept connections, frame bytes, and drive whatever handles a connection. A proxy's pipeline and a broker alone both sit behind it. This crate does IO. | `wire`, `clock` |
+| `host` | One process with several [environments](storage.md#several-environments-in-one-process): it starts and stops proxies and brokers, and shares the workspace and the control plane between them. This crate does IO. | `engine`, `broker`, `listener`, `backend-upstream`, `workspace-fs`, `environment` |
+| `test` | The test library: create a proxy or a broker, activate a scenario, assert on the recording. | `host`, `control-client` |
 | `testcontainers` | A container module that starts GaslightMQ next to a test. | `control-client` |
-| `gaslightmq` | The facade crate: it re-exports what library users need. | The public crates |
-| `gmq` | The binary: `gmq proxy`, `gmq broker` and `gmq run`. | `engine`, `backend-upstream`, `backend-simulated`, `control-server`, `workspace-fs` |
+| `gaslightmq` | The facade crate: `Proxy`, `Broker` and `Host`, and re-exports of what library users need. | The public crates |
+| `gmq` | The binary: `gmq proxy`, `gmq broker`, `gmq start` and `gmq run`. | `host`, `control-server` |
 
 ## The pipeline is sans-IO
 
@@ -223,6 +231,11 @@ The same interface serves three drivers:
 
 Replay makes every recording a regression test for the pipeline.
 
+A proxy in front of a broker needs no socket between the two.
+The engine takes the pipeline's `Forward` and calls the `broker` crate directly,
+and the broker's answer comes back as `BackendAnswered`.
+Both state machines run on one virtual clock, so a run is reproducible down to the order of events.
+
 The other sans-IO crates follow the same pattern.
 `scenario` consumes call records and time, and returns arm and disarm commands.
 `overlay` and the `sim-*` crates consume a request and return a response.
@@ -264,7 +277,7 @@ It reuses the engine's own logic instead of a second implementation in the front
 | `lie`, `event`, `rule`, `trigger`, `scenario` | Edit definitions with the engine's own types and validation. |
 | `quick-inject` | Parse and preview a ⌘K sentence without a round trip. |
 | `surface`, `hardware-push2` | Turn pad presses and controller messages into intents. |
-| `world` | Render the World view. |
+| `virtual-log`, `world` | Render the World view, and preview the record a template gives at any offset. |
 | `control-api`, `control-client` | Talk to the engine. |
 
 These crates stay free of threads, files and sockets.
@@ -286,8 +299,8 @@ The crates arrive in the order the [first version](../README.md#first-version) n
 |---|---|---|
 | 1 | `field`, `clock`, `wire`, `selector`, `lie`, `trigger`, `rule`, `combine` | Rules evaluate against hand-written calls in tests. |
 | 2 | `wire-edit`, `lie-refusal`, `session`, `call`, `pipeline` | The pipeline runs in tests, with partial refusals and explanations. |
-| 3 | `event`, `backend`, `overlay`, `backend-upstream`, `engine` | A proxy that lies. |
-| 4 | `control-api`, `control-server`, `control-client`, `traffic`, `index`, `surface`, `quick-inject`, `ui` | The UI with live traffic, rules, pads and ⌘K. |
-| 5 | `scenario`, `workspace`, `workspace-fs`, `recording`, `test`, `gmq` | Scenarios in files, recordings, and tests in CI. |
-| 6 | `world`, `sim-log`, `sim-group`, `backend-simulated`, `world-seed` | The fake broker. |
+| 3 | `event`, `environment`, `backend`, `overlay`, `backend-upstream`, `listener`, `engine` | A proxy that lies. |
+| 4 | `host`, `control-api`, `control-server`, `control-client`, `traffic`, `index`, `surface`, `quick-inject`, `ui` | The UI with live traffic, rules, pads and ⌘K. |
+| 5 | `journal`, `scenario`, `workspace`, `workspace-fs`, `recording`, `test`, `gmq` | Scenarios in files, recordings, and tests in CI. |
+| 6 | `schema`, `schema-registry`, `virtual-log`, `world`, `sim-log`, `sim-group`, `broker`, `world-seed` | The broker, alone and behind a proxy. |
 | 7 | `lie-topology`, `lie-data`, `lie-progress`, `lie-config`, `hardware-push2`, `sim-txn` | The remaining lies, hardware and transactions. |

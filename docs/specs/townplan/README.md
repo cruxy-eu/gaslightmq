@@ -59,12 +59,12 @@ flowchart TB
 | [Lies and events](../domains/lies-and-events.md) | Core | Truth, Lie, Stage, Target, Event, Consequence, Preset | Defines the vocabulary of everything GaslightMQ can make a client believe. |
 | [Targeting](../domains/targeting.md) | Supporting | Field, Learned field, Condition, Selector, Scope | Provides one predicate language for filtering, targeting and indexing. |
 | [Session](../domains/session.md) | Supporting | Session, Identity, Client context | Runs every connection and holds the state rules need per connection and per client. |
-| [Observation](../domains/observation.md) | Supporting | Call, Verdict, Explanation, Recording, Index | Shows what happened and why. |
-| [World](../domains/world.md) | Supporting | Cluster, Broker, Topic, Partition, Group, Producer, Generator | Holds the state of a simulated cluster. |
+| [Observation](../domains/observation.md) | Supporting | Call, Verdict, Explanation, Recording, Journal, Index | Shows what happened and why. |
+| [World](../domains/world.md) | Supporting | Cluster, Broker node, Topic, Partition, Group, Producer, Record source, Template | Holds the state of a simulated cluster. |
 | [Control surfaces](../domains/control-surfaces.md) | Supporting | View, Pad layout, Layer, Hardware mapping | Gives people fast ways to change rules and scenarios. |
-| [Backends](../architecture/backends.md) | Generic | Backend, Capability, Overlay, Emulation | Answers calls, either from a real cluster or from the World. |
+| [Backends](../architecture/backends.md) | Generic | Backend, Capability, Overlay, Emulation | Answers calls, either from a real cluster or from a broker with its World. |
 | Wire | Generic | Frame, Request, Response | Encodes and decodes the Kafka protocol. |
-| [Workspace](../architecture/storage.md) | Generic | Workspace, Recording file | Persists definitions and recordings. |
+| [Workspace](../architecture/storage.md) | Generic | Workspace, Environment, Secret reference, Scratch file, Recording file | Persists definitions and recordings, and configures where the engine runs. |
 
 The core districts are where GaslightMQ differs from every other Kafka tool.
 The supporting districts exist to serve the core.

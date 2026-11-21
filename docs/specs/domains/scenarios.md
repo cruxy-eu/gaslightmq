@@ -158,7 +158,8 @@ See [two evaluation passes](../architecture/request-pipeline.md#two-evaluation-p
 ## Capture
 
 Capture turns what someone played live into a Sequence scenario.
-While capture runs, the engine records every arm and disarm in the live set with a timestamp.
+While capture runs, the engine marks every arm and disarm in the live set.
+It reads them from the [journal](observation.md#journal), with their timestamps.
 Stopping capture produces a scenario with one step per change,
 ending on the time between changes.
 

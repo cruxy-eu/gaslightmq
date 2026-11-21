@@ -35,7 +35,7 @@ flowchart TB
 | **5 · Trigger** | Evaluates each matching rule's trigger: increments the rule's counter, rolls its die, checks its time window. A rule that fires takes from its budget, and does not fire when the budget is empty. |
 | **6 · Resolve** | Hands the events of firing rules to the scenario runner. Lets lies that do not conflict through. Resolves conflicts with the snapshot's priority order: the live set first, then the scenario's mode. Marks the losers as shadowed or pre-empted. |
 | **7 · Before forwarding** | Applies lies of the before-forwarding [stage](../domains/lies-and-events.md#stage). A silence or a hang-up ends the call. A delay holds the request back. A refusal removes its partitions from the request. A request rewrite changes the request. |
-| **8 · Backend** | Forwards what is left of the request upstream, or lets the World answer. The response is the truth. The backend does not see a request whose partitions were all refused. |
+| **8 · Backend** | Forwards what is left of the request to the real cluster, or hands it to the broker as a function call. The response is the truth. The backend does not see a request whose partitions were all refused. |
 | **9 · After the response** | Merges the refusals of stage 7 into the response. Runs the response pass. Applies rewrites and after-response refusals per target. Then applies modifiers: the summed delay and the maximum throttle. A hang-up at this stage closes the connection instead of sending. |
 | **10 · Send** | Writes the delivered response to the client, in the order the client sent its requests. |
 | **11 · Emit** | Publishes the call event with request, truth, delivered response, verdict and explanation. |

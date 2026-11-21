@@ -1,15 +1,24 @@
 # Target architecture
 
-GaslightMQ runs as one **engine**.
-The engine hosts sessions, evaluates rules, runs scenarios
-and answers calls through a backend.
-A single web UI controls the engine, whatever its backend.
+GaslightMQ is built from two kinds of instances.
+
+- A **proxy** stands in front of a cluster and decides what clients get to see.
+  It hosts sessions, evaluates rules, runs scenarios and lies.
+- A **broker** is a simulated Kafka cluster.
+  It holds a [World](../domains/world.md) and answers calls truthfully from it.
+  A broker never lies.
+
+A proxy's backend is a real cluster, or a broker in the same process.
+One process hosts any number of proxies and brokers,
+and a single web UI controls all of them.
+
+These documents call the runtime of one proxy the **engine**.
 
 | Document | What it covers |
 |---|---|
 | [Request pipeline](request-pipeline.md) | What happens to one call, stage by stage. |
 | [Backends](backends.md) | Upstream and Simulated, their capabilities, the overlay and event emulation. |
-| [Storage](storage.md) | The workspace, live state and recordings. |
+| [Storage and configuration](storage.md) | The workspace, environments, secrets, live state and recordings. |
 | [Control plane](control-plane.md) | The API the UI, the CLI and hardware use. |
 | [Crate layout](crates.md) | The crates of the workspace, what each one holds and which ones are sans-IO. |
 
@@ -38,7 +47,7 @@ flowchart LR
   end
 
   BE -->|Upstream| kafka["Real cluster"]
-  BE -->|Simulated| world["World"]
+  BE -->|Simulated| world["Broker<br/>World"]
   CP <--> ui["Web UI"]
   ui <-->|Web MIDI| push["Push 2"]
   WS <--> files[("Workspace files")]
@@ -47,17 +56,19 @@ flowchart LR
 
 | Component | Responsibility |
 |---|---|
+| **Host** | Start and stop environments in one process. Share the workspace store and the control plane between them. |
 | **Listeners** | Accept connections on the bootstrap endpoint and one endpoint per broker. Refuse connections when a broker is down. |
 | **Sessions** | Run one connection each. Hold identity, the rule snapshot, per-session counters and in-flight calls. Share a client context with the other connections of the same client. |
 | **Pipeline** | Take one call through the stages in [request pipeline](request-pipeline.md). |
 | **Backend** | Answer a call with the truth, from a real cluster or from the World. Apply or emulate events. |
 | **Rule store** | Hold every rule and its state, workspace rules and live rules alike. Publish an immutable snapshot of armed rules in priority order on every change. Hold each armed rule's shared counter and budget as atomics. |
 | **Scenario runner** | Run the active scenario and the live set: turn the mode into a priority order, advance steps, expand events into their consequences and hand them to the backend. |
-| **Clock** | Tell the time for triggers, lifetimes, steps, generators and timeouts. |
+| **Clock** | Tell the time for triggers, lifetimes, steps, arriving records and timeouts. |
 | **Event bus** | Carry call events, rule changes and world changes to everyone who listens. |
-| **Recorder** | Write call events to a recording while recording is on. |
+| **Recorder** | Write call events and journal entries to a recording while recording is on. |
+| **Journal** | Keep what changed and who changed it: arms, disarms, parameter changes, steps and events. |
 | **Indexer** | Maintain the facets of the current recording. |
-| **Workspace store** | Load definitions from files, watch them for changes and write edits back. |
+| **Workspace store** | Load definitions from files, watch them for changes and write edits back. Keep live rules in the scratch file. |
 | **Control plane** | Expose the engine to the UI, the CLI and tests. |
 
 ## Principles
@@ -84,6 +95,10 @@ flowchart LR
   so across connections, which call gets the 3rd match depends on timing.
   The explanation records the match number of every call.
   On the Simulated backend, the virtual clock removes timing as a source of difference.
+- **A restart is a clean slate.**
+  The engine keeps its live state in memory and has no database.
+  After a restart, nothing is armed.
+  See [live state](storage.md#live-state).
 - **The engine is headless.**
   The UI is one client of the control plane.
   The CLI and test libraries are others.
@@ -93,23 +108,89 @@ flowchart LR
 ## Clock
 
 The engine has one clock.
-Time triggers, duration lifetimes, step endings, generators and the World's timeouts all read it.
+Time triggers, duration lifetimes, step endings, arriving records and the World's timeouts all read it.
 
 | Backend | Clock |
 |---|---|
-| Simulated | Virtual. It can run faster than real time, or step on demand. |
+| Simulated | Virtual. It is the broker's clock, and the proxy in front of the broker reads it. It can run faster than real time, or step on demand. |
 | Upstream | The wall clock. |
+
+## Instances and processes
+
+Proxies and brokers combine into three shapes.
+
+| Shape | Instances | Use |
+|---|---|---|
+| A proxy in front of a real cluster | One proxy | Lie about real traffic. |
+| A proxy in front of a broker | One proxy, one broker | A fake cluster that lies, fully reproducible. |
+| A broker alone | One broker | A truthful fake Kafka, for tests that need no lies. |
+
+```mermaid
+flowchart LR
+  c1["Kafka clients"] --> p1
+  c2["Kafka clients"] --> p2
+  c3["Kafka clients"] --> b2
+
+  subgraph process["One process"]
+    subgraph e1["Environment: staging-proxy"]
+      p1["Proxy"]
+    end
+    subgraph e2["Environment: orders-sim"]
+      p2["Proxy"] -->|function calls| b1["Broker"]
+    end
+    subgraph e3["Environment: plain-kafka"]
+      b2["Broker"]
+    end
+    cp["Control plane"] --- e1
+    cp --- e2
+    cp --- e3
+    ws["Workspace store"] --- cp
+  end
+
+  p1 -->|TCP| kafka["Real cluster"]
+  cp <--> ui["Web UI"]
+```
+
+- **A proxy calls its broker directly.**
+  Both are sans-IO, so the proxy hands a request to the broker as a function call.
+  There is no socket between them, and both read the same virtual clock.
+- **An [environment](storage.md#environments) names one shape.**
+  A process starts one environment or several.
+  Each environment has its own listeners and its own live state.
+  Environments share the workspace and the control plane.
+- **Lies happen in one place.**
+  A proxy lies, and a broker does not.
+  A fake cluster that lies is a proxy in front of a broker.
+- **A process can run without a control plane.**
+  It is then one proxy or one broker, set up by flags and files alone.
+
+A library user creates the same instances in a test:
+
+```rust
+let broker = gmq::Broker::new(world);
+let proxy = gmq::Proxy::builder()
+    .backend(&broker)
+    .workspace(workspace)
+    .build();
+```
+
+The sketch shows the shape of the interface, not its final names.
 
 ## Deployment shapes
 
-| Shape | Backend | Use |
+| Command | Starts | Use |
 |---|---|---|
-| `gmq proxy --upstream kafka:9092` | Upstream | Put GaslightMQ in front of a real cluster. Explore with the UI. |
-| `gmq broker --world orders-sim` | Simulated | Run a fake cluster. Explore with the UI. |
-| `gmq run <scenario> [--world <world>]` | Either | Run a scenario headless, for example in CI. Exit when the last step ends, or when stopped. |
-| Library and testcontainers | Either | Start an engine from a test, drive it through the control plane, assert on explanations. |
+| `gmq proxy --upstream kafka:9092` | A proxy in front of a real cluster | Explore with the UI. Needs no workspace. |
+| `gmq proxy --world orders-sim` | A proxy in front of a broker | A fake cluster that lies. Explore with the UI. |
+| `gmq broker --world orders-sim` | A broker alone | A truthful fake Kafka. |
+| `gmq start --env <environment> …` | One or more [environments](storage.md#environments) from the workspace | Several proxies and brokers in one process, with one UI. |
+| `gmq run <scenario> --env <environment>` | One environment | Run a scenario without the UI, for example in CI. Exit when the last step ends, or when stopped. |
+| Library and testcontainers | Instances in a test | Create a proxy or a broker from a test, drive it through the control plane, assert on explanations. |
 
-All shapes are the same engine with a different backend and a different front end.
+Every command takes `--no-control` to run without a control plane.
+
+`gmq init` creates a new workspace.
+The flags of `gmq proxy` and `gmq broker` describe an environment without a file.
 
 `gmq run` reports whether the scenario loaded and ran to its end.
 It does not judge the client under test.

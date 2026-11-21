@@ -71,12 +71,37 @@ A recording keeps:
 
 - every session with its identity, open and close times,
 - every call with its request, truth, delivered response, verdict and explanation,
-- the raw frames, unless the recording is metadata-only.
+- the raw frames, unless the recording is metadata-only,
+- the [journal](#journal) entries between the calls.
 
 A **metadata-only** recording drops record keys, values and headers,
 for traffic that must not leave the machine.
 It is the default on the Upstream backend.
 See [privacy](../architecture/storage.md#privacy).
+
+No recording keeps a client's credentials.
+The engine blanks the payload of `SaslAuthenticate` in every recording.
+
+## Journal
+
+The journal records what changed in the engine, next to what happened on the wire.
+
+| Entry | Records |
+|---|---|
+| Rule armed or disarmed | The rule, and whether a person, a step or a lifetime did it. |
+| Parameter changed | The rule, the parameter, the old and the new value. |
+| Rule fired by hand | The rule. |
+| Scenario activated, step advanced | The scenario and the step. |
+| Event applied or emulated | The event and its consequences. |
+| Environment switched | The environment. |
+
+Every entry carries the time and the surface it came from, such as a pad, ⌘K or a file change.
+
+The engine always keeps the recent journal in memory.
+It feeds the history of a rule in the UI, and [Capture](scenarios.md#capture) reads it.
+While a recording runs, the journal entries go into the recording between the calls.
+A recording therefore explains itself:
+it shows which rules were armed when a call arrived.
 
 ## Index
 

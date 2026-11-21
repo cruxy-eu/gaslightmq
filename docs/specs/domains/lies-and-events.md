@@ -7,9 +7,9 @@ or it can **change the truth** with an event.
 ## Truth
 
 The truth is what the backend answers when no lie applies.
-On the proxy, the truth comes from the real cluster,
+In front of a real cluster, the truth comes from that cluster,
 seen through the Upstream backend's [overlay](../architecture/backends.md#overlay).
-On the fake broker, the truth comes from the [World](world.md).
+In front of a broker, the truth comes from the broker's [World](world.md).
 
 ## Lies
 
@@ -130,7 +130,7 @@ After an event, every call and every client sees the same new world.
 | Coordinator moves | A group or transaction coordinator moves to another broker. |
 | Partition added | A topic gets more partitions. |
 | Topic deleted | A topic disappears. |
-| Records appended | Data arrives on a partition, for example from a generator. |
+| Records appended | Data arrives on a partition. |
 | Records expired | A partition's log start offset moves forward. |
 | Log truncated | A partition's end offset moves back, as after an unclean leader election. |
 | Committed offset reset | A group's committed offset on a partition changes. |

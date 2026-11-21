@@ -36,6 +36,8 @@ The rule's effective selector is the selector **and** the scope.
 - A **live rule** exists only in the engine's memory.
   Pad presses and ⌘K create live rules in the [live set](scenarios.md#the-live-set).
   Keeping a live rule saves it as a workspace rule.
+  A [scratch file](../architecture/storage.md#scratch) keeps live rules across a crash.
+  They come back disarmed.
 
 ## Action
 

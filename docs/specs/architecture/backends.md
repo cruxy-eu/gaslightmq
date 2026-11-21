@@ -1,13 +1,13 @@
 # Backends
 
 A backend answers a call after the session's pipeline has decided what to do with it.
-The engine has two backends.
+A proxy has one of two backends.
 Everything in front of the backend is the same for both.
 
 | Backend | Truth comes from | Typical use |
 |---|---|---|
 | **Upstream** | A real Kafka cluster, seen through the overlay | Proxy in front of a real cluster. Real Kafka semantics, real data. |
-| **Simulated** | The [World](../domains/world.md) | Fake broker. Full control, fully reproducible. |
+| **Simulated** | A [broker](README.md#instances-and-processes) in the same process, with its [World](../domains/world.md) | Fake cluster. Full control, fully reproducible. |
 
 ## Contract
 
@@ -38,7 +38,7 @@ rules match on it, and explanations compare the delivered response against it.
 | Log truncated | ❌ | ✅ |
 | Partition added | ❌ | ✅ |
 | Topic deleted | ❌ | ✅ |
-| Records appended, generators | ❌ | ✅ |
+| Records appended, virtual records | ❌ | ✅ |
 | Editable world state | ❌, read-only observation | ✅ |
 | Virtual clock | ❌, wall clock | ✅ |
 | Reproducible runs | Dice only. The network and the cluster are not reproducible. | ✅ |
@@ -52,7 +52,10 @@ The check includes each event's [consequences](../domains/lies-and-events.md#con
 ## Upstream
 
 The Upstream backend forwards calls to a real cluster.
-It runs one listener per real broker.
+It discovers the brokers from the bootstrap address,
+and runs one listener per real broker.
+The [environment](storage.md#environments) says which ports the listeners use
+and which host clients see.
 
 ### Overlay
 
@@ -140,41 +143,84 @@ The UI shows these effects next to the preset.
 
 ## Simulated
 
-The Simulated backend answers calls from the World.
+The Simulated backend is a broker in the same process.
+The proxy hands each request to the broker as a function call.
+No socket sits between them.
+
+The broker answers from its World.
 It implements the Kafka protocol against the World's state:
-appending records, serving fetches, tracking idempotent producers
+appending records, serving fetches from stored and [virtual records](../domains/world.md#records), tracking idempotent producers
 and running the group protocol, classic and consumer.
 
-It applies events directly to the World,
+The broker applies events directly to the World,
 so every call and every client sees one consistent state.
 
-It runs on the engine's virtual [clock](README.md#clock).
-Time triggers, timeouts and generators all advance with that clock,
-which tests can speed up or step.
+The broker owns the virtual [clock](README.md#clock), and the proxy in front of it reads the same clock.
+Time triggers, timeouts and arriving records all advance together,
+and tests can speed the clock up or step it.
 
 The first version leaves out transactions.
-The backend does not advertise the transactional APIs,
+The broker does not advertise the transactional APIs,
 and "producer fenced" is not available on it yet.
+
+### A broker never lies
+
+A broker answers truthfully from its World.
+Every lie about a simulated cluster comes from the proxy in front of the broker.
+Lies therefore happen in one place, for both backends.
+
+A broker also runs alone, with its own listeners and no proxy.
+It is then a truthful fake Kafka.
+Events still change its World, and no rule applies.
 
 ### Staying faithful
 
-The Simulated backend is only useful when clients cannot tell it from a real broker.
-A proxy in front of a fake broker checks that:
-`gmq proxy --upstream` can point at `gmq broker`.
+A broker is only useful when clients cannot tell it from a real cluster.
+Two checks keep it honest:
 
-This is a test setup, not a feature.
-A scenario that only uses lies must give the same verdicts
-through the proxy and directly on the fake broker.
-The UI offers no way to combine the two backends.
+- A scenario that only uses lies gives the same verdicts
+  in front of a real cluster and in front of a broker.
+- A proxy reaches a broker over TCP as well.
+  `gmq proxy --upstream` can point at the listeners of `gmq broker`.
+  The verdicts match the ones from the function-call path.
+
+## Schema registry
+
+Clients that use Avro or Protobuf look up schemas in a schema registry.
+An [environment](storage.md#environments) says which registry belongs to it.
+
+| Environment has | Registry | Used for |
+|---|---|---|
+| A broker | Built in. It serves the schemas of the workspace over the registry's HTTP interface. | Consumers decode the broker's [records](../domains/world.md#schemas). |
+| A proxy in front of a real cluster | The real one, by URL. | The proxy decodes records for data lies, and the UI shows records decoded. |
+
+```yaml
+schema_registry:
+  listen: 0.0.0.0:8081        # built in, next to a broker
+```
+
+```yaml
+schema_registry:
+  url: https://schema-registry.staging.internal:8081   # the real one
+```
+
+The built-in registry gives every schema an ID that follows from the workspace alone,
+so the bytes of a record are the same in every run.
+A subject is named after its topic, such as `orders.eu-value`, unless the topic says otherwise.
+
+The built-in registry answers truthfully.
+Rules do not apply to it.
 
 ## One UI for both
 
-The UI talks to the engine, not to the backend.
-The environment switcher shows which backend runs.
+The UI talks to the control plane of the process.
+The environment switcher changes which environment the UI shows.
+Nothing restarts, and no client loses its connection.
 
 - Views and actions that work on both backends look the same.
 - Emulated events carry an *emulated* badge.
 - Events a backend cannot do are disabled, with the reason.
-- The World view appears only with the Simulated backend.
+- The World view appears only when the environment has a broker.
+- An environment with a broker alone shows the World view and the traffic, and no rules.
 
 A recording made on the Upstream backend can [seed](../domains/world.md#seeding) a World for the Simulated backend.

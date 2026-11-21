@@ -15,11 +15,13 @@ and shows what those districts publish.
 | **Clients** | One column per scope. Drag a rule to another column to change its scope. |
 | **Pads** | A grid for playing rules live, by mouse, keyboard or hardware. |
 | **Scenarios** | The scenarios in the workspace, their mode and steps, and the active one. |
-| **World** | Only with the Simulated backend: topics, partitions, groups, brokers and generators. |
+| **World** | Only for an environment with a broker: topics, partitions, groups, broker nodes and where each topic's records come from. |
 | **Quick inject (⌘K)** | Type a sentence such as `delay produce orders.* 750ms 40% order-ingest` and get a live rule. |
 
-The environment switcher picks the backend:
-a proxy in front of a real cluster, or a fake cluster.
+The environment switcher lists the [environments](../architecture/storage.md#environments) that run in the process:
+a proxy in front of a real cluster, a proxy in front of a broker, or a broker alone.
+Switching only changes which environment the UI shows.
+Nothing restarts, and no client loses its connection.
 The views stay the same.
 Views that a backend cannot support are hidden,
 and actions that need emulation are marked.

@@ -39,6 +39,31 @@ The second part lists the decisions that were settled, with the reason and the s
   A trigger that reacts to rules or events would also work in Live and Chain mode,
   but it needs an answer to *same call or next call?* and *for how long?*
 
+### World data
+
+- **Can the schema registry lie?**
+  The built-in [schema registry](architecture/backends.md#schema-registry) answers truthfully, and rules do not apply to it.
+  A registry that is slow, down or serves another schema is a failure worth testing.
+  It speaks HTTP, so it needs its own selectors and lies.
+- **Does a virtual record's key match its partition?**
+  A real producer picks the partition from the key.
+  A consumer that relies on that, such as a join over co-partitioned topics,
+  needs keys that hash to the partition they appear in.
+
+### Storage
+
+- **Where do a World's initial records live?**
+  A [seeded](domains/world.md#seeding) World can start with recorded records.
+  A world definition is in git, and recordings are not.
+  The records need a home that CI can reach.
+- **Does write-back keep comments and formatting?**
+  The UI writes edits back to [workspace files](architecture/storage.md#workspace) that people also edit by hand.
+  Either the engine keeps hand-written comments and layout,
+  or it owns the formatting and says so.
+- **Can several people share one engine?**
+  The [journal](domains/observation.md#journal) records which surface changed something, not which person.
+  A shared engine in a staging cluster needs identities and permissions on the control plane.
+
 ### Backends
 
 - **How should "leader moves" reach the proxy?**
@@ -81,7 +106,7 @@ The second part lists the decisions that were settled, with the reason and the s
 | Question | Decision | Reason |
 |---|---|---|
 | How far does event emulation go on Upstream? | As far as the overlay can hold all the state: broker down, unresponsive and back, rebalance as a forced rejoin, records expired, committed offset reset, producer fenced. See [capabilities](architecture/backends.md#capabilities). | Anything more needs split routing or epoch translation. |
-| Can a proxy front a fake broker? | Only as a [conformance test](architecture/backends.md#staying-faithful). | As a feature it adds nothing and doubles the places where lies can happen. |
+| Can a proxy front a fake broker? | Yes. That is how a fake cluster lies: a proxy in front of a [broker](architecture/backends.md#a-broker-never-lies), in one process, without a socket. | A broker never lies, so lies still happen in one place. |
 
 ### Storage and naming
 
@@ -89,6 +114,14 @@ The second part lists the decisions that were settled, with the reason and the s
 |---|---|---|
 | Are names unique across kinds? | No, per kind. The UI shows the kind where kinds mix. See [names](architecture/storage.md#names). | Every reference already says which kind it means. |
 | What is the default for recordings? | Metadata-only on Upstream, full on Simulated. See [privacy](architecture/storage.md#privacy). | The real cluster can carry sensitive data. The World's data is synthetic. |
+| Does GaslightMQ need a database? | No. Definitions are files, live state is memory, recordings are append-only files. See [storage](architecture/storage.md). | A recording is a write-once stream that travels as one file, and selectors already are the query language. |
+| What survives a restart? | Definitions and recordings. Nothing is armed. See [a restart is a clean slate](architecture/storage.md#a-restart-is-a-clean-slate). | A fault injector that resumes on its own is a hazard. |
+| What happens to live rules in a crash? | A [scratch file](architecture/storage.md#scratch) keeps their definitions. They load disarmed. | Work is not lost, and git stays clean. |
+| Where does the history of changes live? | In the [journal](domains/observation.md#journal): in memory, and inside recordings. | A recording then explains itself, and Capture has one source. |
+| How many environments does a process run? | One or several, each with its own live state. The UI switcher only changes which one it shows. See [several environments in one process](architecture/storage.md#several-environments-in-one-process). | One command and one UI address cover a proxy and a fake cluster side by side. |
+| Where does a fake cluster's data come from? | From the topic's [record source](domains/world.md#records): virtual records from a template or a schema, a file, a recording, or what clients produce. | A consumer test needs data without a producer, and a virtual record is the same at the same partition and offset. |
+| Do records have schemas? | Yes. A topic names a format and a schema, and an environment names a [schema registry](architecture/backends.md#schema-registry). | Avro and Protobuf consumers cannot read a record without one. |
+| Where do secrets live? | In files outside git, referenced by path. An environment variable works as a fallback. See [secrets](architecture/storage.md#secrets). | Platforms mount secrets as files, files rotate, and a reference cannot leak through git. |
 
 ### Control surfaces
 

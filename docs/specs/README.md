@@ -26,8 +26,10 @@ A **Rule** binds a selector to a lie or an event, and a **Trigger** decides *whe
 Lies that do not conflict all apply.
 A **Scenario** groups rules and picks a **Mode** that resolves the conflicts between them.
 Every connection runs in its own **Session**, which holds identity and counters and rolls seeded dice.
-Behind the session sits a **Backend**: a real cluster (proxy) or a simulated one (fake broker).
-The same UI, the same rules and the same scenarios work on both.
+The session belongs to a **Proxy**, the only place where lies happen.
+Behind the proxy sits a **Backend**: a real cluster, or a **Broker**, GaslightMQ's own simulated cluster.
+The same UI, the same rules and the same scenarios work on both,
+and one process runs several proxies and brokers side by side.
 
 ## Design principles
 
@@ -40,6 +42,9 @@ The same UI, the same rules and the same scenarios work on both.
 - **Files are the source of truth.**
   Definitions live in a plain-text workspace that works in git and in CI.
   Live state stays in memory until someone saves it.
+  There is no database.
+- **A restart is a clean slate.**
+  Nothing is armed until someone arms it again.
 - **Explain every verdict.**
   Every call records which rules matched, which fired and which were shadowed.
 - **Reproducible by default.**
@@ -47,7 +52,7 @@ The same UI, the same rules and the same scenarios work on both.
 - **Honest about side effects.**
   A lie names its stage, so it is clear what really happened in the cluster.
 - **Backend-portable scenarios.**
-  A scenario written in events runs on the proxy and on the fake broker.
+  A scenario written in events runs in front of a real cluster and in front of a broker.
 
 ## First version
 
