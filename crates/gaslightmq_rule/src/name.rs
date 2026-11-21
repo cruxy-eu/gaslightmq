@@ -3,6 +3,7 @@ use std::fmt;
 use std::str::FromStr;
 use std::sync::Arc;
 
+use gaslightmq_selector::SelectorName;
 use gaslightmq_trigger::DiceKey;
 
 use crate::RuleError;
@@ -18,28 +19,22 @@ macro_rules! name {
         pub struct $name(Arc<str>);
 
         impl $name {
-            /// Checks the rule for names.
+            /// Checks the rule for names, which is [the one of selector names](SelectorName#the-rule-for-names).
             ///
             /// # Errors
             ///
             /// [`RuleError::InvalidName`] when the text is empty, starts or ends with white space,
-            /// or holds a control character.
+            /// or holds a control character or a format character.
             pub fn new(name: impl AsRef<str>) -> Result<Self, RuleError> {
                 let name = name.as_ref();
-                let reason = if name.is_empty() {
-                    "is empty"
-                } else if name.trim() != name {
-                    "starts or ends with white space"
-                } else if name.chars().any(char::is_control) {
-                    "holds a control character"
-                } else {
-                    return Ok(Self(name.into()));
-                };
-                Err(RuleError::InvalidName {
-                    what: $what,
-                    input: name.to_owned(),
-                    reason,
-                })
+                match SelectorName::broken_rule(name) {
+                    None => Ok(Self(name.into())),
+                    Some(reason) => Err(RuleError::InvalidName {
+                        what: $what,
+                        input: name.to_owned(),
+                        reason,
+                    }),
+                }
             }
 
             /// The name as text.
@@ -134,7 +129,9 @@ name! {
     ///
     /// A name has at least one character.
     /// It does not start or end with white space, and it holds no control character such as a line break.
-    /// The names of selectors follow the same rule.
+    /// It holds no format character either, such as a zero-width space or a mark that turns the text direction:
+    /// nobody sees those, so two names could look the same and still differ.
+    /// This is [the rule of selector names](SelectorName#the-rule-for-names), and one place checks it.
     ///
     /// ```
     /// use gaslightmq_rule::prelude::*;
@@ -145,6 +142,8 @@ name! {
     ///
     /// assert!(RuleName::new("").is_err());
     /// assert!(RuleName::new(" Slow down").is_err());
+    /// // A zero-width space hides between the two words.
+    /// assert!(RuleName::new("Slow\u{200b}down").is_err());
     /// # Ok::<(), RuleError>(())
     /// ```
     RuleName, "rule name"
@@ -156,8 +155,9 @@ name! {
     /// A rule references a preset by its name, and so do a pad grid column and a ⌘K suggestion.
     /// A name is unique among presets, and it is exact.
     ///
-    /// A name has at least one character.
-    /// It does not start or end with white space, and it holds no control character such as a line break.
+    /// A name follows [the rule of selector names](SelectorName#the-rule-for-names), like the name of a rule.
+    /// It has at least one character, and it does not start or end with white space.
+    /// It holds no control character such as a line break, and no format character such as a zero-width space.
     ///
     /// ```
     /// use gaslightmq_rule::prelude::*;
@@ -219,6 +219,10 @@ mod tests {
             ("Delay 1 s\n", "starts or ends with white space"),
             ("Delay\n1 s", "holds a control character"),
             ("Delay\t1 s", "holds a control character"),
+            // A zero-width space, a right-to-left override and a byte order mark.
+            ("Delay\u{200b}1 s", "holds a format character"),
+            ("Delay \u{202e}1 s", "holds a format character"),
+            ("\u{feff}Delay 1 s", "holds a format character"),
         ];
 
         for (text, reason) in cases {
@@ -241,6 +245,18 @@ mod tests {
                 "{text:?}"
             );
         }
+    }
+
+    #[test]
+    fn names_that_would_look_the_same_cannot_both_exist() {
+        let seen = RuleName::new("Stale metadata").unwrap();
+
+        for hidden in ['\u{200b}', '\u{200e}', '\u{202e}', '\u{2060}', '\u{feff}'] {
+            let text = format!("Stale{hidden} metadata");
+            assert!(RuleName::new(&text).is_err(), "{text:?}");
+            assert!(PresetName::new(&text).is_err(), "{text:?}");
+        }
+        assert_eq!(RuleName::new("Stale metadata"), Ok(seen));
     }
 
     #[test]

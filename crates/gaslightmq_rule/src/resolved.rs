@@ -1,4 +1,5 @@
 use gaslightmq_clock::Instant;
+use gaslightmq_incident::Subjects;
 use gaslightmq_lie::Stage;
 use gaslightmq_selector::{EffectiveSelector, Pass, SelectorSet};
 use gaslightmq_trigger::{Arming, DiceKey, Die, Lifetime, Seed, Trigger};
@@ -83,6 +84,9 @@ impl Rule {
     /// - [`RuleError::LieBeforeTruth`] when the rule tests a response field and its lie acts before forwarding.
     ///   The truth is not known yet at that stage, so the rule could never fire.
     ///   A rule with an incident can test a response field: the incident takes effect after the call.
+    /// - [`RuleError::ManualWithoutSubject`] when the trigger is manual and the incident takes a subject from the call.
+    ///   Such a rule only fires by hand, and a hand firing has no call, so the rule could never fire.
+    ///   A manual rule with an incident names every subject in its action.
     pub fn resolve(&self, selectors: &SelectorSet, presets: &PresetSet) -> Result<ResolvedRule, RuleError> {
         let rule = || self.name().clone();
 
@@ -110,6 +114,13 @@ impl Rule {
                 rule: rule(),
                 lie: lie.kind(),
             });
+        }
+        // A hand firing has no call, so it resolves the incident against no subject at all.
+        if let Action::Incident(incident) = action
+            && self.trigger().is_manual()
+            && let Err(error) = incident.resolve(&Subjects::new())
+        {
+            return Err(RuleError::ManualWithoutSubject { rule: rule(), error });
         }
 
         Ok(ResolvedRule {
@@ -361,6 +372,49 @@ mod tests {
         let resolved = rule.resolve(&SelectorSet::default(), &PresetSet::default()).unwrap();
 
         assert_eq!(resolved.pass(), Pass::Response);
+    }
+
+    #[test]
+    fn a_manual_rule_whose_incident_takes_its_subject_from_the_call_could_never_fire() {
+        let election = |partition: Option<&str>| IncidentDefinition::LeaderMoves {
+            partition: partition.map(|text| text.parse().unwrap()),
+            to: None,
+        };
+        let resolve = |rule: Rule| rule.resolve(&SelectorSet::default(), &PresetSet::default());
+        let rule = |incident: IncidentDefinition| Rule::new(name("Leader election"), Conditions::new(), incident);
+
+        assert_eq!(
+            resolve(rule(election(None)).with_trigger(Trigger::Manual)),
+            Err(RuleError::ManualWithoutSubject {
+                rule: name("Leader election"),
+                error: IncidentError::MissingSubject {
+                    incident: IncidentKind::LeaderMoves,
+                    subject: "partition",
+                },
+            })
+        );
+        // The same incident fires on a call, which offers the partition.
+        assert!(resolve(rule(election(None))).is_ok());
+        // A manual rule names its subject, or has a lie, which waits for the next matching call.
+        assert!(resolve(rule(election(Some("orders.eu/3"))).with_trigger(Trigger::Manual)).is_ok());
+        let blackhole = Rule::new(name("Blackhole"), Conditions::new(), LieDefinition::Silence);
+        assert!(resolve(blackhole.with_trigger(Trigger::Manual)).is_ok());
+    }
+
+    #[test]
+    fn a_manual_rule_is_checked_with_the_incident_of_its_preset() {
+        let election = IncidentDefinition::LeaderMoves {
+            partition: None,
+            to: None,
+        };
+        let presets = PresetSet::new([Preset::new(preset_name("Leader election"), election)]).unwrap();
+        let rule =
+            Rule::new(name("Pad 3"), Conditions::new(), preset_name("Leader election")).with_trigger(Trigger::Manual);
+
+        assert!(matches!(
+            rule.resolve(&SelectorSet::default(), &presets),
+            Err(RuleError::ManualWithoutSubject { .. })
+        ));
     }
 
     #[test]

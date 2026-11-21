@@ -35,7 +35,10 @@ A rule needs a name, a selector and an action.
 
 A rule name has at least one character.
 It does not start or end with white space, and it holds no control character such as a line break.
+It holds no format character either, such as a zero-width space or a mark that turns the text direction.
+Nobody sees those, so two names could look the same and still differ.
 Upper and lower case differ.
+The names of presets and of selectors follow the same rule.
 
 ### Where rules live
 
@@ -87,9 +90,10 @@ Every subject the call offers gives one incident.
 A rule that targets three partitions of a Produce moves three leaders.
 
 A call can offer no subject at all: a `Heartbeat` names no partition.
-The rule's trigger still says yes, and the incident does not happen.
+The rule's trigger still agrees, but the rule does not fire, and no incident happens.
 The call counts as a match, the firing goes back to the [budget](#budgets),
 and the explanation names the missing subject.
+It does not say that the rule fired.
 
 ## Trigger
 
@@ -114,6 +118,10 @@ trigger: { chance: 50%, nth: 3 }
 
 A manual trigger does not combine: `trigger: manual` has no other parts.
 Such a rule never fires by itself.
+
+A rule with `trigger: manual` and an incident names the [subject](#the-subject-of-an-incident) in its action.
+A hand firing has no call to take the subject from, so a rule that leaves it out could never fire.
+That rule is an error.
 
 ### Count
 
@@ -158,7 +166,15 @@ Any armed rule can fire by hand, whatever its trigger.
 Every hand firing is one firing.
 Two pad presses lie on the next two matching calls.
 A hand firing counts for a [lifetime](#lifetime) of firings like any other firing.
+
+A hand firing is only used up when its lie applied.
+The matching call that takes it can lose it again:
+another rule shadows or pre-empts the lie on every target, or the call ends before it settles.
+The hand firing then waits for the next matching call, so every pad press lies on a call.
+A [count trigger](#count) differs: `nth: 3` has had its match, whatever happened to the call.
+
 A hand firing that still waits for a call when the rule disarms is dropped.
+A rule whose lifetime has ended does not fire by hand, whatever its action.
 
 ### Reacting to other things
 
@@ -262,6 +278,8 @@ Shadowed and pre-empted firings do not count as firings.
 
 A call can arrive after the lifetime ended and before the engine disarmed the rule.
 That call does not count as a match, and the rule neither rolls nor fires for it.
+The rule does not wait for the truth of that call either,
+so the explanation does not list it as [pre-empted](observation.md#explanation) when a lie ends the call.
 
 ### Budgets
 
@@ -281,6 +299,7 @@ A budget of firings therefore works in two steps:
    A firing whose action applied is spent for good.
    A firing that was shadowed or pre-empted on every target goes back to the budget.
    So does the firing of a call that ended before it could settle.
+   A [hand firing](#manual-firing) that goes back also waits for the next matching call.
 
 The firings that are spent and the firings that are set aside never add up to more than the budget.
 A budget of three firings never yields a fourth,

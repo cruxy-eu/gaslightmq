@@ -100,7 +100,7 @@
 //! | Check | Where |
 //! |---|---|
 //! | A name, a scope, a trigger and a lifetime are valid. | Their types, when they are built or read. |
-//! | The selector and the preset of one rule exist, and its lie can act when its selector is decided. | [`Rule::resolve`] |
+//! | The selector and the preset of one rule exist, and the rule can fire: its lie can act when its selector is decided, and a manual rule names the subject of its incident. | [`Rule::resolve`] |
 //! | The names of presets, of rules and of armed rules are unique. | [`PresetSet::new`], [`RuleSet::new`], [`Snapshot::new`] |
 //! | A scenario, a step or a pad names a rule that exists. A rename reaches every reference. | Whoever holds the whole workspace. |
 //!
@@ -117,6 +117,7 @@
 //! - It resolves no conflict between lies. [`PassEvaluation::lies`] gives the lies in priority order to whoever does.
 //! - It applies nothing, and it expands no incident into its consequences.
 //! - It settles no firing: the call [confirms or withdraws](RuleEvaluation#settling) each one.
+//!   A firing that is withdrawn goes back to the budget, and a hand firing waits for the next matching call.
 //! - It keeps no order of its own. A snapshot takes its rules in the order it is given.
 //!
 //! # The `serde` feature

@@ -160,6 +160,11 @@ impl Reservation {
     pub fn withdraw(self) {
         drop(self);
     }
+
+    /// The budget the unit is set aside in.
+    pub(crate) fn budget(&self) -> &Budget {
+        &self.budget
+    }
 }
 
 impl Drop for Reservation {

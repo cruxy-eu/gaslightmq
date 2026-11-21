@@ -101,6 +101,18 @@ impl Effect {
 /// | [`effect`](Self::effect) | Fired | What the rule does: its lie on its target, or its incidents. |
 /// | [`take_firing`](Self::take_firing) | | The firing that the call settles. |
 ///
+/// # Fired means one thing
+///
+/// The record and the evaluation agree on whether the rule fired:
+/// [`fired`](Self::fired) is true exactly when the outcome of [`rolled`](Self::rolled) is.
+///
+/// A trigger can agree on a call the rule can do nothing with:
+/// an incident that takes its subject from the call fires on a call that offers none.
+/// The rule does not fire then, and nothing says it did.
+/// The outcome is [`TriggerOutcome::NothingToActOn`](gaslightmq_trigger::TriggerOutcome::NothingToActOn), the firing went back,
+/// and [`missing_subject`](Self::missing_subject) names what the call lacks.
+/// The record still shows the match number and what the trigger looked at, because the call counted as a match.
+///
 /// # Settling
 ///
 /// A rule fires before anyone knows whether its action applies.
@@ -108,6 +120,9 @@ impl Effect {
 /// [`confirm`](Self::confirm) when the action applied on at least one target,
 /// and [`withdraw`](Self::withdraw) when the rule was shadowed or pre-empted on every target.
 /// Nothing shadows an incident, so a rule with incidents confirms once they are on their way.
+///
+/// A firing that someone made [by hand](ArmedRule::fire_by_hand) is only used up when it is confirmed.
+/// Withdrawn, it waits for the next call the selector matches, so every hand firing lies on a matching call.
 ///
 /// The evaluation keeps what it says after its firing is settled, so it can go into the explanation.
 /// An evaluation that is dropped with its firing withdraws it, which is right for a call that ended early.
@@ -132,30 +147,30 @@ impl RuleEvaluation {
         now: Instant,
         session: &mut SessionCounters,
     ) -> Self {
-        let (rolled, firing) = rule.arming().evaluate(now, session).into_parts();
-        let mut evaluation = Self {
+        let evaluated = rule.arming().evaluate(now, session);
+        let (rolled, effect, firing, missing_subject) = if evaluated.fired() {
+            match Effect::of(rule.rule().action(), call, &target) {
+                Ok(Some(effect)) => {
+                    let (rolled, firing) = evaluated.into_parts();
+                    (rolled, Some(effect), firing, None)
+                }
+                // The action has nothing to act on in this call, so the rule does not fire after all.
+                // The firing goes back, and the record says so.
+                Ok(None) => (evaluated.nothing_to_act_on(), None, None, None),
+                Err(error) => (evaluated.nothing_to_act_on(), None, None, Some(error)),
+            }
+        } else {
+            (*evaluated.rolled(), None, None, None)
+        };
+        Self {
             rule: rule.clone(),
             priority,
             target,
             rolled,
-            effect: None,
-            firing: None,
-            missing_subject: None,
-        };
-        if let Some(firing) = firing {
-            match Effect::of(rule.rule().action(), call, &evaluation.target) {
-                Ok(Some(effect)) => {
-                    evaluation.effect = Some(effect);
-                    evaluation.firing = Some(firing);
-                }
-                Ok(None) => firing.withdraw(),
-                Err(error) => {
-                    firing.withdraw();
-                    evaluation.missing_subject = Some(error);
-                }
-            }
+            effect,
+            firing,
+            missing_subject,
         }
-        evaluation
     }
 
     /// The rule, with the arming the call evaluated.
@@ -182,11 +197,15 @@ impl RuleEvaluation {
     }
 
     /// What the trigger looked at, and how it came out.
+    ///
+    /// Its outcome says that the rule fired exactly when [`fired`](Self::fired) does.
     pub fn rolled(&self) -> &Rolled {
         &self.rolled
     }
 
     /// Whether the rule fired, so it has an [effect](Self::effect).
+    ///
+    /// The outcome of [`rolled`](Self::rolled) says the same.
     pub fn fired(&self) -> bool {
         self.effect.is_some()
     }
@@ -206,11 +225,12 @@ impl RuleEvaluation {
         self.effect.as_ref().map_or(&[], Effect::incidents)
     }
 
-    /// Why the trigger said yes and no incident happened: the incident takes a subject from the call,
+    /// Why the trigger agreed and the rule did not fire: the incident takes a subject from the call,
     /// and this call offers none.
     ///
     /// A `leader-moves` without a partition has nothing to move on a `Heartbeat`.
     /// The call still counted as a match, and the firing went back to the budget.
+    /// The outcome of [`rolled`](Self::rolled) is [`TriggerOutcome::NothingToActOn`](gaslightmq_trigger::TriggerOutcome::NothingToActOn) then.
     pub fn missing_subject(&self) -> Option<&IncidentError> {
         self.missing_subject.as_ref()
     }
@@ -236,6 +256,8 @@ impl RuleEvaluation {
     }
 
     /// Gives the firing back: the rule was shadowed or pre-empted on every target, and its action did not apply.
+    ///
+    /// The budget has the firing free again, and a hand firing waits for the next matching call.
     pub fn withdraw(&mut self) {
         if let Some(firing) = self.take_firing() {
             firing.withdraw();

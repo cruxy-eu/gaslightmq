@@ -394,12 +394,128 @@ fn a_hand_firing_skips_the_trigger_once() {
 }
 
 #[test]
-fn a_rule_with_an_event_fires_by_hand_at_once() {
+fn a_rule_with_an_incident_fires_by_hand_at_once() {
     let arming = arm(Trigger::Manual);
     let firing = arming.fire_now(ARMED_AT).expect("an armed rule fires by hand");
     assert!(firing.by_hand());
     assert!(!firing.confirm().ends_lifetime());
     assert_eq!(arming.counter().matches(), 0, "no call matched");
+    assert_eq!(arming.waiting_by_hand(), 0);
+}
+
+#[test]
+fn a_hand_firing_that_is_withdrawn_waits_for_the_next_matching_call() {
+    let arming = arm(Trigger::Manual);
+    let mut session = session(1);
+    arming.fire_on_next_match();
+
+    // The call takes the hand firing, and another rule shadows it.
+    let (rolled, firing) = arming.evaluate(ARMED_AT, &mut session).into_parts();
+    assert_eq!(rolled.outcome(), TriggerOutcome::FiredByHand);
+    assert_eq!(arming.waiting_by_hand(), 0, "the call holds the hand firing");
+    firing.expect("the rule fires by hand").withdraw();
+    assert_eq!(arming.waiting_by_hand(), 1, "the press is not used up");
+
+    // The next matching call takes it, and its action applies.
+    let (rolled, firing) = arming.evaluate(ARMED_AT, &mut session).into_parts();
+    assert_eq!(rolled.outcome(), TriggerOutcome::FiredByHand);
+    assert_eq!(rolled.match_number(), Some(number(2)));
+    let _ = firing.expect("the rule fires by hand").confirm();
+    assert_eq!(arming.waiting_by_hand(), 0);
+    assert_eq!(
+        arming.evaluate(ARMED_AT, &mut session).rolled().outcome(),
+        TriggerOutcome::Held
+    );
+}
+
+#[test]
+fn a_hand_firing_that_is_dropped_waits_for_the_next_matching_call() {
+    let arming = arm(Trigger::Manual);
+    let (mut first, mut second) = (session(1), session(2));
+    arming.fire_on_next_match();
+
+    // The call ends before it settles its firing.
+    drop(arming.evaluate(ARMED_AT, &mut first));
+    assert_eq!(arming.waiting_by_hand(), 1);
+
+    // The next matching call of any session takes the hand firing.
+    let (rolled, firing) = arming.evaluate(ARMED_AT, &mut second).into_parts();
+    assert_eq!(rolled.outcome(), TriggerOutcome::FiredByHand);
+    let _ = firing.expect("the rule fires by hand").confirm();
+    assert_eq!(arming.waiting_by_hand(), 0);
+}
+
+#[test]
+fn every_hand_firing_lies_once_however_often_it_is_withdrawn() {
+    let arming = arm(Trigger::Manual);
+    let mut session = session(1);
+    arming.fire_on_next_match();
+    arming.fire_on_next_match();
+
+    for _ in 0..3 {
+        arming
+            .evaluate(ARMED_AT, &mut session)
+            .into_firing()
+            .unwrap()
+            .withdraw();
+    }
+    assert_eq!(arming.waiting_by_hand(), 2);
+
+    for _ in 0..2 {
+        let _ = arming.evaluate(ARMED_AT, &mut session).into_firing().unwrap().confirm();
+    }
+    assert_eq!(arming.waiting_by_hand(), 0);
+    assert!(!arming.evaluate(ARMED_AT, &mut session).fired());
+}
+
+#[test]
+fn a_firing_at_once_that_is_withdrawn_waits_for_no_call() {
+    let arming = arm(Trigger::Manual);
+    arming
+        .fire_now(ARMED_AT)
+        .expect("an armed rule fires by hand")
+        .withdraw();
+    assert_eq!(arming.waiting_by_hand(), 0);
+    assert!(!arming.evaluate(ARMED_AT, &mut session(1)).fired());
+}
+
+#[test]
+fn a_rule_whose_action_has_nothing_to_act_on_does_not_fire_after_all() {
+    let arming = arm(TriggerParts::new().with_nth(number(2)));
+    let mut session = session(1);
+
+    // The record of a rule that did not fire stays as it is.
+    let held = arming.evaluate(ARMED_AT, &mut session).nothing_to_act_on();
+    assert_eq!(held.outcome(), TriggerOutcome::Held);
+
+    // The trigger agrees on the 2nd match, and the action has nothing to act on.
+    let evaluation = arming.evaluate(ARMED_AT, &mut session);
+    assert_eq!(evaluation.rolled().outcome(), TriggerOutcome::Fired);
+    let rolled = evaluation.nothing_to_act_on();
+    assert_eq!(rolled.outcome(), TriggerOutcome::NothingToActOn);
+    assert!(!rolled.outcome().fired());
+    // The call counted as a match, and the record keeps what the trigger looked at.
+    assert_eq!(rolled.match_number(), Some(number(2)));
+    assert_eq!(rolled.count_agrees(), Some(true));
+    // `nth: 2` has had its match.
+    let third = *arming.evaluate(ARMED_AT, &mut session).rolled();
+    assert_eq!(third.outcome(), TriggerOutcome::Held);
+    assert_eq!(third.match_number(), Some(number(3)));
+}
+
+#[test]
+fn a_hand_firing_whose_action_has_nothing_to_act_on_waits_for_the_next_matching_call() {
+    let arming = arm(Trigger::Manual);
+    let mut session = session(1);
+    arming.fire_on_next_match();
+
+    let rolled = arming.evaluate(ARMED_AT, &mut session).nothing_to_act_on();
+    assert_eq!(rolled.outcome(), TriggerOutcome::NothingToActOn);
+    assert_eq!(arming.waiting_by_hand(), 1);
+
+    let (rolled, firing) = arming.evaluate(ARMED_AT, &mut session).into_parts();
+    assert_eq!(rolled.outcome(), TriggerOutcome::FiredByHand);
+    let _ = firing.expect("the rule fires by hand").confirm();
     assert_eq!(arming.waiting_by_hand(), 0);
 }
 

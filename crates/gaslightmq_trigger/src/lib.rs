@@ -82,6 +82,10 @@
 //! [`Firing::confirm`] when the action applied, and [`Firing::withdraw`] when it did not.
 //! See [`Budget`] for how that never overspends.
 //!
+//! Only whoever holds the action knows whether it has something to act on in this call.
+//! When it has not, [`Evaluation::nothing_to_act_on`] gives the firing back and says so in the record,
+//! so the record does not read fired for a rule that had nothing to do on this call.
+//!
 //! # Firing by hand
 //!
 //! Someone can fire any armed rule by hand, which skips its trigger once.
@@ -90,6 +94,10 @@
 //! - [`Arming::fire_on_next_match`] fires on the next call the selector matches, for a rule with a lie.
 //!
 //! A hand firing takes from a budget of firings like any other firing.
+//!
+//! Every hand firing lies on a matching call.
+//! A call that takes a hand firing and then withdraws or drops its [`Firing`] puts the hand firing back,
+//! and the next matching call takes it.
 //!
 //! # Dice
 //!
@@ -131,6 +139,7 @@ mod count;
 mod counter;
 mod dice;
 mod error;
+mod hand;
 mod lifetime;
 #[cfg(feature = "serde")]
 mod serde;

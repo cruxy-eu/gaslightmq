@@ -242,14 +242,18 @@ impl Snapshot {
         PassEvaluation::new(pass, rules)
     }
 
-    /// The rules that wait for the truth of `call`, in priority order.
+    /// The rules that wait for the truth of `call` at `now`, in priority order.
     ///
     /// These are the rules of the response pass whose conditions on the request hold.
     /// When a silence or a hang-up ends the call before forwarding, the response pass never runs,
     /// and the explanation of the call lists these rules as pre-empted.
     /// They count no match, because nobody evaluated them.
-    pub fn waiting<S: FieldSource + ?Sized>(&self, call: &S) -> Vec<&ArmedRule> {
-        let waits = |rule: &&ArmedRule| rule.rule().selector().evaluate(call).is_pending();
+    ///
+    /// A rule whose lifetime has ended at `now` is not among them, even before the engine disarms it.
+    /// It could not fire anymore, so no lie took anything from it.
+    pub fn waiting<S: FieldSource + ?Sized>(&self, call: &S, now: Instant) -> Vec<&ArmedRule> {
+        let waits =
+            |rule: &&ArmedRule| !rule.arming().has_ended(now) && rule.rule().selector().evaluate(call).is_pending();
         // A call always has one API. For a source that says otherwise, every selector decides for itself.
         let apis = call.read(Field::Api).present();
         if let Some([FieldValue::Api(api)]) = apis.as_ref().map(|apis| apis.iter().as_slice()) {
@@ -286,7 +290,7 @@ mod tests {
     use gaslightmq_trigger::prelude::*;
 
     use super::*;
-    use crate::{Effect, PresetSet, Rule};
+    use crate::{Effect, HandFiring, PresetSet, Rule};
 
     const NOW: Instant = Instant::ZERO;
 
@@ -452,7 +456,7 @@ mod tests {
                 .evaluate(Pass::Request, &produce(), NOW, &mut session())
                 .is_empty()
         );
-        assert!(snapshot.waiting(&produce()).is_empty());
+        assert!(snapshot.waiting(&produce(), NOW).is_empty());
     }
 
     #[test]
@@ -702,6 +706,45 @@ mod tests {
                 subject: "broker",
             })
         );
+        assert_eq!(outcomes(&pass), [TriggerOutcome::NothingToActOn]);
+    }
+
+    #[test]
+    fn the_record_and_the_evaluation_agree_on_whether_a_rule_fired() {
+        let snapshot = snapshot([
+            &rule("Slow", Conditions::new(), delay()),
+            &rule("Never", Conditions::new(), LieDefinition::Silence).with_trigger(Trigger::Manual),
+            &rule("Refuse the 2nd", Conditions::new(), flap()).with_trigger(nth(2)),
+            &rule("Election", Conditions::new(), leader_moves()),
+            &rule("Refuse once", Conditions::new(), flap()).with_lifetime(Lifetime::Firings(count(1))),
+        ]);
+        let mut session = session();
+        let mut seen = Vec::new();
+
+        // A Produce offers a partition to the election, and a Heartbeat offers none.
+        for call in [produce(), heartbeat(), produce(), heartbeat()] {
+            let mut pass = snapshot.evaluate(Pass::Request, &call, NOW, &mut session);
+            for evaluated in &mut pass {
+                assert_eq!(
+                    evaluated.fired(),
+                    evaluated.rolled().outcome().fired(),
+                    "{}",
+                    evaluated.name()
+                );
+                assert_eq!(evaluated.fired(), evaluated.is_unsettled(), "{}", evaluated.name());
+                seen.push(evaluated.rolled().outcome());
+                evaluated.confirm();
+            }
+        }
+
+        for outcome in [
+            TriggerOutcome::Fired,
+            TriggerOutcome::Held,
+            TriggerOutcome::NothingToActOn,
+            TriggerOutcome::LifetimeOver,
+        ] {
+            assert!(seen.contains(&outcome), "{outcome:?}");
+        }
     }
 
     #[test]
@@ -714,9 +757,11 @@ mod tests {
         let mut pass = snapshot.evaluate(Pass::Request, &heartbeat(), NOW, &mut session);
         let missed = &mut pass.rules_mut()[0];
 
-        // The trigger said yes, and the call counts as a match.
-        assert_eq!(missed.rolled().outcome(), TriggerOutcome::Fired);
+        // The trigger agreed, and the call counts as a match. The record does not say that the rule fired.
+        assert_eq!(missed.rolled().outcome(), TriggerOutcome::NothingToActOn);
+        assert!(!missed.rolled().outcome().fired());
         assert_eq!(missed.rolled().match_number(), Some(MatchNumber::new(1).unwrap()));
+        assert_eq!(missed.rolled().budget().map(BudgetReading::left), Some(1));
         assert_eq!(
             missed.missing_subject(),
             Some(&IncidentError::MissingSubject {
@@ -788,6 +833,9 @@ mod tests {
         shadowed.rules_mut()[0].withdraw();
         assert!(!shadowed.rules()[0].is_unsettled());
         assert_eq!(armed.arming().budget().map(Budget::left), Some(1));
+        // The evaluation keeps what it said: the rule fired, and another rule shadowed it.
+        assert_eq!(outcomes(&shadowed), [TriggerOutcome::Fired]);
+        assert!(shadowed.rules()[0].fired());
 
         let later = snapshot.evaluate(Pass::Request, &produce(), NOW, &mut session);
         assert_eq!(outcomes(&later), [TriggerOutcome::Fired]);
@@ -843,10 +891,70 @@ mod tests {
             next.rules()[0].rolled().match_number(),
             Some(MatchNumber::new(2).unwrap())
         );
-        assert!(next.rules_mut()[0].take_firing().is_some_and(|firing| firing.by_hand()));
+        let firing = next.rules_mut()[0].take_firing().expect("the rule fired");
+        assert!(firing.by_hand());
+        // The refusal applied, which uses the hand firing up.
+        firing.confirm();
 
         let after = snapshot.evaluate(Pass::Request, &produce(), NOW, &mut session);
         assert_eq!(outcomes(&after), [TriggerOutcome::Held]);
+    }
+
+    #[test]
+    fn a_hand_firing_of_a_lie_that_is_withdrawn_lies_on_the_next_matching_call() {
+        let refuse = rule("Refuse", api(ApiKey::PRODUCE), flap()).with_trigger(Trigger::Manual);
+        let snapshot = snapshot([&refuse]);
+        let armed = snapshot.get(&name("Refuse")).unwrap();
+        let mut session = session();
+
+        // Someone presses the pad once.
+        assert!(matches!(armed.fire_by_hand(NOW), Ok(HandFiring::OnNextMatch)));
+        assert_eq!(armed.arming().waiting_by_hand(), 1);
+
+        // The next Produce takes the hand firing, and a rule with a higher priority shadows the refusal.
+        let mut shadowed = snapshot.evaluate(Pass::Request, &produce(), NOW, &mut session);
+        assert_eq!(outcomes(&shadowed), [TriggerOutcome::FiredByHand]);
+        assert_eq!(armed.arming().waiting_by_hand(), 0);
+        shadowed.rules_mut()[0].withdraw();
+
+        // The press is not used up, so the Produce after it gets the refusal.
+        assert_eq!(armed.arming().waiting_by_hand(), 1);
+        let mut next = snapshot.evaluate(Pass::Request, &produce(), NOW, &mut session);
+        assert_eq!(outcomes(&next), [TriggerOutcome::FiredByHand]);
+        assert_eq!(
+            lies(&next),
+            ["NOT_LEADER_OR_FOLLOWER on orders.eu/3, orders.eu/4, payments.settled/0"]
+        );
+        assert!(next.rules_mut()[0].confirm().is_some());
+
+        // One press is one lie.
+        assert_eq!(armed.arming().waiting_by_hand(), 0);
+        let after = snapshot.evaluate(Pass::Request, &produce(), NOW, &mut session);
+        assert_eq!(outcomes(&after), [TriggerOutcome::Held]);
+    }
+
+    #[test]
+    fn a_hand_firing_of_a_call_that_ended_early_lies_on_the_next_matching_call() {
+        let refuse = rule("Refuse", api(ApiKey::PRODUCE), flap())
+            .with_trigger(Trigger::Manual)
+            .with_lifetime(Lifetime::Firings(count(1)));
+        let snapshot = snapshot([&refuse]);
+        let armed = snapshot.get(&name("Refuse")).unwrap();
+        let mut session = session();
+        assert!(armed.fire_by_hand(NOW).unwrap().fired());
+
+        // The connection closes before the call settles its firing.
+        let dropped = snapshot.evaluate(Pass::Request, &produce(), NOW, &mut session);
+        assert_eq!(outcomes(&dropped), [TriggerOutcome::FiredByHand]);
+        drop(dropped);
+
+        // Both the firing of the budget and the press are back.
+        assert_eq!(armed.arming().budget().map(Budget::left), Some(1));
+        assert_eq!(armed.arming().waiting_by_hand(), 1);
+        let mut next = snapshot.evaluate(Pass::Request, &produce(), NOW, &mut session);
+        assert_eq!(outcomes(&next), [TriggerOutcome::FiredByHand]);
+        assert_eq!(next.rules_mut()[0].confirm().map(Confirmed::ends_lifetime), Some(true));
+        assert_eq!(armed.arming().waiting_by_hand(), 0);
     }
 
     #[test]
@@ -910,7 +1018,7 @@ mod tests {
             &rule("Slow success", Condition::is(Outcome::Ok).into(), delay()),
         ]);
         let waiting = |call: &Fields| -> Vec<String> {
-            let waiting = snapshot.waiting(call);
+            let waiting = snapshot.waiting(call, NOW);
             waiting.into_iter().map(|rule| rule.name().to_string()).collect()
         };
 
@@ -932,6 +1040,37 @@ mod tests {
                 .map(|rule| rule.arming().counter().matches()),
             Some(0)
         );
+    }
+
+    #[test]
+    fn a_rule_whose_lifetime_ended_does_not_wait_for_the_truth() {
+        let half_a_minute = Lifetime::Duration(TimeSpan::from_secs(30));
+        let snapshot = snapshot([
+            &rule("Lost for 30 s", succeeded(ApiKey::PRODUCE), lost()).with_lifetime(half_a_minute),
+            &rule("Lost once", succeeded(ApiKey::PRODUCE), lost()).with_lifetime(Lifetime::Firings(count(1))),
+            &rule("Lost", succeeded(ApiKey::PRODUCE), lost()),
+        ]);
+        let waiting = |call: &Fields, now: Instant| -> Vec<String> {
+            let waiting = snapshot.waiting(call, now);
+            waiting.into_iter().map(|rule| rule.name().to_string()).collect()
+        };
+        let later = NOW + TimeSpan::from_secs(30);
+
+        assert_eq!(waiting(&produce(), NOW), ["Lost for 30 s", "Lost once", "Lost"]);
+        // The duration passed, and the engine has not disarmed the rule yet.
+        assert_eq!(waiting(&produce(), later), ["Lost once", "Lost"]);
+        // A source without one API leaves the rule out too.
+        assert_eq!(
+            waiting(&Fields::new().with(ApiKey::PRODUCE).with(ApiKey::FETCH), later),
+            ["Lost once", "Lost"]
+        );
+
+        // A call spends the one firing of the second rule, which ends its lifetime.
+        let mut response = snapshot.evaluate(Pass::Response, &produce().with(Outcome::Ok), NOW, &mut session());
+        for evaluated in &mut response {
+            evaluated.confirm();
+        }
+        assert_eq!(waiting(&produce(), NOW), ["Lost for 30 s", "Lost"]);
     }
 
     #[test]

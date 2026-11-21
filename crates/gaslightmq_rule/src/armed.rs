@@ -99,14 +99,23 @@ impl ArmedRule {
     ///   It lies on the next call its selector matches, once, and that call shows it in its evaluation.
     ///
     /// Every hand firing is one firing: two of them lie on the next two matching calls.
+    /// A hand firing of a lie is only used up when its lie applied.
+    /// When the call [withdraws](crate::RuleEvaluation::withdraw) the firing or ends early,
+    /// the hand firing waits for the next matching call.
+    ///
+    /// A rule whose lifetime has ended does not fire, whatever its action: the result is [`HandFiring::NotFired`].
     ///
     /// # Errors
     ///
-    /// [`RuleError::NoCallForIncident`] when the incident leaves its subject to the call.
+    /// [`RuleError::NoCallForIncident`] when the rule is still armed and its incident leaves its subject to the call.
     /// A hand firing has no call, so nothing can say which partition or group is meant.
     /// The rule takes no firing from its budget then.
     pub fn fire_by_hand(&self, now: Instant) -> Result<HandFiring, RuleError> {
         let arming = self.arming();
+        // The lifetime comes first: a rule that has ended does nothing, so it has nothing to get wrong.
+        if arming.has_ended(now) {
+            return Ok(HandFiring::NotFired);
+        }
         match self.rule().action() {
             Action::Incident(definition) => {
                 let incidents = definition
@@ -120,7 +129,6 @@ impl ArmedRule {
                     None => HandFiring::NotFired,
                 })
             }
-            Action::Lie(_) if arming.has_ended(now) => Ok(HandFiring::NotFired),
             Action::Lie(_) => {
                 arming.fire_on_next_match();
                 Ok(HandFiring::OnNextMatch)
@@ -144,6 +152,8 @@ pub enum HandFiring {
         firing: Firing,
     },
     /// The rule has a lie, which waits for the next call its selector matches.
+    ///
+    /// It keeps waiting until its lie applied on one: a call that withdraws the firing puts it back.
     OnNextMatch,
     /// The rule did not fire: its lifetime has ended, or its budget has no firing free.
     NotFired,
@@ -319,11 +329,32 @@ mod tests {
 
         let mut session = session();
         for _ in 0..2 {
-            let rolled = *armed.arming().evaluate(NOW, &mut session).rolled();
+            let (rolled, firing) = armed.arming().evaluate(NOW, &mut session).into_parts();
             assert_eq!(rolled.outcome(), TriggerOutcome::FiredByHand);
+            firing.expect("the rule fires by hand").confirm();
         }
         let rolled = *armed.arming().evaluate(NOW, &mut session).rolled();
         assert_eq!(rolled.outcome(), TriggerOutcome::Held);
+        assert_eq!(armed.arming().waiting_by_hand(), 0);
+    }
+
+    #[test]
+    fn a_hand_firing_of_a_lie_that_did_not_apply_waits_for_the_next_matching_call() {
+        let armed = arm(&flap().with_trigger(Trigger::Manual));
+        let mut session = session();
+        assert!(matches!(armed.fire_by_hand(NOW), Ok(HandFiring::OnNextMatch)));
+
+        // Another rule shadows the lie on the next matching call, which withdraws the firing.
+        let (rolled, firing) = armed.arming().evaluate(NOW, &mut session).into_parts();
+        assert_eq!(rolled.outcome(), TriggerOutcome::FiredByHand);
+        firing.expect("the rule fires by hand").withdraw();
+
+        // The press is not used up: the call after it lies.
+        assert_eq!(armed.arming().waiting_by_hand(), 1);
+        let (rolled, firing) = armed.arming().evaluate(NOW, &mut session).into_parts();
+        assert_eq!(rolled.outcome(), TriggerOutcome::FiredByHand);
+        firing.expect("the rule fires by hand").confirm();
+        assert_eq!(armed.arming().waiting_by_hand(), 0);
     }
 
     #[test]
@@ -333,5 +364,26 @@ mod tests {
 
         assert!(matches!(armed.fire_by_hand(later), Ok(HandFiring::NotFired)));
         assert_eq!(armed.arming().waiting_by_hand(), 0);
+    }
+
+    #[test]
+    fn a_lifetime_that_ended_comes_before_a_subject_that_is_missing() {
+        let half_a_minute = Lifetime::Duration(TimeSpan::from_secs(30));
+        let armed = arm(&election(None).with_lifetime(half_a_minute));
+
+        // While the rule is armed, the hand firing is an error: there is no call to take the partition from.
+        assert!(matches!(
+            armed.fire_by_hand(NOW),
+            Err(RuleError::NoCallForIncident { .. })
+        ));
+        // Once the lifetime ended, the rule just does not fire, like every other rule.
+        let later = NOW + TimeSpan::from_secs(30);
+        assert!(matches!(armed.fire_by_hand(later), Ok(HandFiring::NotFired)));
+
+        // The same holds for a lifetime of firings that calls spent.
+        let armed = arm(&election(None).with_lifetime(Lifetime::Firings(count(1))));
+        let firing = armed.arming().evaluate(NOW, &mut session()).into_firing().unwrap();
+        assert!(firing.confirm().ends_lifetime());
+        assert!(matches!(armed.fire_by_hand(NOW), Ok(HandFiring::NotFired)));
     }
 }

@@ -14,6 +14,15 @@ use crate::{PresetName, RuleName, RuleState};
 /// let error = "".parse::<RuleName>().unwrap_err();
 /// assert_eq!(error.to_string(), "rule name \"\" is empty");
 /// ```
+///
+/// # One message says it all
+///
+/// The message of an error is complete.
+/// A variant that holds the error of another crate writes that error into its own message,
+/// because a file reader and the UI show one line, and not a chain.
+/// No variant therefore has a [`source`](std::error::Error::source):
+/// a reporter that walks the chain would print the inner message twice.
+/// The inner error is the `error` field of its variant, for code that wants to look at it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum RuleError {
@@ -35,6 +44,9 @@ pub enum RuleError {
     UnknownPreset { rule: RuleName, preset: PresetName },
     /// A rule tests a response field, and its lie acts before forwarding, when the truth is not known yet.
     LieBeforeTruth { rule: RuleName, lie: LieKind },
+    /// A rule only fires by hand, and its incident takes a subject from the call.
+    /// A hand firing has no call, so the rule could never fire.
+    ManualWithoutSubject { rule: RuleName, error: IncidentError },
     /// A rule cannot fire its incident by hand, because the incident takes a subject from the call and there is none.
     NoCallForIncident { rule: RuleName, error: IncidentError },
     /// A rule in this state cannot take this change, where `change` is `arm`, `disarm` or `save`.
@@ -60,6 +72,11 @@ impl fmt::Display for RuleError {
                  when the truth is not known yet. Give the lie `stage: after`",
                 rule.as_str()
             ),
+            Self::ManualWithoutSubject { rule, error } => write!(
+                f,
+                "rule {:?} can never fire, because its trigger is manual and a hand firing has no call: {error}",
+                rule.as_str()
+            ),
             Self::NoCallForIncident { rule, error } => write!(
                 f,
                 "rule {:?} cannot fire by hand, because there is no call: {error}",
@@ -71,15 +88,8 @@ impl fmt::Display for RuleError {
     }
 }
 
-impl std::error::Error for RuleError {
-    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        match self {
-            Self::UnknownSelector { error, .. } => Some(error),
-            Self::NoCallForIncident { error, .. } => Some(error),
-            _ => None,
-        }
-    }
-}
+/// The message is complete, so no variant has a source. See [`RuleError`].
+impl std::error::Error for RuleError {}
 
 #[cfg(test)]
 mod tests {
@@ -154,6 +164,14 @@ mod tests {
                  when the truth is not known yet. Give the lie `stage: after`",
             ),
             (
+                RuleError::ManualWithoutSubject {
+                    rule: rule("Election"),
+                    error: missing_partition(),
+                },
+                "rule \"Election\" can never fire, because its trigger is manual and a hand firing has no call: \
+                 leader-moves needs a partition, and none is named",
+            ),
+            (
                 RuleError::NoCallForIncident {
                     rule: rule("Election"),
                     error: missing_partition(),
@@ -179,25 +197,49 @@ mod tests {
         }
     }
 
-    #[test]
-    fn the_error_of_another_crate_is_the_source() {
-        let selector = RuleError::UnknownSelector {
-            rule: rule("Flap"),
-            error: unknown_selector(),
-        };
-        let incident = RuleError::NoCallForIncident {
-            rule: rule("Election"),
-            error: missing_partition(),
-        };
+    /// Writes an error the way a reporter does that walks the chain: every message, and then its source.
+    fn chain(error: &dyn Error) -> String {
+        let mut messages = vec![error.to_string()];
+        let mut source = error.source();
+        while let Some(inner) = source {
+            messages.push(inner.to_string());
+            source = inner.source();
+        }
+        messages.join(": ")
+    }
 
-        assert_eq!(
-            selector.source().map(ToString::to_string),
-            Some(unknown_selector().to_string())
-        );
-        assert_eq!(
-            incident.source().map(ToString::to_string),
-            Some(missing_partition().to_string())
-        );
-        assert!(RuleError::UnknownRule { name: rule("Flap") }.source().is_none());
+    #[test]
+    fn the_message_holds_the_error_of_another_crate_and_the_chain_prints_it_once() {
+        let selector = unknown_selector().to_string();
+        let incident = missing_partition().to_string();
+        let cases = [
+            (
+                RuleError::UnknownSelector {
+                    rule: rule("Flap"),
+                    error: unknown_selector(),
+                },
+                &selector,
+            ),
+            (
+                RuleError::ManualWithoutSubject {
+                    rule: rule("Election"),
+                    error: missing_partition(),
+                },
+                &incident,
+            ),
+            (
+                RuleError::NoCallForIncident {
+                    rule: rule("Election"),
+                    error: missing_partition(),
+                },
+                &incident,
+            ),
+        ];
+
+        for (error, inner) in cases {
+            assert!(error.source().is_none(), "{error}");
+            assert_eq!(chain(&error), error.to_string());
+            assert_eq!(chain(&error).matches(inner.as_str()).count(), 1, "{error}");
+        }
     }
 }

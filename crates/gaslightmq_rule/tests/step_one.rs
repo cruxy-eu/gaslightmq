@@ -187,7 +187,7 @@ impl Run {
 
     /// The names of the rules that wait for the truth of a call.
     fn waiting(&self, call: &Fields) -> Vec<String> {
-        let waiting = self.snapshot.waiting(call);
+        let waiting = self.snapshot.waiting(call, self.clock.now());
         waiting.into_iter().map(|rule| rule.name().to_string()).collect()
     }
 
@@ -350,6 +350,8 @@ fn a_rule_that_waits_for_the_truth_evaluates_against_hand_written_fetch_calls() 
         ["Slow down two successful fetches | matched orders.eu/3, orders.us/0 | 0 of 2 left | LifetimeOver"]
     );
     assert_eq!(run.matches("Slow down two successful fetches")?, 2);
+    // A rule that cannot fire anymore does not wait for the truth of a Fetch either.
+    assert_eq!(run.waiting(&fetch), [""; 0]);
     Ok(())
 }
 
