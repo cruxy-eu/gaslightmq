@@ -1,8 +1,0 @@
-[package]
-name = "gaslightmq-scenario"
-version.workspace = true
-edition.workspace = true
-
-[dependencies]
-serde = { workspace = true, features = ["derive"] }
-serde_yaml.workspace = true

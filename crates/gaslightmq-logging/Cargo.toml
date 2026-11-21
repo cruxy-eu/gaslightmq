@@ -1,7 +1,0 @@
-[package]
-name = "gaslightmq-logging"
-version.workspace = true
-edition.workspace = true
-
-[dependencies]
-tracing-subscriber = { workspace = true, features = ["env-filter"] }

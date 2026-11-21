@@ -1,7 +1,0 @@
-body { font-family: system-ui, sans-serif; margin: 1rem; }
-main.offline { opacity: 0.5; }
-table { border-collapse: collapse; }
-th, td { border: 1px solid #ccc; padding: 0.25rem 0.5rem; text-align: left; white-space: nowrap; }
-tr.active { background: #fff3cd; }
-input.number { width: 5em; }
-.error { color: #b00; }
