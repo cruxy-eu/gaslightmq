@@ -265,14 +265,17 @@ impl<'a, Id> Round<'a, Id> {
         let to_the_seated = if with_the_seated { How::Shadowed } else { How::PreEmpted };
 
         match target {
-            // The whole call is one target, so any refusal on the call stands in its way.
             Target::Call => {
-                let seated = self.seated.first;
                 let held = self.board.refusals.first;
-                let rival = if with_the_seated {
-                    self.higher(seated, held)
+                let (seated, rival) = if with_the_seated {
+                    // The whole call is one target, so any refusal on the call stands in its way.
+                    let seated = self.seated.first;
+                    (seated, self.higher(seated, held))
                 } else {
-                    seated.or(held)
+                    // A seated refusal of a part already happened, and the rest of the call has a truth to replace.
+                    // Only a seated refusal of the whole call leaves a lie of the response pass nothing.
+                    let seated = self.seated.of_call();
+                    (seated, seated.or(held))
                 };
 
                 match rival {

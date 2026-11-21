@@ -37,14 +37,16 @@
 //! - **Priority decides a conflict.**
 //!   The lies go from the highest priority down, and each takes the targets that are still free.
 //!   The loser is **shadowed** on the target the two share.
-//! - **A loser wins nothing.**
+//! - **Within one pass, a loser wins nothing.**
 //!   A lie only shadows another lie on a target it applies to itself.
 //!   A refusal above a blackhole shadows the blackhole, and a refusal of another partition below the two then applies.
+//!   [Two passes](#two-passes) have one exception.
 //! - **A lie with nothing left to change is pre-empted**, whatever its priority.
 //!   Pre-emption comes before shadowing:
 //!   a rewrite of a refused partition is pre-empted, even when a rewrite above it changes the same aspect.
 //! - **A terminal lie pre-empts what acts at its stage or later.**
 //!   A delay before forwarding still holds the request back when a hang-up after the response ends the call.
+//!   Its throttle reaches no client, because the call has no answer.
 //! - **The whole call is one target.**
 //!   A refusal of the whole call and a refusal of a part conflict, and the loser loses its whole target.
 //!   A rewrite of the whole call keeps something to change until the whole call is refused.
@@ -99,6 +101,12 @@
 //! What took effect before forwarding stays: the fate of such a lie is final after the request pass.
 //! A lie that acts after the response is open until the response pass ran.
 //! [`RequestPass::response_pass`] lists what happens between the passes.
+//!
+//! A loss before forwarding stays as well, and that is the one time a loser keeps a win.
+//! A hang-up after the response shadows a refusal before forwarding in the request pass,
+//! and a refusal of the response pass, with a higher priority, then shadows the hang-up.
+//! The request was forwarded whole by then, so the first refusal stays shadowed.
+//! Its [`Loss`] names the hang-up, which ended nothing, and its firing does not count.
 //!
 //! ```
 //! use gaslightmq_combine::prelude::*;

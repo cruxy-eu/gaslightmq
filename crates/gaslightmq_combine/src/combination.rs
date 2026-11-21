@@ -99,12 +99,18 @@ impl<Id: Clone> RequestPass<Id> {
     ///
     /// - The fate of a request-pass lie that acts before forwarding is final.
     ///   It took effect, or it lost to a lie of its own pass.
+    ///   It keeps that loss when its winner then loses in the response pass, because the request was forwarded by then.
+    ///   Its [`Loss`] then names a lie that does not apply there.
     /// - A request-pass lie that acts after the response meets the lies of the response pass,
     ///   and their conflicts resolve by priority as usual.
     ///   A hang-up after the response that won the request pass can still lose to a refusal of the response pass,
     ///   and a refusal it shadowed then applies after all.
     /// - A part that was refused before forwarding has no truth.
     ///   A response-pass lie on that part is pre-empted by the refusal, whatever its priority.
+    /// - A response-pass lie on the whole call does not conflict with a refusal of a part before forwarding,
+    ///   which already happened.
+    ///   A refusal of the whole call replaces the truth of every part that was forwarded, and both apply.
+    ///   Only a refusal of the whole call before forwarding leaves no truth, and pre-empts it.
     /// - A response-pass hang-up does not conflict with a refusal before forwarding, which already happened.
     ///   Both apply.
     /// - After a silence or a hang-up before forwarding, there is no truth at all.
@@ -231,6 +237,8 @@ impl<Id> Combination<Id> {
     ///
     /// The refusals of this effect are the ones that act after the response.
     /// The refusals [before forwarding](Self::before_forwarding) merge into the response as well.
+    /// A part that was refused before forwarding keeps that refusal,
+    /// also when a refusal of the response pass holds the whole call here: that one replaces the truth of the rest.
     pub const fn after_response(&self) -> &Effect<Id> {
         &self.after
     }
@@ -266,10 +274,13 @@ fn before_forwarding<Id: Clone>(entries: &[Entry<Id>], board: &Board) -> Effect<
 }
 
 /// The effect after the response of what the second round decided.
+///
 /// The throttle also counts the modifiers that applied before forwarding, in the `first` round.
+/// A call that ends after the response has no answer to carry a throttle, so its throttle is zero.
 fn after_response<Id: Clone>(entries: &[Entry<Id>], first: &Board, second: &Board) -> Effect<Id> {
     let id = |lie: &usize| Some(entries[*lie].lie.id().clone());
     let held_back = first.modifiers.iter().copied().filter(|&lie| entries[lie].is_settled());
+    let answered = second.terminal.is_none();
 
     Effect {
         terminal: second.terminal.as_ref().and_then(id),
@@ -283,6 +294,7 @@ fn after_response<Id: Clone>(entries: &[Entry<Id>], first: &Board, second: &Boar
         delay: delay(entries, second.modifiers.iter().copied()),
         throttle: held_back
             .chain(second.modifiers.iter().copied())
+            .filter(|_| answered)
             .filter_map(|lie| timing(entries, lie))
             .map(TimingLie::throttle)
             .max()
@@ -537,9 +549,12 @@ mod tests {
             refusals: winners_by_fate(call, stage, |claim| claim.class() == CombinationClass::Refusal),
             rewrites,
             delay: timings(Some(stage)).fold(Delay::ZERO, Delay::plus),
+            // The throttle is a field of the answer, and a call that a terminal lie ends has no answer.
             throttle: match stage {
-                Stage::BeforeForwarding => TimeSpan::ZERO,
-                Stage::AfterResponse => timings(None).map(TimingLie::throttle).max().unwrap_or(TimeSpan::ZERO),
+                Stage::AfterResponse if terminals.is_empty() => {
+                    timings(None).map(TimingLie::throttle).max().unwrap_or(TimeSpan::ZERO)
+                }
+                _ => TimeSpan::ZERO,
             },
         }
     }
@@ -639,6 +654,28 @@ mod tests {
                 let call = RequestPass::of(request).response_pass(response);
 
                 assert_the_combination_holds_together(&call, claims.len());
+            }
+        }
+    }
+
+    #[test]
+    fn a_lie_is_only_pre_empted_on_what_the_other_lie_holds() {
+        for claims in lists(&catalogue(), 3) {
+            for mask in 0..8 {
+                let (request, response) = in_two_passes(&claims, mask);
+                let call = RequestPass::of(request).response_pass(response);
+
+                for fate in call.fates() {
+                    for loss in fate.pre_empted() {
+                        let held = call.fate_of(loss.to()).unwrap().applied();
+                        let holds_it = match (held, loss.on()) {
+                            (Some(Target::Call), _) => true,
+                            (Some(Target::Parts(held)), Target::Parts(lost)) => lost.is_subset(held),
+                            (Some(Target::Parts(_)), Target::Call) | (None, _) => false,
+                        };
+                        assert!(holds_it, "pre-empted on more than the other lie holds: {call:?}");
+                    }
+                }
             }
         }
     }

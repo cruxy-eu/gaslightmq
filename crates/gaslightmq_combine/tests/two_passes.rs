@@ -154,6 +154,102 @@ fn a_whole_call_that_was_refused_before_forwarding_has_no_truth_at_all() {
 }
 
 #[test]
+fn a_response_pass_refusal_of_the_whole_call_refuses_what_a_refusal_before_forwarding_left() {
+    let request = RequestPass::of([lie("Leader flap", 5, refusal(parts(&["orders.eu/3"])))]);
+    let before = request.before_forwarding().clone();
+
+    // `orders.eu/3` never reached the backend. Every other partition has a truth, and "Rebalance" replaces it.
+    let call = request.response_pass([
+        lie("Rebalance", 0, late_refusal(Target::Call)),
+        lie(
+            "Lost acknowledgement",
+            1,
+            late_refusal(parts(&["orders.eu/3", "orders.eu/4"])),
+        ),
+        lie("Stale watermark", 2, stale_watermark(parts(&["orders.eu/4"]))),
+        lie("Another controller", 3, rewrite(Aspect::Controller, Target::Call)),
+    ]);
+
+    assert_eq!(fate(&call, "Leader flap"), "applied on orders.eu/3");
+    assert_eq!(fate(&call, "Rebalance"), "applied on call");
+    assert!(call.fate_of(&"Rebalance").unwrap().counts());
+
+    // Below it, the refused partition has no truth, and the rest is refused.
+    assert_eq!(
+        fate(&call, "Lost acknowledgement"),
+        "shadowed on orders.eu/4 by Rebalance; pre-empted on orders.eu/3 by Leader flap"
+    );
+    assert_eq!(fate(&call, "Stale watermark"), "pre-empted on orders.eu/4 by Rebalance");
+    assert_eq!(fate(&call, "Another controller"), "pre-empted on call by Rebalance");
+
+    // The refused partition keeps its refusal, and the refusal of the whole call covers the others.
+    assert_eq!(call.before_forwarding(), &before);
+    assert_eq!(held(before.refusals()), ["orders.eu/3: Leader flap"]);
+    assert_eq!(held(call.after_response().refusals()), ["call: Rebalance"]);
+    assert_eq!(
+        call.after_response().refusals().of(&part("orders.eu/4")),
+        Some(&"Rebalance")
+    );
+}
+
+#[test]
+fn a_response_pass_refusal_of_the_whole_call_applies_whatever_the_priority_of_the_refusal_before_forwarding() {
+    let call = combine(
+        vec![lie("Leader flap", 0, refusal(parts(&["orders.eu/3"])))],
+        vec![lie("Rebalance", 1, late_refusal(Target::Call))],
+    );
+
+    assert_eq!(fate(&call, "Leader flap"), "applied on orders.eu/3");
+    assert_eq!(fate(&call, "Rebalance"), "applied on call");
+}
+
+#[test]
+fn a_response_pass_refusal_of_the_whole_call_conflicts_with_a_refusal_after_the_response() {
+    // The refusal before forwarding already happened. The refusal after the response is a conflict, by priority.
+    let fired = |rebalance: usize| {
+        combine(
+            vec![
+                lie("Leader flap", 1, refusal(parts(&["orders.eu/3"]))),
+                lie("Lost acknowledgement", 2, late_refusal(parts(&["orders.eu/4"]))),
+            ],
+            vec![lie("Rebalance", rebalance, late_refusal(Target::Call))],
+        )
+    };
+
+    let below = fired(3);
+    assert_eq!(fate(&below, "Rebalance"), "shadowed on call by Lost acknowledgement");
+    assert_eq!(fate(&below, "Lost acknowledgement"), "applied on orders.eu/4");
+    assert_eq!(
+        held(below.after_response().refusals()),
+        ["orders.eu/4: Lost acknowledgement"]
+    );
+
+    let above = fired(0);
+    assert_eq!(fate(&above, "Rebalance"), "applied on call");
+    assert_eq!(
+        fate(&above, "Lost acknowledgement"),
+        "shadowed on orders.eu/4 by Rebalance"
+    );
+    assert_eq!(fate(&above, "Leader flap"), "applied on orders.eu/3");
+    assert_eq!(held(above.after_response().refusals()), ["call: Rebalance"]);
+}
+
+#[test]
+fn a_request_pass_refusal_of_the_whole_call_below_a_refusal_before_forwarding_stays_shadowed() {
+    // Both fired in the request pass, where the whole call is one target and priority decides.
+    let call = combine(
+        vec![
+            lie("Leader flap", 0, refusal(parts(&["orders.eu/3"]))),
+            lie("Rebalance", 1, late_refusal(Target::Call)),
+        ],
+        vec![lie("Slow answer", 2, delay(1000))],
+    );
+
+    assert_eq!(fate(&call, "Rebalance"), "shadowed on call by Leader flap");
+    assert!(call.after_response().refusals().is_empty());
+}
+
+#[test]
 fn a_refusal_before_forwarding_that_was_shadowed_refused_nothing() {
     let partition = parts(&["orders.eu/3"]);
     let call = combine(
@@ -275,7 +371,10 @@ fn a_hang_up_after_the_response_that_won_the_request_pass_can_lose_the_response_
     assert_eq!(fate(&call, "Slow answer"), "applied on call");
 
     // What it kept from acting before forwarding lost its chance: priority held within the request pass.
+    // The request was forwarded whole, so the loss stays, to a hang-up that ended nothing. Neither firing counts.
     assert_eq!(fate(&call, "Leader flap"), "shadowed on orders.eu/3 by Late disconnect");
+    assert!(!call.fate_of(&"Leader flap").unwrap().counts());
+    assert!(!call.fate_of(&"Late disconnect").unwrap().counts());
     assert!(call.before_forwarding().changes_nothing());
 
     let after = call.after_response();
@@ -285,6 +384,35 @@ fn a_hang_up_after_the_response_that_won_the_request_pass_can_lose_the_response_
         ["orders.eu/4: Lost acknowledgement", "orders.eu/5: Fail what succeeded"]
     );
     assert_eq!(after.delay().length(), millis(1000));
+}
+
+#[test]
+fn a_refusal_before_forwarding_keeps_its_loss_when_its_winner_loses_the_partition_in_the_response_pass() {
+    let partition = parts(&["orders.eu/3"]);
+    let call = combine(
+        vec![
+            lie(
+                "Lost acknowledgement",
+                1,
+                late_refusal(parts(&["orders.eu/3", "orders.eu/4"])),
+            ),
+            lie("Leader flap", 2, refusal(partition.clone())),
+        ],
+        vec![lie("Fail what succeeded", 0, late_refusal(partition))],
+    );
+
+    // The partition reached the backend, so its refusal before forwarding cannot apply any more.
+    assert_eq!(fate(&call, "Fail what succeeded"), "applied on orders.eu/3");
+    assert_eq!(
+        fate(&call, "Lost acknowledgement"),
+        "applied on orders.eu/4; shadowed on orders.eu/3 by Fail what succeeded"
+    );
+    assert_eq!(
+        fate(&call, "Leader flap"),
+        "shadowed on orders.eu/3 by Lost acknowledgement"
+    );
+    assert!(!call.fate_of(&"Leader flap").unwrap().counts());
+    assert!(call.before_forwarding().changes_nothing());
 }
 
 #[test]
@@ -340,6 +468,25 @@ fn a_response_pass_hang_up_does_not_undo_a_refusal_before_forwarding() {
     assert_eq!(held(call.before_forwarding().refusals()), ["orders.eu/3: Leader flap"]);
     assert_eq!(call.after_response().terminal(), Some(&"Disconnect on success"));
     assert!(call.after_response().refusals().is_empty());
+}
+
+#[test]
+fn a_response_pass_hang_up_leaves_no_answer_to_carry_the_throttle_of_the_request_pass() {
+    let call = combine(
+        vec![
+            lie("Slow request", 1, delay(200).with_throttle(millis(700)).at(BEFORE)),
+            lie("Throttle", 2, TimingLie::new().with_throttle(millis(500))),
+        ],
+        vec![lie("Disconnect on success", 0, late_hang_up())],
+    );
+
+    // The request waited before the hang-up fired, so that lie applied.
+    assert_eq!(fate(&call, "Slow request"), "applied on call");
+    assert_eq!(fate(&call, "Throttle"), "pre-empted on call by Disconnect on success");
+    assert_eq!(call.before_forwarding().delay().length(), millis(200));
+
+    assert_eq!(call.after_response().terminal(), Some(&"Disconnect on success"));
+    assert_eq!(call.after_response().throttle(), millis(0));
 }
 
 #[test]

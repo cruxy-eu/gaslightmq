@@ -548,6 +548,22 @@ fn the_throttle_of_either_stage_goes_into_the_answer() {
 }
 
 #[test]
+fn a_call_that_ends_after_the_response_has_no_answer_to_carry_a_throttle() {
+    let call = combine([
+        lie("Late disconnect", 0, late_hang_up()),
+        lie("Slow request", 1, delay(200).with_throttle(millis(700)).at(BEFORE)),
+    ]);
+
+    // The delay held the request back, so the lie applies. Its throttle reaches no client.
+    assert_eq!(fate(&call, "Slow request"), "applied on call");
+    assert_eq!(call.before_forwarding().delay().length(), millis(200));
+
+    let after = call.after_response();
+    assert_eq!(after.terminal(), Some(&"Late disconnect"));
+    assert_eq!(after.throttle(), millis(0));
+}
+
+#[test]
 fn a_timing_lie_that_changes_nothing_still_applies() {
     let call = combine([lie("Nothing", 0, TimingLie::new())]);
 

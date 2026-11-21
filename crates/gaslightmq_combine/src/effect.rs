@@ -196,7 +196,7 @@ const fn sum(one: TimeSpan, other: TimeSpan) -> TimeSpan {
 /// | [`refusals`](Self::refusals) | The refusal that holds each target. |
 /// | [`rewrites`](Self::rewrites) | For every aspect, the rewrite that holds each target. Rewrites act after the response only. |
 /// | [`delay`](Self::delay) | How long the call waits at this stage. |
-/// | [`throttle`](Self::throttle) | The throttle the answer tells the client. It is a field of the answer, so it is zero before forwarding. |
+/// | [`throttle`](Self::throttle) | The throttle the answer tells the client. It is a field of the answer, so it is zero before forwarding, and zero when the call ends without an answer. |
 ///
 /// ```
 /// use gaslightmq_clock::TimeSpan;
@@ -304,6 +304,7 @@ impl<Id> Effect<Id> {
     /// The `throttle_time_ms` of the answer: the longest throttle of the timing lies that apply, at either stage.
     ///
     /// The throttle is a field of the answer, so it is zero before forwarding.
+    /// It is also zero when a [terminal lie](Self::terminal) ends the call at this stage: no answer carries it.
     /// It is at most [`TimingLie::MAX_THROTTLE`].
     pub const fn throttle(&self) -> TimeSpan {
         self.throttle

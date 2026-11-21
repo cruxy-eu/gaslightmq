@@ -103,6 +103,11 @@ Between the passes, the stage decides:
   The response pass skips that partition.
   A response-pass lie on that partition is pre-empted there, even when it has a higher priority,
   and the explanation names the refusal.
+  A response-pass lie on the whole call has the other partitions left to change, so that refusal does not pre-empt it.
+  A response-pass refusal of the whole call replaces the truth of every partition that reached the backend,
+  and the refused partition keeps its own refusal.
+- A whole call that the request pass refused before forwarding has no truth at all.
+  A response-pass refusal or rewrite is pre-empted, on any target.
 - Everything else from the request pass meets the response pass in stage 9,
   where conflicts resolve by priority as usual.
 
@@ -111,6 +116,8 @@ The outcome of a request-pass lie that acts before forwarding is final when the 
 
 - A refusal before forwarding that lost a conflict in the request pass stays shadowed,
   even when its winner loses a conflict in the response pass.
+  The request was forwarded by then, so the refusal cannot act before forwarding any more.
+  The explanation still names that winner, and the firing of the refusal goes back to its budget.
 - A response-pass hang-up does not conflict with a refusal before forwarding.
   The refused partition never reached the backend,
   and the connection closes after the backend answered the rest.

@@ -8,6 +8,10 @@ use crate::{Claim, FiredLie, Priority};
 /// A lie that is **shadowed** lost a conflict: the other lie has a higher priority.
 /// A lie that is **pre-empted** had nothing left to change: the other lie got there first.
 /// A [`Fate`] says which of the two a loss is.
+///
+/// Within one pass, the other lie applies on that target.
+/// Across [two passes](crate#two-passes), a lie that acts before forwarding keeps a loss of the request pass,
+/// also when the other lie then loses the target in the response pass.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Loss<Id> {
     pub(crate) on: Target,

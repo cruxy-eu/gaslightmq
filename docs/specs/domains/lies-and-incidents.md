@@ -111,9 +111,12 @@ Lies that conflict go to the scenario's [mode](scenarios.md#modes),
 which picks one winner per target.
 The losing rule is **shadowed** for that target.
 
-A rule that lost a target shadows no rule there.
+Within one [evaluation pass](../architecture/request-pipeline.md#two-evaluation-passes),
+a rule that lost a target shadows no rule there.
 A refusal above a blackhole shadows the blackhole,
 and a refusal of another partition below the two then applies.
+Across the two passes, a lie before forwarding keeps what it lost in the request pass,
+even when its winner loses in the response pass.
 
 A lie that fired but has nothing left to change is **pre-empted**.
 A delay on a call that a silence ended is pre-empted,
@@ -131,6 +134,7 @@ The combined delay of a stage is the sum of the delays that apply there.
 It strays from that sum by at most the sum of their jitters.
 The throttle is a field of the answer.
 It is the maximum over every timing lie that applies, at either stage.
+A call that a terminal lie ends has no answer, so no throttle reaches the client.
 
 The whole call is one target.
 A refusal of the whole call and a refusal of a partition conflict,
