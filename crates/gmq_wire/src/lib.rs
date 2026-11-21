@@ -1,15 +1,23 @@
-//! Kafka wire framing shared by the fake broker and the proxy.
+//! The Kafka codec: frames, headers and record batches.
 //!
 //! Every Kafka frame on the wire is a 4-byte big-endian length followed by
-//! a header and a body. These helpers read and write such frames, either
-//! fully decoded ([`read_request`]) or as raw bytes ([`read_frame`]) for
-//! code that only needs to peek at the header and forward the rest.
+//! a header and a body. This crate splits frames out of a byte buffer
+//! ([`decode_frame`]), decodes them fully ([`split_request`]) or only as far
+//! as needed ([`peek_request`]), and converts records to and from record
+//! batches ([`batch`]).
+//!
+//! The crate is sans-IO: it works on bytes in memory and never touches a
+//! socket. Whoever owns the socket reads into a buffer and calls in here.
+
+pub mod batch;
+pub mod record;
+
+pub use record::{Offset, Partition, Record};
 
 use anyhow::{Result, bail};
 use bytes::{Buf, Bytes, BytesMut};
 use kafka_protocol::messages::{ApiKey, RequestHeader, ResponseHeader};
 use kafka_protocol::protocol::{Decodable, Encodable};
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 /// Upper bound for a single frame. Larger frames are rejected instead of
 /// allocated, which protects against garbage on the socket.
@@ -41,32 +49,37 @@ pub fn response_header_version(api_key: i16, api_version: i16) -> i16 {
 // Raw frames
 // ---------------------------------------------------------------------------
 
-/// Read one length-prefixed frame and return its payload without the length
-/// prefix. Returns `None` on clean EOF.
-pub async fn read_frame<R: AsyncReadExt + Unpin>(reader: &mut R) -> Result<Option<Bytes>> {
-    let len = match reader.read_u32().await {
-        Ok(n) => n as usize,
-        Err(e) if e.kind() == std::io::ErrorKind::UnexpectedEof => return Ok(None),
-        Err(e) => return Err(e.into()),
-    };
+/// Take one length-prefixed frame from the front of `buf` and return its
+/// payload without the length prefix.
+///
+/// Returns `None` and leaves `buf` untouched while the frame is incomplete.
+/// The caller appends more bytes and calls again. An invalid length is an
+/// error as soon as the prefix is there, before the payload arrives.
+pub fn decode_frame(buf: &mut BytesMut) -> Result<Option<Bytes>> {
+    if buf.len() < 4 {
+        return Ok(None);
+    }
+    let len = u32::from_be_bytes([buf[0], buf[1], buf[2], buf[3]]) as usize;
     if len == 0 {
         bail!("received zero-length frame");
     }
     if len > MAX_FRAME_LEN {
         bail!("frame of {len} bytes exceeds limit of {MAX_FRAME_LEN}");
     }
-    let mut frame = BytesMut::zeroed(len);
-    reader.read_exact(&mut frame).await?;
-    Ok(Some(frame.freeze()))
+    if buf.len() < 4 + len {
+        buf.reserve(4 + len - buf.len());
+        return Ok(None);
+    }
+    buf.advance(4);
+    Ok(Some(buf.split_to(len).freeze()))
 }
 
-/// Write `payload` as one length-prefixed frame.
-pub async fn write_frame<W: AsyncWriteExt + Unpin>(writer: &mut W, payload: &[u8]) -> Result<()> {
+/// Wrap `payload` in one length-prefixed frame.
+pub fn encode_frame(payload: &[u8]) -> Bytes {
     let mut frame = BytesMut::with_capacity(4 + payload.len());
     frame.extend_from_slice(&(payload.len() as u32).to_be_bytes());
     frame.extend_from_slice(payload);
-    writer.write_all(&frame).await?;
-    Ok(())
+    frame.freeze()
 }
 
 /// The fixed-position fields at the start of every request header.
@@ -128,15 +141,6 @@ pub fn parse_request(data: &[u8]) -> Result<ParsedRequest> {
     split_request(Bytes::copy_from_slice(data))
 }
 
-/// Read one length-prefixed request and split it into header and body.
-/// Returns `None` on clean EOF.
-pub async fn read_request<R: AsyncReadExt + Unpin>(reader: &mut R) -> Result<Option<ParsedRequest>> {
-    match read_frame(reader).await? {
-        Some(payload) => split_request(payload).map(Some),
-        None => Ok(None),
-    }
-}
-
 /// Encode a request header and body into a payload (without length prefix).
 pub fn encode_request<E: Encodable>(header: &RequestHeader, body: &E) -> Result<Bytes> {
     let header_version = request_header_version(header.request_api_key, header.request_api_version);
@@ -184,15 +188,9 @@ pub fn decode_response<D: Decodable>(
     Ok((header, body))
 }
 
-/// Write a length-prefixed response frame with a fresh header for
+/// Build a length-prefixed response frame with a fresh header for
 /// `correlation_id`, followed by an already-encoded `body`.
-pub async fn write_response<W: AsyncWriteExt + Unpin>(
-    writer: &mut W,
-    api_key: i16,
-    api_version: i16,
-    correlation_id: i32,
-    body: &[u8],
-) -> Result<()> {
+pub fn response_frame(api_key: i16, api_version: i16, correlation_id: i32, body: &[u8]) -> Result<Bytes> {
     let header_version = response_header_version(api_key, api_version);
     let header = ResponseHeader::default().with_correlation_id(correlation_id);
 
@@ -203,9 +201,7 @@ pub async fn write_response<W: AsyncWriteExt + Unpin>(
     frame.extend_from_slice(&(total as u32).to_be_bytes());
     header.encode(&mut frame, header_version)?;
     frame.extend_from_slice(body);
-
-    writer.write_all(&frame).await?;
-    Ok(())
+    Ok(frame.freeze())
 }
 
 #[cfg(test)]
@@ -288,36 +284,63 @@ mod tests {
         assert!(peek_request(&[0, 3, 0]).is_err());
     }
 
-    #[tokio::test]
-    async fn read_request_parses_length_prefixed_frame() {
+    #[test]
+    fn decode_frame_splits_a_framed_request() {
         let header = RequestHeader::default()
             .with_request_api_key(ApiKey::ApiVersions as i16)
             .with_request_api_version(0)
             .with_correlation_id(7);
         let mut payload = BytesMut::new();
         header.encode(&mut payload, request_header_version(18, 0)).unwrap();
+        let mut buf = BytesMut::from(&encode_frame(&payload)[..]);
 
-        let (mut client, mut server) = tokio::io::duplex(1024);
-        tokio::spawn(async move { write_frame(&mut client, &payload).await.unwrap() });
-
-        let parsed = read_request(&mut server).await.unwrap().unwrap();
+        let parsed = split_request(decode_frame(&mut buf).unwrap().unwrap()).unwrap();
         assert_eq!(parsed.api_key, ApiKey::ApiVersions as i16);
         assert_eq!(parsed.api_version, 0);
         assert_eq!(parsed.header.correlation_id, 7);
+        assert!(buf.is_empty());
     }
 
-    #[tokio::test]
-    async fn read_request_returns_none_on_eof() {
-        let (client, mut server) = tokio::io::duplex(1024);
-        drop(client);
-        assert!(read_request(&mut server).await.unwrap().is_none());
+    #[test]
+    fn decode_frame_waits_for_the_whole_frame() {
+        let frame = encode_frame(b"abcdef");
+        let mut buf = BytesMut::new();
+        for byte in &frame[..frame.len() - 1] {
+            buf.extend_from_slice(&[*byte]);
+            assert!(decode_frame(&mut buf).unwrap().is_none());
+        }
+        buf.extend_from_slice(&frame[frame.len() - 1..]);
+        assert_eq!(decode_frame(&mut buf).unwrap().unwrap().as_ref(), b"abcdef");
     }
 
-    #[tokio::test]
-    async fn read_frame_rejects_oversized_frame() {
-        let (mut client, mut server) = tokio::io::duplex(1024);
-        client.write_u32((MAX_FRAME_LEN + 1) as u32).await.unwrap();
-        assert!(read_frame(&mut server).await.is_err());
+    #[test]
+    fn decode_frame_leaves_the_next_frame_in_the_buffer() {
+        let mut buf = BytesMut::new();
+        buf.extend_from_slice(&encode_frame(b"one"));
+        buf.extend_from_slice(&encode_frame(b"two"));
+        assert_eq!(decode_frame(&mut buf).unwrap().unwrap().as_ref(), b"one");
+        assert_eq!(decode_frame(&mut buf).unwrap().unwrap().as_ref(), b"two");
+        assert!(decode_frame(&mut buf).unwrap().is_none());
+    }
+
+    #[test]
+    fn decode_frame_rejects_oversized_frame() {
+        let mut buf = BytesMut::from(&((MAX_FRAME_LEN + 1) as u32).to_be_bytes()[..]);
+        assert!(decode_frame(&mut buf).is_err());
+    }
+
+    #[test]
+    fn decode_frame_rejects_zero_length_frame() {
+        let mut buf = BytesMut::from(&0u32.to_be_bytes()[..]);
+        assert!(decode_frame(&mut buf).is_err());
+    }
+
+    #[test]
+    fn response_frame_prefixes_length_and_header() {
+        let mut buf = BytesMut::from(&response_frame(ApiKey::Metadata as i16, 1, 5, &[0xAB]).unwrap()[..]);
+        let payload = decode_frame(&mut buf).unwrap().unwrap();
+        assert_eq!(peek_response_correlation_id(&payload).unwrap(), 5);
+        assert_eq!(payload.last(), Some(&0xAB));
     }
 
     #[test]

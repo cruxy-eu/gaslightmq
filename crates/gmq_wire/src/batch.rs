@@ -1,7 +1,7 @@
-//! Conversion between facade [`Record`]s and Kafka record batches.
+//! Conversion between [`Record`]s and Kafka record batches.
 
 use bytes::{Bytes, BytesMut};
-use gaslightmq_kernel::{Header, Offset, Record};
+use crate::record::{Header, Offset, Record};
 use indexmap::IndexMap;
 use kafka_protocol::protocol::StrBytes;
 use kafka_protocol::records::{
@@ -9,7 +9,7 @@ use kafka_protocol::records::{
     RecordBatchDecoder, RecordBatchEncoder, RecordEncodeOptions, RecordSet, TimestampType,
 };
 
-/// Convert facade records to wire records, numbering offsets from 0.
+/// Convert records to wire records, numbering offsets from 0.
 pub fn to_kafka(records: &[Record]) -> Vec<KafkaRecord> {
     records
         .iter()
@@ -37,7 +37,7 @@ pub fn to_kafka(records: &[Record]) -> Vec<KafkaRecord> {
         .collect()
 }
 
-/// Convert a decoded record set to facade records.
+/// Convert a decoded record set to records.
 pub fn from_kafka(batch: &RecordSet) -> Vec<Record> {
     batch
         .records

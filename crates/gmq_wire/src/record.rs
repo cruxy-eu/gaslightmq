@@ -1,3 +1,5 @@
+//! Records, partitions and offsets as the rest of the workspace speaks of them.
+
 use bytes::Bytes;
 
 #[derive(Debug, Clone, PartialEq, Eq)]

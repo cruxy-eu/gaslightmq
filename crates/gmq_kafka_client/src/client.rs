@@ -4,12 +4,12 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use bytes::Bytes;
-use gaslightmq_kafka_client_api::records::{decode_batches, encode_batch};
-use gaslightmq_kafka_client_api::{
+use gmq_wire::batch::{decode_batches, encode_batch};
+use crate::traits::{
     Admin, Consumer, PartitionMetadata, ProduceResult, Producer, TopicConfigs, TopicMetadata,
     Watermarks,
 };
-use gaslightmq_kernel::{Offset, Partition, Record};
+use gmq_wire::{Offset, Partition, Record};
 use kafka_protocol::messages::describe_configs_request::DescribeConfigsResource;
 use kafka_protocol::messages::fetch_request::{FetchPartition, FetchTopic};
 use kafka_protocol::messages::list_offsets_request::{ListOffsetsPartition, ListOffsetsTopic};

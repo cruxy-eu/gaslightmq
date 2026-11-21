@@ -27,12 +27,12 @@ use tokio::net::TcpStream;
 use tokio::sync::Mutex;
 
 use futures::StreamExt;
-use gaslightmq_kernel::{Offset, Partition};
+use gmq_wire::{Offset, Partition};
 use crate::traits::{
     HeartbeatResult, JoinGroupResult, Producer, ProtocolConsumer, ProduceResult,
     RecordStream, SyncGroupResult,
 };
-use gaslightmq_kernel::Record;
+use gmq_wire::Record;
 
 use kafka_protocol::messages::create_topics_request::CreateTopicsRequest;
 use kafka_protocol::messages::create_topics_response::CreateTopicsResponse;
@@ -165,7 +165,7 @@ impl Producer for RawKafkaClient {
         partition: Partition,
         records: &[Record],
     ) -> ProduceResult {
-        let records_bytes = crate::records::encode_batch(records);
+        let records_bytes = gmq_wire::batch::encode_batch(records);
         let request = ProduceRequest::default()
             .with_acks(-1)
             .with_timeout_ms(5000)
@@ -210,7 +210,7 @@ impl ProtocolConsumer for RawKafkaClient {
                 if let Some(ref raw) = partition_resp.records {
                     let mut buf = raw.clone();
                     if let Ok(batch) = RecordBatchDecoder::decode(&mut buf) {
-                        records.extend(crate::records::from_kafka(&batch));
+                        records.extend(gmq_wire::batch::from_kafka(&batch));
                     }
                 }
             }
@@ -266,7 +266,7 @@ impl ProtocolConsumer for RawKafkaClient {
                             if let Some(ref raw) = partition_resp.records {
                                 let mut rbuf = raw.clone();
                                 if let Ok(batch) = RecordBatchDecoder::decode(&mut rbuf) {
-                                    records.extend(crate::records::from_kafka(&batch));
+                                    records.extend(gmq_wire::batch::from_kafka(&batch));
                                 }
                             }
                         }

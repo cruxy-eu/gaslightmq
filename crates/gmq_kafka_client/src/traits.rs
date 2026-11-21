@@ -2,7 +2,7 @@ use std::future::Future;
 use std::pin::Pin;
 
 use futures::Stream;
-use gaslightmq_kernel::{Offset, Partition, Record};
+use gmq_wire::{Offset, Partition, Record};
 use kafka_protocol::error::ResponseError;
 
 pub type RecordStream = Pin<Box<dyn Stream<Item = Record> + Send>>;

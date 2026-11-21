@@ -1,13 +1,15 @@
 [package]
-name = "gaslightmq-kafka-client-native"
+name = "gmq_kafka_client"
 version.workspace = true
 edition.workspace = true
 
 [dependencies]
-gaslightmq-kafka-client-api.workspace = true
-gaslightmq-kernel.workspace = true
-gaslightmq-wire.workspace = true
+gmq_wire.workspace = true
 bytes.workspace = true
+futures.workspace = true
 kafka-protocol.workspace = true
 tokio = { workspace = true, features = ["net", "io-util", "time", "sync"] }
 tracing.workspace = true
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["rt", "macros"] }

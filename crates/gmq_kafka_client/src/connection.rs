@@ -3,18 +3,40 @@
 use std::sync::atomic::{AtomicI32, Ordering};
 use std::time::Duration;
 
-use gaslightmq_wire::{decode_response, encode_request, peek_response_correlation_id, read_frame, write_frame};
+use bytes::{Bytes, BytesMut};
+use gmq_wire::{decode_frame, decode_response, encode_frame, encode_request, peek_response_correlation_id};
 use kafka_protocol::messages::{ApiKey, RequestHeader};
 use kafka_protocol::protocol::{Decodable, Encodable, StrBytes};
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 use tokio::sync::Mutex;
 
 use crate::error::ClientError;
 
+/// A connected stream and the bytes read from it that no frame has claimed yet.
+struct Socket {
+    stream: TcpStream,
+    unread: BytesMut,
+}
+
+impl Socket {
+    /// Read until one whole frame is there.
+    async fn read_frame(&mut self) -> Result<Bytes, ClientError> {
+        loop {
+            if let Some(frame) = decode_frame(&mut self.unread).map_err(|e| ClientError::Protocol(e.to_string()))? {
+                return Ok(frame);
+            }
+            if self.stream.read_buf(&mut self.unread).await? == 0 {
+                return Err(ClientError::Io("connection closed by broker".into()));
+            }
+        }
+    }
+}
+
 pub(crate) struct Connection {
     addr: String,
     client_id: StrBytes,
-    stream: Mutex<Option<TcpStream>>,
+    socket: Mutex<Option<Socket>>,
     next_cid: AtomicI32,
 }
 
@@ -23,7 +45,7 @@ impl Connection {
         Self {
             addr,
             client_id: StrBytes::from_string(client_id.to_string()),
-            stream: Mutex::new(None),
+            socket: Mutex::new(None),
             next_cid: AtomicI32::new(1),
         }
     }
@@ -41,26 +63,23 @@ impl Connection {
         req: &Req,
         timeout: Duration,
     ) -> Result<Resp, ClientError> {
-        let mut slot = self.stream.lock().await;
+        let mut slot = self.socket.lock().await;
         let cid = self.next_cid.fetch_add(1, Ordering::Relaxed);
         let exchange = async {
             if slot.is_none() {
                 let stream = TcpStream::connect(&self.addr).await?;
                 let _ = stream.set_nodelay(true);
-                *slot = Some(stream);
+                *slot = Some(Socket { stream, unread: BytesMut::new() });
             }
-            let stream = slot.as_mut().expect("connected above");
+            let socket = slot.as_mut().expect("connected above");
             let header = RequestHeader::default()
                 .with_request_api_key(key as i16)
                 .with_request_api_version(version)
                 .with_correlation_id(cid)
                 .with_client_id(Some(self.client_id.clone()));
             let payload = encode_request(&header, req).map_err(|e| ClientError::Protocol(e.to_string()))?;
-            write_frame(stream, &payload).await.map_err(|e| ClientError::Io(e.to_string()))?;
-            let frame = read_frame(stream)
-                .await
-                .map_err(|e| ClientError::Io(e.to_string()))?
-                .ok_or_else(|| ClientError::Io("connection closed by broker".into()))?;
+            socket.stream.write_all(&encode_frame(&payload)).await?;
+            let frame = socket.read_frame().await?;
             let got = peek_response_correlation_id(&frame).map_err(|e| ClientError::Protocol(e.to_string()))?;
             if got != cid {
                 return Err(ClientError::Protocol(format!("correlation id {got}, expected {cid}")));
