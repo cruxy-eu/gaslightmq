@@ -26,7 +26,7 @@ Two crates stand apart: the facade is plain `gaslightmq`, and the binary is `gmq
 - **A crate boundary needs a reason.**
   A crate exists because something else reuses it,
   because it keeps a heavy dependency away from the rest,
-  or because it must compile to WebAssembly for the UI.
+  or because its types travel to the UI, so it must compile to WebAssembly without the Kafka codec.
   Code that always changes together stays in one crate.
 - **Dependencies follow the town plan.**
   Vocabulary crates depend on nothing.
@@ -36,6 +36,11 @@ Two crates stand apart: the facade is plain `gaslightmq`, and the binary is `gmq
 - **Definitions live with their domain.**
   The crate that owns a concept owns its definition type and its `serde` mapping.
   The `workspace` crate only assembles and cross-checks them.
+- **The UI shares types, not logic.**
+  The UI reaches the engine only through the control plane.
+  It shares the engine's definition types.
+  It runs none of the engine's behaviour and none of the Kafka codec.
+  See [what compiles to WebAssembly](#what-compiles-to-webassembly).
 
 The workspace rules apply to every crate:
 Rust edition 2024, native async traits and workspace dependency versions.
@@ -69,7 +74,6 @@ flowchart BT
   F --> C
   C --> T
   C --> S
-  C --> W
   IO --> P
   IO --> S
   IO --> O
@@ -97,7 +101,7 @@ Every other crate speaks in them.
 | `field` | The [field vocabulary](../domains/targeting.md#fields): field names, values, and the `FieldSource` trait that a live call and a recorded call both implement. Every district of the town plan [shares this vocabulary](../townplan/README.md#targeting-is-a-shared-kernel). | — |
 | `clock` | The [clock](README.md#clock): a `Clock` trait, the virtual clock, and instants that do not come from the system. | — |
 | `wire` | The Kafka codec: frames, headers, lazily decoded bodies and record batches. | — |
-| `lie` | The [lie](../domains/lies-and-events.md#lies) vocabulary: kind, stage, target, combination class, the `Lie` trait, and the effect a lie asks the pipeline for. | `field`, `wire` |
+| `lie` | The [lie](../domains/lies-and-events.md#lies) vocabulary: kind, stage, target and combination class, and the definition of every lie kind as data. It holds no behaviour. See [lies as crates](#lies-as-crates). | `field` |
 | `event` | The [event](../domains/lies-and-events.md#events) vocabulary, the expansion into consequences, and the capabilities a backend declares. | — |
 | `call` | The [call](../domains/observation.md#call) record: identity, request summary, truth, delivered response, verdict, explanation and timing. | `field`, `lie`, `event` |
 
@@ -110,18 +114,19 @@ Every other crate speaks in them.
 | `rule` | The rule definition, its state, and the immutable snapshot of armed rules in priority order. | `selector`, `lie`, `event`, `trigger` |
 | `combine` | [How lies combine](../domains/lies-and-events.md#how-lies-combine): which lies conflict, which win by priority, which are shadowed or pre-empted. | `lie` |
 | `wire_edit` | Surgery on requests and responses: remove partitions, merge responses, synthesize an error response for any API, map topic IDs to names. | `wire` |
-| `lie_refusal` | Refusals for every API, before forwarding and after the response. | `lie`, `wire_edit` |
-| `lie_topology` | Rewrites of Metadata, `FindCoordinator` and `DescribeCluster`. | `lie`, `wire_edit` |
-| `lie_data` | Altered, dropped, duplicated, reordered and corrupted records. | `lie`, `wire_edit`, `schema` |
-| `lie_progress` | Rewrites of watermarks, log start offsets and committed offsets. | `lie`, `wire_edit` |
-| `lie_config` | Rewrites of `DescribeConfigs` responses. | `lie`, `wire_edit` |
+| `lie_api` | The contract between the pipeline and a lie kind: the `Lie` trait, and the effect a lie asks the pipeline for. Also the behaviour of timing, silence and hang-up. See [lies as crates](#lies-as-crates). | `lie`, `wire` |
+| `lie_refusal` | Refusals for every API, before forwarding and after the response. | `lie`, `lie_api`, `wire_edit` |
+| `lie_topology` | Rewrites of Metadata, `FindCoordinator` and `DescribeCluster`. | `lie`, `lie_api`, `wire_edit` |
+| `lie_data` | Altered, dropped, duplicated, reordered and corrupted records. | `lie`, `lie_api`, `wire_edit`, `schema` |
+| `lie_progress` | Rewrites of watermarks, log start offsets and committed offsets. | `lie`, `lie_api`, `wire_edit` |
+| `lie_config` | Rewrites of `DescribeConfigs` responses. | `lie`, `lie_api`, `wire_edit` |
 
 ### Session and pipeline
 
 | Crate | Holds | Depends on |
 |---|---|---|
 | `session` | The state of one [session](../domains/session.md), which its pipeline owns: lifecycle, identity, session key, per-session counters, in-flight calls, response ordering and the stalled state. Also the client context that sessions share. | `field`, `wire`, `trigger`, `clock` |
-| `pipeline` | The [request pipeline](request-pipeline.md) as a state machine: all stages, both evaluation passes and partial refusals. | `wire`, `wire_edit`, `selector`, `rule`, `trigger`, `lie`, `combine`, `session`, `call`, `event`, `clock` |
+| `pipeline` | The [request pipeline](request-pipeline.md) as a state machine: all stages, both evaluation passes and partial refusals. | `wire`, `wire_edit`, `selector`, `rule`, `trigger`, `lie`, `lie_api`, `combine`, `session`, `call`, `event`, `clock` |
 
 ### Scenarios
 
@@ -170,8 +175,8 @@ Transactions arrive later as `sim_txn`, next to `sim_log` and `sim_group`.
 |---|---|---|
 | `surface` | [Pad layouts](../domains/control-surfaces.md#pad-layout), layers, pads as positions, the encoder mapping, and the intents a surface sends. | `rule` |
 | `hardware_push2` | The Push 2 mapping: controller messages to surface intents, and rule state back to pad colours. | `surface` |
-| `quick_inject` | The ⌘K sentence parser: text to a rule definition, with completions. | `selector`, `lie`, `rule` |
-| `control_api` | The [control plane](control-plane.md) as types: resources, commands and stream messages. | `call`, `journal`, `rule`, `scenario`, `selector`, `surface`, `world`, `event`, `environment` |
+| `quick_inject` | The ⌘K sentence parser: text to a rule definition, with completions. The host runs it behind the [control plane](control-plane.md#drafts). | `selector`, `lie`, `rule` |
+| `control_api` | The [control plane](control-plane.md) as types: resources, commands and stream messages. It re-exports the definition types its messages carry, and it holds its own view of the World's state. | `call`, `journal`, `rule`, `scenario`, `selector`, `surface`, `event`, `environment` |
 | `control_client` | A client for the control plane, for native targets and for WebAssembly. This crate does IO. | `control_api` |
 | `control_server` | The HTTP and WebSocket server in front of the host. This crate does IO. | `host`, `control_api` |
 
@@ -180,9 +185,9 @@ Transactions arrive later as `sim_txn`, next to `sim_log` and `sim_group`.
 | Crate | Holds | Depends on |
 |---|---|---|
 | `engine` | The runtime of one proxy: one task per session that owns the transport and drives the pipeline, the rule store, the scenario runner, the event bus, the journal, the recorder and the indexer. This crate does IO. | `pipeline`, `session`, `rule`, `scenario`, `journal`, `traffic`, `index`, `recording`, `backend`, `listener`, `workspace`, `environment`, `clock` |
-| `ui` | The web UI, a Dioxus application. | `control_client`, `surface`, `hardware_push2`, `quick_inject`, `selector`, `call` |
+| `ui` | The web UI, a Dioxus application. It reaches the engine only through the control plane. | `control_api`, `control_client`, `surface`, `hardware_push2` |
 | `listener` | Kafka on a socket: accept connections, frame bytes, and drive whatever handles a connection. A proxy's pipeline and a broker alone both sit behind it. This crate does IO. | `wire`, `clock` |
-| `host` | One process with several [environments](storage.md#several-environments-in-one-process): it starts and stops proxies and brokers, runs the task that drives each broker, and shares the workspace and the control plane between them. This crate does IO. | `engine`, `broker`, `listener`, `backend_upstream`, `workspace_fs`, `environment` |
+| `host` | One process with several [environments](storage.md#several-environments-in-one-process): it starts and stops proxies and brokers, runs the task that drives each broker, and shares the workspace and the control plane between them. This crate does IO. | `engine`, `broker`, `listener`, `backend_upstream`, `workspace_fs`, `environment`, `quick_inject` |
 | `test` | The test library: create a proxy or a broker, activate a scenario, assert on the recording. | `host`, `control_client` |
 | `testcontainers` | A container module that starts GaslightMQ next to a test. | `control_client` |
 | `kafka_client_api` | What a Kafka client offers to a test, whichever client it is: the producer, consumer and admin traits, one trait per protocol API, and a raw client that sends one request at a fixed version. This crate does IO. | `wire` |
@@ -346,23 +351,42 @@ The listener then stands in front of the broker, without an engine.
 
 ## Lies as crates
 
+A lie has a definition and a behaviour, and they live in different crates.
+
+| Part | Crate | Holds | Reaches `wire` |
+|---|---|---|---|
+| Definition | `lie` | Every lie kind as data: its parameters, its stage and its `serde` mapping. | No |
+| Contract | `lie_api` | The `Lie` trait, and the effect a lie asks the pipeline for. | Yes |
+| Behaviour | One crate per kind, listed below | What a kind does to a request or a response. | Yes |
+
+Rules, call records, the workspace and the control plane carry lie definitions.
+A definition needs no Kafka codec, so none of them reaches `wire` through `lie`.
+The `Lie` trait reads requests and responses, so `lie_api` depends on `wire`.
+
+The split rests on one rule:
+every lie definition is data in `lie`, and the `lie_*` crates hold behaviour only.
+A `lie_*` crate with a definition type of its own would put `wire` back under every crate that carries a rule,
+and so under `control_api` and the UI.
+
 A lie kind gets its own crate when it reads or rewrites payloads.
 Those kinds are large, they know specific Kafka APIs,
 and they change at their own pace.
 
-| Lie kind | Crate | Reason |
+| Lie kind | Behaviour in | Reason |
 |---|---|---|
 | Refusal | `lie_refusal` | Knows the error shape of every API, and how to remove and merge partitions. |
 | Topology | `lie_topology` | Knows Metadata, `FindCoordinator` and `DescribeCluster`. |
 | Data | `lie_data` | Knows record batches, compression and checksums. |
 | Progress | `lie_progress` | Knows offsets in Fetch, `ListOffsets` and `OffsetFetch`. |
 | Configuration | `lie_config` | Knows `DescribeConfigs`. |
-| Timing, silence, hang-up | `lie` | Each one is a single instruction to the pipeline: hold, drop or close. They need no payload code. |
+| Timing, silence, hang-up | `lie_api` | Each one is a single instruction to the pipeline: hold, drop or close. They need no payload code. |
 
-Every kind implements the `Lie` trait from the `lie` crate.
+Every kind implements the `Lie` trait from `lie_api`.
 The pipeline works with a set of lies that the engine registers,
-so `pipeline` depends on `lie` and on none of the `lie_*` crates.
-A build can leave a kind out, and a new kind does not touch the pipeline.
+so `pipeline` depends on `lie` and `lie_api`, and on none of the crates of a lie kind.
+A new kind adds its definition to `lie` and its behaviour to a crate of its own, and it does not touch the pipeline.
+A build can leave a kind out.
+Such a build still reads that kind's definitions, because they are data in `lie`.
 
 Events do not get a crate per event.
 An event is a value in the `event` crate.
@@ -371,30 +395,64 @@ An event is a value in the `event` crate.
 ## What compiles to WebAssembly
 
 The UI runs in the browser.
-It reuses the engine's own logic instead of a second implementation in the front end.
+It reaches the engine only through the [control plane](control-plane.md).
+It shares the engine's definition types, and it runs none of the engine's behaviour and none of the Kafka codec.
+
+The definition types are a public contract already, because they are the workspace's YAML files.
+The control plane carries the same types, so a rule has one form in a file, in a request and in the UI.
+A definition type only holds valid values.
+The UI therefore checks a value in a form with the engine's own types, and without a round trip.
 
 | Crate | The UI uses it to |
 |---|---|
 | `kernel` | Check and show topic names, partitions and offsets with the engine's own types. |
-| `field`, `selector` | Highlight the recorded calls a draft selector matches, while someone types. |
-| `call` | Render verdicts and explanations. |
-| `lie`, `event`, `rule`, `trigger`, `scenario` | Edit definitions with the engine's own types and validation. |
-| `quick_inject` | Parse and preview a ⌘K sentence without a round trip. |
+| `field`, `selector` | Build and edit selector definitions. |
+| `lie`, `event`, `trigger`, `rule`, `scenario` | Edit definitions with the engine's own types. |
+| `call`, `journal` | Render verdicts, explanations and the history of a rule. |
+| `environment`, `clock` | Show environments, and the instants that calls and journal entries carry. |
 | `surface`, `hardware_push2` | Turn pad presses and controller messages into intents. |
-| `virtual_log`, `world` | Render the World view, and preview the record a template gives at any offset. |
 | `control_api`, `control_client` | Talk to the engine. |
 
-These crates stay free of threads, files and sockets.
+The UI names the definition types through `control_api`, which re-exports them.
+
+Whatever needs the engine's logic is an operation of the control plane.
+
+| The UI wants to | It asks the control plane to |
+|---|---|
+| Highlight the recorded calls a draft selector matches, while someone types. | Query the recording with the draft. |
+| Preview a ⌘K sentence. | Parse the sentence. |
+| Show the records of a topic in the World view. | Preview the records at an offset. |
+| Check a definition against the rest of the workspace. | Create or update it. The engine validates it with the `workspace` crate. |
+
+See [drafts](control-plane.md#drafts).
+The engine sees the whole recording and the whole workspace, and the browser only holds a window of both.
+The CLI and tests get the same operations.
+
+The World is the one district whose definition types the UI does not share.
+Those types live in `world` and `virtual_log`, which reach `wire` and `schema`.
+`control_api` holds its own view of the World's state instead.
+
+`surface` and `hardware_push2` do run behaviour in the browser:
+they turn pad presses and controller messages into intents.
+That behaviour belongs to a control surface, not to the engine.
+Web MIDI only exists in the browser, so the hardware mapping runs there.
+The same two crates later serve a hardware bridge in the CLI,
+which sends the same intents through `control_client`.
+
+The crates in the table stay free of threads, files and sockets.
 `control_client` is the exception.
 It is part of the IO edge, and in the browser it reaches the engine through the browser's own HTTP and WebSocket.
-The same `surface` and `hardware_push2` crates later serve a hardware bridge in the CLI,
-which sends the same intents through `control_client`.
+
+CI enforces the boundary:
+the dependency closures of `control_api` and `ui` never reach `kafka-protocol`.
+Two missing edges keep it that way.
+`lie` does not depend on `wire`, and `control_api` does not depend on `world`.
 
 ## Features
 
 - Every crate with definition types has a `serde` feature.
 - `control_client` has one feature per transport: native and WebAssembly.
-- `gmq` has one feature per backend and one per `lie_*` crate,
+- `gmq` has one feature per backend and one per crate of a lie kind,
   so a build can ship the proxy without the fake broker.
 
 ## Build order
@@ -404,7 +462,7 @@ The crates arrive in the order the [first version](../README.md#first-version) n
 | Step | Crates | Result |
 |---|---|---|
 | 1 | `kernel`, `field`, `clock`, `wire`, `selector`, `lie`, `trigger`, `rule`, `combine` | Rules evaluate against hand-written calls in tests. |
-| 2 | `wire_edit`, `lie_refusal`, `session`, `call`, `pipeline` | The pipeline runs in tests, with partial refusals and explanations. |
+| 2 | `wire_edit`, `lie_api`, `lie_refusal`, `session`, `call`, `pipeline` | The pipeline runs in tests, with partial refusals and explanations. |
 | 3 | `event`, `environment`, `backend`, `overlay`, `backend_upstream`, `listener`, `engine` | A proxy that lies. |
 | 4 | `host`, `control_api`, `control_server`, `control_client`, `traffic`, `index`, `surface`, `quick_inject`, `ui` | The UI with live traffic, rules, pads and ⌘K. |
 | 5 | `journal`, `scenario`, `workspace`, `workspace_fs`, `recording`, `test`, `gmq` | Scenarios in files, recordings, and tests in CI. |
