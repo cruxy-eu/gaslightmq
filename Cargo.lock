@@ -196,15 +196,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "gaslightmq_event"
-version = "0.1.0"
-dependencies = [
- "gaslightmq_kernel",
- "serde",
- "serde_json",
-]
-
-[[package]]
 name = "gaslightmq_field"
 version = "0.1.0"
 dependencies = [
@@ -213,6 +204,15 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_test",
+]
+
+[[package]]
+name = "gaslightmq_incident"
+version = "0.1.0"
+dependencies = [
+ "gaslightmq_kernel",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

@@ -1,26 +1,29 @@
 use std::fmt;
 
-use crate::EventKind;
+use crate::IncidentKind;
 
-/// Why a value cannot become an event, or a part of one.
+/// Why a value cannot become an incident, or a part of one.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
-pub enum EventError {
-    /// No event has this name.
-    UnknownEvent { name: String },
-    /// The event needs a `subject`, such as a partition or a group.
+pub enum IncidentError {
+    /// No incident has this name.
+    UnknownIncident { name: String },
+    /// The incident needs a `subject`, such as a partition or a group.
     /// The definition names none, and the call that fired it offers none.
-    MissingSubject { event: EventKind, subject: &'static str },
+    MissingSubject {
+        incident: IncidentKind,
+        subject: &'static str,
+    },
     /// The count is zero, or above the highest `what`.
     CountOutOfRange { what: &'static str, value: u64, max: u64 },
 }
 
-impl fmt::Display for EventError {
+impl fmt::Display for IncidentError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::UnknownEvent { name } => write!(f, "no event is called {name:?}"),
-            Self::MissingSubject { event, subject } => {
-                write!(f, "{event} needs a {subject}, and none is named")
+            Self::UnknownIncident { name } => write!(f, "no incident is called {name:?}"),
+            Self::MissingSubject { incident, subject } => {
+                write!(f, "{incident} needs a {subject}, and none is named")
             }
             Self::CountOutOfRange { what, value, max } => {
                 write!(f, "{what} {value} is not between 1 and {max}")
@@ -29,7 +32,7 @@ impl fmt::Display for EventError {
     }
 }
 
-impl std::error::Error for EventError {}
+impl std::error::Error for IncidentError {}
 
 #[cfg(test)]
 mod tests {
@@ -39,20 +42,20 @@ mod tests {
     fn every_variant_names_what_was_wrong() {
         let cases = [
             (
-                EventError::UnknownEvent {
+                IncidentError::UnknownIncident {
                     name: "leader-move".into(),
                 },
-                "no event is called \"leader-move\"",
+                "no incident is called \"leader-move\"",
             ),
             (
-                EventError::MissingSubject {
-                    event: EventKind::Rebalance,
+                IncidentError::MissingSubject {
+                    incident: IncidentKind::Rebalance,
                     subject: "group",
                 },
                 "rebalance needs a group, and none is named",
             ),
             (
-                EventError::CountOutOfRange {
+                IncidentError::CountOutOfRange {
                     what: "partition count",
                     value: 0,
                     max: 2_147_483_647,

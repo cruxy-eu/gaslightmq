@@ -1,5 +1,5 @@
 [package]
-name = "gaslightmq_event"
+name = "gaslightmq_incident"
 version.workspace = true
 edition.workspace = true
 

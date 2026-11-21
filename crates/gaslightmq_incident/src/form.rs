@@ -1,6 +1,6 @@
-//! The `serde` forms: a kind as its name, and an event as a map with an `event` key.
+//! The `serde` forms: a kind as its name, and an incident as a map with an `incident` key.
 //!
-//! An event, a definition, a consequence and an expanded event all write a flat map.
+//! An incident, a definition, a consequence and an expanded incident all write a flat map.
 //! [`Fields`] holds every key such a map can have.
 //! Reading takes the keys that belong to the value out of it, and whatever is left is an error.
 //! A misspelt or misplaced key therefore never passes silently:
@@ -13,11 +13,11 @@ use serde::de::{self, Deserialize, Deserializer, MapAccess, Visitor};
 use serde::ser::{Serialize, SerializeMap, Serializer};
 
 use crate::{
-    Capabilities, Consequence, Coordinator, Event, EventDefinition, EventError, EventKind, ExpandedEvent,
-    PartitionCount, RecordCount, Support,
+    Consequence, Coordinator, ExpandedIncident, Incident, IncidentDefinition, IncidentError, IncidentKind,
+    IncidentSupport, PartitionCount, RecordCount, Support,
 };
 
-const EVENT: &str = "event";
+const INCIDENT: &str = "incident";
 const CONSEQUENCE: &str = "consequence";
 const PARTITION: &str = "partition";
 const TOPIC: &str = "topic";
@@ -31,7 +31,7 @@ const CONSEQUENCES: &str = "consequences";
 
 /// Every key, in the order a map writes them.
 const KEYS: &[&str] = &[
-    EVENT,
+    INCIDENT,
     CONSEQUENCE,
     PARTITION,
     TOPIC,
@@ -47,13 +47,13 @@ const KEYS: &[&str] = &[
 const LEADERLESS: &str = "leaderless";
 const COORDINATOR_UNAVAILABLE: &str = "coordinator-unavailable";
 
-impl Serialize for EventKind {
+impl Serialize for IncidentKind {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         serializer.serialize_str(self.name())
     }
 }
 
-impl<'de> Deserialize<'de> for EventKind {
+impl<'de> Deserialize<'de> for IncidentKind {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         String::deserialize(deserializer)?.parse().map_err(de::Error::custom)
     }
@@ -77,7 +77,7 @@ impl<'de> Deserialize<'de> for Support {
     }
 }
 
-/// A consequence that is not an event, as the `consequence` key names it.
+/// A consequence that is not an incident, as the `consequence` key names it.
 #[derive(Clone, Copy)]
 enum ConsequenceName {
     Leaderless,
@@ -116,14 +116,14 @@ impl<'de> Deserialize<'de> for ConsequenceName {
 /// The keys of one map, each with its value when the map has it.
 #[derive(Default)]
 struct Fields {
-    event: Option<EventKind>,
+    incident: Option<IncidentKind>,
     consequence: Option<ConsequenceName>,
     partition: Option<TopicPartition>,
     topic: Option<TopicName>,
     broker: Option<BrokerId>,
     group: Option<GroupId>,
     transactional_id: Option<TransactionalId>,
-    /// A broker ID or an offset, which only the kind of the event tells apart.
+    /// A broker ID or an offset, which only the kind of the incident tells apart.
     to: Option<u64>,
     count: Option<u64>,
     failover: Option<bool>,
@@ -134,7 +134,7 @@ impl Fields {
     /// Every key with whether the map has it, in the order of [`KEYS`].
     fn present(&self) -> [(&'static str, bool); 11] {
         [
-            (EVENT, self.event.is_some()),
+            (INCIDENT, self.incident.is_some()),
             (CONSEQUENCE, self.consequence.is_some()),
             (PARTITION, self.partition.is_some()),
             (TOPIC, self.topic.is_some()),
@@ -148,9 +148,9 @@ impl Fields {
         ]
     }
 
-    /// The fields of an event.
-    fn of_event(event: &Event) -> Self {
-        Self::from(&EventDefinition::from(event.clone()))
+    /// The fields of an incident.
+    fn of_incident(incident: &Incident) -> Self {
+        Self::from(&IncidentDefinition::from(incident.clone()))
     }
 
     fn set_coordinator(&mut self, coordinator: Option<&Coordinator>) {
@@ -187,7 +187,7 @@ impl Fields {
         broker.map(Some).map_err(E::custom)
     }
 
-    /// Take `to` as the offset something moves to, which the event cannot do without.
+    /// Take `to` as the offset something moves to, which the incident cannot do without.
     fn take_to_offset<E: de::Error>(&mut self) -> Result<Offset, E> {
         let to = self.to.take().ok_or_else(|| E::missing_field(TO))?;
         Offset::new(to).map_err(E::custom)
@@ -197,7 +197,7 @@ impl Fields {
         let Some(count) = self.count.take() else {
             return Ok(PartitionCount::ONE);
         };
-        let out_of_range = || EventError::CountOutOfRange {
+        let out_of_range = || IncidentError::CountOutOfRange {
             what: "partition count",
             value: count,
             max: PartitionCount::MAX.value().into(),
@@ -223,56 +223,56 @@ impl Fields {
         }
     }
 
-    /// Read the map as an event definition.
-    fn into_definition<E: de::Error>(mut self) -> Result<EventDefinition, E> {
-        let kind = self.event.take().ok_or_else(|| E::missing_field(EVENT))?;
+    /// Read the map as an incident definition.
+    fn into_definition<E: de::Error>(mut self) -> Result<IncidentDefinition, E> {
+        let kind = self.incident.take().ok_or_else(|| E::missing_field(INCIDENT))?;
         let definition = match kind {
-            EventKind::LeaderMoves => EventDefinition::LeaderMoves {
+            IncidentKind::LeaderMoves => IncidentDefinition::LeaderMoves {
                 partition: self.partition.take(),
                 to: self.take_to_broker()?,
             },
-            EventKind::BrokerGoesDown => EventDefinition::BrokerGoesDown {
+            IncidentKind::BrokerGoesDown => IncidentDefinition::BrokerGoesDown {
                 broker: self.broker.take(),
                 failover: self.failover.take().unwrap_or(false),
             },
-            EventKind::BrokerGoesUnresponsive => EventDefinition::BrokerGoesUnresponsive {
+            IncidentKind::BrokerGoesUnresponsive => IncidentDefinition::BrokerGoesUnresponsive {
                 broker: self.broker.take(),
             },
-            EventKind::BrokerComesBack => EventDefinition::BrokerComesBack {
+            IncidentKind::BrokerComesBack => IncidentDefinition::BrokerComesBack {
                 broker: self.broker.take(),
             },
-            EventKind::Rebalance => EventDefinition::Rebalance {
+            IncidentKind::Rebalance => IncidentDefinition::Rebalance {
                 group: self.group.take(),
             },
-            EventKind::CoordinatorMoves => EventDefinition::CoordinatorMoves {
+            IncidentKind::CoordinatorMoves => IncidentDefinition::CoordinatorMoves {
                 coordinator: self.take_coordinator()?,
                 to: self.take_to_broker()?,
             },
-            EventKind::PartitionAdded => EventDefinition::PartitionAdded {
+            IncidentKind::PartitionAdded => IncidentDefinition::PartitionAdded {
                 topic: self.topic.take(),
                 count: self.take_partition_count()?,
             },
-            EventKind::TopicDeleted => EventDefinition::TopicDeleted {
+            IncidentKind::TopicDeleted => IncidentDefinition::TopicDeleted {
                 topic: self.topic.take(),
             },
-            EventKind::RecordsAppended => EventDefinition::RecordsAppended {
+            IncidentKind::RecordsAppended => IncidentDefinition::RecordsAppended {
                 partition: self.partition.take(),
                 count: self.take_record_count()?,
             },
-            EventKind::RecordsExpired => EventDefinition::RecordsExpired {
+            IncidentKind::RecordsExpired => IncidentDefinition::RecordsExpired {
                 partition: self.partition.take(),
                 to: self.take_to_offset()?,
             },
-            EventKind::LogTruncated => EventDefinition::LogTruncated {
+            IncidentKind::LogTruncated => IncidentDefinition::LogTruncated {
                 partition: self.partition.take(),
                 to: self.take_to_offset()?,
             },
-            EventKind::CommittedOffsetReset => EventDefinition::CommittedOffsetReset {
+            IncidentKind::CommittedOffsetReset => IncidentDefinition::CommittedOffsetReset {
                 group: self.group.take(),
                 partition: self.partition.take(),
                 to: self.take_to_offset()?,
             },
-            EventKind::ProducerFenced => EventDefinition::ProducerFenced {
+            IncidentKind::ProducerFenced => IncidentDefinition::ProducerFenced {
                 transactional_id: self.transactional_id.take(),
             },
         };
@@ -280,57 +280,58 @@ impl Fields {
         Ok(definition)
     }
 
-    /// Read the map as an event: a definition that names every subject.
-    fn into_event<E: de::Error>(self) -> Result<Event, E> {
-        Event::try_from(self.into_definition()?).map_err(E::custom)
+    /// Read the map as an incident: a definition that names every subject.
+    fn into_incident<E: de::Error>(self) -> Result<Incident, E> {
+        Incident::try_from(self.into_definition()?).map_err(E::custom)
     }
 }
 
 /// The fields a definition writes.
 /// It leaves out what reading fills in: a subject it does not name, a count of one, and no failover.
-impl From<&EventDefinition> for Fields {
-    fn from(definition: &EventDefinition) -> Self {
+impl From<&IncidentDefinition> for Fields {
+    fn from(definition: &IncidentDefinition) -> Self {
         let mut fields = Self {
-            event: Some(definition.kind()),
+            incident: Some(definition.kind()),
             ..Self::default()
         };
         let number = |broker: &Option<BrokerId>| broker.map(|broker| u64::from(broker.value()));
         match definition {
-            EventDefinition::LeaderMoves { partition, to } => {
+            IncidentDefinition::LeaderMoves { partition, to } => {
                 fields.partition.clone_from(partition);
                 fields.to = number(to);
             }
-            EventDefinition::BrokerGoesDown { broker, failover } => {
+            IncidentDefinition::BrokerGoesDown { broker, failover } => {
                 fields.broker = *broker;
                 fields.failover = failover.then_some(true);
             }
-            EventDefinition::BrokerGoesUnresponsive { broker } | EventDefinition::BrokerComesBack { broker } => {
+            IncidentDefinition::BrokerGoesUnresponsive { broker } | IncidentDefinition::BrokerComesBack { broker } => {
                 fields.broker = *broker;
             }
-            EventDefinition::Rebalance { group } => fields.group.clone_from(group),
-            EventDefinition::CoordinatorMoves { coordinator, to } => {
+            IncidentDefinition::Rebalance { group } => fields.group.clone_from(group),
+            IncidentDefinition::CoordinatorMoves { coordinator, to } => {
                 fields.set_coordinator(coordinator.as_ref());
                 fields.to = number(to);
             }
-            EventDefinition::PartitionAdded { topic, count } => {
+            IncidentDefinition::PartitionAdded { topic, count } => {
                 fields.topic.clone_from(topic);
                 fields.count = (*count != PartitionCount::ONE).then(|| count.value().into());
             }
-            EventDefinition::TopicDeleted { topic } => fields.topic.clone_from(topic),
-            EventDefinition::RecordsAppended { partition, count } => {
+            IncidentDefinition::TopicDeleted { topic } => fields.topic.clone_from(topic),
+            IncidentDefinition::RecordsAppended { partition, count } => {
                 fields.partition.clone_from(partition);
                 fields.count = (*count != RecordCount::ONE).then(|| count.value());
             }
-            EventDefinition::RecordsExpired { partition, to } | EventDefinition::LogTruncated { partition, to } => {
+            IncidentDefinition::RecordsExpired { partition, to }
+            | IncidentDefinition::LogTruncated { partition, to } => {
                 fields.partition.clone_from(partition);
                 fields.to = Some(to.value());
             }
-            EventDefinition::CommittedOffsetReset { group, partition, to } => {
+            IncidentDefinition::CommittedOffsetReset { group, partition, to } => {
                 fields.group.clone_from(group);
                 fields.partition.clone_from(partition);
                 fields.to = Some(to.value());
             }
-            EventDefinition::ProducerFenced { transactional_id } => {
+            IncidentDefinition::ProducerFenced { transactional_id } => {
                 fields.transactional_id.clone_from(transactional_id);
             }
         }
@@ -350,7 +351,7 @@ impl Serialize for Fields {
 
         let len = self.present().into_iter().filter(|(_, present)| *present).count();
         let mut map = serializer.serialize_map(Some(len))?;
-        entry(&mut map, EVENT, self.event.as_ref())?;
+        entry(&mut map, INCIDENT, self.incident.as_ref())?;
         entry(&mut map, CONSEQUENCE, self.consequence.as_ref())?;
         entry(&mut map, PARTITION, self.partition.as_ref())?;
         entry(&mut map, TOPIC, self.topic.as_ref())?;
@@ -373,7 +374,7 @@ impl<'de> Visitor<'de> for FieldsVisitor {
     type Value = Fields;
 
     fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("a map with an `event` key")
+        f.write_str("a map with an `incident` key")
     }
 
     fn visit_map<A: MapAccess<'de>>(self, mut map: A) -> Result<Fields, A::Error> {
@@ -392,7 +393,7 @@ impl<'de> Visitor<'de> for FieldsVisitor {
         let mut fields = Fields::default();
         while let Some(key) = map.next_key::<String>()? {
             match key.as_str() {
-                EVENT => set(&mut map, EVENT, &mut fields.event)?,
+                INCIDENT => set(&mut map, INCIDENT, &mut fields.incident)?,
                 CONSEQUENCE => set(&mut map, CONSEQUENCE, &mut fields.consequence)?,
                 PARTITION => set(&mut map, PARTITION, &mut fields.partition)?,
                 TOPIC => set(&mut map, TOPIC, &mut fields.topic)?,
@@ -410,33 +411,33 @@ impl<'de> Visitor<'de> for FieldsVisitor {
     }
 }
 
-impl Serialize for EventDefinition {
+impl Serialize for IncidentDefinition {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         Fields::from(self).serialize(serializer)
     }
 }
 
-impl<'de> Deserialize<'de> for EventDefinition {
+impl<'de> Deserialize<'de> for IncidentDefinition {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         deserializer.deserialize_map(FieldsVisitor)?.into_definition()
     }
 }
 
 /// Writes the form of a definition that names every subject.
-impl Serialize for Event {
+impl Serialize for Incident {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        Fields::of_event(self).serialize(serializer)
+        Fields::of_incident(self).serialize(serializer)
     }
 }
 
 /// Reads the form of a definition, and rejects one that leaves a subject out.
-impl<'de> Deserialize<'de> for Event {
+impl<'de> Deserialize<'de> for Incident {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        deserializer.deserialize_map(FieldsVisitor)?.into_event()
+        deserializer.deserialize_map(FieldsVisitor)?.into_incident()
     }
 }
 
-/// Writes a map with a `consequence` key, or the map of the event that follows.
+/// Writes a map with a `consequence` key, or the map of the incident that follows.
 impl Serialize for Consequence {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         let fields = match self {
@@ -453,7 +454,7 @@ impl Serialize for Consequence {
                 fields.set_coordinator(Some(coordinator));
                 fields
             }
-            Self::Event(event) => Fields::of_event(event),
+            Self::Incident(incident) => Fields::of_incident(incident),
         };
         fields.serialize(serializer)
     }
@@ -463,7 +464,7 @@ impl<'de> Deserialize<'de> for Consequence {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         let mut fields = deserializer.deserialize_map(FieldsVisitor)?;
         let Some(consequence) = fields.consequence.take() else {
-            return fields.into_event().map(Self::Event);
+            return fields.into_incident().map(Self::Incident);
         };
         let consequence = match consequence {
             ConsequenceName::Leaderless => {
@@ -491,14 +492,14 @@ fn consequence_name(consequence: &Consequence) -> &'static str {
     match consequence {
         Consequence::Leaderless { .. } => LEADERLESS,
         Consequence::CoordinatorUnavailable { .. } => COORDINATOR_UNAVAILABLE,
-        Consequence::Event(event) => event.kind().name(),
+        Consequence::Incident(incident) => incident.kind().name(),
     }
 }
 
-/// Writes the map of the event, with a `consequences` key when the event has any.
-impl Serialize for ExpandedEvent {
+/// Writes the map of the incident, with a `consequences` key when the incident has any.
+impl Serialize for ExpandedIncident {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        let mut fields = Fields::of_event(&self.event);
+        let mut fields = Fields::of_incident(&self.incident);
         if !self.consequences.is_empty() {
             fields.consequences = Some(self.consequences.clone());
         }
@@ -506,50 +507,50 @@ impl Serialize for ExpandedEvent {
     }
 }
 
-impl<'de> Deserialize<'de> for ExpandedEvent {
+impl<'de> Deserialize<'de> for ExpandedIncident {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         let mut fields = deserializer.deserialize_map(FieldsVisitor)?;
         let consequences = fields.consequences.take().unwrap_or_default();
         Ok(Self {
-            event: fields.into_event()?,
+            incident: fields.into_incident()?,
             consequences,
         })
     }
 }
 
 /// Writes a map of every kind to what the backend does with it.
-impl Serialize for Capabilities {
+impl Serialize for IncidentSupport {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         serializer.collect_map(self.iter())
     }
 }
 
 /// Reads a map of kinds, in which a kind that is left out is unsupported.
-impl<'de> Deserialize<'de> for Capabilities {
+impl<'de> Deserialize<'de> for IncidentSupport {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        struct CapabilitiesVisitor;
+        struct IncidentSupportVisitor;
 
-        impl<'de> Visitor<'de> for CapabilitiesVisitor {
-            type Value = Capabilities;
+        impl<'de> Visitor<'de> for IncidentSupportVisitor {
+            type Value = IncidentSupport;
 
             fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-                f.write_str("a map of event kinds to `applied`, `emulated` or `unsupported`")
+                f.write_str("a map of incident kinds to `applied`, `emulated` or `unsupported`")
             }
 
-            fn visit_map<A: MapAccess<'de>>(self, mut map: A) -> Result<Capabilities, A::Error> {
+            fn visit_map<A: MapAccess<'de>>(self, mut map: A) -> Result<IncidentSupport, A::Error> {
                 let mut seen = Vec::new();
-                let mut capabilities = Capabilities::none();
-                while let Some((kind, support)) = map.next_entry::<EventKind, Support>()? {
+                let mut declared = IncidentSupport::none();
+                while let Some((kind, support)) = map.next_entry::<IncidentKind, Support>()? {
                     if seen.contains(&kind) {
                         return Err(de::Error::custom(format_args!("duplicate kind `{kind}`")));
                     }
                     seen.push(kind);
-                    capabilities = capabilities.declare([kind], support);
+                    declared = declared.declare([kind], support);
                 }
-                Ok(capabilities)
+                Ok(declared)
             }
         }
 
-        deserializer.deserialize_map(CapabilitiesVisitor)
+        deserializer.deserialize_map(IncidentSupportVisitor)
     }
 }

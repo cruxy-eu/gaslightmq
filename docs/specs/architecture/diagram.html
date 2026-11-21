@@ -421,7 +421,7 @@ const CRATES = [
   ["clock","Vocabulary","sans",1,1,"A Clock trait, the virtual clock, and instants that do not come from the system.",[]],
   ["wire","Vocabulary","sans",0,1,"The Kafka codec: frames, headers, lazily decoded bodies and record batches.",[]],
   ["lie","Vocabulary","sans",1,1,"The lie vocabulary: kind, stage and combination class, and the definition of every lie kind as data. No behaviour.",["field"]],
-  ["incident","Vocabulary","sans",1,1,"The incident vocabulary, the expansion into consequences, and the capabilities a backend declares.",["kernel"]],
+  ["incident","Vocabulary","sans",1,1,"The incident vocabulary, the expansion into consequences, and the support a backend declares for each kind of incident.",["kernel"]],
   ["call","Vocabulary","sans",1,2,"The call record: identity, request summary, truth, delivered response, verdict, explanation and timing.",["field","lie","incident"]],
 ].map(([name,layer,kind,wasm,step,holds,deps]) => ({name,layer,kind,wasm:!!wasm,step,holds,deps}));
 

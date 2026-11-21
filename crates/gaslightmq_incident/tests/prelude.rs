@@ -26,7 +26,7 @@ mod next_to_std_and_the_kernel {
     use std::sync::*;
     use std::time::*;
 
-    use gaslightmq_event::prelude::*;
+    use gaslightmq_incident::prelude::*;
     use gaslightmq_kernel::prelude::*;
 
     struct Empty;
@@ -43,28 +43,28 @@ mod next_to_std_and_the_kernel {
 
     /// One value of every type of the prelude, each named without a path.
     pub fn every_item() -> Vec<String> {
-        let definition = EventDefinition::PartitionAdded {
+        let definition = IncidentDefinition::PartitionAdded {
             topic: None,
             count: PartitionCount::ONE,
         };
-        let missing: EventError = definition.resolve(&Subjects::new()).unwrap_err();
-        let event = Event::RecordsAppended {
+        let missing: IncidentError = definition.resolve(&Subjects::new()).unwrap_err();
+        let incident = Incident::RecordsAppended {
             partition: "orders.eu/3".parse().unwrap(),
             count: RecordCount::ONE,
         };
-        let expanded: ExpandedEvent = event.clone().expand(&Empty);
+        let expanded: ExpandedIncident = incident.clone().expand(&Empty);
         let consequences: &[Consequence] = expanded.consequences();
         let requirements = Requirements::from(&definition);
         let requirement: Requirement = requirements.iter().next().unwrap();
-        let unsupported: UnsupportedEvents = Capabilities::none().check(&requirements).unwrap_err();
+        let unsupported: UnsupportedIncidents = IncidentSupport::none().check(&requirements).unwrap_err();
         let coordinator = Coordinator::Group(GroupId::new("payments").unwrap());
 
         vec![
-            EventKind::LeaderMoves.to_string(),
+            IncidentKind::LeaderMoves.to_string(),
             Support::Emulated.to_string(),
             missing.to_string(),
             unsupported.to_string(),
-            format!("{event:?} {consequences:?} {requirement:?} {coordinator:?}"),
+            format!("{incident:?} {consequences:?} {requirement:?} {coordinator:?}"),
         ]
     }
 }

@@ -1,4 +1,4 @@
-//! How many of something an event adds.
+//! How many of something an incident adds.
 
 /// Define a count that holds `1..=max`.
 macro_rules! count_value {
@@ -21,10 +21,10 @@ macro_rules! count_value {
             ///
             /// # Errors
             ///
-            /// [`EventError::CountOutOfRange`](crate::EventError::CountOutOfRange) when `value` is outside that range.
-            pub fn new(value: $value) -> Result<Self, $crate::EventError> {
+            /// [`IncidentError::CountOutOfRange`](crate::IncidentError::CountOutOfRange) when `value` is outside that range.
+            pub fn new(value: $value) -> Result<Self, $crate::IncidentError> {
                 if !(1..=Self::MAX.0).contains(&value) {
-                    return Err($crate::EventError::CountOutOfRange {
+                    return Err($crate::IncidentError::CountOutOfRange {
                         what: $what,
                         value: value.into(),
                         max: Self::MAX.0.into(),
@@ -47,7 +47,7 @@ macro_rules! count_value {
         }
 
         impl TryFrom<$value> for $name {
-            type Error = $crate::EventError;
+            type Error = $crate::IncidentError;
 
             fn try_from(value: $value) -> Result<Self, Self::Error> {
                 Self::new(value)
@@ -84,35 +84,35 @@ macro_rules! count_value {
 }
 
 count_value! {
-    /// How many partitions a "partition added" event adds to a topic.
+    /// How many partitions a "partition added" incident adds to a topic.
     ///
     /// It is at least one.
     /// A topic numbers its partitions with an `i32`, so no topic takes more than [`i32::MAX`].
     ///
     /// ```
-    /// use gaslightmq_event::prelude::*;
+    /// use gaslightmq_incident::prelude::*;
     ///
     /// assert_eq!(PartitionCount::new(3)?.value(), 3);
     /// assert_eq!(PartitionCount::default(), PartitionCount::ONE);
     /// assert!(PartitionCount::new(0).is_err());
-    /// # Ok::<(), EventError>(())
+    /// # Ok::<(), IncidentError>(())
     /// ```
     PartitionCount, "partition count", value: u32, max: i32::MAX as u32
 }
 
 count_value! {
-    /// How many records a "records appended" event adds to a partition.
+    /// How many records a "records appended" incident adds to a partition.
     ///
     /// It is at least one.
     /// A partition numbers its records with an `i64`, so no log takes more than [`i64::MAX`].
     ///
     /// ```
-    /// use gaslightmq_event::prelude::*;
+    /// use gaslightmq_incident::prelude::*;
     ///
     /// assert_eq!(RecordCount::new(500)?.value(), 500);
     /// assert_eq!(RecordCount::default(), RecordCount::ONE);
     /// assert!(RecordCount::new(0).is_err());
-    /// # Ok::<(), EventError>(())
+    /// # Ok::<(), IncidentError>(())
     /// ```
     RecordCount, "record count", value: u64, max: i64::MAX as u64
 }
@@ -120,7 +120,7 @@ count_value! {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::EventError;
+    use crate::IncidentError;
 
     #[test]
     fn a_count_is_at_least_one() {
@@ -128,7 +128,7 @@ mod tests {
         assert_eq!(RecordCount::new(1), Ok(RecordCount::ONE));
         assert_eq!(
             PartitionCount::new(0),
-            Err(EventError::CountOutOfRange {
+            Err(IncidentError::CountOutOfRange {
                 what: "partition count",
                 value: 0,
                 max: 2_147_483_647
@@ -136,7 +136,7 @@ mod tests {
         );
         assert_eq!(
             RecordCount::new(0),
-            Err(EventError::CountOutOfRange {
+            Err(IncidentError::CountOutOfRange {
                 what: "record count",
                 value: 0,
                 max: i64::MAX as u64
@@ -150,7 +150,7 @@ mod tests {
         assert_eq!(RecordCount::new(i64::MAX as u64), Ok(RecordCount::MAX));
         assert_eq!(
             PartitionCount::new(i32::MAX as u32 + 1),
-            Err(EventError::CountOutOfRange {
+            Err(IncidentError::CountOutOfRange {
                 what: "partition count",
                 value: 2_147_483_648,
                 max: 2_147_483_647
@@ -158,7 +158,7 @@ mod tests {
         );
         assert_eq!(
             RecordCount::try_from(u64::MAX),
-            Err(EventError::CountOutOfRange {
+            Err(IncidentError::CountOutOfRange {
                 what: "record count",
                 value: u64::MAX,
                 max: i64::MAX as u64

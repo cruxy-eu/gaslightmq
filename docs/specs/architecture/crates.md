@@ -102,7 +102,7 @@ Every other crate speaks in them.
 | `clock` | The [clock](README.md#clock): a `Clock` trait, the virtual clock, and instants that do not come from the system. | — |
 | `wire` | The Kafka codec: frames, headers, lazily decoded bodies and record batches. | — |
 | `lie` | The [lie](../domains/lies-and-incidents.md#lies) vocabulary: kind, stage and combination class, and the definition of every lie kind as data. It holds no behaviour. See [lies as crates](#lies-as-crates). | `field` |
-| `incident` | The [incident](../domains/lies-and-incidents.md#incidents) vocabulary, the expansion into consequences, and the capabilities a backend declares. | `kernel` |
+| `incident` | The [incident](../domains/lies-and-incidents.md#incidents) vocabulary, the expansion into consequences, and the support a backend declares for each kind of incident. | `kernel` |
 | `call` | The [call](../domains/observation.md#call) record: identity, request summary, truth, delivered response, verdict, explanation and timing. | `field`, `lie`, `incident` |
 
 ### Targeting and injection
