@@ -1,0 +1,15 @@
+[package]
+name = "gaslightmq_combine"
+version.workspace = true
+edition.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+gaslightmq_clock.workspace = true
+gaslightmq_field.workspace = true
+gaslightmq_lie.workspace = true
+
+[dev-dependencies]
+gaslightmq_kernel.workspace = true

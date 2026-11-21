@@ -99,7 +99,7 @@ When several lies apply to one call, their combination class decides what happen
 
 | Class | Lies | Combination |
 |---|---|---|
-| **Modifier** | Timing | Modifiers stack. Delays add up. Throttle takes the maximum. |
+| **Modifier** | Timing | Modifiers stack. Delays add up, with their jitters. Throttle takes the maximum. |
 | **Rewrite** | Topology, data, progress, configuration | Rewrites merge per target and aspect. A stale high watermark and dropped records on the same partition both apply. Two rewrites of the same aspect of the same target conflict. |
 | **Refusal** | Refusal | Refusals of different partitions all apply. Two refusals of the same partition conflict. A refusal replaces everything about its partition, so it pre-empts rewrites of that partition. |
 | **Terminal** | Silence, hang-up | A terminal lie ends the whole call. Only one can apply. It conflicts with every refusal on the call, and it pre-empts modifiers and rewrites. |
@@ -111,9 +111,31 @@ Lies that conflict go to the scenario's [mode](scenarios.md#modes),
 which picks one winner per target.
 The losing rule is **shadowed** for that target.
 
+A rule that lost a target shadows no rule there.
+A refusal above a blackhole shadows the blackhole,
+and a refusal of another partition below the two then applies.
+
 A lie that fired but has nothing left to change is **pre-empted**.
 A delay on a call that a silence ended is pre-empted,
 and so is a data rewrite of a partition that another rule refused.
+
+Pre-emption does not depend on priority, and it comes before shadowing.
+A rewrite of a refused partition is pre-empted,
+even when a rewrite above it changes the same aspect.
+
+A terminal lie pre-empts the lies that act at its [stage](#stage) or later.
+A delay before forwarding still holds the request back
+when a hang-up after the response ends the call.
+
+The combined delay of a stage is the sum of the delays that apply there.
+It strays from that sum by at most the sum of their jitters.
+The throttle is a field of the answer.
+It is the maximum over every timing lie that applies, at either stage.
+
+The whole call is one target.
+A refusal of the whole call and a refusal of a partition conflict,
+and the loser loses its whole target, as with a terminal lie.
+A rewrite of the whole call keeps something to change until a terminal lie applies or the whole call is refused.
 
 ## Incidents
 

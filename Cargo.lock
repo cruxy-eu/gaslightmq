@@ -196,6 +196,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "gaslightmq_combine"
+version = "0.1.0"
+dependencies = [
+ "gaslightmq_clock",
+ "gaslightmq_field",
+ "gaslightmq_kernel",
+ "gaslightmq_lie",
+]
+
+[[package]]
 name = "gaslightmq_field"
 version = "0.1.0"
 dependencies = [

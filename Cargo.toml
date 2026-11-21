@@ -1,6 +1,7 @@
 [workspace]
 members = [
     "crates/gaslightmq_clock",
+    "crates/gaslightmq_combine",
     "crates/gaslightmq_field",
     "crates/gaslightmq_incident",
     "crates/gaslightmq_kernel",
