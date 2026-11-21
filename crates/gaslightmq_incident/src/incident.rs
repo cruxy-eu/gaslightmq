@@ -1,17 +1,17 @@
 use gaslightmq_kernel::prelude::*;
 
-use crate::{EventKind, PartitionCount, RecordCount};
+use crate::{IncidentKind, PartitionCount, RecordCount};
 
 /// A change to the truth, with everything it needs to happen.
 ///
-/// A rule fires an event, the engine [expands](Event::expand) it,
+/// A rule fires an incident, the engine [expands](Incident::expand) it,
 /// and a backend applies it to its World or emulates it in its overlay.
 /// After that, every call and every client sees the same new world.
 ///
-/// An event names what it changes.
-/// The [`EventDefinition`](crate::EventDefinition) of a rule may leave that to the call that fires the rule.
+/// An incident names what it changes.
+/// The [`IncidentDefinition`](crate::IncidentDefinition) of a rule may leave that to the call that fires the rule.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub enum Event {
+pub enum Incident {
     /// The partition gets a new leader and a new leader epoch.
     LeaderMoves {
         partition: TopicPartition,
@@ -63,23 +63,23 @@ pub enum Event {
     ProducerFenced { transactional_id: TransactionalId },
 }
 
-impl Event {
-    /// Which of the thirteen events this is.
-    pub fn kind(&self) -> EventKind {
+impl Incident {
+    /// Which of the thirteen incidents this is.
+    pub fn kind(&self) -> IncidentKind {
         match self {
-            Self::LeaderMoves { .. } => EventKind::LeaderMoves,
-            Self::BrokerGoesDown { .. } => EventKind::BrokerGoesDown,
-            Self::BrokerGoesUnresponsive { .. } => EventKind::BrokerGoesUnresponsive,
-            Self::BrokerComesBack { .. } => EventKind::BrokerComesBack,
-            Self::Rebalance { .. } => EventKind::Rebalance,
-            Self::CoordinatorMoves { .. } => EventKind::CoordinatorMoves,
-            Self::PartitionAdded { .. } => EventKind::PartitionAdded,
-            Self::TopicDeleted { .. } => EventKind::TopicDeleted,
-            Self::RecordsAppended { .. } => EventKind::RecordsAppended,
-            Self::RecordsExpired { .. } => EventKind::RecordsExpired,
-            Self::LogTruncated { .. } => EventKind::LogTruncated,
-            Self::CommittedOffsetReset { .. } => EventKind::CommittedOffsetReset,
-            Self::ProducerFenced { .. } => EventKind::ProducerFenced,
+            Self::LeaderMoves { .. } => IncidentKind::LeaderMoves,
+            Self::BrokerGoesDown { .. } => IncidentKind::BrokerGoesDown,
+            Self::BrokerGoesUnresponsive { .. } => IncidentKind::BrokerGoesUnresponsive,
+            Self::BrokerComesBack { .. } => IncidentKind::BrokerComesBack,
+            Self::Rebalance { .. } => IncidentKind::Rebalance,
+            Self::CoordinatorMoves { .. } => IncidentKind::CoordinatorMoves,
+            Self::PartitionAdded { .. } => IncidentKind::PartitionAdded,
+            Self::TopicDeleted { .. } => IncidentKind::TopicDeleted,
+            Self::RecordsAppended { .. } => IncidentKind::RecordsAppended,
+            Self::RecordsExpired { .. } => IncidentKind::RecordsExpired,
+            Self::LogTruncated { .. } => IncidentKind::LogTruncated,
+            Self::CommittedOffsetReset { .. } => IncidentKind::CommittedOffsetReset,
+            Self::ProducerFenced { .. } => IncidentKind::ProducerFenced,
         }
     }
 

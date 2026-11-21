@@ -14,8 +14,8 @@ Everything in front of the backend is the same for both.
 A backend:
 
 - answers a decoded request with the truth,
-- declares its **capabilities**: which events it can apply, and which it can only emulate,
-- applies or emulates an event when the scenario runner fires one,
+- declares its **capabilities**: which incidents it can apply, and which it can only emulate,
+- applies or emulates an incident when the scenario runner fires one,
 - reports the endpoints clients should connect to.
 
 A backend never lies.
@@ -55,10 +55,10 @@ See [the backend seam](crates.md#the-backend-seam).
 | Virtual clock | ❌, wall clock | ✅ |
 | Reproducible runs | Dice only. The network and the cluster are not reproducible. | ✅ |
 
-A scenario declares the events it needs.
-A backend rejects a scenario that needs events it cannot apply or emulate,
+A scenario declares the incidents it needs.
+A backend rejects a scenario that needs incidents it cannot apply or emulate,
 when the scenario loads, not halfway through a run.
-The check includes each event's [consequences](../domains/lies-and-events.md#consequences):
+The check includes each incident's [consequences](../domains/lies-and-incidents.md#consequences):
 "broker goes down" with `failover: true` needs "leader moves".
 
 ## Upstream
@@ -80,19 +80,19 @@ It holds two things:
   so clients connect to the proxy's listeners.
   It is always on.
   Without it, clients would bypass GaslightMQ after bootstrap.
-- **Emulated events.**
-  An event stays in the overlay for as long as it is in force.
+- **Emulated incidents.**
+  An incident stays in the overlay for as long as it is in force.
 
 The overlay is part of the backend, not a set of rules.
 Its output is the truth.
 It takes no part in conflicts between lies,
-and rules cannot tell an emulated event from a real one.
+and rules cannot tell an emulated incident from a real one.
 A call keeps the real cluster's answer next to the truth when the overlay changed it,
 so the UI can show both.
 
-### Emulating events
+### Emulating incidents
 
-| Event | Emulation |
+| Incident | Emulation |
 |---|---|
 | Broker down | Close the broker's listener. Drop its connections. Leave it out of Metadata. Report the partitions it led as leaderless, and the coordinators it hosted as unavailable. |
 | Broker unresponsive | Accept connections on the broker's endpoint, never answer. |
@@ -103,7 +103,7 @@ so the UI can show both.
 | Producer fenced | Refuse the producer's transactional calls with `PRODUCER_FENCED`, until it calls `InitProducerId` again. |
 
 An emulation only fools clients that go through GaslightMQ.
-The UI marks emulated events as emulated.
+The UI marks emulated incidents as emulated.
 
 ### What the first version does not emulate
 
@@ -167,7 +167,7 @@ It implements the Kafka protocol against the World's state:
 appending records, serving fetches from stored and [virtual records](../domains/world.md#records), tracking idempotent producers
 and running the group protocol, classic and consumer.
 
-The broker applies events directly to the World,
+The broker applies incidents directly to the World,
 so every call and every client sees one consistent state.
 
 The broker owns the virtual [clock](README.md#clock), and the proxy in front of it reads the same clock.
@@ -186,7 +186,7 @@ Lies therefore happen in one place, for both backends.
 
 A broker also runs alone, with its own listeners and no proxy.
 It is then a truthful fake Kafka.
-Events still change its World, and no rule applies.
+Incidents still change its World, and no rule applies.
 
 ### Staying faithful
 
@@ -233,8 +233,8 @@ The environment switcher changes which environment the UI shows.
 Nothing restarts, and no client loses its connection.
 
 - Views and actions that work on both backends look the same.
-- Emulated events carry an *emulated* badge.
-- Events a backend cannot do are disabled, with the reason.
+- Emulated incidents carry an *emulated* badge.
+- Incidents a backend cannot do are disabled, with the reason.
 - The World view appears only when the environment has a broker.
 - An environment with a broker alone shows the World view and the traffic, and no rules.
 

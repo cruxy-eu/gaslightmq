@@ -145,7 +145,7 @@ The engine validates the whole workspace on load and on every change:
 
 - every reference resolves,
 - every selector uses known fields,
-- every scenario's events are supported by the current backend,
+- every scenario's incidents are supported by the current backend,
 - every secret is a reference, not a value.
 
 An invalid file does not stop the engine.
@@ -313,7 +313,7 @@ so playing with the pads leaves git clean.
 Nothing is armed after a restart.
 The engine does not remember which rules were armed, which scenario was active or how far its counters were.
 A fault injector that resumes on its own is a hazard:
-someone restarts it after an incident and the faults are back.
+someone restarts it after an outage and the faults are back.
 
 A command can name a scenario to activate at start,
 such as `gmq run <scenario>` or `gmq start --scenario <scenario>`.

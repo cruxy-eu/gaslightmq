@@ -1,8 +1,8 @@
-# Lies and events
+# Lies and incidents
 
 GaslightMQ changes what clients experience in two ways.
 It can **lie** about the truth,
-or it can **change the truth** with an event.
+or it can **change the truth** with an incident.
 
 ## Truth
 
@@ -115,12 +115,12 @@ A lie that fired but has nothing left to change is **pre-empted**.
 A delay on a call that a silence ended is pre-empted,
 and so is a data rewrite of a partition that another rule refused.
 
-## Events
+## Incidents
 
-An event changes the truth.
-After an event, every call and every client sees the same new world.
+An incident changes the truth.
+After an incident, every call and every client sees the same new world.
 
-| Event | Effect |
+| Incident | Effect |
 |---|---|
 | Leader moves | A partition gets a new leader and a new leader epoch. |
 | Broker goes down | A broker refuses connections and drops existing ones. |
@@ -136,52 +136,52 @@ After an event, every call and every client sees the same new world.
 | Committed offset reset | A group's committed offset on a partition changes. |
 | Producer fenced | A transactional producer's epoch is bumped. |
 
-Events describe the cluster, not one call.
-A rule can still fire an event in reaction to a call:
+Incidents describe the cluster, not one call.
+A rule can still fire an incident in reaction to a call:
 "when the 3rd Produce arrives, move the leader".
-The event takes effect after that call.
+The incident takes effect after that call.
 
-Events are not lies.
-An event never conflicts with a lie, and no rule shadows it.
-Every event that a firing rule causes takes effect.
+Incidents are not lies.
+An incident never conflicts with a lie, and no rule shadows it.
+Every incident that a firing rule causes takes effect.
 
 ### Consequences
 
-Some events have consequences.
-The engine expands an event into its consequences before it reaches the backend,
+Some incidents have consequences.
+The engine expands an incident into its consequences before it reaches the backend,
 so both backends see the same list.
 
-| Event | Consequences |
+| Incident | Consequences |
 |---|---|
 | Broker goes down | Every partition the broker led has no leader. Every coordinator it hosted is unavailable. |
-| Broker goes down, with `failover: true` | Every partition the broker led gets a "leader moves" event. Every coordinator it hosted gets a "coordinator moves" event. |
+| Broker goes down, with `failover: true` | Every partition the broker led gets a "leader moves" incident. Every coordinator it hosted gets a "coordinator moves" incident. |
 | Broker comes back | The broker is a replica again. Leaders and coordinators stay where they are. |
 | Leader moves | None. |
 
-A backend that cannot apply or emulate one of the consequences rejects the event.
+A backend that cannot apply or emulate one of the consequences rejects the incident.
 
-### Events on each backend
+### Incidents on each backend
 
-The [Simulated backend](../architecture/backends.md#simulated) applies events to the World.
-The event really happens, and everything stays consistent.
+The [Simulated backend](../architecture/backends.md#simulated) applies incidents to the World.
+The incident really happens, and everything stays consistent.
 
 The [Upstream backend](../architecture/backends.md#upstream) cannot change a real cluster.
-It **emulates** an event inside its overlay.
+It **emulates** an incident inside its overlay.
 For "broker goes down", the overlay:
 
 - closes the broker's listener and drops its connections,
 - leaves the broker out of Metadata,
 - reports the partitions it led as leaderless.
 
-Rules cannot tell an emulated event from a real one.
+Rules cannot tell an emulated incident from a real one.
 What the overlay answers is the truth.
 
 An emulation is only as consistent as the traffic that passes through GaslightMQ.
 Clients that talk to the real cluster directly see the real cluster.
-The UI marks emulated events, so nobody mistakes them for real ones.
-A backend rejects an event it cannot emulate when the scenario loads.
+The UI marks emulated incidents, so nobody mistakes them for real ones.
+A backend rejects an incident it cannot emulate when the scenario loads.
 
-### A lie or an event?
+### A lie or an incident?
 
 A lie is one call wide.
 Clients cross-check what they are told,
@@ -192,12 +192,12 @@ The client asks `ListOffsets` for the earliest offset, gets the truth,
 seeks to it and receives the same lie again, forever.
 
 Use a lie for what a client sees once: an error, a delay, a corrupted batch.
-Use an event when the client must keep believing it across calls and APIs:
+Use an incident when the client must keep believing it across calls and APIs:
 "records expired" moves the log start offset for Fetch and `ListOffsets` alike.
 
 ## Presets
 
-A preset is a named, reusable lie or event with its parameters.
+A preset is a named, reusable lie or incident with its parameters.
 
 ```yaml
 name: Delay 1 s
@@ -221,7 +221,7 @@ error: NOT_LEADER_OR_FOLLOWER
 
 ```yaml
 name: Leader election
-event: leader-moves
+incident: leader-moves
 ```
 
 Pad grid columns, ⌘K suggestions and rule editors all offer presets.

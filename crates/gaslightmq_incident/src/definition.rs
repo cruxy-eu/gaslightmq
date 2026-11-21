@@ -2,106 +2,106 @@ use std::collections::BTreeSet;
 
 use gaslightmq_kernel::prelude::*;
 
-use crate::{Coordinator, Event, EventError, EventKind, PartitionCount, RecordCount};
+use crate::{Coordinator, Incident, IncidentError, IncidentKind, PartitionCount, RecordCount};
 
-/// An event as a rule's action or a preset writes it.
+/// An incident as a rule's action or a preset writes it.
 ///
-/// It has the thirteen variants of [`Event`], with the same parameters.
-/// The difference is the subject: the partition, broker, group, topic or producer the event changes.
-/// A definition may leave its subject out, and then the event is about the call that fires the rule.
-/// The preset `event: leader-moves` moves the leader of whichever partition that call targets.
+/// It has the thirteen variants of [`Incident`], with the same parameters.
+/// The difference is the subject: the partition, broker, group, topic or producer the incident changes.
+/// A definition may leave its subject out, and then the incident is about the call that fires the rule.
+/// The preset `incident: leader-moves` moves the leader of whichever partition that call targets.
 ///
-/// [`resolve`](Self::resolve) turns a definition into the events that happen.
+/// [`resolve`](Self::resolve) turns a definition into the incidents that happen.
 ///
 /// ```
-/// use gaslightmq_event::prelude::*;
+/// use gaslightmq_incident::prelude::*;
 /// use gaslightmq_kernel::prelude::*;
 ///
 /// // "When the 3rd Produce arrives, move the leader."
-/// let preset = EventDefinition::LeaderMoves { partition: None, to: None };
+/// let preset = IncidentDefinition::LeaderMoves { partition: None, to: None };
 ///
 /// // That Produce targets two partitions, so two leaders move.
 /// let produce = Subjects::new().with_partition("orders.eu/3".parse()?).with_partition("orders.eu/4".parse()?);
-/// let events = preset.resolve(&produce)?;
+/// let incidents = preset.resolve(&produce)?;
 /// assert_eq!(
-///     events,
+///     incidents,
 ///     [
-///         Event::LeaderMoves { partition: "orders.eu/3".parse()?, to: None },
-///         Event::LeaderMoves { partition: "orders.eu/4".parse()?, to: None },
+///         Incident::LeaderMoves { partition: "orders.eu/3".parse()?, to: None },
+///         Incident::LeaderMoves { partition: "orders.eu/4".parse()?, to: None },
 ///     ]
 /// );
 /// # Ok::<(), Box<dyn std::error::Error>>(())
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub enum EventDefinition {
-    /// See [`Event::LeaderMoves`].
+pub enum IncidentDefinition {
+    /// See [`Incident::LeaderMoves`].
     LeaderMoves {
         partition: Option<TopicPartition>,
         to: Option<BrokerId>,
     },
-    /// See [`Event::BrokerGoesDown`].
+    /// See [`Incident::BrokerGoesDown`].
     BrokerGoesDown { broker: Option<BrokerId>, failover: bool },
-    /// See [`Event::BrokerGoesUnresponsive`].
+    /// See [`Incident::BrokerGoesUnresponsive`].
     BrokerGoesUnresponsive { broker: Option<BrokerId> },
-    /// See [`Event::BrokerComesBack`].
+    /// See [`Incident::BrokerComesBack`].
     BrokerComesBack { broker: Option<BrokerId> },
-    /// See [`Event::Rebalance`].
+    /// See [`Incident::Rebalance`].
     Rebalance { group: Option<GroupId> },
-    /// See [`Event::CoordinatorMoves`].
+    /// See [`Incident::CoordinatorMoves`].
     /// Without a coordinator, the coordinator of every group and transactional ID of the call moves.
     CoordinatorMoves {
         coordinator: Option<Coordinator>,
         to: Option<BrokerId>,
     },
-    /// See [`Event::PartitionAdded`].
+    /// See [`Incident::PartitionAdded`].
     PartitionAdded {
         topic: Option<TopicName>,
         count: PartitionCount,
     },
-    /// See [`Event::TopicDeleted`].
+    /// See [`Incident::TopicDeleted`].
     TopicDeleted { topic: Option<TopicName> },
-    /// See [`Event::RecordsAppended`].
+    /// See [`Incident::RecordsAppended`].
     RecordsAppended {
         partition: Option<TopicPartition>,
         count: RecordCount,
     },
-    /// See [`Event::RecordsExpired`].
+    /// See [`Incident::RecordsExpired`].
     RecordsExpired {
         partition: Option<TopicPartition>,
         to: Offset,
     },
-    /// See [`Event::LogTruncated`].
+    /// See [`Incident::LogTruncated`].
     LogTruncated {
         partition: Option<TopicPartition>,
         to: Offset,
     },
-    /// See [`Event::CommittedOffsetReset`].
+    /// See [`Incident::CommittedOffsetReset`].
     CommittedOffsetReset {
         group: Option<GroupId>,
         partition: Option<TopicPartition>,
         to: Offset,
     },
-    /// See [`Event::ProducerFenced`].
+    /// See [`Incident::ProducerFenced`].
     ProducerFenced { transactional_id: Option<TransactionalId> },
 }
 
-impl EventDefinition {
-    /// Which of the thirteen events this defines.
-    pub fn kind(&self) -> EventKind {
+impl IncidentDefinition {
+    /// Which of the thirteen incidents this defines.
+    pub fn kind(&self) -> IncidentKind {
         match self {
-            Self::LeaderMoves { .. } => EventKind::LeaderMoves,
-            Self::BrokerGoesDown { .. } => EventKind::BrokerGoesDown,
-            Self::BrokerGoesUnresponsive { .. } => EventKind::BrokerGoesUnresponsive,
-            Self::BrokerComesBack { .. } => EventKind::BrokerComesBack,
-            Self::Rebalance { .. } => EventKind::Rebalance,
-            Self::CoordinatorMoves { .. } => EventKind::CoordinatorMoves,
-            Self::PartitionAdded { .. } => EventKind::PartitionAdded,
-            Self::TopicDeleted { .. } => EventKind::TopicDeleted,
-            Self::RecordsAppended { .. } => EventKind::RecordsAppended,
-            Self::RecordsExpired { .. } => EventKind::RecordsExpired,
-            Self::LogTruncated { .. } => EventKind::LogTruncated,
-            Self::CommittedOffsetReset { .. } => EventKind::CommittedOffsetReset,
-            Self::ProducerFenced { .. } => EventKind::ProducerFenced,
+            Self::LeaderMoves { .. } => IncidentKind::LeaderMoves,
+            Self::BrokerGoesDown { .. } => IncidentKind::BrokerGoesDown,
+            Self::BrokerGoesUnresponsive { .. } => IncidentKind::BrokerGoesUnresponsive,
+            Self::BrokerComesBack { .. } => IncidentKind::BrokerComesBack,
+            Self::Rebalance { .. } => IncidentKind::Rebalance,
+            Self::CoordinatorMoves { .. } => IncidentKind::CoordinatorMoves,
+            Self::PartitionAdded { .. } => IncidentKind::PartitionAdded,
+            Self::TopicDeleted { .. } => IncidentKind::TopicDeleted,
+            Self::RecordsAppended { .. } => IncidentKind::RecordsAppended,
+            Self::RecordsExpired { .. } => IncidentKind::RecordsExpired,
+            Self::LogTruncated { .. } => IncidentKind::LogTruncated,
+            Self::CommittedOffsetReset { .. } => IncidentKind::CommittedOffsetReset,
+            Self::ProducerFenced { .. } => IncidentKind::ProducerFenced,
         }
     }
 
@@ -110,31 +110,31 @@ impl EventDefinition {
         matches!(self, Self::BrokerGoesDown { failover: true, .. })
     }
 
-    /// The events that happen when a rule with this action fires on a call about `subjects`.
+    /// The incidents that happen when a rule with this action fires on a call about `subjects`.
     ///
     /// A subject the definition names stands, whatever the call is about.
-    /// A subject it leaves out comes from the call, and every value the call offers gives one event:
+    /// A subject it leaves out comes from the call, and every value the call offers gives one incident:
     /// a call that targets three partitions moves three leaders.
-    /// The events come in the order of their subjects.
+    /// The incidents come in the order of their subjects.
     ///
     /// The result is never empty.
     /// A rule that someone fires by hand has no call, so it resolves against [`Subjects::new`].
     ///
     /// # Errors
     ///
-    /// [`EventError::MissingSubject`] when the definition leaves a subject out and the call offers none.
-    pub fn resolve(&self, subjects: &Subjects) -> Result<Vec<Event>, EventError> {
+    /// [`IncidentError::MissingSubject`] when the definition leaves a subject out and the call offers none.
+    pub fn resolve(&self, subjects: &Subjects) -> Result<Vec<Incident>, IncidentError> {
         let kind = self.kind();
-        let events = match self {
+        let incidents = match self {
             Self::LeaderMoves { partition, to } => subjects
                 .partitions(kind, partition.as_ref())?
                 .into_iter()
-                .map(|partition| Event::LeaderMoves { partition, to: *to })
+                .map(|partition| Incident::LeaderMoves { partition, to: *to })
                 .collect(),
             Self::BrokerGoesDown { broker, failover } => subjects
                 .brokers(kind, *broker)?
                 .into_iter()
-                .map(|broker| Event::BrokerGoesDown {
+                .map(|broker| Incident::BrokerGoesDown {
                     broker,
                     failover: *failover,
                 })
@@ -142,37 +142,37 @@ impl EventDefinition {
             Self::BrokerGoesUnresponsive { broker } => subjects
                 .brokers(kind, *broker)?
                 .into_iter()
-                .map(|broker| Event::BrokerGoesUnresponsive { broker })
+                .map(|broker| Incident::BrokerGoesUnresponsive { broker })
                 .collect(),
             Self::BrokerComesBack { broker } => subjects
                 .brokers(kind, *broker)?
                 .into_iter()
-                .map(|broker| Event::BrokerComesBack { broker })
+                .map(|broker| Incident::BrokerComesBack { broker })
                 .collect(),
             Self::Rebalance { group } => subjects
                 .groups(kind, group.as_ref())?
                 .into_iter()
-                .map(|group| Event::Rebalance { group })
+                .map(|group| Incident::Rebalance { group })
                 .collect(),
             Self::CoordinatorMoves { coordinator, to } => subjects
                 .coordinators(kind, coordinator.as_ref())?
                 .into_iter()
-                .map(|coordinator| Event::CoordinatorMoves { coordinator, to: *to })
+                .map(|coordinator| Incident::CoordinatorMoves { coordinator, to: *to })
                 .collect(),
             Self::PartitionAdded { topic, count } => subjects
                 .topics(kind, topic.as_ref())?
                 .into_iter()
-                .map(|topic| Event::PartitionAdded { topic, count: *count })
+                .map(|topic| Incident::PartitionAdded { topic, count: *count })
                 .collect(),
             Self::TopicDeleted { topic } => subjects
                 .topics(kind, topic.as_ref())?
                 .into_iter()
-                .map(|topic| Event::TopicDeleted { topic })
+                .map(|topic| Incident::TopicDeleted { topic })
                 .collect(),
             Self::RecordsAppended { partition, count } => subjects
                 .partitions(kind, partition.as_ref())?
                 .into_iter()
-                .map(|partition| Event::RecordsAppended {
+                .map(|partition| Incident::RecordsAppended {
                     partition,
                     count: *count,
                 })
@@ -180,12 +180,12 @@ impl EventDefinition {
             Self::RecordsExpired { partition, to } => subjects
                 .partitions(kind, partition.as_ref())?
                 .into_iter()
-                .map(|partition| Event::RecordsExpired { partition, to: *to })
+                .map(|partition| Incident::RecordsExpired { partition, to: *to })
                 .collect(),
             Self::LogTruncated { partition, to } => subjects
                 .partitions(kind, partition.as_ref())?
                 .into_iter()
-                .map(|partition| Event::LogTruncated { partition, to: *to })
+                .map(|partition| Incident::LogTruncated { partition, to: *to })
                 .collect(),
             Self::CommittedOffsetReset { group, partition, to } => {
                 let partitions = subjects.partitions(kind, partition.as_ref())?;
@@ -193,7 +193,7 @@ impl EventDefinition {
                     .groups(kind, group.as_ref())?
                     .into_iter()
                     .flat_map(|group| {
-                        partitions.iter().map(move |partition| Event::CommittedOffsetReset {
+                        partitions.iter().map(move |partition| Incident::CommittedOffsetReset {
                             group: group.clone(),
                             partition: partition.clone(),
                             to: *to,
@@ -204,74 +204,74 @@ impl EventDefinition {
             Self::ProducerFenced { transactional_id } => subjects
                 .transactional_ids(kind, transactional_id.as_ref())?
                 .into_iter()
-                .map(|transactional_id| Event::ProducerFenced { transactional_id })
+                .map(|transactional_id| Incident::ProducerFenced { transactional_id })
                 .collect(),
         };
-        Ok(events)
+        Ok(incidents)
     }
 }
 
-/// An event is a definition that names every subject.
-impl From<Event> for EventDefinition {
-    fn from(event: Event) -> Self {
-        match event {
-            Event::LeaderMoves { partition, to } => Self::LeaderMoves {
+/// An incident is a definition that names every subject.
+impl From<Incident> for IncidentDefinition {
+    fn from(incident: Incident) -> Self {
+        match incident {
+            Incident::LeaderMoves { partition, to } => Self::LeaderMoves {
                 partition: Some(partition),
                 to,
             },
-            Event::BrokerGoesDown { broker, failover } => Self::BrokerGoesDown {
+            Incident::BrokerGoesDown { broker, failover } => Self::BrokerGoesDown {
                 broker: Some(broker),
                 failover,
             },
-            Event::BrokerGoesUnresponsive { broker } => Self::BrokerGoesUnresponsive { broker: Some(broker) },
-            Event::BrokerComesBack { broker } => Self::BrokerComesBack { broker: Some(broker) },
-            Event::Rebalance { group } => Self::Rebalance { group: Some(group) },
-            Event::CoordinatorMoves { coordinator, to } => Self::CoordinatorMoves {
+            Incident::BrokerGoesUnresponsive { broker } => Self::BrokerGoesUnresponsive { broker: Some(broker) },
+            Incident::BrokerComesBack { broker } => Self::BrokerComesBack { broker: Some(broker) },
+            Incident::Rebalance { group } => Self::Rebalance { group: Some(group) },
+            Incident::CoordinatorMoves { coordinator, to } => Self::CoordinatorMoves {
                 coordinator: Some(coordinator),
                 to,
             },
-            Event::PartitionAdded { topic, count } => Self::PartitionAdded {
+            Incident::PartitionAdded { topic, count } => Self::PartitionAdded {
                 topic: Some(topic),
                 count,
             },
-            Event::TopicDeleted { topic } => Self::TopicDeleted { topic: Some(topic) },
-            Event::RecordsAppended { partition, count } => Self::RecordsAppended {
+            Incident::TopicDeleted { topic } => Self::TopicDeleted { topic: Some(topic) },
+            Incident::RecordsAppended { partition, count } => Self::RecordsAppended {
                 partition: Some(partition),
                 count,
             },
-            Event::RecordsExpired { partition, to } => Self::RecordsExpired {
+            Incident::RecordsExpired { partition, to } => Self::RecordsExpired {
                 partition: Some(partition),
                 to,
             },
-            Event::LogTruncated { partition, to } => Self::LogTruncated {
+            Incident::LogTruncated { partition, to } => Self::LogTruncated {
                 partition: Some(partition),
                 to,
             },
-            Event::CommittedOffsetReset { group, partition, to } => Self::CommittedOffsetReset {
+            Incident::CommittedOffsetReset { group, partition, to } => Self::CommittedOffsetReset {
                 group: Some(group),
                 partition: Some(partition),
                 to,
             },
-            Event::ProducerFenced { transactional_id } => Self::ProducerFenced {
+            Incident::ProducerFenced { transactional_id } => Self::ProducerFenced {
                 transactional_id: Some(transactional_id),
             },
         }
     }
 }
 
-/// A definition that names every subject is one event.
-/// One that leaves a subject out is an [`EventError::MissingSubject`].
-impl TryFrom<EventDefinition> for Event {
-    type Error = EventError;
+/// A definition that names every subject is one incident.
+/// One that leaves a subject out is an [`IncidentError::MissingSubject`].
+impl TryFrom<IncidentDefinition> for Incident {
+    type Error = IncidentError;
 
-    fn try_from(definition: EventDefinition) -> Result<Self, Self::Error> {
-        let mut events = definition.resolve(&Subjects::new())?;
+    fn try_from(definition: IncidentDefinition) -> Result<Self, Self::Error> {
+        let mut incidents = definition.resolve(&Subjects::new())?;
         // Without a call, every subject comes from the definition, and each gives exactly one value.
-        Ok(events.swap_remove(0))
+        Ok(incidents.swap_remove(0))
     }
 }
 
-/// What a call is about: the subjects it offers to an [`EventDefinition`] that names none.
+/// What a call is about: the subjects it offers to an [`IncidentDefinition`] that names none.
 ///
 /// The pipeline builds it for the call that fires a rule,
 /// from the rule's target and from the call's fields.
@@ -285,19 +285,19 @@ impl TryFrom<EventDefinition> for Event {
 /// | Transactional IDs | The `transactional.id` field. |
 ///
 /// ```
-/// use gaslightmq_event::prelude::*;
+/// use gaslightmq_incident::prelude::*;
 /// use gaslightmq_kernel::prelude::*;
 ///
 /// let heartbeat = Subjects::new().with_broker(BrokerId::from(2)).with_group(GroupId::new("analytics-etl")?);
 ///
-/// let rebalance = EventDefinition::Rebalance { group: None };
-/// assert_eq!(rebalance.resolve(&heartbeat)?, [Event::Rebalance { group: GroupId::new("analytics-etl")? }]);
+/// let rebalance = IncidentDefinition::Rebalance { group: None };
+/// assert_eq!(rebalance.resolve(&heartbeat)?, [Incident::Rebalance { group: GroupId::new("analytics-etl")? }]);
 ///
 /// // A Heartbeat names no partition.
-/// let leader_moves = EventDefinition::LeaderMoves { partition: None, to: None };
+/// let leader_moves = IncidentDefinition::LeaderMoves { partition: None, to: None };
 /// assert_eq!(
 ///     leader_moves.resolve(&heartbeat),
-///     Err(EventError::MissingSubject { event: EventKind::LeaderMoves, subject: "partition" }),
+///     Err(IncidentError::MissingSubject { incident: IncidentKind::LeaderMoves, subject: "partition" }),
 /// );
 /// # Ok::<(), Box<dyn std::error::Error>>(())
 /// ```
@@ -353,51 +353,59 @@ impl Subjects {
         self
     }
 
-    fn partitions(&self, event: EventKind, named: Option<&TopicPartition>) -> Result<Vec<TopicPartition>, EventError> {
-        named_or_offered(event, "partition", named, &self.partitions)
+    fn partitions(
+        &self,
+        incident: IncidentKind,
+        named: Option<&TopicPartition>,
+    ) -> Result<Vec<TopicPartition>, IncidentError> {
+        named_or_offered(incident, "partition", named, &self.partitions)
     }
 
-    fn topics(&self, event: EventKind, named: Option<&TopicName>) -> Result<Vec<TopicName>, EventError> {
-        named_or_offered(event, "topic", named, &self.topics)
+    fn topics(&self, incident: IncidentKind, named: Option<&TopicName>) -> Result<Vec<TopicName>, IncidentError> {
+        named_or_offered(incident, "topic", named, &self.topics)
     }
 
-    fn brokers(&self, event: EventKind, named: Option<BrokerId>) -> Result<Vec<BrokerId>, EventError> {
-        named_or_offered(event, "broker", named.as_ref(), &self.broker)
+    fn brokers(&self, incident: IncidentKind, named: Option<BrokerId>) -> Result<Vec<BrokerId>, IncidentError> {
+        named_or_offered(incident, "broker", named.as_ref(), &self.broker)
     }
 
-    fn groups(&self, event: EventKind, named: Option<&GroupId>) -> Result<Vec<GroupId>, EventError> {
-        named_or_offered(event, "group", named, &self.groups)
+    fn groups(&self, incident: IncidentKind, named: Option<&GroupId>) -> Result<Vec<GroupId>, IncidentError> {
+        named_or_offered(incident, "group", named, &self.groups)
     }
 
     fn transactional_ids(
         &self,
-        event: EventKind,
+        incident: IncidentKind,
         named: Option<&TransactionalId>,
-    ) -> Result<Vec<TransactionalId>, EventError> {
-        named_or_offered(event, "transactional ID", named, &self.transactional_ids)
+    ) -> Result<Vec<TransactionalId>, IncidentError> {
+        named_or_offered(incident, "transactional ID", named, &self.transactional_ids)
     }
 
-    fn coordinators(&self, event: EventKind, named: Option<&Coordinator>) -> Result<Vec<Coordinator>, EventError> {
+    fn coordinators(
+        &self,
+        incident: IncidentKind,
+        named: Option<&Coordinator>,
+    ) -> Result<Vec<Coordinator>, IncidentError> {
         let offered: Vec<Coordinator> = (self.groups.iter().cloned().map(Coordinator::Group))
             .chain(self.transactional_ids.iter().cloned().map(Coordinator::Transaction))
             .collect();
-        named_or_offered(event, "group or transactional ID", named, &offered)
+        named_or_offered(incident, "group or transactional ID", named, &offered)
     }
 }
 
 /// The subject the definition names, or else every subject the call offers.
 fn named_or_offered<'a, T: Clone + 'a>(
-    event: EventKind,
+    incident: IncidentKind,
     subject: &'static str,
     named: Option<&T>,
     offered: impl IntoIterator<Item = &'a T>,
-) -> Result<Vec<T>, EventError> {
+) -> Result<Vec<T>, IncidentError> {
     let subjects: Vec<T> = match named {
         Some(named) => vec![named.clone()],
         None => offered.into_iter().cloned().collect(),
     };
     if subjects.is_empty() {
-        return Err(EventError::MissingSubject { event, subject });
+        return Err(IncidentError::MissingSubject { incident, subject });
     }
     Ok(subjects)
 }
@@ -423,46 +431,46 @@ mod tests {
     }
 
     /// One definition of every kind that names no subject.
-    fn every_definition_without_subject() -> [EventDefinition; 13] {
+    fn every_definition_without_subject() -> [IncidentDefinition; 13] {
         [
-            EventDefinition::LeaderMoves {
+            IncidentDefinition::LeaderMoves {
                 partition: None,
                 to: None,
             },
-            EventDefinition::BrokerGoesDown {
+            IncidentDefinition::BrokerGoesDown {
                 broker: None,
                 failover: false,
             },
-            EventDefinition::BrokerGoesUnresponsive { broker: None },
-            EventDefinition::BrokerComesBack { broker: None },
-            EventDefinition::Rebalance { group: None },
-            EventDefinition::CoordinatorMoves {
+            IncidentDefinition::BrokerGoesUnresponsive { broker: None },
+            IncidentDefinition::BrokerComesBack { broker: None },
+            IncidentDefinition::Rebalance { group: None },
+            IncidentDefinition::CoordinatorMoves {
                 coordinator: None,
                 to: None,
             },
-            EventDefinition::PartitionAdded {
+            IncidentDefinition::PartitionAdded {
                 topic: None,
                 count: PartitionCount::ONE,
             },
-            EventDefinition::TopicDeleted { topic: None },
-            EventDefinition::RecordsAppended {
+            IncidentDefinition::TopicDeleted { topic: None },
+            IncidentDefinition::RecordsAppended {
                 partition: None,
                 count: RecordCount::ONE,
             },
-            EventDefinition::RecordsExpired {
+            IncidentDefinition::RecordsExpired {
                 partition: None,
                 to: Offset::from(5000),
             },
-            EventDefinition::LogTruncated {
+            IncidentDefinition::LogTruncated {
                 partition: None,
                 to: Offset::from(40),
             },
-            EventDefinition::CommittedOffsetReset {
+            IncidentDefinition::CommittedOffsetReset {
                 group: None,
                 partition: None,
                 to: Offset::from(0),
             },
-            EventDefinition::ProducerFenced { transactional_id: None },
+            IncidentDefinition::ProducerFenced { transactional_id: None },
         ]
     }
 
@@ -476,14 +484,14 @@ mod tests {
     }
 
     #[test]
-    fn a_definition_and_its_events_are_of_the_same_kind() {
+    fn a_definition_and_its_incidents_are_of_the_same_kind() {
         let definitions = every_definition_without_subject();
-        let kinds: Vec<EventKind> = definitions.iter().map(EventDefinition::kind).collect();
-        assert_eq!(kinds, EventKind::ALL);
+        let kinds: Vec<IncidentKind> = definitions.iter().map(IncidentDefinition::kind).collect();
+        assert_eq!(kinds, IncidentKind::ALL);
 
         for definition in definitions {
-            for event in definition.resolve(&a_call_about_everything()).unwrap() {
-                assert_eq!(event.kind(), definition.kind());
+            for incident in definition.resolve(&a_call_about_everything()).unwrap() {
+                assert_eq!(incident.kind(), definition.kind());
             }
         }
     }
@@ -491,13 +499,13 @@ mod tests {
     #[test]
     fn a_named_subject_needs_no_call() {
         // The rule of the "Leader election" scenario.
-        let definition = EventDefinition::LeaderMoves {
+        let definition = IncidentDefinition::LeaderMoves {
             partition: Some(partition("orders.eu/3")),
             to: None,
         };
         assert_eq!(
             definition.resolve(&Subjects::new()),
-            Ok(vec![Event::LeaderMoves {
+            Ok(vec![Incident::LeaderMoves {
                 partition: partition("orders.eu/3"),
                 to: None
             }]),
@@ -506,14 +514,14 @@ mod tests {
 
     #[test]
     fn a_named_subject_stands_whatever_the_call_is_about() {
-        let definition = EventDefinition::LeaderMoves {
+        let definition = IncidentDefinition::LeaderMoves {
             partition: Some(partition("orders.eu/3")),
             to: Some(BrokerId::from(1)),
         };
         let call = Subjects::new().with_partition(partition("payments.settled/0"));
         assert_eq!(
             definition.resolve(&call),
-            Ok(vec![Event::LeaderMoves {
+            Ok(vec![Incident::LeaderMoves {
                 partition: partition("orders.eu/3"),
                 to: Some(BrokerId::from(1))
             }]),
@@ -522,15 +530,15 @@ mod tests {
 
     #[test]
     fn a_subject_that_is_left_out_comes_from_the_call() {
-        // The "Leader election" preset: `event: leader-moves`.
-        let preset = EventDefinition::LeaderMoves {
+        // The "Leader election" preset: `incident: leader-moves`.
+        let preset = IncidentDefinition::LeaderMoves {
             partition: None,
             to: None,
         };
         let call = Subjects::new().with_partition(partition("orders.eu/3"));
         assert_eq!(
             preset.resolve(&call),
-            Ok(vec![Event::LeaderMoves {
+            Ok(vec![Incident::LeaderMoves {
                 partition: partition("orders.eu/3"),
                 to: None
             }]),
@@ -538,8 +546,8 @@ mod tests {
     }
 
     #[test]
-    fn every_subject_of_the_call_gives_one_event_in_order() {
-        let preset = EventDefinition::RecordsExpired {
+    fn every_subject_of_the_call_gives_one_incident_in_order() {
+        let preset = IncidentDefinition::RecordsExpired {
             partition: None,
             to: Offset::from(5000),
         };
@@ -551,15 +559,15 @@ mod tests {
         assert_eq!(
             preset.resolve(&call),
             Ok(vec![
-                Event::RecordsExpired {
+                Incident::RecordsExpired {
                     partition: partition("orders.eu/3"),
                     to: Offset::from(5000)
                 },
-                Event::RecordsExpired {
+                Incident::RecordsExpired {
                     partition: partition("orders.eu/4"),
                     to: Offset::from(5000)
                 },
-                Event::RecordsExpired {
+                Incident::RecordsExpired {
                     partition: partition("orders.us/0"),
                     to: Offset::from(5000)
                 },
@@ -587,8 +595,8 @@ mod tests {
         for (definition, subject) in every_definition_without_subject().into_iter().zip(subjects) {
             assert_eq!(
                 definition.resolve(&Subjects::new()),
-                Err(EventError::MissingSubject {
-                    event: definition.kind(),
+                Err(IncidentError::MissingSubject {
+                    incident: definition.kind(),
                     subject
                 }),
             );
@@ -601,19 +609,19 @@ mod tests {
             .with_partition(partition("orders.eu/3"))
             .with_broker(BrokerId::from(2));
         assert_eq!(
-            EventDefinition::Rebalance { group: None }.resolve(&produce),
-            Err(EventError::MissingSubject {
-                event: EventKind::Rebalance,
+            IncidentDefinition::Rebalance { group: None }.resolve(&produce),
+            Err(IncidentError::MissingSubject {
+                incident: IncidentKind::Rebalance,
                 subject: "group"
             }),
         );
         assert_eq!(
-            EventDefinition::BrokerGoesDown {
+            IncidentDefinition::BrokerGoesDown {
                 broker: None,
                 failover: true
             }
             .resolve(&produce),
-            Ok(vec![Event::BrokerGoesDown {
+            Ok(vec![Incident::BrokerGoesDown {
                 broker: BrokerId::from(2),
                 failover: true
             }]),
@@ -627,12 +635,12 @@ mod tests {
             .with_partition(partition("orders.eu/4"))
             .with_topic(topic("payments.settled"));
         assert_eq!(
-            EventDefinition::TopicDeleted { topic: None }.resolve(&call),
+            IncidentDefinition::TopicDeleted { topic: None }.resolve(&call),
             Ok(vec![
-                Event::TopicDeleted {
+                Incident::TopicDeleted {
                     topic: topic("orders.eu")
                 },
-                Event::TopicDeleted {
+                Incident::TopicDeleted {
                     topic: topic("payments.settled")
                 },
             ]),
@@ -640,12 +648,12 @@ mod tests {
 
         let count = PartitionCount::new(2).unwrap();
         assert_eq!(
-            EventDefinition::PartitionAdded {
+            IncidentDefinition::PartitionAdded {
                 topic: Some(topic("orders.us")),
                 count
             }
             .resolve(&call),
-            Ok(vec![Event::PartitionAdded {
+            Ok(vec![Incident::PartitionAdded {
                 topic: topic("orders.us"),
                 count
             }]),
@@ -656,13 +664,13 @@ mod tests {
     fn a_topic_without_partition_offers_no_partition() {
         let metadata = Subjects::new().with_topic(topic("orders.eu"));
         assert_eq!(
-            EventDefinition::RecordsAppended {
+            IncidentDefinition::RecordsAppended {
                 partition: None,
                 count: RecordCount::ONE
             }
             .resolve(&metadata),
-            Err(EventError::MissingSubject {
-                event: EventKind::RecordsAppended,
+            Err(IncidentError::MissingSubject {
+                incident: IncidentKind::RecordsAppended,
                 subject: "partition"
             }),
         );
@@ -674,17 +682,17 @@ mod tests {
             .with_broker(BrokerId::from(1))
             .with_broker(BrokerId::from(2));
         assert_eq!(
-            EventDefinition::BrokerGoesUnresponsive { broker: None }.resolve(&call),
-            Ok(vec![Event::BrokerGoesUnresponsive {
+            IncidentDefinition::BrokerGoesUnresponsive { broker: None }.resolve(&call),
+            Ok(vec![Incident::BrokerGoesUnresponsive {
                 broker: BrokerId::from(2)
             }]),
         );
         assert_eq!(
-            EventDefinition::BrokerComesBack {
+            IncidentDefinition::BrokerComesBack {
                 broker: Some(BrokerId::from(3))
             }
             .resolve(&call),
-            Ok(vec![Event::BrokerComesBack {
+            Ok(vec![Incident::BrokerComesBack {
                 broker: BrokerId::from(3)
             }]),
         );
@@ -692,7 +700,7 @@ mod tests {
 
     #[test]
     fn a_committed_offset_resets_for_every_group_on_every_partition() {
-        let definition = EventDefinition::CommittedOffsetReset {
+        let definition = IncidentDefinition::CommittedOffsetReset {
             group: None,
             partition: None,
             to: Offset::from(0),
@@ -702,7 +710,7 @@ mod tests {
             .with_group(group("analytics-etl"))
             .with_partition(partition("orders.eu/3"))
             .with_partition(partition("orders.eu/4"));
-        let reset = |group_id: &str, topic_partition: &str| Event::CommittedOffsetReset {
+        let reset = |group_id: &str, topic_partition: &str| Incident::CommittedOffsetReset {
             group: group(group_id),
             partition: partition(topic_partition),
             to: Offset::from(0),
@@ -718,7 +726,7 @@ mod tests {
         );
 
         // One subject from the definition, the other from the call.
-        let definition = EventDefinition::CommittedOffsetReset {
+        let definition = IncidentDefinition::CommittedOffsetReset {
             group: Some(group("payments")),
             partition: None,
             to: Offset::from(0),
@@ -729,8 +737,8 @@ mod tests {
         );
         assert_eq!(
             definition.resolve(&Subjects::new()),
-            Err(EventError::MissingSubject {
-                event: EventKind::CommittedOffsetReset,
+            Err(IncidentError::MissingSubject {
+                incident: IncidentKind::CommittedOffsetReset,
                 subject: "partition"
             }),
         );
@@ -738,11 +746,11 @@ mod tests {
 
     #[test]
     fn the_coordinator_of_the_call_is_the_one_of_its_group_or_its_transactional_id() {
-        let definition = EventDefinition::CoordinatorMoves {
+        let definition = IncidentDefinition::CoordinatorMoves {
             coordinator: None,
             to: Some(BrokerId::from(3)),
         };
-        let moves = |coordinator: Coordinator| Event::CoordinatorMoves {
+        let moves = |coordinator: Coordinator| Incident::CoordinatorMoves {
             coordinator,
             to: Some(BrokerId::from(3)),
         };
@@ -774,34 +782,34 @@ mod tests {
     fn a_producer_is_fenced_by_its_transactional_id() {
         let call = Subjects::new().with_transactional_id(transactional_id("payments-tx-1"));
         assert_eq!(
-            EventDefinition::ProducerFenced { transactional_id: None }.resolve(&call),
-            Ok(vec![Event::ProducerFenced {
+            IncidentDefinition::ProducerFenced { transactional_id: None }.resolve(&call),
+            Ok(vec![Incident::ProducerFenced {
                 transactional_id: transactional_id("payments-tx-1")
             }]),
         );
     }
 
     #[test]
-    fn an_event_is_a_definition_that_names_every_subject() {
+    fn an_incident_is_a_definition_that_names_every_subject() {
         for definition in every_definition_without_subject() {
-            for event in definition.resolve(&a_call_about_everything()).unwrap() {
-                let named = EventDefinition::from(event.clone());
-                assert_eq!(named.kind(), event.kind());
-                assert_eq!(Event::try_from(named.clone()), Ok(event.clone()));
-                assert_eq!(named.resolve(&a_call_about_everything()), Ok(vec![event]));
+            for incident in definition.resolve(&a_call_about_everything()).unwrap() {
+                let named = IncidentDefinition::from(incident.clone());
+                assert_eq!(named.kind(), incident.kind());
+                assert_eq!(Incident::try_from(named.clone()), Ok(incident.clone()));
+                assert_eq!(named.resolve(&a_call_about_everything()), Ok(vec![incident]));
             }
         }
     }
 
     #[test]
-    fn a_definition_without_subject_is_not_an_event() {
+    fn a_definition_without_subject_is_not_an_incident() {
         assert_eq!(
-            Event::try_from(EventDefinition::LeaderMoves {
+            Incident::try_from(IncidentDefinition::LeaderMoves {
                 partition: None,
                 to: None
             }),
-            Err(EventError::MissingSubject {
-                event: EventKind::LeaderMoves,
+            Err(IncidentError::MissingSubject {
+                incident: IncidentKind::LeaderMoves,
                 subject: "partition"
             }),
         );

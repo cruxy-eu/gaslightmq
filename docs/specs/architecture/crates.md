@@ -49,7 +49,7 @@ Rust edition 2024, native async traits and workspace dependency versions.
 
 ```mermaid
 flowchart BT
-  V["Vocabulary<br/>kernel · field · clock · wire · lie · event · call"]
+  V["Vocabulary<br/>kernel · field · clock · wire · lie · incident · call"]
   T["Targeting and injection<br/>selector · trigger · rule · combine · wire_edit · lie_*"]
   P["Session and pipeline<br/>session · pipeline"]
   S["Scenarios<br/>scenario"]
@@ -98,21 +98,21 @@ Every other crate speaks in them.
 | Crate | Holds | Depends on |
 |---|---|---|
 | `kernel` | The value objects of Kafka: topic names and IDs, partition numbers, offsets, positions such as `orders.eu/3`, broker IDs, epochs, the IDs of clients, groups and producers, and API keys and error codes with the names Kafka gives them. Each type only holds valid values. | — |
-| `field` | The [field vocabulary](../domains/targeting.md#fields): field names, their typed values, and the `FieldSource` trait that a live call and a recorded call both implement. Also the parts of a call, and the [target](../domains/lies-and-events.md#target) that a match yields. Every district of the town plan [shares this vocabulary](../townplan/README.md#targeting-is-a-shared-kernel). | `kernel`, `clock` |
+| `field` | The [field vocabulary](../domains/targeting.md#fields): field names, their typed values, and the `FieldSource` trait that a live call and a recorded call both implement. Also the parts of a call, and the [target](../domains/lies-and-incidents.md#target) that a match yields. Every district of the town plan [shares this vocabulary](../townplan/README.md#targeting-is-a-shared-kernel). | `kernel`, `clock` |
 | `clock` | The [clock](README.md#clock): a `Clock` trait, the virtual clock, and instants that do not come from the system. | — |
 | `wire` | The Kafka codec: frames, headers, lazily decoded bodies and record batches. | — |
-| `lie` | The [lie](../domains/lies-and-events.md#lies) vocabulary: kind, stage and combination class, and the definition of every lie kind as data. It holds no behaviour. See [lies as crates](#lies-as-crates). | `field` |
-| `event` | The [event](../domains/lies-and-events.md#events) vocabulary, the expansion into consequences, and the capabilities a backend declares. | `kernel` |
-| `call` | The [call](../domains/observation.md#call) record: identity, request summary, truth, delivered response, verdict, explanation and timing. | `field`, `lie`, `event` |
+| `lie` | The [lie](../domains/lies-and-incidents.md#lies) vocabulary: kind, stage and combination class, and the definition of every lie kind as data. It holds no behaviour. See [lies as crates](#lies-as-crates). | `field` |
+| `incident` | The [incident](../domains/lies-and-incidents.md#incidents) vocabulary, the expansion into consequences, and the support a backend declares for each kind of incident. | `kernel` |
+| `call` | The [call](../domains/observation.md#call) record: identity, request summary, truth, delivered response, verdict, explanation and timing. | `field`, `lie`, `incident` |
 
 ### Targeting and injection
 
 | Crate | Holds | Depends on |
 |---|---|---|
-| `selector` | Conditions, selectors, includes and scope. Matching against a `FieldSource`, with the [target](../domains/lies-and-events.md#target) a match yields. An index of selectors by API. | `field` |
+| `selector` | Conditions, selectors, includes and scope. Matching against a `FieldSource`, with the [target](../domains/lies-and-incidents.md#target) a match yields. An index of selectors by API. | `field` |
 | `trigger` | [Triggers](../domains/rules.md#trigger), counters, dice, budgets and lifetimes. | `clock` |
-| `rule` | The rule definition, its state, and the immutable snapshot of armed rules in priority order. | `selector`, `lie`, `event`, `trigger` |
-| `combine` | [How lies combine](../domains/lies-and-events.md#how-lies-combine): which lies conflict, which win by priority, which are shadowed or pre-empted. | `lie` |
+| `rule` | The rule definition, its state, and the immutable snapshot of armed rules in priority order. | `selector`, `lie`, `incident`, `trigger` |
+| `combine` | [How lies combine](../domains/lies-and-incidents.md#how-lies-combine): which lies conflict, which win by priority, which are shadowed or pre-empted. | `lie` |
 | `wire_edit` | Surgery on requests and responses: remove partitions, merge responses, synthesize an error response for any API, map topic IDs to names. | `wire` |
 | `lie_api` | The contract between the pipeline and a lie kind: the `Lie` trait, and the effect a lie asks the pipeline for. Also the behaviour of timing, silence and hang-up. See [lies as crates](#lies-as-crates). | `lie`, `wire` |
 | `lie_refusal` | Refusals for every API, before forwarding and after the response. | `lie`, `lie_api`, `wire_edit` |
@@ -126,13 +126,13 @@ Every other crate speaks in them.
 | Crate | Holds | Depends on |
 |---|---|---|
 | `session` | The state of one [session](../domains/session.md), which its pipeline owns: lifecycle, identity, session key, per-session counters, in-flight calls, response ordering and the stalled state. Also the client context that sessions share. | `field`, `wire`, `trigger`, `clock` |
-| `pipeline` | The [request pipeline](request-pipeline.md) as a state machine: all stages, both evaluation passes and partial refusals. | `wire`, `wire_edit`, `selector`, `rule`, `trigger`, `lie`, `lie_api`, `combine`, `session`, `call`, `event`, `clock` |
+| `pipeline` | The [request pipeline](request-pipeline.md) as a state machine: all stages, both evaluation passes and partial refusals. | `wire`, `wire_edit`, `selector`, `rule`, `trigger`, `lie`, `lie_api`, `combine`, `session`, `call`, `incident`, `clock` |
 
 ### Scenarios
 
 | Crate | Holds | Depends on |
 |---|---|---|
-| `scenario` | The [scenario](../domains/scenarios.md) definition, modes as priority orders, the step machine of a Sequence, the live set and capture. It consumes call records, journal entries and time, and it emits arm and disarm commands. | `rule`, `trigger`, `call`, `journal`, `event`, `clock` |
+| `scenario` | The [scenario](../domains/scenarios.md) definition, modes as priority orders, the step machine of a Sequence, the live set and capture. It consumes call records, journal entries and time, and it emits arm and disarm commands. | `rule`, `trigger`, `call`, `journal`, `incident`, `clock` |
 
 ### Observation
 
@@ -140,23 +140,23 @@ Every other crate speaks in them.
 |---|---|---|
 | `traffic` | The live window of recent calls, subscriptions by selector, and statistics per rule and per API. | `call`, `selector` |
 | `index` | The [index](../domains/observation.md#index): facets, counts under the active filters, suggested patterns. | `call`, `selector` |
-| `journal` | The [journal](../domains/observation.md#journal): its entries, and the window of recent entries the engine keeps in memory. | `event`, `clock` |
+| `journal` | The [journal](../domains/observation.md#journal): its entries, and the window of recent entries the engine keeps in memory. | `incident`, `clock` |
 | `recording` | The [recording](storage.md#recordings) format: append-only chunks with summaries, calls and journal entries, metadata-only mode, blanked credentials, a reader and a writer over `std::io`. | `call`, `journal`, `wire` |
 
 ### World and backends
 
 | Crate | Holds | Depends on |
 |---|---|---|
-| `backend` | The [backend contract](backends.md#contract): the request and answer messages, and the one async trait through which the engine reaches a backend. It holds no logic and needs no runtime. See [the backend seam](#the-backend-seam). | `wire`, `event`, `clock` |
+| `backend` | The [backend contract](backends.md#contract): the request and answer messages, and the one async trait through which the engine reaches a backend. It holds no logic and needs no runtime. See [the backend seam](#the-backend-seam). | `wire`, `incident`, `clock` |
 | `schema` | Record [formats and schemas](../domains/world.md#schemas): encode and decode JSON, Avro and Protobuf, one feature per format. | — |
 | `virtual_log` | [Virtual records](../domains/world.md#virtual-records): the record at a partition and offset as a pure function of the definition, templates, stable batches, and the mapping between offsets and time. | `wire`, `clock`, `schema` |
 | `schema_registry` | The built-in [schema registry](backends.md#schema-registry) and a client for a real one. This crate does IO. | `schema` |
-| `world` | The [World](../domains/world.md): its state, world definitions, how each event changes it, and where each topic's records come from. | `wire`, `event`, `clock`, `virtual_log` |
+| `world` | The [World](../domains/world.md): its state, world definitions, how each incident changes it, and where each topic's records come from. | `wire`, `incident`, `clock`, `virtual_log` |
 | `world_seed` | Seeding a world definition from a recording. | `world`, `index`, `recording` |
 | `sim_log` | Produce, Fetch, offsets and idempotent producers against the World. | `world`, `wire` |
 | `sim_group` | Group coordination against the World, for the classic and the consumer protocol. | `world`, `wire`, `clock` |
-| `overlay` | The Upstream [overlay](backends.md#overlay): address translation, emulated events and sessionless Fetch. It rewrites requests and responses, and it opens no connection. | `wire`, `wire_edit`, `event` |
-| `broker` | The broker instance as a [state machine](#the-broker-is-a-state-machine-too): it routes each request to a `sim_*` crate, applies events to the World and owns the virtual clock. It speaks the messages of the backend contract, so a proxy reaches it without a socket. | `backend`, `world`, `sim_log`, `sim_group`, `clock` |
+| `overlay` | The Upstream [overlay](backends.md#overlay): address translation, emulated incidents and sessionless Fetch. It rewrites requests and responses, and it opens no connection. | `wire`, `wire_edit`, `incident` |
+| `broker` | The broker instance as a [state machine](#the-broker-is-a-state-machine-too): it routes each request to a `sim_*` crate, applies incidents to the World and owns the virtual clock. It speaks the messages of the backend contract, so a proxy reaches it without a socket. | `backend`, `world`, `sim_log`, `sim_group`, `clock` |
 | `backend_upstream` | The Upstream backend: connections to the real cluster, with the overlay around them. This crate does IO. | `backend`, `overlay` |
 
 Transactions arrive later as `sim_txn`, next to `sim_log` and `sim_group`.
@@ -166,7 +166,7 @@ Transactions arrive later as `sim_txn`, next to `sim_log` and `sim_group`.
 | Crate | Holds | Depends on |
 |---|---|---|
 | `environment` | [Environments](storage.md#environments), [secret references](storage.md#secrets), and the order in which flags, variables and files set a value. It never reads a secret. | — |
-| `workspace` | The whole set of definitions as one model: cross-reference validation, renames that cascade, and the YAML layout of the [workspace](storage.md#workspace). It works on file contents, not on files. | `selector`, `lie`, `event`, `rule`, `scenario`, `surface`, `world`, `environment` |
+| `workspace` | The whole set of definitions as one model: cross-reference validation, renames that cascade, and the YAML layout of the [workspace](storage.md#workspace). It works on file contents, not on files. | `selector`, `lie`, `incident`, `rule`, `scenario`, `surface`, `world`, `environment` |
 | `workspace_fs` | Loading, watching and writing back, the scratch file, and reading the files that secret references name. This crate does IO. | `workspace` |
 
 ### Control
@@ -176,7 +176,7 @@ Transactions arrive later as `sim_txn`, next to `sim_log` and `sim_group`.
 | `surface` | [Pad layouts](../domains/control-surfaces.md#pad-layout), layers, pads as positions, the encoder mapping, and the intents a surface sends. | `rule` |
 | `hardware_push2` | The Push 2 mapping: controller messages to surface intents, and rule state back to pad colours. | `surface` |
 | `quick_inject` | The ⌘K sentence parser: text to a rule definition, with completions. The host runs it behind the [control plane](control-plane.md#drafts). | `selector`, `lie`, `rule` |
-| `control_api` | The [control plane](control-plane.md) as types: resources, commands and stream messages. It re-exports the definition types its messages carry, and it holds its own view of the World's state. | `call`, `journal`, `rule`, `scenario`, `selector`, `surface`, `event`, `environment` |
+| `control_api` | The [control plane](control-plane.md) as types: resources, commands and stream messages. It re-exports the definition types its messages carry, and it holds its own view of the World's state. | `call`, `journal`, `rule`, `scenario`, `selector`, `surface`, `incident`, `environment` |
 | `control_client` | A client for the control plane, for native targets and for WebAssembly. This crate does IO. | `control_api` |
 | `control_server` | The HTTP and WebSocket server in front of the host. This crate does IO. | `host`, `control_api` |
 
@@ -218,7 +218,7 @@ pub enum Output {
     SetTimer { id: TimerId, at: Instant },
     Close,
     Emit(Call),
-    Fire(Event),
+    Fire(Incident),
 }
 
 impl Pipeline {
@@ -289,7 +289,7 @@ See [disconnects](../domains/session.md#disconnects).
 
 `broker` is a state machine for one simulated cluster.
 It has the shape of the pipeline:
-requests, events and fired timers go in, and answers and timers come out.
+requests, incidents and fired timers go in, and answers and timers come out.
 
 A broker cannot always answer at once.
 A Fetch waits for records until its maximum wait ends,
@@ -300,7 +300,7 @@ in the same step or in a later one.
 A proxy in front of a broker needs no socket between the two.
 The engine takes the pipeline's `Forward` and hands the request to the broker in memory.
 The broker's answer returns to the pipeline as `BackendAnswered`.
-Both state machines run on one virtual clock, so a run is reproducible down to the order of events.
+Both state machines run on one virtual clock, so a run is reproducible down to the order in which things happen.
 
 ## The IO edge is async
 
@@ -388,8 +388,8 @@ A new kind adds its definition to `lie` and its behaviour to a crate of its own,
 A build can leave a kind out.
 Such a build still reads that kind's definitions, because they are data in `lie`.
 
-Events do not get a crate per event.
-An event is a value in the `event` crate.
+Incidents do not get a crate per incident.
+An incident is a value in the `incident` crate.
 `world` applies it, and `overlay` emulates it.
 
 ## What compiles to WebAssembly
@@ -407,7 +407,7 @@ The UI therefore checks a value in a form with the engine's own types, and witho
 |---|---|
 | `kernel` | Check and show topic names, partitions and offsets with the engine's own types. |
 | `field`, `selector` | Build and edit selector definitions. |
-| `lie`, `event`, `trigger`, `rule`, `scenario` | Edit definitions with the engine's own types. |
+| `lie`, `incident`, `trigger`, `rule`, `scenario` | Edit definitions with the engine's own types. |
 | `call`, `journal` | Render verdicts, explanations and the history of a rule. |
 | `environment`, `clock` | Show environments, and the instants that calls and journal entries carry. |
 | `surface`, `hardware_push2` | Turn pad presses and controller messages into intents. |
@@ -461,7 +461,7 @@ The crates arrive in the order the [first version](../README.md#first-version) n
 
 | Step | Crates | Result |
 |---|---|---|
-| 1 | `kernel`, `field`, `clock`, `wire`, `selector`, `lie`, `event`, `trigger`, `rule`, `combine` | Rules evaluate against hand-written calls in tests. |
+| 1 | `kernel`, `field`, `clock`, `wire`, `selector`, `lie`, `incident`, `trigger`, `rule`, `combine` | Rules evaluate against hand-written calls in tests. |
 | 2 | `wire_edit`, `lie_api`, `lie_refusal`, `session`, `call`, `pipeline` | The pipeline runs in tests, with partial refusals and explanations. |
 | 3 | `environment`, `backend`, `overlay`, `backend_upstream`, `listener`, `engine` | A proxy that lies. |
 | 4 | `host`, `control_api`, `control_server`, `control_client`, `traffic`, `index`, `surface`, `quick_inject`, `ui` | The UI with live traffic, rules, pads and ⌘K. |

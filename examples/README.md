@@ -16,7 +16,7 @@ The commands and the file formats are not implemented yet.
 | [`05-delays-for-one-client`](05-delays-for-one-client/README.md) | Easy | A slow cluster for one client, and a normal one for everyone else. |
 | [`06-avro-and-schema-registry`](06-avro-and-schema-registry/README.md) | Medium | Avro records with a schema, and a schema registry to read them. |
 | [`07-scenario-step-by-step`](07-scenario-step-by-step/README.md) | Medium | An exact test case in steps: exactly three errors, then recovery. |
-| [`08-broker-node-goes-down`](08-broker-node-goes-down/README.md) | Medium | An event that changes the fake cluster: a node fails and leaders move. |
+| [`08-broker-node-goes-down`](08-broker-node-goes-down/README.md) | Medium | An incident that changes the fake cluster: a node fails and leaders move. |
 | [`09-proxy-in-front-of-real-kafka`](09-proxy-in-front-of-real-kafka/README.md) | Medium | The same lies in front of a real cluster, with secrets kept in files. |
 | [`10-several-environments`](10-several-environments/README.md) | Complex | A fake cluster and a real one side by side in one process, with one UI. |
 | [`11-complete-orders-setup`](11-complete-orders-setup/README.md) | Complex | Everything together, with Docker Compose, Kubernetes and CI files. |

@@ -25,7 +25,7 @@ The UI can show the two side by side.
 Some lies leave them equal: a delay changes when the answer arrives, not what it says.
 
 The overlay is not a lie.
-Address translation and emulated events are part of the truth,
+Address translation and emulated incidents are part of the truth,
 so a Metadata call that no rule touched has the verdict Pass.
 
 ## Verdict
@@ -36,7 +36,7 @@ The verdict is the outcome of evaluating the call:
 - **Lied**: one or more lies applied.
   The verdict lists them, such as `+750 ms` and `NOT_LEADER_OR_FOLLOWER on orders.eu/3`.
 
-Events a call fired are part of the explanation, not the verdict,
+Incidents a call fired are part of the explanation, not the verdict,
 because they change the world and not this call.
 
 ## Explanation
@@ -92,7 +92,7 @@ The journal records what changed in the engine, next to what happened on the wir
 | Parameter changed | The rule, the parameter, the old and the new value. |
 | Rule fired by hand | The rule. |
 | Scenario activated, step advanced | The scenario and the step. |
-| Event applied or emulated | The event and its consequences. |
+| Incident applied or emulated | The incident and its consequences. |
 | Environment switched | The environment. |
 
 Every entry carries the time and the surface it came from, such as a pad, ⌘K or a file change.

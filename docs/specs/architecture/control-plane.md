@@ -25,10 +25,10 @@ It is then set up by flags and files alone.
 | `layouts` | List, get, create, update, rename, delete. |
 | `sessions` | List the open sessions with their identity. Close one. |
 | `recordings` | Start, stop, list, open. Query calls with a selector, saved or [draft](#drafts). Get the index. |
-| `world` | Only for an environment with a broker. Get state, apply an event, save as a world definition, set the clock. [Preview the records](#drafts) at an offset. |
+| `world` | Only for an environment with a broker. Get state, apply an incident, save as a world definition, set the clock. [Preview the records](#drafts) at an offset. |
 | `backend` | Get the backend kind, its endpoints and its capabilities. |
 | `environments` | List and get the environments of the workspace. Start and stop one. |
-| `journal` | Query what changed: arms, disarms, parameter changes, steps and events. |
+| `journal` | Query what changed: arms, disarms, parameter changes, steps and incidents. |
 | `capture` | Start, stop and save as a scenario. |
 | `quick-inject` | [Parse a ⌘K sentence](#drafts) into a rule definition, with completions. |
 
@@ -37,7 +37,7 @@ Live rules are the exception.
 They stay in memory until *keep* saves them as workspace rules.
 
 *Fire* skips a rule's trigger once.
-An event fires immediately.
+An incident fires immediately.
 A lie applies to the next call the rule matches.
 See [manual firing](../domains/rules.md#manual-firing).
 
@@ -75,7 +75,7 @@ The WebSocket streams:
 | **Stats** | Matches, firings and remaining budget per rule, and calls per API, at a fixed interval. |
 | **Rule changed** | A rule changed state or definition. |
 | **Scenario changed** | The active scenario changed, or advanced a step. |
-| **World changed** | An event changed the World, or the Upstream backend's overlay. |
+| **World changed** | An incident changed the World, or the Upstream backend's overlay. |
 | **Session opened, identified, closed** | Session lifecycle. |
 | **Journal entry** | Something changed, with the time and the surface that changed it. |
 | **Environment started, stopped** | An environment came up or went down. |

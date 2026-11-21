@@ -14,7 +14,7 @@ A scenario has:
 | **Seed** | The root of every die in the run. |
 | **Rules** | The rules the scenario owns, or references by name. They stay armed for the whole run. |
 | **Steps** | Only in Sequence mode: the stages of the story. |
-| **Requirements** | What the backend must support, such as the events the scenario uses. |
+| **Requirements** | What the backend must support, such as the incidents the scenario uses. |
 
 ```yaml
 name: Leader election
@@ -23,7 +23,7 @@ seed: 42
 rules:
   - name: Leader moves away
     selector: Order producers
-    action: { event: leader-moves, partition: orders.eu/3 }
+    action: { incident: leader-moves, partition: orders.eu/3 }
     trigger: { nth: 1 }
   - name: Stale metadata
     selector: { api: Metadata }
@@ -36,7 +36,7 @@ whether a scenario owns the rule or the workspace does.
 
 ## Modes
 
-Lies that do not conflict [combine on their own](lies-and-events.md#how-lies-combine), in every mode.
+Lies that do not conflict [combine on their own](lies-and-incidents.md#how-lies-combine), in every mode.
 The mode only decides between lies that **conflict**:
 two terminal lies, a terminal lie and a refusal,
 two refusals of the same partition,
@@ -150,7 +150,7 @@ When no scenario is active, the engine runs the live set alone.
 Rules that pads and ⌘K create are [live rules](rules.md#where-rules-live).
 They stay in memory until someone keeps them or saves the live set as a scenario.
 
-Priority only orders lies at the same [stage](lies-and-events.md#stage).
+Priority only orders lies at the same [stage](lies-and-incidents.md#stage).
 A lie that ends a call before forwarding takes effect before the truth exists,
 so it pre-empts a rule that waits for the truth, whatever their priority.
 See [two evaluation passes](../architecture/request-pipeline.md#two-evaluation-passes).
@@ -176,10 +176,10 @@ and keeps it as a reproducible test.
 ## Portability
 
 A scenario that uses only lies runs on every backend.
-A scenario that uses events runs where the backend can apply or emulate those events
-and their [consequences](lies-and-events.md#consequences).
+A scenario that uses incidents runs where the backend can apply or emulate those incidents
+and their [consequences](lies-and-incidents.md#consequences).
 The backend checks a scenario's requirements when the scenario loads,
-and rejects it with the list of unsupported events.
+and rejects it with the list of unsupported incidents.
 
 The *Leader election* scenario above needs "leader moves",
 so it runs on the Simulated backend only.

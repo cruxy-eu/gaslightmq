@@ -7,7 +7,7 @@ and the concepts it owns.
 |---|---|
 | [Session](session.md) | Session, Identity, Client context |
 | [Targeting](targeting.md) | Field, Learned field, Condition, Selector, Scope |
-| [Lies and events](lies-and-events.md) | Truth, Lie, Stage, Target, Event, Consequence, Preset |
+| [Lies and incidents](lies-and-incidents.md) | Truth, Lie, Stage, Target, Incident, Consequence, Preset |
 | [Rules and triggers](rules.md) | Rule, Action, Trigger, Counter, Dice, Lifetime, Budget, Arming |
 | [Scenarios](scenarios.md) | Scenario, Mode, Step, Live set, Capture |
 | [Observation](observation.md) | Call, Verdict, Explanation, Recording, Journal, Index, Facet |
@@ -23,26 +23,26 @@ Workspace, Environment, Secret and Scratch file belong to [storage](../architect
 
 | Term | Meaning |
 |---|---|
-| **Action** | What a rule does when it fires: tell a lie or cause an event. |
+| **Action** | What a rule does when it fires: tell a lie or cause an incident. |
 | **Backend** | What answers a call after a proxy's session: a real cluster (Upstream) or a broker in the same process (Simulated). |
 | **Broker** | A simulated Kafka cluster. It holds a World, answers truthfully and never lies. One broker simulates several broker nodes. |
-| **Broker node** | One Kafka broker inside a cluster, real or simulated. Events such as "broker goes down" are about a node. |
+| **Broker node** | One Kafka broker inside a cluster, real or simulated. Incidents such as "broker goes down" are about a node. |
 | **Budget** | A number of matches or firings that all sessions share and take from atomically. |
 | **Call** | One request and its response on one session. |
 | **Capture** | Turning what someone played live into a Sequence scenario. |
 | **Client context** | What the engine learned about one client instance across its connections, such as its group. |
 | **Clock** | The engine's time: virtual on the Simulated backend, the wall clock on the Upstream backend. |
 | **Condition** | One clause of a selector: a field, an operator and one or more values. |
-| **Consequence** | What the engine adds to an event, such as leaderless partitions when a broker goes down. |
+| **Consequence** | What the engine adds to an incident, such as leaderless partitions when a broker goes down. |
 | **Counter** | The number of calls a rule matched, kept per rule or per session. |
 | **Dice** | Seeded rolls for chance triggers, derived from the seed, the rule and the match number. |
-| **Emulation** | How the Upstream backend fakes an event inside its overlay. |
+| **Emulation** | How the Upstream backend fakes an incident inside its overlay. |
 | **Environment** | A named definition of instances that run together: a proxy, a broker, or a proxy in front of a broker. A process runs one or several. |
-| **Event** | A change to the state of the world. |
 | **Explanation** | The record of which rules matched, rolled, fired, applied, or were shadowed or pre-empted for a call. |
 | **Field** | A named property of a connection or a call that selectors can test. |
+| **Incident** | A change to the state of the world. |
 | **Index** | Facets built automatically from recorded calls. |
-| **Journal** | The record of what changed in the engine: arms, disarms, parameter changes, steps and events. |
+| **Journal** | The record of what changed in the engine: arms, disarms, parameter changes, steps and incidents. |
 | **Layer** | A scope on the pad grid. The same row and column can hold different rules on different layers. |
 | **Learned field** | A field whose value comes from the client context when the request does not carry it. |
 | **Lie** | Anything the client is told that differs from the truth. |
@@ -50,11 +50,11 @@ Workspace, Environment, Secret and Scratch file belong to [storage](../architect
 | **Live rule** | A rule that only exists in the engine's memory, until someone keeps it. |
 | **Live set** | Rules armed by hand on top of the active scenario. Live rules win conflicts with scenario rules. |
 | **Mode** | How a scenario resolves conflicts: Live (most recently armed), Chain (order) or Sequence (order, with steps). |
-| **Overlay** | The Upstream backend's layer over the real cluster: address translation and emulated events. Part of the truth. |
+| **Overlay** | The Upstream backend's layer over the real cluster: address translation and emulated incidents. Part of the truth. |
 | **Pad layout** | A grid that maps rows to selectors, columns to presets and layers to scopes. |
 | **Pre-empted** | A lie that fired but had nothing left to change, because another lie ended the call or replaced its target. |
 | **Proxy** | The instance that stands in front of a cluster or a broker. It runs sessions, rules and scenarios, and it is the only place where lies happen. |
-| **Preset** | A named, reusable lie or event with its parameters, such as "Delay 1 s". |
+| **Preset** | A named, reusable lie or incident with its parameters, such as "Delay 1 s". |
 | **Recording** | A captured stretch of calls across sessions. |
 | **Rule** | A named selector, action and trigger, with a lifetime. |
 | **Shadowed** | A lie that fired but lost a conflict to a rule with a higher priority. |

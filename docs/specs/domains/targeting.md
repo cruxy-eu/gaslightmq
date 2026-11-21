@@ -99,7 +99,7 @@ A Produce request can name several topics and several partitions.
   `topic is orders.eu` with `partition is 3` matches `orders.eu/3`,
   not a request that carries `orders.eu/1` and `payments.settled/3`.
 
-The partitions that satisfy the conditions are the rule's [target](lies-and-events.md#target).
+The partitions that satisfy the conditions are the rule's [target](lies-and-incidents.md#target).
 A selector on `orders.*` matches a Produce for `orders.eu` and `payments.settled`,
 and the rule's lie applies to the `orders.eu` partitions only.
 

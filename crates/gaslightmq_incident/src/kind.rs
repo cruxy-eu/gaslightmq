@@ -1,15 +1,15 @@
 use std::fmt;
 use std::str::FromStr;
 
-use crate::EventError;
+use crate::IncidentError;
 
-/// An event without its parameters: which of the thirteen events it is.
+/// An incident without its parameters: which of the thirteen incidents it is.
 ///
-/// A backend declares its [`Capabilities`](crate::Capabilities) per kind,
+/// A backend declares its [`IncidentSupport`](crate::IncidentSupport) per kind,
 /// and a scenario's [`Requirements`](crate::Requirements) name kinds.
 /// The order is the order of the table in the specification.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum EventKind {
+pub enum IncidentKind {
     /// A partition gets a new leader and a new leader epoch.
     LeaderMoves,
     /// A broker refuses connections and drops existing ones.
@@ -38,7 +38,7 @@ pub enum EventKind {
     ProducerFenced,
 }
 
-impl EventKind {
+impl IncidentKind {
     /// Every kind, in the order of the specification.
     pub const ALL: [Self; 13] = [
         Self::LeaderMoves,
@@ -96,21 +96,21 @@ impl EventKind {
 }
 
 /// Writes the name a file uses, such as `leader-moves`.
-impl fmt::Display for EventKind {
+impl fmt::Display for IncidentKind {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.pad(self.name())
     }
 }
 
 /// Reads the name a file uses, as [`Display`](fmt::Display) writes it.
-impl FromStr for EventKind {
-    type Err = EventError;
+impl FromStr for IncidentKind {
+    type Err = IncidentError;
 
     fn from_str(name: &str) -> Result<Self, Self::Err> {
         Self::ALL
             .into_iter()
             .find(|kind| kind.name() == name)
-            .ok_or_else(|| EventError::UnknownEvent { name: name.to_owned() })
+            .ok_or_else(|| IncidentError::UnknownIncident { name: name.to_owned() })
     }
 }
 
@@ -120,7 +120,7 @@ mod tests {
 
     #[test]
     fn there_are_thirteen_kinds_in_the_order_of_the_specification() {
-        let titles: Vec<&str> = EventKind::ALL.into_iter().map(EventKind::title).collect();
+        let titles: Vec<&str> = IncidentKind::ALL.into_iter().map(IncidentKind::title).collect();
         assert_eq!(
             titles,
             [
@@ -140,32 +140,32 @@ mod tests {
             ]
         );
 
-        let mut sorted = EventKind::ALL;
+        let mut sorted = IncidentKind::ALL;
         sorted.sort();
-        assert_eq!(sorted, EventKind::ALL);
+        assert_eq!(sorted, IncidentKind::ALL);
     }
 
     #[test]
     fn the_name_in_a_file_is_the_title_in_lower_case_with_hyphens() {
-        for kind in EventKind::ALL {
+        for kind in IncidentKind::ALL {
             assert_eq!(kind.name(), kind.title().to_lowercase().replace(' ', "-"));
         }
     }
 
     #[test]
     fn a_kind_reads_back_from_the_name_it_writes() {
-        for kind in EventKind::ALL {
+        for kind in IncidentKind::ALL {
             assert_eq!(kind.to_string().parse(), Ok(kind));
         }
-        assert_eq!("leader-moves".parse(), Ok(EventKind::LeaderMoves));
+        assert_eq!("leader-moves".parse(), Ok(IncidentKind::LeaderMoves));
     }
 
     #[test]
-    fn a_name_that_no_event_has_is_an_error() {
+    fn a_name_that_no_incident_has_is_an_error() {
         for name in ["leader-move", "Leader moves", "LEADER-MOVES", ""] {
             assert_eq!(
-                name.parse::<EventKind>(),
-                Err(EventError::UnknownEvent { name: name.to_owned() }),
+                name.parse::<IncidentKind>(),
+                Err(IncidentError::UnknownIncident { name: name.to_owned() }),
             );
         }
     }

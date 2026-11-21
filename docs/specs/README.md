@@ -13,7 +13,7 @@ They describe where the system is heading, not how the current code works.
 | Directory | What it covers |
 |---|---|
 | [`townplan/`](townplan/README.md) | The districts of the system, what each one owns and how they depend on each other. |
-| [`domains/`](domains/README.md) | The concepts in each district: sessions, selectors, lies, events, rules, triggers, scenarios, the world, recordings and control surfaces. |
+| [`domains/`](domains/README.md) | The concepts in each district: sessions, selectors, lies, incidents, rules, triggers, scenarios, the world, recordings and control surfaces. |
 | [`architecture/`](architecture/README.md) | The target runtime: the engine, the request pipeline, backends, storage, the control plane and the crate layout. |
 | [`open-questions.md`](open-questions.md) | Decisions that are still open, and the ones that were settled. |
 
@@ -21,8 +21,8 @@ They describe where the system is heading, not how the current code works.
 
 A **Selector** describes *which calls* a rule targets.
 A **Lie** describes *what the client is told* instead of the truth.
-An **Event** describes *how the world changes*.
-A **Rule** binds a selector to a lie or an event, and a **Trigger** decides *when* it fires.
+An **Incident** describes *how the world changes*.
+A **Rule** binds a selector to a lie or an incident, and a **Trigger** decides *when* it fires.
 Lies that do not conflict all apply.
 A **Scenario** groups rules and picks a **Mode** that resolves the conflicts between them.
 Every connection runs in its own **Session**, which holds identity and counters and rolls seeded dice.
@@ -52,7 +52,7 @@ and one process runs several proxies and brokers side by side.
 - **Honest about side effects.**
   A lie names its stage, so it is clear what really happened in the cluster.
 - **Backend-portable scenarios.**
-  A scenario written in events runs in front of a real cluster and in front of a broker.
+  A scenario written in incidents runs in front of a real cluster and in front of a broker.
 
 ## First version
 
@@ -61,7 +61,7 @@ The first version leaves these parts out:
 
 | Left out | Instead |
 |---|---|
-| Triggers that react to other rules or events | A [Sequence](domains/scenarios.md#sequence) step ends on calls or firings, and the next step arms the reaction. |
+| Triggers that react to other rules or incidents | A [Sequence](domains/scenarios.md#sequence) step ends on calls or firings, and the next step arms the reaction. |
 | Counters per client | Counters per rule or per session. See [counters](domains/rules.md#counters). |
 | Emulating "leader moves" and "coordinator moves" on the proxy | The *Leader flap* lie preset. See [capabilities](architecture/backends.md#capabilities). |
 | Capturing parameter changes on an armed rule | Capture keeps the parameters from the moment of arming. See [capture](domains/scenarios.md#capture). |

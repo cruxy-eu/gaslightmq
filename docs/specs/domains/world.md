@@ -2,7 +2,7 @@
 
 The World is the state of a simulated cluster.
 A [broker](../architecture/README.md#instances-and-processes) holds one World and answers calls from it,
-and events change it.
+and incidents change it.
 A proxy in front of a real cluster has no World: the real cluster holds the truth.
 
 ## Contents
@@ -21,22 +21,22 @@ A proxy in front of a real cluster has no World: the real cluster holds the trut
 The World is consistent by construction.
 Every call sees the same leaders, offsets and group state.
 
-## Events change the World
+## Incidents change the World
 
-[Events](lies-and-events.md#events) are the only way the World changes,
+[Incidents](lies-and-incidents.md#incidents) are the only way the World changes,
 apart from the clients' own calls.
 A Produce call appends to a log.
 A JoinGroup call changes a group.
-A "leader moves" event changes a partition's leader.
+A "leader moves" incident changes a partition's leader.
 
 Clients' own calls follow the Kafka protocol's rules.
-Events can do things the protocol never would on its own,
+Incidents can do things the protocol never would on its own,
 which is the point.
 
-The World does not react to an event by itself.
+The World does not react to an incident by itself.
 A broker node that goes down leaves its partitions without a leader,
-until a "leader moves" event gives them one.
-The engine adds such [consequences](lies-and-events.md#consequences) to the event,
+until a "leader moves" incident gives them one.
+The engine adds such [consequences](lies-and-incidents.md#consequences) to the incident,
 the same way for both backends.
 
 ## The World never lies
@@ -47,7 +47,7 @@ A rule can make that proxy refuse a Produce
 even though the World would accept it.
 
 A broker that runs alone is a truthful fake Kafka.
-Events still change its World.
+Incidents still change its World.
 
 ## Records
 

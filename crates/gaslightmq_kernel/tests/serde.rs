@@ -167,10 +167,10 @@ fn a_definition_holds_value_objects() {
         to: Option<BrokerId>,
     }
 
-    let event: LeaderMoves = serde_json::from_str(r#"{ "partition": "orders.eu/3", "to": 2 }"#).unwrap();
+    let incident: LeaderMoves = serde_json::from_str(r#"{ "partition": "orders.eu/3", "to": 2 }"#).unwrap();
 
     assert_eq!(
-        event,
+        incident,
         LeaderMoves {
             partition: "orders.eu/3".parse().unwrap(),
             to: Some(BrokerId::from(2))

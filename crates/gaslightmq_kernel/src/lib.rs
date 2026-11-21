@@ -114,7 +114,7 @@
 //! # The `serde` feature
 //!
 //! With the `serde` feature, every type serializes as its text form, and a number as a number.
-//! A selector or an event in YAML writes `orders.eu/3` for a topic partition and `3` for a partition number.
+//! A selector or an incident in YAML writes `orders.eu/3` for a topic partition and `3` for a partition number.
 //! Deserialization applies the same rule as the constructor.
 //!
 //! An [`ApiKey`] and an [`ErrorCode`] serialize as their name, such as `Produce`.
