@@ -256,6 +256,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "gaslightmq_selector"
+version = "0.1.0"
+dependencies = [
+ "gaslightmq_field",
+ "gaslightmq_kernel",
+ "serde",
+ "serde_json",
+ "serde_test",
+]
+
+[[package]]
 name = "gaslightmq_wire"
 version = "0.1.0"
 dependencies = [

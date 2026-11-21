@@ -103,6 +103,10 @@ The partitions that satisfy the conditions are the rule's [target](lies-and-inci
 A selector on `orders.*` matches a Produce for `orders.eu` and `payments.settled`,
 and the rule's lie applies to the `orders.eu` partitions only.
 
+`is not` never narrows the target, because it tests every value of the call.
+`topic matches orders.*` with `topic is not orders.eu` does not mean "the orders partitions except `orders.eu`".
+It matches no Produce that carries `orders.eu`.
+
 ## Conditions
 
 A condition tests one field against one or more values.
@@ -117,6 +121,24 @@ A condition tests one field against one or more values.
 Values within one condition combine with **or**.
 Conditions within one selector combine with **and**.
 
+`is not` takes one or more values, and it matches when the field equals none of them.
+`is not` also matches a call that does not have the field.
+Every other operator does not match such a call.
+
+### Patterns
+
+`matches` tests the text of a value against a glob pattern.
+
+| In a pattern | Matches |
+|---|---|
+| `*` | Any run of characters, also an empty one. |
+| `?` | Exactly one character. |
+| Any other character | Itself. |
+
+A pattern matches the whole text, and upper and lower case differ.
+A pattern has no escape character.
+A pattern works on every field: `api matches *Group*` matches `JoinGroup` and `SyncGroup`.
+
 ## Selectors
 
 A selector is a named set of conditions.
@@ -128,8 +150,31 @@ match:
   topic: "orders.*"
 ```
 
-A selector can include another selector by name.
+`match` has one entry per field, so it holds one condition per field.
+The form of the entry says which operator it is.
+
+| Operator | Form | Example |
+|---|---|---|
+| `is` | The value. | `api: Produce` |
+| `is any of` | A list of values. | `api: [JoinGroup, SyncGroup]` |
+| `matches` | A text with a `*` or a `?`. | `topic: "orders.*"` |
+| `is not` | A map with the key `is-not`, and a value or a list of values. | `client.id: { is-not: kafka-ui }` |
+
+A text with a `*` or a `?` is a pattern, and any other text is a value.
+A pattern inside a list is an error, because a list holds values.
+
+Every operator also has a form that names it: `{ is: … }`, `{ is-any-of: […] }` and `{ matches: … }`.
+Under `is`, `is-any-of` and `is-not`, a text with a `*` or a `?` is that text, and not a pattern.
+`client.id: { is: "batch-*" }` is the client whose ID really holds a `*`.
+
+The engine checks a value against its field when it reads a selector.
+`api: Prodcue` is an error, and not a selector that never matches.
+A number also reads as the text of its digits, so `group: 42` is the group called `42`.
+
+A selector can include one other selector by name.
 The included conditions combine with **and**.
+An included selector can test a field that the selector tests too, and both conditions apply.
+Selectors cannot include each other in a circle.
 
 ```yaml
 name: Order producers from ingest
