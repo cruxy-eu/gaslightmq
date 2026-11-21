@@ -102,7 +102,7 @@ Every other crate speaks in them.
 | `clock` | The [clock](README.md#clock): a `Clock` trait, the virtual clock, and instants that do not come from the system. | — |
 | `wire` | The Kafka codec: frames, headers, lazily decoded bodies and record batches. | — |
 | `lie` | The [lie](../domains/lies-and-events.md#lies) vocabulary: kind, stage, target and combination class, and the definition of every lie kind as data. It holds no behaviour. See [lies as crates](#lies-as-crates). | `field` |
-| `event` | The [event](../domains/lies-and-events.md#events) vocabulary, the expansion into consequences, and the capabilities a backend declares. | — |
+| `event` | The [event](../domains/lies-and-events.md#events) vocabulary, the expansion into consequences, and the capabilities a backend declares. | `kernel` |
 | `call` | The [call](../domains/observation.md#call) record: identity, request summary, truth, delivered response, verdict, explanation and timing. | `field`, `lie`, `event` |
 
 ### Targeting and injection
@@ -461,9 +461,9 @@ The crates arrive in the order the [first version](../README.md#first-version) n
 
 | Step | Crates | Result |
 |---|---|---|
-| 1 | `kernel`, `field`, `clock`, `wire`, `selector`, `lie`, `trigger`, `rule`, `combine` | Rules evaluate against hand-written calls in tests. |
+| 1 | `kernel`, `field`, `clock`, `wire`, `selector`, `lie`, `event`, `trigger`, `rule`, `combine` | Rules evaluate against hand-written calls in tests. |
 | 2 | `wire_edit`, `lie_api`, `lie_refusal`, `session`, `call`, `pipeline` | The pipeline runs in tests, with partial refusals and explanations. |
-| 3 | `event`, `environment`, `backend`, `overlay`, `backend_upstream`, `listener`, `engine` | A proxy that lies. |
+| 3 | `environment`, `backend`, `overlay`, `backend_upstream`, `listener`, `engine` | A proxy that lies. |
 | 4 | `host`, `control_api`, `control_server`, `control_client`, `traffic`, `index`, `surface`, `quick_inject`, `ui` | The UI with live traffic, rules, pads and ⌘K. |
 | 5 | `journal`, `scenario`, `workspace`, `workspace_fs`, `recording`, `test`, `gmq` | Scenarios in files, recordings, and tests in CI. |
 | 6 | `schema`, `schema_registry`, `virtual_log`, `world`, `sim_log`, `sim_group`, `broker`, `world_seed` | The broker, alone and behind a proxy. |
