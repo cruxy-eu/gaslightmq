@@ -66,22 +66,54 @@ Triggers combine.
 `nth: 3` with `chance: 50%` fires on the 3rd matching call, half of the time.
 All parts of a combined trigger must agree.
 
+```yaml
+trigger: { chance: 50%, nth: 3 }
+```
+
+A manual trigger does not combine: `trigger: manual` has no other parts.
+Such a rule never fires by itself.
+
+### Count
+
+| Part | Fires |
+|---|---|
+| `nth: 3` | On the 3rd match. |
+| `every: 10` | On every 10th match. |
+| `first: 5` | On the first 5 matches. |
+| `skip: 100` | On none of the first 100 matches. |
+
+`skip` passes over the first matches,
+and `nth`, `every` and `first` count from the match after them.
+`skip: 100` with `first: 5` fires on the matches 101 to 105.
+
 A count trigger counts matching calls, whatever happens to them afterwards.
 When a rule fires on its 3rd match and another rule [shadows](lies-and-incidents.md#how-lies-combine) it,
-that firing is spent.
+`nth: 3` has had its match, and the rule does not fire on the 4th instead.
 The explanation shows it.
 
+### Time
+
 Time triggers use the [engine's clock](../architecture/README.md#clock).
+A trigger has one window: `after` or `between`, not both.
+`between: [10s, 40s]` opens 10 s after arming, and it is closed again from 40 s on.
+
 A time trigger only opens a window.
 The [lifetime](#lifetime) decides when a rule stops.
 
 ### Manual firing
 
 Firing a rule by hand skips its trigger once.
+Any armed rule can fire by hand, whatever its trigger.
 
 - A rule with an **incident** fires the incident immediately.
 - A rule with a **lie** has no call to lie about yet.
   It lies on the next call its selector matches, once.
+  That call can come from any session, and it gets a match number like every other match.
+
+Every hand firing is one firing.
+Two pad presses lie on the next two matching calls.
+A hand firing counts for a [lifetime](#lifetime) of firings like any other firing.
+A hand firing that still waits for a call when the rule disarms is dropped.
 
 ### Reacting to other things
 
@@ -131,27 +163,87 @@ scenario seed
 
 Without an active scenario, the workspace's default seed takes the scenario seed's place.
 
+The counter key of a session is the text of its [session key](session.md#state).
+
+### Chance and roll
+
+A chance is a percentage with at most four decimals, such as `40%` or `0.5%`.
+A bare number such as `40` or `0.4` is an error, because it does not say which of the two it means.
+
+The engine holds a chance as a whole number of parts per million: `40%` is 400 000.
+A roll is a whole number from 0 up to, and not including, one million.
+The rule fires when the roll is under the chance,
+so `100%` fires on every match and `0%` on none.
+No floating point takes part.
+
+### Derivation
+
+The derivation is fixed.
+A seed gives the same rolls in every run, on every platform and with every version of Rust.
+It uses 64-bit unsigned arithmetic that wraps, and no hasher of the standard library.
+
+| Step | Value |
+|---|---|
+| The die of a rule | `mix(seed ^ fnv1a(dice key))` |
+| The die of a rule on one session, with `per: session` | `mix(die ^ fnv1a(counter key))` |
+| The bits for one match | `mix(die + match number × 0x9e3779b97f4a7c15)` |
+| The roll | `(bits × 1 000 000) >> 64` |
+
+- `fnv1a` is 64-bit FNV-1a over the UTF-8 bytes of the key.
+- `mix` is the finalizer of SplitMix64.
+- The bits for match *n* are output number *n* of the SplitMix64 generator that starts at the die.
+  A die keeps no state, so the order in which calls arrive does not change a roll.
+
+A change to this derivation changes which calls every existing scenario hits.
+The `trigger` crate pins it in its tests, with fixed rolls for fixed seeds.
+
 ## Lifetime
 
 A lifetime decides when an armed rule disarms itself.
 
-| Lifetime | Disarms |
-|---|---|
-| Until disarmed | Never by itself. |
-| Duration | After a period, such as 30 s. |
-| Matches | After a number of matching calls. |
-| Firings | After the rule's action applied a number of times. |
+| Lifetime | Disarms | Example |
+|---|---|---|
+| Until disarmed | Never by itself. | `lifetime: until disarmed` |
+| Duration | After a period, measured from the moment the rule was armed. | `lifetime: 30s` |
+| Matches | After a number of matching calls. | `lifetime: 100 matches` |
+| Firings | After the rule's action applied a number of times. | `lifetime: 3 firings` |
+
+A rule without a lifetime stays armed until disarmed.
 
 "Next 100 calls" is ambiguous.
 The lifetime names whether it counts matches or firings.
 Shadowed and pre-empted firings do not count as firings.
 
+A call can arrive after the lifetime ended and before the engine disarmed the rule.
+That call does not count as a match, and the rule neither rolls nor fires for it.
+
+### Budgets
+
 Matches and firings are **budgets**.
 The engine keeps one budget per armed rule, shared by all sessions.
-A call takes from the budget at the moment its rule fires,
-and a rule with an empty budget does not fire.
+
+A match counts the moment it happens.
+A call takes its match from a budget of matches at once.
+
+A firing only counts when the rule's action applied.
+A call learns that later, when its lies [resolve](#evaluating-one-call).
+A budget of firings therefore works in two steps:
+
+1. A rule that fires **sets one firing aside** in its budget.
+   A rule that finds no firing free does not fire.
+2. The call **settles** the firing when it knows what happened.
+   A firing whose action applied is spent for good.
+   A firing that was shadowed or pre-empted on every target goes back to the budget.
+   So does the firing of a call that ended before it could settle.
+
+The firings that are spent and the firings that are set aside never add up to more than the budget.
 A budget of three firings never yields a fourth,
 however many connections match at the same time.
+
+While a firing is set aside, another call can find the budget empty.
+That call does not fire, even when the firing goes back to the budget afterwards.
+The rule stays armed, and a later match takes the firing.
+The lifetime ends when the action applied for the last time.
 
 ## State
 
@@ -176,6 +268,7 @@ A scenario, a step or a person arms them.
 
 Arming a rule resets its counters, its budget and its time window.
 Changing a parameter of an armed rule resets nothing.
+A budget keeps what calls spent, and takes the new number.
 
 ## Evaluating one call
 
@@ -184,12 +277,13 @@ For each call, the session:
 1. Collects every armed rule whose effective selector matches the call,
    and works out each rule's [target](lies-and-incidents.md#target).
 2. Evaluates each rule's trigger with the rule's counter and die,
-   and takes from the rule's budget when it fires.
+   and sets a firing aside in the rule's [budget](#budgets) when it fires.
 3. Fires the incidents of the rules that fired.
 4. Lets the lies that do not conflict apply,
    and resolves conflicts by priority:
    the [live set](scenarios.md#the-live-set) first, then the active scenario's [mode](scenarios.md#modes).
-5. Records an [explanation](observation.md#explanation) of every step.
+5. Settles every firing: spent when its action applied, and back to the budget when it did not.
+6. Records an [explanation](observation.md#explanation) of every step.
 
 Rules never see each other directly.
 Only priority decides between them.
