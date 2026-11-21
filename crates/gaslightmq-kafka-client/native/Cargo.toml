@@ -11,8 +11,3 @@ bytes.workspace = true
 kafka-protocol.workspace = true
 tokio = { workspace = true, features = ["net", "io-util", "time", "sync"] }
 tracing.workspace = true
-
-[dev-dependencies]
-gaslightmq.workspace = true
-gaslightmq-testing.workspace = true
-tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }
