@@ -12,7 +12,7 @@ a filter built while looking at traffic becomes a selector without translation.
 ## Fields
 
 A field is a named property of a connection or a call.
-Fields come in three groups.
+Fields come in four groups.
 
 ### Connection fields
 
@@ -23,6 +23,7 @@ They come from the [session identity](session.md#identity).
 |---|---|
 | `connection` | `#7` |
 | `address` | `10.0.4.27:51459` |
+| `host` | `10.0.4.27` |
 | `endpoint` | `broker 2` |
 | `client.id` | `order-ingest` |
 | `client.software` | `librdkafka 2.6.1` |
@@ -38,18 +39,43 @@ They come from decoding the request.
 | `api.version` | `11` | Every request |
 | `topic` | `orders.eu` | Requests that name topics |
 | `partition` | `3` | Requests that name partitions |
-| `group` | `analytics-etl` | Group protocol requests |
-| `transactional.id` | `payments-tx-1` | Transactional requests |
 | `acks` | `-1` | Produce |
 
-A request can carry many values for one field.
-A Produce request can name several topics and several partitions.
-A condition on a multi-valued field matches when **any** value matches.
+The wire does not always carry what a selector needs.
+The engine fills the gaps, so `topic` and `partition` mean the same on every request:
+
+- **Topic IDs.**
+  Newer request versions name topics by ID.
+  The engine learns the IDs from Metadata responses and always exposes the topic name.
+- **Fetch sessions.**
+  A client with an incremental fetch session only names the partitions that changed since its last Fetch.
+  Both backends decline fetch sessions,
+  so every Fetch names every partition it reads.
+  See [backends](../architecture/backends.md#fetch-sessions).
+
+### Learned fields
+
+Learned fields describe *which group or transaction* the caller belongs to.
+A request that carries the value itself provides it.
+On every other request, the value comes from the [client context](session.md#client-context).
+
+| Field | Example | Carried by |
+|---|---|---|
+| `group` | `analytics-etl` | Group protocol requests, `OffsetCommit` and `OffsetFetch` |
+| `member.id` | `consumer-1-4f2a…` | Group protocol requests |
+| `group.instance.id` | `etl-0` | Group protocol requests of static members |
+| `transactional.id` | `payments-tx-1` | Transactional requests |
+
+`api is Fetch` with `group is analytics-etl` matches the fetches of that group's consumers,
+once any connection of the same client named the group.
+
+A client that runs several consumers under one `client.id` has several groups.
+The field is then multi-valued.
 
 ### Response fields
 
 Response fields describe *what the truth was*.
-They come from the backend's response, before any post-response lie applies.
+They come from the backend's response, before any lie after the response applies.
 
 | Field | Example |
 |---|---|
@@ -60,6 +86,22 @@ They come from the backend's response, before any post-response lie applies.
 Response fields are available for filtering in Observation.
 Rules can only use them for lies that act after the response,
 because before the response, the truth is not known yet.
+
+### Multi-valued fields
+
+A request can carry many values for one field.
+A Produce request can name several topics and several partitions.
+
+- A positive condition matches when **any** value matches.
+- `is not` matches when **no** value equals.
+  `topic is not orders.eu` does not match a Produce that carries `orders.eu` and `payments.settled`.
+- Conditions on `topic` and `partition` apply to the same partition.
+  `topic is orders.eu` with `partition is 3` matches `orders.eu/3`,
+  not a request that carries `orders.eu/1` and `payments.settled/3`.
+
+The partitions that satisfy the conditions are the rule's [target](lies-and-events.md#target).
+A selector on `orders.*` matches a Produce for `orders.eu` and `payments.settled`,
+and the rule's lie applies to the `orders.eu` partitions only.
 
 ## Conditions
 
@@ -125,5 +167,12 @@ Common scopes are:
 |---|---|
 | All clients | *(no conditions)* |
 | One client | `client.id is order-ingest` |
+| One client instance | `client.id is order-ingest` and `host is 10.0.4.27` |
 | One connection | `connection is #7` |
 | One broker endpoint | `endpoint is broker 2` |
+
+A scope is a set of conditions like any other.
+It does not give a rule [priority](scenarios.md#modes) over rules with a wider scope.
+
+A scope on one connection ends with that connection.
+Use a client instance to follow a client across reconnects.

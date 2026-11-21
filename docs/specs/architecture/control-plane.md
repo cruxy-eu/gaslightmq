@@ -11,7 +11,7 @@ and nothing reaches the engine any other way.
 |---|---|
 | `selectors` | List, get, create, update, rename, delete. Test against the current recording. |
 | `presets` | List, get, create, update, rename, delete. |
-| `rules` | List, get, create, update, rename, delete. Arm, disarm, fire. |
+| `rules` | List, get, create, update, rename, delete. Arm, disarm, fire. Keep a live rule. |
 | `scenarios` | List, get, create, update, rename, delete. Activate, deactivate, step. |
 | `layouts` | List, get, create, update, rename, delete. |
 | `sessions` | List the open sessions with their identity. Close one. |
@@ -21,6 +21,13 @@ and nothing reaches the engine any other way.
 | `capture` | Start, stop and save as a scenario. |
 
 Create and update operations on definitions write to the workspace files.
+Live rules are the exception.
+They stay in memory until *keep* saves them as workspace rules.
+
+*Fire* skips a rule's trigger once.
+An event fires immediately.
+A lie applies to the next call the rule matches.
+See [manual firing](../domains/rules.md#manual-firing).
 
 ## Live stream
 
@@ -30,10 +37,10 @@ The WebSocket streams:
 |---|---|
 | **Snapshot** | The full state, sent when a client connects. |
 | **Call** | One call event: request summary, verdict and explanation. |
-| **Stats** | Counters per rule and per API, at a fixed interval. |
+| **Stats** | Matches, firings and remaining budget per rule, and calls per API, at a fixed interval. |
 | **Rule changed** | A rule changed state or definition. |
 | **Scenario changed** | The active scenario changed, or advanced a step. |
-| **World changed** | An event changed the World. |
+| **World changed** | An event changed the World, or the Upstream backend's overlay. |
 | **Session opened, identified, closed** | Session lifecycle. |
 | **Workspace error** | A file failed validation. |
 
@@ -44,7 +51,7 @@ so a UI that only shows `orders.*` does not receive every call.
 
 Surfaces send intent, not state.
 A pad press sends *arm the rule at row 1, column 4 on layer order-ingest*,
-and the engine creates the rule if it does not exist yet.
+and the engine creates a live rule if the pad has none yet.
 An encoder turn sends *change probability by +3*, not *set probability to 43*,
 so two surfaces turning the same encoder do not fight.
 
@@ -59,5 +66,9 @@ Test libraries drive the same API:
    and assert on verdicts and explanations.
 
 Explanations make assertions precise:
-a test can check that *Refuse with NOT_LEADER* fired three times,
+a test can check that *Refuse with NOT_LEADER* applied three times,
 not merely that the client saw some errors.
+[Budgets](../domains/rules.md#lifetime) make that count exact.
+
+The test owns the verdict on the client.
+A scenario has no expectations of its own yet.

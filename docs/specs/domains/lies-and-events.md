@@ -6,8 +6,9 @@ or it can **change the truth** with an event.
 
 ## Truth
 
-The truth is what the backend answers when GaslightMQ does not interfere.
-On the proxy, the truth comes from the real cluster.
+The truth is what the backend answers when no lie applies.
+On the proxy, the truth comes from the real cluster,
+seen through the Upstream backend's [overlay](../architecture/backends.md#overlay).
 On the fake broker, the truth comes from the [World](world.md).
 
 ## Lies
@@ -25,38 +26,72 @@ and some quietly change what it believes about data or the cluster.
 
 | Kind | The client is told | Examples |
 |---|---|---|
-| **Refusal** | The request failed. | An error code on the whole response, or on some topics or partitions. |
+| **Refusal** | The request failed. | An error code on the partitions a rule targets, or on the whole response. |
 | **Timing** | The answer took longer, or the client must back off. | Delay with jitter, `throttle_time_ms`. |
 | **Silence** | Nothing at all. | The request is read but never answered (blackhole). |
-| **Hang-up** | The connection is gone. | Close the socket before forwarding, or after the response. |
-| **Topology** | The cluster looks different. | Rewritten broker addresses, a different leader, a missing broker, another controller. |
+| **Hang-up** | The connection is gone. | Close the socket before forwarding, or after the backend answered. |
+| **Topology** | The cluster looks different. | A different leader, a missing broker, another controller, an unreachable address. |
 | **Data** | The records are different. | Altered, dropped, duplicated or reordered records, corrupted batches. |
 | **Progress** | Offsets and positions are different. | A stale high watermark, a different committed offset, a log start offset that jumped. |
 | **Configuration** | Settings are different. | Rewritten topic or broker configs in `DescribeConfigs`. |
 
-Topology lies are what make the proxy work at all.
-The proxy rewrites broker addresses in Metadata responses,
+The proxy also rewrites broker addresses in Metadata responses,
 so clients connect to the proxy instead of the real brokers.
-That lie is always on.
+That address translation is not a lie.
+It belongs to the Upstream backend's [overlay](../architecture/backends.md#overlay),
+and it is part of the truth that rules see.
 
-### When a lie acts
+### Stage
 
-A lie acts at one moment of a call:
+A lie acts at one of two **stages** of a call:
 
 ```
 receive ─► [before forwarding] ─► backend ─► [after the response] ─► send
-            refusal, silence,                 timing, refusal per partition,
-            hang-up, request rewrite          topology, data, progress,
-                                              configuration, hang-up
+            refusal, timing,                  refusal, timing,
+            silence, hang-up,                 topology, data, progress,
+            request rewrite                   configuration, hang-up
 ```
 
 - **Before forwarding**: the backend never sees the request,
-  or sees a rewritten version of it.
+  or sees it late, or sees a rewritten version of it.
 - **After the response**: the backend answers truthfully,
   and the lie changes the answer before the client sees it.
 
+Refusal, timing and hang-up name their stage,
+because the stage changes what really happens in the cluster.
+
+| Lie | Before forwarding | After the response |
+|---|---|---|
+| **Refusal** | The backend never sees the refused part. Nothing is written. This is the default. | The backend handles the request, and the client is told it failed. A refused Produce is written anyway, so a retry duplicates the records unless the producer is idempotent. |
+| **Timing** | The backend sees the request late. A late Heartbeat can expire the member and cause a real rebalance. | The backend answers on time, and the client waits. This is the default. |
+| **Hang-up** | The connection closes, and the request is dropped. This is the default. | The backend handles the request, and the connection closes before the client reads the answer. |
+
+Silence always acts before forwarding.
+Topology, data, progress and configuration lies always act after the response.
+
 A lie that acts after the response can depend on the truth.
 For example, it can apply only when the truth was a success.
+
+### Target
+
+A lie applies to a **target**: the part of the call it changes.
+
+- Most Kafka requests carry several topics and partitions.
+  On those requests, the target is the set of partitions the rule's selector matched.
+  See [multi-valued fields](targeting.md#multi-valued-fields).
+- On requests without partitions, such as `FindCoordinator` or `Heartbeat`,
+  the target is the whole response.
+- Timing, silence and hang-up always target the whole call.
+
+A rule that refuses `orders.*` only refuses the `orders.*` partitions
+of a Produce request that also carries `payments.settled`.
+The rest of the request goes through.
+
+When a refusal before forwarding targets only some partitions,
+the engine removes those partitions from the request,
+forwards the rest,
+and merges the refusals into the response.
+The outcome for a partition does not depend on how the client batched its request.
 
 ### How lies combine
 
@@ -65,13 +100,20 @@ When several lies apply to one call, their combination class decides what happen
 | Class | Lies | Combination |
 |---|---|---|
 | **Modifier** | Timing | Modifiers stack. Delays add up. Throttle takes the maximum. |
-| **Rewrite** | Topology, data, progress, configuration, refusal per partition | Rewrites merge per target. Two rewrites of different partitions both apply. Two rewrites of the same partition conflict. |
-| **Terminal** | Refusal of the whole response, silence, hang-up | Only one terminal lie can apply. The scenario's [mode](scenarios.md#modes) picks the winner. |
+| **Rewrite** | Topology, data, progress, configuration | Rewrites merge per target and aspect. A stale high watermark and dropped records on the same partition both apply. Two rewrites of the same aspect of the same target conflict. |
+| **Refusal** | Refusal | Refusals of different partitions all apply. Two refusals of the same partition conflict. A refusal replaces everything about its partition, so it pre-empts rewrites of that partition. |
+| **Terminal** | Silence, hang-up | A terminal lie ends the whole call. Only one can apply. It conflicts with every refusal on the call, and it pre-empts modifiers and rewrites. |
 
-Kafka responses are per partition,
-so many apparent conflicts are not conflicts at all.
-A rule that refuses `orders.*` and a rule that refuses `payments.*`
-both apply to one Produce request that touches both topics.
+Lies that do not conflict all apply.
+A delay, a refusal of `orders.eu/3` and a stale watermark on `orders.eu/4` combine on one Fetch.
+
+Lies that conflict go to the scenario's [mode](scenarios.md#modes),
+which picks one winner per target.
+The losing rule is **shadowed** for that target.
+
+A lie that fired but has nothing left to change is **pre-empted**.
+A delay on a call that a silence ended is pre-empted,
+and so is a data rewrite of a partition that another rule refused.
 
 ## Events
 
@@ -80,38 +122,78 @@ After an event, every call and every client sees the same new world.
 
 | Event | Effect |
 |---|---|
-| Leader moves | A partition gets a new leader. |
+| Leader moves | A partition gets a new leader and a new leader epoch. |
 | Broker goes down | A broker refuses connections and drops existing ones. |
 | Broker goes unresponsive | A broker accepts connections and never answers. |
 | Broker comes back | A broker serves traffic again. |
-| Rebalance | A consumer group starts a new generation. |
+| Rebalance | A consumer group starts a new generation or epoch. |
 | Coordinator moves | A group or transaction coordinator moves to another broker. |
 | Partition added | A topic gets more partitions. |
 | Topic deleted | A topic disappears. |
 | Records appended | Data arrives on a partition, for example from a generator. |
+| Records expired | A partition's log start offset moves forward. |
+| Log truncated | A partition's end offset moves back, as after an unclean leader election. |
+| Committed offset reset | A group's committed offset on a partition changes. |
 | Producer fenced | A transactional producer's epoch is bumped. |
 
 Events describe the cluster, not one call.
 A rule can still fire an event in reaction to a call:
 "when the 3rd Produce arrives, move the leader".
+The event takes effect after that call.
+
+Events are not lies.
+An event never conflicts with a lie, and no rule shadows it.
+Every event that a firing rule causes takes effect.
+
+### Consequences
+
+Some events have consequences.
+The engine expands an event into its consequences before it reaches the backend,
+so both backends see the same list.
+
+| Event | Consequences |
+|---|---|
+| Broker goes down | Every partition the broker led has no leader. Every coordinator it hosted is unavailable. |
+| Broker goes down, with `failover: true` | Every partition the broker led gets a "leader moves" event. Every coordinator it hosted gets a "coordinator moves" event. |
+| Broker comes back | The broker is a replica again. Leaders and coordinators stay where they are. |
+| Leader moves | None. |
+
+A backend that cannot apply or emulate one of the consequences rejects the event.
 
 ### Events on each backend
 
-The [Simulated backend](../architecture/backends.md) applies events to the World.
+The [Simulated backend](../architecture/backends.md#simulated) applies events to the World.
 The event really happens, and everything stays consistent.
 
-The [Upstream backend](../architecture/backends.md) cannot change a real cluster.
-It **emulates** an event with a bundle of lies.
-For "leader moves", the emulation:
+The [Upstream backend](../architecture/backends.md#upstream) cannot change a real cluster.
+It **emulates** an event inside its overlay.
+For "broker goes down", the overlay:
 
-- refuses calls to the old leader with `NOT_LEADER_OR_FOLLOWER`,
-- rewrites Metadata so the partition points at the new leader,
-- forwards calls on the new leader's endpoint to the real leader.
+- closes the broker's listener and drops its connections,
+- leaves the broker out of Metadata,
+- reports the partitions it led as leaderless.
+
+Rules cannot tell an emulated event from a real one.
+What the overlay answers is the truth.
 
 An emulation is only as consistent as the traffic that passes through GaslightMQ.
-Clients that talk to the real cluster directly see the truth.
+Clients that talk to the real cluster directly see the real cluster.
 The UI marks emulated events, so nobody mistakes them for real ones.
 A backend rejects an event it cannot emulate when the scenario loads.
+
+### A lie or an event?
+
+A lie is one call wide.
+Clients cross-check what they are told,
+so a lie about durable state soon contradicts itself.
+
+A progress lie that answers a Fetch with `OFFSET_OUT_OF_RANGE` is an example.
+The client asks `ListOffsets` for the earliest offset, gets the truth,
+seeks to it and receives the same lie again, forever.
+
+Use a lie for what a client sees once: an error, a delay, a corrupted batch.
+Use an event when the client must keep believing it across calls and APIs:
+"records expired" moves the log start offset for Fetch and `ListOffsets` alike.
 
 ## Presets
 
@@ -122,6 +204,19 @@ name: Delay 1 s
 lie: timing
 delay: 1s
 jitter: 200ms
+```
+
+```yaml
+name: Lost acknowledgement
+lie: refusal
+error: REQUEST_TIMED_OUT
+stage: after
+```
+
+```yaml
+name: Leader flap
+lie: refusal
+error: NOT_LEADER_OR_FOLLOWER
 ```
 
 ```yaml

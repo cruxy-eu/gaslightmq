@@ -13,13 +13,14 @@ flowchart TB
   end
 
   subgraph core["Core"]
-    SC["Scenarios<br/>mode · steps · seed"]
-    IN["Injection<br/>rules · triggers · lies · events"]
+    SC["Scenarios<br/>mode · steps · seed · live set"]
+    IN["Injection<br/>rules · triggers · counters · dice"]
+    LE["Lies and events<br/>stages · targets · presets"]
   end
 
   subgraph support["Supporting"]
     TG["Targeting<br/>selectors · fields · scope"]
-    SE["Session<br/>identity · dice · counters"]
+    SE["Session<br/>identity · client context"]
     OB["Observation<br/>recordings · index · explanations"]
     WO["World<br/>simulated cluster state"]
   end
@@ -33,6 +34,7 @@ flowchart TB
   CS -->|commands| SC
   CS -->|commands| IN
   SC -->|arms and fires| IN
+  IN -->|acts through| LE
   IN -->|uses| TG
   SE -->|evaluates| IN
   SE -->|uses| TG
@@ -52,21 +54,24 @@ flowchart TB
 
 | District | Type | Owns | Responsibility |
 |---|---|---|---|
-| [Scenarios](../domains/scenarios.md) | Core | Scenario, Mode, Step, Live layer, Capture | Tells failure stories over time and resolves conflicts between rules. |
-| [Injection](../domains/rules.md) | Core | Rule, Action, Trigger, Lifetime | Decides what happens to a call or to the world. |
-| [Lies and events](../domains/lies-and-events.md) | Core | Truth, Lie, Event, Preset | Defines the vocabulary of everything GaslightMQ can make a client believe. |
-| [Targeting](../domains/targeting.md) | Supporting | Field, Condition, Selector, Scope | Provides one predicate language for filtering, targeting and indexing. |
-| [Session](../domains/session.md) | Supporting | Session, Identity, Counter, Dice | Runs every connection and holds the state rules need per connection. |
+| [Scenarios](../domains/scenarios.md) | Core | Scenario, Mode, Step, Live set, Capture | Tells failure stories over time and resolves conflicts between rules. |
+| [Injection](../domains/rules.md) | Core | Rule, Action, Trigger, Counter, Dice, Lifetime, Budget | Decides what happens to a call or to the world. |
+| [Lies and events](../domains/lies-and-events.md) | Core | Truth, Lie, Stage, Target, Event, Consequence, Preset | Defines the vocabulary of everything GaslightMQ can make a client believe. |
+| [Targeting](../domains/targeting.md) | Supporting | Field, Learned field, Condition, Selector, Scope | Provides one predicate language for filtering, targeting and indexing. |
+| [Session](../domains/session.md) | Supporting | Session, Identity, Client context | Runs every connection and holds the state rules need per connection and per client. |
 | [Observation](../domains/observation.md) | Supporting | Call, Verdict, Explanation, Recording, Index | Shows what happened and why. |
-| [World](../domains/world.md) | Supporting | Cluster, Broker, Topic, Partition, Group, Generator | Holds the state of a simulated cluster. |
+| [World](../domains/world.md) | Supporting | Cluster, Broker, Topic, Partition, Group, Producer, Generator | Holds the state of a simulated cluster. |
 | [Control surfaces](../domains/control-surfaces.md) | Supporting | View, Pad layout, Layer, Hardware mapping | Gives people fast ways to change rules and scenarios. |
-| [Backends](../architecture/backends.md) | Generic | Backend, Capability, Emulation | Answers calls, either from a real cluster or from the World. |
+| [Backends](../architecture/backends.md) | Generic | Backend, Capability, Overlay, Emulation | Answers calls, either from a real cluster or from the World. |
 | Wire | Generic | Frame, Request, Response | Encodes and decodes the Kafka protocol. |
 | [Workspace](../architecture/storage.md) | Generic | Workspace, Recording file | Persists definitions and recordings. |
 
 The core districts are where GaslightMQ differs from every other Kafka tool.
 The supporting districts exist to serve the core.
 The generic districts solve problems that are not specific to GaslightMQ.
+
+The engine owns the [Clock](../architecture/README.md#clock).
+Scenarios, Injection and the World all read it, and none of them owns it.
 
 ## Relationships
 
@@ -81,14 +86,16 @@ so the vocabulary changes deliberately and rarely.
 
 Scenarios arm, disarm and fire rules.
 Injection does not know about modes, steps or timelines.
-It only knows which rules are armed and how to evaluate one call against them.
-The active scenario's mode tells Injection how to resolve conflicts.
+It only knows which rules are armed, in which priority order,
+and how to evaluate one call against them.
+Scenarios turns the live set and the active scenario's mode into that priority order.
 
 ### Session evaluates Injection
 
 Every session receives a snapshot of the armed rules.
-The session evaluates that snapshot for each call,
-using its own dice and counters.
+The session evaluates that snapshot for each call.
+Injection owns each rule's counter, dice and budget.
+Sessions share them, and only keep the counters a rule asks for per session.
 Injection publishes a new snapshot whenever a rule changes.
 
 ### Backends sit behind an anti-corruption layer
@@ -96,8 +103,9 @@ Injection publishes a new snapshot whenever a rule changes.
 Injection speaks in lies and events.
 A backend translates an event into something it can do.
 The Simulated backend applies the event to the World.
-The Upstream backend emulates the event with a bundle of lies.
-Neither backend leaks its internals back into Injection.
+The Upstream backend emulates the event inside its overlay on the real cluster.
+Neither backend leaks its internals back into Injection:
+what a backend answers is the truth, and rules cannot tell an emulated event from a real one.
 
 ### Observation is downstream of everything
 
@@ -124,9 +132,16 @@ and a layout only maps positions to names.
   A pad is a position that points at zero or one rule.
 - **Scope is not a separate concept.**
   Scope is a selector over connection fields that the UI shows as its own axis.
+  It gives a rule no priority.
+- **A layer is not the live set.**
+  A layer is a page of the pad grid for one scope.
+  The live set is the rules someone armed by hand.
 - **Broker state is not a separate concept.**
   In the World, a broker going down is an event.
   On the proxy, the Upstream backend emulates it by refusing and dropping connections.
 - **A lie is not always a fault.**
   A lie is anything the client is told that differs from the truth,
-  including rewritten addresses and altered data.
+  including a different leader and altered data.
+- **The overlay is not a lie.**
+  The proxy's address translation and its emulated events are part of the truth.
+  Rules and explanations treat them like the real cluster's answers.

@@ -13,14 +13,20 @@ A call is one request and its response on one session.
 |---|---|
 | **Session** | The session the call ran on, with its identity. |
 | **Request** | The decoded request, with every [field](targeting.md#fields). |
+| **Upstream** | What the real cluster answered, when the Upstream backend's [overlay](../architecture/backends.md#overlay) changed it. |
 | **Truth** | What the backend answered, if the request reached it. |
 | **Delivered** | What the client actually received. |
 | **Verdict** | Pass, or the lies that applied. |
 | **Explanation** | Why the verdict came out this way. |
 | **Timing** | When the call arrived, how long the backend took, how long the client waited. |
 
-Truth and delivered differ exactly when a lie applied.
+Truth and delivered only differ when a lie applied.
 The UI can show the two side by side.
+Some lies leave them equal: a delay changes when the answer arrives, not what it says.
+
+The overlay is not a lie.
+Address translation and emulated events are part of the truth,
+so a Metadata call that no rule touched has the verdict Pass.
 
 ## Verdict
 
@@ -39,17 +45,22 @@ An explanation records every rule the call touched:
 
 | Status | Meaning |
 |---|---|
-| **Matched** | The selector matched. |
-| **Rolled** | The trigger was evaluated, with its result: the die roll, the count, the time window. |
+| **Matched** | The selector matched, with the target it matched. |
+| **Rolled** | The trigger was evaluated, with its result: the match number, the die roll, the time window, the budget. |
 | **Fired** | The trigger said yes. |
 | **Applied** | The action took effect. |
-| **Shadowed** | The rule fired, but the mode picked another rule. The explanation names the winner. |
+| **Shadowed** | The rule fired, but a rule with a higher priority won the conflict. The explanation names the winner and the target. |
+| **Pre-empted** | The rule had nothing left to change: a terminal lie ended the call, or a refusal replaced the rule's partition. The explanation names the lie that got there first. |
+
+A rule that waits for the truth is also pre-empted
+when a lie ends the call before forwarding.
 
 Without explanations, any combination rule feels like magic.
 With them, the UI answers *why did this call fail?*
 and *why did my rule not fire?*
 
-Shadowed rules do not count as firings for their [lifetime](rules.md#lifetime).
+Shadowed and pre-empted rules do not count as firings for their [lifetime](rules.md#lifetime).
+A rule that is shadowed on one partition and applies on another counts as one firing.
 
 ## Recording
 
@@ -60,10 +71,12 @@ A recording keeps:
 
 - every session with its identity, open and close times,
 - every call with its request, truth, delivered response, verdict and explanation,
-- the raw frames, unless the recording keeps headers only.
+- the raw frames, unless the recording is metadata-only.
 
-A **headers-only** recording drops record payloads,
+A **metadata-only** recording drops record keys, values and headers,
 for traffic that must not leave the machine.
+It is the default on the Upstream backend.
+See [privacy](../architecture/storage.md#privacy).
 
 ## Index
 
