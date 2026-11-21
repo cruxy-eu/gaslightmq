@@ -1,0 +1,10 @@
+- name: Order acknowledgements get lost
+  selector:
+    api: Produce
+    topic: "orders.*"
+  action:
+    lie: refusal
+    error: REQUEST_TIMED_OUT
+    stage: after                   # the real cluster writes the records, the client is told it failed
+  trigger:
+    chance: 10%

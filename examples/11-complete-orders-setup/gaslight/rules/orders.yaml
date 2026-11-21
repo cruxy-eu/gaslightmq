@@ -1,0 +1,25 @@
+# Rules: a selector, a lie and a trigger. They load disarmed.
+
+- name: Orders sometimes fail
+  selector: Order producers
+  action: Error retriable
+  trigger:
+    chance: 20%
+
+- name: Order fetches are slow for analytics
+  selector: Order fetches
+  scope:
+    client.id: analytics-etl
+  action: Delay 1 s
+  trigger:
+    chance: 30%
+
+- name: Every hundredth order fetch hangs
+  selector: Order fetches
+  action: Blackhole
+  trigger:
+    every: 100
+
+- name: Refuse with NOT_LEADER
+  selector: Order fetches
+  action: Error retriable

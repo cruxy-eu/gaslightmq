@@ -1,0 +1,13 @@
+# A fake cluster with a proxy in front of it.
+name: shop
+
+# The broker owns the data.
+broker:
+  world: shop
+
+# The proxy owns the lies. It has no upstream, so it stands in front of the broker above.
+proxy:
+  listen:
+    bootstrap: 0.0.0.0:9092
+    brokers: 0.0.0.0:19092-19094
+    advertise: localhost

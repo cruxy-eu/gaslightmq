@@ -1,0 +1,19 @@
+# An exact test case: the consumer keeps reading while the leader churns.
+name: Consumer survives leader churn
+mode: sequence
+seed: 7
+
+steps:
+  - name: Warm up
+    until: { calls: 100, selector: Order fetches }
+
+  - name: Leader churn
+    arm: [Refuse with NOT_LEADER]
+    # A budget: exactly three refusals, however many connections fetch at once.
+    until: { firings: 3, rule: Refuse with NOT_LEADER }
+
+  - name: Slow recovery
+    arm: [Order fetches are slow for analytics]
+    until: { after: 20s }
+
+  - name: Back to normal

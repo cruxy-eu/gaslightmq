@@ -1,0 +1,7 @@
+{
+  "id": "order-{{seq}}",
+  "customer": "{{pick customers}}",
+  "amount": "{{number 5 500}}",
+  "currency": "{{pick currencies}}",
+  "placed_at": "{{timestamp}}"
+}

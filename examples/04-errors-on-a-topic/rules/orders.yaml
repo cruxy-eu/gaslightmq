@@ -1,0 +1,9 @@
+- name: Orders sometimes fail
+  selector:
+    api: Produce
+    topic: orders
+  action:
+    lie: refusal
+    error: NOT_LEADER_OR_FOLLOWER
+  trigger:
+    chance: 20%

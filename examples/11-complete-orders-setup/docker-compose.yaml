@@ -1,0 +1,25 @@
+# The fake cluster next to the application under test.
+services:
+  gaslightmq:
+    image: ghcr.io/cruxy-eu/gaslightmq:latest
+    command:
+      - start
+      - --workspace=/workspace
+      - --env=orders-sim
+      - --scenario=Flaky orders     # nothing is armed unless the command says so
+    volumes:
+      - ./gaslight:/workspace:ro    # read-only: the files in git stay the source of truth
+    ports:
+      - "9092:9092"                 # Kafka bootstrap
+      - "19092-19094:19092-19094"   # one port per broker node
+      - "8081:8081"                 # schema registry
+      - "8080:8080"                 # UI and control plane
+
+  # Your application. It needs no producer and no real Kafka.
+  order-consumer:
+    image: example/order-consumer:latest
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: gaslightmq:9092
+      SCHEMA_REGISTRY_URL: http://gaslightmq:8081
+    depends_on:
+      - gaslightmq

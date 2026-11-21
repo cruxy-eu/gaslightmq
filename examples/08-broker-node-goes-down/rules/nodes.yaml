@@ -1,0 +1,12 @@
+# A rule can cause an event instead of telling a lie.
+# An event changes the fake cluster itself, for every client.
+- name: Node 2 fails on the 50th fetch
+  selector:
+    api: Fetch
+    topic: orders
+  action:
+    event: broker-down
+    broker: 2
+    failover: true                 # leaders and coordinators move to the other nodes
+  trigger:
+    nth: 50

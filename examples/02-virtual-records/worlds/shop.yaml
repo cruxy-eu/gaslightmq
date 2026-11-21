@@ -1,0 +1,13 @@
+name: shop
+seed: 7
+start: 2026-01-01T00:00:00Z
+brokers: 1
+lists:
+  customers: [acme, globex, initech]
+topics:
+  - name: orders
+    partitions: 3
+    records:
+      template: templates/order.json
+      key: "order-{{seq}}"
+      existing: 100000000            # already in the topic when the cluster starts

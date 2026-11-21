@@ -1,0 +1,5 @@
+# A preset is a lie with a name.
+- name: Delay 1 s
+  lie: timing
+  delay: 1s
+  jitter: 200ms

@@ -1,0 +1,18 @@
+# A proxy in front of a real cluster. There is no broker and no world file.
+name: staging
+
+proxy:
+  upstream:
+    bootstrap: kafka-1.staging.internal:9092
+    tls:
+      ca: secrets/kafka-ca.pem
+    sasl:
+      mechanism: SCRAM-SHA-512
+      username: gaslight
+      # A reference to a file, never the password itself.
+      password: { file: secrets/kafka-password }
+  listen:
+    bootstrap: 0.0.0.0:9092
+    brokers: 0.0.0.0:19092-19191   # the real brokers are discovered, one port each
+    advertise: localhost
+  recording: metadata-only         # real traffic: keep record payloads off the disk

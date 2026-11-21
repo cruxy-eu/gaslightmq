@@ -1,0 +1,9 @@
+name: shop
+seed: 7
+start: 2026-01-01T00:00:00Z
+brokers: 1
+topics:
+  - name: payments.settled
+    partitions: 1
+    records:
+      file: data/payments.jsonl      # the topic contains exactly these records

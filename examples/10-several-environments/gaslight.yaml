@@ -1,0 +1,5 @@
+# Both environments start with a plain `gmq start`.
+environments: [shop, staging]
+
+control:
+  listen: 0.0.0.0:8080

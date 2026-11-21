@@ -1,0 +1,13 @@
+name: shop
+seed: 7
+start: 2026-01-01T00:00:00Z
+brokers: 3
+lists:
+  customers: [acme, globex, initech]
+topics:
+  - name: orders
+    partitions: 3
+    records:
+      template: templates/order.json
+      existing: 1000000
+      arriving: 5/s

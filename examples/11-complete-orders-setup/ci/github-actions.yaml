@@ -1,0 +1,27 @@
+# Copy this to .github/workflows/ to use it.
+name: consumer against a flaky cluster
+
+on: [pull_request]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Start the fake cluster and activate the scenario
+        run: |
+          docker run -d --name gaslightmq \
+            -v "$PWD/examples/11-complete-orders-setup/gaslight:/workspace:ro" \
+            -p 9092:9092 -p 19092-19094:19092-19094 -p 8081:8081 -p 8080:8080 \
+            ghcr.io/cruxy-eu/gaslightmq:latest \
+            start --workspace=/workspace --env=orders-sim \
+            --scenario="Consumer survives leader churn" \
+            --advertise=localhost   # a flag wins over the environment file
+
+      # Replace this with the test command of your own application.
+      - name: Run the consumer tests
+        run: cargo test --test consumer
+        env:
+          KAFKA_BOOTSTRAP_SERVERS: localhost:9092
+          SCHEMA_REGISTRY_URL: http://localhost:8081

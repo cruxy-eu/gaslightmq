@@ -1,0 +1,5 @@
+name: Node failure
+mode: chain
+seed: 42
+rules:
+  - Node 2 fails on the 50th fetch
