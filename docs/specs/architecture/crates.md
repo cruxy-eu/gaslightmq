@@ -29,7 +29,7 @@ Two crates stand apart: the facade is plain `gaslightmq`, and the binary is `gmq
   or because its types travel to the UI, so it must compile to WebAssembly without the Kafka codec.
   Code that always changes together stays in one crate.
 - **Dependencies follow the town plan.**
-  Vocabulary crates depend on nothing.
+  Vocabulary crates depend only on other vocabulary crates.
   Logic crates depend on vocabulary.
   The engine depends on logic.
   Nothing depends on the engine except the binaries and the test library.
@@ -98,10 +98,10 @@ Every other crate speaks in them.
 | Crate | Holds | Depends on |
 |---|---|---|
 | `kernel` | The value objects of Kafka: topic names and IDs, partition numbers, offsets, positions such as `orders.eu/3`, broker IDs, epochs, the IDs of clients, groups and producers, and API keys and error codes with the names Kafka gives them. Each type only holds valid values. | — |
-| `field` | The [field vocabulary](../domains/targeting.md#fields): field names, values, and the `FieldSource` trait that a live call and a recorded call both implement. Every district of the town plan [shares this vocabulary](../townplan/README.md#targeting-is-a-shared-kernel). | — |
+| `field` | The [field vocabulary](../domains/targeting.md#fields): field names, their typed values, and the `FieldSource` trait that a live call and a recorded call both implement. Also the parts of a call, and the [target](../domains/lies-and-events.md#target) that a match yields. Every district of the town plan [shares this vocabulary](../townplan/README.md#targeting-is-a-shared-kernel). | `kernel`, `clock` |
 | `clock` | The [clock](README.md#clock): a `Clock` trait, the virtual clock, and instants that do not come from the system. | — |
 | `wire` | The Kafka codec: frames, headers, lazily decoded bodies and record batches. | — |
-| `lie` | The [lie](../domains/lies-and-events.md#lies) vocabulary: kind, stage, target and combination class, and the definition of every lie kind as data. It holds no behaviour. See [lies as crates](#lies-as-crates). | `field` |
+| `lie` | The [lie](../domains/lies-and-events.md#lies) vocabulary: kind, stage and combination class, and the definition of every lie kind as data. It holds no behaviour. See [lies as crates](#lies-as-crates). | `field` |
 | `event` | The [event](../domains/lies-and-events.md#events) vocabulary, the expansion into consequences, and the capabilities a backend declares. | `kernel` |
 | `call` | The [call](../domains/observation.md#call) record: identity, request summary, truth, delivered response, verdict, explanation and timing. | `field`, `lie`, `event` |
 

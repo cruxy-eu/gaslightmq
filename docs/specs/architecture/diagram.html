@@ -417,10 +417,10 @@ const CRATES = [
   ["lie_config","Targeting and injection","sans",0,7,"Rewrites of DescribeConfigs responses.",["lie","lie_api","wire_edit"]],
 
   ["kernel","Vocabulary","sans",1,1,"The value objects of Kafka: topic names and IDs, partition numbers, offsets, positions such as orders.eu/3, broker IDs, epochs, the IDs of clients, groups and producers, and API keys and error codes with the names Kafka gives them. Each type only holds valid values.",[]],
-  ["field","Vocabulary","sans",1,1,"The field vocabulary: field names, values, and the FieldSource trait that a live call and a recorded call both implement. Every district of the town plan shares this vocabulary.",[]],
+  ["field","Vocabulary","sans",1,1,"The field vocabulary: field names, their typed values, and the FieldSource trait that a live call and a recorded call both implement. Also the parts of a call, and the target that a match yields. Every district of the town plan shares this vocabulary.",["kernel","clock"]],
   ["clock","Vocabulary","sans",1,1,"A Clock trait, the virtual clock, and instants that do not come from the system.",[]],
   ["wire","Vocabulary","sans",0,1,"The Kafka codec: frames, headers, lazily decoded bodies and record batches.",[]],
-  ["lie","Vocabulary","sans",1,1,"The lie vocabulary: kind, stage, target and combination class, and the definition of every lie kind as data. No behaviour.",["field"]],
+  ["lie","Vocabulary","sans",1,1,"The lie vocabulary: kind, stage and combination class, and the definition of every lie kind as data. No behaviour.",["field"]],
   ["event","Vocabulary","sans",1,1,"The event vocabulary, the expansion into consequences, and the capabilities a backend declares.",["kernel"]],
   ["call","Vocabulary","sans",1,2,"The call record: identity, request summary, truth, delivered response, verdict, explanation and timing.",["field","lie","event"]],
 ].map(([name,layer,kind,wasm,step,holds,deps]) => ({name,layer,kind,wasm:!!wasm,step,holds,deps}));
