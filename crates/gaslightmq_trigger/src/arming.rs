@@ -1,10 +1,8 @@
 //! One arming of one rule: its live state, and the evaluation of a matching call.
 
-use std::sync::Arc;
-use std::sync::atomic::{AtomicU64, Ordering};
-
 use gaslightmq_clock::{Duration, Instant};
 
+use crate::hand::{HandFirings, TakenHandFiring};
 use crate::{
     Budget, BudgetReading, Chance, Counter, Die, Lifetime, MatchNumber, Per, Reservation, Roll, SessionCounters,
     TimeWindow, Trigger, TriggerParts,
@@ -64,7 +62,7 @@ pub struct Arming {
     armed_at: Instant,
     counter: Counter,
     budget: Option<Budget>,
-    by_hand: Arc<AtomicU64>,
+    by_hand: HandFirings,
 }
 
 impl Arming {
@@ -80,7 +78,7 @@ impl Arming {
                 Lifetime::Matches(limit) | Lifetime::Firings(limit) => Some(Budget::new(limit)),
                 Lifetime::UntilDisarmed | Lifetime::Duration(_) => None,
             },
-            by_hand: Arc::default(),
+            by_hand: HandFirings::default(),
         }
     }
 
@@ -164,6 +162,7 @@ impl Arming {
     /// 4. Otherwise every part of the trigger has to agree: the count parts, the die roll and the time window.
     /// 5. A rule that fires under a lifetime of firings sets one firing of its budget aside,
     ///    and does not fire when none is free.
+    ///    A hand firing that finds none free keeps waiting.
     ///
     /// The [`Evaluation`] holds what happened as a [`Rolled`] record, and a [`Firing`] when the rule fired.
     pub fn evaluate(&self, now: Instant, session: &mut SessionCounters) -> Evaluation {
@@ -189,8 +188,9 @@ impl Arming {
         };
         rolled.match_number = Some(match_number);
 
-        let by_hand = self.take_hand_firing();
-        if !by_hand {
+        let (by, outcome) = if let Some(waited) = self.by_hand.take() {
+            (FiredBy::HandOnMatch(waited), TriggerOutcome::FiredByHand)
+        } else {
             let agrees = match self.trigger {
                 Trigger::Parts(parts) => self.roll(&parts, match_number, since_armed, session, &mut rolled),
                 Trigger::Manual => false,
@@ -198,21 +198,14 @@ impl Arming {
             if !agrees {
                 return Evaluation::held(rolled.with_outcome(TriggerOutcome::Held));
             }
-        }
+            (FiredBy::Trigger, TriggerOutcome::Fired)
+        };
 
-        let Some(firing) = self.fire(by_hand, &mut rolled) else {
-            if by_hand {
-                // The hand firing waits for a call that finds a firing free.
-                self.fire_on_next_match();
-            }
+        let Some(firing) = self.fire(by, &mut rolled) else {
             return Evaluation::held(rolled.with_outcome(TriggerOutcome::BudgetEmpty));
         };
         Evaluation {
-            rolled: rolled.with_outcome(if by_hand {
-                TriggerOutcome::FiredByHand
-            } else {
-                TriggerOutcome::Fired
-            }),
+            rolled: rolled.with_outcome(outcome),
             firing: Some(firing),
         }
     }
@@ -234,7 +227,7 @@ impl Arming {
         };
         Some(Firing {
             reservation,
-            by_hand: true,
+            by: FiredBy::HandAtOnce,
         })
     }
 
@@ -243,20 +236,18 @@ impl Arming {
     /// A rule with a lie uses this: it has no call to lie about yet.
     /// The next matching call on any session fires the rule and skips its trigger.
     /// Every hand firing is one firing, so two of them fire on the next two matching calls.
+    ///
+    /// A hand firing is only used up when a call [confirms](Firing::confirm) it.
+    /// When the call withdraws its firing or ends early, the hand firing waits for the next matching call.
     pub fn fire_on_next_match(&self) {
-        self.by_hand.fetch_add(1, Ordering::Relaxed);
+        self.by_hand.add();
     }
 
     /// How many hand firings still wait for a matching call.
+    ///
+    /// A hand firing that a call took and has not settled yet is not among them.
     pub fn waiting_by_hand(&self) -> u64 {
-        self.by_hand.load(Ordering::Relaxed)
-    }
-
-    /// Takes one hand firing that waits for a call, when there is one.
-    fn take_hand_firing(&self) -> bool {
-        self.by_hand
-            .try_update(Ordering::Relaxed, Ordering::Relaxed, |waiting| waiting.checked_sub(1))
-            .is_ok()
+        self.by_hand.waiting()
     }
 
     /// Checks every part of the trigger, writes each check down, and returns whether all agree.
@@ -286,16 +277,18 @@ impl Arming {
     }
 
     /// Makes the firing of a rule that fires, or returns `None` when its budget has no firing free.
-    fn fire(&self, by_hand: bool, rolled: &mut Rolled) -> Option<Firing> {
+    fn fire(&self, by: FiredBy, rolled: &mut Rolled) -> Option<Firing> {
         let reservation = match (self.lifetime, &self.budget) {
             (Lifetime::Firings(_), Some(budget)) => {
                 let reservation = budget.reserve();
                 rolled.budget = Some(budget.reading());
+                // Without a firing free, `by` is dropped here.
+                // A hand firing then waits for a call that finds a firing free.
                 Some(reservation?)
             }
             _ => None,
         };
-        Some(Firing { reservation, by_hand })
+        Some(Firing { reservation, by })
     }
 }
 
@@ -331,6 +324,31 @@ impl Evaluation {
     pub fn into_parts(self) -> (Rolled, Option<Firing>) {
         (self.rolled, self.firing)
     }
+
+    /// The record of a rule whose action has nothing to act on in this call, so the rule does not fire after all.
+    ///
+    /// Only whoever holds the action knows this: an incident that takes its subject from the call
+    /// has nothing to change on a call that offers none.
+    /// The call still counted as a match, and the record keeps every part the trigger looked at.
+    ///
+    /// - The outcome of a rule that fired becomes [`TriggerOutcome::NothingToActOn`].
+    /// - Its firing goes back: the budget has the firing free again, and the record reads the budget after that.
+    ///   A hand firing waits for the next matching call.
+    ///
+    /// The record of a rule that did not fire stays as it is.
+    pub fn nothing_to_act_on(self) -> Rolled {
+        let Evaluation { mut rolled, firing } = self;
+        if let Some(firing) = firing {
+            let budget = firing
+                .reservation
+                .as_ref()
+                .map(|reservation| reservation.budget().clone());
+            firing.withdraw();
+            rolled.budget = budget.as_ref().map(Budget::reading).or(rolled.budget);
+            rolled.outcome = TriggerOutcome::NothingToActOn;
+        }
+        rolled
+    }
 }
 
 /// How the evaluation of a trigger came out.
@@ -342,8 +360,12 @@ pub enum TriggerOutcome {
     FiredByHand,
     /// A part of the trigger did not agree, or the trigger is manual. The rule did not fire.
     Held,
-    /// The trigger agreed, but the budget had no firing free. The rule did not fire.
+    /// The trigger agreed, or someone fired the rule by hand, but the budget had no firing free.
+    /// The rule did not fire.
     BudgetEmpty,
+    /// The trigger agreed, or someone fired the rule by hand, but the action had nothing to act on in this call.
+    /// The rule did not fire. See [`Evaluation::nothing_to_act_on`].
+    NothingToActOn,
     /// The lifetime of the rule had ended. The call was not counted.
     LifetimeOver,
 }
@@ -435,6 +457,8 @@ impl Rolled {
     /// What the budget held after this call took from it, when the lifetime counts matches or firings.
     ///
     /// A budget of firings only shows when the trigger agreed, because only then does the call take from it.
+    /// When the action had [nothing to act on](TriggerOutcome::NothingToActOn),
+    /// it shows the budget after the firing went back.
     pub const fn budget(&self) -> Option<BudgetReading> {
         self.budget
     }
@@ -461,21 +485,44 @@ impl Rolled {
 ///
 /// Under a lifetime of firings, the firing holds a [`Reservation`] of the rule's budget.
 /// Dropping a firing withdraws it, so a call that ends early gives the firing back.
+///
+/// # Hand firings
+///
+/// Every hand firing lies on a matching call, so a press is only used up when its action applied.
+/// A firing that a call took from the [hand firings that waited](Arming::fire_on_next_match) goes back to them
+/// when the call withdraws or drops it, and the next matching call takes it.
+/// A firing of [`Arming::fire_now`] had no call to wait for, so withdrawing it only gives its reservation back.
 #[derive(Debug)]
 #[must_use = "a firing that is dropped does not count for the lifetime"]
 pub struct Firing {
     reservation: Option<Reservation>,
-    by_hand: bool,
+    by: FiredBy,
+}
+
+/// What made a rule fire.
+#[derive(Debug)]
+enum FiredBy {
+    /// Every part of the trigger agreed.
+    Trigger,
+    /// Someone fired the rule by hand at once, without a call.
+    HandAtOnce,
+    /// Someone fired the rule by hand, and a matching call took that firing from those that waited.
+    HandOnMatch(TakenHandFiring),
 }
 
 impl Firing {
     /// Whether someone fired the rule by hand.
     pub const fn by_hand(&self) -> bool {
-        self.by_hand
+        !matches!(self.by, FiredBy::Trigger)
     }
 
     /// Counts the firing for the lifetime: the action applied.
+    ///
+    /// This also uses up the hand firing that the call took.
     pub fn confirm(self) -> Confirmed {
+        if let FiredBy::HandOnMatch(waited) = self.by {
+            waited.confirm();
+        }
         Confirmed {
             ends_lifetime: self
                 .reservation
@@ -484,6 +531,9 @@ impl Firing {
     }
 
     /// Gives the firing back: the rule was shadowed or pre-empted, and its action did not apply.
+    ///
+    /// The budget has the firing free again.
+    /// A hand firing that the call took waits for the next matching call.
     pub fn withdraw(self) {
         drop(self);
     }

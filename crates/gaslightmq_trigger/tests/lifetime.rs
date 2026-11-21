@@ -366,8 +366,66 @@ fn a_hand_firing_waits_while_every_firing_is_set_aside() {
 
     // The firing in flight was pre-empted, so the next matching call fires by hand.
     in_flight.withdraw();
-    assert_eq!(outcome(&arming, &mut session), TriggerOutcome::FiredByHand);
+    let (rolled, firing) = arming.evaluate(ARMED_AT, &mut session).into_parts();
+    assert_eq!(rolled.outcome(), TriggerOutcome::FiredByHand);
+    assert!(firing.unwrap().confirm().ends_lifetime());
     assert_eq!(arming.waiting_by_hand(), 0);
+}
+
+#[test]
+fn a_hand_firing_that_is_withdrawn_gives_its_firing_back_and_waits_again() {
+    let arming = arm(Trigger::Manual, Lifetime::Firings(count(1)));
+    let mut session = session(1);
+    arming.fire_on_next_match();
+
+    let (rolled, firing) = arming.evaluate(ARMED_AT, &mut session).into_parts();
+    assert_eq!(rolled.outcome(), TriggerOutcome::FiredByHand);
+    assert_eq!(arming.budget().unwrap().left(), 0);
+    firing.unwrap().withdraw();
+
+    // The budget has its firing free again, and the press still waits for a call.
+    assert_eq!(arming.budget().unwrap().left(), 1);
+    assert_eq!(arming.waiting_by_hand(), 1);
+
+    // The next matching call takes both, and its action applies: the press and the lifetime are used up.
+    let (rolled, firing) = arming.evaluate(ARMED_AT, &mut session).into_parts();
+    assert_eq!(rolled.outcome(), TriggerOutcome::FiredByHand);
+    assert!(firing.unwrap().confirm().ends_lifetime());
+    assert_eq!(arming.waiting_by_hand(), 0);
+}
+
+#[test]
+fn a_firing_with_nothing_to_act_on_goes_back_to_the_budget() {
+    let arming = arm(Trigger::always(), Lifetime::Firings(count(1)));
+    let mut session = session(1);
+
+    let evaluation = arming.evaluate(ARMED_AT, &mut session);
+    assert_eq!(evaluation.rolled().budget().map(BudgetReading::left), Some(0));
+    let rolled = evaluation.nothing_to_act_on();
+
+    assert_eq!(rolled.outcome(), TriggerOutcome::NothingToActOn);
+    assert_eq!(
+        rolled.budget().map(BudgetReading::left),
+        Some(1),
+        "the record reads the budget after it"
+    );
+    assert_eq!(arming.budget().unwrap().left(), 1);
+    assert!(!arming.has_ended(ARMED_AT));
+
+    // The next matching call takes the firing.
+    assert!(arming.evaluate(ARMED_AT, &mut session).fired());
+}
+
+#[test]
+fn a_match_with_nothing_to_act_on_still_counts_for_a_lifetime_of_matches() {
+    let arming = arm(Trigger::always(), Lifetime::Matches(count(2)));
+    let mut session = session(1);
+
+    let rolled = arming.evaluate(ARMED_AT, &mut session).nothing_to_act_on();
+
+    assert_eq!(rolled.outcome(), TriggerOutcome::NothingToActOn);
+    assert_eq!(rolled.budget().map(BudgetReading::left), Some(1));
+    assert_eq!(arming.budget().unwrap().left(), 1);
 }
 
 #[test]

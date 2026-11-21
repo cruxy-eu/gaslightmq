@@ -89,6 +89,8 @@ The pipeline therefore runs stages 4 to 6 twice:
 - The **response pass** runs after the backend answers.
   It evaluates the rules that also test response fields.
 
+A rule belongs to one pass, so a call counts as one match of it.
+
 Priority orders the rules within one pass.
 Between the passes, the stage decides:
 
@@ -96,6 +98,7 @@ Between the passes, the stage decides:
   The response pass does not run.
   A rule that waited for the truth is pre-empted, even when it has a higher priority,
   and the explanation says so.
+  Nobody evaluated that rule, so the call does not count as a match of it.
 - A partition that the request pass refused before forwarding has no truth.
   The response pass skips that partition.
 - Everything else from the request pass meets the response pass in stage 9,

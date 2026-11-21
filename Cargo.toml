@@ -5,6 +5,7 @@ members = [
     "crates/gaslightmq_incident",
     "crates/gaslightmq_kernel",
     "crates/gaslightmq_lie",
+    "crates/gaslightmq_rule",
     "crates/gaslightmq_selector",
     "crates/gaslightmq_trigger",
     "crates/gaslightmq_wire",
@@ -19,8 +20,12 @@ version = "0.1.0"
 [workspace.dependencies]
 gaslightmq_clock = { path = "crates/gaslightmq_clock" }
 gaslightmq_field = { path = "crates/gaslightmq_field" }
+gaslightmq_incident = { path = "crates/gaslightmq_incident" }
 gaslightmq_kafka_client_api = { path = "crates/gaslightmq_kafka_client/api" }
 gaslightmq_kernel = { path = "crates/gaslightmq_kernel" }
+gaslightmq_lie = { path = "crates/gaslightmq_lie" }
+gaslightmq_selector = { path = "crates/gaslightmq_selector" }
+gaslightmq_trigger = { path = "crates/gaslightmq_trigger" }
 gaslightmq_wire = { path = "crates/gaslightmq_wire" }
 bytes = "1"
 futures = "0.3"

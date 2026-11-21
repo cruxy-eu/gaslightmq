@@ -226,3 +226,7 @@ incident: leader-moves
 
 Pad grid columns, ⌘K suggestions and rule editors all offer presets.
 Rules reference presets by name, or define their action inline.
+
+A preset name is unique among presets, and it follows the rule for [rule names](rules.md#rule).
+A preset holds the keys of its lie or incident next to its name.
+It holds either a `lie` key or an `incident` key, and not both.
