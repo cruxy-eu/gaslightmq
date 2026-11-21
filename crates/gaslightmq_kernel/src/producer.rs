@@ -85,7 +85,11 @@ mod tests {
         assert_eq!(ProducerId::new(MAX_ID).map(ProducerId::value), Ok(MAX_ID));
         assert_eq!(
             ProducerId::new(MAX_ID + 1),
-            Err(KernelError::TooLarge { what: "producer ID", value: MAX_ID + 1, max: MAX_ID })
+            Err(KernelError::TooLarge {
+                what: "producer ID",
+                value: MAX_ID + 1,
+                max: MAX_ID
+            })
         );
     }
 
@@ -96,7 +100,13 @@ mod tests {
         assert_eq!(ProducerId::from(4000_u32), producer);
         assert_eq!(ProducerId::try_from(4000_u64), Ok(producer));
         assert_eq!(ProducerId::try_from(4000_i64), Ok(producer));
-        assert_eq!(ProducerId::try_from(-1_i64), Err(KernelError::Negative { what: "producer ID", value: -1 }));
+        assert_eq!(
+            ProducerId::try_from(-1_i64),
+            Err(KernelError::Negative {
+                what: "producer ID",
+                value: -1
+            })
+        );
         assert!(ProducerId::try_from(u64::MAX).is_err());
         assert_eq!(producer.value(), 4000);
         assert_eq!(u64::from(producer), 4000);
@@ -107,7 +117,13 @@ mod tests {
     fn the_wire_writes_no_producer_id_as_minus_one() {
         assert_eq!(ProducerId::from_wire(-1), Ok(None));
         assert_eq!(ProducerId::from_wire(4000), Ok(Some(ProducerId::from(4000))));
-        assert_eq!(ProducerId::from_wire(-2), Err(KernelError::Negative { what: "producer ID", value: -2 }));
+        assert_eq!(
+            ProducerId::from_wire(-2),
+            Err(KernelError::Negative {
+                what: "producer ID",
+                value: -2
+            })
+        );
         assert_eq!(ProducerId::to_wire(None), -1);
         assert_eq!(ProducerId::to_wire(Some(ProducerId::from(4000))), 4000);
     }
@@ -125,7 +141,11 @@ mod tests {
         assert_eq!(ProducerEpoch::new(MAX_EPOCH).map(ProducerEpoch::value), Ok(MAX_EPOCH));
         assert_eq!(
             ProducerEpoch::new(MAX_EPOCH + 1),
-            Err(KernelError::TooLarge { what: "producer epoch", value: 32_768, max: 32_767 })
+            Err(KernelError::TooLarge {
+                what: "producer epoch",
+                value: 32_768,
+                max: 32_767
+            })
         );
     }
 
@@ -136,7 +156,13 @@ mod tests {
         assert_eq!(ProducerEpoch::from(5_u8), epoch);
         assert_eq!(ProducerEpoch::try_from(5_u16), Ok(epoch));
         assert_eq!(ProducerEpoch::try_from(5_i16), Ok(epoch));
-        assert_eq!(ProducerEpoch::try_from(-1_i16), Err(KernelError::Negative { what: "producer epoch", value: -1 }));
+        assert_eq!(
+            ProducerEpoch::try_from(-1_i16),
+            Err(KernelError::Negative {
+                what: "producer epoch",
+                value: -1
+            })
+        );
         assert!(ProducerEpoch::try_from(u16::MAX).is_err());
         assert_eq!(epoch.value(), 5);
         assert_eq!(u16::from(epoch), 5);
@@ -148,7 +174,13 @@ mod tests {
     fn the_wire_writes_no_producer_epoch_as_minus_one() {
         assert_eq!(ProducerEpoch::from_wire(-1), Ok(None));
         assert_eq!(ProducerEpoch::from_wire(5), Ok(Some(ProducerEpoch::from(5))));
-        assert_eq!(ProducerEpoch::from_wire(-2), Err(KernelError::Negative { what: "producer epoch", value: -2 }));
+        assert_eq!(
+            ProducerEpoch::from_wire(-2),
+            Err(KernelError::Negative {
+                what: "producer epoch",
+                value: -2
+            })
+        );
         assert_eq!(ProducerEpoch::to_wire(None), -1);
         assert_eq!(ProducerEpoch::to_wire(Some(ProducerEpoch::from(5))), 5);
     }
@@ -159,7 +191,11 @@ mod tests {
         assert_eq!(ProducerEpoch::from(5).to_string(), "5");
         assert_eq!(
             "32768".parse::<ProducerEpoch>(),
-            Err(KernelError::TooLarge { what: "producer epoch", value: 32_768, max: 32_767 })
+            Err(KernelError::TooLarge {
+                what: "producer epoch",
+                value: 32_768,
+                max: 32_767
+            })
         );
     }
 
@@ -173,11 +209,20 @@ mod tests {
     #[test]
     fn a_transactional_id_takes_any_text_but_none() {
         assert_eq!(TransactionalId::new("payments tx/1").unwrap().as_str(), "payments tx/1");
-        assert_eq!(TransactionalId::new(""), Err(KernelError::Empty { what: "transactional ID" }));
+        assert_eq!(
+            TransactionalId::new(""),
+            Err(KernelError::Empty {
+                what: "transactional ID"
+            })
+        );
         assert_eq!(TransactionalId::MAX_LEN, 32_767);
         assert_eq!(
             TransactionalId::new("a".repeat(32_768)),
-            Err(KernelError::TooLong { what: "transactional ID", len: 32_768, max: 32_767 })
+            Err(KernelError::TooLong {
+                what: "transactional ID",
+                len: 32_768,
+                max: 32_767
+            })
         );
     }
 
@@ -187,7 +232,10 @@ mod tests {
 
         assert_eq!("payments-tx-1".parse::<TransactionalId>(), Ok(transactional.clone()));
         assert_eq!(TransactionalId::try_from("payments-tx-1"), Ok(transactional.clone()));
-        assert_eq!(TransactionalId::try_from(String::from("payments-tx-1")), Ok(transactional.clone()));
+        assert_eq!(
+            TransactionalId::try_from(String::from("payments-tx-1")),
+            Ok(transactional.clone())
+        );
         assert_eq!(String::from(transactional.clone()), "payments-tx-1");
         assert_eq!(transactional.to_string(), "payments-tx-1");
         assert_eq!(transactional, "payments-tx-1");

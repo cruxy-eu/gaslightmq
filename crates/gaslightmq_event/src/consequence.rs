@@ -109,18 +109,12 @@ impl Event {
                 coordinators.dedup();
 
                 if *failover {
-                    let leaders = partitions.into_iter().map(|partition| {
-                        Consequence::Event(Self::LeaderMoves {
-                            partition,
-                            to: None,
-                        })
-                    });
-                    let coordinators = coordinators.into_iter().map(|coordinator| {
-                        Consequence::Event(Self::CoordinatorMoves {
-                            coordinator,
-                            to: None,
-                        })
-                    });
+                    let leaders = partitions
+                        .into_iter()
+                        .map(|partition| Consequence::Event(Self::LeaderMoves { partition, to: None }));
+                    let coordinators = coordinators
+                        .into_iter()
+                        .map(|coordinator| Consequence::Event(Self::CoordinatorMoves { coordinator, to: None }));
                     leaders.chain(coordinators).collect()
                 } else {
                     let leaders = partitions
@@ -147,9 +141,7 @@ impl Event {
 /// [`Event::expand`] never adds an event of another kind.
 pub(crate) fn kinds_of_consequences(kind: EventKind, failover: bool) -> &'static [EventKind] {
     match kind {
-        EventKind::BrokerGoesDown if failover => {
-            &[EventKind::LeaderMoves, EventKind::CoordinatorMoves]
-        }
+        EventKind::BrokerGoesDown if failover => &[EventKind::LeaderMoves, EventKind::CoordinatorMoves],
         _ => &[],
     }
 }
@@ -168,27 +160,15 @@ mod tests {
             let partitions: &[&str] = match broker.value() {
                 1 => &["orders.eu/0", "payments.settled/1"],
                 // Out of order and with a duplicate, as a map of a World may give them.
-                2 => &[
-                    "payments.settled/0",
-                    "orders.eu/3",
-                    "orders.eu/1",
-                    "orders.eu/3",
-                ],
+                2 => &["payments.settled/0", "orders.eu/3", "orders.eu/1", "orders.eu/3"],
                 _ => &[],
             };
-            partitions
-                .iter()
-                .map(|partition| partition.parse().unwrap())
-                .collect()
+            partitions.iter().map(|partition| partition.parse().unwrap()).collect()
         }
 
         fn coordinators_hosted_by(&self, broker: BrokerId) -> Vec<Coordinator> {
             match broker.value() {
-                2 => vec![
-                    transaction("payments-tx-1"),
-                    group("payments"),
-                    group("analytics-etl"),
-                ],
+                2 => vec![transaction("payments-tx-1"), group("payments"), group("analytics-etl")],
                 _ => vec![],
             }
         }
@@ -299,12 +279,8 @@ mod tests {
                 to: None,
             })
         };
-        let coordinator_moves = |coordinator: Coordinator| {
-            Consequence::Event(Event::CoordinatorMoves {
-                coordinator,
-                to: None,
-            })
-        };
+        let coordinator_moves =
+            |coordinator: Coordinator| Consequence::Event(Event::CoordinatorMoves { coordinator, to: None });
 
         assert_eq!(
             down.expand(&Cluster).consequences(),

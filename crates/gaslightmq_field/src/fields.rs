@@ -82,6 +82,7 @@ impl Fields {
     ///
     /// A value of a response field also says that the backend answered:
     /// from then on, every response field without a value is absent instead of pending.
+    #[must_use]
     pub fn with(mut self, value: impl CallValue) -> Self {
         let value: FieldValue = value.into();
         let field = value.field();
@@ -102,6 +103,7 @@ impl Fields {
     /// A second value of the same field makes the field multi-valued:
     /// a client that runs several consumers under one `client.id` has several groups.
     /// A field that the call itself has a value of keeps that value alone.
+    #[must_use]
     pub fn with_learned(mut self, value: impl LearnedValue) -> Self {
         let value: FieldValue = value.into();
         match self.values.get_mut(&value.field()) {
@@ -116,6 +118,7 @@ impl Fields {
     }
 
     /// The request names `part`: a topic, a partition, or either with its own truth.
+    #[must_use]
     pub fn with_part(mut self, part: impl Into<PartFields>) -> Self {
         self.parts.push(part.into());
         self
@@ -123,6 +126,7 @@ impl Fields {
 
     /// The call never reached the backend, as after a silence or a refusal before forwarding.
     /// Its response fields are absent, and they stay so.
+    #[must_use]
     pub fn without_truth(mut self) -> Self {
         self.values.retain(|field, _| field.group() != FieldGroup::Response);
         self.truth = Truth::None;
@@ -176,36 +180,51 @@ mod tests {
         let call = Fields::new();
 
         for field in Field::ALL {
-            let expected = if field.group() == FieldGroup::Response { Reading::Pending } else { Reading::Absent };
+            let expected = if field.group() == FieldGroup::Response {
+                Reading::Pending
+            } else {
+                Reading::Absent
+            };
             assert_eq!(call.read(field), expected, "{field}");
             assert_eq!(call.whole_call(field), expected, "{field}");
         }
-        assert!(call.parts().is_empty());
+        assert_eq!(call.parts(), []);
         assert_eq!(call, Fields::default());
     }
 
     #[test]
     fn a_value_is_a_value_of_its_own_field_only() {
-        let call = Fields::new().with(ConnectionNumber::new(7)).with(ApiKey::PRODUCE).with(Acks::ALL);
+        let call = Fields::new()
+            .with(ConnectionNumber::new(7))
+            .with(ApiKey::PRODUCE)
+            .with(Acks::ALL);
 
         assert_eq!(text(call.read(Field::Connection)), "#7");
         assert_eq!(text(call.read(Field::Api)), "Produce");
         assert_eq!(text(call.read(Field::Acks)), "-1");
         assert_eq!(call.read(Field::ClientId), Reading::Absent);
-        assert_eq!(call.read(Field::Api).present().map(|values| values.origin()), Some(Origin::Call));
+        assert_eq!(
+            call.read(Field::Api).present().map(|values| values.origin()),
+            Some(Origin::Call)
+        );
     }
 
     #[test]
     fn a_second_value_makes_a_field_multi_valued() {
-        let call = Fields::new().with(group("payments")).with(group("analytics-etl")).with(group("payments"));
+        let call = Fields::new()
+            .with(group("payments"))
+            .with(group("analytics-etl"))
+            .with(group("payments"));
 
         assert_eq!(text(call.read(Field::Group)), "analytics-etl, payments");
     }
 
     #[test]
     fn the_client_context_provides_a_learned_field_the_request_does_not_carry() {
-        let call =
-            Fields::new().with(ApiKey::FETCH).with_learned(group("payments")).with_learned(group("analytics-etl"));
+        let call = Fields::new()
+            .with(ApiKey::FETCH)
+            .with_learned(group("payments"))
+            .with_learned(group("analytics-etl"));
         let groups = call.read(Field::Group).present().unwrap();
 
         assert_eq!(groups.to_string(), "analytics-etl, payments");
@@ -214,8 +233,12 @@ mod tests {
 
     #[test]
     fn a_request_that_carries_a_learned_field_provides_it_alone() {
-        let carried_last = Fields::new().with_learned(group("payments")).with(group("analytics-etl"));
-        let carried_first = Fields::new().with(group("analytics-etl")).with_learned(group("payments"));
+        let carried_last = Fields::new()
+            .with_learned(group("payments"))
+            .with(group("analytics-etl"));
+        let carried_first = Fields::new()
+            .with(group("analytics-etl"))
+            .with_learned(group("payments"));
 
         for call in [carried_last, carried_first] {
             let groups = call.read(Field::Group).present().unwrap();
@@ -280,7 +303,10 @@ mod tests {
 
     #[test]
     fn a_request_that_names_topics_only_has_no_partition() {
-        let metadata = Fields::new().with(ApiKey::METADATA).with_part(topic("orders.eu")).with_part(topic("orders.us"));
+        let metadata = Fields::new()
+            .with(ApiKey::METADATA)
+            .with_part(topic("orders.eu"))
+            .with_part(topic("orders.us"));
 
         assert_eq!(text(metadata.read(Field::Topic)), "orders.eu, orders.us");
         assert_eq!(metadata.read(Field::Partition), Reading::Absent);
@@ -294,7 +320,9 @@ mod tests {
             .with(Acks::ALL)
             .with_part(partition("orders.eu/1"))
             .with_part(partition("payments.settled/3"));
-        let [eu, settled] = produce.parts() else { panic!("two parts") };
+        let [eu, settled] = produce.parts() else {
+            panic!("two parts")
+        };
 
         assert_eq!(text(produce.read_in(eu, Field::Topic)), "orders.eu");
         assert_eq!(text(produce.read_in(eu, Field::Partition)), "1");
@@ -310,12 +338,17 @@ mod tests {
 
     #[test]
     fn the_whole_target_of_a_call_with_parts_is_every_part() {
-        let produce = Fields::new().with_part(partition("payments.settled/3")).with_part(partition("orders.eu/1"));
+        let produce = Fields::new()
+            .with_part(partition("payments.settled/3"))
+            .with_part(partition("orders.eu/1"));
 
         assert_eq!(
             produce.whole_target(),
-            Target::of_parts([Part::from(partition("orders.eu/1")), Part::from(partition("payments.settled/3"))])
-                .unwrap()
+            Target::of_parts([
+                Part::from(partition("orders.eu/1")),
+                Part::from(partition("payments.settled/3"))
+            ])
+            .unwrap()
         );
     }
 
@@ -342,13 +375,18 @@ mod tests {
             .with_part(PartFields::new(partition("orders.eu/4")).succeeded())
             .with_part(PartFields::new(partition("payments.settled/0")).without_truth())
             .with(Latency::from_millis(14));
-        let [failed, succeeded, refused] = answered.parts() else { panic!("three parts") };
+        let [failed, succeeded, refused] = answered.parts() else {
+            panic!("three parts")
+        };
 
         assert_eq!(text(answered.read(Field::Outcome)), "ok, error");
         assert_eq!(text(answered.read(Field::ErrorCode)), "NOT_LEADER_OR_FOLLOWER");
 
         assert_eq!(text(answered.read_in(failed, Field::Outcome)), "error");
-        assert_eq!(text(answered.read_in(failed, Field::ErrorCode)), "NOT_LEADER_OR_FOLLOWER");
+        assert_eq!(
+            text(answered.read_in(failed, Field::ErrorCode)),
+            "NOT_LEADER_OR_FOLLOWER"
+        );
         assert_eq!(text(answered.read_in(succeeded, Field::Outcome)), "ok");
         assert_eq!(answered.read_in(succeeded, Field::ErrorCode), Reading::Absent);
         assert_eq!(answered.read_in(refused, Field::Outcome), Reading::Absent);
@@ -383,10 +421,20 @@ mod tests {
     #[test]
     fn a_reference_to_a_source_is_a_source() {
         fn topics(source: impl FieldSource) -> String {
-            let whole = source.whole_call(Field::Api).present().map(|values| values.to_string()).unwrap_or_default();
+            let whole = source
+                .whole_call(Field::Api)
+                .present()
+                .map_or_default(|values| values.to_string());
             let parts = source.parts().len();
-            let first = source.parts().first().map(|part| text(source.read_in(part, Field::Topic))).unwrap_or_default();
-            format!("{whole} {parts} {first} {} {}", text(source.read(Field::Topic)), source.whole_target())
+            let first = source
+                .parts()
+                .first()
+                .map_or_default(|part| text(source.read_in(part, Field::Topic)));
+            format!(
+                "{whole} {parts} {first} {} {}",
+                text(source.read(Field::Topic)),
+                source.whole_target()
+            )
         }
 
         let produce = Fields::new().with(ApiKey::PRODUCE).with_part(partition("orders.eu/1"));

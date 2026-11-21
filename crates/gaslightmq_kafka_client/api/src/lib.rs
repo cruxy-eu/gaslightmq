@@ -29,6 +29,6 @@ pub use list_offsets::ListOffsets;
 pub use metadata::Metadata;
 pub use produce::Produce;
 pub use traits::{
-    Admin, Consumer, HeartbeatResult, JoinGroupResult, PartitionMetadata, ProduceResult, Producer,
-    ProtocolConsumer, RecordStream, SyncGroupResult, TopicConfigs, TopicMetadata, Watermarks,
+    Admin, Consumer, HeartbeatResult, JoinGroupResult, PartitionMetadata, ProduceResult, Producer, ProtocolConsumer,
+    RecordStream, SyncGroupResult, TopicConfigs, TopicMetadata, Watermarks,
 };

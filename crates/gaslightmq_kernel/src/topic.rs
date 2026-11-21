@@ -56,8 +56,15 @@ const ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwx
 
 impl TopicId {
     /// Keep `bytes` as a topic ID, unless they are all zero.
+    ///
+    /// # Errors
+    ///
+    /// [`KernelError::Reserved`] when `bytes` are all zero.
     pub fn new(bytes: [u8; 16]) -> Result<Self, KernelError> {
-        Self::from_wire(bytes).ok_or_else(|| KernelError::Reserved { what: WHAT, value: Self(bytes).to_string() })
+        Self::from_wire(bytes).ok_or_else(|| KernelError::Reserved {
+            what: WHAT,
+            value: Self(bytes).to_string(),
+        })
     }
 
     /// The 16 bytes of the UUID, in the order Kafka writes them.
@@ -77,12 +84,15 @@ impl TopicId {
 
     /// The six bits that one character of the text form stands for.
     fn sextet(character: char, position: usize) -> Result<u8, KernelError> {
-        let index = u8::try_from(character).ok().and_then(|byte| ALPHABET.iter().position(|&letter| letter == byte));
-        match index {
-            // The alphabet has 64 letters, so the index fits.
-            Some(index) => Ok(index as u8),
-            None => Err(KernelError::InvalidCharacter { what: WHAT, character, position }),
-        }
+        let byte = u8::try_from(character).ok();
+        (0u8..)
+            .zip(ALPHABET)
+            .find_map(|(index, &letter)| (Some(letter) == byte).then_some(index))
+            .ok_or(KernelError::InvalidCharacter {
+                what: WHAT,
+                character,
+                position,
+            })
     }
 }
 
@@ -121,7 +131,11 @@ impl FromStr for TopicId {
     type Err = KernelError;
 
     fn from_str(text: &str) -> Result<Self, Self::Err> {
-        let malformed = || KernelError::Malformed { what: WHAT, input: text.to_owned(), expected: TEXT_FORM };
+        let malformed = || KernelError::Malformed {
+            what: WHAT,
+            input: text.to_owned(),
+            expected: TEXT_FORM,
+        };
         if text.is_empty() {
             return Err(KernelError::Empty { what: WHAT });
         }
@@ -204,13 +218,27 @@ mod tests {
         assert!(TopicName::new("a".repeat(249)).is_ok());
         assert_eq!(
             TopicName::new("a".repeat(250)),
-            Err(KernelError::TooLong { what: "topic name", len: 250, max: 249 })
+            Err(KernelError::TooLong {
+                what: "topic name",
+                len: 250,
+                max: 249
+            })
         );
         assert_eq!(TopicName::new(""), Err(KernelError::Empty { what: "topic name" }));
-        assert_eq!(TopicName::new(".."), Err(KernelError::Reserved { what: "topic name", value: "..".into() }));
+        assert_eq!(
+            TopicName::new(".."),
+            Err(KernelError::Reserved {
+                what: "topic name",
+                value: "..".into()
+            })
+        );
         assert_eq!(
             TopicName::new("orders.*"),
-            Err(KernelError::InvalidCharacter { what: "topic name", character: '*', position: 7 })
+            Err(KernelError::InvalidCharacter {
+                what: "topic name",
+                character: '*',
+                position: 7
+            })
         );
     }
 
@@ -243,8 +271,10 @@ mod tests {
 
     #[test]
     fn topic_names_order_as_their_text() {
-        let names: BTreeSet<TopicName> =
-            ["payments", "orders.us", "orders.eu"].into_iter().map(|name| name.parse().unwrap()).collect();
+        let names: BTreeSet<TopicName> = ["payments", "orders.us", "orders.eu"]
+            .into_iter()
+            .map(|name| name.parse().unwrap())
+            .collect();
 
         let sorted: Vec<&str> = names.iter().map(TopicName::as_str).collect();
         assert_eq!(sorted, ["orders.eu", "orders.us", "payments"]);
@@ -278,7 +308,10 @@ mod tests {
 
     #[test]
     fn a_topic_id_is_not_all_zeros() {
-        let reserved = KernelError::Reserved { what: "topic ID", value: "AAAAAAAAAAAAAAAAAAAAAA".into() };
+        let reserved = KernelError::Reserved {
+            what: "topic ID",
+            value: "AAAAAAAAAAAAAAAAAAAAAA".into(),
+        };
 
         assert_eq!(TopicId::new([0; 16]), Err(reserved.clone()));
         assert_eq!(TopicId::try_from([0; 16]), Err(reserved.clone()));
@@ -311,7 +344,10 @@ mod tests {
         assert_eq!(TopicId::new([0xFF; 16]).unwrap().to_string(), "_____________________w");
         assert_eq!(TopicId::new([0xFB; 16]).unwrap().to_string(), "-_v7-_v7-_v7-_v7-_v7-w");
         assert_eq!(TopicId::try_from(1u128).unwrap().to_string(), "AAAAAAAAAAAAAAAAAAAAAQ");
-        assert_eq!(format!("{:?}", TopicId::new(BYTES).unwrap()), format!("TopicId({TEXT})"));
+        assert_eq!(
+            format!("{:?}", TopicId::new(BYTES).unwrap()),
+            format!("TopicId({TEXT})")
+        );
     }
 
     #[test]
@@ -358,7 +394,11 @@ mod tests {
         ] {
             assert_eq!(
                 text.parse::<TopicId>(),
-                Err(KernelError::InvalidCharacter { what: "topic ID", character, position }),
+                Err(KernelError::InvalidCharacter {
+                    what: "topic ID",
+                    character,
+                    position
+                }),
                 "{text:?}"
             );
         }
@@ -367,7 +407,10 @@ mod tests {
     #[test]
     fn a_topic_id_has_one_text_form() {
         // `B` ends in the bits 0001, which no UUID has room for.
-        assert!(matches!("Zm9vYmFyYmF6cXV4MTIzNB".parse::<TopicId>(), Err(KernelError::Malformed { .. })));
+        assert!(matches!(
+            "Zm9vYmFyYmF6cXV4MTIzNB".parse::<TopicId>(),
+            Err(KernelError::Malformed { .. })
+        ));
     }
 
     #[test]

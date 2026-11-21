@@ -29,6 +29,10 @@ impl ApiVersion {
     const MAX_VALUE: u16 = i16::MAX as u16;
 
     /// Check that `version` is at most [`i16::MAX`], and keep it.
+    ///
+    /// # Errors
+    ///
+    /// [`FieldError::OutOfRange`] when `version` is above that.
     pub fn new(version: u16) -> Result<Self, FieldError> {
         if version > Self::MAX_VALUE {
             return Err(FieldError::out_of_range(Self::WHAT, version, 0, Self::MAX_VALUE.into()));
@@ -61,7 +65,9 @@ impl TryFrom<i16> for ApiVersion {
     type Error = FieldError;
 
     fn try_from(raw: i16) -> Result<Self, Self::Error> {
-        u16::try_from(raw).map(Self).map_err(|_| FieldError::out_of_range(Self::WHAT, raw, 0, Self::MAX_VALUE.into()))
+        u16::try_from(raw)
+            .map(Self)
+            .map_err(|_| FieldError::out_of_range(Self::WHAT, raw, 0, Self::MAX_VALUE.into()))
     }
 }
 
@@ -74,7 +80,8 @@ impl From<ApiVersion> for u16 {
 /// Gives the type Kafka writes an API version as.
 impl From<ApiVersion> for i16 {
     fn from(version: ApiVersion) -> Self {
-        version.0 as i16
+        // The version is at most `i16::MAX`, so the sign bit is clear and the cast keeps it.
+        version.0.cast_signed()
     }
 }
 
@@ -83,7 +90,7 @@ impl FromStr for ApiVersion {
     type Err = FieldError;
 
     fn from_str(text: &str) -> Result<Self, Self::Err> {
-        text::number(Self::WHAT, text, 0, Self::MAX_VALUE.into()).map(|version| Self(version as u16))
+        text::number(Self::WHAT, text, 0, Self::MAX_VALUE.into()).map(Self)
     }
 }
 
@@ -158,7 +165,7 @@ impl FromStr for Acks {
         if text == "all" {
             return Ok(Acks::ALL);
         }
-        text::number(Self::WHAT, text, i16::MIN.into(), i16::MAX.unsigned_abs().into()).map(|acks| Self(acks as i16))
+        text::number(Self::WHAT, text, i16::MIN.into(), i16::MAX.unsigned_abs().into()).map(Self)
     }
 }
 
@@ -178,9 +185,18 @@ mod tests {
     fn an_api_version_is_between_zero_and_the_largest_i16() {
         assert_eq!(ApiVersion::new(0).map(ApiVersion::value), Ok(0));
         assert_eq!(ApiVersion::new(32_767).map(ApiVersion::value), Ok(32_767));
-        assert_eq!(ApiVersion::new(32_768), Err(FieldError::out_of_range("API version", 32_768, 0, 32_767)));
-        assert_eq!(ApiVersion::try_from(40_000_u16), Err(FieldError::out_of_range("API version", 40_000, 0, 32_767)));
-        assert_eq!(ApiVersion::try_from(-1_i16), Err(FieldError::out_of_range("API version", -1, 0, 32_767)));
+        assert_eq!(
+            ApiVersion::new(32_768),
+            Err(FieldError::out_of_range("API version", 32_768, 0, 32_767))
+        );
+        assert_eq!(
+            ApiVersion::try_from(40_000_u16),
+            Err(FieldError::out_of_range("API version", 40_000, 0, 32_767))
+        );
+        assert_eq!(
+            ApiVersion::try_from(-1_i16),
+            Err(FieldError::out_of_range("API version", -1, 0, 32_767))
+        );
     }
 
     #[test]
@@ -197,9 +213,18 @@ mod tests {
     fn an_api_version_reads_and_writes_decimal_digits() {
         assert_eq!(ApiVersion::from(11).to_string(), "11");
         assert_eq!("11".parse(), Ok(ApiVersion::from(11)));
-        assert_eq!("v11".parse::<ApiVersion>(), Err(FieldError::malformed("API version", "v11", "a whole number")));
-        assert_eq!("-1".parse::<ApiVersion>(), Err(FieldError::out_of_range("API version", "-1", 0, 32_767)));
-        assert_eq!("32768".parse::<ApiVersion>(), Err(FieldError::out_of_range("API version", "32768", 0, 32_767)));
+        assert_eq!(
+            "v11".parse::<ApiVersion>(),
+            Err(FieldError::malformed("API version", "v11", "a whole number"))
+        );
+        assert_eq!(
+            "-1".parse::<ApiVersion>(),
+            Err(FieldError::out_of_range("API version", "-1", 0, 32_767))
+        );
+        assert_eq!(
+            "32768".parse::<ApiVersion>(),
+            Err(FieldError::out_of_range("API version", "32768", 0, 32_767))
+        );
     }
 
     #[test]
@@ -225,9 +250,19 @@ mod tests {
     #[test]
     fn acks_is_a_number_that_fits_i16() {
         for text in ["", "ALL", "none", "leader", "1.0"] {
-            assert_eq!(text.parse::<Acks>(), Err(FieldError::malformed("acks", text, "a whole number")), "{text:?}");
+            assert_eq!(
+                text.parse::<Acks>(),
+                Err(FieldError::malformed("acks", text, "a whole number")),
+                "{text:?}"
+            );
         }
-        assert_eq!("40000".parse::<Acks>(), Err(FieldError::out_of_range("acks", "40000", -32_768, 32_767)));
-        assert_eq!("-40000".parse::<Acks>(), Err(FieldError::out_of_range("acks", "-40000", -32_768, 32_767)));
+        assert_eq!(
+            "40000".parse::<Acks>(),
+            Err(FieldError::out_of_range("acks", "40000", -32_768, 32_767))
+        );
+        assert_eq!(
+            "-40000".parse::<Acks>(),
+            Err(FieldError::out_of_range("acks", "-40000", -32_768, 32_767))
+        );
     }
 }

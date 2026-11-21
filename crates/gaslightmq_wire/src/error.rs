@@ -22,11 +22,17 @@ pub enum WireError {
 
 impl WireError {
     pub(crate) fn decode(what: &'static str, reason: impl fmt::Display) -> Self {
-        Self::Decode { what, reason: reason.to_string() }
+        Self::Decode {
+            what,
+            reason: reason.to_string(),
+        }
     }
 
     pub(crate) fn encode(what: &'static str, reason: impl fmt::Display) -> Self {
-        Self::Encode { what, reason: reason.to_string() }
+        Self::Encode {
+            what,
+            reason: reason.to_string(),
+        }
     }
 }
 

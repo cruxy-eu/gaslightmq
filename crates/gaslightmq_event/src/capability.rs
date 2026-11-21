@@ -86,21 +86,19 @@ impl Capabilities {
 
     /// Declare the kinds of events the backend applies.
     /// The last declaration of a kind stands.
+    #[must_use]
     pub fn applies(self, kinds: impl IntoIterator<Item = EventKind>) -> Self {
         self.declare(kinds, Support::Applied)
     }
 
     /// Declare the kinds of events the backend can only emulate.
     /// The last declaration of a kind stands.
+    #[must_use]
     pub fn emulates(self, kinds: impl IntoIterator<Item = EventKind>) -> Self {
         self.declare(kinds, Support::Emulated)
     }
 
-    pub(crate) fn declare(
-        mut self,
-        kinds: impl IntoIterator<Item = EventKind>,
-        support: Support,
-    ) -> Self {
+    pub(crate) fn declare(mut self, kinds: impl IntoIterator<Item = EventKind>, support: Support) -> Self {
         for kind in kinds {
             match support {
                 Support::Unsupported => self.supported.remove(&kind),
@@ -112,23 +110,22 @@ impl Capabilities {
 
     /// What the backend does with an event of this kind.
     pub fn support(&self, kind: EventKind) -> Support {
-        self.supported
-            .get(&kind)
-            .copied()
-            .unwrap_or(Support::Unsupported)
+        self.supported.get(&kind).copied().unwrap_or(Support::Unsupported)
     }
 
     /// Every kind with what the backend does with it, in the order of [`EventKind`].
     pub fn iter(&self) -> impl Iterator<Item = (EventKind, Support)> + '_ {
-        EventKind::ALL
-            .into_iter()
-            .map(|kind| (kind, self.support(kind)))
+        EventKind::ALL.into_iter().map(|kind| (kind, self.support(kind)))
     }
 
     /// Check that the backend applies or emulates every event the requirements name.
     ///
     /// The requirements include the consequences of each event,
     /// so the result also names a kind that only a consequence needs.
+    ///
+    /// # Errors
+    ///
+    /// [`UnsupportedEvents`] with every requirement the backend can neither apply nor emulate.
     pub fn check(&self, requirements: &Requirements) -> Result<(), UnsupportedEvents> {
         let events: Vec<Requirement> = requirements
             .iter()
@@ -211,10 +208,7 @@ mod tests {
     }
 
     /// The unsupported events as pairs of a kind and the kind it is a consequence of.
-    fn unsupported(
-        backend: &Capabilities,
-        definitions: &[EventDefinition],
-    ) -> Vec<(EventKind, Option<EventKind>)> {
+    fn unsupported(backend: &Capabilities, definitions: &[EventDefinition]) -> Vec<(EventKind, Option<EventKind>)> {
         match backend.check(&requirements(definitions)) {
             Ok(()) => vec![],
             Err(unsupported) => unsupported
@@ -277,10 +271,7 @@ mod tests {
             .applies([EventKind::Rebalance])
             .emulates([EventKind::Rebalance]);
         assert_eq!(backend.support(EventKind::Rebalance), Support::Emulated);
-        assert_eq!(
-            backend,
-            Capabilities::none().emulates([EventKind::Rebalance])
-        );
+        assert_eq!(backend, Capabilities::none().emulates([EventKind::Rebalance]));
     }
 
     #[test]
@@ -298,10 +289,7 @@ mod tests {
         }];
 
         assert_eq!(unsupported(&simulated(), &rules), []);
-        assert_eq!(
-            unsupported(&upstream(), &rules),
-            [(EventKind::LeaderMoves, None)]
-        );
+        assert_eq!(unsupported(&upstream(), &rules), [(EventKind::LeaderMoves, None)]);
     }
 
     #[test]
@@ -359,13 +347,8 @@ mod tests {
 
     #[test]
     fn the_simulated_backend_fences_no_producer_yet() {
-        let rules = [EventDefinition::ProducerFenced {
-            transactional_id: None,
-        }];
-        assert_eq!(
-            unsupported(&simulated(), &rules),
-            [(EventKind::ProducerFenced, None)]
-        );
+        let rules = [EventDefinition::ProducerFenced { transactional_id: None }];
+        assert_eq!(unsupported(&simulated(), &rules), [(EventKind::ProducerFenced, None)]);
         assert_eq!(unsupported(&upstream(), &rules), []);
     }
 

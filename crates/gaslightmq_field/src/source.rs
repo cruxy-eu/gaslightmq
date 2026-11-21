@@ -247,7 +247,10 @@ mod tests {
         assert!(present.is_present() && !present.is_absent() && !present.is_pending());
         assert!(absent.is_absent() && !absent.is_present() && !absent.is_pending());
         assert!(pending.is_pending() && !pending.is_present() && !pending.is_absent());
-        assert_eq!([present.present(), absent.present(), pending.present()], [Some(3), None, None]);
+        assert_eq!(
+            [present.present(), absent.present(), pending.present()],
+            [Some(3), None, None]
+        );
     }
 
     #[test]
@@ -255,7 +258,10 @@ mod tests {
         assert_eq!(Reading::Present(3).map(|value| value + 1), Reading::Present(4));
         assert_eq!(Reading::<i32>::Absent.map(|value| value + 1), Reading::Absent);
         assert_eq!(Reading::<i32>::Pending.map(|value| value + 1), Reading::Pending);
-        assert_eq!(Reading::Present(String::from("x")).as_ref(), Reading::Present(&String::from("x")));
+        assert_eq!(
+            Reading::Present(String::from("x")).as_ref(),
+            Reading::Present(&String::from("x"))
+        );
         assert_eq!(Reading::<String>::Pending.as_ref(), Reading::Pending);
         assert_eq!(Reading::<String>::Absent.as_ref(), Reading::Absent);
     }

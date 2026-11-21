@@ -105,7 +105,10 @@ fn the_prelude_holds_every_value_object_and_the_error() {
 
 #[test]
 fn a_glob_import_of_the_prelude_leaves_the_names_of_std_alone() {
-    assert_eq!(alone::std_names_keep_their_meaning(), Ok(Some("orders.eu/3@0".to_owned())));
+    assert_eq!(
+        alone::std_names_keep_their_meaning(),
+        Ok(Some("orders.eu/3@0".to_owned()))
+    );
 }
 
 #[test]

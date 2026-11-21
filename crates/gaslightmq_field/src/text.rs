@@ -116,15 +116,22 @@ macro_rules! text_conversions {
 pub(crate) use {number_form, text_conversions, text_form};
 
 /// Reads decimal digits with an optional minus sign, and checks the number against `min` and `max`.
-pub(crate) fn number(what: &'static str, text: &str, min: i64, max: u64) -> Result<i128, crate::FieldError> {
+/// A number that `T` cannot hold is out of range as well.
+pub(crate) fn number<T: TryFrom<i128>>(
+    what: &'static str,
+    text: &str,
+    min: i64,
+    max: u64,
+) -> Result<T, crate::FieldError> {
     let digits = text.strip_prefix('-').unwrap_or(text);
     if digits.is_empty() || !digits.bytes().all(|byte| byte.is_ascii_digit()) {
         return Err(crate::FieldError::malformed(what, text, "a whole number"));
     }
-    match text.parse::<i128>() {
-        Ok(number) if number >= i128::from(min) && number <= i128::from(max) => Ok(number),
-        _ => Err(crate::FieldError::out_of_range(what, text, min, max)),
-    }
+    text.parse::<i128>()
+        .ok()
+        .filter(|number| (i128::from(min)..=i128::from(max)).contains(number))
+        .and_then(|number| T::try_from(number).ok())
+        .ok_or_else(|| crate::FieldError::out_of_range(what, text, min, max))
 }
 
 #[cfg(test)]
@@ -138,21 +145,36 @@ mod tests {
         assert_eq!(number("acks", "-5", -5, 9), Ok(-5));
         assert_eq!(number("acks", "9", -5, 9), Ok(9));
         assert_eq!(number("acks", "007", -5, 9), Ok(7));
-        assert_eq!(number("connection number", "18446744073709551615", 0, u64::MAX), Ok(i128::from(u64::MAX)));
+        assert_eq!(
+            number("connection number", "18446744073709551615", 0, u64::MAX),
+            Ok(i128::from(u64::MAX))
+        );
     }
 
     #[test]
     fn a_number_outside_the_range_is_out_of_range() {
         for text in ["10", "-6", "99999999999999999999999999999999999999999999"] {
-            assert_eq!(number("acks", text, -5, 9), Err(FieldError::out_of_range("acks", text, -5, 9)), "{text:?}");
+            assert_eq!(
+                number::<i16>("acks", text, -5, 9),
+                Err(FieldError::out_of_range("acks", text, -5, 9)),
+                "{text:?}"
+            );
         }
+    }
+
+    #[test]
+    fn a_number_the_type_cannot_hold_is_out_of_range() {
+        assert_eq!(
+            number::<i16>("acks", "40000", 0, 50_000),
+            Err(FieldError::out_of_range("acks", "40000", 0, 50_000))
+        );
     }
 
     #[test]
     fn anything_else_is_malformed() {
         for text in ["", "-", "+3", " 3", "3 ", "3.0", "--1", "0x10", "all", "٣"] {
             assert_eq!(
-                number("acks", text, -5, 9),
+                number::<i16>("acks", text, -5, 9),
                 Err(FieldError::malformed("acks", text, "a whole number")),
                 "{text:?}"
             );

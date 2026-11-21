@@ -1,0 +1,6 @@
+# For rustfmt run on one file, as an editor does: it does not read the edition from Cargo.toml.
+edition = "2024"
+# The 2024 style, stated so it does not depend on how rustfmt was started.
+style_edition = "2024"
+# Kafka message names and async signatures are long, and at 100 columns too many of them wrap.
+max_width = 120

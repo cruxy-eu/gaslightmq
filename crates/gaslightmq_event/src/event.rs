@@ -40,10 +40,7 @@ pub enum Event {
         to: Option<BrokerId>,
     },
     /// The topic gets `count` more partitions.
-    PartitionAdded {
-        topic: TopicName,
-        count: PartitionCount,
-    },
+    PartitionAdded { topic: TopicName, count: PartitionCount },
     /// The topic disappears.
     TopicDeleted { topic: TopicName },
     /// `count` records arrive on the partition.
@@ -53,15 +50,9 @@ pub enum Event {
         count: RecordCount,
     },
     /// The partition's log start offset moves forward to `to`.
-    RecordsExpired {
-        partition: TopicPartition,
-        to: Offset,
-    },
+    RecordsExpired { partition: TopicPartition, to: Offset },
     /// The partition's end offset moves back to `to`, as after an unclean leader election.
-    LogTruncated {
-        partition: TopicPartition,
-        to: Offset,
-    },
+    LogTruncated { partition: TopicPartition, to: Offset },
     /// The group's committed offset on the partition becomes `to`.
     CommittedOffsetReset {
         group: GroupId,

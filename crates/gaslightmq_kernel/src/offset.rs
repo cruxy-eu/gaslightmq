@@ -45,7 +45,14 @@ mod tests {
     fn an_offset_is_between_zero_and_the_highest_i64() {
         assert_eq!(Offset::new(0).map(Offset::value), Ok(0));
         assert_eq!(Offset::new(MAX).map(Offset::value), Ok(MAX));
-        assert_eq!(Offset::new(MAX + 1), Err(KernelError::TooLarge { what: "offset", value: MAX + 1, max: MAX }));
+        assert_eq!(
+            Offset::new(MAX + 1),
+            Err(KernelError::TooLarge {
+                what: "offset",
+                value: MAX + 1,
+                max: MAX
+            })
+        );
         assert_eq!(Offset::ZERO, Offset::from(0));
     }
 
@@ -59,10 +66,26 @@ mod tests {
         assert_eq!(Offset::try_from(i64::MAX).map(Offset::value), Ok(MAX));
         assert_eq!(
             Offset::try_from(u64::MAX),
-            Err(KernelError::TooLarge { what: "offset", value: u64::MAX, max: MAX })
+            Err(KernelError::TooLarge {
+                what: "offset",
+                value: u64::MAX,
+                max: MAX
+            })
         );
-        assert_eq!(Offset::try_from(-1_i64), Err(KernelError::Negative { what: "offset", value: -1 }));
-        assert_eq!(Offset::try_from(i64::MIN), Err(KernelError::Negative { what: "offset", value: i64::MIN }));
+        assert_eq!(
+            Offset::try_from(-1_i64),
+            Err(KernelError::Negative {
+                what: "offset",
+                value: -1
+            })
+        );
+        assert_eq!(
+            Offset::try_from(i64::MIN),
+            Err(KernelError::Negative {
+                what: "offset",
+                value: i64::MIN
+            })
+        );
     }
 
     #[test]
@@ -80,7 +103,13 @@ mod tests {
         assert_eq!(Offset::from_wire(-1), Ok(None));
         assert_eq!(Offset::from_wire(0), Ok(Some(Offset::ZERO)));
         assert_eq!(Offset::from_wire(42), Ok(Some(Offset::from(42))));
-        assert_eq!(Offset::from_wire(-2), Err(KernelError::Negative { what: "offset", value: -2 }));
+        assert_eq!(
+            Offset::from_wire(-2),
+            Err(KernelError::Negative {
+                what: "offset",
+                value: -2
+            })
+        );
         assert_eq!(Offset::to_wire(None), -1);
         assert_eq!(Offset::to_wire(Some(Offset::from(42))), 42);
     }
@@ -89,14 +118,33 @@ mod tests {
     fn an_offset_reads_and_prints_decimal_digits() {
         assert_eq!("42".parse::<Offset>(), Ok(Offset::from(42)));
         assert_eq!(Offset::from(42).to_string(), "42");
-        assert_eq!(format!("{:>4}|{:?}", Offset::from(42), Offset::from(42)), "  42|Offset(42)");
+        assert_eq!(
+            format!("{:>4}|{:?}", Offset::from(42), Offset::from(42)),
+            "  42|Offset(42)"
+        );
         assert_eq!(MAX.to_string().parse::<Offset>().map(Offset::value), Ok(MAX));
         assert_eq!(
             "9223372036854775808".parse::<Offset>(),
-            Err(KernelError::TooLarge { what: "offset", value: MAX + 1, max: MAX })
+            Err(KernelError::TooLarge {
+                what: "offset",
+                value: MAX + 1,
+                max: MAX
+            })
         );
-        assert_eq!("-1".parse::<Offset>(), Err(KernelError::Negative { what: "offset", value: -1 }));
-        assert_eq!("latest".parse::<Offset>(), Err(KernelError::NotANumber { what: "offset", input: "latest".into() }));
+        assert_eq!(
+            "-1".parse::<Offset>(),
+            Err(KernelError::Negative {
+                what: "offset",
+                value: -1
+            })
+        );
+        assert_eq!(
+            "latest".parse::<Offset>(),
+            Err(KernelError::NotANumber {
+                what: "offset",
+                input: "latest".into()
+            })
+        );
         assert_eq!("".parse::<Offset>(), Err(KernelError::Empty { what: "offset" }));
     }
 

@@ -65,7 +65,10 @@ impl FromStr for ConnectionNumber {
         if digits.is_empty() || !digits.bytes().all(|byte| byte.is_ascii_digit()) {
             return Err(FieldError::malformed(Self::WHAT, text, "#N"));
         }
-        digits.parse().map(Self).map_err(|_| FieldError::out_of_range(Self::WHAT, text, 0, u64::MAX))
+        digits
+            .parse()
+            .map(Self)
+            .map_err(|_| FieldError::out_of_range(Self::WHAT, text, 0, u64::MAX))
     }
 }
 
@@ -140,7 +143,11 @@ impl FromStr for ClientAddress {
 
     fn from_str(text: &str) -> Result<Self, Self::Err> {
         text.parse::<SocketAddr>().map(Self::new).map_err(|_| {
-            FieldError::malformed("client address", text, "an IP address and a port, such as 10.0.4.27:51459")
+            FieldError::malformed(
+                "client address",
+                text,
+                "an IP address and a port, such as 10.0.4.27:51459",
+            )
         })
     }
 }
@@ -320,6 +327,11 @@ impl ClientSoftware {
     const FORM: &'static str = "a name and a version, such as librdkafka 2.6.1";
 
     /// Check the name and the version, and keep them.
+    ///
+    /// # Errors
+    ///
+    /// [`FieldError::Malformed`] when the name or the version is empty,
+    /// or holds whitespace or a control character.
     pub fn new(name: impl AsRef<str>, version: impl AsRef<str>) -> Result<Self, FieldError> {
         let (name, version) = (name.as_ref(), version.as_ref());
         let text = format!("{name} {version}");
@@ -327,7 +339,10 @@ impl ClientSoftware {
         if !valid(name) || !valid(version) {
             return Err(FieldError::malformed(Self::WHAT, &text, Self::FORM));
         }
-        Ok(Self { text: text.into(), name_len: name.len() })
+        Ok(Self {
+            text: text.into(),
+            name_len: name.len(),
+        })
     }
 
     /// The name of the client library, such as `librdkafka`.
@@ -401,7 +416,12 @@ mod tests {
         }
         assert_eq!(
             "#18446744073709551616".parse::<ConnectionNumber>(),
-            Err(FieldError::out_of_range("connection number", "#18446744073709551616", 0, u64::MAX))
+            Err(FieldError::out_of_range(
+                "connection number",
+                "#18446744073709551616",
+                0,
+                u64::MAX
+            ))
         );
     }
 
@@ -417,7 +437,10 @@ mod tests {
         assert_eq!(address.to_string(), "10.0.4.27:51459");
         assert_eq!(address.host(), ClientHost::new(IpAddr::V4(Ipv4Addr::new(10, 0, 4, 27))));
         assert_eq!(address.port(), 51459);
-        assert_eq!(SocketAddr::from(address), "10.0.4.27:51459".parse::<SocketAddr>().unwrap());
+        assert_eq!(
+            SocketAddr::from(address),
+            "10.0.4.27:51459".parse::<SocketAddr>().unwrap()
+        );
         assert_eq!(address.socket_addr(), SocketAddr::from(address));
     }
 
@@ -450,11 +473,22 @@ mod tests {
 
     #[test]
     fn a_client_address_needs_an_ip_address_and_a_port() {
-        for text in ["", "10.0.4.27", "10.0.4.27:", ":51459", "localhost:9092", "10.0.4.27:99999", "2001:db8::1:51459x"]
-        {
+        for text in [
+            "",
+            "10.0.4.27",
+            "10.0.4.27:",
+            ":51459",
+            "localhost:9092",
+            "10.0.4.27:99999",
+            "2001:db8::1:51459x",
+        ] {
             assert_eq!(
                 text.parse::<ClientAddress>(),
-                Err(FieldError::malformed("client address", text, "an IP address and a port, such as 10.0.4.27:51459")),
+                Err(FieldError::malformed(
+                    "client address",
+                    text,
+                    "an IP address and a port, such as 10.0.4.27:51459"
+                )),
                 "{text:?}"
             );
         }
@@ -469,7 +503,11 @@ mod tests {
         for text in ["", "localhost", "10.0.4", "10.0.4.27:51459", "10.0.4.*"] {
             assert_eq!(
                 text.parse::<ClientHost>(),
-                Err(FieldError::malformed("client host", text, "an IP address, such as 10.0.4.27")),
+                Err(FieldError::malformed(
+                    "client host",
+                    text,
+                    "an IP address, such as 10.0.4.27"
+                )),
                 "{text:?}"
             );
         }
@@ -500,21 +538,33 @@ mod tests {
     fn the_broker_of_an_endpoint_is_a_broker_id() {
         assert_eq!(
             "broker -1".parse::<Endpoint>(),
-            Err(FieldError::Kernel(KernelError::Negative { what: "broker ID", value: -1 }))
+            Err(FieldError::Kernel(KernelError::Negative {
+                what: "broker ID",
+                value: -1
+            }))
         );
         assert_eq!(
             "broker  2".parse::<Endpoint>(),
-            Err(FieldError::Kernel(KernelError::NotANumber { what: "broker ID", input: " 2".to_owned() }))
+            Err(FieldError::Kernel(KernelError::NotANumber {
+                what: "broker ID",
+                input: " 2".to_owned()
+            }))
         );
     }
 
     #[test]
     fn the_bootstrap_endpoint_comes_before_the_brokers() {
-        let mut endpoints =
-            [Endpoint::Broker(BrokerId::from(2)), Endpoint::Bootstrap, Endpoint::Broker(BrokerId::from(1))];
+        let mut endpoints = [
+            Endpoint::Broker(BrokerId::from(2)),
+            Endpoint::Bootstrap,
+            Endpoint::Broker(BrokerId::from(1)),
+        ];
         endpoints.sort();
 
-        assert_eq!(endpoints.map(|endpoint| endpoint.to_string()), ["bootstrap", "broker 1", "broker 2"]);
+        assert_eq!(
+            endpoints.map(|endpoint| endpoint.to_string()),
+            ["bootstrap", "broker 1", "broker 2"]
+        );
     }
 
     #[test]
@@ -532,16 +582,33 @@ mod tests {
     #[test]
     fn client_software_needs_a_name_and_a_version_without_whitespace() {
         let malformed = |text: &str| {
-            Err(FieldError::malformed("client software", text, "a name and a version, such as librdkafka 2.6.1"))
+            Err(FieldError::malformed(
+                "client software",
+                text,
+                "a name and a version, such as librdkafka 2.6.1",
+            ))
         };
 
-        for text in ["", "librdkafka", " 2.6.1", "librdkafka ", "librdkafka  2.6.1", "librdkafka 2.6.1 beta", "a\tb c"]
-        {
+        for text in [
+            "",
+            "librdkafka",
+            " 2.6.1",
+            "librdkafka ",
+            "librdkafka  2.6.1",
+            "librdkafka 2.6.1 beta",
+            "a\tb c",
+        ] {
             assert_eq!(text.parse::<ClientSoftware>(), malformed(text), "{text:?}");
         }
-        assert_eq!(ClientSoftware::new("lib rdkafka", "2.6.1"), malformed("lib rdkafka 2.6.1"));
+        assert_eq!(
+            ClientSoftware::new("lib rdkafka", "2.6.1"),
+            malformed("lib rdkafka 2.6.1")
+        );
         assert_eq!(ClientSoftware::new("librdkafka", ""), malformed("librdkafka "));
-        assert_eq!(ClientSoftware::new("librdkafka", "2.6\u{0}"), malformed("librdkafka 2.6\u{0}"));
+        assert_eq!(
+            ClientSoftware::new("librdkafka", "2.6\u{0}"),
+            malformed("librdkafka 2.6\u{0}")
+        );
     }
 
     #[test]

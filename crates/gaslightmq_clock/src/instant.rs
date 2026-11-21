@@ -28,11 +28,7 @@ use crate::TimeSpan;
 /// assert_eq!(arrived - answered, Duration::ZERO);
 /// ```
 #[derive(Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
-#[cfg_attr(
-    feature = "serde",
-    derive(serde::Serialize, serde::Deserialize),
-    serde(transparent)
-)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize), serde(transparent))]
 pub struct Instant(u64);
 
 impl Instant {
@@ -158,10 +154,7 @@ mod tests {
         assert_eq!(late + Duration::from_nanos(1), Instant::MAX);
         assert_eq!(late + Duration::from_nanos(2), Instant::MAX);
         assert_eq!(Instant::ZERO + Duration::MAX, Instant::MAX);
-        assert_eq!(
-            Instant::ZERO + TimeSpan::from_millis(u64::MAX),
-            Instant::MAX
-        );
+        assert_eq!(Instant::ZERO + TimeSpan::from_millis(u64::MAX), Instant::MAX);
         assert_eq!(Instant::MAX + Duration::ZERO, Instant::MAX);
 
         let mut at = Instant::MAX;
@@ -172,10 +165,7 @@ mod tests {
     #[test]
     fn checked_add_reports_an_instant_beyond_the_last() {
         let late = Instant::from_nanos(u64::MAX - 1);
-        assert_eq!(
-            late.checked_add(Duration::from_nanos(1)),
-            Some(Instant::MAX)
-        );
+        assert_eq!(late.checked_add(Duration::from_nanos(1)), Some(Instant::MAX));
         assert_eq!(late.checked_add(Duration::from_nanos(2)), None);
         assert_eq!(Instant::ZERO.checked_add(Duration::MAX), None);
         assert_eq!(
@@ -210,10 +200,7 @@ mod tests {
             answered.checked_duration_since(arrived),
             Some(Duration::from_nanos(750))
         );
-        assert_eq!(
-            arrived.checked_duration_since(arrived),
-            Some(Duration::ZERO)
-        );
+        assert_eq!(arrived.checked_duration_since(arrived), Some(Duration::ZERO));
         assert_eq!(arrived.checked_duration_since(answered), None);
     }
 

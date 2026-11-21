@@ -70,6 +70,10 @@ macro_rules! field_values {
             /// The text has to be a value of the field's type:
             /// `Produce` is a value of `api`, and `Prodcue` is an error instead of a selector that never matches.
             /// A pattern such as `orders.*` is not a value, and whoever reads a selector tells the two apart.
+            ///
+            /// # Errors
+            ///
+            /// The [`FieldError`] of the field's type, when `text` is not a value of it.
             pub fn parse_value(self, text: &str) -> Result<FieldValue, FieldError> {
                 match self {
                     $(Field::$variant => Ok(FieldValue::$variant(text.parse::<$type>()?)),)*
@@ -248,7 +252,11 @@ impl FieldValues {
     /// The one value of a field.
     pub fn one(value: impl Into<FieldValue>) -> Self {
         let value = value.into();
-        Self { field: value.field(), values: Values::One(value), origin: Origin::Call }
+        Self {
+            field: value.field(),
+            values: Values::One(value),
+            origin: Origin::Call,
+        }
     }
 
     /// The values of a field that the call or its session provides, or `None` when there is none.
@@ -268,7 +276,11 @@ impl FieldValues {
         values.dedup();
         let field = values.first()?.field();
         debug_assert!(values.iter().all(|value| value.field() == field));
-        let values = if values.len() > 1 { Values::Many(values) } else { Values::One(values.pop()?) };
+        let values = if values.len() > 1 {
+            Values::Many(values)
+        } else {
+            Values::One(values.pop()?)
+        };
         Some(Self { field, values, origin })
     }
 
@@ -337,11 +349,17 @@ mod tests {
     fn examples() -> Vec<(FieldValue, &'static str)> {
         vec![
             (ConnectionNumber::new(7).into(), "#7"),
-            ("10.0.4.27:51459".parse::<ClientAddress>().unwrap().into(), "10.0.4.27:51459"),
+            (
+                "10.0.4.27:51459".parse::<ClientAddress>().unwrap().into(),
+                "10.0.4.27:51459",
+            ),
             ("10.0.4.27".parse::<ClientHost>().unwrap().into(), "10.0.4.27"),
             (Endpoint::Broker(BrokerId::from(2)).into(), "broker 2"),
             (ClientId::new("order-ingest").unwrap().into(), "order-ingest"),
-            (ClientSoftware::new("librdkafka", "2.6.1").unwrap().into(), "librdkafka 2.6.1"),
+            (
+                ClientSoftware::new("librdkafka", "2.6.1").unwrap().into(),
+                "librdkafka 2.6.1",
+            ),
             (ApiKey::PRODUCE.into(), "Produce"),
             (ApiVersion::from(11).into(), "11"),
             (TopicName::new("orders.eu").unwrap().into(), "orders.eu"),
@@ -411,11 +429,18 @@ mod tests {
     fn the_error_of_a_kernel_type_names_that_type() {
         assert_eq!(
             Field::Topic.parse_value("orders/eu"),
-            Err(FieldError::Kernel(KernelError::InvalidCharacter { what: "topic name", character: '/', position: 6 }))
+            Err(FieldError::Kernel(KernelError::InvalidCharacter {
+                what: "topic name",
+                character: '/',
+                position: 6
+            }))
         );
         assert_eq!(
             Field::Api.parse_value("Prodcue"),
-            Err(FieldError::Kernel(KernelError::UnknownName { what: "API key", input: "Prodcue".to_owned() }))
+            Err(FieldError::Kernel(KernelError::UnknownName {
+                what: "API key",
+                input: "Prodcue".to_owned()
+            }))
         );
     }
 
@@ -456,12 +481,18 @@ mod tests {
         assert_eq!((&values).into_iter().count(), 2);
         assert!(values.contains(&topic("orders.eu").into()));
         assert!(!values.contains(&topic("orders.us").into()));
-        assert_eq!(values, FieldValues::of([topic("orders.eu"), topic("payments.settled")]).unwrap());
+        assert_eq!(
+            values,
+            FieldValues::of([topic("orders.eu"), topic("payments.settled")]).unwrap()
+        );
     }
 
     #[test]
     fn several_equal_values_are_one_value() {
-        assert_eq!(FieldValues::of([ApiKey::FETCH, ApiKey::FETCH]), Some(FieldValues::one(ApiKey::FETCH)));
+        assert_eq!(
+            FieldValues::of([ApiKey::FETCH, ApiKey::FETCH]),
+            Some(FieldValues::one(ApiKey::FETCH))
+        );
     }
 
     #[test]

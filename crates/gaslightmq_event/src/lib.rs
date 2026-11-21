@@ -149,8 +149,7 @@ pub use requirement::{Requirement, Requirements};
 pub mod prelude {
     #[doc(no_inline)]
     pub use crate::{
-        Capabilities, Consequence, Coordinator, Event, EventDefinition, EventError, EventKind,
-        ExpandedEvent, PartitionCount, RecordCount, Requirement, Requirements, Subjects, Support,
-        Topology, UnsupportedEvents,
+        Capabilities, Consequence, Coordinator, Event, EventDefinition, EventError, EventKind, ExpandedEvent,
+        PartitionCount, RecordCount, Requirement, Requirements, Subjects, Support, Topology, UnsupportedEvents,
     };
 }

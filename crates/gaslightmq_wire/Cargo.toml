@@ -3,6 +3,9 @@ name = "gaslightmq_wire"
 version.workspace = true
 edition.workspace = true
 
+[lints]
+workspace = true
+
 [dependencies]
 bytes.workspace = true
 indexmap.workspace = true

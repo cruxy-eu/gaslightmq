@@ -10,16 +10,9 @@ pub enum EventError {
     UnknownEvent { name: String },
     /// The event needs a `subject`, such as a partition or a group.
     /// The definition names none, and the call that fired it offers none.
-    MissingSubject {
-        event: EventKind,
-        subject: &'static str,
-    },
+    MissingSubject { event: EventKind, subject: &'static str },
     /// The count is zero, or above the highest `what`.
-    CountOutOfRange {
-        what: &'static str,
-        value: u64,
-        max: u64,
-    },
+    CountOutOfRange { what: &'static str, value: u64, max: u64 },
 }
 
 impl fmt::Display for EventError {

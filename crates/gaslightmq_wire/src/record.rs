@@ -30,34 +30,51 @@ pub struct Record {
 
 impl Record {
     pub fn new(value: impl Into<Bytes>) -> Self {
-        Self { value: Some(value.into()), ..Self::empty() }
+        Self {
+            value: Some(value.into()),
+            ..Self::empty()
+        }
     }
 
     /// A record without a value, which a compacted topic reads as a tombstone.
     pub fn empty() -> Self {
-        Self { key: None, value: None, headers: Vec::new(), offset: None, timestamp: None }
+        Self {
+            key: None,
+            value: None,
+            headers: Vec::new(),
+            offset: None,
+            timestamp: None,
+        }
     }
 
+    #[must_use]
     pub fn with_key(mut self, key: impl Into<Bytes>) -> Self {
         self.key = Some(key.into());
         self
     }
 
+    #[must_use]
     pub fn with_header(mut self, key: impl Into<String>, value: impl Into<Bytes>) -> Self {
-        self.headers.push(RecordHeader { key: key.into(), value: Some(value.into()) });
+        self.headers.push(RecordHeader {
+            key: key.into(),
+            value: Some(value.into()),
+        });
         self
     }
 
+    #[must_use]
     pub fn with_headers(mut self, headers: Vec<RecordHeader>) -> Self {
         self.headers = headers;
         self
     }
 
+    #[must_use]
     pub fn with_offset(mut self, offset: impl Into<Offset>) -> Self {
         self.offset = Some(offset.into());
         self
     }
 
+    #[must_use]
     pub fn with_timestamp(mut self, timestamp: i64) -> Self {
         self.timestamp = Some(timestamp);
         self
@@ -78,9 +95,13 @@ pub struct RecordBatch {
 impl RecordBatch {
     /// An uncompressed batch.
     pub fn new(records: impl Into<Vec<Record>>) -> Self {
-        Self { records: records.into(), compression: Compression::None }
+        Self {
+            records: records.into(),
+            compression: Compression::None,
+        }
     }
 
+    #[must_use]
     pub fn with_compression(mut self, compression: Compression) -> Self {
         self.compression = compression;
         self
@@ -91,14 +112,26 @@ impl RecordBatch {
     /// A record without an offset continues from the first record's offset,
     /// or from 0. A record without a timestamp gets 0. A batch without
     /// records encodes to no bytes, because the format has no empty batch.
+    ///
+    /// # Errors
+    ///
+    /// [`WireError::Encode`] when a record is too large for the format, or
+    /// compressing the batch fails.
     pub fn encode(&self) -> Result<Bytes, WireError> {
         if self.records.is_empty() {
             return Ok(Bytes::new());
         }
         let base = self.records[0].offset.map_or(0, i64::from);
-        let records: Vec<KafkaRecord> =
-            self.records.iter().enumerate().map(|(i, record)| to_kafka(record, base + i as i64, i as i32)).collect();
-        let options = RecordEncodeOptions { version: 2, compression: self.compression };
+        let records: Vec<KafkaRecord> = self
+            .records
+            .iter()
+            .zip(0i32..)
+            .map(|(record, sequence)| to_kafka(record, base + i64::from(sequence), sequence))
+            .collect();
+        let options = RecordEncodeOptions {
+            version: 2,
+            compression: self.compression,
+        };
         let mut out = BytesMut::new();
         RecordBatchEncoder::encode(&mut out, &records, &options).map_err(|e| WireError::encode("record batch", e))?;
         Ok(out.freeze())
@@ -110,6 +143,11 @@ impl RecordBatch {
     /// cut it off at the size the client asked for. That last piece is
     /// skipped, as a Kafka client skips it. A batch that is all there and
     /// does not decode is an error.
+    ///
+    /// # Errors
+    ///
+    /// [`WireError::Decode`] when a batch announces a negative length, or is
+    /// all there and does not decode.
     pub fn decode_all(bytes: &Bytes) -> Result<Vec<Self>, WireError> {
         /// A batch starts with its base offset (8 bytes) and the length of the rest (4 bytes).
         const PREFIX: usize = 12;
@@ -125,7 +163,10 @@ impl RecordBatch {
             }
             let mut batch = rest.split_to(PREFIX + len);
             let set = RecordBatchDecoder::decode(&mut batch).map_err(|e| WireError::decode("record batch", e))?;
-            batches.push(Self { records: set.records.iter().map(from_kafka).collect(), compression: set.compression });
+            batches.push(Self {
+                records: set.records.iter().map(from_kafka).collect(),
+                compression: set.compression,
+            });
         }
         Ok(batches)
     }
@@ -165,7 +206,10 @@ fn from_kafka(record: &KafkaRecord) -> Record {
         headers: record
             .headers
             .iter()
-            .map(|(key, value)| RecordHeader { key: key.to_string(), value: value.clone() })
+            .map(|(key, value)| RecordHeader {
+                key: key.to_string(),
+                value: value.clone(),
+            })
             .collect(),
         offset: Some(Offset::from(record.offset)),
         timestamp: Some(record.timestamp),
@@ -197,15 +241,18 @@ impl From<Partition> for u32 {
     }
 }
 
+/// From the number on the wire, which is signed. The bits are kept, so a
+/// negative number converts back to itself.
 impl From<i32> for Partition {
     fn from(v: i32) -> Self {
-        Self(v as u32)
+        Self(v.cast_unsigned())
     }
 }
 
+/// To the number on the wire, which is signed. The bits are kept.
 impl From<Partition> for i32 {
     fn from(p: Partition) -> Self {
-        p.0 as i32
+        p.0.cast_signed()
     }
 }
 
@@ -240,15 +287,19 @@ impl From<Offset> for u64 {
     }
 }
 
+/// From the number on the wire, which is signed. The bits are kept, so a
+/// negative number such as the `-1` of a failed Produce converts back to
+/// itself.
 impl From<i64> for Offset {
     fn from(v: i64) -> Self {
-        Self(v as u64)
+        Self(v.cast_unsigned())
     }
 }
 
+/// To the number on the wire, which is signed. The bits are kept.
 impl From<Offset> for i64 {
     fn from(o: Offset) -> Self {
-        o.0 as i64
+        o.0.cast_signed()
     }
 }
 
@@ -264,7 +315,10 @@ mod tests {
 
     fn orders() -> Vec<Record> {
         vec![
-            Record::new("a").with_key("k1").with_header("trace", "t-1").with_timestamp(1_000),
+            Record::new("a")
+                .with_key("k1")
+                .with_header("trace", "t-1")
+                .with_timestamp(1_000),
             Record::new("b").with_timestamp(1_001),
             Record::empty().with_key("k1").with_timestamp(1_002),
         ]
@@ -277,14 +331,21 @@ mod tests {
         let batches = RecordBatch::decode_all(&bytes).unwrap();
 
         assert_eq!(batches.len(), 1);
-        let expected: Vec<Record> = orders().into_iter().enumerate().map(|(i, r)| r.with_offset(i as u64)).collect();
+        let expected: Vec<Record> = orders()
+            .into_iter()
+            .enumerate()
+            .map(|(i, r)| r.with_offset(i as u64))
+            .collect();
         assert_eq!(batches[0].records, expected);
         assert_eq!(batches[0].compression, Compression::None);
     }
 
     #[test]
     fn compressed_batch_decodes_too() {
-        let bytes = RecordBatch::new(orders()).with_compression(Compression::Gzip).encode().unwrap();
+        let bytes = RecordBatch::new(orders())
+            .with_compression(Compression::Gzip)
+            .encode()
+            .unwrap();
 
         let batches = RecordBatch::decode_all(&bytes).unwrap();
 
@@ -294,7 +355,11 @@ mod tests {
 
     #[test]
     fn offsets_continue_from_the_first_record() {
-        let batch = RecordBatch::new(vec![Record::new("a").with_offset(40u64), Record::new("b"), Record::new("c")]);
+        let batch = RecordBatch::new(vec![
+            Record::new("a").with_offset(40u64),
+            Record::new("b"),
+            Record::new("c"),
+        ]);
 
         let decoded = RecordBatch::decode_all(&batch.encode().unwrap()).unwrap();
 
@@ -306,11 +371,19 @@ mod tests {
     fn decodes_every_batch_of_a_field() {
         let mut field = BytesMut::new();
         field.extend_from_slice(&RecordBatch::new(vec![Record::new("a")]).encode().unwrap());
-        field.extend_from_slice(&RecordBatch::new(vec![Record::new("b").with_offset(1u64)]).encode().unwrap());
+        field.extend_from_slice(
+            &RecordBatch::new(vec![Record::new("b").with_offset(1u64)])
+                .encode()
+                .unwrap(),
+        );
 
         let batches = RecordBatch::decode_all(&field.freeze()).unwrap();
 
-        let values: Vec<_> = batches.iter().flat_map(|b| &b.records).map(|r| r.value.clone().unwrap()).collect();
+        let values: Vec<_> = batches
+            .iter()
+            .flat_map(|b| &b.records)
+            .map(|r| r.value.clone().unwrap())
+            .collect();
         assert_eq!(values, ["a", "b"]);
     }
 
@@ -331,7 +404,13 @@ mod tests {
         let last = bytes.len() - 1;
         bytes[last] ^= 0xFF;
 
-        assert!(matches!(RecordBatch::decode_all(&bytes.freeze()), Err(WireError::Decode { what: "record batch", .. })));
+        assert!(matches!(
+            RecordBatch::decode_all(&bytes.freeze()),
+            Err(WireError::Decode {
+                what: "record batch",
+                ..
+            })
+        ));
     }
 
     #[test]

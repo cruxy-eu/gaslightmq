@@ -165,8 +165,14 @@ mod tests {
         assert_eq!(ApiKey::PRODUCE.to_string(), "Produce");
         assert_eq!(ApiKey::from(4711).to_string(), "4711");
         assert_eq!(ApiKey::from(-1).to_string(), "-1");
-        assert_eq!(format!("{:>9}|{:>6}|", ApiKey::PRODUCE, ApiKey::from(4711)), "  Produce|  4711|");
-        assert_eq!(format!("{:?} {:?}", ApiKey::PRODUCE, ApiKey::from(4711)), "ApiKey(Produce) ApiKey(4711)");
+        assert_eq!(
+            format!("{:>9}|{:>6}|", ApiKey::PRODUCE, ApiKey::from(4711)),
+            "  Produce|  4711|"
+        );
+        assert_eq!(
+            format!("{:?} {:?}", ApiKey::PRODUCE, ApiKey::from(4711)),
+            "ApiKey(Produce) ApiKey(4711)"
+        );
     }
 
     #[test]
@@ -185,18 +191,29 @@ mod tests {
         for text in ["Prodcue", "produce", "PRODUCE", "Produce ", "ProduceRequest"] {
             assert_eq!(
                 text.parse::<ApiKey>(),
-                Err(KernelError::UnknownName { what: "API key", input: text.to_owned() }),
+                Err(KernelError::UnknownName {
+                    what: "API key",
+                    input: text.to_owned()
+                }),
                 "{text:?}"
             );
         }
         assert_eq!("".parse::<ApiKey>(), Err(KernelError::Empty { what: "API key" }));
         assert_eq!(
             "32768".parse::<ApiKey>(),
-            Err(KernelError::TooLarge { what: "API key", value: 32_768, max: 32_767 })
+            Err(KernelError::TooLarge {
+                what: "API key",
+                value: 32_768,
+                max: 32_767
+            })
         );
         assert_eq!(
             "-32769".parse::<ApiKey>(),
-            Err(KernelError::TooSmall { what: "API key", value: -32_769, min: -32_768 })
+            Err(KernelError::TooSmall {
+                what: "API key",
+                value: -32_769,
+                min: -32_768
+            })
         );
     }
 

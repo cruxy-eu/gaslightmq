@@ -15,11 +15,7 @@ use core::fmt;
 /// assert!(Speed::times(0).is_paused());
 /// ```
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
-#[cfg_attr(
-    feature = "serde",
-    derive(serde::Serialize, serde::Deserialize),
-    serde(transparent)
-)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize), serde(transparent))]
 pub struct Speed(u32);
 
 impl Speed {
@@ -100,10 +96,7 @@ mod tests {
     #[test]
     fn serde_maps_a_speed_to_its_factor() {
         assert_eq!(serde_json::to_string(&Speed::times(60)).unwrap(), "60");
-        assert_eq!(
-            serde_json::from_str::<Speed>("60").unwrap(),
-            Speed::times(60)
-        );
+        assert_eq!(serde_json::from_str::<Speed>("60").unwrap(), Speed::times(60));
         assert_eq!(serde_json::from_str::<Speed>("0").unwrap(), Speed::PAUSED);
         assert!(serde_json::from_str::<Speed>("-1").is_err());
         assert!(serde_json::from_str::<Speed>("1.5").is_err());

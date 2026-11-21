@@ -67,8 +67,15 @@ pub(crate) use error_codes;
 
 impl ErrorCode {
     /// Keep `code` as an error code, unless it is zero.
+    ///
+    /// # Errors
+    ///
+    /// [`KernelError::Reserved`] when `code` is zero.
     pub fn new(code: i16) -> Result<Self, KernelError> {
-        Self::from_wire(code).ok_or_else(|| KernelError::Reserved { what: WHAT, value: code.to_string() })
+        Self::from_wire(code).ok_or_else(|| KernelError::Reserved {
+            what: WHAT,
+            value: code.to_string(),
+        })
     }
 
     /// A code of the name table, which holds no zero.
@@ -131,7 +138,10 @@ impl FromStr for ErrorCode {
 
     fn from_str(text: &str) -> Result<Self, Self::Err> {
         if text == NONE {
-            return Err(KernelError::Reserved { what: WHAT, value: NONE.to_owned() });
+            return Err(KernelError::Reserved {
+                what: WHAT,
+                value: NONE.to_owned(),
+            });
         }
         Self::new(code::parse(WHAT, Self::NAMES, text)?)
     }
@@ -177,14 +187,20 @@ mod tests {
 
     #[test]
     fn zero_is_no_error_code() {
-        let reserved = KernelError::Reserved { what: "error code", value: "0".into() };
+        let reserved = KernelError::Reserved {
+            what: "error code",
+            value: "0".into(),
+        };
 
         assert_eq!(ErrorCode::new(0), Err(reserved.clone()));
         assert_eq!(ErrorCode::try_from(0), Err(reserved.clone()));
         assert_eq!("0".parse::<ErrorCode>(), Err(reserved));
         assert_eq!(
             "NONE".parse::<ErrorCode>(),
-            Err(KernelError::Reserved { what: "error code", value: "NONE".into() })
+            Err(KernelError::Reserved {
+                what: "error code",
+                value: "NONE".into()
+            })
         );
         assert!(ErrorCode::known().all(|code| code.value() != 0));
     }
@@ -228,7 +244,10 @@ mod tests {
         assert_eq!(ErrorCode::NOT_LEADER_OR_FOLLOWER.to_string(), "NOT_LEADER_OR_FOLLOWER");
         assert_eq!(code(999).to_string(), "999");
         assert_eq!(code(-2).to_string(), "-2");
-        assert_eq!(format!("{:>19}|{:>5}|", ErrorCode::REQUEST_TIMED_OUT, code(999)), "  REQUEST_TIMED_OUT|  999|");
+        assert_eq!(
+            format!("{:>19}|{:>5}|", ErrorCode::REQUEST_TIMED_OUT, code(999)),
+            "  REQUEST_TIMED_OUT|  999|"
+        );
         assert_eq!(
             format!("{:?} {:?}", ErrorCode::REQUEST_TIMED_OUT, code(999)),
             "ErrorCode(REQUEST_TIMED_OUT) ErrorCode(999)"
@@ -237,28 +256,50 @@ mod tests {
 
     #[test]
     fn an_error_code_reads_a_name_or_a_number() {
-        assert_eq!("NOT_LEADER_OR_FOLLOWER".parse::<ErrorCode>(), Ok(ErrorCode::NOT_LEADER_OR_FOLLOWER));
+        assert_eq!(
+            "NOT_LEADER_OR_FOLLOWER".parse::<ErrorCode>(),
+            Ok(ErrorCode::NOT_LEADER_OR_FOLLOWER)
+        );
         assert_eq!("6".parse::<ErrorCode>(), Ok(ErrorCode::NOT_LEADER_OR_FOLLOWER));
         assert_eq!("-1".parse::<ErrorCode>(), Ok(ErrorCode::UNKNOWN_SERVER_ERROR));
         assert_eq!("999".parse::<ErrorCode>(), Ok(code(999)));
-        assert_eq!(ErrorCode::try_from("REQUEST_TIMED_OUT"), Ok(ErrorCode::REQUEST_TIMED_OUT));
-        assert_eq!(ErrorCode::try_from(String::from("REQUEST_TIMED_OUT")), Ok(ErrorCode::REQUEST_TIMED_OUT));
+        assert_eq!(
+            ErrorCode::try_from("REQUEST_TIMED_OUT"),
+            Ok(ErrorCode::REQUEST_TIMED_OUT)
+        );
+        assert_eq!(
+            ErrorCode::try_from(String::from("REQUEST_TIMED_OUT")),
+            Ok(ErrorCode::REQUEST_TIMED_OUT)
+        );
         assert_eq!(String::from(ErrorCode::REQUEST_TIMED_OUT), "REQUEST_TIMED_OUT");
     }
 
     #[test]
     fn an_error_code_does_not_read_a_name_kafka_does_not_have() {
-        for text in ["NOT_LEADER", "not_leader_or_follower", "NotLeaderOrFollower", "none", "None"] {
+        for text in [
+            "NOT_LEADER",
+            "not_leader_or_follower",
+            "NotLeaderOrFollower",
+            "none",
+            "None",
+        ] {
             assert_eq!(
                 text.parse::<ErrorCode>(),
-                Err(KernelError::UnknownName { what: "error code", input: text.to_owned() }),
+                Err(KernelError::UnknownName {
+                    what: "error code",
+                    input: text.to_owned()
+                }),
                 "{text:?}"
             );
         }
         assert_eq!("".parse::<ErrorCode>(), Err(KernelError::Empty { what: "error code" }));
         assert_eq!(
             "32768".parse::<ErrorCode>(),
-            Err(KernelError::TooLarge { what: "error code", value: 32_768, max: 32_767 })
+            Err(KernelError::TooLarge {
+                what: "error code",
+                value: 32_768,
+                max: 32_767
+            })
         );
     }
 
@@ -274,7 +315,10 @@ mod tests {
 
     #[test]
     fn every_code_without_a_name_reads_what_it_prints() {
-        for code in (i16::MIN..=i16::MAX).filter_map(ErrorCode::from_wire).filter(|code| !code.is_known()) {
+        for code in (i16::MIN..=i16::MAX)
+            .filter_map(ErrorCode::from_wire)
+            .filter(|code| !code.is_known())
+        {
             assert_eq!(code.to_string(), code.value().to_string());
             assert_eq!(code.to_string().parse::<ErrorCode>(), Ok(code));
         }

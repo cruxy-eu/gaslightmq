@@ -28,7 +28,9 @@ const COMMAND: &str = "GASLIGHTMQ_UPDATE_NAMES=1 cargo test -p gaslightmq_wire -
 
 /// Every API of `kafka-protocol`: its key, and its name as `kafka-protocol` spells it.
 fn apis() -> Vec<(i16, String)> {
-    KafkaApiKey::iter().map(|key| (key as i16, format!("{key:?}"))).collect()
+    KafkaApiKey::iter()
+        .map(|key| (key as i16, format!("{key:?}")))
+        .collect()
 }
 
 /// Every error of `kafka-protocol`: its code, and its name as `kafka-protocol` spells it.
@@ -68,7 +70,10 @@ fn camel(shouting: &str) -> String {
         .split('_')
         .flat_map(|word| {
             let mut letters = word.chars();
-            letters.next().into_iter().chain(letters.map(|letter| letter.to_ascii_lowercase()))
+            letters
+                .next()
+                .into_iter()
+                .chain(letters.map(|letter| letter.to_ascii_lowercase()))
         })
         .collect()
 }

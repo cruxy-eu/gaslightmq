@@ -40,10 +40,7 @@ pub enum EventDefinition {
         to: Option<BrokerId>,
     },
     /// See [`Event::BrokerGoesDown`].
-    BrokerGoesDown {
-        broker: Option<BrokerId>,
-        failover: bool,
-    },
+    BrokerGoesDown { broker: Option<BrokerId>, failover: bool },
     /// See [`Event::BrokerGoesUnresponsive`].
     BrokerGoesUnresponsive { broker: Option<BrokerId> },
     /// See [`Event::BrokerComesBack`].
@@ -85,9 +82,7 @@ pub enum EventDefinition {
         to: Offset,
     },
     /// See [`Event::ProducerFenced`].
-    ProducerFenced {
-        transactional_id: Option<TransactionalId>,
-    },
+    ProducerFenced { transactional_id: Option<TransactionalId> },
 }
 
 impl EventDefinition {
@@ -123,19 +118,21 @@ impl EventDefinition {
     /// The events come in the order of their subjects.
     ///
     /// The result is never empty.
-    /// When the definition leaves a subject out and the call offers none,
-    /// the result is [`EventError::MissingSubject`].
     /// A rule that someone fires by hand has no call, so it resolves against [`Subjects::new`].
+    ///
+    /// # Errors
+    ///
+    /// [`EventError::MissingSubject`] when the definition leaves a subject out and the call offers none.
     pub fn resolve(&self, subjects: &Subjects) -> Result<Vec<Event>, EventError> {
         let kind = self.kind();
         let events = match self {
             Self::LeaderMoves { partition, to } => subjects
-                .partitions(kind, partition)?
+                .partitions(kind, partition.as_ref())?
                 .into_iter()
                 .map(|partition| Event::LeaderMoves { partition, to: *to })
                 .collect(),
             Self::BrokerGoesDown { broker, failover } => subjects
-                .brokers(kind, broker)?
+                .brokers(kind, *broker)?
                 .into_iter()
                 .map(|broker| Event::BrokerGoesDown {
                     broker,
@@ -143,43 +140,37 @@ impl EventDefinition {
                 })
                 .collect(),
             Self::BrokerGoesUnresponsive { broker } => subjects
-                .brokers(kind, broker)?
+                .brokers(kind, *broker)?
                 .into_iter()
                 .map(|broker| Event::BrokerGoesUnresponsive { broker })
                 .collect(),
             Self::BrokerComesBack { broker } => subjects
-                .brokers(kind, broker)?
+                .brokers(kind, *broker)?
                 .into_iter()
                 .map(|broker| Event::BrokerComesBack { broker })
                 .collect(),
             Self::Rebalance { group } => subjects
-                .groups(kind, group)?
+                .groups(kind, group.as_ref())?
                 .into_iter()
                 .map(|group| Event::Rebalance { group })
                 .collect(),
             Self::CoordinatorMoves { coordinator, to } => subjects
-                .coordinators(kind, coordinator)?
+                .coordinators(kind, coordinator.as_ref())?
                 .into_iter()
-                .map(|coordinator| Event::CoordinatorMoves {
-                    coordinator,
-                    to: *to,
-                })
+                .map(|coordinator| Event::CoordinatorMoves { coordinator, to: *to })
                 .collect(),
             Self::PartitionAdded { topic, count } => subjects
-                .topics(kind, topic)?
+                .topics(kind, topic.as_ref())?
                 .into_iter()
-                .map(|topic| Event::PartitionAdded {
-                    topic,
-                    count: *count,
-                })
+                .map(|topic| Event::PartitionAdded { topic, count: *count })
                 .collect(),
             Self::TopicDeleted { topic } => subjects
-                .topics(kind, topic)?
+                .topics(kind, topic.as_ref())?
                 .into_iter()
                 .map(|topic| Event::TopicDeleted { topic })
                 .collect(),
             Self::RecordsAppended { partition, count } => subjects
-                .partitions(kind, partition)?
+                .partitions(kind, partition.as_ref())?
                 .into_iter()
                 .map(|partition| Event::RecordsAppended {
                     partition,
@@ -187,37 +178,31 @@ impl EventDefinition {
                 })
                 .collect(),
             Self::RecordsExpired { partition, to } => subjects
-                .partitions(kind, partition)?
+                .partitions(kind, partition.as_ref())?
                 .into_iter()
                 .map(|partition| Event::RecordsExpired { partition, to: *to })
                 .collect(),
             Self::LogTruncated { partition, to } => subjects
-                .partitions(kind, partition)?
+                .partitions(kind, partition.as_ref())?
                 .into_iter()
                 .map(|partition| Event::LogTruncated { partition, to: *to })
                 .collect(),
-            Self::CommittedOffsetReset {
-                group,
-                partition,
-                to,
-            } => {
-                let partitions = subjects.partitions(kind, partition)?;
+            Self::CommittedOffsetReset { group, partition, to } => {
+                let partitions = subjects.partitions(kind, partition.as_ref())?;
                 subjects
-                    .groups(kind, group)?
+                    .groups(kind, group.as_ref())?
                     .into_iter()
                     .flat_map(|group| {
-                        partitions
-                            .iter()
-                            .map(move |partition| Event::CommittedOffsetReset {
-                                group: group.clone(),
-                                partition: partition.clone(),
-                                to: *to,
-                            })
+                        partitions.iter().map(move |partition| Event::CommittedOffsetReset {
+                            group: group.clone(),
+                            partition: partition.clone(),
+                            to: *to,
+                        })
                     })
                     .collect()
             }
             Self::ProducerFenced { transactional_id } => subjects
-                .transactional_ids(kind, transactional_id)?
+                .transactional_ids(kind, transactional_id.as_ref())?
                 .into_iter()
                 .map(|transactional_id| Event::ProducerFenced { transactional_id })
                 .collect(),
@@ -238,12 +223,8 @@ impl From<Event> for EventDefinition {
                 broker: Some(broker),
                 failover,
             },
-            Event::BrokerGoesUnresponsive { broker } => Self::BrokerGoesUnresponsive {
-                broker: Some(broker),
-            },
-            Event::BrokerComesBack { broker } => Self::BrokerComesBack {
-                broker: Some(broker),
-            },
+            Event::BrokerGoesUnresponsive { broker } => Self::BrokerGoesUnresponsive { broker: Some(broker) },
+            Event::BrokerComesBack { broker } => Self::BrokerComesBack { broker: Some(broker) },
             Event::Rebalance { group } => Self::Rebalance { group: Some(group) },
             Event::CoordinatorMoves { coordinator, to } => Self::CoordinatorMoves {
                 coordinator: Some(coordinator),
@@ -266,11 +247,7 @@ impl From<Event> for EventDefinition {
                 partition: Some(partition),
                 to,
             },
-            Event::CommittedOffsetReset {
-                group,
-                partition,
-                to,
-            } => Self::CommittedOffsetReset {
+            Event::CommittedOffsetReset { group, partition, to } => Self::CommittedOffsetReset {
                 group: Some(group),
                 partition: Some(partition),
                 to,
@@ -340,6 +317,7 @@ impl Subjects {
     }
 
     /// Offer a partition, and with it its topic.
+    #[must_use]
     pub fn with_partition(mut self, partition: TopicPartition) -> Self {
         self.topics.insert(partition.topic().clone());
         self.partitions.insert(partition);
@@ -347,6 +325,7 @@ impl Subjects {
     }
 
     /// Offer a topic that the call names without a partition.
+    #[must_use]
     pub fn with_topic(mut self, topic: TopicName) -> Self {
         self.topics.insert(topic);
         self
@@ -354,75 +333,53 @@ impl Subjects {
 
     /// Offer the broker the call arrived on.
     /// A call arrives on one broker, so a second broker replaces the first.
+    #[must_use]
     pub fn with_broker(mut self, broker: BrokerId) -> Self {
         self.broker = Some(broker);
         self
     }
 
     /// Offer a consumer group.
+    #[must_use]
     pub fn with_group(mut self, group: GroupId) -> Self {
         self.groups.insert(group);
         self
     }
 
     /// Offer a transactional ID.
+    #[must_use]
     pub fn with_transactional_id(mut self, transactional_id: TransactionalId) -> Self {
         self.transactional_ids.insert(transactional_id);
         self
     }
 
-    fn partitions(
-        &self,
-        event: EventKind,
-        named: &Option<TopicPartition>,
-    ) -> Result<Vec<TopicPartition>, EventError> {
+    fn partitions(&self, event: EventKind, named: Option<&TopicPartition>) -> Result<Vec<TopicPartition>, EventError> {
         named_or_offered(event, "partition", named, &self.partitions)
     }
 
-    fn topics(
-        &self,
-        event: EventKind,
-        named: &Option<TopicName>,
-    ) -> Result<Vec<TopicName>, EventError> {
+    fn topics(&self, event: EventKind, named: Option<&TopicName>) -> Result<Vec<TopicName>, EventError> {
         named_or_offered(event, "topic", named, &self.topics)
     }
 
-    fn brokers(
-        &self,
-        event: EventKind,
-        named: &Option<BrokerId>,
-    ) -> Result<Vec<BrokerId>, EventError> {
-        named_or_offered(event, "broker", named, &self.broker)
+    fn brokers(&self, event: EventKind, named: Option<BrokerId>) -> Result<Vec<BrokerId>, EventError> {
+        named_or_offered(event, "broker", named.as_ref(), &self.broker)
     }
 
-    fn groups(
-        &self,
-        event: EventKind,
-        named: &Option<GroupId>,
-    ) -> Result<Vec<GroupId>, EventError> {
+    fn groups(&self, event: EventKind, named: Option<&GroupId>) -> Result<Vec<GroupId>, EventError> {
         named_or_offered(event, "group", named, &self.groups)
     }
 
     fn transactional_ids(
         &self,
         event: EventKind,
-        named: &Option<TransactionalId>,
+        named: Option<&TransactionalId>,
     ) -> Result<Vec<TransactionalId>, EventError> {
         named_or_offered(event, "transactional ID", named, &self.transactional_ids)
     }
 
-    fn coordinators(
-        &self,
-        event: EventKind,
-        named: &Option<Coordinator>,
-    ) -> Result<Vec<Coordinator>, EventError> {
+    fn coordinators(&self, event: EventKind, named: Option<&Coordinator>) -> Result<Vec<Coordinator>, EventError> {
         let offered: Vec<Coordinator> = (self.groups.iter().cloned().map(Coordinator::Group))
-            .chain(
-                self.transactional_ids
-                    .iter()
-                    .cloned()
-                    .map(Coordinator::Transaction),
-            )
+            .chain(self.transactional_ids.iter().cloned().map(Coordinator::Transaction))
             .collect();
         named_or_offered(event, "group or transactional ID", named, &offered)
     }
@@ -432,7 +389,7 @@ impl Subjects {
 fn named_or_offered<'a, T: Clone + 'a>(
     event: EventKind,
     subject: &'static str,
-    named: &Option<T>,
+    named: Option<&T>,
     offered: impl IntoIterator<Item = &'a T>,
 ) -> Result<Vec<T>, EventError> {
     let subjects: Vec<T> = match named {
@@ -505,9 +462,7 @@ mod tests {
                 partition: None,
                 to: Offset::from(0),
             },
-            EventDefinition::ProducerFenced {
-                transactional_id: None,
-            },
+            EventDefinition::ProducerFenced { transactional_id: None },
         ]
     }
 
@@ -819,10 +774,7 @@ mod tests {
     fn a_producer_is_fenced_by_its_transactional_id() {
         let call = Subjects::new().with_transactional_id(transactional_id("payments-tx-1"));
         assert_eq!(
-            EventDefinition::ProducerFenced {
-                transactional_id: None
-            }
-            .resolve(&call),
+            EventDefinition::ProducerFenced { transactional_id: None }.resolve(&call),
             Ok(vec![Event::ProducerFenced {
                 transactional_id: transactional_id("payments-tx-1")
             }]),
