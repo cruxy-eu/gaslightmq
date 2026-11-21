@@ -1,0 +1,9 @@
+[package]
+name = "gaslightmq_kafka_client_api"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+gaslightmq_wire.workspace = true
+futures.workspace = true
+tokio = { workspace = true, features = ["net", "io-util", "sync"] }

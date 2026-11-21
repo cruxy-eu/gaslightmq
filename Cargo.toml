@@ -1,9 +1,5 @@
 [workspace]
-members = [
-    "crates/gaslightmq-kernel",
-    "crates/gaslightmq-wire",
-    "crates/gaslightmq-kafka-client/*",
-]
+members = ["crates/gaslightmq_wire", "crates/gaslightmq_kafka_client/*"]
 resolver = "2"
 
 [workspace.package]
@@ -11,11 +7,8 @@ edition = "2024"
 version = "0.1.0"
 
 [workspace.dependencies]
-gaslightmq-kernel = { path = "crates/gaslightmq-kernel" }
-gaslightmq-kafka-client-api = { path = "crates/gaslightmq-kafka-client/api" }
-gaslightmq-kafka-client-native = { path = "crates/gaslightmq-kafka-client/native" }
-gaslightmq-wire = { path = "crates/gaslightmq-wire" }
-anyhow = "1"
+gaslightmq_kafka_client_api = { path = "crates/gaslightmq_kafka_client/api" }
+gaslightmq_wire = { path = "crates/gaslightmq_wire" }
 bytes = "1"
 futures = "0.3"
 indexmap = "2"

@@ -1,0 +1,9 @@
+[package]
+name = "gaslightmq_wire"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+bytes.workspace = true
+indexmap.workspace = true
+kafka-protocol.workspace = true

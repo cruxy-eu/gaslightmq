@@ -1,0 +1,14 @@
+[package]
+name = "gaslightmq_kafka_client_native"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+gaslightmq_kafka_client_api.workspace = true
+gaslightmq_wire.workspace = true
+bytes.workspace = true
+tokio = { workspace = true, features = ["net", "io-util", "time", "sync"] }
+tracing.workspace = true
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["rt", "macros"] }

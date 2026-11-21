@@ -254,7 +254,7 @@ h3.sub{color:var(--t2);font-size:13px;font-weight:600;margin:22px 0 10px}
         </div>
         <div class="backs">
           <div class="card io">
-            <h4>Upstream <span class="tag io">backend-upstream · async</span></h4>
+            <h4>Upstream <span class="tag io">backend_upstream · async</span></h4>
             <p>Connections to the real cluster.</p>
             <div class="inner"><b>overlay</b> <span class="tag sans">sans-IO</span><p>Address translation and emulated events.</p></div>
             <div class="out">→ TCP → real Kafka cluster</div>
@@ -287,7 +287,7 @@ h3.sub{color:var(--t2);font-size:13px;font-weight:600;margin:22px 0 10px}
 <!-- ───────────────────────── 3 · crates ───────────────────────── -->
 <section id="crates">
   <h2>Crates</h2>
-  <p class="lead">Every crate carries the <code>gaslightmq-</code> prefix. Dependencies point down the page. Hover a crate to see what it needs and who uses it, click to pin it.</p>
+  <p class="lead">Every crate name starts with <code>gaslightmq_</code> and uses underscores. The facade is plain <code>gaslightmq</code>, and the binary is <code>gmq</code>. Dependencies point down the page. Hover a crate to see what it needs and who uses it, click to pin it.</p>
 
   <div class="tools">
     <label>Build order</label>
@@ -309,7 +309,7 @@ h3.sub{color:var(--t2);font-size:13px;font-weight:600;margin:22px 0 10px}
   <div class="grid3">
     <div class="panel shape">
       <h4>A proxy in front of a real cluster</h4>
-      <div class="mini"><span class="b x">clients</span><span class="a">TCP →</span><span class="b io">listener</span><span class="b sans">pipeline</span><span class="a">→</span><span class="b io">backend-upstream</span><span class="a">TCP →</span><span class="b x">real cluster</span></div>
+      <div class="mini"><span class="b x">clients</span><span class="a">TCP →</span><span class="b io">listener</span><span class="b sans">pipeline</span><span class="a">→</span><span class="b io">backend_upstream</span><span class="a">TCP →</span><span class="b x">real cluster</span></div>
       <p>Lie about real traffic. Wall clock. <code>gmq proxy --upstream kafka:9092</code></p>
     </div>
     <div class="panel shape">
@@ -359,25 +359,27 @@ const LAYERS = [
 ];
 // name, layer, kind, wasm, build step, holds, deps
 const CRATES = [
-  ["gmq","Applications","app",0,5,"The binary: gmq proxy, gmq broker, gmq start and gmq run.",["host","control-server"]],
+  ["gmq","Applications","app",0,5,"The binary: gmq proxy, gmq broker, gmq start and gmq run.",["host","control_server"]],
   ["gaslightmq","Applications","app",0,null,"The facade crate: Proxy, Broker and Host, and re-exports of what library users need. Depends on the public crates.",[]],
-  ["test","Applications","app",0,5,"The test library: create a proxy or a broker, activate a scenario, assert on the recording.",["host","control-client"]],
-  ["testcontainers","Applications","app",0,null,"A container module that starts GaslightMQ next to a test.",["control-client"]],
-  ["ui","Applications","app",1,4,"The web UI, a Dioxus application.",["control-client","surface","hardware-push2","quick-inject","selector","call"]],
+  ["test","Applications","app",0,5,"The test library: create a proxy or a broker, activate a scenario, assert on the recording.",["host","control_client"]],
+  ["testcontainers","Applications","app",0,null,"A container module that starts GaslightMQ next to a test.",["control_client"]],
+  ["kafka_client_api","Applications","app",0,null,"What a Kafka client offers to a test, whichever client it is: producer, consumer and admin traits, one trait per protocol API, and a raw client that sends one request at a fixed version.",["wire"]],
+  ["kafka_client_native","Applications","app",0,null,"Our own Kafka client behind those traits: follows partition leaders, negotiates API versions, and reports every failure as an error.",["kafka_client_api","wire"]],
+  ["ui","Applications","app",1,4,"The web UI, a Dioxus application.",["control_client","surface","hardware_push2","quick_inject","selector","call"]],
 
-  ["host","IO edge","io",0,4,"One process with several environments. Starts and stops proxies and brokers, and runs the task that drives each broker.",["engine","broker","listener","backend-upstream","workspace-fs","environment"]],
+  ["host","IO edge","io",0,4,"One process with several environments. Starts and stops proxies and brokers, and runs the task that drives each broker.",["engine","broker","listener","backend_upstream","workspace_fs","environment"]],
   ["engine","IO edge","io",0,3,"The runtime of one proxy: one task per session that owns the transport and drives the pipeline, plus rule store, scenario runner, event bus, journal, recorder and indexer. Tasks, timers and channels; it opens no socket itself.",["pipeline","session","rule","scenario","journal","traffic","index","recording","backend","listener","workspace","environment","clock"]],
   ["listener","IO edge","io",0,3,"Kafka on a socket: accept connections, frame bytes, and drive whatever handles a connection. Gives a session its transport.",["wire","clock"]],
-  ["backend-upstream","IO edge","io",0,3,"The Upstream backend: connections to the real cluster, with the overlay around them.",["backend","overlay"]],
-  ["schema-registry","IO edge","io",0,6,"The built-in schema registry over HTTP, and a client for a real one.",["schema"]],
-  ["workspace-fs","IO edge","io",0,5,"Loading, watching and writing back workspace files, the scratch file, and reading the files that secret references name.",["workspace"]],
-  ["control-server","IO edge","io",0,4,"The HTTP and WebSocket server in front of the host.",["host","control-api"]],
-  ["control-client","IO edge","io",1,4,"A client for the control plane, for native targets and for the browser.",["control-api"]],
+  ["backend_upstream","IO edge","io",0,3,"The Upstream backend: connections to the real cluster, with the overlay around them.",["backend","overlay"]],
+  ["schema_registry","IO edge","io",0,6,"The built-in schema registry over HTTP, and a client for a real one.",["schema"]],
+  ["workspace_fs","IO edge","io",0,5,"Loading, watching and writing back workspace files, the scratch file, and reading the files that secret references name.",["workspace"]],
+  ["control_server","IO edge","io",0,4,"The HTTP and WebSocket server in front of the host.",["host","control_api"]],
+  ["control_client","IO edge","io",1,4,"A client for the control plane, for native targets and for the browser.",["control_api"]],
 
-  ["control-api","Control","sans",1,4,"The control plane as types: resources, commands and stream messages.",["call","journal","rule","scenario","selector","surface","world","event","environment"]],
-  ["quick-inject","Control","sans",1,4,"The ⌘K sentence parser: text to a rule definition, with completions.",["selector","lie","rule"]],
+  ["control_api","Control","sans",1,4,"The control plane as types: resources, commands and stream messages.",["call","journal","rule","scenario","selector","surface","world","event","environment"]],
+  ["quick_inject","Control","sans",1,4,"The ⌘K sentence parser: text to a rule definition, with completions.",["selector","lie","rule"]],
   ["surface","Control","sans",1,4,"Pad layouts, layers, pads as positions, the encoder mapping, and the intents a surface sends.",["rule"]],
-  ["hardware-push2","Control","sans",1,7,"The Push 2 mapping: controller messages to surface intents, and rule state back to pad colours.",["surface"]],
+  ["hardware_push2","Control","sans",1,7,"The Push 2 mapping: controller messages to surface intents, and rule state back to pad colours.",["surface"]],
 
   ["workspace","Workspace","sans",0,5,"The whole set of definitions as one model: cross-reference validation, cascading renames and the YAML layout. Works on file contents, not on files.",["selector","lie","event","rule","scenario","surface","world","environment"]],
   ["environment","Workspace","sans",0,3,"Environments, secret references, and the order in which flags, variables and files set a value. It never reads a secret.",[]],
@@ -385,13 +387,13 @@ const CRATES = [
   ["scenario","Scenarios","sans",1,5,"The scenario definition, modes as priority orders, the step machine of a Sequence, the live set and capture. Consumes call records, journal entries and time; emits arm and disarm commands.",["rule","trigger","call","journal","event","clock"]],
 
   ["backend","World and backends","sig",0,3,"The backend contract: the request and answer messages, and the one async trait through which the engine reaches a backend. No logic, no runtime.",["wire","event","clock"]],
-  ["broker","World and backends","sans",0,6,"The broker instance as a state machine: routes each request to a sim-* crate, applies events to the World and owns the virtual clock.",["backend","world","sim-log","sim-group","clock"]],
-  ["sim-log","World and backends","sans",0,6,"Produce, Fetch, offsets and idempotent producers against the World.",["world","wire"]],
-  ["sim-group","World and backends","sans",0,6,"Group coordination against the World, for the classic and the consumer protocol.",["world","wire","clock"]],
-  ["world","World and backends","sans",1,6,"The World: its state, world definitions, how each event changes it, and where each topic's records come from.",["wire","event","clock","virtual-log"]],
-  ["world-seed","World and backends","sans",0,6,"Seeding a world definition from a recording.",["world","index","recording"]],
-  ["virtual-log","World and backends","sans",1,6,"Virtual records: the record at a partition and offset as a pure function of the definition.",["wire","clock","schema"]],
-  ["overlay","World and backends","sans",0,3,"The Upstream overlay: address translation, emulated events and sessionless Fetch. Rewrites requests and responses, opens no connection.",["wire","wire-edit","event"]],
+  ["broker","World and backends","sans",0,6,"The broker instance as a state machine: routes each request to a sim_* crate, applies events to the World and owns the virtual clock.",["backend","world","sim_log","sim_group","clock"]],
+  ["sim_log","World and backends","sans",0,6,"Produce, Fetch, offsets and idempotent producers against the World.",["world","wire"]],
+  ["sim_group","World and backends","sans",0,6,"Group coordination against the World, for the classic and the consumer protocol.",["world","wire","clock"]],
+  ["world","World and backends","sans",1,6,"The World: its state, world definitions, how each event changes it, and where each topic's records come from.",["wire","event","clock","virtual_log"]],
+  ["world_seed","World and backends","sans",0,6,"Seeding a world definition from a recording.",["world","index","recording"]],
+  ["virtual_log","World and backends","sans",1,6,"Virtual records: the record at a partition and offset as a pure function of the definition.",["wire","clock","schema"]],
+  ["overlay","World and backends","sans",0,3,"The Upstream overlay: address translation, emulated events and sessionless Fetch. Rewrites requests and responses, opens no connection.",["wire","wire_edit","event"]],
   ["schema","World and backends","sans",0,6,"Record formats and schemas: encode and decode JSON, Avro and Protobuf, one feature per format.",[]],
 
   ["traffic","Observation","sans",0,4,"The live window of recent calls, subscriptions by selector, and statistics per rule and per API.",["call","selector"]],
@@ -399,19 +401,19 @@ const CRATES = [
   ["journal","Observation","sans",0,5,"The journal: its entries, and the window of recent entries the engine keeps in memory.",["event","clock"]],
   ["recording","Observation","sans",0,5,"The recording format: append-only chunks, metadata-only mode, blanked credentials, a reader and a writer over std::io.",["call","journal","wire"]],
 
-  ["pipeline","Session and pipeline","sans",0,2,"The request pipeline as a state machine: all stages, both evaluation passes and partial refusals. handle(input, now) -> outputs.",["wire","wire-edit","selector","rule","trigger","lie","combine","session","call","event","clock"]],
+  ["pipeline","Session and pipeline","sans",0,2,"The request pipeline as a state machine: all stages, both evaluation passes and partial refusals. handle(input, now) -> outputs.",["wire","wire_edit","selector","rule","trigger","lie","combine","session","call","event","clock"]],
   ["session","Session and pipeline","sans",0,2,"The state of one session, which its pipeline owns: lifecycle, identity, session key, per-session counters, in-flight calls, response ordering and the stalled state. Also the client context that sessions share.",["field","wire","trigger","clock"]],
 
   ["rule","Targeting and injection","sans",1,1,"The rule definition, its state, and the immutable snapshot of armed rules in priority order.",["selector","lie","event","trigger"]],
   ["selector","Targeting and injection","sans",1,1,"Conditions, selectors, includes and scope. Matching against a FieldSource, and an index of selectors by API.",["field"]],
   ["trigger","Targeting and injection","sans",1,1,"Triggers, counters, dice, budgets and lifetimes.",["clock"]],
   ["combine","Targeting and injection","sans",0,1,"How lies combine: which conflict, which win by priority, which are shadowed or pre-empted.",["lie"]],
-  ["wire-edit","Targeting and injection","sans",0,2,"Surgery on requests and responses: remove partitions, merge responses, synthesize an error response for any API.",["wire"]],
-  ["lie-refusal","Targeting and injection","sans",0,2,"Refusals for every API, before forwarding and after the response.",["lie","wire-edit"]],
-  ["lie-topology","Targeting and injection","sans",0,7,"Rewrites of Metadata, FindCoordinator and DescribeCluster.",["lie","wire-edit"]],
-  ["lie-data","Targeting and injection","sans",0,7,"Altered, dropped, duplicated, reordered and corrupted records.",["lie","wire-edit","schema"]],
-  ["lie-progress","Targeting and injection","sans",0,7,"Rewrites of watermarks, log start offsets and committed offsets.",["lie","wire-edit"]],
-  ["lie-config","Targeting and injection","sans",0,7,"Rewrites of DescribeConfigs responses.",["lie","wire-edit"]],
+  ["wire_edit","Targeting and injection","sans",0,2,"Surgery on requests and responses: remove partitions, merge responses, synthesize an error response for any API.",["wire"]],
+  ["lie_refusal","Targeting and injection","sans",0,2,"Refusals for every API, before forwarding and after the response.",["lie","wire_edit"]],
+  ["lie_topology","Targeting and injection","sans",0,7,"Rewrites of Metadata, FindCoordinator and DescribeCluster.",["lie","wire_edit"]],
+  ["lie_data","Targeting and injection","sans",0,7,"Altered, dropped, duplicated, reordered and corrupted records.",["lie","wire_edit","schema"]],
+  ["lie_progress","Targeting and injection","sans",0,7,"Rewrites of watermarks, log start offsets and committed offsets.",["lie","wire_edit"]],
+  ["lie_config","Targeting and injection","sans",0,7,"Rewrites of DescribeConfigs responses.",["lie","wire_edit"]],
 
   ["field","Vocabulary","sans",1,1,"The field vocabulary: field names, values, and the FieldSource trait that a live call and a recorded call both implement. The shared kernel.",[]],
   ["clock","Vocabulary","sans",0,1,"A Clock trait, the virtual clock, and instants that do not come from the system.",[]],
@@ -503,7 +505,7 @@ function render() {
   users.forEach(u => curve(u, cur, "user"));
   const list = (ns) => ns.length ? `<div class="list">${ns.map(n => `<button data-go="${n}">${n}</button>`).join("")}</div>` : `<p class="none">None.</p>`;
   insp.innerHTML = `
-    <h3>gaslightmq-${c.name}</h3>
+    <h3>${c.name === "gmq" || c.name === "gaslightmq" ? c.name : "gaslightmq_" + c.name}</h3>
     <div class="meta">
       <span class="tag ${c.kind === "app" ? "ext" : c.kind}">${KIND[c.kind]}</span>
       <span class="tag ext">${c.layer}</span>
