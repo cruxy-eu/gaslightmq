@@ -74,7 +74,7 @@ It is not meant to be reproducible.
 Chain mode is for steady background behaviour with priorities.
 The scenario orders its rules.
 
-- Every rule that fires applies, unless it conflicts with a rule above it.
+- Every rule that fires applies, unless it conflicts with a rule above it that applies.
 - In a conflict, the higher rule wins.
 - The lower rule is shadowed for the target they share.
 

@@ -94,15 +94,38 @@ A rule belongs to one pass, so a call counts as one match of it.
 Priority orders the rules within one pass.
 Between the passes, the stage decides:
 
-- A silence or a hang-up that won the request pass ends the call before the truth exists.
+- A silence or a hang-up before forwarding that won the request pass ends the call before the truth exists.
   The response pass does not run.
   A rule that waited for the truth is pre-empted, even when it has a higher priority,
   and the explanation says so.
   Nobody evaluated that rule, so the call does not count as a match of it.
 - A partition that the request pass refused before forwarding has no truth.
   The response pass skips that partition.
+  A response-pass lie on that partition is pre-empted there, even when it has a higher priority,
+  and the explanation names the refusal.
+  A response-pass lie on the whole call has the other partitions left to change, so that refusal does not pre-empt it.
+  A response-pass refusal of the whole call replaces the truth of every partition that reached the backend,
+  and the refused partition keeps its own refusal.
+- A whole call that the request pass refused before forwarding has no truth at all.
+  A response-pass refusal or rewrite is pre-empted, on any target.
 - Everything else from the request pass meets the response pass in stage 9,
   where conflicts resolve by priority as usual.
+
+What acted before forwarding stays.
+The outcome of a request-pass lie that acts before forwarding is final when the request pass ends:
+
+- A refusal before forwarding that lost a conflict in the request pass stays shadowed,
+  even when its winner loses a conflict in the response pass.
+  The request was forwarded by then, so the refusal cannot act before forwarding any more.
+  The explanation still names that winner, and the firing of the refusal goes back to its budget.
+- A response-pass hang-up does not conflict with a refusal before forwarding.
+  The refused partition never reached the backend,
+  and the connection closes after the backend answered the rest.
+  Both lies apply.
+
+The outcome of a request-pass lie that acts after the response is open until the response pass ends.
+A hang-up after the response that won the request pass loses to a response-pass refusal with a higher priority.
+A refusal after the response that the hang-up shadowed then applies.
 
 This is the only place where a rule with a lower priority can beat a higher one.
 A live rule that waits for the truth does not stop a scenario rule from ending the call first.
