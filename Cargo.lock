@@ -206,7 +206,6 @@ dependencies = [
  "bytes",
  "futures",
  "gmq_wire",
- "kafka-protocol",
  "tokio",
  "tracing",
 ]
@@ -215,7 +214,6 @@ dependencies = [
 name = "gmq_wire"
 version = "0.1.0"
 dependencies = [
- "anyhow",
  "bytes",
  "indexmap",
  "kafka-protocol",

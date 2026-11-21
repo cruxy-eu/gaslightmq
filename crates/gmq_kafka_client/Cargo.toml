@@ -7,7 +7,6 @@ edition.workspace = true
 gmq_wire.workspace = true
 bytes.workspace = true
 futures.workspace = true
-kafka-protocol.workspace = true
 tokio = { workspace = true, features = ["net", "io-util", "time", "sync"] }
 tracing.workspace = true
 

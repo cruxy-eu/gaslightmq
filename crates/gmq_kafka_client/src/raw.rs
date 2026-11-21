@@ -1,48 +1,36 @@
+//! A client that sends one request to one address, at a fixed version.
+
 use std::net::SocketAddr;
 use std::sync::atomic::{AtomicI32, Ordering};
 
-use bytes::{Bytes, BytesMut};
-use kafka_protocol::messages::*;
-use kafka_protocol::messages::fetch_request::{FetchPartition, FetchTopic};
-use kafka_protocol::messages::find_coordinator_request::FindCoordinatorRequest;
-use kafka_protocol::messages::find_coordinator_response::FindCoordinatorResponse;
-use kafka_protocol::messages::heartbeat_request::HeartbeatRequest;
-use kafka_protocol::messages::heartbeat_response::HeartbeatResponse;
-use kafka_protocol::messages::join_group_request::JoinGroupRequest;
-use kafka_protocol::messages::join_group_response::JoinGroupResponse;
-use kafka_protocol::messages::list_offsets_request::ListOffsetsRequest;
-use kafka_protocol::messages::list_offsets_response::ListOffsetsResponse;
-use kafka_protocol::messages::metadata_request::MetadataRequest;
-use kafka_protocol::messages::metadata_response::MetadataResponse;
-use kafka_protocol::messages::produce_request::{PartitionProduceData, TopicProduceData};
-use kafka_protocol::messages::produce_request::ProduceRequest;
-use kafka_protocol::messages::produce_response::ProduceResponse;
-use kafka_protocol::messages::fetch_response::FetchResponse;
-use kafka_protocol::messages::sync_group_request::SyncGroupRequest;
-use kafka_protocol::messages::sync_group_response::SyncGroupResponse;
-use kafka_protocol::protocol::{Decodable, Encodable, StrBytes};
-use kafka_protocol::records::RecordBatchDecoder;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::net::TcpStream;
+use futures::StreamExt;
+use gmq_wire::messages::fetch_request::{FetchPartition, FetchTopic};
+use gmq_wire::messages::produce_request::{PartitionProduceData, TopicProduceData};
+use gmq_wire::messages::{
+    ApiVersionsRequest, ApiVersionsResponse, CreateTopicsRequest, CreateTopicsResponse, DeleteTopicsRequest,
+    DeleteTopicsResponse, FetchRequest, FetchResponse, FindCoordinatorRequest, FindCoordinatorResponse, GroupId,
+    HeartbeatRequest, JoinGroupRequest, ListOffsetsRequest, ListOffsetsResponse, MetadataRequest, MetadataResponse,
+    ProduceRequest, ProduceResponse, SyncGroupRequest, TopicName,
+};
+use gmq_wire::protocol::{Request as KafkaRequest, StrBytes};
+use gmq_wire::{Offset, Partition, Record, RecordBatch, Request, ResponseError, WireError};
 use tokio::sync::Mutex;
 
-use futures::StreamExt;
-use gmq_wire::{Offset, Partition};
+use crate::connection::Socket;
+use crate::error::ClientError;
 use crate::traits::{
-    HeartbeatResult, JoinGroupResult, Producer, ProtocolConsumer, ProduceResult,
-    RecordStream, SyncGroupResult,
+    HeartbeatResult, JoinGroupResult, ProduceResult, Producer, ProtocolConsumer, RecordStream, SyncGroupResult,
 };
-use gmq_wire::Record;
-
-use kafka_protocol::messages::create_topics_request::CreateTopicsRequest;
-use kafka_protocol::messages::create_topics_response::CreateTopicsResponse;
-use kafka_protocol::messages::delete_topics_request::DeleteTopicsRequest;
-use kafka_protocol::messages::delete_topics_response::DeleteTopicsResponse;
 use crate::{ApiVersions, CreateTopics, DeleteTopics, Fetch, FindCoordinator, ListOffsets, Metadata, Produce};
 
+/// Sends each request as it is given, to one address, at a fixed version.
+///
+/// It follows no leaders, negotiates no versions and retries nothing, so a
+/// test sees exactly what one request gets back. It panics when the
+/// connection fails or the response does not decode.
 pub struct RawKafkaClient {
     addr: SocketAddr,
-    stream: Mutex<Option<TcpStream>>,
+    socket: Mutex<Option<Socket>>,
     correlation_id: AtomicI32,
 }
 
@@ -54,274 +42,182 @@ impl From<SocketAddr> for RawKafkaClient {
 
 impl RawKafkaClient {
     pub fn new(addr: SocketAddr) -> Self {
-        Self {
-            addr,
-            stream: Mutex::new(None),
-            correlation_id: AtomicI32::new(1),
-        }
+        Self { addr, socket: Mutex::new(None), correlation_id: AtomicI32::new(1) }
     }
 
     pub fn addr(&self) -> SocketAddr {
         self.addr
     }
 
-    async fn request<Req: Encodable, Resp: Decodable>(
-        &self,
-        api_key: ApiKey,
-        api_version: i16,
-        request: &Req,
-    ) -> Resp {
-        let mut guard = self.stream.lock().await;
-        if guard.is_none() {
-            *guard = Some(TcpStream::connect(self.addr).await.unwrap());
-        }
-        let stream = guard.as_mut().unwrap();
-        let cid = self.correlation_id.fetch_add(1, Ordering::Relaxed);
-
-        let header_version = api_key.request_header_version(api_version);
-        let mut header = RequestHeader::default();
-        header.request_api_key = api_key as i16;
-        header.request_api_version = api_version;
-        header.correlation_id = cid;
-
-        let mut buf = BytesMut::new();
-        header.encode(&mut buf, header_version).unwrap();
-        request.encode(&mut buf, api_version).unwrap();
-
-        stream.write_u32(buf.len() as u32).await.unwrap();
-        stream.write_all(&buf).await.unwrap();
-
-        let len = stream.read_u32().await.unwrap() as usize;
-        let mut frame = vec![0u8; len];
-        stream.read_exact(&mut frame).await.unwrap();
-
-        let mut resp_buf = Bytes::from(frame);
-        let resp_header_version = api_key.response_header_version(api_version);
-        let _resp_header = ResponseHeader::decode(&mut resp_buf, resp_header_version).unwrap();
-        Resp::decode(&mut resp_buf, api_version).unwrap()
+    async fn request<R: KafkaRequest>(&self, version: i16, body: &R) -> R::Response {
+        let correlation_id = self.correlation_id.fetch_add(1, Ordering::Relaxed);
+        let request = Request::new(version, correlation_id, None, body).unwrap();
+        let mut slot = self.socket.lock().await;
+        let socket = match slot.as_mut() {
+            Some(socket) => socket,
+            None => slot.insert(Socket::connect(&self.addr.to_string()).await.unwrap()),
+        };
+        socket.exchange::<R>(&request).await.unwrap()
     }
 }
 
+/// One Fetch for one partition on a connection of its own.
+async fn fetch_once(addr: SocketAddr, request: &FetchRequest) -> Result<Vec<Record>, ClientError> {
+    let request = Request::new(4, 0, None, request)?;
+    let response = Socket::connect(&addr.to_string()).await?.exchange::<FetchRequest>(&request).await?;
+    Ok(records_of(&response)?)
+}
+
+fn fetch_request(topic: &str, partition: Partition, offset: i64, max_wait_ms: i32) -> FetchRequest {
+    FetchRequest::default().with_max_wait_ms(max_wait_ms).with_min_bytes(1).with_max_bytes(1024 * 1024).with_topics(
+        vec![FetchTopic::default().with_topic(topic_name(topic)).with_partitions(vec![
+            FetchPartition::default()
+                .with_partition(i32::from(partition))
+                .with_fetch_offset(offset)
+                .with_partition_max_bytes(1024 * 1024),
+        ])],
+    )
+}
+
+/// Every record a Fetch response carries, over all its partitions.
+fn records_of(response: &FetchResponse) -> Result<Vec<Record>, WireError> {
+    let mut records = Vec::new();
+    for partition in response.responses.iter().flat_map(|topic| &topic.partitions) {
+        if let Some(field) = &partition.records {
+            records.extend(RecordBatch::decode_all(field)?.into_iter().flat_map(|batch| batch.records));
+        }
+    }
+    Ok(records)
+}
+
+fn topic_name(topic: &str) -> TopicName {
+    TopicName(StrBytes::from_string(topic.to_string()))
+}
+
+fn group_id(group: &str) -> GroupId {
+    GroupId(StrBytes::from_string(group.to_string()))
+}
 
 impl Produce for RawKafkaClient {
     async fn produce(&self, request: ProduceRequest) -> ProduceResponse {
-        self.request(ApiKey::Produce, 3, &request).await
+        self.request(3, &request).await
     }
 }
-
 
 impl Fetch for RawKafkaClient {
     async fn fetch(&self, request: FetchRequest) -> FetchResponse {
-        self.request(ApiKey::Fetch, 4, &request).await
+        self.request(4, &request).await
     }
 }
-
 
 impl Metadata for RawKafkaClient {
     async fn metadata(&self, request: MetadataRequest) -> MetadataResponse {
-        self.request(ApiKey::Metadata, 1, &request).await
+        self.request(1, &request).await
     }
 }
-
 
 impl ApiVersions for RawKafkaClient {
     async fn api_versions(&self, request: ApiVersionsRequest) -> ApiVersionsResponse {
-        self.request(ApiKey::ApiVersions, 0, &request).await
+        self.request(0, &request).await
     }
 }
-
 
 impl ListOffsets for RawKafkaClient {
     async fn list_offsets(&self, request: ListOffsetsRequest) -> ListOffsetsResponse {
-        self.request(ApiKey::ListOffsets, 1, &request).await
+        self.request(1, &request).await
     }
 }
-
 
 impl FindCoordinator for RawKafkaClient {
     async fn find_coordinator(&self, request: FindCoordinatorRequest) -> FindCoordinatorResponse {
-        self.request(ApiKey::FindCoordinator, 0, &request).await
+        self.request(0, &request).await
     }
 }
-
 
 impl CreateTopics for RawKafkaClient {
     async fn create_topics(&self, request: CreateTopicsRequest) -> CreateTopicsResponse {
-        self.request(ApiKey::CreateTopics, 2, &request).await
+        self.request(2, &request).await
     }
 }
 
-
 impl DeleteTopics for RawKafkaClient {
     async fn delete_topics(&self, request: DeleteTopicsRequest) -> DeleteTopicsResponse {
-        self.request(ApiKey::DeleteTopics, 1, &request).await
+        self.request(1, &request).await
     }
 }
 
 impl Producer for RawKafkaClient {
-    async fn send(
-        &self,
-        topic: &str,
-        partition: Partition,
-        records: &[Record],
-    ) -> ProduceResult {
-        let records_bytes = gmq_wire::batch::encode_batch(records);
-        let request = ProduceRequest::default()
-            .with_acks(-1)
-            .with_timeout_ms(5000)
-            .with_topic_data(vec![TopicProduceData::default()
-                .with_name(TopicName(StrBytes::from_string(topic.to_string())))
-                .with_partition_data(vec![PartitionProduceData::default()
+    async fn send(&self, topic: &str, partition: Partition, records: &[Record]) -> ProduceResult {
+        let request = ProduceRequest::default().with_acks(-1).with_timeout_ms(5000).with_topic_data(vec![
+            TopicProduceData::default().with_name(topic_name(topic)).with_partition_data(vec![
+                PartitionProduceData::default()
                     .with_index(i32::from(partition))
-                    .with_records(Some(records_bytes))])]);
+                    .with_records(Some(RecordBatch::new(records).encode().unwrap())),
+            ]),
+        ]);
 
-        let response: ProduceResponse = self.request(ApiKey::Produce, 3, &request).await;
+        let response = self.request(3, &request).await;
 
-        let partition_resp = &response.responses[0].partition_responses[0];
-        let error = kafka_protocol::error::ResponseError::try_from_code(partition_resp.error_code);
-
+        let partition_response = &response.responses[0].partition_responses[0];
         ProduceResult {
-            error,
+            error: ResponseError::try_from_code(partition_response.error_code),
             partition,
-            offset: Offset::from(partition_resp.base_offset),
+            offset: Offset::from(partition_response.base_offset),
         }
     }
 }
 
-
 impl ProtocolConsumer for RawKafkaClient {
     async fn fetch(&self, topic: &str, partition: Partition, offset: Offset) -> Vec<Record> {
-        let request = FetchRequest::default()
-            .with_max_wait_ms(1000)
-            .with_min_bytes(1)
-            .with_max_bytes(1024 * 1024)
-            .with_topics(vec![FetchTopic::default()
-                .with_topic(TopicName(StrBytes::from_string(topic.to_string())))
-                .with_partitions(vec![FetchPartition::default()
-                    .with_partition(i32::from(partition))
-                    .with_fetch_offset(i64::from(offset))
-                    .with_partition_max_bytes(1024 * 1024)])]);
-
-        let response: FetchResponse = self.request(ApiKey::Fetch, 4, &request).await;
-
-        let mut records = Vec::new();
-        for topic_resp in &response.responses {
-            for partition_resp in &topic_resp.partitions {
-                if let Some(ref raw) = partition_resp.records {
-                    let mut buf = raw.clone();
-                    if let Ok(batch) = RecordBatchDecoder::decode(&mut buf) {
-                        records.extend(gmq_wire::batch::from_kafka(&batch));
-                    }
-                }
-            }
-        }
-        records
+        let response = self.request(4, &fetch_request(topic, partition, i64::from(offset), 1000)).await;
+        records_of(&response).unwrap()
     }
 
+    /// Records from `offset` on, fetched one request at a time, each on a
+    /// connection of its own. The stream ends at the first Fetch that brings
+    /// no records or fails.
     fn stream(&self, topic: &str, partition: Partition, offset: Offset) -> RecordStream {
         let addr = self.addr;
         let topic = topic.to_string();
-        let partition_val = i32::from(partition);
-        let start = i64::from(offset);
 
         Box::pin(
-            futures::stream::unfold(start, move |current_offset| {
-                let topic = topic.clone();
+            futures::stream::unfold(i64::from(offset), move |next_offset| {
+                let request = fetch_request(&topic, partition, next_offset, 100);
                 async move {
-                    let mut tcp = TcpStream::connect(addr).await.ok()?;
-                    let header_version = ApiKey::Fetch.request_header_version(4);
-                    let mut header = RequestHeader::default();
-                    header.request_api_key = ApiKey::Fetch as i16;
-                    header.request_api_version = 4;
-                    header.correlation_id = 0;
-
-                    let request = FetchRequest::default()
-                        .with_max_wait_ms(100)
-                        .with_min_bytes(1)
-                        .with_max_bytes(1024 * 1024)
-                        .with_topics(vec![FetchTopic::default()
-                            .with_topic(TopicName(StrBytes::from_string(topic.clone())))
-                            .with_partitions(vec![FetchPartition::default()
-                                .with_partition(partition_val)
-                                .with_fetch_offset(current_offset)
-                                .with_partition_max_bytes(1024 * 1024)])]);
-
-                    let mut buf = BytesMut::new();
-                    header.encode(&mut buf, header_version).unwrap();
-                    request.encode(&mut buf, 4).unwrap();
-                    tcp.write_u32(buf.len() as u32).await.ok()?;
-                    tcp.write_all(&buf).await.ok()?;
-
-                    let len = tcp.read_u32().await.ok()? as usize;
-                    let mut frame = vec![0u8; len];
-                    tcp.read_exact(&mut frame).await.ok()?;
-                    let mut resp_buf = Bytes::from(frame);
-                    let resp_header_version = ApiKey::Fetch.response_header_version(4);
-                    let _ = ResponseHeader::decode(&mut resp_buf, resp_header_version).ok()?;
-                    let response = FetchResponse::decode(&mut resp_buf, 4).ok()?;
-
-                    let mut records = Vec::new();
-                    for topic_resp in &response.responses {
-                        for partition_resp in &topic_resp.partitions {
-                            if let Some(ref raw) = partition_resp.records {
-                                let mut rbuf = raw.clone();
-                                if let Ok(batch) = RecordBatchDecoder::decode(&mut rbuf) {
-                                    records.extend(gmq_wire::batch::from_kafka(&batch));
-                                }
-                            }
-                        }
-                    }
-
+                    let records = fetch_once(addr, &request).await.ok()?;
                     if records.is_empty() {
-                        None
-                    } else {
-                        let next = current_offset + records.len() as i64;
-                        Some((records, next))
+                        return None;
                     }
+                    let next_offset = next_offset + records.len() as i64;
+                    Some((records, next_offset))
                 }
             })
             .flat_map(futures::stream::iter),
         )
     }
 
-    async fn join_group(&self, group_id: &str) -> JoinGroupResult {
+    async fn join_group(&self, group: &str) -> JoinGroupResult {
         let request = JoinGroupRequest::default()
-            .with_group_id(kafka_protocol::messages::GroupId(StrBytes::from_string(
-                group_id.to_string(),
-            )))
+            .with_group_id(group_id(group))
             .with_session_timeout_ms(30000)
             .with_protocol_type(StrBytes::from_static_str("consumer"));
 
-        let response: JoinGroupResponse = self.request(ApiKey::JoinGroup, 0, &request).await;
+        let response = self.request(0, &request).await;
 
         JoinGroupResult {
-            error: kafka_protocol::error::ResponseError::try_from_code(response.error_code),
+            error: ResponseError::try_from_code(response.error_code),
             member_id: response.member_id.as_str().to_string(),
             leader: response.leader.as_str().to_string(),
         }
     }
 
-    async fn sync_group(&self, group_id: &str) -> SyncGroupResult {
-        let request = SyncGroupRequest::default().with_group_id(
-            kafka_protocol::messages::GroupId(StrBytes::from_string(group_id.to_string())),
-        );
-
-        let response: SyncGroupResponse = self.request(ApiKey::SyncGroup, 0, &request).await;
-
-        SyncGroupResult {
-            error: kafka_protocol::error::ResponseError::try_from_code(response.error_code),
-        }
+    async fn sync_group(&self, group: &str) -> SyncGroupResult {
+        let response = self.request(0, &SyncGroupRequest::default().with_group_id(group_id(group))).await;
+        SyncGroupResult { error: ResponseError::try_from_code(response.error_code) }
     }
 
-    async fn heartbeat(&self, group_id: &str) -> HeartbeatResult {
-        let request = HeartbeatRequest::default().with_group_id(
-            kafka_protocol::messages::GroupId(StrBytes::from_string(group_id.to_string())),
-        );
-
-        let response: HeartbeatResponse = self.request(ApiKey::Heartbeat, 0, &request).await;
-
-        HeartbeatResult {
-            error: kafka_protocol::error::ResponseError::try_from_code(response.error_code),
-        }
+    async fn heartbeat(&self, group: &str) -> HeartbeatResult {
+        let response = self.request(0, &HeartbeatRequest::default().with_group_id(group_id(group))).await;
+        HeartbeatResult { error: ResponseError::try_from_code(response.error_code) }
     }
 }

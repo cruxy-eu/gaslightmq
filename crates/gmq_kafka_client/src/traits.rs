@@ -3,7 +3,7 @@ use std::pin::Pin;
 
 use futures::Stream;
 use gmq_wire::{Offset, Partition, Record};
-use kafka_protocol::error::ResponseError;
+use gmq_wire::ResponseError;
 
 pub type RecordStream = Pin<Box<dyn Stream<Item = Record> + Send>>;
 

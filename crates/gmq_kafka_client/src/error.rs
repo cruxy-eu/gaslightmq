@@ -1,6 +1,6 @@
 use std::fmt;
 
-use kafka_protocol::error::ResponseError;
+use gmq_wire::{ResponseError, WireError};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ClientError {
@@ -65,5 +65,11 @@ impl std::error::Error for ClientError {}
 impl From<std::io::Error> for ClientError {
     fn from(e: std::io::Error) -> Self {
         Self::Io(e.to_string())
+    }
+}
+
+impl From<WireError> for ClientError {
+    fn from(e: WireError) -> Self {
+        Self::Protocol(e.to_string())
     }
 }

@@ -4,23 +4,23 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use bytes::Bytes;
-use gmq_wire::batch::{decode_batches, encode_batch};
 use crate::traits::{
     Admin, Consumer, PartitionMetadata, ProduceResult, Producer, TopicConfigs, TopicMetadata,
     Watermarks,
 };
-use gmq_wire::{Offset, Partition, Record};
-use kafka_protocol::messages::describe_configs_request::DescribeConfigsResource;
-use kafka_protocol::messages::fetch_request::{FetchPartition, FetchTopic};
-use kafka_protocol::messages::list_offsets_request::{ListOffsetsPartition, ListOffsetsTopic};
-use kafka_protocol::messages::metadata_request::MetadataRequestTopic;
-use kafka_protocol::messages::produce_request::{PartitionProduceData, TopicProduceData};
-use kafka_protocol::messages::{
+use gmq_wire::protocol::Request as KafkaRequest;
+use gmq_wire::{Offset, Partition, Record, RecordBatch};
+use gmq_wire::messages::describe_configs_request::DescribeConfigsResource;
+use gmq_wire::messages::fetch_request::{FetchPartition, FetchTopic};
+use gmq_wire::messages::list_offsets_request::{ListOffsetsPartition, ListOffsetsTopic};
+use gmq_wire::messages::metadata_request::MetadataRequestTopic;
+use gmq_wire::messages::produce_request::{PartitionProduceData, TopicProduceData};
+use gmq_wire::messages::{
     ApiKey, ApiVersionsRequest, ApiVersionsResponse, BrokerId, DescribeConfigsRequest,
     DescribeConfigsResponse, FetchRequest, FetchResponse, ListOffsetsRequest, ListOffsetsResponse,
     MetadataRequest, MetadataResponse, ProduceRequest, ProduceResponse, TopicName,
 };
-use kafka_protocol::protocol::StrBytes;
+use gmq_wire::protocol::StrBytes;
 use tokio::sync::OnceCell;
 use tokio::time::Instant;
 use tracing::debug;
@@ -202,7 +202,7 @@ impl KafkaClient {
             .inner
             .versions
             .get_or_try_init(|| async {
-                let resp: ApiVersionsResponse = self.on_any(ApiKey::ApiVersions, 0, &ApiVersionsRequest::default(), timeout).await?;
+                let resp: ApiVersionsResponse = self.on_any(0, &ApiVersionsRequest::default(), timeout).await?;
                 if let Some(e) = ClientError::broker(resp.error_code) {
                     return Err(e);
                 }
@@ -220,14 +220,10 @@ impl KafkaClient {
     }
 
     /// Send a request to whichever broker answers first.
-    async fn on_any<Req, Resp>(&self, key: ApiKey, version: i16, req: &Req, timeout: Duration) -> Result<Resp, ClientError>
-    where
-        Req: kafka_protocol::protocol::Encodable,
-        Resp: kafka_protocol::protocol::Decodable,
-    {
+    async fn on_any<R: KafkaRequest>(&self, version: i16, req: &R, timeout: Duration) -> Result<R::Response, ClientError> {
         let mut last = ClientError::Io("no brokers to connect to".into());
         for conn in self.any_connections() {
-            match conn.request(key, version, req, timeout).await {
+            match conn.request(version, req, timeout).await {
                 Ok(resp) => return Ok(resp),
                 Err(e) if e.is_retriable() => last = e,
                 Err(e) => return Err(e),
@@ -243,7 +239,7 @@ impl KafkaClient {
         let req = MetadataRequest::default().with_topics(topics.map(|ts| {
             ts.iter().map(|t| MetadataRequestTopic::default().with_name(Some(topic_name(t)))).collect()
         }));
-        let resp: MetadataResponse = self.on_any(ApiKey::Metadata, version, &req, timeout).await?;
+        let resp: MetadataResponse = self.on_any(version, &req, timeout).await?;
         let mut cluster = self.inner.cluster.lock().unwrap();
         cluster.brokers = resp.brokers.iter().map(|b| (b.node_id.0, format!("{}:{}", b.host, b.port))).collect();
         for t in &resp.topics {
@@ -295,7 +291,7 @@ impl KafkaClient {
 
     /// Write `records` to a partition. Returns the offset of the first one.
     pub async fn produce(&self, topic: &str, partition: i32, records: &[Record]) -> Result<Offset, ClientError> {
-        let batch = encode_batch(records);
+        let batch = RecordBatch::new(records).encode()?;
         retry!(self, |timeout| {
             let result = self.produce_once(topic, partition, batch.clone(), timeout).await;
             if matches!(&result, Err(e) if e.is_retriable()) {
@@ -314,7 +310,7 @@ impl KafkaClient {
             .with_topic_data(vec![TopicProduceData::default().with_name(topic_name(topic)).with_partition_data(vec![
                 PartitionProduceData::default().with_index(partition).with_records(Some(batch)),
             ])]);
-        let resp: ProduceResponse = conn.request(ApiKey::Produce, version, &req, timeout).await?;
+        let resp: ProduceResponse = conn.request(version, &req, timeout).await?;
         let p = resp
             .responses
             .iter()
@@ -349,7 +345,7 @@ impl KafkaClient {
             .with_topics(vec![FetchTopic::default().with_topic(topic_name(topic)).with_partitions(vec![
                 FetchPartition::default().with_partition(partition).with_fetch_offset(offset).with_partition_max_bytes(16 << 20),
             ])]);
-        let resp: FetchResponse = conn.request(ApiKey::Fetch, version, &req, timeout).await?;
+        let resp: FetchResponse = conn.request(version, &req, timeout).await?;
         if let Some(e) = ClientError::broker(resp.error_code) {
             return Err(e);
         }
@@ -359,7 +355,7 @@ impl KafkaClient {
                 return Err(e);
             }
             if let Some(raw) = &p.records {
-                records.extend(decode_batches(raw));
+                records.extend(RecordBatch::decode_all(raw)?.into_iter().flat_map(|batch| batch.records));
             }
         }
         Ok(records)
@@ -402,7 +398,7 @@ impl KafkaClient {
                     .with_name(topic_name(topic))
                     .with_partitions(vec![ListOffsetsPartition::default().with_partition_index(partition).with_timestamp(timestamp)]),
             ]);
-            let resp: ListOffsetsResponse = conn.request(ApiKey::ListOffsets, version, &req, timeout).await?;
+            let resp: ListOffsetsResponse = conn.request(version, &req, timeout).await?;
             let p = resp
                 .topics
                 .iter()
@@ -431,7 +427,7 @@ impl KafkaClient {
                     .with_resource_name(StrBytes::from_string(topic.to_string()))
                     .with_configuration_keys(keys),
             ]);
-            let resp: DescribeConfigsResponse = self.on_any(ApiKey::DescribeConfigs, version, &req, timeout).await?;
+            let resp: DescribeConfigsResponse = self.on_any(version, &req, timeout).await?;
             let result = resp
                 .results
                 .iter()
