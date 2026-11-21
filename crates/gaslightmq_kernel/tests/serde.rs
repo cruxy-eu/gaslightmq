@@ -8,6 +8,7 @@ use std::fmt::Debug;
 use gaslightmq_kernel::prelude::*;
 use serde::Serialize;
 use serde::de::DeserializeOwned;
+use serde_test::{Compact, Configure, Token, assert_de_tokens_error, assert_tokens};
 
 /// `json` is what the value writes, and what reads back as the same value.
 fn writes<T: Serialize + DeserializeOwned + PartialEq + Debug>(value: T, json: &str) {
@@ -127,4 +128,89 @@ fn a_definition_holds_value_objects() {
     let event: LeaderMoves = serde_json::from_str(r#"{ "partition": "orders.eu/3", "to": 2 }"#).unwrap();
 
     assert_eq!(event, LeaderMoves { partition: "orders.eu/3".parse().unwrap(), to: Some(BrokerId::from(2)) });
+}
+
+#[test]
+fn an_api_key_and_an_error_code_write_their_name() {
+    writes(ApiKey::PRODUCE, r#""Produce""#);
+    writes(ApiKey::FIND_COORDINATOR, r#""FindCoordinator""#);
+    writes(ErrorCode::NOT_LEADER_OR_FOLLOWER, r#""NOT_LEADER_OR_FOLLOWER""#);
+    writes(ErrorCode::UNKNOWN_SERVER_ERROR, r#""UNKNOWN_SERVER_ERROR""#);
+}
+
+#[test]
+fn an_api_key_and_an_error_code_without_a_name_write_their_number() {
+    writes(ApiKey::from(4711), "4711");
+    writes(ApiKey::from(-1), "-1");
+    writes(ErrorCode::try_from(999).unwrap(), "999");
+    writes(ErrorCode::try_from(-2).unwrap(), "-2");
+}
+
+#[test]
+fn an_api_key_and_an_error_code_read_a_number_and_a_number_as_text() {
+    for json in ["0", r#""0""#, r#""Produce""#] {
+        assert_eq!(serde_json::from_str::<ApiKey>(json).unwrap(), ApiKey::PRODUCE, "{json}");
+    }
+    for json in ["6", r#""6""#, r#""NOT_LEADER_OR_FOLLOWER""#] {
+        assert_eq!(serde_json::from_str::<ErrorCode>(json).unwrap(), ErrorCode::NOT_LEADER_OR_FOLLOWER, "{json}");
+    }
+    assert_eq!(serde_json::from_str::<ApiKey>(r#""4711""#).unwrap(), ApiKey::from(4711));
+    assert_eq!(serde_json::from_str::<ErrorCode>("-1").unwrap(), ErrorCode::UNKNOWN_SERVER_ERROR);
+}
+
+#[test]
+fn reading_an_api_key_or_an_error_code_applies_its_rule() {
+    rejects::<ApiKey>(r#""Prodcue""#, "unknown API key: \"Prodcue\"");
+    rejects::<ApiKey>(r#""produce""#, "unknown API key: \"produce\"");
+    rejects::<ApiKey>(r#""40000""#, "API key 40000 exceeds the maximum of 32767");
+    rejects::<ApiKey>("40000", "invalid value: integer `40000`, expected the name or the number of a Kafka API");
+    rejects::<ApiKey>("-40000", "invalid value: integer `-40000`, expected the name or the number of a Kafka API");
+    rejects::<ApiKey>("1.5", "invalid type");
+    rejects::<ApiKey>("true", "invalid type");
+    rejects::<ErrorCode>(r#""NOT_LEADER""#, "unknown error code: \"NOT_LEADER\"");
+    rejects::<ErrorCode>(r#""NONE""#, "error code cannot be \"NONE\"");
+    rejects::<ErrorCode>(r#""0""#, "error code cannot be \"0\"");
+    rejects::<ErrorCode>("0", "error code cannot be \"0\"");
+    rejects::<ErrorCode>("40000", "invalid value: integer `40000`, expected the name or the number of a Kafka error");
+}
+
+#[test]
+fn an_api_key_and_an_error_code_are_keys_of_a_map() {
+    writes(BTreeMap::from([(ApiKey::PRODUCE, 3), (ApiKey::from(4711), 1)]), r#"{"Produce":3,"4711":1}"#);
+    writes(
+        BTreeMap::from([(ErrorCode::NOT_LEADER_OR_FOLLOWER, 3), (ErrorCode::try_from(999).unwrap(), 1)]),
+        r#"{"NOT_LEADER_OR_FOLLOWER":3,"999":1}"#,
+    );
+}
+
+#[test]
+fn a_format_that_people_read_gets_the_name() {
+    assert_tokens(&ApiKey::PRODUCE.readable(), &[Token::Str("Produce")]);
+    assert_tokens(&ApiKey::from(4711).readable(), &[Token::I16(4711)]);
+    assert_tokens(&ErrorCode::NOT_LEADER_OR_FOLLOWER.readable(), &[Token::Str("NOT_LEADER_OR_FOLLOWER")]);
+    assert_tokens(&ErrorCode::try_from(999).unwrap().readable(), &[Token::I16(999)]);
+}
+
+#[test]
+fn a_binary_format_gets_the_number() {
+    assert_tokens(&ApiKey::PRODUCE.compact(), &[Token::I16(0)]);
+    assert_tokens(&ApiKey::from(4711).compact(), &[Token::I16(4711)]);
+    assert_tokens(&ErrorCode::NOT_LEADER_OR_FOLLOWER.compact(), &[Token::I16(6)]);
+    assert_tokens(&ErrorCode::try_from(999).unwrap().compact(), &[Token::I16(999)]);
+    assert_de_tokens_error::<Compact<ErrorCode>>(&[Token::I16(0)], "error code cannot be \"0\"");
+}
+
+#[test]
+fn a_refusal_holds_an_error_code_and_no_error_is_none() {
+    #[derive(Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+    struct Refusal {
+        api: ApiKey,
+        error: Option<ErrorCode>,
+    }
+
+    writes(
+        Refusal { api: ApiKey::PRODUCE, error: Some(ErrorCode::REQUEST_TIMED_OUT) },
+        r#"{"api":"Produce","error":"REQUEST_TIMED_OUT"}"#,
+    );
+    writes(Refusal { api: ApiKey::from(4711), error: None }, r#"{"api":4711,"error":null}"#);
 }

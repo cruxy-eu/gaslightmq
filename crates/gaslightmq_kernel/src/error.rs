@@ -21,8 +21,13 @@ pub enum KernelError {
     /// The number is above the highest `what`.
     /// `value` stops at [`u64::MAX`] for a text with more digits than that.
     TooLarge { what: &'static str, value: u64, max: u64 },
+    /// The number is below the lowest `what`.
+    /// `value` stops at [`i64::MIN`] for a text with more digits than that.
+    TooSmall { what: &'static str, value: i64, min: i64 },
     /// The text is not a decimal number.
     NotANumber { what: &'static str, input: String },
+    /// The text is not a name that Kafka gives a `what`, and not a number either.
+    UnknownName { what: &'static str, input: String },
     /// The text does not have the form of `what`, such as `topic/partition`.
     Malformed { what: &'static str, input: String, expected: &'static str },
 }
@@ -38,7 +43,9 @@ impl fmt::Display for KernelError {
             Self::Reserved { what, value } => write!(f, "{what} cannot be {value:?}"),
             Self::Negative { what, value } => write!(f, "{what} cannot be negative: {value}"),
             Self::TooLarge { what, value, max } => write!(f, "{what} {value} exceeds the maximum of {max}"),
+            Self::TooSmall { what, value, min } => write!(f, "{what} {value} is below the minimum of {min}"),
             Self::NotANumber { what, input } => write!(f, "{what} is not a number: {input:?}"),
+            Self::UnknownName { what, input } => write!(f, "unknown {what}: {input:?}"),
             Self::Malformed { what, input, expected } => {
                 write!(f, "{what} {input:?} does not have the form {expected}")
             }
@@ -70,7 +77,12 @@ mod tests {
                 KernelError::TooLarge { what: "producer epoch", value: 40_000, max: 32_767 },
                 "producer epoch 40000 exceeds the maximum of 32767",
             ),
+            (
+                KernelError::TooSmall { what: "API key", value: -40_000, min: -32_768 },
+                "API key -40000 is below the minimum of -32768",
+            ),
             (KernelError::NotANumber { what: "offset", input: "x".into() }, "offset is not a number: \"x\""),
+            (KernelError::UnknownName { what: "API key", input: "Prodcue".into() }, "unknown API key: \"Prodcue\""),
             (
                 KernelError::Malformed { what: "topic partition", input: "orders".into(), expected: "topic/partition" },
                 "topic partition \"orders\" does not have the form topic/partition",

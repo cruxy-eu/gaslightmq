@@ -8,6 +8,7 @@ version = "0.1.0"
 
 [workspace.dependencies]
 gaslightmq_kafka_client_api = { path = "crates/gaslightmq_kafka_client/api" }
+gaslightmq_kernel = { path = "crates/gaslightmq_kernel" }
 gaslightmq_wire = { path = "crates/gaslightmq_wire" }
 bytes = "1"
 futures = "0.3"
@@ -15,6 +16,7 @@ indexmap = "2"
 kafka-protocol = "0.17"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+serde_test = "1"
 tokio = "1"
 tracing = "0.1"
 

@@ -7,3 +7,6 @@ edition.workspace = true
 bytes.workspace = true
 indexmap.workspace = true
 kafka-protocol.workspace = true
+
+[dev-dependencies]
+gaslightmq_kernel.workspace = true

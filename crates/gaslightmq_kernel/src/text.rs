@@ -156,10 +156,20 @@ macro_rules! text_value {
     };
 }
 
-/// Give a type that has a text form the conversions from and to owned text.
+/// Give a type that has a text form the conversions from and to owned text, and the text form in `serde`.
 ///
 /// The type implements `FromStr` and `Display`, and this macro builds on both.
 macro_rules! text_form {
+    ($name:ident) => {
+        $crate::text::text_conversions!($name);
+        $crate::text::text_serde!($name);
+    };
+}
+
+/// Give a type that has a text form the conversions from and to owned text.
+///
+/// The type implements `FromStr` and `Display`, and this macro builds on both.
+macro_rules! text_conversions {
     ($name:ident) => {
         impl TryFrom<&str> for $name {
             type Error = $crate::KernelError;
@@ -182,8 +192,6 @@ macro_rules! text_form {
                 value.to_string()
             }
         }
-
-        $crate::text::text_serde!($name);
     };
 }
 
@@ -209,7 +217,7 @@ macro_rules! text_serde {
     };
 }
 
-pub(crate) use {text_form, text_serde, text_value};
+pub(crate) use {text_conversions, text_form, text_serde, text_value};
 
 #[cfg(test)]
 mod tests {

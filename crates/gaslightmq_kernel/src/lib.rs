@@ -18,6 +18,8 @@
 //! | [`TransactionalId`] | The `transactional.id` of a producer. | `payments-tx-1` |
 //! | [`ProducerId`] | The ID of an idempotent or transactional producer. | `4000` |
 //! | [`ProducerEpoch`] | The epoch of a producer ID. | `5` |
+//! | [`ApiKey`] | The key of a Kafka API. | `Produce` |
+//! | [`ErrorCode`] | The code of a Kafka error. | `NOT_LEADER_OR_FOLLOWER` |
 //!
 //! A value of one of these types is always valid.
 //! A constructor checks the raw value and returns a [`KernelError`] for one that breaks the type's rule.
@@ -70,9 +72,17 @@
 //!
 //! Exactly one integer type converts with `From`, so a literal needs no suffix: `Offset::from(42)`.
 //!
+//! An [`ApiKey`] and an [`ErrorCode`] hold the `i16` Kafka writes, and Kafka gives most of them a name.
+//!
+//! | From or to | Through |
+//! |---|---|
+//! | A number | `new`, `value`, `From<T> for i16`, and `From<i16>` for an API key or `TryFrom<i16>` for an error code |
+//! | A name | A constant such as [`ApiKey::PRODUCE`], `name`, `known` |
+//! | Text | [`FromStr`](std::str::FromStr) and [`Display`](std::fmt::Display): the name, or the number without one |
+//!
 //! [`TopicId`] converts from and to `[u8; 16]` and `u128`.
 //! [`TopicPartition`], [`PartitionOffset`] and [`TopicPartitionOffset`] convert from and to tuples of their parts.
-//! All four convert from and to their text form, as the names and IDs do.
+//! These four, an [`ApiKey`] and an [`ErrorCode`] convert from and to their text form, as the names and IDs do.
 //!
 //! # What Kafka writes for "none"
 //!
@@ -86,6 +96,7 @@
 //! | [`Offset`], [`BrokerId`], [`LeaderEpoch`], [`ProducerId`], [`ProducerEpoch`] | `-1` |
 //! | [`TopicId`] | The UUID of all zeros. |
 //! | [`MemberId`] | An empty string. |
+//! | [`ErrorCode`] | `0`, which Kafka calls `NONE`. |
 //!
 //! ```
 //! use gaslightmq_kernel::prelude::*;
@@ -106,15 +117,23 @@
 //! A selector or an event in YAML writes `orders.eu/3` for a topic partition and `3` for a partition number.
 //! Deserialization applies the same rule as the constructor.
 //!
+//! An [`ApiKey`] and an [`ErrorCode`] serialize as their name, such as `Produce`.
+//! One without a name serializes as its number, and both forms read back.
+//! A format that people do not read, such as a binary one, gets the number alone.
+//!
 //! # No IO
 //!
 //! The crate depends on no other crate of the workspace.
 //! It has no async code, no IO, no clock and no randomness, and it compiles to WebAssembly.
 
+mod api;
 mod client;
 mod cluster;
+mod code;
 mod error;
+mod error_code;
 mod group;
+mod names;
 mod number;
 mod offset;
 mod partition;
@@ -122,9 +141,11 @@ mod producer;
 mod text;
 mod topic;
 
+pub use api::ApiKey;
 pub use client::ClientId;
 pub use cluster::{BrokerId, LeaderEpoch};
 pub use error::KernelError;
+pub use error_code::ErrorCode;
 pub use group::{GroupId, GroupInstanceId, MemberId};
 pub use offset::Offset;
 pub use partition::{PartitionNumber, PartitionOffset, TopicPartition, TopicPartitionOffset};
@@ -146,8 +167,8 @@ pub use topic::{TopicId, TopicName};
 pub mod prelude {
     #[doc(no_inline)]
     pub use crate::{
-        BrokerId, ClientId, GroupId, GroupInstanceId, KernelError, LeaderEpoch, MemberId, Offset, PartitionNumber,
-        PartitionOffset, ProducerEpoch, ProducerId, TopicId, TopicName, TopicPartition, TopicPartitionOffset,
-        TransactionalId,
+        ApiKey, BrokerId, ClientId, ErrorCode, GroupId, GroupInstanceId, KernelError, LeaderEpoch, MemberId, Offset,
+        PartitionNumber, PartitionOffset, ProducerEpoch, ProducerId, TopicId, TopicName, TopicPartition,
+        TopicPartitionOffset, TransactionalId,
     };
 }

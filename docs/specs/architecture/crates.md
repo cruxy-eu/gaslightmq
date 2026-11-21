@@ -93,7 +93,7 @@ Every other crate speaks in them.
 
 | Crate | Holds | Depends on |
 |---|---|---|
-| `kernel` | The value objects of Kafka: topic names and IDs, partition numbers, offsets, positions such as `orders.eu/3`, broker IDs, epochs, and the IDs of clients, groups and producers. Each type only holds valid values. | — |
+| `kernel` | The value objects of Kafka: topic names and IDs, partition numbers, offsets, positions such as `orders.eu/3`, broker IDs, epochs, the IDs of clients, groups and producers, and API keys and error codes with the names Kafka gives them. Each type only holds valid values. | — |
 | `field` | The [field vocabulary](../domains/targeting.md#fields): field names, values, and the `FieldSource` trait that a live call and a recorded call both implement. Every district of the town plan [shares this vocabulary](../townplan/README.md#targeting-is-a-shared-kernel). | — |
 | `clock` | The [clock](README.md#clock): a `Clock` trait, the virtual clock, and instants that do not come from the system. | — |
 | `wire` | The Kafka codec: frames, headers, lazily decoded bodies and record batches. | — |

@@ -149,6 +149,30 @@ fn every_type_with_a_text_form_reads_what_it_prints() {
     round_trips_as_text::<TopicPartition>("orders.eu/3");
     round_trips_as_text::<PartitionOffset>("3@42");
     round_trips_as_text::<TopicPartitionOffset>("orders.eu/3@42");
+    round_trips_as_text::<ApiKey>("Produce");
+    round_trips_as_text::<ApiKey>("4711");
+    round_trips_as_text::<ErrorCode>("NOT_LEADER_OR_FOLLOWER");
+    round_trips_as_text::<ErrorCode>("999");
+}
+
+#[test]
+fn an_api_key_and_an_error_code_convert_from_and_to_the_number_kafka_writes() {
+    let produce: ApiKey = 0_i16.into();
+    let not_leader: ErrorCode = 6_i16.try_into().unwrap();
+
+    assert_eq!((produce, not_leader), (ApiKey::PRODUCE, ErrorCode::NOT_LEADER_OR_FOLLOWER));
+    assert_eq!((i16::from(produce), i16::from(not_leader)), (0, 6));
+    assert_eq!((produce.value(), not_leader.value()), (0, 6));
+    assert_eq!((produce.name(), not_leader.name()), (Some("Produce"), Some("NOT_LEADER_OR_FOLLOWER")));
+    assert!(produce.is_known() && not_leader.is_known());
+    assert!(ApiKey::known().any(|key| key == produce) && ErrorCode::known().any(|code| code == not_leader));
+}
+
+#[test]
+fn an_error_code_reads_zero_as_none() {
+    assert_eq!(ErrorCode::from_wire(0), None);
+    assert_eq!(ErrorCode::to_wire(None), 0_i16);
+    assert!(matches!(ErrorCode::try_from(0), Err(KernelError::Reserved { .. })));
 }
 
 #[test]

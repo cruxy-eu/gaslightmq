@@ -54,6 +54,8 @@ mod next_to_std {
             TransactionalId::new("payments-tx-1").unwrap().to_string(),
             ProducerId::from(4000).to_string(),
             ProducerEpoch::from(5).to_string(),
+            ApiKey::PRODUCE.to_string(),
+            ErrorCode::NOT_LEADER_OR_FOLLOWER.to_string(),
             error.to_string(),
         ]
     }
@@ -94,6 +96,8 @@ fn the_prelude_holds_every_value_object_and_the_error() {
             "payments-tx-1",
             "4000",
             "5",
+            "Produce",
+            "NOT_LEADER_OR_FOLLOWER",
             "topic name is empty",
         ]
     );
