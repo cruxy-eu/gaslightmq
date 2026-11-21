@@ -1,10 +1,10 @@
 [package]
-name = "gmq_kafka_client"
+name = "gaslightmq_kafka_client"
 version.workspace = true
 edition.workspace = true
 
 [dependencies]
-gmq_wire.workspace = true
+gaslightmq_wire.workspace = true
 bytes.workspace = true
 futures.workspace = true
 tokio = { workspace = true, features = ["net", "io-util", "time", "sync"] }

@@ -6,11 +6,11 @@ or one component of the [engine](README.md#components).
 This document describes the target layout.
 Moving the current crates to it is a separate plan.
 
-Every crate name starts with `gmq_` and uses underscores, never hyphens.
+Every crate name starts with `gaslightmq_` and uses underscores, never hyphens.
 The name in `Cargo.toml`, the directory and the path in code are then one string,
 so one search finds all three.
-The tables leave the prefix out: `selector` is the crate `gmq_selector`.
-Two crates carry no prefix: the facade `gaslightmq` and the binary `gmq`.
+The tables leave the prefix out: `selector` is the crate `gaslightmq_selector`.
+Two crates stand apart: the facade is plain `gaslightmq`, and the binary is `gmq`.
 
 ## Principles
 

@@ -15,8 +15,8 @@
 //! and writes the bytes of a [`Frame`].
 //!
 //! ```
-//! use gmq_wire::messages::{MetadataRequest, MetadataResponse};
-//! use gmq_wire::{FrameDecoder, Request, Response};
+//! use gaslightmq_wire::messages::{MetadataRequest, MetadataResponse};
+//! use gaslightmq_wire::{FrameDecoder, Request, Response};
 //!
 //! // A client builds a request and puts it on the connection.
 //! let request = Request::new(12, 7, Some("orders"), &MetadataRequest::default())?;
@@ -32,12 +32,12 @@
 //! // It answers under the same correlation ID.
 //! let response = received.response(&MetadataResponse::default())?;
 //! assert_eq!(Response::peek_correlation_id(response.frame())?, 7);
-//! # Ok::<(), gmq_wire::WireError>(())
+//! # Ok::<(), gaslightmq_wire::WireError>(())
 //! ```
 //!
 //! The message types come from the `kafka-protocol` crate.
 //! This crate re-exports them as [`messages`] and [`protocol`],
-//! so the rest of the workspace depends on `gmq_wire` alone.
+//! so the rest of the workspace depends on `gaslightmq_wire` alone.
 
 mod api;
 mod error;

@@ -188,6 +188,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "gaslightmq_kafka_client"
+version = "0.1.0"
+dependencies = [
+ "bytes",
+ "futures",
+ "gaslightmq_wire",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
+name = "gaslightmq_wire"
+version = "0.1.0"
+dependencies = [
+ "bytes",
+ "indexmap",
+ "kafka-protocol",
+]
+
+[[package]]
 name = "getrandom"
 version = "0.3.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -197,26 +217,6 @@ dependencies = [
  "libc",
  "r-efi",
  "wasip2",
-]
-
-[[package]]
-name = "gmq_kafka_client"
-version = "0.1.0"
-dependencies = [
- "bytes",
- "futures",
- "gmq_wire",
- "tokio",
- "tracing",
-]
-
-[[package]]
-name = "gmq_wire"
-version = "0.1.0"
-dependencies = [
- "bytes",
- "indexmap",
- "kafka-protocol",
 ]
 
 [[package]]

@@ -287,7 +287,7 @@ h3.sub{color:var(--t2);font-size:13px;font-weight:600;margin:22px 0 10px}
 <!-- ───────────────────────── 3 · crates ───────────────────────── -->
 <section id="crates">
   <h2>Crates</h2>
-  <p class="lead">Every crate name starts with <code>gmq_</code> and uses underscores. The facade <code>gaslightmq</code> and the binary <code>gmq</code> carry no prefix. Dependencies point down the page. Hover a crate to see what it needs and who uses it, click to pin it.</p>
+  <p class="lead">Every crate name starts with <code>gaslightmq_</code> and uses underscores. The facade is plain <code>gaslightmq</code>, and the binary is <code>gmq</code>. Dependencies point down the page. Hover a crate to see what it needs and who uses it, click to pin it.</p>
 
   <div class="tools">
     <label>Build order</label>
@@ -504,7 +504,7 @@ function render() {
   users.forEach(u => curve(u, cur, "user"));
   const list = (ns) => ns.length ? `<div class="list">${ns.map(n => `<button data-go="${n}">${n}</button>`).join("")}</div>` : `<p class="none">None.</p>`;
   insp.innerHTML = `
-    <h3>${c.name === "gmq" || c.name === "gaslightmq" ? c.name : "gmq_" + c.name}</h3>
+    <h3>${c.name === "gmq" || c.name === "gaslightmq" ? c.name : "gaslightmq_" + c.name}</h3>
     <div class="meta">
       <span class="tag ${c.kind === "app" ? "ext" : c.kind}">${KIND[c.kind]}</span>
       <span class="tag ext">${c.layer}</span>

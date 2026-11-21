@@ -3,10 +3,10 @@
 use std::net::SocketAddr;
 use std::time::Duration;
 
-use gmq_kafka_client::{ClientConfig, ClientError, KafkaClient};
-use gmq_wire::messages::api_versions_response::ApiVersion;
-use gmq_wire::messages::{ApiVersionsResponse, MetadataResponse};
-use gmq_wire::{ApiKey, FrameDecoder, Request};
+use gaslightmq_kafka_client::{ClientConfig, ClientError, KafkaClient};
+use gaslightmq_wire::messages::api_versions_response::ApiVersion;
+use gaslightmq_wire::messages::{ApiVersionsResponse, MetadataResponse};
+use gaslightmq_wire::{ApiKey, FrameDecoder, Request};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 

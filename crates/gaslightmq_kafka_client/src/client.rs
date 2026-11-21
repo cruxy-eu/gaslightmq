@@ -8,19 +8,19 @@ use crate::traits::{
     Admin, Consumer, PartitionMetadata, ProduceResult, Producer, TopicConfigs, TopicMetadata,
     Watermarks,
 };
-use gmq_wire::protocol::Request as KafkaRequest;
-use gmq_wire::{Offset, Partition, Record, RecordBatch};
-use gmq_wire::messages::describe_configs_request::DescribeConfigsResource;
-use gmq_wire::messages::fetch_request::{FetchPartition, FetchTopic};
-use gmq_wire::messages::list_offsets_request::{ListOffsetsPartition, ListOffsetsTopic};
-use gmq_wire::messages::metadata_request::MetadataRequestTopic;
-use gmq_wire::messages::produce_request::{PartitionProduceData, TopicProduceData};
-use gmq_wire::messages::{
+use gaslightmq_wire::protocol::Request as KafkaRequest;
+use gaslightmq_wire::{Offset, Partition, Record, RecordBatch};
+use gaslightmq_wire::messages::describe_configs_request::DescribeConfigsResource;
+use gaslightmq_wire::messages::fetch_request::{FetchPartition, FetchTopic};
+use gaslightmq_wire::messages::list_offsets_request::{ListOffsetsPartition, ListOffsetsTopic};
+use gaslightmq_wire::messages::metadata_request::MetadataRequestTopic;
+use gaslightmq_wire::messages::produce_request::{PartitionProduceData, TopicProduceData};
+use gaslightmq_wire::messages::{
     ApiKey, ApiVersionsRequest, ApiVersionsResponse, BrokerId, DescribeConfigsRequest,
     DescribeConfigsResponse, FetchRequest, FetchResponse, ListOffsetsRequest, ListOffsetsResponse,
     MetadataRequest, MetadataResponse, ProduceRequest, ProduceResponse, TopicName,
 };
-use gmq_wire::protocol::StrBytes;
+use gaslightmq_wire::protocol::StrBytes;
 use tokio::sync::OnceCell;
 use tokio::time::Instant;
 use tracing::debug;

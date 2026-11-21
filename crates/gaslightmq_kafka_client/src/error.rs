@@ -1,6 +1,6 @@
 use std::fmt;
 
-use gmq_wire::{ResponseError, WireError};
+use gaslightmq_wire::{ResponseError, WireError};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ClientError {

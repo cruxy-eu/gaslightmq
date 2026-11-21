@@ -1,5 +1,5 @@
 [package]
-name = "gmq_wire"
+name = "gaslightmq_wire"
 version.workspace = true
 edition.workspace = true
 

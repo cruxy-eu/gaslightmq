@@ -3,8 +3,8 @@
 use std::sync::atomic::{AtomicI32, Ordering};
 use std::time::Duration;
 
-use gmq_wire::protocol::Request as KafkaRequest;
-use gmq_wire::{Frame, FrameDecoder, Request, Response};
+use gaslightmq_wire::protocol::Request as KafkaRequest;
+use gaslightmq_wire::{Frame, FrameDecoder, Request, Response};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 use tokio::sync::Mutex;

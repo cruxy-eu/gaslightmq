@@ -4,16 +4,16 @@ use std::net::SocketAddr;
 use std::sync::atomic::{AtomicI32, Ordering};
 
 use futures::StreamExt;
-use gmq_wire::messages::fetch_request::{FetchPartition, FetchTopic};
-use gmq_wire::messages::produce_request::{PartitionProduceData, TopicProduceData};
-use gmq_wire::messages::{
+use gaslightmq_wire::messages::fetch_request::{FetchPartition, FetchTopic};
+use gaslightmq_wire::messages::produce_request::{PartitionProduceData, TopicProduceData};
+use gaslightmq_wire::messages::{
     ApiVersionsRequest, ApiVersionsResponse, CreateTopicsRequest, CreateTopicsResponse, DeleteTopicsRequest,
     DeleteTopicsResponse, FetchRequest, FetchResponse, FindCoordinatorRequest, FindCoordinatorResponse, GroupId,
     HeartbeatRequest, JoinGroupRequest, ListOffsetsRequest, ListOffsetsResponse, MetadataRequest, MetadataResponse,
     ProduceRequest, ProduceResponse, SyncGroupRequest, TopicName,
 };
-use gmq_wire::protocol::{Request as KafkaRequest, StrBytes};
-use gmq_wire::{Offset, Partition, Record, RecordBatch, Request, ResponseError, WireError};
+use gaslightmq_wire::protocol::{Request as KafkaRequest, StrBytes};
+use gaslightmq_wire::{Offset, Partition, Record, RecordBatch, Request, ResponseError, WireError};
 use tokio::sync::Mutex;
 
 use crate::connection::Socket;

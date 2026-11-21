@@ -2,8 +2,8 @@ use std::future::Future;
 use std::pin::Pin;
 
 use futures::Stream;
-use gmq_wire::{Offset, Partition, Record};
-use gmq_wire::ResponseError;
+use gaslightmq_wire::{Offset, Partition, Record};
+use gaslightmq_wire::ResponseError;
 
 pub type RecordStream = Pin<Box<dyn Stream<Item = Record> + Send>>;
 
