@@ -4,7 +4,7 @@ use gaslightmq_clock::TimeSpan;
 use gaslightmq_field::prelude::*;
 use gaslightmq_kernel::prelude::*;
 
-use crate::{Aspect, CombinationClass, LieKind, Stage, TargetedLie};
+use crate::{Aspect, CombinationClass, LieError, LieKind, Stage, TargetedLie};
 
 /// A refusal: the client is told that the request failed.
 ///
@@ -61,6 +61,23 @@ impl fmt::Display for RefusalLie {
 /// Every parameter is a time span, and zero means that the lie leaves it alone.
 /// A timing lie acts after the response unless it says otherwise, so the backend answers on time and the client waits.
 ///
+/// A timing lie whose parameters are all zero changes nothing.
+/// It is a valid lie: it is where the `with_` methods start from, and it harms no call.
+///
+/// # What always holds
+///
+/// - The [jitter](Self::jitter) is at most the [delay](Self::delay), so the shortest wait is never less than no time.
+/// - The [throttle](Self::throttle) is at most [`MAX_THROTTLE`](Self::MAX_THROTTLE), so it fits `throttle_time_ms`.
+///
+/// Whoever does the telling can therefore compute `delay - jitter`, and cast the throttle to an `i32`.
+/// The parameters are private for that reason, unlike those of a [`RefusalLie`], which take any value.
+///
+/// The `with_` methods never fail.
+/// A value that is too long stops at the longest one that holds, as [`TimeSpan::from_secs`] stops at the longest time span.
+/// Code that builds a lie has no user to report an error to, and a chain of `with_` calls stays a `const` expression.
+/// Reading a file is different: with the `serde` feature, a value that is too long is an error,
+/// because the person who wrote it meant something else.
+///
 /// ```
 /// use gaslightmq_clock::TimeSpan;
 /// use gaslightmq_lie::prelude::*;
@@ -69,28 +86,32 @@ impl fmt::Display for RefusalLie {
 /// let delay = TimingLie::new()
 ///     .with_delay(TimeSpan::from_secs(1))
 ///     .with_jitter(TimeSpan::from_millis(200));
-/// assert_eq!(delay.stage, Stage::AfterResponse);
-/// assert_eq!(delay.throttle, TimeSpan::ZERO);
+/// assert_eq!(delay.stage(), Stage::AfterResponse);
+/// assert_eq!(delay.throttle(), TimeSpan::ZERO);
 /// assert_eq!(delay.to_string(), "+1 s ±200 ms");
 ///
 /// // A late Heartbeat can expire the member, and cause a real rebalance.
 /// let late = TimingLie::new().with_delay(TimeSpan::from_secs(45)).at(Stage::BeforeForwarding);
 /// assert_eq!(late.to_string(), "+45 s before forwarding");
+///
+/// // The jitter stops at the delay.
+/// let wild = TimingLie::new()
+///     .with_delay(TimeSpan::from_millis(100))
+///     .with_jitter(TimeSpan::from_millis(200));
+/// assert_eq!(wild.jitter(), TimeSpan::from_millis(100));
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct TimingLie {
-    /// How long the call waits.
-    pub delay: TimeSpan,
-    /// How far the wait strays from `delay`, either way.
-    /// A delay of `1s` with a jitter of `200ms` waits between 800 ms and 1200 ms.
-    pub jitter: TimeSpan,
-    /// The `throttle_time_ms` of the answer, which tells the client to back off for that long.
-    pub throttle: TimeSpan,
-    /// Where the call waits: before the backend sees the request, or before the client sees the answer.
-    pub stage: Stage,
+    delay: TimeSpan,
+    jitter: TimeSpan,
+    throttle: TimeSpan,
+    stage: Stage,
 }
 
 impl TimingLie {
+    /// The longest throttle: `throttle_time_ms` is an `i32`, so it holds 2147483647 ms at most, which is nearly 25 days.
+    pub const MAX_THROTTLE: TimeSpan = TimeSpan::from_millis(i32::MAX as u64);
+
     /// A timing lie that changes nothing yet, after the response.
     pub const fn new() -> Self {
         Self {
@@ -101,24 +122,66 @@ impl TimingLie {
         }
     }
 
+    /// A timing lie of exactly those parameters, as a file writes them.
+    ///
+    /// # Errors
+    ///
+    /// - [`LieError::JitterExceedsDelay`] when `jitter` is longer than `delay`.
+    /// - [`LieError::ThrottleTooLong`] when `throttle` is longer than [`MAX_THROTTLE`](Self::MAX_THROTTLE).
+    #[cfg(feature = "serde")]
+    pub(crate) fn checked(
+        delay: TimeSpan,
+        jitter: TimeSpan,
+        throttle: TimeSpan,
+        stage: Stage,
+    ) -> Result<Self, LieError> {
+        if jitter > delay {
+            return Err(LieError::JitterExceedsDelay { jitter, delay });
+        }
+        if throttle > Self::MAX_THROTTLE {
+            return Err(LieError::ThrottleTooLong { throttle });
+        }
+        Ok(Self {
+            delay,
+            jitter,
+            throttle,
+            stage,
+        })
+    }
+
     /// The same lie with that delay.
+    ///
+    /// The jitter never exceeds the delay, so a jitter that is longer than `delay` stops at `delay`.
     #[must_use]
     pub const fn with_delay(mut self, delay: TimeSpan) -> Self {
         self.delay = delay;
+        self.jitter = shorter(self.jitter, delay);
         self
     }
 
-    /// The same lie with that jitter.
+    /// The same lie with that jitter, which stops at the delay.
+    ///
+    /// Set the delay first: a lie without a delay has no wait to stray from, and its jitter stays zero.
+    ///
+    /// ```
+    /// use gaslightmq_clock::TimeSpan;
+    /// use gaslightmq_lie::prelude::*;
+    ///
+    /// let (second, jitter) = (TimeSpan::from_secs(1), TimeSpan::from_millis(200));
+    ///
+    /// assert_eq!(TimingLie::new().with_delay(second).with_jitter(jitter).jitter(), jitter);
+    /// assert_eq!(TimingLie::new().with_jitter(jitter).with_delay(second).jitter(), TimeSpan::ZERO);
+    /// ```
     #[must_use]
     pub const fn with_jitter(mut self, jitter: TimeSpan) -> Self {
-        self.jitter = jitter;
+        self.jitter = shorter(jitter, self.delay);
         self
     }
 
-    /// The same lie with that throttle.
+    /// The same lie with that throttle, which stops at [`MAX_THROTTLE`](Self::MAX_THROTTLE).
     #[must_use]
     pub const fn with_throttle(mut self, throttle: TimeSpan) -> Self {
-        self.throttle = throttle;
+        self.throttle = shorter(throttle, Self::MAX_THROTTLE);
         self
     }
 
@@ -127,6 +190,37 @@ impl TimingLie {
     pub const fn at(mut self, stage: Stage) -> Self {
         self.stage = stage;
         self
+    }
+
+    /// How long the call waits.
+    pub const fn delay(&self) -> TimeSpan {
+        self.delay
+    }
+
+    /// How far the wait strays from the delay, either way, and at most the delay.
+    /// A delay of `1s` with a jitter of `200ms` waits between 800 ms and 1200 ms.
+    pub const fn jitter(&self) -> TimeSpan {
+        self.jitter
+    }
+
+    /// The `throttle_time_ms` of the answer, which tells the client to back off for that long.
+    /// It is at most [`MAX_THROTTLE`](Self::MAX_THROTTLE).
+    pub const fn throttle(&self) -> TimeSpan {
+        self.throttle
+    }
+
+    /// Where the call waits: before the backend sees the request, or before the client sees the answer.
+    pub const fn stage(&self) -> Stage {
+        self.stage
+    }
+}
+
+/// The shorter of two time spans.
+const fn shorter(one: TimeSpan, other: TimeSpan) -> TimeSpan {
+    if one.as_millis() <= other.as_millis() {
+        one
+    } else {
+        other
     }
 }
 
@@ -141,7 +235,8 @@ impl Default for TimingLie {
 /// It leaves out what is zero, and the stage unless the lie acts before forwarding.
 impl fmt::Display for TimingLie {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let waits = self.delay != TimeSpan::ZERO || self.jitter != TimeSpan::ZERO;
+        // A jitter needs a delay, so the delay alone says whether the call waits.
+        let waits = self.delay != TimeSpan::ZERO;
         let throttles = self.throttle != TimeSpan::ZERO;
 
         if waits || !throttles {
@@ -230,8 +325,8 @@ impl fmt::Display for HangUpLie {
 ///
 /// // The rule matched one partition of a Produce.
 /// let matched = Target::of_parts(["orders.eu/3".parse()?]).expect("one part");
-/// assert_eq!(lie.on(matched).to_string(), "NOT_LEADER_OR_FOLLOWER on orders.eu/3");
-/// # Ok::<(), FieldError>(())
+/// assert_eq!(lie.on(matched)?.to_string(), "NOT_LEADER_OR_FOLLOWER on orders.eu/3");
+/// # Ok::<(), Box<dyn std::error::Error>>(())
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 #[non_exhaustive]
@@ -262,7 +357,7 @@ impl LieDefinition {
     pub const fn stage(&self) -> Stage {
         match self {
             Self::Refusal(lie) => lie.stage,
-            Self::Timing(lie) => lie.stage,
+            Self::Timing(lie) => lie.stage(),
             Self::Silence => LieKind::Silence.default_stage(),
             Self::HangUp(lie) => lie.stage,
         }
@@ -284,7 +379,11 @@ impl LieDefinition {
 
     /// The lie on what a selector matched.
     /// See [`TargetedLie::new`].
-    pub fn on(self, target: Target) -> TargetedLie {
+    ///
+    /// # Errors
+    ///
+    /// [`LieError::EmptyTarget`] when `target` is a set of parts without a part.
+    pub fn on(self, target: Target) -> Result<TargetedLie, LieError> {
         TargetedLie::new(self, target)
     }
 }
@@ -382,7 +481,7 @@ mod tests {
     #[test]
     fn a_new_lie_acts_at_the_default_stage_of_its_kind() {
         assert_eq!(RefusalLie::new(ErrorCode::UNKNOWN_SERVER_ERROR).stage, BEFORE);
-        assert_eq!(TimingLie::new().stage, AFTER);
+        assert_eq!(TimingLie::new().stage(), AFTER);
         assert_eq!(HangUpLie::new().stage, BEFORE);
         assert_eq!(TimingLie::default(), TimingLie::new());
         assert_eq!(HangUpLie::default(), HangUpLie::new());
@@ -400,7 +499,7 @@ mod tests {
     #[test]
     fn a_lie_that_names_its_stage_acts_there() {
         assert_eq!(RefusalLie::new(ErrorCode::REQUEST_TIMED_OUT).at(AFTER).stage, AFTER);
-        assert_eq!(TimingLie::new().at(BEFORE).stage, BEFORE);
+        assert_eq!(TimingLie::new().at(BEFORE).stage(), BEFORE);
         assert_eq!(HangUpLie::new().at(AFTER).stage, AFTER);
         assert_eq!(LieDefinition::from(HangUpLie::new().at(AFTER)).stage(), AFTER);
     }
@@ -408,21 +507,78 @@ mod tests {
     #[test]
     fn a_new_timing_lie_changes_nothing_until_it_gets_a_parameter() {
         let lie = TimingLie::new();
-        assert_eq!((lie.delay, lie.jitter, lie.throttle), (millis(0), millis(0), millis(0)));
+        assert_eq!(
+            (lie.delay(), lie.jitter(), lie.throttle()),
+            (millis(0), millis(0), millis(0))
+        );
 
         let lie = lie
             .with_delay(millis(1000))
             .with_jitter(millis(200))
             .with_throttle(millis(500));
         assert_eq!(
-            lie,
-            TimingLie {
-                delay: millis(1000),
-                jitter: millis(200),
-                throttle: millis(500),
-                stage: AFTER
-            }
+            (lie.delay(), lie.jitter(), lie.throttle(), lie.stage()),
+            (millis(1000), millis(200), millis(500), AFTER)
         );
+    }
+
+    #[test]
+    fn the_jitter_of_a_timing_lie_stops_at_its_delay() {
+        let lie = TimingLie::new().with_delay(millis(100));
+
+        assert_eq!(lie.with_jitter(millis(99)).jitter(), millis(99));
+        assert_eq!(lie.with_jitter(millis(100)).jitter(), millis(100));
+        assert_eq!(lie.with_jitter(millis(200)).jitter(), millis(100));
+        assert_eq!(lie.with_jitter(millis(u64::MAX)).jitter(), millis(100));
+    }
+
+    #[test]
+    fn a_timing_lie_without_a_delay_has_no_jitter() {
+        assert_eq!(TimingLie::new().with_jitter(millis(200)).jitter(), millis(0));
+        assert_eq!(TimingLie::new().with_jitter(millis(200)), TimingLie::new());
+
+        // The jitter comes after the delay it strays from.
+        let lie = TimingLie::new().with_jitter(millis(200)).with_delay(millis(1000));
+        assert_eq!((lie.delay(), lie.jitter()), (millis(1000), millis(0)));
+    }
+
+    #[test]
+    fn a_shorter_delay_shortens_the_jitter_with_it() {
+        let lie = TimingLie::new().with_delay(millis(1000)).with_jitter(millis(200));
+
+        let shorter = lie.with_delay(millis(50));
+        assert_eq!((shorter.delay(), shorter.jitter()), (millis(50), millis(50)));
+
+        let longer = lie.with_delay(millis(5000));
+        assert_eq!((longer.delay(), longer.jitter()), (millis(5000), millis(200)));
+
+        assert_eq!(lie.with_delay(millis(0)), TimingLie::new());
+    }
+
+    #[test]
+    fn the_throttle_of_a_timing_lie_stops_at_what_kafka_can_tell() {
+        let longest = millis(u64::from(i32::MAX.unsigned_abs()));
+        assert_eq!(TimingLie::MAX_THROTTLE, longest);
+        assert!(i32::try_from(TimingLie::MAX_THROTTLE.as_millis()).is_ok());
+
+        let lie = TimingLie::new();
+        assert_eq!(lie.with_throttle(longest).throttle(), longest);
+        assert_eq!(lie.with_throttle(millis(longest.as_millis() + 1)).throttle(), longest);
+        assert_eq!(lie.with_throttle(millis(u64::MAX)).throttle(), longest);
+        // The delay has no such bound.
+        assert_eq!(lie.with_delay(millis(u64::MAX)).delay(), millis(u64::MAX));
+    }
+
+    #[test]
+    fn a_chain_of_parameters_is_a_constant() {
+        const DELAY: TimingLie = TimingLie::new()
+            .with_delay(TimeSpan::from_secs(1))
+            .with_jitter(TimeSpan::from_secs(5))
+            .with_throttle(TimeSpan::from_millis(u64::MAX))
+            .at(BEFORE);
+
+        assert_eq!(DELAY.jitter(), DELAY.delay());
+        assert_eq!(DELAY.throttle(), TimingLie::MAX_THROTTLE);
     }
 
     #[test]
@@ -491,7 +647,11 @@ mod tests {
             (lie().with_delay(millis(1500)), "+1500 ms"),
             (lie().with_delay(millis(120_000)), "+2 m"),
             (lie().with_delay(millis(1000)).with_jitter(millis(200)), "+1 s ±200 ms"),
-            (lie().with_jitter(millis(200)), "+0 s ±200 ms"),
+            (lie().with_jitter(millis(200)), "+0 s"),
+            (
+                lie().with_delay(millis(100)).with_jitter(millis(200)),
+                "+100 ms ±100 ms",
+            ),
             (lie().with_throttle(millis(500)), "throttle 500 ms"),
             (
                 lie().with_delay(millis(1000)).with_throttle(millis(500)),

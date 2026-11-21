@@ -55,6 +55,10 @@ fn parts(texts: &[&str]) -> Target {
     Target::of_parts(texts.iter().map(|text| text.parse().unwrap())).unwrap()
 }
 
+fn on(lie: LieDefinition, target: Target) -> TargetedLie {
+    lie.on(target).unwrap()
+}
+
 #[test]
 fn a_kind_writes_its_name() {
     writes(&LieKind::HangUp, r#""hang-up""#);
@@ -153,7 +157,12 @@ fn a_definition_leaves_out_the_default_stage_of_its_kind() {
 
 #[test]
 fn a_timing_lie_leaves_out_what_is_zero() {
+    // A timing lie that changes nothing is a valid lie: it is what `TimingLie::new` writes, so it reads back.
     writes(&timing(TimingLie::new()), r#"{"lie":"timing"}"#);
+    reads(
+        r#"{"lie":"timing","stage":"before"}"#,
+        &timing(TimingLie::new().at(BEFORE)),
+    );
     reads(
         r#"{"lie":"timing","delay":"0s","jitter":"0ms","throttle":"0s"}"#,
         &timing(TimingLie::new()),
@@ -192,6 +201,102 @@ fn a_kind_without_a_definition_does_not_read() {
     }
     // `action: { lie: topology, leader: previous }` waits for the topology lie.
     rejects::<LieDefinition>(r#"{"lie":"topology","leader":"previous"}"#, "unknown field `leader`");
+}
+
+#[test]
+fn a_kind_without_a_definition_says_so_before_any_other_reason() {
+    for kind in ["topology", "data", "progress", "configuration"] {
+        let reason = format!("{kind} has no definition yet");
+        // A rewrite never acts before forwarding, and that is not why the map does not read.
+        rejects::<LieDefinition>(&format!(r#"{{"lie":"{kind}","stage":"before"}}"#), &reason);
+        rejects::<LieDefinition>(&format!(r#"{{"stage":"before","lie":"{kind}"}}"#), &reason);
+        rejects::<LieDefinition>(&format!(r#"{{"lie":"{kind}","stage":"after"}}"#), &reason);
+        rejects::<LieDefinition>(&format!(r#"{{"lie":"{kind}","delay":"1s"}}"#), &reason);
+        rejects::<TargetedLie>(
+            &format!(r#"{{"lie":"{kind}","stage":"before","target":"call"}}"#),
+            &reason,
+        );
+    }
+}
+
+#[test]
+fn a_jitter_longer_than_the_delay_does_not_read() {
+    // The wait would be between -200 ms and 200 ms.
+    rejects::<LieDefinition>(
+        r#"{"lie":"timing","jitter":"200ms"}"#,
+        "a jitter of 200ms is longer than the delay of 0s",
+    );
+    rejects::<LieDefinition>(
+        r#"{"lie":"timing","jitter":"2s","delay":"1s"}"#,
+        "a jitter of 2s is longer than the delay of 1s",
+    );
+    rejects::<LieDefinition>(
+        r#"{"lie":"timing","delay":"100ms","jitter":"101ms","throttle":"1s"}"#,
+        "a jitter of 101ms is longer than the delay of 100ms",
+    );
+    rejects::<TargetedLie>(
+        r#"{"lie":"timing","jitter":"200ms","target":"call"}"#,
+        "a jitter of 200ms is longer than the delay of 0s",
+    );
+    rejects::<Preset>(
+        r#"{"name":"Jitter","lie":"timing","jitter":"200ms"}"#,
+        "a jitter of 200ms is longer than the delay of 0s",
+    );
+
+    // A jitter as long as the delay waits between no time and twice the delay.
+    writes(
+        &timing(TimingLie::new().with_delay(millis(200)).with_jitter(millis(200))),
+        r#"{"lie":"timing","delay":"200ms","jitter":"200ms"}"#,
+    );
+}
+
+#[test]
+fn a_throttle_longer_than_kafka_can_tell_does_not_read() {
+    // `throttle_time_ms` is an `i32`.
+    let longest = TimingLie::MAX_THROTTLE;
+    assert_eq!(longest.to_string(), "2147483647ms");
+    writes(
+        &timing(TimingLie::new().with_throttle(longest)),
+        r#"{"lie":"timing","throttle":"2147483647ms"}"#,
+    );
+
+    rejects::<LieDefinition>(
+        r#"{"lie":"timing","throttle":"2147483648ms"}"#,
+        "a throttle of 2147483648ms is longer than 2147483647ms, the longest that Kafka can tell a client",
+    );
+    rejects::<LieDefinition>(
+        r#"{"lie":"timing","delay":"1s","throttle":"600h"}"#,
+        "a throttle of 600h is longer than 2147483647ms",
+    );
+    rejects::<TargetedLie>(
+        r#"{"lie":"timing","throttle":"600h"}"#,
+        "a throttle of 600h is longer than 2147483647ms",
+    );
+    // A delay has no such bound.
+    reads(
+        r#"{"lie":"timing","delay":"600h"}"#,
+        &timing(TimingLie::new().with_delay(millis(600 * 3_600_000))),
+    );
+}
+
+#[test]
+fn every_timing_lie_that_code_builds_reads_back() {
+    let spans = [0, 1, 200, 1000, u64::from(u32::MAX), u64::MAX].map(millis);
+
+    for delay in spans {
+        for jitter in spans {
+            for throttle in spans {
+                let lie = timing(
+                    TimingLie::new()
+                        .with_delay(delay)
+                        .with_jitter(jitter)
+                        .with_throttle(throttle),
+                );
+                let json = serde_json::to_string(&lie).unwrap();
+                assert_eq!(serde_json::from_str::<LieDefinition>(&json).unwrap(), lie, "{json}");
+            }
+        }
+    }
 }
 
 #[test]
@@ -265,11 +370,14 @@ fn a_definition_is_a_map() {
 fn a_targeted_lie_writes_its_definition_and_its_target() {
     // `NOT_LEADER_OR_FOLLOWER on orders.eu/3`
     writes(
-        &refusal(ErrorCode::NOT_LEADER_OR_FOLLOWER).on(parts(&["orders.eu/3"])),
+        &on(refusal(ErrorCode::NOT_LEADER_OR_FOLLOWER), parts(&["orders.eu/3"])),
         r#"{"lie":"refusal","error":"NOT_LEADER_OR_FOLLOWER","target":{"parts":["orders.eu/3"]}}"#,
     );
     writes(
-        &refusal_after_the_response(ErrorCode::REQUEST_TIMED_OUT).on(parts(&["orders.eu/4", "orders.eu/3"])),
+        &on(
+            refusal_after_the_response(ErrorCode::REQUEST_TIMED_OUT),
+            parts(&["orders.eu/4", "orders.eu/3"]),
+        ),
         r#"{"lie":"refusal","error":"REQUEST_TIMED_OUT","stage":"after","target":{"parts":["orders.eu/3","orders.eu/4"]}}"#,
     );
 }
@@ -278,17 +386,17 @@ fn a_targeted_lie_writes_its_definition_and_its_target() {
 fn a_targeted_lie_leaves_out_the_whole_call() {
     // `+750 ms`
     writes(
-        &timing(TimingLie::new().with_delay(millis(750))).on(Target::Call),
+        &on(timing(TimingLie::new().with_delay(millis(750))), Target::Call),
         r#"{"lie":"timing","delay":"750ms"}"#,
     );
     writes(
-        &refusal(ErrorCode::COORDINATOR_NOT_AVAILABLE).on(Target::Call),
+        &on(refusal(ErrorCode::COORDINATOR_NOT_AVAILABLE), Target::Call),
         r#"{"lie":"refusal","error":"COORDINATOR_NOT_AVAILABLE"}"#,
     );
-    writes(&LieDefinition::Silence.on(Target::Call), r#"{"lie":"silence"}"#);
+    writes(&on(LieDefinition::Silence, Target::Call), r#"{"lie":"silence"}"#);
     reads(
         r#"{"lie":"hang-up","stage":"after","target":"call"}"#,
-        &hang_up(AFTER).on(Target::Call),
+        &on(hang_up(AFTER), Target::Call),
     );
 }
 
@@ -303,6 +411,29 @@ fn a_lie_on_the_whole_call_does_not_read_with_parts() {
         (r#"{"lie":"hang-up","target":{"parts":["orders.eu/3"]}}"#, "hang-up"),
     ] {
         rejects::<TargetedLie>(json, &format!("{kind} always targets the whole call"));
+    }
+}
+
+#[test]
+fn a_targeted_lie_does_not_read_with_a_target_without_parts() {
+    let reason = "invalid length 0, expected at least one part";
+
+    // A refusal that covers no part would write `NOT_LEADER_OR_FOLLOWER on `.
+    rejects::<TargetedLie>(
+        r#"{"lie":"refusal","error":"NOT_LEADER_OR_FOLLOWER","target":{"parts":[]}}"#,
+        reason,
+    );
+    rejects::<TargetedLie>(
+        r#"{"target":{"parts":[]},"lie":"refusal","error":"NOT_LEADER_OR_FOLLOWER"}"#,
+        reason,
+    );
+    // A lie on the whole call names the same reason, and not that it has parts.
+    for json in [
+        r#"{"lie":"timing","delay":"750ms","target":{"parts":[]}}"#,
+        r#"{"lie":"silence","target":{"parts":[]}}"#,
+        r#"{"lie":"hang-up","target":{"parts":[]}}"#,
+    ] {
+        rejects::<TargetedLie>(json, reason);
     }
 }
 

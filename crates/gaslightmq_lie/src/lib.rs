@@ -39,12 +39,12 @@
 //!
 //! // Both rules match a Fetch, and their selector matched one of its partitions.
 //! let matched = Target::of_parts(["orders.eu/3".parse()?]).expect("one part");
-//! let verdict = [slow.on(matched.clone()), flap.on(matched)];
+//! let verdict = [slow.on(matched.clone())?, flap.on(matched)?];
 //!
 //! // The refusal changes that partition, and the delay holds the whole call back.
 //! assert_eq!(verdict[0].to_string(), "+750 ms");
 //! assert_eq!(verdict[1].to_string(), "NOT_LEADER_OR_FOLLOWER on orders.eu/3");
-//! # Ok::<(), FieldError>(())
+//! # Ok::<(), Box<dyn std::error::Error>>(())
 //! ```
 //!
 //! # Kinds without a definition
@@ -72,7 +72,7 @@
 //! | Key | Holds | On |
 //! |---|---|---|
 //! | `error` | The error code, by the name Kafka gives it. Required. | `refusal` |
-//! | `delay`, `jitter`, `throttle` | A time span, such as `200ms`. Zero when left out. | `timing` |
+//! | `delay`, `jitter`, `throttle` | A time span, such as `200ms`. Zero when left out. The jitter is at most the delay, and the throttle at most `2147483647ms`. | `timing` |
 //! | `stage` | `before` or `after`. The default stage of the kind when left out. | `refusal`, `timing`, `hang-up` |
 //!
 //! Writing leaves out the default stage of the kind, and a time span of zero.
@@ -80,6 +80,19 @@
 //! Reading rejects a key that does not belong to the lie, and a stage at which the lie never acts.
 //! A `delay` on a refusal would otherwise silently do nothing.
 //! Reading also rejects `topology`, `data`, `progress` and `configuration`, which have no definition yet.
+//!
+//! Reading rejects a value that no lie can hold:
+//!
+//! - A jitter that is longer than the delay, such as `{ lie: timing, jitter: 200ms }`.
+//!   The shortest wait would be less than no time.
+//! - A throttle that is longer than [`TimingLie::MAX_THROTTLE`], which is all that Kafka's `throttle_time_ms` holds.
+//! - A target without a part, such as `target: { parts: [] }`. The lie would change nothing.
+//!
+//! The `with_` methods of a [`TimingLie`] stop such a value at the longest one that holds instead.
+//!
+//! Reading does not reject `{ lie: timing }`, the timing lie that changes nothing.
+//! It is what [`TimingLie::new`] writes, and every value that writes also reads back.
+//! A rule or a preset that wants every lie to do something checks that itself.
 //!
 //! The map is flat, so a preset or a rule holds the keys of a lie next to its own.
 //! `#[serde(flatten)]` on a field of type [`LieDefinition`] reads `{ name: Delay 1 s, lie: timing, delay: 1s }`.

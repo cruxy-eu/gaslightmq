@@ -5,6 +5,15 @@
 //! Reading takes the keys that belong to the lie out of it, and whatever is left is an error.
 //! A misspelt or misplaced key therefore never passes silently:
 //! a refusal without its `stage` key acts before forwarding, which is not what a typo intends.
+//!
+//! Reading also rejects a value that no lie can hold: a jitter longer than the delay,
+//! a throttle longer than Kafka can tell a client, and a target without a part.
+//! The methods that build a lie in code stop such a value at the longest one that holds, and reading does not:
+//! whoever wrote `jitter: 200ms` without a delay meant something else, and gets to hear it.
+//!
+//! Reading does not reject a lie that does nothing.
+//! `{ lie: timing }` is what [`TimingLie::new`] writes, and every value that writes also reads back.
+//! Such a lie harms no call, and a verdict still lists it, as `+0 s`.
 
 use std::fmt;
 
@@ -85,32 +94,50 @@ impl Fields {
         }
     }
 
+    /// Take the stage of a lie of `kind`: the one the map names, or the default one of the kind.
+    fn take_stage<E: de::Error>(&mut self, kind: LieKind) -> Result<Stage, E> {
+        kind.stage_for(self.stage.take()).map_err(E::custom)
+    }
+
     /// Read the map as a definition.
     fn into_definition<E: de::Error>(mut self) -> Result<LieDefinition, E> {
         let kind = self.lie.take().ok_or_else(|| E::missing_field(LIE))?;
-        let stage = kind.stage_for(self.stage.take()).map_err(E::custom)?;
         let definition = match kind {
-            LieKind::Refusal => LieDefinition::Refusal(RefusalLie {
-                error: self.error.take().ok_or_else(|| E::missing_field(ERROR))?,
-                stage,
-            }),
-            LieKind::Timing => LieDefinition::Timing(TimingLie {
-                delay: self.delay.take().unwrap_or_default(),
-                jitter: self.jitter.take().unwrap_or_default(),
-                throttle: self.throttle.take().unwrap_or_default(),
-                stage,
-            }),
-            LieKind::Silence => LieDefinition::Silence,
-            LieKind::HangUp => LieDefinition::HangUp(HangUpLie { stage }),
+            // A kind without a definition says so before anything else about the map is wrong.
+            // Its keys are not known yet, so no other reason would be true.
             LieKind::Topology | LieKind::Data | LieKind::Progress | LieKind::Configuration => {
                 return Err(E::custom(format_args!("{kind} has no definition yet")));
             }
+            LieKind::Refusal => {
+                let stage = self.take_stage(kind)?;
+                let error = self.error.take().ok_or_else(|| E::missing_field(ERROR))?;
+                LieDefinition::Refusal(RefusalLie { error, stage })
+            }
+            LieKind::Timing => {
+                let stage = self.take_stage(kind)?;
+                let delay = self.delay.take().unwrap_or_default();
+                let jitter = self.jitter.take().unwrap_or_default();
+                let throttle = self.throttle.take().unwrap_or_default();
+                TimingLie::checked(delay, jitter, throttle, stage)
+                    .map(LieDefinition::Timing)
+                    .map_err(E::custom)?
+            }
+            LieKind::Silence => {
+                // Silence names no stage, and a map may still name the only one it has.
+                self.take_stage(kind)?;
+                LieDefinition::Silence
+            }
+            LieKind::HangUp => LieDefinition::HangUp(HangUpLie {
+                stage: self.take_stage(kind)?,
+            }),
         };
         self.nothing_left(kind)?;
         Ok(definition)
     }
 
     /// Read the map as a lie with its target, which is the whole call when the map names none.
+    ///
+    /// The target has at least one part, because [`Target`] reads no other one.
     fn into_targeted<E: de::Error>(mut self) -> Result<TargetedLie, E> {
         let target = self.target.take().unwrap_or(Target::Call);
         let lie = self.into_definition()?;
@@ -136,9 +163,9 @@ impl From<&LieDefinition> for Fields {
         match definition {
             LieDefinition::Refusal(lie) => fields.error = Some(lie.error),
             LieDefinition::Timing(lie) => {
-                fields.delay = unless_zero(lie.delay);
-                fields.jitter = unless_zero(lie.jitter);
-                fields.throttle = unless_zero(lie.throttle);
+                fields.delay = unless_zero(lie.delay());
+                fields.jitter = unless_zero(lie.jitter());
+                fields.throttle = unless_zero(lie.throttle());
             }
             LieDefinition::Silence | LieDefinition::HangUp(_) => {}
         }
@@ -247,7 +274,11 @@ impl Serialize for TargetedLie {
 }
 
 /// Reads the map of a definition with an optional `target` key.
-/// It rejects parts as the target of a lie that always targets the whole call.
+///
+/// It rejects a target without a part.
+/// It also rejects parts as the target of a lie that always targets the whole call.
+/// [`TargetedLie::new`] gives such a lie the whole call instead, because it takes what a selector matched.
+/// A map holds what the lie changed, and for such a lie that is never a part.
 impl<'de> Deserialize<'de> for TargetedLie {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         let visitor = FieldsVisitor { keys: TARGETED_KEYS };

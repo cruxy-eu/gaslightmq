@@ -37,7 +37,7 @@ mod next_to_std_the_kernel_and_the_fields {
         let hang_up = HangUpLie::new().at(Stage::AfterResponse);
         let definition = LieDefinition::from(refusal);
         let class: CombinationClass = definition.class();
-        let targeted: TargetedLie = definition.on(Target::Call);
+        let targeted: TargetedLie = definition.on(Target::Call).unwrap();
         let unknown: LieError = "hangup".parse::<LieKind>().unwrap_err();
 
         vec![

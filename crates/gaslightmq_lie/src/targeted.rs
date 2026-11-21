@@ -2,7 +2,7 @@ use std::fmt;
 
 use gaslightmq_field::prelude::*;
 
-use crate::LieDefinition;
+use crate::{LieDefinition, LieError};
 
 /// A lie with the target it applies to: one line of a verdict.
 ///
@@ -14,6 +14,8 @@ use crate::LieDefinition;
 /// Timing, silence and hang-up always target the whole call.
 /// [`new`](Self::new) gives such a lie the whole call, whatever the selector matched.
 ///
+/// A targeted lie always changes something: its target is the whole call, or at least one part.
+///
 /// ```
 /// use gaslightmq_clock::TimeSpan;
 /// use gaslightmq_field::prelude::*;
@@ -23,15 +25,15 @@ use crate::LieDefinition;
 /// // A rule on `orders.*` matched one partition of a Fetch.
 /// let matched = Target::of_parts(["orders.eu/3".parse()?]).expect("one part");
 ///
-/// let refusal = TargetedLie::new(RefusalLie::new(ErrorCode::NOT_LEADER_OR_FOLLOWER), matched.clone());
+/// let refusal = TargetedLie::new(RefusalLie::new(ErrorCode::NOT_LEADER_OR_FOLLOWER), matched.clone())?;
 /// assert_eq!(refusal.target(), &matched);
 /// assert_eq!(refusal.to_string(), "NOT_LEADER_OR_FOLLOWER on orders.eu/3");
 ///
 /// // A call has one answer, so a delay holds all of it back.
-/// let delay = TargetedLie::new(TimingLie::new().with_delay(TimeSpan::from_millis(750)), matched);
+/// let delay = TargetedLie::new(TimingLie::new().with_delay(TimeSpan::from_millis(750)), matched)?;
 /// assert_eq!(delay.target(), &Target::Call);
 /// assert_eq!(delay.to_string(), "+750 ms");
-/// # Ok::<(), FieldError>(())
+/// # Ok::<(), Box<dyn std::error::Error>>(())
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct TargetedLie {
@@ -44,14 +46,29 @@ impl TargetedLie {
     ///
     /// A lie of a kind that [targets the whole call](crate::LieKind::targets_whole_call)
     /// gets [`Target::Call`] instead of `target`.
-    pub fn new(lie: impl Into<LieDefinition>, target: Target) -> Self {
+    /// That is no mistake to report: `target` is what the selector matched, and not yet what the lie changes.
+    /// A rule on `orders.*` with a delay is a valid rule, and its delay holds the whole call back.
+    ///
+    /// Reading a targeted lie is stricter.
+    /// With the `serde` feature, a map is a line of a verdict, so its `target` key says what the lie changed.
+    /// A delay with parts there is a line that nothing writes, and reading rejects it.
+    ///
+    /// # Errors
+    ///
+    /// [`LieError::EmptyTarget`] when `target` is a set of parts without a part, whatever the kind of the lie.
+    /// A selector that matches no part does not match the call, so there is no lie to tell.
+    /// [`Target::of_parts`] never yields such a target.
+    pub fn new(lie: impl Into<LieDefinition>, target: Target) -> Result<Self, LieError> {
+        if !target.is_call() && target.parts().next().is_none() {
+            return Err(LieError::EmptyTarget);
+        }
         let lie = lie.into();
         let target = if lie.kind().targets_whole_call() {
             Target::Call
         } else {
             target
         };
-        Self { lie, target }
+        Ok(Self { lie, target })
     }
 
     /// What the client is told.
@@ -79,6 +96,8 @@ impl fmt::Display for TargetedLie {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeSet;
+
     use gaslightmq_clock::TimeSpan;
     use gaslightmq_kernel::prelude::*;
 
@@ -97,10 +116,14 @@ mod tests {
         TimingLie::new().with_delay(TimeSpan::from_millis(750))
     }
 
+    fn on(lie: impl Into<LieDefinition>, target: Target) -> TargetedLie {
+        TargetedLie::new(lie, target).unwrap()
+    }
+
     #[test]
     fn a_refusal_keeps_the_parts_the_selector_matched() {
         let target = parts(&["orders.eu/3", "orders.eu/4"]);
-        let lie = TargetedLie::new(refusal(), target.clone());
+        let lie = on(refusal(), target.clone());
 
         assert_eq!(lie.lie(), &LieDefinition::from(refusal()));
         assert_eq!(lie.target(), &target);
@@ -108,7 +131,7 @@ mod tests {
 
     #[test]
     fn a_refusal_of_a_request_without_parts_targets_the_whole_call() {
-        let lie = TargetedLie::new(RefusalLie::new(ErrorCode::COORDINATOR_NOT_AVAILABLE), Target::Call);
+        let lie = on(RefusalLie::new(ErrorCode::COORDINATOR_NOT_AVAILABLE), Target::Call);
 
         assert_eq!(lie.target(), &Target::Call);
     }
@@ -119,12 +142,8 @@ mod tests {
         let lies: [LieDefinition; 3] = [delay().into(), LieDefinition::Silence, HangUpLie::new().into()];
 
         for lie in lies {
-            assert_eq!(
-                TargetedLie::new(lie.clone(), matched.clone()).target(),
-                &Target::Call,
-                "{lie}"
-            );
-            assert_eq!(TargetedLie::new(lie.clone(), Target::Call).target(), &Target::Call);
+            assert_eq!(on(lie.clone(), matched.clone()).target(), &Target::Call, "{lie}");
+            assert_eq!(on(lie.clone(), Target::Call).target(), &Target::Call);
         }
     }
 
@@ -134,12 +153,33 @@ mod tests {
 
         assert_eq!(
             LieDefinition::from(refusal()).on(target.clone()),
-            TargetedLie::new(refusal(), target.clone())
+            Ok(on(refusal(), target.clone()))
         );
         assert_eq!(
             LieDefinition::Silence.on(target),
-            TargetedLie::new(LieDefinition::Silence, Target::Call)
+            Ok(on(LieDefinition::Silence, Target::Call))
         );
+    }
+
+    #[test]
+    fn no_lie_binds_to_a_target_without_parts() {
+        // `Target::of_parts` never yields this target, and the variant is open to whoever builds it by hand.
+        let empty = Target::Parts(BTreeSet::new());
+        let lies: [LieDefinition; 4] = [
+            refusal().into(),
+            delay().into(),
+            LieDefinition::Silence,
+            HangUpLie::new().into(),
+        ];
+
+        for lie in lies {
+            assert_eq!(
+                TargetedLie::new(lie.clone(), empty.clone()),
+                Err(LieError::EmptyTarget),
+                "{lie}"
+            );
+            assert_eq!(lie.clone().on(empty.clone()), Err(LieError::EmptyTarget), "{lie}");
+        }
     }
 
     #[test]
@@ -148,28 +188,19 @@ mod tests {
         let two = parts(&["orders.eu/4", "orders.eu/3"]);
         let after = Stage::AfterResponse;
         let cases = [
+            (on(refusal(), one.clone()), "NOT_LEADER_OR_FOLLOWER on orders.eu/3"),
+            (on(refusal(), two), "NOT_LEADER_OR_FOLLOWER on orders.eu/3, orders.eu/4"),
             (
-                TargetedLie::new(refusal(), one.clone()),
-                "NOT_LEADER_OR_FOLLOWER on orders.eu/3",
-            ),
-            (
-                TargetedLie::new(refusal(), two),
-                "NOT_LEADER_OR_FOLLOWER on orders.eu/3, orders.eu/4",
-            ),
-            (
-                TargetedLie::new(RefusalLie::new(ErrorCode::REQUEST_TIMED_OUT).at(after), one.clone()),
+                on(RefusalLie::new(ErrorCode::REQUEST_TIMED_OUT).at(after), one.clone()),
                 "REQUEST_TIMED_OUT after the response on orders.eu/3",
             ),
             (
-                TargetedLie::new(RefusalLie::new(ErrorCode::COORDINATOR_NOT_AVAILABLE), Target::Call),
+                on(RefusalLie::new(ErrorCode::COORDINATOR_NOT_AVAILABLE), Target::Call),
                 "COORDINATOR_NOT_AVAILABLE",
             ),
-            (TargetedLie::new(delay(), one.clone()), "+750 ms"),
-            (TargetedLie::new(LieDefinition::Silence, one.clone()), "silence"),
-            (
-                TargetedLie::new(HangUpLie::new().at(after), one),
-                "hang-up after the response",
-            ),
+            (on(delay(), one.clone()), "+750 ms"),
+            (on(LieDefinition::Silence, one.clone()), "silence"),
+            (on(HangUpLie::new().at(after), one), "hang-up after the response"),
         ];
 
         for (lie, text) in cases {
