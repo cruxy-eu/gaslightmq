@@ -255,16 +255,34 @@ impl From<TopicPartition> for PartFields {
 /// # Ok::<(), FieldError>(())
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-#[cfg_attr(
-    feature = "serde",
-    derive(serde::Serialize, serde::Deserialize),
-    serde(rename_all = "lowercase")
-)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize), serde(rename_all = "lowercase"))]
 pub enum Target {
     /// The whole call.
     Call,
     /// Some parts of the call, and at least one.
     Parts(BTreeSet<Part>),
+}
+
+/// Reads `call`, or a map with the one entry `parts` and the list of parts.
+/// It rejects a list without a part, as [`Target::of_parts`] does.
+#[cfg(feature = "serde")]
+impl<'de> serde::Deserialize<'de> for Target {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        /// A target as its form has it, before the check that it has a part.
+        #[derive(serde::Deserialize)]
+        #[serde(rename = "Target", rename_all = "lowercase")]
+        enum Form {
+            Call,
+            Parts(BTreeSet<Part>),
+        }
+
+        match Form::deserialize(deserializer)? {
+            Form::Call => Ok(Target::Call),
+            Form::Parts(parts) => {
+                Target::of_parts(parts).ok_or_else(|| serde::de::Error::invalid_length(0, &"at least one part"))
+            }
+        }
+    }
 }
 
 impl Target {

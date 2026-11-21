@@ -4,6 +4,7 @@ members = [
     "crates/gaslightmq_field",
     "crates/gaslightmq_incident",
     "crates/gaslightmq_kernel",
+    "crates/gaslightmq_lie",
     "crates/gaslightmq_wire",
     "crates/gaslightmq_kafka_client/*",
 ]
@@ -15,6 +16,7 @@ version = "0.1.0"
 
 [workspace.dependencies]
 gaslightmq_clock = { path = "crates/gaslightmq_clock" }
+gaslightmq_field = { path = "crates/gaslightmq_field" }
 gaslightmq_kafka_client_api = { path = "crates/gaslightmq_kafka_client/api" }
 gaslightmq_kernel = { path = "crates/gaslightmq_kernel" }
 gaslightmq_wire = { path = "crates/gaslightmq_wire" }

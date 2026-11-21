@@ -96,7 +96,7 @@
 //! | [`FieldValue`] | A map with one entry: `topic: orders.eu`. |
 //! | `FieldValue::bare` | The form of the value's own type, for under a key that names the field. A [`Field`] reads it back as a seed. |
 //! | [`Part`] | Its text form: `orders.eu/3`. |
-//! | [`Target`] | The text `call`, or a map with the one entry `parts` and the list of parts. |
+//! | [`Target`] | The text `call`, or a map with the one entry `parts` and the list of parts. Reading rejects a list without a part. |
 //!
 //! A connection number in YAML is the number `7`, because `#7` starts a comment there.
 //!

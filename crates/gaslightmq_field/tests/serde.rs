@@ -329,6 +329,23 @@ fn a_target_writes_call_or_its_parts() {
     rejects::<Target>(r#"{"parts":["orders/eu"]}"#, "partition number is not a number: \"eu\"");
 }
 
+#[test]
+fn a_target_without_parts_does_not_read() {
+    // A selector that matches no part does not match the call, so no target is empty.
+    rejects::<Target>(r#"{"parts":[]}"#, "invalid length 0, expected at least one part");
+    assert_de_tokens_error::<Target>(
+        &[
+            Token::NewtypeVariant {
+                name: "Target",
+                variant: "parts",
+            },
+            Token::Seq { len: Some(0) },
+            Token::SeqEnd,
+        ],
+        "invalid length 0, expected at least one part",
+    );
+}
+
 /// A compact format is one that people do not read, such as a binary one.
 fn compact<T: Serialize + DeserializeOwned + PartialEq + Debug>(value: T, tokens: &[Token]) {
     assert_tokens::<Compact<T>>(&value.compact(), tokens);
