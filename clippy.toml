@@ -1,0 +1,2 @@
+# The product name is prose, and `doc_markdown` would have it in backticks. `..` keeps clippy's own list.
+doc-valid-idents = ["GaslightMQ", ".."]

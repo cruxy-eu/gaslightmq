@@ -12,7 +12,11 @@ pub enum KernelError {
     TooLong { what: &'static str, len: usize, max: usize },
     /// The text has a character that `what` does not allow.
     /// `position` counts characters from zero.
-    InvalidCharacter { what: &'static str, character: char, position: usize },
+    InvalidCharacter {
+        what: &'static str,
+        character: char,
+        position: usize,
+    },
     /// Kafka reserves the value, such as the topic name `..` or the topic ID of all zeros.
     Reserved { what: &'static str, value: String },
     /// The number is below zero.
@@ -29,7 +33,11 @@ pub enum KernelError {
     /// The text is not a name that Kafka gives a `what`, and not a number either.
     UnknownName { what: &'static str, input: String },
     /// The text does not have the form of `what`, such as `topic/partition`.
-    Malformed { what: &'static str, input: String, expected: &'static str },
+    Malformed {
+        what: &'static str,
+        input: String,
+        expected: &'static str,
+    },
 }
 
 impl fmt::Display for KernelError {
@@ -37,8 +45,15 @@ impl fmt::Display for KernelError {
         match self {
             Self::Empty { what } => write!(f, "{what} is empty"),
             Self::TooLong { what, len, max } => write!(f, "{what} of {len} bytes exceeds the limit of {max}"),
-            Self::InvalidCharacter { what, character, position } => {
-                write!(f, "{what} has the invalid character {character:?} at position {position}")
+            Self::InvalidCharacter {
+                what,
+                character,
+                position,
+            } => {
+                write!(
+                    f,
+                    "{what} has the invalid character {character:?} at position {position}"
+                )
             }
             Self::Reserved { what, value } => write!(f, "{what} cannot be {value:?}"),
             Self::Negative { what, value } => write!(f, "{what} cannot be negative: {value}"),
@@ -64,27 +79,71 @@ mod tests {
         let cases = [
             (KernelError::Empty { what: "topic name" }, "topic name is empty"),
             (
-                KernelError::TooLong { what: "topic name", len: 250, max: 249 },
+                KernelError::TooLong {
+                    what: "topic name",
+                    len: 250,
+                    max: 249,
+                },
                 "topic name of 250 bytes exceeds the limit of 249",
             ),
             (
-                KernelError::InvalidCharacter { what: "topic name", character: '/', position: 6 },
+                KernelError::InvalidCharacter {
+                    what: "topic name",
+                    character: '/',
+                    position: 6,
+                },
                 "topic name has the invalid character '/' at position 6",
             ),
-            (KernelError::Reserved { what: "topic name", value: "..".into() }, "topic name cannot be \"..\""),
-            (KernelError::Negative { what: "offset", value: -2 }, "offset cannot be negative: -2"),
             (
-                KernelError::TooLarge { what: "producer epoch", value: 40_000, max: 32_767 },
+                KernelError::Reserved {
+                    what: "topic name",
+                    value: "..".into(),
+                },
+                "topic name cannot be \"..\"",
+            ),
+            (
+                KernelError::Negative {
+                    what: "offset",
+                    value: -2,
+                },
+                "offset cannot be negative: -2",
+            ),
+            (
+                KernelError::TooLarge {
+                    what: "producer epoch",
+                    value: 40_000,
+                    max: 32_767,
+                },
                 "producer epoch 40000 exceeds the maximum of 32767",
             ),
             (
-                KernelError::TooSmall { what: "API key", value: -40_000, min: -32_768 },
+                KernelError::TooSmall {
+                    what: "API key",
+                    value: -40_000,
+                    min: -32_768,
+                },
                 "API key -40000 is below the minimum of -32768",
             ),
-            (KernelError::NotANumber { what: "offset", input: "x".into() }, "offset is not a number: \"x\""),
-            (KernelError::UnknownName { what: "API key", input: "Prodcue".into() }, "unknown API key: \"Prodcue\""),
             (
-                KernelError::Malformed { what: "topic partition", input: "orders".into(), expected: "topic/partition" },
+                KernelError::NotANumber {
+                    what: "offset",
+                    input: "x".into(),
+                },
+                "offset is not a number: \"x\"",
+            ),
+            (
+                KernelError::UnknownName {
+                    what: "API key",
+                    input: "Prodcue".into(),
+                },
+                "unknown API key: \"Prodcue\"",
+            ),
+            (
+                KernelError::Malformed {
+                    what: "topic partition",
+                    input: "orders".into(),
+                    expected: "topic/partition",
+                },
                 "topic partition \"orders\" does not have the form topic/partition",
             ),
         ];

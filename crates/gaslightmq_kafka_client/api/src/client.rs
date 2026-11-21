@@ -13,7 +13,9 @@ use gaslightmq_wire::messages::{
     ProduceRequest, ProduceResponse, SyncGroupRequest, TopicName,
 };
 use gaslightmq_wire::protocol::{Request as KafkaRequest, StrBytes};
-use gaslightmq_wire::{FrameDecoder, Offset, Partition, Record, RecordBatch, Request, Response, ResponseError, WireError};
+use gaslightmq_wire::{
+    FrameDecoder, Offset, Partition, Record, RecordBatch, Request, Response, ResponseError, WireError,
+};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 use tokio::sync::Mutex;
@@ -44,7 +46,10 @@ type Failure = Box<dyn std::error::Error + Send + Sync>;
 
 impl Socket {
     async fn connect(addr: SocketAddr) -> Result<Self, Failure> {
-        Ok(Self { stream: TcpStream::connect(addr).await?, frames: FrameDecoder::new() })
+        Ok(Self {
+            stream: TcpStream::connect(addr).await?,
+            frames: FrameDecoder::new(),
+        })
     }
 
     /// Send `request` and read its response.
@@ -70,7 +75,11 @@ impl From<SocketAddr> for RawKafkaClient {
 
 impl RawKafkaClient {
     pub fn new(addr: SocketAddr) -> Self {
-        Self { addr, socket: Mutex::new(None), correlation_id: AtomicI32::new(1) }
+        Self {
+            addr,
+            socket: Mutex::new(None),
+            correlation_id: AtomicI32::new(1),
+        }
     }
 
     pub fn addr(&self) -> SocketAddr {
@@ -97,14 +106,20 @@ async fn fetch_once(addr: SocketAddr, request: &FetchRequest) -> Result<Vec<Reco
 }
 
 fn fetch_request(topic: &str, partition: Partition, offset: i64, max_wait_ms: i32) -> FetchRequest {
-    FetchRequest::default().with_max_wait_ms(max_wait_ms).with_min_bytes(1).with_max_bytes(1024 * 1024).with_topics(
-        vec![FetchTopic::default().with_topic(topic_name(topic)).with_partitions(vec![
-            FetchPartition::default()
-                .with_partition(i32::from(partition))
-                .with_fetch_offset(offset)
-                .with_partition_max_bytes(1024 * 1024),
-        ])],
-    )
+    FetchRequest::default()
+        .with_max_wait_ms(max_wait_ms)
+        .with_min_bytes(1)
+        .with_max_bytes(1024 * 1024)
+        .with_topics(vec![
+            FetchTopic::default()
+                .with_topic(topic_name(topic))
+                .with_partitions(vec![
+                    FetchPartition::default()
+                        .with_partition(i32::from(partition))
+                        .with_fetch_offset(offset)
+                        .with_partition_max_bytes(1024 * 1024),
+                ]),
+        ])
 }
 
 /// Every record a Fetch response carries, over all its partitions.
@@ -112,7 +127,11 @@ fn records_of(response: &FetchResponse) -> Result<Vec<Record>, WireError> {
     let mut records = Vec::new();
     for partition in response.responses.iter().flat_map(|topic| &topic.partitions) {
         if let Some(field) = &partition.records {
-            records.extend(RecordBatch::decode_all(field)?.into_iter().flat_map(|batch| batch.records));
+            records.extend(
+                RecordBatch::decode_all(field)?
+                    .into_iter()
+                    .flat_map(|batch| batch.records),
+            );
         }
     }
     Ok(records)
@@ -176,13 +195,18 @@ impl DeleteTopics for RawKafkaClient {
 
 impl Producer for RawKafkaClient {
     async fn send(&self, topic: &str, partition: Partition, records: &[Record]) -> ProduceResult {
-        let request = ProduceRequest::default().with_acks(-1).with_timeout_ms(5000).with_topic_data(vec![
-            TopicProduceData::default().with_name(topic_name(topic)).with_partition_data(vec![
-                PartitionProduceData::default()
-                    .with_index(i32::from(partition))
-                    .with_records(Some(RecordBatch::new(records).encode().unwrap())),
-            ]),
-        ]);
+        let request = ProduceRequest::default()
+            .with_acks(-1)
+            .with_timeout_ms(5000)
+            .with_topic_data(vec![
+                TopicProduceData::default()
+                    .with_name(topic_name(topic))
+                    .with_partition_data(vec![
+                        PartitionProduceData::default()
+                            .with_index(i32::from(partition))
+                            .with_records(Some(RecordBatch::new(records).encode().unwrap())),
+                    ]),
+            ]);
 
         let response = self.request(3, &request).await;
 
@@ -197,7 +221,9 @@ impl Producer for RawKafkaClient {
 
 impl ProtocolConsumer for RawKafkaClient {
     async fn fetch(&self, topic: &str, partition: Partition, offset: Offset) -> Vec<Record> {
-        let response = self.request(4, &fetch_request(topic, partition, i64::from(offset), 1000)).await;
+        let response = self
+            .request(4, &fetch_request(topic, partition, i64::from(offset), 1000))
+            .await;
         records_of(&response).unwrap()
     }
 
@@ -216,7 +242,8 @@ impl ProtocolConsumer for RawKafkaClient {
                     if records.is_empty() {
                         return None;
                     }
-                    let next_offset = next_offset + records.len() as i64;
+                    let fetched = i64::try_from(records.len()).expect("a record count that fits an i64");
+                    let next_offset = next_offset + fetched;
                     Some((records, next_offset))
                 }
             })
@@ -240,12 +267,20 @@ impl ProtocolConsumer for RawKafkaClient {
     }
 
     async fn sync_group(&self, group: &str) -> SyncGroupResult {
-        let response = self.request(0, &SyncGroupRequest::default().with_group_id(group_id(group))).await;
-        SyncGroupResult { error: ResponseError::try_from_code(response.error_code) }
+        let response = self
+            .request(0, &SyncGroupRequest::default().with_group_id(group_id(group)))
+            .await;
+        SyncGroupResult {
+            error: ResponseError::try_from_code(response.error_code),
+        }
     }
 
     async fn heartbeat(&self, group: &str) -> HeartbeatResult {
-        let response = self.request(0, &HeartbeatRequest::default().with_group_id(group_id(group))).await;
-        HeartbeatResult { error: ResponseError::try_from_code(response.error_code) }
+        let response = self
+            .request(0, &HeartbeatRequest::default().with_group_id(group_id(group)))
+            .await;
+        HeartbeatResult {
+            error: ResponseError::try_from_code(response.error_code),
+        }
     }
 }

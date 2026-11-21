@@ -19,6 +19,11 @@ pub struct Request {
 
 impl Request {
     /// Encode a request for the API of `body`.
+    ///
+    /// # Errors
+    ///
+    /// [`WireError::Encode`] when the header or the body cannot be written
+    /// at `version`.
     pub fn new<B: KafkaRequest>(
         version: i16,
         correlation_id: i32,
@@ -36,18 +41,31 @@ impl Request {
             .encode(&mut payload, api.request_header_version())
             .map_err(|e| WireError::encode("request header", e))?;
         let body_at = payload.len();
-        body.encode(&mut payload, api.version).map_err(|e| WireError::encode("request body", e))?;
-        Ok(Self { header, frame: Frame::new(payload.freeze()), body_at })
+        body.encode(&mut payload, api.version)
+            .map_err(|e| WireError::encode("request body", e))?;
+        Ok(Self {
+            header,
+            frame: Frame::new(payload.freeze()),
+            body_at,
+        })
     }
 
     /// Decode the header of a frame that a client sent.
     ///
     /// A frame of an API this crate has no messages for still decodes:
     /// its API, correlation ID and client ID are there, and its body is not.
+    ///
+    /// # Errors
+    ///
+    /// [`WireError::Truncated`] when the frame is too short to name its API,
+    /// and [`WireError::Decode`] when the rest of the header is not valid.
     pub fn decode(frame: Frame) -> Result<Self, WireError> {
         let payload = frame.payload();
         let Some(&[k0, k1, v0, v1]) = payload.first_chunk::<4>() else {
-            return Err(WireError::Truncated { what: "request header", len: payload.len() });
+            return Err(WireError::Truncated {
+                what: "request header",
+                len: payload.len(),
+            });
         };
         let api = Api::from_wire(i16::from_be_bytes([k0, k1]), i16::from_be_bytes([v0, v1]));
         let mut rest = payload.clone();
@@ -76,11 +94,16 @@ impl Request {
 
     /// Decode the body as message `B`.
     ///
-    /// Fails with [`WireError::WrongApi`] when the request is of another API
-    /// than `B`.
+    /// # Errors
+    ///
+    /// [`WireError::WrongApi`] when the request is of another API than `B`,
+    /// and [`WireError::Decode`] when the bytes are not a valid `B`.
     pub fn body<B: KafkaRequest>(&self) -> Result<B, WireError> {
         if B::KEY != self.header.request_api_key {
-            return Err(WireError::WrongApi { expected: B::KEY, actual: self.header.request_api_key });
+            return Err(WireError::WrongApi {
+                expected: B::KEY,
+                actual: self.header.request_api_key,
+            });
         }
         B::decode(&mut self.body_bytes(), self.header.request_api_version)
             .map_err(|e| WireError::decode("request body", e))
@@ -101,6 +124,11 @@ impl Request {
     }
 
     /// Encode a response to this request: same API, same correlation ID.
+    ///
+    /// # Errors
+    ///
+    /// [`WireError::Encode`] when `body` cannot be written at the version of
+    /// this request.
     pub fn response<B: Encodable>(&self, body: &B) -> Result<Response, WireError> {
         Response::new(self.api(), self.correlation_id(), body)
     }
@@ -113,8 +141,13 @@ mod tests {
 
     #[test]
     fn decodes_what_new_encoded() {
-        let sent = Request::new(12, 42, Some("test-client"), &MetadataRequest::default().with_allow_auto_topic_creation(false))
-            .unwrap();
+        let sent = Request::new(
+            12,
+            42,
+            Some("test-client"),
+            &MetadataRequest::default().with_allow_auto_topic_creation(false),
+        )
+        .unwrap();
 
         let received = Request::decode(sent.frame().clone()).unwrap();
 
@@ -139,7 +172,13 @@ mod tests {
 
         assert_eq!(request.correlation_id(), 5);
         assert_eq!(request.body_bytes().as_ref(), &[0xDE, 0xAD]);
-        assert!(matches!(request.body::<MetadataRequest>(), Err(WireError::Decode { what: "request body", .. })));
+        assert!(matches!(
+            request.body::<MetadataRequest>(),
+            Err(WireError::Decode {
+                what: "request body",
+                ..
+            })
+        ));
     }
 
     #[test]
@@ -147,7 +186,10 @@ mod tests {
         let request = Request::new(12, 1, None, &MetadataRequest::default()).unwrap();
         assert_eq!(
             request.body::<FetchRequest>().unwrap_err(),
-            WireError::WrongApi { expected: ApiKey::Fetch as i16, actual: ApiKey::Metadata as i16 }
+            WireError::WrongApi {
+                expected: ApiKey::Fetch as i16,
+                actual: ApiKey::Metadata as i16
+            }
         );
     }
 
@@ -174,6 +216,12 @@ mod tests {
     #[test]
     fn a_frame_shorter_than_a_header_is_truncated() {
         let frame = Frame::new(Bytes::from_static(&[0, 3, 0]));
-        assert_eq!(Request::decode(frame).unwrap_err(), WireError::Truncated { what: "request header", len: 3 });
+        assert_eq!(
+            Request::decode(frame).unwrap_err(),
+            WireError::Truncated {
+                what: "request header",
+                len: 3
+            }
+        );
     }
 }

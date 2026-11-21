@@ -205,9 +205,7 @@ mod tests {
     }
 
     fn reason(text: &str) -> Reason {
-        let error = text
-            .parse::<TimeSpan>()
-            .expect_err("the text should not parse");
+        let error = text.parse::<TimeSpan>().expect_err("the text should not parse");
         assert_eq!(error.text, text);
         error.reason
     }
@@ -238,18 +236,12 @@ mod tests {
             TimeSpan::from_duration(Duration::from_micros(20_999)),
             TimeSpan::from_millis(20)
         );
-        assert_eq!(
-            TimeSpan::from_duration(Duration::from_nanos(999_999)),
-            TimeSpan::ZERO
-        );
+        assert_eq!(TimeSpan::from_duration(Duration::from_nanos(999_999)), TimeSpan::ZERO);
         assert_eq!(
             TimeSpan::from_duration(Duration::from_secs(20)),
             TimeSpan::from_secs(20)
         );
-        assert_eq!(
-            TimeSpan::from_duration(Duration::MAX),
-            TimeSpan::from_millis(u64::MAX)
-        );
+        assert_eq!(TimeSpan::from_duration(Duration::MAX), TimeSpan::from_millis(u64::MAX));
     }
 
     #[test]
@@ -325,11 +317,7 @@ mod tests {
             ("10\ts", "\ts"),
             ("10 m s", "m s"),
         ] {
-            assert_eq!(
-                reason(text),
-                Reason::UnknownUnit(unit.to_owned()),
-                "`{text}`"
-            );
+            assert_eq!(reason(text), Reason::UnknownUnit(unit.to_owned()), "`{text}`");
         }
     }
 
@@ -442,14 +430,8 @@ mod tests {
 
         #[test]
         fn a_time_span_serializes_as_its_text() {
-            assert_eq!(
-                serde_json::to_string(&TimeSpan::from_secs(10)).unwrap(),
-                "\"10s\""
-            );
-            assert_eq!(
-                serde_json::to_string(&TimeSpan::from_millis(200)).unwrap(),
-                "\"200ms\""
-            );
+            assert_eq!(serde_json::to_string(&TimeSpan::from_secs(10)).unwrap(), "\"10s\"");
+            assert_eq!(serde_json::to_string(&TimeSpan::from_millis(200)).unwrap(), "\"200ms\"");
         }
 
         #[test]

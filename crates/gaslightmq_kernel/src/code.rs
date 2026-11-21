@@ -7,7 +7,11 @@ pub(crate) type Names = &'static [(i16, &'static str)];
 
 /// The name Kafka gives `code`.
 pub(crate) fn name(names: Names, code: i16) -> Option<&'static str> {
-    names.binary_search_by_key(&code, |(code, _)| *code).ok().and_then(|index| names.get(index)).map(|(_, name)| *name)
+    names
+        .binary_search_by_key(&code, |(code, _)| *code)
+        .ok()
+        .and_then(|index| names.get(index))
+        .map(|(_, name)| *name)
 }
 
 /// Read a name of the table, or a decimal number that fits `i16`.
@@ -20,15 +24,26 @@ pub(crate) fn parse(what: &'static str, names: Names, text: &str) -> Result<i16,
     }
     let digits = text.strip_prefix('-').unwrap_or(text);
     if digits.is_empty() || !digits.bytes().all(|byte| byte.is_ascii_digit()) {
-        return Err(KernelError::UnknownName { what, input: text.to_owned() });
+        return Err(KernelError::UnknownName {
+            what,
+            input: text.to_owned(),
+        });
     }
     // A number that does not fit the type it is read as is outside `i16` on the side of its sign.
     if text.starts_with('-') {
         let value = text.parse::<i64>().unwrap_or(i64::MIN);
-        i16::try_from(value).map_err(|_| KernelError::TooSmall { what, value, min: i16::MIN.into() })
+        i16::try_from(value).map_err(|_| KernelError::TooSmall {
+            what,
+            value,
+            min: i16::MIN.into(),
+        })
     } else {
         let value = text.parse::<u64>().unwrap_or(u64::MAX);
-        i16::try_from(value).map_err(|_| KernelError::TooLarge { what, value, max: i16::MAX.unsigned_abs().into() })
+        i16::try_from(value).map_err(|_| KernelError::TooLarge {
+            what,
+            value,
+            max: i16::MAX.unsigned_abs().into(),
+        })
     }
 }
 
@@ -120,7 +135,10 @@ mod tests {
         for text in ["three", "THREE", "Thre", "Three ", " Three", "Minus_One"] {
             assert_eq!(
                 parse("code", NAMES, text),
-                Err(KernelError::UnknownName { what: "code", input: text.to_owned() }),
+                Err(KernelError::UnknownName {
+                    what: "code",
+                    input: text.to_owned()
+                }),
                 "{text:?}"
             );
         }
@@ -140,19 +158,35 @@ mod tests {
     fn a_number_fits_i16() {
         assert_eq!(
             parse("code", NAMES, "32768"),
-            Err(KernelError::TooLarge { what: "code", value: 32_768, max: 32_767 })
+            Err(KernelError::TooLarge {
+                what: "code",
+                value: 32_768,
+                max: 32_767
+            })
         );
         assert_eq!(
             parse("code", NAMES, "-32769"),
-            Err(KernelError::TooSmall { what: "code", value: -32_769, min: -32_768 })
+            Err(KernelError::TooSmall {
+                what: "code",
+                value: -32_769,
+                min: -32_768
+            })
         );
         assert_eq!(
             parse("code", NAMES, "99999999999999999999999"),
-            Err(KernelError::TooLarge { what: "code", value: u64::MAX, max: 32_767 })
+            Err(KernelError::TooLarge {
+                what: "code",
+                value: u64::MAX,
+                max: 32_767
+            })
         );
         assert_eq!(
             parse("code", NAMES, "-99999999999999999999999"),
-            Err(KernelError::TooSmall { what: "code", value: i64::MIN, min: -32_768 })
+            Err(KernelError::TooSmall {
+                what: "code",
+                value: i64::MIN,
+                min: -32_768
+            })
         );
     }
 
@@ -161,7 +195,10 @@ mod tests {
         for text in ["+3", "3.0", "-", "--1", "0x10", "3 ", "Prodcue"] {
             assert_eq!(
                 parse("code", NAMES, text),
-                Err(KernelError::UnknownName { what: "code", input: text.to_owned() }),
+                Err(KernelError::UnknownName {
+                    what: "code",
+                    input: text.to_owned()
+                }),
                 "{text:?}"
             );
         }

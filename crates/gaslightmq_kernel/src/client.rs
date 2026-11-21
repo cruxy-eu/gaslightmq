@@ -40,7 +40,11 @@ mod tests {
         assert!(ClientId::new("a".repeat(32_767)).is_ok());
         assert_eq!(
             ClientId::new("a".repeat(32_768)),
-            Err(KernelError::TooLong { what: "client ID", len: 32_768, max: 32_767 })
+            Err(KernelError::TooLong {
+                what: "client ID",
+                len: 32_768,
+                max: 32_767
+            })
         );
     }
 

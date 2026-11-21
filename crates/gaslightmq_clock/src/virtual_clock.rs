@@ -84,9 +84,7 @@ impl VirtualClock {
     ///
     /// A paused clock stays where it is.
     pub fn run_for(&mut self, real: Duration) -> Instant {
-        let nanos = real
-            .as_nanos()
-            .saturating_mul(u128::from(self.speed.factor()));
+        let nanos = real.as_nanos().saturating_mul(u128::from(self.speed.factor()));
         let nanos = u64::try_from(nanos).unwrap_or(u64::MAX);
         self.now = Instant::from_nanos(self.now.as_nanos().saturating_add(nanos));
         self.now
@@ -179,10 +177,7 @@ mod tests {
     fn advance_to_never_moves_the_clock_back() {
         let mut clock = VirtualClock::new();
         let now = clock.advance(Duration::from_secs(30));
-        assert_eq!(
-            clock.advance_to(Instant::ZERO + Duration::from_secs(5)),
-            now
-        );
+        assert_eq!(clock.advance_to(Instant::ZERO + Duration::from_secs(5)), now);
         assert_eq!(clock.advance_to(now), now);
         assert_eq!(clock.now(), now);
     }
@@ -204,10 +199,7 @@ mod tests {
             clock.run_for(Duration::from_millis(250)),
             Instant::ZERO + Duration::from_millis(250)
         );
-        assert_eq!(
-            clock.run_for(Duration::from_nanos(1)),
-            Instant::from_nanos(250_000_001)
-        );
+        assert_eq!(clock.run_for(Duration::from_nanos(1)), Instant::from_nanos(250_000_001));
     }
 
     #[test]
@@ -312,7 +304,7 @@ mod tests {
             // One nanosecond less does not reach the deadline.
             let mut early = VirtualClock::new();
             early.set_speed(Speed::times(factor));
-            early.run_for(wait - Duration::from_nanos(1));
+            early.run_for(wait.saturating_sub(Duration::from_nanos(1)));
             assert!(early.now() < deadline, "{factor}x, {remaining} ns");
 
             clock.run_for(wait);

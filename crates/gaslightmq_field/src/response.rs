@@ -163,7 +163,11 @@ mod tests {
             assert_eq!(outcome.to_string().parse(), Ok(outcome));
         }
         for text in ["", "OK", "Ok", "success", "delayed", "throttled", "ok "] {
-            assert_eq!(text.parse::<Outcome>(), Err(FieldError::unknown_name("outcome", text)), "{text:?}");
+            assert_eq!(
+                text.parse::<Outcome>(),
+                Err(FieldError::unknown_name("outcome", text)),
+                "{text:?}"
+            );
         }
     }
 
@@ -173,8 +177,14 @@ mod tests {
         assert_eq!(Latency::from(Duration::from_nanos(999_999)), Latency::from_millis(0));
         assert_eq!(Latency::from_millis(14).duration(), Duration::from_millis(14));
         assert_eq!(Duration::from(Latency::from_millis(14)), Duration::from_millis(14));
-        assert_eq!(Latency::new(TimeSpan::from_secs(2)).span(), TimeSpan::from_millis(2_000));
-        assert_eq!(TimeSpan::from(Latency::from(TimeSpan::from_millis(14))), TimeSpan::from_millis(14));
+        assert_eq!(
+            Latency::new(TimeSpan::from_secs(2)).span(),
+            TimeSpan::from_millis(2_000)
+        );
+        assert_eq!(
+            TimeSpan::from(Latency::from(TimeSpan::from_millis(14))),
+            TimeSpan::from_millis(14)
+        );
     }
 
     #[test]
@@ -187,7 +197,11 @@ mod tests {
         for text in ["", "14", "ms", "1.5s", "14 parsecs", "-1ms"] {
             assert_eq!(
                 text.parse::<Latency>(),
-                Err(FieldError::malformed("latency", text, "a whole number and a unit, such as 14ms")),
+                Err(FieldError::malformed(
+                    "latency",
+                    text,
+                    "a whole number and a unit, such as 14ms"
+                )),
                 "{text:?}"
             );
         }

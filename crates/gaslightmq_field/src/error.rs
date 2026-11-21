@@ -21,24 +21,45 @@ pub enum FieldError {
     /// `what` has a fixed set of names, and the text is none of them.
     UnknownName { what: &'static str, input: String },
     /// The text does not have the form of `what`, such as `broker 2`.
-    Malformed { what: &'static str, input: String, expected: &'static str },
+    Malformed {
+        what: &'static str,
+        input: String,
+        expected: &'static str,
+    },
     /// The text is a number that `what` cannot hold.
-    OutOfRange { what: &'static str, input: String, min: i64, max: u64 },
+    OutOfRange {
+        what: &'static str,
+        input: String,
+        min: i64,
+        max: u64,
+    },
     /// The field holds a value object of the kernel, and that type refused the text.
     Kernel(KernelError),
 }
 
 impl FieldError {
     pub(crate) fn unknown_name(what: &'static str, input: &str) -> Self {
-        Self::UnknownName { what, input: input.to_owned() }
+        Self::UnknownName {
+            what,
+            input: input.to_owned(),
+        }
     }
 
     pub(crate) fn malformed(what: &'static str, input: &str, expected: &'static str) -> Self {
-        Self::Malformed { what, input: input.to_owned(), expected }
+        Self::Malformed {
+            what,
+            input: input.to_owned(),
+            expected,
+        }
     }
 
     pub(crate) fn out_of_range(what: &'static str, input: impl fmt::Display, min: i64, max: u64) -> Self {
-        Self::OutOfRange { what, input: input.to_string(), min, max }
+        Self::OutOfRange {
+            what,
+            input: input.to_string(),
+            min,
+            max,
+        }
     }
 }
 
@@ -82,7 +103,12 @@ mod tests {
     #[test]
     fn every_variant_names_what_was_wrong() {
         let cases = [
-            (FieldError::UnknownField { name: "client.name".into() }, "no field is named \"client.name\""),
+            (
+                FieldError::UnknownField {
+                    name: "client.name".into(),
+                },
+                "no field is named \"client.name\"",
+            ),
             (FieldError::unknown_name("outcome", "okay"), "unknown outcome: \"okay\""),
             (
                 FieldError::malformed("endpoint", "broker", "bootstrap or broker N"),
@@ -92,7 +118,10 @@ mod tests {
                 FieldError::out_of_range("API version", "40000", 0, 32_767),
                 "API version 40000 is not between 0 and 32767",
             ),
-            (FieldError::Kernel(KernelError::Empty { what: "topic name" }), "topic name is empty"),
+            (
+                FieldError::Kernel(KernelError::Empty { what: "topic name" }),
+                "topic name is empty",
+            ),
         ];
 
         for (error, message) in cases {

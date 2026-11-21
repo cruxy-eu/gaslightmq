@@ -108,14 +108,19 @@ fn produce(partitions: &[&str]) -> Fields {
         .with(ApiKey::PRODUCE)
         .with(ApiVersion::from(11))
         .with(Acks::ALL);
-    partitions.iter().fold(call, |call, text| call.with_part(partition(text)))
+    partitions
+        .iter()
+        .fold(call, |call, text| call.with_part(partition(text)))
 }
 
 #[test]
 fn a_positive_condition_matches_when_any_value_matches() {
     let call = produce(&["orders.eu/1", "payments.settled/3"]);
 
-    assert_eq!(evaluate(&call, &[is(Field::Topic, "payments.settled")]), matched(&["payments.settled/3"]));
+    assert_eq!(
+        evaluate(&call, &[is(Field::Topic, "payments.settled")]),
+        matched(&["payments.settled/3"])
+    );
     assert_eq!(evaluate(&call, &[is(Field::Topic, "orders.us")]), Verdict::NotMatched);
 }
 
@@ -124,49 +129,83 @@ fn is_not_matches_when_no_value_equals() {
     let both = produce(&["orders.eu/1", "payments.settled/3"]);
     let settled = produce(&["payments.settled/3"]);
 
-    assert_eq!(evaluate(&both, &[is_not(Field::Topic, "orders.eu")]), Verdict::NotMatched);
-    assert_eq!(evaluate(&settled, &[is_not(Field::Topic, "orders.eu")]), matched(&["payments.settled/3"]));
+    assert_eq!(
+        evaluate(&both, &[is_not(Field::Topic, "orders.eu")]),
+        Verdict::NotMatched
+    );
+    assert_eq!(
+        evaluate(&settled, &[is_not(Field::Topic, "orders.eu")]),
+        matched(&["payments.settled/3"])
+    );
 }
 
 #[test]
 fn conditions_on_topic_and_partition_apply_to_the_same_partition() {
     let conditions = [is(Field::Topic, "orders.eu"), is(Field::Partition, "3")];
 
-    assert_eq!(evaluate(&produce(&["orders.eu/3"]), &conditions), matched(&["orders.eu/3"]));
-    assert_eq!(evaluate(&produce(&["orders.eu/1", "payments.settled/3"]), &conditions), Verdict::NotMatched);
+    assert_eq!(
+        evaluate(&produce(&["orders.eu/3"]), &conditions),
+        matched(&["orders.eu/3"])
+    );
+    assert_eq!(
+        evaluate(&produce(&["orders.eu/1", "payments.settled/3"]), &conditions),
+        Verdict::NotMatched
+    );
 }
 
 #[test]
 fn the_partitions_that_satisfy_the_conditions_are_the_target() {
     let call = produce(&["orders.eu/3", "orders.eu/4", "payments.settled/0"]);
 
-    assert_eq!(evaluate(&call, &[is(Field::Topic, "orders.eu")]), matched(&["orders.eu/3", "orders.eu/4"]));
+    assert_eq!(
+        evaluate(&call, &[is(Field::Topic, "orders.eu")]),
+        matched(&["orders.eu/3", "orders.eu/4"])
+    );
 }
 
 #[test]
 fn a_selector_that_tests_no_part_targets_every_part() {
     let call = produce(&["orders.eu/3", "payments.settled/0"]);
 
-    assert_eq!(evaluate(&call, &[is(Field::Api, "Produce")]), matched(&["orders.eu/3", "payments.settled/0"]));
+    assert_eq!(
+        evaluate(&call, &[is(Field::Api, "Produce")]),
+        matched(&["orders.eu/3", "payments.settled/0"])
+    );
     assert_eq!(evaluate(&call, &[]), Verdict::Matched(call.whole_target()));
 }
 
 #[test]
 fn on_a_request_without_partitions_the_target_is_the_whole_call() {
-    let heartbeat = Fields::new().with(ApiKey::HEARTBEAT).with(GroupId::new("analytics-etl").unwrap());
+    let heartbeat = Fields::new()
+        .with(ApiKey::HEARTBEAT)
+        .with(GroupId::new("analytics-etl").unwrap());
 
-    assert_eq!(evaluate(&heartbeat, &[is(Field::Group, "analytics-etl")]), Verdict::Matched(Target::Call));
-    assert_eq!(evaluate(&heartbeat, &[is(Field::Topic, "orders.eu")]), Verdict::NotMatched);
-    assert_eq!(evaluate(&heartbeat, &[is_not(Field::Topic, "orders.eu")]), Verdict::Matched(Target::Call));
+    assert_eq!(
+        evaluate(&heartbeat, &[is(Field::Group, "analytics-etl")]),
+        Verdict::Matched(Target::Call)
+    );
+    assert_eq!(
+        evaluate(&heartbeat, &[is(Field::Topic, "orders.eu")]),
+        Verdict::NotMatched
+    );
+    assert_eq!(
+        evaluate(&heartbeat, &[is_not(Field::Topic, "orders.eu")]),
+        Verdict::Matched(Target::Call)
+    );
 }
 
 #[test]
 fn on_a_request_that_names_topics_only_the_target_is_a_set_of_topics() {
     let topic = |name: &str| TopicName::new(name).unwrap();
-    let metadata =
-        Fields::new().with(ApiKey::METADATA).with_part(topic("orders.eu")).with_part(topic("payments.settled"));
+    let metadata = Fields::new()
+        .with(ApiKey::METADATA)
+        .with_part(topic("orders.eu"))
+        .with_part(topic("payments.settled"));
 
-    assert_eq!(evaluate(&metadata, &[is(Field::Topic, "orders.eu")]), matched(&["orders.eu"]));
+    assert_eq!(
+        evaluate(&metadata, &[is(Field::Topic, "orders.eu")]),
+        matched(&["orders.eu"])
+    );
     assert_eq!(evaluate(&metadata, &[is(Field::Partition, "3")]), Verdict::NotMatched);
 }
 
@@ -175,7 +214,10 @@ fn a_field_that_the_request_does_not_have_fails_a_positive_condition() {
     let fetch = Fields::new().with(ApiKey::FETCH).with_part(partition("orders.eu/3"));
 
     assert_eq!(evaluate(&fetch, &[is(Field::Acks, "-1")]), Verdict::NotMatched);
-    assert_eq!(evaluate(&fetch, &[is_not(Field::Acks, "-1")]), matched(&["orders.eu/3"]));
+    assert_eq!(
+        evaluate(&fetch, &[is_not(Field::Acks, "-1")]),
+        matched(&["orders.eu/3"])
+    );
 }
 
 #[test]
@@ -187,7 +229,10 @@ fn a_fetch_matches_its_group_once_the_client_named_the_group() {
 
     let learned = fetch.with_learned(GroupId::new("analytics-etl").unwrap());
     assert_eq!(evaluate(&learned, &conditions), matched(&["orders.eu/3"]));
-    assert_eq!(learned.read(Field::Group).present().map(|groups| groups.origin()), Some(Origin::ClientContext));
+    assert_eq!(
+        learned.read(Field::Group).present().map(|groups| groups.origin()),
+        Some(Origin::ClientContext)
+    );
 }
 
 #[test]
@@ -197,9 +242,18 @@ fn a_client_with_several_consumers_has_several_groups() {
         .with_learned(GroupId::new("payments").unwrap())
         .with_learned(GroupId::new("analytics-etl").unwrap());
 
-    assert_eq!(evaluate(&fetch, &[is(Field::Group, "payments")]), Verdict::Matched(Target::Call));
-    assert_eq!(evaluate(&fetch, &[is(Field::Group, "analytics-etl")]), Verdict::Matched(Target::Call));
-    assert_eq!(evaluate(&fetch, &[is_not(Field::Group, "payments")]), Verdict::NotMatched);
+    assert_eq!(
+        evaluate(&fetch, &[is(Field::Group, "payments")]),
+        Verdict::Matched(Target::Call)
+    );
+    assert_eq!(
+        evaluate(&fetch, &[is(Field::Group, "analytics-etl")]),
+        Verdict::Matched(Target::Call)
+    );
+    assert_eq!(
+        evaluate(&fetch, &[is_not(Field::Group, "payments")]),
+        Verdict::NotMatched
+    );
 }
 
 #[test]
@@ -209,7 +263,10 @@ fn a_request_that_carries_its_group_matches_that_group_only() {
         .with_learned(GroupId::new("payments").unwrap())
         .with(GroupId::new("analytics-etl").unwrap());
 
-    assert_eq!(evaluate(&commit, &[is(Field::Group, "analytics-etl")]), Verdict::Matched(Target::Call));
+    assert_eq!(
+        evaluate(&commit, &[is(Field::Group, "analytics-etl")]),
+        Verdict::Matched(Target::Call)
+    );
     assert_eq!(evaluate(&commit, &[is(Field::Group, "payments")]), Verdict::NotMatched);
 }
 
@@ -225,7 +282,12 @@ fn a_scope_tests_connection_fields_only() {
         assert_eq!(evaluate(&call, scope), matched(&["orders.eu/3"]));
     }
     assert_eq!(evaluate(&call, &another_client), Verdict::NotMatched);
-    for scope in [&one_client_instance[..], &one_connection, &one_endpoint, &another_client] {
+    for scope in [
+        &one_client_instance[..],
+        &one_connection,
+        &one_endpoint,
+        &another_client,
+    ] {
         for condition in scope {
             let (Condition::Is(value) | Condition::IsNot(value)) = condition;
             assert_eq!(value.field().group(), FieldGroup::Connection);
@@ -242,8 +304,14 @@ fn a_session_that_is_not_identified_has_no_client_id() {
 
     assert_eq!(opened.read(Field::ClientId), Reading::Absent);
     assert_eq!(opened.read(Field::ClientSoftware), Reading::Absent);
-    assert_eq!(evaluate(&opened, &[is(Field::ClientId, "order-ingest")]), Verdict::NotMatched);
-    assert_eq!(evaluate(&opened, &[is(Field::Endpoint, "bootstrap")]), Verdict::Matched(Target::Call));
+    assert_eq!(
+        evaluate(&opened, &[is(Field::ClientId, "order-ingest")]),
+        Verdict::NotMatched
+    );
+    assert_eq!(
+        evaluate(&opened, &[is(Field::Endpoint, "bootstrap")]),
+        Verdict::Matched(Target::Call)
+    );
 }
 
 #[test]
@@ -252,7 +320,10 @@ fn a_rule_that_tests_a_response_field_cannot_match_before_the_backend_answers() 
     let asked = produce(&["orders.eu/3", "payments.settled/0"]);
 
     assert_eq!(evaluate(&asked, &conditions), Verdict::Undecided);
-    assert_eq!(evaluate(&asked, &[is_not(Field::ErrorCode, "NOT_LEADER_OR_FOLLOWER")]), Verdict::Undecided);
+    assert_eq!(
+        evaluate(&asked, &[is_not(Field::ErrorCode, "NOT_LEADER_OR_FOLLOWER")]),
+        Verdict::Undecided
+    );
     assert!(conditions.iter().any(|condition| {
         let (Condition::Is(value) | Condition::IsNot(value)) = condition;
         value.field().group() == FieldGroup::Response
@@ -266,7 +337,10 @@ fn a_rule_that_tests_a_response_field_cannot_match_before_the_backend_answers() 
 fn a_request_condition_that_fails_decides_before_the_backend_answers() {
     let asked = produce(&["payments.settled/0"]);
 
-    assert_eq!(evaluate(&asked, &[is(Field::Topic, "orders.eu"), is(Field::Outcome, "ok")]), Verdict::NotMatched);
+    assert_eq!(
+        evaluate(&asked, &[is(Field::Topic, "orders.eu"), is(Field::Outcome, "ok")]),
+        Verdict::NotMatched
+    );
 }
 
 #[test]
@@ -282,9 +356,15 @@ fn a_condition_on_the_truth_applies_to_the_same_partition() {
         evaluate(&answered, &[is(Field::Topic, "orders.eu"), is(Field::Outcome, "ok")]),
         matched(&["orders.eu/3"])
     );
-    assert_eq!(evaluate(&answered, &[is(Field::ErrorCode, "NOT_LEADER_OR_FOLLOWER")]), matched(&["orders.eu/4"]));
     assert_eq!(
-        evaluate(&answered, &[is(Field::Topic, "payments.settled"), is(Field::Outcome, "error")]),
+        evaluate(&answered, &[is(Field::ErrorCode, "NOT_LEADER_OR_FOLLOWER")]),
+        matched(&["orders.eu/4"])
+    );
+    assert_eq!(
+        evaluate(
+            &answered,
+            &[is(Field::Topic, "payments.settled"), is(Field::Outcome, "error")]
+        ),
         Verdict::NotMatched
     );
 }
@@ -296,7 +376,10 @@ fn the_response_pass_skips_a_partition_that_was_refused_before_forwarding() {
         .with_part(PartFields::new(partition("orders.eu/3")).without_truth())
         .with_part(PartFields::new(partition("orders.eu/4")).succeeded());
 
-    assert_eq!(evaluate(&answered, &[is(Field::Outcome, "ok")]), matched(&["orders.eu/4"]));
+    assert_eq!(
+        evaluate(&answered, &[is(Field::Outcome, "ok")]),
+        matched(&["orders.eu/4"])
+    );
     assert_eq!(evaluate(&answered, &[is(Field::Outcome, "error")]), Verdict::NotMatched);
 }
 
@@ -357,12 +440,20 @@ fn a_source_of_another_shape_answers_like_the_same_call_as_plain_data() {
     for field in Field::ALL {
         assert_eq!(recorded.read(field), plain.read(field), "{field}");
         for (recorded_part, plain_part) in recorded.parts().iter().zip(plain.parts()) {
-            assert_eq!(recorded.read_in(recorded_part, field), plain.read_in(plain_part, field), "{field}");
+            assert_eq!(
+                recorded.read_in(recorded_part, field),
+                plain.read_in(plain_part, field),
+                "{field}"
+            );
         }
     }
     assert_eq!(recorded.whole_target(), plain.whole_target());
 
-    let conditions = [is(Field::Group, "analytics-etl"), is(Field::Partition, "4"), is(Field::Outcome, "ok")];
+    let conditions = [
+        is(Field::Group, "analytics-etl"),
+        is(Field::Partition, "4"),
+        is(Field::Outcome, "ok"),
+    ];
     assert_eq!(evaluate(&recorded, &conditions), matched(&["orders.eu/4"]));
     assert_eq!(evaluate(&recorded, &conditions), evaluate(&plain, &conditions));
 }

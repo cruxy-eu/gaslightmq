@@ -63,7 +63,11 @@ mod tests {
         assert_eq!(BrokerId::new(MAX).map(BrokerId::value), Ok(MAX));
         assert_eq!(
             BrokerId::new(MAX + 1),
-            Err(KernelError::TooLarge { what: "broker ID", value: u64::from(MAX) + 1, max: u64::from(MAX) })
+            Err(KernelError::TooLarge {
+                what: "broker ID",
+                value: u64::from(MAX) + 1,
+                max: u64::from(MAX)
+            })
         );
     }
 
@@ -74,7 +78,13 @@ mod tests {
         assert_eq!(BrokerId::from(2_u16), broker);
         assert_eq!(BrokerId::try_from(2_u32), Ok(broker));
         assert_eq!(BrokerId::try_from(2_i32), Ok(broker));
-        assert_eq!(BrokerId::try_from(-1_i32), Err(KernelError::Negative { what: "broker ID", value: -1 }));
+        assert_eq!(
+            BrokerId::try_from(-1_i32),
+            Err(KernelError::Negative {
+                what: "broker ID",
+                value: -1
+            })
+        );
         assert!(BrokerId::try_from(u32::MAX).is_err());
         assert_eq!(broker.value(), 2);
         assert_eq!(u32::from(broker), 2);
@@ -86,7 +96,13 @@ mod tests {
     fn the_wire_writes_no_broker_as_minus_one() {
         assert_eq!(BrokerId::from_wire(-1), Ok(None));
         assert_eq!(BrokerId::from_wire(0), Ok(Some(BrokerId::from(0))));
-        assert_eq!(BrokerId::from_wire(-2), Err(KernelError::Negative { what: "broker ID", value: -2 }));
+        assert_eq!(
+            BrokerId::from_wire(-2),
+            Err(KernelError::Negative {
+                what: "broker ID",
+                value: -2
+            })
+        );
         assert_eq!(BrokerId::to_wire(None), -1);
         assert_eq!(BrokerId::to_wire(Some(BrokerId::from(2))), 2);
     }
@@ -97,11 +113,18 @@ mod tests {
         assert_eq!(BrokerId::from(2).to_string(), "2");
         assert_eq!(
             "broker 2".parse::<BrokerId>(),
-            Err(KernelError::NotANumber { what: "broker ID", input: "broker 2".into() })
+            Err(KernelError::NotANumber {
+                what: "broker ID",
+                input: "broker 2".into()
+            })
         );
         assert_eq!(
             "2147483648".parse::<BrokerId>(),
-            Err(KernelError::TooLarge { what: "broker ID", value: 2_147_483_648, max: 2_147_483_647 })
+            Err(KernelError::TooLarge {
+                what: "broker ID",
+                value: 2_147_483_648,
+                max: 2_147_483_647
+            })
         );
     }
 
@@ -110,7 +133,11 @@ mod tests {
         assert_eq!(LeaderEpoch::new(MAX).map(LeaderEpoch::value), Ok(MAX));
         assert_eq!(
             LeaderEpoch::new(MAX + 1),
-            Err(KernelError::TooLarge { what: "leader epoch", value: u64::from(MAX) + 1, max: u64::from(MAX) })
+            Err(KernelError::TooLarge {
+                what: "leader epoch",
+                value: u64::from(MAX) + 1,
+                max: u64::from(MAX)
+            })
         );
     }
 
@@ -121,7 +148,13 @@ mod tests {
         assert_eq!(LeaderEpoch::from(7_u16), epoch);
         assert_eq!(LeaderEpoch::try_from(7_u32), Ok(epoch));
         assert_eq!(LeaderEpoch::try_from(7_i32), Ok(epoch));
-        assert_eq!(LeaderEpoch::try_from(-1_i32), Err(KernelError::Negative { what: "leader epoch", value: -1 }));
+        assert_eq!(
+            LeaderEpoch::try_from(-1_i32),
+            Err(KernelError::Negative {
+                what: "leader epoch",
+                value: -1
+            })
+        );
         assert_eq!(u32::from(epoch), 7);
         assert_eq!(i32::from(epoch), 7);
     }
@@ -130,7 +163,13 @@ mod tests {
     fn the_wire_writes_an_unknown_epoch_as_minus_one() {
         assert_eq!(LeaderEpoch::from_wire(-1), Ok(None));
         assert_eq!(LeaderEpoch::from_wire(7), Ok(Some(LeaderEpoch::from(7))));
-        assert_eq!(LeaderEpoch::from_wire(-7), Err(KernelError::Negative { what: "leader epoch", value: -7 }));
+        assert_eq!(
+            LeaderEpoch::from_wire(-7),
+            Err(KernelError::Negative {
+                what: "leader epoch",
+                value: -7
+            })
+        );
         assert_eq!(LeaderEpoch::to_wire(None), -1);
         assert_eq!(LeaderEpoch::to_wire(Some(LeaderEpoch::from(7))), 7);
     }

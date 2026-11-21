@@ -141,7 +141,10 @@ impl Field {
     /// `outcome` and `error.code` are the truth of the part, when the backend answers per partition.
     /// Conditions on these fields apply to the same part.
     pub const fn is_per_part(self) -> bool {
-        matches!(self, Field::Topic | Field::Partition | Field::Outcome | Field::ErrorCode)
+        matches!(
+            self,
+            Field::Topic | Field::Partition | Field::Outcome | Field::ErrorCode
+        )
     }
 }
 
@@ -202,8 +205,12 @@ pub enum FieldGroup {
 
 impl FieldGroup {
     /// Every group, in the order a call passes through them.
-    pub const ALL: [FieldGroup; 4] =
-        [FieldGroup::Connection, FieldGroup::Request, FieldGroup::Learned, FieldGroup::Response];
+    pub const ALL: [FieldGroup; 4] = [
+        FieldGroup::Connection,
+        FieldGroup::Request,
+        FieldGroup::Learned,
+        FieldGroup::Response,
+    ];
 
     /// The name of the group in lower case.
     pub const fn name(self) -> &'static str {
@@ -295,7 +302,11 @@ mod tests {
     #[test]
     fn a_name_is_exact() {
         for text in ["", "Topic", "client_id", "client", "client.id ", "clientid", "error"] {
-            assert_eq!(text.parse::<Field>(), Err(FieldError::UnknownField { name: text.to_owned() }), "{text:?}");
+            assert_eq!(
+                text.parse::<Field>(),
+                Err(FieldError::UnknownField { name: text.to_owned() }),
+                "{text:?}"
+            );
         }
     }
 
@@ -305,10 +316,23 @@ mod tests {
 
         assert_eq!(
             fields(FieldGroup::Connection),
-            ["connection", "address", "host", "endpoint", "client.id", "client.software"]
+            [
+                "connection",
+                "address",
+                "host",
+                "endpoint",
+                "client.id",
+                "client.software"
+            ]
         );
-        assert_eq!(fields(FieldGroup::Request), ["api", "api.version", "topic", "partition", "acks"]);
-        assert_eq!(fields(FieldGroup::Learned), ["group", "member.id", "group.instance.id", "transactional.id"]);
+        assert_eq!(
+            fields(FieldGroup::Request),
+            ["api", "api.version", "topic", "partition", "acks"]
+        );
+        assert_eq!(
+            fields(FieldGroup::Learned),
+            ["group", "member.id", "group.instance.id", "transactional.id"]
+        );
         assert_eq!(fields(FieldGroup::Response), ["outcome", "error.code", "latency"]);
     }
 
@@ -331,7 +355,10 @@ mod tests {
     #[test]
     fn a_part_has_its_own_topic_partition_and_truth() {
         let per_part: Vec<Field> = Field::ALL.into_iter().filter(|field| field.is_per_part()).collect();
-        assert_eq!(per_part, [Field::Topic, Field::Partition, Field::Outcome, Field::ErrorCode]);
+        assert_eq!(
+            per_part,
+            [Field::Topic, Field::Partition, Field::Outcome, Field::ErrorCode]
+        );
     }
 
     #[test]
@@ -339,11 +366,17 @@ mod tests {
         for group in FieldGroup::ALL {
             assert_eq!(group.to_string().parse::<FieldGroup>(), Ok(group));
         }
-        assert_eq!("Response".parse::<FieldGroup>(), Err(FieldError::unknown_name("field group", "Response")));
+        assert_eq!(
+            "Response".parse::<FieldGroup>(),
+            Err(FieldError::unknown_name("field group", "Response"))
+        );
     }
 
     #[test]
     fn a_name_pads_like_text() {
-        assert_eq!(format!("{:>10}|{:<9}|", Field::Topic, FieldGroup::Request), "     topic|request  |");
+        assert_eq!(
+            format!("{:>10}|{:<9}|", Field::Topic, FieldGroup::Request),
+            "     topic|request  |"
+        );
     }
 }

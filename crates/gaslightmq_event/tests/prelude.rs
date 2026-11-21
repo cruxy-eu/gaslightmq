@@ -75,8 +75,5 @@ fn the_prelude_names_every_type_next_to_std_and_the_kernel() {
     assert_eq!(items[0], "leader-moves");
     assert_eq!(items[1], "emulated");
     assert_eq!(items[2], "partition-added needs a topic, and none is named");
-    assert_eq!(
-        items[3],
-        "the backend cannot apply or emulate: partition-added"
-    );
+    assert_eq!(items[3], "the backend cannot apply or emulate: partition-added");
 }

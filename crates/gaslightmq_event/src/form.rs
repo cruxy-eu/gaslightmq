@@ -13,8 +13,8 @@ use serde::de::{self, Deserialize, Deserializer, MapAccess, Visitor};
 use serde::ser::{Serialize, SerializeMap, Serializer};
 
 use crate::{
-    Capabilities, Consequence, Coordinator, Event, EventDefinition, EventError, EventKind,
-    ExpandedEvent, PartitionCount, RecordCount, Support,
+    Capabilities, Consequence, Coordinator, Event, EventDefinition, EventError, EventKind, ExpandedEvent,
+    PartitionCount, RecordCount, Support,
 };
 
 const EVENT: &str = "event";
@@ -55,9 +55,7 @@ impl Serialize for EventKind {
 
 impl<'de> Deserialize<'de> for EventKind {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        String::deserialize(deserializer)?
-            .parse()
-            .map_err(de::Error::custom)
+        String::deserialize(deserializer)?.parse().map_err(de::Error::custom)
     }
 }
 
@@ -158,9 +156,7 @@ impl Fields {
     fn set_coordinator(&mut self, coordinator: Option<&Coordinator>) {
         match coordinator {
             Some(Coordinator::Group(group)) => self.group = Some(group.clone()),
-            Some(Coordinator::Transaction(transactional_id)) => {
-                self.transactional_id = Some(transactional_id.clone())
-            }
+            Some(Coordinator::Transaction(transactional_id)) => self.transactional_id = Some(transactional_id.clone()),
             None => {}
         }
     }
@@ -187,9 +183,7 @@ impl Fields {
             value: to,
             max: i32::MAX as u64,
         };
-        let broker = u32::try_from(to)
-            .map_err(|_| too_large())
-            .and_then(BrokerId::new);
+        let broker = u32::try_from(to).map_err(|_| too_large()).and_then(BrokerId::new);
         broker.map(Some).map_err(E::custom)
     }
 
@@ -224,9 +218,7 @@ impl Fields {
     /// Fail when the map has a key that `owner` did not take.
     fn nothing_left<E: de::Error>(&self, owner: &str) -> Result<(), E> {
         match self.present().into_iter().find(|(_, present)| *present) {
-            Some((key, _)) => Err(E::custom(format_args!(
-                "`{key}` does not belong to {owner}"
-            ))),
+            Some((key, _)) => Err(E::custom(format_args!("`{key}` does not belong to {owner}"))),
             None => Ok(()),
         }
     }
@@ -305,47 +297,41 @@ impl From<&EventDefinition> for Fields {
         let number = |broker: &Option<BrokerId>| broker.map(|broker| u64::from(broker.value()));
         match definition {
             EventDefinition::LeaderMoves { partition, to } => {
-                fields.partition = partition.clone();
+                fields.partition.clone_from(partition);
                 fields.to = number(to);
             }
             EventDefinition::BrokerGoesDown { broker, failover } => {
                 fields.broker = *broker;
                 fields.failover = failover.then_some(true);
             }
-            EventDefinition::BrokerGoesUnresponsive { broker }
-            | EventDefinition::BrokerComesBack { broker } => {
+            EventDefinition::BrokerGoesUnresponsive { broker } | EventDefinition::BrokerComesBack { broker } => {
                 fields.broker = *broker;
             }
-            EventDefinition::Rebalance { group } => fields.group = group.clone(),
+            EventDefinition::Rebalance { group } => fields.group.clone_from(group),
             EventDefinition::CoordinatorMoves { coordinator, to } => {
                 fields.set_coordinator(coordinator.as_ref());
                 fields.to = number(to);
             }
             EventDefinition::PartitionAdded { topic, count } => {
-                fields.topic = topic.clone();
+                fields.topic.clone_from(topic);
                 fields.count = (*count != PartitionCount::ONE).then(|| count.value().into());
             }
-            EventDefinition::TopicDeleted { topic } => fields.topic = topic.clone(),
+            EventDefinition::TopicDeleted { topic } => fields.topic.clone_from(topic),
             EventDefinition::RecordsAppended { partition, count } => {
-                fields.partition = partition.clone();
+                fields.partition.clone_from(partition);
                 fields.count = (*count != RecordCount::ONE).then(|| count.value());
             }
-            EventDefinition::RecordsExpired { partition, to }
-            | EventDefinition::LogTruncated { partition, to } => {
-                fields.partition = partition.clone();
+            EventDefinition::RecordsExpired { partition, to } | EventDefinition::LogTruncated { partition, to } => {
+                fields.partition.clone_from(partition);
                 fields.to = Some(to.value());
             }
-            EventDefinition::CommittedOffsetReset {
-                group,
-                partition,
-                to,
-            } => {
-                fields.group = group.clone();
-                fields.partition = partition.clone();
+            EventDefinition::CommittedOffsetReset { group, partition, to } => {
+                fields.group.clone_from(group);
+                fields.partition.clone_from(partition);
                 fields.to = Some(to.value());
             }
             EventDefinition::ProducerFenced { transactional_id } => {
-                fields.transactional_id = transactional_id.clone();
+                fields.transactional_id.clone_from(transactional_id);
             }
         }
         fields
@@ -355,34 +341,26 @@ impl From<&EventDefinition> for Fields {
 /// Writes a map with the keys that have a value.
 impl Serialize for Fields {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        fn entry<M: SerializeMap, T: Serialize>(
-            map: &mut M,
-            key: &str,
-            value: &Option<T>,
-        ) -> Result<(), M::Error> {
+        fn entry<M: SerializeMap, T: Serialize>(map: &mut M, key: &str, value: Option<&T>) -> Result<(), M::Error> {
             match value {
                 Some(value) => map.serialize_entry(key, value),
                 None => Ok(()),
             }
         }
 
-        let len = self
-            .present()
-            .into_iter()
-            .filter(|(_, present)| *present)
-            .count();
+        let len = self.present().into_iter().filter(|(_, present)| *present).count();
         let mut map = serializer.serialize_map(Some(len))?;
-        entry(&mut map, EVENT, &self.event)?;
-        entry(&mut map, CONSEQUENCE, &self.consequence)?;
-        entry(&mut map, PARTITION, &self.partition)?;
-        entry(&mut map, TOPIC, &self.topic)?;
-        entry(&mut map, BROKER, &self.broker)?;
-        entry(&mut map, GROUP, &self.group)?;
-        entry(&mut map, TRANSACTIONAL_ID, &self.transactional_id)?;
-        entry(&mut map, TO, &self.to)?;
-        entry(&mut map, COUNT, &self.count)?;
-        entry(&mut map, FAILOVER, &self.failover)?;
-        entry(&mut map, CONSEQUENCES, &self.consequences)?;
+        entry(&mut map, EVENT, self.event.as_ref())?;
+        entry(&mut map, CONSEQUENCE, self.consequence.as_ref())?;
+        entry(&mut map, PARTITION, self.partition.as_ref())?;
+        entry(&mut map, TOPIC, self.topic.as_ref())?;
+        entry(&mut map, BROKER, self.broker.as_ref())?;
+        entry(&mut map, GROUP, self.group.as_ref())?;
+        entry(&mut map, TRANSACTIONAL_ID, self.transactional_id.as_ref())?;
+        entry(&mut map, TO, self.to.as_ref())?;
+        entry(&mut map, COUNT, self.count.as_ref())?;
+        entry(&mut map, FAILOVER, self.failover.as_ref())?;
+        entry(&mut map, CONSEQUENCES, self.consequences.as_ref())?;
         map.end()
     }
 }
@@ -440,9 +418,7 @@ impl Serialize for EventDefinition {
 
 impl<'de> Deserialize<'de> for EventDefinition {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        deserializer
-            .deserialize_map(FieldsVisitor)?
-            .into_definition()
+        deserializer.deserialize_map(FieldsVisitor)?.into_definition()
     }
 }
 

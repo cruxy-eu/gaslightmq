@@ -110,9 +110,7 @@ impl FromStr for EventKind {
         Self::ALL
             .into_iter()
             .find(|kind| kind.name() == name)
-            .ok_or_else(|| EventError::UnknownEvent {
-                name: name.to_owned(),
-            })
+            .ok_or_else(|| EventError::UnknownEvent { name: name.to_owned() })
     }
 }
 
@@ -167,9 +165,7 @@ mod tests {
         for name in ["leader-move", "Leader moves", "LEADER-MOVES", ""] {
             assert_eq!(
                 name.parse::<EventKind>(),
-                Err(EventError::UnknownEvent {
-                    name: name.to_owned()
-                }),
+                Err(EventError::UnknownEvent { name: name.to_owned() }),
             );
         }
     }

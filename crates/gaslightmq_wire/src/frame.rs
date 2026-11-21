@@ -28,6 +28,11 @@ impl Frame {
     }
 
     /// The bytes to put on the connection: the length prefix and the payload.
+    ///
+    /// # Panics
+    ///
+    /// When the payload is longer than the prefix can say, as
+    /// [`write_to`](Self::write_to) does.
     pub fn to_bytes(&self) -> Bytes {
         let mut out = BytesMut::with_capacity(4 + self.0.len());
         self.write_to(&mut out);
@@ -35,8 +40,14 @@ impl Frame {
     }
 
     /// Append the length prefix and the payload to `out`.
+    ///
+    /// # Panics
+    ///
+    /// When the payload is longer than `u32::MAX` bytes, which the prefix
+    /// cannot say.
     pub fn write_to(&self, out: &mut BytesMut) {
-        out.extend_from_slice(&(self.0.len() as u32).to_be_bytes());
+        let len = u32::try_from(self.0.len()).expect("a frame payload of at most u32::MAX bytes");
+        out.extend_from_slice(&len.to_be_bytes());
         out.extend_from_slice(&self.0);
     }
 }
@@ -66,7 +77,10 @@ impl FrameDecoder {
 
     /// A decoder that rejects frames with a payload over `max_len` bytes.
     pub fn with_max_len(max_len: usize) -> Self {
-        Self { buffer: BytesMut::new(), max_len }
+        Self {
+            buffer: BytesMut::new(),
+            max_len,
+        }
     }
 
     /// Add bytes that arrived.
@@ -91,6 +105,12 @@ impl FrameDecoder {
     /// decoder does not accept is an error as soon as the prefix is there,
     /// before the payload arrives. After an error the connection is of no
     /// use: there is no way to find the start of the next frame.
+    ///
+    /// # Errors
+    ///
+    /// [`WireError::EmptyFrame`] when the prefix announces zero bytes, and
+    /// [`WireError::FrameTooLarge`] when it announces more than the decoder
+    /// accepts.
     pub fn next_frame(&mut self) -> Result<Option<Frame>, WireError> {
         let Some(prefix) = self.buffer.first_chunk::<4>() else {
             return Ok(None);

@@ -14,10 +14,17 @@ pub(crate) fn name(what: &'static str, value: &str, max: usize) -> Result<(), Ke
     non_empty(what, value, max)?;
     let allowed = |character: char| character.is_ascii_alphanumeric() || matches!(character, '.' | '_' | '-');
     if let Some((position, character)) = value.chars().enumerate().find(|(_, character)| !allowed(*character)) {
-        return Err(KernelError::InvalidCharacter { what, character, position });
+        return Err(KernelError::InvalidCharacter {
+            what,
+            character,
+            position,
+        });
     }
     if matches!(value, "." | "..") {
-        return Err(KernelError::Reserved { what, value: value.to_owned() });
+        return Err(KernelError::Reserved {
+            what,
+            value: value.to_owned(),
+        });
     }
     Ok(())
 }
@@ -33,7 +40,11 @@ pub(crate) fn non_empty(what: &'static str, value: &str, max: usize) -> Result<(
 /// The rule for an ID that may be empty: no more bytes than a message can carry.
 pub(crate) fn any(what: &'static str, value: &str, max: usize) -> Result<(), KernelError> {
     if value.len() > max {
-        return Err(KernelError::TooLong { what, len: value.len(), max });
+        return Err(KernelError::TooLong {
+            what,
+            len: value.len(),
+            max,
+        });
     }
     Ok(())
 }
@@ -55,6 +66,10 @@ macro_rules! text_value {
             pub const MAX_LEN: usize = $max;
 
             #[doc = concat!("Check `value` against the rule for a ", $what, ", and keep it.")]
+            ///
+            /// # Errors
+            ///
+            /// The [`KernelError`](crate::KernelError) that says how `value` breaks the rule.
             pub fn new(value: impl AsRef<str>) -> Result<Self, $crate::KernelError> {
                 let value = value.as_ref();
                 $rule($what, value, Self::MAX_LEN)?;
@@ -232,7 +247,10 @@ mod tests {
 
     #[test]
     fn a_name_is_not_empty() {
-        assert_eq!(name("topic name", "", MAX_NAME_LEN), Err(KernelError::Empty { what: "topic name" }));
+        assert_eq!(
+            name("topic name", "", MAX_NAME_LEN),
+            Err(KernelError::Empty { what: "topic name" })
+        );
     }
 
     #[test]
@@ -240,18 +258,30 @@ mod tests {
         assert_eq!(name("topic name", &"a".repeat(249), MAX_NAME_LEN), Ok(()));
         assert_eq!(
             name("topic name", &"a".repeat(250), MAX_NAME_LEN),
-            Err(KernelError::TooLong { what: "topic name", len: 250, max: 249 })
+            Err(KernelError::TooLong {
+                what: "topic name",
+                len: 250,
+                max: 249
+            })
         );
     }
 
     #[test]
     fn a_name_rejects_every_other_character() {
-        for (value, character, position) in
-            [("orders/3", '/', 6), ("orders@3", '@', 6), ("orders eu", ' ', 6), ("*", '*', 0), ("ordérs", 'é', 3)]
-        {
+        for (value, character, position) in [
+            ("orders/3", '/', 6),
+            ("orders@3", '@', 6),
+            ("orders eu", ' ', 6),
+            ("*", '*', 0),
+            ("ordérs", 'é', 3),
+        ] {
             assert_eq!(
                 name("topic name", value, MAX_NAME_LEN),
-                Err(KernelError::InvalidCharacter { what: "topic name", character, position }),
+                Err(KernelError::InvalidCharacter {
+                    what: "topic name",
+                    character,
+                    position
+                }),
                 "{value:?}"
             );
         }
@@ -262,7 +292,10 @@ mod tests {
         for value in [".", ".."] {
             assert_eq!(
                 name("topic name", value, MAX_NAME_LEN),
-                Err(KernelError::Reserved { what: "topic name", value: value.to_owned() })
+                Err(KernelError::Reserved {
+                    what: "topic name",
+                    value: value.to_owned()
+                })
             );
         }
     }
@@ -273,15 +306,29 @@ mod tests {
         assert_eq!(non_empty("group ID", &"a".repeat(32_767), MAX_STRING_LEN), Ok(()));
         assert_eq!(
             non_empty("group ID", &"a".repeat(32_768), MAX_STRING_LEN),
-            Err(KernelError::TooLong { what: "group ID", len: 32_768, max: 32_767 })
+            Err(KernelError::TooLong {
+                what: "group ID",
+                len: 32_768,
+                max: 32_767
+            })
         );
-        assert_eq!(non_empty("group ID", "", MAX_STRING_LEN), Err(KernelError::Empty { what: "group ID" }));
+        assert_eq!(
+            non_empty("group ID", "", MAX_STRING_LEN),
+            Err(KernelError::Empty { what: "group ID" })
+        );
     }
 
     #[test]
     fn the_limit_counts_bytes() {
         assert_eq!(any("client ID", "ééé", 6), Ok(()));
-        assert_eq!(any("client ID", "éééé", 6), Err(KernelError::TooLong { what: "client ID", len: 8, max: 6 }));
+        assert_eq!(
+            any("client ID", "éééé", 6),
+            Err(KernelError::TooLong {
+                what: "client ID",
+                len: 8,
+                max: 6
+            })
+        );
     }
 
     #[test]

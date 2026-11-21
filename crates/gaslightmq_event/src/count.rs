@@ -18,6 +18,10 @@ macro_rules! count_value {
             pub const MAX: Self = Self($max);
 
             #[doc = concat!("Check that `value` is at least one and at most [`MAX`](Self::MAX), and keep it.")]
+            ///
+            /// # Errors
+            ///
+            /// [`EventError::CountOutOfRange`](crate::EventError::CountOutOfRange) when `value` is outside that range.
             pub fn new(value: $value) -> Result<Self, $crate::EventError> {
                 if !(1..=Self::MAX.0).contains(&value) {
                     return Err($crate::EventError::CountOutOfRange {
@@ -142,10 +146,7 @@ mod tests {
 
     #[test]
     fn a_count_is_at_most_what_kafka_can_number() {
-        assert_eq!(
-            PartitionCount::new(i32::MAX as u32),
-            Ok(PartitionCount::MAX)
-        );
+        assert_eq!(PartitionCount::new(i32::MAX as u32), Ok(PartitionCount::MAX));
         assert_eq!(RecordCount::new(i64::MAX as u64), Ok(RecordCount::MAX));
         assert_eq!(
             PartitionCount::new(i32::MAX as u32 + 1),

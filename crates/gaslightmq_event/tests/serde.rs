@@ -10,23 +10,20 @@ use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 
 /// `json` is what the value writes, and what reads back as the same value.
-fn writes<T: Serialize + DeserializeOwned + PartialEq + Debug>(value: T, json: &str) {
-    assert_eq!(serde_json::to_string(&value).unwrap(), json);
-    assert_eq!(serde_json::from_str::<T>(json).unwrap(), value);
+fn writes<T: Serialize + DeserializeOwned + PartialEq + Debug>(value: &T, json: &str) {
+    assert_eq!(serde_json::to_string(value).unwrap(), json);
+    assert_eq!(serde_json::from_str::<T>(json).unwrap(), *value);
 }
 
 /// `json` reads as the value, though the value writes a shorter form.
-fn reads<T: DeserializeOwned + PartialEq + Debug>(json: &str, value: T) {
-    assert_eq!(serde_json::from_str::<T>(json).unwrap(), value);
+fn reads<T: DeserializeOwned + PartialEq + Debug>(json: &str, value: &T) {
+    assert_eq!(serde_json::from_str::<T>(json).unwrap(), *value);
 }
 
 /// Reading `json` fails with a message that holds `reason`.
 fn rejects<T: DeserializeOwned + Debug>(json: &str, reason: &str) {
     let error = serde_json::from_str::<T>(json).expect_err(json).to_string();
-    assert!(
-        error.contains(reason),
-        "{json}: {error:?} does not hold {reason:?}"
-    );
+    assert!(error.contains(reason), "{json}: {error:?} does not hold {reason:?}");
 }
 
 fn partition(text: &str) -> TopicPartition {
@@ -47,13 +44,10 @@ fn transactional_id(text: &str) -> TransactionalId {
 
 #[test]
 fn a_kind_writes_its_name() {
-    writes(EventKind::LeaderMoves, r#""leader-moves""#);
-    writes(
-        EventKind::CommittedOffsetReset,
-        r#""committed-offset-reset""#,
-    );
+    writes(&EventKind::LeaderMoves, r#""leader-moves""#);
+    writes(&EventKind::CommittedOffsetReset, r#""committed-offset-reset""#);
     for kind in EventKind::ALL {
-        writes(kind, &format!("{:?}", kind.name()));
+        writes(&kind, &format!("{:?}", kind.name()));
     }
     rejects::<EventKind>(r#""leader-move""#, "no event is called \"leader-move\"");
     rejects::<EventKind>("3", "expected a string");
@@ -63,7 +57,7 @@ fn a_kind_writes_its_name() {
 fn the_action_of_the_leader_election_scenario_reads_as_a_definition() {
     // `action: { event: leader-moves, partition: orders.eu/3 }`
     writes(
-        EventDefinition::LeaderMoves {
+        &EventDefinition::LeaderMoves {
             partition: Some(partition("orders.eu/3")),
             to: None,
         },
@@ -75,7 +69,7 @@ fn the_action_of_the_leader_election_scenario_reads_as_a_definition() {
 fn the_leader_election_preset_names_no_partition() {
     // `event: leader-moves`
     writes(
-        EventDefinition::LeaderMoves {
+        &EventDefinition::LeaderMoves {
             partition: None,
             to: None,
         },
@@ -86,87 +80,87 @@ fn the_leader_election_preset_names_no_partition() {
 #[test]
 fn every_definition_writes_a_map_with_its_parameters() {
     writes(
-        EventDefinition::LeaderMoves {
+        &EventDefinition::LeaderMoves {
             partition: Some(partition("orders.eu/3")),
             to: Some(BrokerId::from(2)),
         },
         r#"{"event":"leader-moves","partition":"orders.eu/3","to":2}"#,
     );
     writes(
-        EventDefinition::BrokerGoesDown {
+        &EventDefinition::BrokerGoesDown {
             broker: Some(BrokerId::from(2)),
             failover: true,
         },
         r#"{"event":"broker-goes-down","broker":2,"failover":true}"#,
     );
     writes(
-        EventDefinition::BrokerGoesUnresponsive {
+        &EventDefinition::BrokerGoesUnresponsive {
             broker: Some(BrokerId::from(2)),
         },
         r#"{"event":"broker-goes-unresponsive","broker":2}"#,
     );
     writes(
-        EventDefinition::BrokerComesBack {
+        &EventDefinition::BrokerComesBack {
             broker: Some(BrokerId::from(2)),
         },
         r#"{"event":"broker-comes-back","broker":2}"#,
     );
     writes(
-        EventDefinition::Rebalance {
+        &EventDefinition::Rebalance {
             group: Some(group("payments")),
         },
         r#"{"event":"rebalance","group":"payments"}"#,
     );
     writes(
-        EventDefinition::CoordinatorMoves {
+        &EventDefinition::CoordinatorMoves {
             coordinator: Some(group("payments").into()),
             to: Some(BrokerId::from(3)),
         },
         r#"{"event":"coordinator-moves","group":"payments","to":3}"#,
     );
     writes(
-        EventDefinition::CoordinatorMoves {
+        &EventDefinition::CoordinatorMoves {
             coordinator: Some(transactional_id("payments-tx-1").into()),
             to: None,
         },
         r#"{"event":"coordinator-moves","transactional.id":"payments-tx-1"}"#,
     );
     writes(
-        EventDefinition::PartitionAdded {
+        &EventDefinition::PartitionAdded {
             topic: Some(topic("orders.eu")),
             count: PartitionCount::new(2).unwrap(),
         },
         r#"{"event":"partition-added","topic":"orders.eu","count":2}"#,
     );
     writes(
-        EventDefinition::TopicDeleted {
+        &EventDefinition::TopicDeleted {
             topic: Some(topic("orders.eu")),
         },
         r#"{"event":"topic-deleted","topic":"orders.eu"}"#,
     );
     writes(
-        EventDefinition::RecordsAppended {
+        &EventDefinition::RecordsAppended {
             partition: Some(partition("orders.eu/3")),
             count: RecordCount::new(500).unwrap(),
         },
         r#"{"event":"records-appended","partition":"orders.eu/3","count":500}"#,
     );
     writes(
-        EventDefinition::RecordsExpired {
+        &EventDefinition::RecordsExpired {
             partition: Some(partition("orders.eu/3")),
             to: Offset::from(5000),
         },
         r#"{"event":"records-expired","partition":"orders.eu/3","to":5000}"#,
     );
     writes(
-        EventDefinition::LogTruncated {
+        &EventDefinition::LogTruncated {
             partition: Some(partition("orders.eu/3")),
             to: Offset::from(40),
         },
         r#"{"event":"log-truncated","partition":"orders.eu/3","to":40}"#,
     );
     writes(
-        EventDefinition::CommittedOffsetReset {
+        &EventDefinition::CommittedOffsetReset {
             group: Some(group("payments")),
             partition: Some(partition("orders.eu/3")),
             to: Offset::from(0),
@@ -174,7 +168,7 @@ fn every_definition_writes_a_map_with_its_parameters() {
         r#"{"event":"committed-offset-reset","partition":"orders.eu/3","group":"payments","to":0}"#,
     );
     writes(
-        EventDefinition::ProducerFenced {
+        &EventDefinition::ProducerFenced {
             transactional_id: Some(transactional_id("payments-tx-1")),
         },
         r#"{"event":"producer-fenced","transactional.id":"payments-tx-1"}"#,
@@ -184,65 +178,62 @@ fn every_definition_writes_a_map_with_its_parameters() {
 #[test]
 fn every_definition_may_leave_its_subject_out() {
     writes(
-        EventDefinition::BrokerGoesDown {
+        &EventDefinition::BrokerGoesDown {
             broker: None,
             failover: false,
         },
         r#"{"event":"broker-goes-down"}"#,
     );
     writes(
-        EventDefinition::BrokerGoesUnresponsive { broker: None },
+        &EventDefinition::BrokerGoesUnresponsive { broker: None },
         r#"{"event":"broker-goes-unresponsive"}"#,
     );
     writes(
-        EventDefinition::BrokerComesBack { broker: None },
+        &EventDefinition::BrokerComesBack { broker: None },
         r#"{"event":"broker-comes-back"}"#,
     );
+    writes(&EventDefinition::Rebalance { group: None }, r#"{"event":"rebalance"}"#);
     writes(
-        EventDefinition::Rebalance { group: None },
-        r#"{"event":"rebalance"}"#,
-    );
-    writes(
-        EventDefinition::CoordinatorMoves {
+        &EventDefinition::CoordinatorMoves {
             coordinator: None,
             to: None,
         },
         r#"{"event":"coordinator-moves"}"#,
     );
     writes(
-        EventDefinition::PartitionAdded {
+        &EventDefinition::PartitionAdded {
             topic: None,
             count: PartitionCount::ONE,
         },
         r#"{"event":"partition-added"}"#,
     );
     writes(
-        EventDefinition::TopicDeleted { topic: None },
+        &EventDefinition::TopicDeleted { topic: None },
         r#"{"event":"topic-deleted"}"#,
     );
     writes(
-        EventDefinition::RecordsAppended {
+        &EventDefinition::RecordsAppended {
             partition: None,
             count: RecordCount::ONE,
         },
         r#"{"event":"records-appended"}"#,
     );
     writes(
-        EventDefinition::RecordsExpired {
+        &EventDefinition::RecordsExpired {
             partition: None,
             to: Offset::from(5000),
         },
         r#"{"event":"records-expired","to":5000}"#,
     );
     writes(
-        EventDefinition::LogTruncated {
+        &EventDefinition::LogTruncated {
             partition: None,
             to: Offset::from(40),
         },
         r#"{"event":"log-truncated","to":40}"#,
     );
     writes(
-        EventDefinition::CommittedOffsetReset {
+        &EventDefinition::CommittedOffsetReset {
             group: None,
             partition: None,
             to: Offset::from(0),
@@ -250,9 +241,7 @@ fn every_definition_may_leave_its_subject_out() {
         r#"{"event":"committed-offset-reset","to":0}"#,
     );
     writes(
-        EventDefinition::ProducerFenced {
-            transactional_id: None,
-        },
+        &EventDefinition::ProducerFenced { transactional_id: None },
         r#"{"event":"producer-fenced"}"#,
     );
 }
@@ -261,21 +250,21 @@ fn every_definition_may_leave_its_subject_out() {
 fn a_definition_reads_the_defaults_it_does_not_write() {
     reads(
         r#"{"event":"broker-goes-down","broker":2,"failover":false}"#,
-        EventDefinition::BrokerGoesDown {
+        &EventDefinition::BrokerGoesDown {
             broker: Some(BrokerId::from(2)),
             failover: false,
         },
     );
     reads(
         r#"{"event":"partition-added","count":1}"#,
-        EventDefinition::PartitionAdded {
+        &EventDefinition::PartitionAdded {
             topic: None,
             count: PartitionCount::ONE,
         },
     );
     reads(
         r#"{"event":"records-appended","count":1}"#,
-        EventDefinition::RecordsAppended {
+        &EventDefinition::RecordsAppended {
             partition: None,
             count: RecordCount::ONE,
         },
@@ -286,14 +275,14 @@ fn a_definition_reads_the_defaults_it_does_not_write() {
 fn the_keys_of_a_definition_come_in_any_order() {
     reads(
         r#"{"to":2,"partition":"orders.eu/3","event":"leader-moves"}"#,
-        EventDefinition::LeaderMoves {
+        &EventDefinition::LeaderMoves {
             partition: Some(partition("orders.eu/3")),
             to: Some(BrokerId::from(2)),
         },
     );
     reads(
         r#"{"to":5000,"event":"records-expired"}"#,
-        EventDefinition::RecordsExpired {
+        &EventDefinition::RecordsExpired {
             partition: None,
             to: Offset::from(5000),
         },
@@ -303,10 +292,7 @@ fn the_keys_of_a_definition_come_in_any_order() {
 #[test]
 fn a_definition_needs_an_event_key_with_a_known_name() {
     rejects::<EventDefinition>(r#"{"partition":"orders.eu/3"}"#, "missing field `event`");
-    rejects::<EventDefinition>(
-        r#"{"event":"leader-move"}"#,
-        "no event is called \"leader-move\"",
-    );
+    rejects::<EventDefinition>(r#"{"event":"leader-move"}"#, "no event is called \"leader-move\"");
     rejects::<EventDefinition>(r#""leader-moves""#, "expected a map with an `event` key");
 }
 
@@ -333,10 +319,7 @@ fn a_definition_rejects_a_key_of_another_event() {
         r#"{"event":"broker-goes-down","partition":"orders.eu/3"}"#,
         "`partition` does not belong to broker-goes-down",
     );
-    rejects::<EventDefinition>(
-        r#"{"event":"rebalance","to":2}"#,
-        "`to` does not belong to rebalance",
-    );
+    rejects::<EventDefinition>(r#"{"event":"rebalance","to":2}"#, "`to` does not belong to rebalance");
     rejects::<EventDefinition>(
         r#"{"event":"topic-deleted","topic":"orders.eu","count":2}"#,
         "`count` does not belong to topic-deleted",
@@ -361,14 +344,8 @@ fn a_definition_rejects_a_key_that_comes_twice() {
 
 #[test]
 fn a_definition_applies_the_rule_of_every_value() {
-    rejects::<EventDefinition>(
-        r#"{"event":"leader-moves","partition":"orders.eu"}"#,
-        "topic/partition",
-    );
-    rejects::<EventDefinition>(
-        r#"{"event":"topic-deleted","topic":"orders/eu"}"#,
-        "invalid character",
-    );
+    rejects::<EventDefinition>(r#"{"event":"leader-moves","partition":"orders.eu"}"#, "topic/partition");
+    rejects::<EventDefinition>(r#"{"event":"topic-deleted","topic":"orders/eu"}"#, "invalid character");
     rejects::<EventDefinition>(
         r#"{"event":"leader-moves","to":2147483648}"#,
         "broker ID 2147483648 exceeds the maximum of 2147483647",
@@ -394,10 +371,7 @@ fn a_definition_applies_the_rule_of_every_value() {
         r#"{"event":"records-appended","count":0}"#,
         "record count 0 is not between 1 and 9223372036854775807",
     );
-    rejects::<EventDefinition>(
-        r#"{"event":"broker-goes-down","failover":"yes"}"#,
-        "expected a boolean",
-    );
+    rejects::<EventDefinition>(r#"{"event":"broker-goes-down","failover":"yes"}"#, "expected a boolean");
 }
 
 #[test]
@@ -436,7 +410,7 @@ fn a_definition_sits_in_a_preset_next_to_its_name() {
     // name: Leader election
     // event: leader-moves
     writes(
-        Preset {
+        &Preset {
             name: "Leader election".into(),
             action: Action::Event(EventDefinition::LeaderMoves {
                 partition: None,
@@ -446,7 +420,7 @@ fn a_definition_sits_in_a_preset_next_to_its_name() {
         r#"{"name":"Leader election","event":"leader-moves"}"#,
     );
     writes(
-        Preset {
+        &Preset {
             name: "Fail over broker 2".into(),
             action: Action::Event(EventDefinition::BrokerGoesDown {
                 broker: Some(BrokerId::from(2)),
@@ -456,11 +430,9 @@ fn a_definition_sits_in_a_preset_next_to_its_name() {
         r#"{"name":"Fail over broker 2","event":"broker-goes-down","broker":2,"failover":true}"#,
     );
     writes(
-        Preset {
+        &Preset {
             name: "Leader flap".into(),
-            action: Action::Lie {
-                lie: "refusal".into(),
-            },
+            action: Action::Lie { lie: "refusal".into() },
         },
         r#"{"name":"Leader flap","lie":"refusal"}"#,
     );
@@ -469,45 +441,43 @@ fn a_definition_sits_in_a_preset_next_to_its_name() {
 #[test]
 fn a_definition_in_a_preset_still_rejects_a_misspelt_key() {
     assert!(
-        serde_json::from_str::<Preset>(
-            r#"{"name":"Leader election","event":"leader-moves","partiton":"orders.eu/3"}"#
-        )
-        .is_err()
+        serde_json::from_str::<Preset>(r#"{"name":"Leader election","event":"leader-moves","partiton":"orders.eu/3"}"#)
+            .is_err()
     );
 }
 
 #[test]
 fn an_event_writes_the_map_of_a_definition_that_names_every_subject() {
     writes(
-        Event::LeaderMoves {
+        &Event::LeaderMoves {
             partition: partition("orders.eu/3"),
             to: None,
         },
         r#"{"event":"leader-moves","partition":"orders.eu/3"}"#,
     );
     writes(
-        Event::BrokerGoesDown {
+        &Event::BrokerGoesDown {
             broker: BrokerId::from(2),
             failover: false,
         },
         r#"{"event":"broker-goes-down","broker":2}"#,
     );
     writes(
-        Event::CoordinatorMoves {
+        &Event::CoordinatorMoves {
             coordinator: transactional_id("payments-tx-1").into(),
             to: Some(BrokerId::from(1)),
         },
         r#"{"event":"coordinator-moves","transactional.id":"payments-tx-1","to":1}"#,
     );
     writes(
-        Event::PartitionAdded {
+        &Event::PartitionAdded {
             topic: topic("orders.eu"),
             count: PartitionCount::ONE,
         },
         r#"{"event":"partition-added","topic":"orders.eu"}"#,
     );
     writes(
-        Event::CommittedOffsetReset {
+        &Event::CommittedOffsetReset {
             group: group("payments"),
             partition: partition("orders.eu/3"),
             to: Offset::from(0),
@@ -539,25 +509,25 @@ fn an_event_names_its_subject() {
 #[test]
 fn a_consequence_writes_its_name_or_the_event_that_follows() {
     writes(
-        Consequence::Leaderless {
+        &Consequence::Leaderless {
             partition: partition("orders.eu/3"),
         },
         r#"{"consequence":"leaderless","partition":"orders.eu/3"}"#,
     );
     writes(
-        Consequence::CoordinatorUnavailable {
+        &Consequence::CoordinatorUnavailable {
             coordinator: group("payments").into(),
         },
         r#"{"consequence":"coordinator-unavailable","group":"payments"}"#,
     );
     writes(
-        Consequence::CoordinatorUnavailable {
+        &Consequence::CoordinatorUnavailable {
             coordinator: transactional_id("payments-tx-1").into(),
         },
         r#"{"consequence":"coordinator-unavailable","transactional.id":"payments-tx-1"}"#,
     );
     writes(
-        Consequence::Event(Event::LeaderMoves {
+        &Consequence::Event(Event::LeaderMoves {
             partition: partition("orders.eu/3"),
             to: None,
         }),
@@ -567,10 +537,7 @@ fn a_consequence_writes_its_name_or_the_event_that_follows() {
 
 #[test]
 fn a_consequence_rejects_what_does_not_belong_to_it() {
-    rejects::<Consequence>(
-        r#"{"consequence":"leaderless"}"#,
-        "missing field `partition`",
-    );
+    rejects::<Consequence>(r#"{"consequence":"leaderless"}"#, "missing field `partition`");
     rejects::<Consequence>(
         r#"{"consequence":"leaderless","partition":"orders.eu/3","group":"payments"}"#,
         "`group` does not belong to leaderless",
@@ -588,10 +555,7 @@ fn a_consequence_rejects_what_does_not_belong_to_it() {
         "unknown variant `gone`",
     );
     rejects::<Consequence>(r#"{"partition":"orders.eu/3"}"#, "missing field `event`");
-    rejects::<Consequence>(
-        r#"{"event":"leader-moves"}"#,
-        "leader-moves needs a partition",
-    );
+    rejects::<Consequence>(r#"{"event":"leader-moves"}"#, "leader-moves needs a partition");
 }
 
 /// Broker 2 leads `orders.eu/3` and hosts the coordinator of `payments`.
@@ -610,7 +574,7 @@ impl Topology for Cluster {
 #[test]
 fn an_expanded_event_writes_the_event_with_its_consequences() {
     writes(
-        Event::BrokerGoesDown {
+        &Event::BrokerGoesDown {
             broker: BrokerId::from(2),
             failover: false,
         }
@@ -622,7 +586,7 @@ fn an_expanded_event_writes_the_event_with_its_consequences() {
         ),
     );
     writes(
-        Event::BrokerGoesDown {
+        &Event::BrokerGoesDown {
             broker: BrokerId::from(2),
             failover: true,
         }
@@ -641,25 +605,19 @@ fn an_expanded_event_without_consequences_writes_the_event_alone() {
         broker: BrokerId::from(2),
     }
     .expand(&Cluster);
-    writes(
-        expanded.clone(),
-        r#"{"event":"broker-comes-back","broker":2}"#,
-    );
+    writes(&expanded.clone(), r#"{"event":"broker-comes-back","broker":2}"#);
     reads(
         r#"{"event":"broker-comes-back","broker":2,"consequences":[]}"#,
-        expanded,
+        &expanded,
     );
-    rejects::<ExpandedEvent>(
-        r#"{"event":"broker-comes-back"}"#,
-        "broker-comes-back needs a broker",
-    );
+    rejects::<ExpandedEvent>(r#"{"event":"broker-comes-back"}"#, "broker-comes-back needs a broker");
 }
 
 #[test]
 fn support_writes_its_name() {
-    writes(Support::Applied, r#""applied""#);
-    writes(Support::Emulated, r#""emulated""#);
-    writes(Support::Unsupported, r#""unsupported""#);
+    writes(&Support::Applied, r#""applied""#);
+    writes(&Support::Emulated, r#""emulated""#);
+    writes(&Support::Unsupported, r#""unsupported""#);
     rejects::<Support>(r#""partly""#, "unknown variant `partly`");
 }
 
@@ -669,7 +627,7 @@ fn capabilities_write_every_kind_with_its_support() {
         .applies([EventKind::RecordsAppended])
         .emulates([EventKind::BrokerGoesDown, EventKind::Rebalance]);
     writes(
-        backend,
+        &backend,
         concat!(
             r#"{"leader-moves":"unsupported","broker-goes-down":"emulated","#,
             r#""broker-goes-unresponsive":"unsupported","broker-comes-back":"unsupported","#,
@@ -685,15 +643,12 @@ fn capabilities_write_every_kind_with_its_support() {
 fn capabilities_read_a_kind_that_is_left_out_as_unsupported() {
     reads(
         r#"{"rebalance":"emulated","leader-moves":"applied","log-truncated":"unsupported"}"#,
-        Capabilities::none()
+        &Capabilities::none()
             .applies([EventKind::LeaderMoves])
             .emulates([EventKind::Rebalance]),
     );
-    reads("{}", Capabilities::none());
-    rejects::<Capabilities>(
-        r#"{"leader-move":"applied"}"#,
-        "no event is called \"leader-move\"",
-    );
+    reads("{}", &Capabilities::none());
+    rejects::<Capabilities>(r#"{"leader-move":"applied"}"#, "no event is called \"leader-move\"");
     rejects::<Capabilities>(
         r#"{"rebalance":"emulated","rebalance":"applied"}"#,
         "duplicate kind `rebalance`",
@@ -702,12 +657,9 @@ fn capabilities_read_a_kind_that_is_left_out_as_unsupported() {
 
 #[test]
 fn a_count_writes_a_number() {
-    writes(PartitionCount::new(3).unwrap(), "3");
-    writes(RecordCount::new(500).unwrap(), "500");
+    writes(&PartitionCount::new(3).unwrap(), "3");
+    writes(&RecordCount::new(500).unwrap(), "500");
     rejects::<PartitionCount>("0", "partition count 0 is not between 1 and 2147483647");
-    rejects::<RecordCount>(
-        "0",
-        "record count 0 is not between 1 and 9223372036854775807",
-    );
+    rejects::<RecordCount>("0", "record count 0 is not between 1 and 9223372036854775807");
     rejects::<RecordCount>("-1", "invalid value");
 }

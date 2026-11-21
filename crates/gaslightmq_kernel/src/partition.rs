@@ -223,7 +223,10 @@ impl TopicPartitionOffset {
     const FORM: &'static str = "topic/partition@offset";
 
     pub fn new(topic_partition: TopicPartition, offset: Offset) -> Self {
-        Self { topic_partition, offset }
+        Self {
+            topic_partition,
+            offset,
+        }
     }
 
     pub fn topic(&self) -> &TopicName {
@@ -283,9 +286,16 @@ impl FromStr for TopicPartitionOffset {
 
     fn from_str(text: &str) -> Result<Self, Self::Err> {
         let (topic_partition, offset) = split(text, '@', Self::WHAT, Self::FORM)?;
-        let (topic, partition) = split(topic_partition, '/', Self::WHAT, Self::FORM)
-            .map_err(|_| KernelError::Malformed { what: Self::WHAT, input: text.to_owned(), expected: Self::FORM })?;
-        Ok(Self::new(TopicPartition::new(topic.parse()?, partition.parse()?), offset.parse()?))
+        let (topic, partition) =
+            split(topic_partition, '/', Self::WHAT, Self::FORM).map_err(|_| KernelError::Malformed {
+                what: Self::WHAT,
+                input: text.to_owned(),
+                expected: Self::FORM,
+            })?;
+        Ok(Self::new(
+            TopicPartition::new(topic.parse()?, partition.parse()?),
+            offset.parse()?,
+        ))
     }
 }
 
@@ -316,7 +326,11 @@ fn split<'a>(
     if text.is_empty() {
         return Err(KernelError::Empty { what });
     }
-    text.rsplit_once(separator).ok_or_else(|| KernelError::Malformed { what, input: text.to_owned(), expected })
+    text.rsplit_once(separator).ok_or_else(|| KernelError::Malformed {
+        what,
+        input: text.to_owned(),
+        expected,
+    })
 }
 
 #[cfg(test)]
@@ -341,7 +355,11 @@ mod tests {
         assert_eq!(PartitionNumber::new(MAX).map(PartitionNumber::value), Ok(MAX));
         assert_eq!(
             PartitionNumber::new(MAX + 1),
-            Err(KernelError::TooLarge { what: "partition number", value: u64::from(MAX) + 1, max: u64::from(MAX) })
+            Err(KernelError::TooLarge {
+                what: "partition number",
+                value: u64::from(MAX) + 1,
+                max: u64::from(MAX)
+            })
         );
     }
 
@@ -356,7 +374,10 @@ mod tests {
         assert!(PartitionNumber::try_from(u32::MAX).is_err());
         assert_eq!(
             PartitionNumber::try_from(-1_i32),
-            Err(KernelError::Negative { what: "partition number", value: -1 })
+            Err(KernelError::Negative {
+                what: "partition number",
+                value: -1
+            })
         );
     }
 
@@ -377,12 +398,25 @@ mod tests {
         assert_eq!(format!("{:?}", partition(3)), "PartitionNumber(3)");
         assert_eq!(
             "2147483648".parse::<PartitionNumber>(),
-            Err(KernelError::TooLarge { what: "partition number", value: 2_147_483_648, max: 2_147_483_647 })
+            Err(KernelError::TooLarge {
+                what: "partition number",
+                value: 2_147_483_648,
+                max: 2_147_483_647
+            })
         );
-        assert_eq!("-1".parse::<PartitionNumber>(), Err(KernelError::Negative { what: "partition number", value: -1 }));
+        assert_eq!(
+            "-1".parse::<PartitionNumber>(),
+            Err(KernelError::Negative {
+                what: "partition number",
+                value: -1
+            })
+        );
         assert_eq!(
             "three".parse::<PartitionNumber>(),
-            Err(KernelError::NotANumber { what: "partition number", input: "three".into() })
+            Err(KernelError::NotANumber {
+                what: "partition number",
+                input: "three".into()
+            })
         );
     }
 
@@ -398,7 +432,10 @@ mod tests {
         assert_eq!(topic_partition.to_string(), "orders.eu/3");
         assert_eq!("orders.eu/3".parse::<TopicPartition>(), Ok(topic_partition.clone()));
         assert_eq!(TopicPartition::try_from("orders.eu/3"), Ok(topic_partition.clone()));
-        assert_eq!(TopicPartition::try_from(String::from("orders.eu/3")), Ok(topic_partition.clone()));
+        assert_eq!(
+            TopicPartition::try_from(String::from("orders.eu/3")),
+            Ok(topic_partition.clone())
+        );
         assert_eq!(String::from(topic_partition.clone()), "orders.eu/3");
         assert_eq!(format!("{topic_partition:?}"), "TopicPartition(orders.eu/3)");
     }
@@ -410,7 +447,10 @@ mod tests {
         assert_eq!(topic_partition.topic(), &orders());
         assert_eq!(topic_partition.partition(), partition(3));
         assert_eq!(topic_partition.clone().into_parts(), (orders(), partition(3)));
-        assert_eq!(<(TopicName, PartitionNumber)>::from(topic_partition), (orders(), partition(3)));
+        assert_eq!(
+            <(TopicName, PartitionNumber)>::from(topic_partition),
+            (orders(), partition(3))
+        );
     }
 
     #[test]
@@ -425,32 +465,62 @@ mod tests {
 
         assert_eq!("orders.eu".parse::<TopicPartition>(), malformed("orders.eu"));
         assert_eq!("3".parse::<TopicPartition>(), malformed("3"));
-        assert_eq!("".parse::<TopicPartition>(), Err(KernelError::Empty { what: "topic partition" }));
-        assert_eq!("/3".parse::<TopicPartition>(), Err(KernelError::Empty { what: "topic name" }));
-        assert_eq!("orders.eu/".parse::<TopicPartition>(), Err(KernelError::Empty { what: "partition number" }));
+        assert_eq!(
+            "".parse::<TopicPartition>(),
+            Err(KernelError::Empty {
+                what: "topic partition"
+            })
+        );
+        assert_eq!(
+            "/3".parse::<TopicPartition>(),
+            Err(KernelError::Empty { what: "topic name" })
+        );
+        assert_eq!(
+            "orders.eu/".parse::<TopicPartition>(),
+            Err(KernelError::Empty {
+                what: "partition number"
+            })
+        );
     }
 
     #[test]
     fn a_topic_partition_checks_both_parts() {
         assert_eq!(
             "orders.*/3".parse::<TopicPartition>(),
-            Err(KernelError::InvalidCharacter { what: "topic name", character: '*', position: 7 })
+            Err(KernelError::InvalidCharacter {
+                what: "topic name",
+                character: '*',
+                position: 7
+            })
         );
         assert_eq!(
             "orders/eu/3".parse::<TopicPartition>(),
-            Err(KernelError::InvalidCharacter { what: "topic name", character: '/', position: 6 })
+            Err(KernelError::InvalidCharacter {
+                what: "topic name",
+                character: '/',
+                position: 6
+            })
         );
         assert_eq!(
             "orders.eu/x".parse::<TopicPartition>(),
-            Err(KernelError::NotANumber { what: "partition number", input: "x".into() })
+            Err(KernelError::NotANumber {
+                what: "partition number",
+                input: "x".into()
+            })
         );
         assert_eq!(
             "orders.eu/-1".parse::<TopicPartition>(),
-            Err(KernelError::Negative { what: "partition number", value: -1 })
+            Err(KernelError::Negative {
+                what: "partition number",
+                value: -1
+            })
         );
         assert_eq!(
             "orders.eu/3@42".parse::<TopicPartition>(),
-            Err(KernelError::NotANumber { what: "partition number", input: "3@42".into() })
+            Err(KernelError::NotANumber {
+                what: "partition number",
+                input: "3@42".into()
+            })
         );
     }
 
@@ -485,7 +555,10 @@ mod tests {
         assert_eq!(position.partition(), partition(3));
         assert_eq!(position.offset(), Offset::from(42));
         assert_eq!(position.into_parts(), (partition(3), Offset::from(42)));
-        assert_eq!(<(PartitionNumber, Offset)>::from(position), (partition(3), Offset::from(42)));
+        assert_eq!(
+            <(PartitionNumber, Offset)>::from(position),
+            (partition(3), Offset::from(42))
+        );
         assert_eq!(position.in_topic(&orders()).to_string(), "orders.eu/3@42");
     }
 
@@ -493,19 +566,48 @@ mod tests {
     fn a_partition_offset_needs_and_checks_both_parts() {
         assert_eq!(
             "3".parse::<PartitionOffset>(),
-            Err(KernelError::Malformed { what: "partition offset", input: "3".into(), expected: "partition@offset" })
+            Err(KernelError::Malformed {
+                what: "partition offset",
+                input: "3".into(),
+                expected: "partition@offset"
+            })
         );
-        assert_eq!("".parse::<PartitionOffset>(), Err(KernelError::Empty { what: "partition offset" }));
-        assert_eq!("@42".parse::<PartitionOffset>(), Err(KernelError::Empty { what: "partition number" }));
-        assert_eq!("3@".parse::<PartitionOffset>(), Err(KernelError::Empty { what: "offset" }));
-        assert_eq!("3@-1".parse::<PartitionOffset>(), Err(KernelError::Negative { what: "offset", value: -1 }));
+        assert_eq!(
+            "".parse::<PartitionOffset>(),
+            Err(KernelError::Empty {
+                what: "partition offset"
+            })
+        );
+        assert_eq!(
+            "@42".parse::<PartitionOffset>(),
+            Err(KernelError::Empty {
+                what: "partition number"
+            })
+        );
+        assert_eq!(
+            "3@".parse::<PartitionOffset>(),
+            Err(KernelError::Empty { what: "offset" })
+        );
+        assert_eq!(
+            "3@-1".parse::<PartitionOffset>(),
+            Err(KernelError::Negative {
+                what: "offset",
+                value: -1
+            })
+        );
         assert_eq!(
             "x@42".parse::<PartitionOffset>(),
-            Err(KernelError::NotANumber { what: "partition number", input: "x".into() })
+            Err(KernelError::NotANumber {
+                what: "partition number",
+                input: "x".into()
+            })
         );
         assert_eq!(
             "orders.eu/3@42".parse::<PartitionOffset>(),
-            Err(KernelError::NotANumber { what: "partition number", input: "orders.eu/3".into() })
+            Err(KernelError::NotANumber {
+                what: "partition number",
+                input: "orders.eu/3".into()
+            })
         );
     }
 
@@ -524,7 +626,10 @@ mod tests {
         assert_eq!(position.to_string(), "orders.eu/3@42");
         assert_eq!("orders.eu/3@42".parse::<TopicPartitionOffset>(), Ok(position.clone()));
         assert_eq!(TopicPartitionOffset::try_from("orders.eu/3@42"), Ok(position.clone()));
-        assert_eq!(TopicPartitionOffset::try_from(String::from("orders.eu/3@42")), Ok(position.clone()));
+        assert_eq!(
+            TopicPartitionOffset::try_from(String::from("orders.eu/3@42")),
+            Ok(position.clone())
+        );
         assert_eq!(String::from(position.clone()), "orders.eu/3@42");
         assert_eq!(format!("{position:?}"), "TopicPartitionOffset(orders.eu/3@42)");
         assert_eq!(orders().partition(partition(3)).at(Offset::from(42)), position);
@@ -539,14 +644,26 @@ mod tests {
         assert_eq!(position.partition(), partition(3));
         assert_eq!(position.offset(), Offset::from(42));
         assert_eq!(position.topic_partition(), &topic_partition);
-        assert_eq!(position.partition_offset(), PartitionOffset::new(partition(3), Offset::from(42)));
-        assert_eq!(position.clone().into_parts(), (topic_partition.clone(), Offset::from(42)));
-        assert_eq!(<(TopicPartition, Offset)>::from(position.clone()), (topic_partition, Offset::from(42)));
+        assert_eq!(
+            position.partition_offset(),
+            PartitionOffset::new(partition(3), Offset::from(42))
+        );
+        assert_eq!(
+            position.clone().into_parts(),
+            (topic_partition.clone(), Offset::from(42))
+        );
+        assert_eq!(
+            <(TopicPartition, Offset)>::from(position.clone()),
+            (topic_partition, Offset::from(42))
+        );
         assert_eq!(
             <(TopicName, PartitionNumber, Offset)>::from(position.clone()),
             (orders(), partition(3), Offset::from(42))
         );
-        assert_eq!(TopicPartitionOffset::from((orders(), partition(3), Offset::from(42))), position);
+        assert_eq!(
+            TopicPartitionOffset::from((orders(), partition(3), Offset::from(42))),
+            position
+        );
     }
 
     #[test]
@@ -560,33 +677,58 @@ mod tests {
         };
 
         assert_eq!("orders.eu/3".parse::<TopicPartitionOffset>(), malformed("orders.eu/3"));
-        assert_eq!("orders.eu@42".parse::<TopicPartitionOffset>(), malformed("orders.eu@42"));
+        assert_eq!(
+            "orders.eu@42".parse::<TopicPartitionOffset>(),
+            malformed("orders.eu@42")
+        );
         assert_eq!("3@42".parse::<TopicPartitionOffset>(), malformed("3@42"));
         assert_eq!("orders.eu".parse::<TopicPartitionOffset>(), malformed("orders.eu"));
-        assert_eq!("".parse::<TopicPartitionOffset>(), Err(KernelError::Empty { what: "topic partition offset" }));
+        assert_eq!(
+            "".parse::<TopicPartitionOffset>(),
+            Err(KernelError::Empty {
+                what: "topic partition offset"
+            })
+        );
     }
 
     #[test]
     fn a_topic_partition_offset_checks_all_three_parts() {
         assert_eq!(
             "orders eu/3@42".parse::<TopicPartitionOffset>(),
-            Err(KernelError::InvalidCharacter { what: "topic name", character: ' ', position: 6 })
+            Err(KernelError::InvalidCharacter {
+                what: "topic name",
+                character: ' ',
+                position: 6
+            })
         );
         assert_eq!(
             "orders.eu/x@42".parse::<TopicPartitionOffset>(),
-            Err(KernelError::NotANumber { what: "partition number", input: "x".into() })
+            Err(KernelError::NotANumber {
+                what: "partition number",
+                input: "x".into()
+            })
         );
         assert_eq!(
             "orders.eu/3@latest".parse::<TopicPartitionOffset>(),
-            Err(KernelError::NotANumber { what: "offset", input: "latest".into() })
+            Err(KernelError::NotANumber {
+                what: "offset",
+                input: "latest".into()
+            })
         );
         assert_eq!(
             "orders.eu/3@-1".parse::<TopicPartitionOffset>(),
-            Err(KernelError::Negative { what: "offset", value: -1 })
+            Err(KernelError::Negative {
+                what: "offset",
+                value: -1
+            })
         );
         assert_eq!(
             "orders@eu/3@42".parse::<TopicPartitionOffset>(),
-            Err(KernelError::InvalidCharacter { what: "topic name", character: '@', position: 6 })
+            Err(KernelError::InvalidCharacter {
+                what: "topic name",
+                character: '@',
+                position: 6
+            })
         );
     }
 

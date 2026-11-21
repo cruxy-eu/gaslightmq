@@ -63,10 +63,7 @@ impl Requirements {
     pub fn iter(&self) -> impl Iterator<Item = Requirement> + '_ {
         self.kinds
             .iter()
-            .map(|(&kind, &consequence_of)| Requirement {
-                kind,
-                consequence_of,
-            })
+            .map(|(&kind, &consequence_of)| Requirement { kind, consequence_of })
     }
 
     /// Need an event of this kind, and the events it can have as consequences.
@@ -163,10 +160,7 @@ mod tests {
         assert!(!requirements.is_empty());
         assert_eq!(
             list(&requirements),
-            [
-                requirement(EventKind::LeaderMoves),
-                requirement(EventKind::Rebalance)
-            ]
+            [requirement(EventKind::LeaderMoves), requirement(EventKind::Rebalance)]
         );
     }
 
@@ -215,14 +209,8 @@ mod tests {
         ];
 
         // Whichever rule comes first.
-        assert_eq!(
-            list(&[&leader_moves, &down].into_iter().collect()),
-            expected
-        );
-        assert_eq!(
-            list(&[&down, &leader_moves].into_iter().collect()),
-            expected
-        );
+        assert_eq!(list(&[&leader_moves, &down].into_iter().collect()), expected);
+        assert_eq!(list(&[&down, &leader_moves].into_iter().collect()), expected);
     }
 
     #[test]
@@ -231,10 +219,7 @@ mod tests {
         requirements.extend(&[EventDefinition::Rebalance { group: None }]);
         assert_eq!(
             list(&requirements),
-            [
-                requirement(EventKind::Rebalance),
-                requirement(EventKind::TopicDeleted)
-            ]
+            [requirement(EventKind::Rebalance), requirement(EventKind::TopicDeleted)]
         );
     }
 

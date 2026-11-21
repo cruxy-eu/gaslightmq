@@ -3,7 +3,11 @@
 use crate::KernelError;
 
 /// Read a decimal number between zero and `max`.
-pub(crate) fn parse(what: &'static str, text: &str, max: u64) -> Result<u64, KernelError> {
+pub(crate) fn parse<T>(what: &'static str, text: &str, max: T) -> Result<T, KernelError>
+where
+    T: TryFrom<u64> + Into<u64>,
+{
+    let max: u64 = max.into();
     let digits = |text: &str| !text.is_empty() && text.bytes().all(|byte| byte.is_ascii_digit());
     if text.is_empty() {
         return Err(KernelError::Empty { what });
@@ -11,13 +15,20 @@ pub(crate) fn parse(what: &'static str, text: &str, max: u64) -> Result<u64, Ker
     if digits(text) {
         // A text of digits that does not fit `u64` is above every maximum.
         let value = text.parse::<u64>().unwrap_or(u64::MAX);
-        return if value <= max { Ok(value) } else { Err(KernelError::TooLarge { what, value, max }) };
+        return match T::try_from(value) {
+            Ok(number) if value <= max => Ok(number),
+            _ => Err(KernelError::TooLarge { what, value, max }),
+        };
     }
     match text.strip_prefix('-') {
-        Some(rest) if digits(rest) => {
-            Err(KernelError::Negative { what, value: text.parse::<i64>().unwrap_or(i64::MIN) })
-        }
-        _ => Err(KernelError::NotANumber { what, input: text.to_owned() }),
+        Some(rest) if digits(rest) => Err(KernelError::Negative {
+            what,
+            value: text.parse::<i64>().unwrap_or(i64::MIN),
+        }),
+        _ => Err(KernelError::NotANumber {
+            what,
+            input: text.to_owned(),
+        }),
     }
 }
 
@@ -39,6 +50,10 @@ macro_rules! number_value {
             const MAX_VALUE: $value = <$wire>::MAX as $value;
 
             #[doc = concat!("Check that `value` is at most [`", stringify!($wire), "::MAX`], and keep it.")]
+            ///
+            /// # Errors
+            ///
+            /// [`KernelError::TooLarge`](crate::KernelError::TooLarge) when `value` is above that.
             pub fn new(value: $value) -> Result<Self, $crate::KernelError> {
                 if value > Self::MAX_VALUE {
                     return Err($crate::KernelError::TooLarge {
@@ -75,10 +90,9 @@ macro_rules! number_value {
             type Error = $crate::KernelError;
 
             fn try_from(raw: $wire) -> Result<Self, Self::Error> {
-                if raw < 0 {
-                    return Err($crate::KernelError::Negative { what: $what, value: raw.into() });
-                }
-                Ok(Self(raw as $value))
+                <$value>::try_from(raw)
+                    .map(Self)
+                    .map_err(|_| $crate::KernelError::Negative { what: $what, value: raw.into() })
             }
         }
 
@@ -91,8 +105,8 @@ macro_rules! number_value {
         #[doc = concat!("Gives the type Kafka writes a ", $what, " as.")]
         impl From<$name> for $wire {
             fn from(number: $name) -> Self {
-                // The value is at most `<wire>::MAX`, so the cast keeps it.
-                number.0 as $wire
+                // The value is at most `<wire>::MAX`, so the sign bit is clear and the cast keeps it.
+                number.0.cast_signed()
             }
         }
 
@@ -101,9 +115,7 @@ macro_rules! number_value {
             type Err = $crate::KernelError;
 
             fn from_str(text: &str) -> Result<Self, Self::Err> {
-                let value = $crate::number::parse($what, text, Self::MAX_VALUE.into())?;
-                // `parse` keeps the value at or below `MAX_VALUE`, so the cast keeps it.
-                Ok(Self(value as $value))
+                $crate::number::parse($what, text, Self::MAX_VALUE).map(Self)
             }
         }
 
@@ -137,8 +149,16 @@ macro_rules! number_sentinel {
             #[doc = concat!("Read the number Kafka writes, in which `-1` means ", $none, ".")]
             ///
             /// Every other negative number is an error.
+            ///
+            /// # Errors
+            ///
+            /// [`KernelError::Negative`](crate::KernelError::Negative) when `raw` is below `-1`.
             pub fn from_wire(raw: $wire) -> Result<Option<Self>, $crate::KernelError> {
-                if raw == -1 { Ok(None) } else { Self::try_from(raw).map(Some) }
+                if raw == -1 {
+                    Ok(None)
+                } else {
+                    Self::try_from(raw).map(Some)
+                }
             }
 
             #[doc = concat!("The number Kafka writes: the ", $what, ", or `-1` for `None`.")]
@@ -157,30 +177,50 @@ mod tests {
 
     #[test]
     fn reads_digits_up_to_the_maximum() {
-        assert_eq!(parse("offset", "0", 9), Ok(0));
-        assert_eq!(parse("offset", "9", 9), Ok(9));
-        assert_eq!(parse("offset", "007", 9), Ok(7));
+        assert_eq!(parse("offset", "0", 9_u64), Ok(0));
+        assert_eq!(parse("offset", "9", 9_u64), Ok(9));
+        assert_eq!(parse("offset", "007", 9_u64), Ok(7));
     }
 
     #[test]
     fn a_number_above_the_maximum_is_too_large() {
-        assert_eq!(parse("offset", "10", 9), Err(KernelError::TooLarge { what: "offset", value: 10, max: 9 }));
+        assert_eq!(
+            parse("offset", "10", 9_u64),
+            Err(KernelError::TooLarge {
+                what: "offset",
+                value: 10,
+                max: 9
+            })
+        );
     }
 
     #[test]
     fn digits_that_do_not_fit_u64_are_too_large() {
         assert_eq!(
-            parse("offset", "99999999999999999999999", 9),
-            Err(KernelError::TooLarge { what: "offset", value: u64::MAX, max: 9 })
+            parse("offset", "99999999999999999999999", 9_u64),
+            Err(KernelError::TooLarge {
+                what: "offset",
+                value: u64::MAX,
+                max: 9
+            })
         );
     }
 
     #[test]
     fn a_negative_number_is_negative() {
-        assert_eq!(parse("offset", "-1", 9), Err(KernelError::Negative { what: "offset", value: -1 }));
         assert_eq!(
-            parse("offset", "-99999999999999999999999", 9),
-            Err(KernelError::Negative { what: "offset", value: i64::MIN })
+            parse("offset", "-1", 9_u64),
+            Err(KernelError::Negative {
+                what: "offset",
+                value: -1
+            })
+        );
+        assert_eq!(
+            parse("offset", "-99999999999999999999999", 9_u64),
+            Err(KernelError::Negative {
+                what: "offset",
+                value: i64::MIN
+            })
         );
     }
 
@@ -188,8 +228,11 @@ mod tests {
     fn anything_else_is_not_a_number() {
         for text in ["x", "+3", " 3", "3 ", "3.0", "-", "--1", "0x10", "٣"] {
             assert_eq!(
-                parse("offset", text, 9),
-                Err(KernelError::NotANumber { what: "offset", input: text.to_owned() }),
+                parse("offset", text, 9_u64),
+                Err(KernelError::NotANumber {
+                    what: "offset",
+                    input: text.to_owned()
+                }),
                 "{text:?}"
             );
         }
@@ -197,6 +240,6 @@ mod tests {
 
     #[test]
     fn no_text_is_empty() {
-        assert_eq!(parse("offset", "", 9), Err(KernelError::Empty { what: "offset" }));
+        assert_eq!(parse("offset", "", 9_u64), Err(KernelError::Empty { what: "offset" }));
     }
 }

@@ -78,7 +78,11 @@ impl FromStr for Part {
     type Err = FieldError;
 
     fn from_str(text: &str) -> Result<Self, Self::Err> {
-        if text.contains('/') { Ok(Part::Partition(text.parse()?)) } else { Ok(Part::Topic(text.parse()?)) }
+        if text.contains('/') {
+            Ok(Part::Partition(text.parse()?))
+        } else {
+            Ok(Part::Topic(text.parse()?))
+        }
     }
 }
 
@@ -142,23 +146,38 @@ enum Truth {
 impl PartFields {
     /// A part without a truth of its own: the response fields of the call apply to it.
     pub fn new(part: impl Into<Part>) -> Self {
-        Self { part: part.into(), truth: Truth::OfCall }
+        Self {
+            part: part.into(),
+            truth: Truth::OfCall,
+        }
     }
 
     /// The backend answered this part without an error.
+    #[must_use]
     pub fn succeeded(self) -> Self {
-        Self { truth: Truth::Succeeded, ..self }
+        Self {
+            truth: Truth::Succeeded,
+            ..self
+        }
     }
 
     /// The backend answered this part with an error.
+    #[must_use]
     pub fn failed(self, code: ErrorCode) -> Self {
-        Self { truth: Truth::Failed(code), ..self }
+        Self {
+            truth: Truth::Failed(code),
+            ..self
+        }
     }
 
     /// This part never reached the backend, as after a refusal before forwarding.
     /// It has no truth, whatever the backend answered for the rest of the call.
+    #[must_use]
     pub fn without_truth(self) -> Self {
-        Self { truth: Truth::None, ..self }
+        Self {
+            truth: Truth::None,
+            ..self
+        }
     }
 
     /// Which part of the call this is.
@@ -236,7 +255,11 @@ impl From<TopicPartition> for PartFields {
 /// # Ok::<(), FieldError>(())
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize), serde(rename_all = "lowercase"))]
+#[cfg_attr(
+    feature = "serde",
+    derive(serde::Serialize, serde::Deserialize),
+    serde(rename_all = "lowercase")
+)]
 pub enum Target {
     /// The whole call.
     Call,
@@ -248,7 +271,11 @@ impl Target {
     /// The target of those parts, or `None` when there is no part.
     pub fn of_parts(parts: impl IntoIterator<Item = Part>) -> Option<Self> {
         let parts: BTreeSet<Part> = parts.into_iter().collect();
-        if parts.is_empty() { None } else { Some(Target::Parts(parts)) }
+        if parts.is_empty() {
+            None
+        } else {
+            Some(Target::Parts(parts))
+        }
     }
 
     /// Whether the target is the whole call.
@@ -311,7 +338,10 @@ mod tests {
         assert_eq!(topic.partition(), None);
         assert_eq!(topic.topic_partition(), None);
         assert_eq!(partition.partition(), Some(PartitionNumber::from(3)));
-        assert_eq!(partition.topic_partition().map(ToString::to_string).as_deref(), Some("orders.eu/3"));
+        assert_eq!(
+            partition.topic_partition().map(ToString::to_string).as_deref(),
+            Some("orders.eu/3")
+        );
     }
 
     #[test]
@@ -319,7 +349,10 @@ mod tests {
         for text in ["orders.eu", "orders.eu/3", "__consumer_offsets/49"] {
             assert_eq!(part(text).to_string(), text);
         }
-        assert!(matches!("".parse::<Part>(), Err(FieldError::Kernel(KernelError::Empty { .. }))));
+        assert!(matches!(
+            "".parse::<Part>(),
+            Err(FieldError::Kernel(KernelError::Empty { .. }))
+        ));
         assert!(matches!("orders.eu/".parse::<Part>(), Err(FieldError::Kernel(_))));
         assert!(matches!("orders.eu/x".parse::<Part>(), Err(FieldError::Kernel(_))));
         assert!(matches!("orders eu".parse::<Part>(), Err(FieldError::Kernel(_))));
@@ -330,7 +363,10 @@ mod tests {
         let topic = TopicName::new("orders.eu").unwrap();
 
         assert_eq!(Part::from(topic.clone()), part("orders.eu"));
-        assert_eq!(Part::from(topic.partition(PartitionNumber::from(3))), part("orders.eu/3"));
+        assert_eq!(
+            Part::from(topic.partition(PartitionNumber::from(3))),
+            part("orders.eu/3")
+        );
     }
 
     #[test]
@@ -339,8 +375,14 @@ mod tests {
         let topic = PartFields::new(part("orders.eu"));
 
         assert_eq!(partition.part(), &part("orders.eu/3"));
-        assert_eq!(partition.own(Field::Topic), Some(Reading::Present(TopicName::new("orders.eu").unwrap().into())));
-        assert_eq!(partition.own(Field::Partition), Some(Reading::Present(PartitionNumber::from(3).into())));
+        assert_eq!(
+            partition.own(Field::Topic),
+            Some(Reading::Present(TopicName::new("orders.eu").unwrap().into()))
+        );
+        assert_eq!(
+            partition.own(Field::Partition),
+            Some(Reading::Present(PartitionNumber::from(3).into()))
+        );
         assert_eq!(topic.own(Field::Topic), partition.own(Field::Topic));
         assert_eq!(topic.own(Field::Partition), Some(Reading::Absent));
     }
@@ -374,8 +416,14 @@ mod tests {
     fn a_part_that_failed_is_an_error_with_its_code() {
         let answered = PartFields::new(part("orders.eu/3")).failed(ErrorCode::NOT_LEADER_OR_FOLLOWER);
 
-        assert_eq!(answered.own(Field::Outcome), Some(Reading::Present(Outcome::Error.into())));
-        assert_eq!(answered.own(Field::ErrorCode), Some(Reading::Present(ErrorCode::NOT_LEADER_OR_FOLLOWER.into())));
+        assert_eq!(
+            answered.own(Field::Outcome),
+            Some(Reading::Present(Outcome::Error.into()))
+        );
+        assert_eq!(
+            answered.own(Field::ErrorCode),
+            Some(Reading::Present(ErrorCode::NOT_LEADER_OR_FOLLOWER.into()))
+        );
     }
 
     #[test]
@@ -391,8 +439,14 @@ mod tests {
         let topic = TopicName::new("orders.eu").unwrap();
 
         assert_eq!(PartFields::from(topic.clone()), PartFields::new(part("orders.eu")));
-        assert_eq!(PartFields::from(topic.partition(PartitionNumber::from(3))), PartFields::new(part("orders.eu/3")));
-        assert_eq!(PartFields::from(part("orders.eu/3")), PartFields::new(part("orders.eu/3")));
+        assert_eq!(
+            PartFields::from(topic.partition(PartitionNumber::from(3))),
+            PartFields::new(part("orders.eu/3"))
+        );
+        assert_eq!(
+            PartFields::from(part("orders.eu/3")),
+            PartFields::new(part("orders.eu/3"))
+        );
     }
 
     #[test]

@@ -2,8 +2,8 @@ use std::future::Future;
 use std::pin::Pin;
 
 use futures::Stream;
-use gaslightmq_wire::{Offset, Partition, Record};
 use gaslightmq_wire::ResponseError;
+use gaslightmq_wire::{Offset, Partition, Record};
 
 pub type RecordStream = Pin<Box<dyn Stream<Item = Record> + Send>>;
 
@@ -31,9 +31,9 @@ pub struct HeartbeatResult {
     pub error: Option<ResponseError>,
 }
 
-
 pub trait Producer {
-    fn send(&self, topic: &str, partition: Partition, records: &[Record]) -> impl Future<Output = ProduceResult> + Send;
+    fn send(&self, topic: &str, partition: Partition, records: &[Record])
+    -> impl Future<Output = ProduceResult> + Send;
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -60,8 +60,7 @@ pub trait Consumer {
     fn watermarks(&self, topic: &str, partition: Partition) -> impl Future<Output = Watermarks> + Send;
 }
 
-
-/// Configuration of a topic, as returned by DescribeConfigs.
+/// Configuration of a topic, as returned by `DescribeConfigs`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TopicConfigs {
     pub error: Option<ResponseError>,

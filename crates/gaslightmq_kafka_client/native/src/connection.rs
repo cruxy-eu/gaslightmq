@@ -21,7 +21,10 @@ impl Socket {
     async fn connect(addr: &str) -> Result<Self, ClientError> {
         let stream = TcpStream::connect(addr).await?;
         let _ = stream.set_nodelay(true);
-        Ok(Self { stream, frames: FrameDecoder::new() })
+        Ok(Self {
+            stream,
+            frames: FrameDecoder::new(),
+        })
     }
 
     /// Send `request` and read its response.
@@ -60,7 +63,12 @@ pub(crate) struct Connection {
 
 impl Connection {
     pub fn new(addr: String, client_id: &str) -> Self {
-        Self { addr, client_id: client_id.to_string(), socket: Mutex::new(None), next_cid: AtomicI32::new(1) }
+        Self {
+            addr,
+            client_id: client_id.to_string(),
+            socket: Mutex::new(None),
+            next_cid: AtomicI32::new(1),
+        }
     }
 
     pub fn addr(&self) -> &str {

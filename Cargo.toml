@@ -28,6 +28,11 @@ serde_test = "1"
 tokio = "1"
 tracing = "0.1"
 
+[workspace.lints.clippy]
+pedantic = { level = "warn", priority = -1 }
+# Noise: wants `#[must_use]` on every public getter, yet skips the ones that touch `Bytes` or a mutex.
+must_use_candidate = "allow"
+
 [profile.release]
 lto = true
 codegen-units = 1

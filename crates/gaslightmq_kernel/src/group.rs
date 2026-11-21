@@ -40,8 +40,16 @@ text_value! {
 
 impl MemberId {
     /// Read the string Kafka writes, in which an empty string means "no member ID yet".
+    ///
+    /// # Errors
+    ///
+    /// The error of [`new`](Self::new), when `raw` is not empty and breaks the rule for a member ID.
     pub fn from_wire(raw: &str) -> Result<Option<Self>, KernelError> {
-        if raw.is_empty() { Ok(None) } else { Self::new(raw).map(Some) }
+        if raw.is_empty() {
+            Ok(None)
+        } else {
+            Self::new(raw).map(Some)
+        }
     }
 
     /// The string Kafka writes: the member ID, or an empty string for `None`.
@@ -90,7 +98,11 @@ mod tests {
         assert!(GroupId::new("a".repeat(32_767)).is_ok());
         assert_eq!(
             GroupId::new("a".repeat(32_768)),
-            Err(KernelError::TooLong { what: "group ID", len: 32_768, max: 32_767 })
+            Err(KernelError::TooLong {
+                what: "group ID",
+                len: 32_768,
+                max: 32_767
+            })
         );
     }
 
@@ -124,7 +136,11 @@ mod tests {
         assert_eq!(MemberId::MAX_LEN, 32_767);
         assert_eq!(
             MemberId::new("a".repeat(32_768)),
-            Err(KernelError::TooLong { what: "member ID", len: 32_768, max: 32_767 })
+            Err(KernelError::TooLong {
+                what: "member ID",
+                len: 32_768,
+                max: 32_767
+            })
         );
     }
 
@@ -149,7 +165,11 @@ mod tests {
         assert_eq!(MemberId::from_wire("consumer-1-4f2a"), Ok(Some(member.clone())));
         assert_eq!(
             MemberId::from_wire(&"a".repeat(32_768)),
-            Err(KernelError::TooLong { what: "member ID", len: 32_768, max: 32_767 })
+            Err(KernelError::TooLong {
+                what: "member ID",
+                len: 32_768,
+                max: 32_767
+            })
         );
         assert_eq!(MemberId::to_wire(None), "");
         assert_eq!(MemberId::to_wire(Some(&member)), "consumer-1-4f2a");
@@ -162,16 +182,32 @@ mod tests {
         assert!(GroupInstanceId::new("a".repeat(249)).is_ok());
         assert_eq!(
             GroupInstanceId::new("a".repeat(250)),
-            Err(KernelError::TooLong { what: "group instance ID", len: 250, max: 249 })
+            Err(KernelError::TooLong {
+                what: "group instance ID",
+                len: 250,
+                max: 249
+            })
         );
-        assert_eq!(GroupInstanceId::new(""), Err(KernelError::Empty { what: "group instance ID" }));
+        assert_eq!(
+            GroupInstanceId::new(""),
+            Err(KernelError::Empty {
+                what: "group instance ID"
+            })
+        );
         assert_eq!(
             GroupInstanceId::new("."),
-            Err(KernelError::Reserved { what: "group instance ID", value: ".".into() })
+            Err(KernelError::Reserved {
+                what: "group instance ID",
+                value: ".".into()
+            })
         );
         assert_eq!(
             GroupInstanceId::new("etl 0"),
-            Err(KernelError::InvalidCharacter { what: "group instance ID", character: ' ', position: 3 })
+            Err(KernelError::InvalidCharacter {
+                what: "group instance ID",
+                character: ' ',
+                position: 3
+            })
         );
     }
 

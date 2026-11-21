@@ -10,7 +10,7 @@ use gaslightmq_wire::{ApiKey, FrameDecoder, Request};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 
-/// Answer ApiVersions and Metadata on one connection. Every response leaves
+/// Answer `ApiVersions` and Metadata on one connection. Every response leaves
 /// in two writes, split inside the frame, so the client has to put it back
 /// together.
 async fn serve(mut stream: TcpStream) {
@@ -26,8 +26,13 @@ async fn serve(mut stream: TcpStream) {
         };
         let request = Request::decode(frame).unwrap();
         let response = if request.api().known() == Some(ApiKey::ApiVersions) {
-            let metadata = ApiVersion::default().with_api_key(ApiKey::Metadata as i16).with_min_version(1).with_max_version(12);
-            request.response(&ApiVersionsResponse::default().with_api_keys(vec![metadata])).unwrap()
+            let metadata = ApiVersion::default()
+                .with_api_key(ApiKey::Metadata as i16)
+                .with_min_version(1)
+                .with_max_version(12);
+            request
+                .response(&ApiVersionsResponse::default().with_api_keys(vec![metadata]))
+                .unwrap()
         } else {
             request.response(&MetadataResponse::default()).unwrap()
         };
@@ -73,5 +78,8 @@ async fn a_peer_that_hangs_up_is_a_delivery_timeout() {
 
     let err = client.topic_metadata(None).await.unwrap_err();
 
-    assert!(matches!(err, ClientError::DeliveryTimeout(ref last) if matches!(**last, ClientError::Io(_))), "{err}");
+    assert!(
+        matches!(err, ClientError::DeliveryTimeout(ref last) if matches!(**last, ClientError::Io(_))),
+        "{err}"
+    );
 }

@@ -4,7 +4,7 @@
 //! A type that misses one conversion does not compile here.
 
 use std::borrow::Borrow;
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeSet, HashSet};
 use std::fmt::{Debug, Display};
 use std::hash::Hash;
 use std::str::FromStr;
@@ -60,8 +60,8 @@ where
     assert!(*text == value && text == value && owned == value);
 
     // `Borrow<str>` promises the order and the hash of `str`.
-    assert_eq!(HashMap::from([(value.clone(), ())]).get(text), Some(&()));
-    assert_eq!(BTreeMap::from([(value.clone(), ())]).get(text), Some(&()));
+    assert!(HashSet::from([value.clone()]).contains(text));
+    assert!(BTreeSet::from([value.clone()]).contains(text));
 
     let long = "a".repeat(too_long);
     assert!(matches!(long.parse::<T>(), Err(KernelError::TooLong { .. })));
@@ -111,8 +111,14 @@ where
     assert_eq!((max + 1).to_string().parse::<T>(), Err(too_large::<T>(max + 1, max)));
 
     // No negative number is a value.
-    assert!(matches!(T::try_from(minus_one), Err(KernelError::Negative { value: -1, .. })));
-    assert!(matches!("-1".parse::<T>(), Err(KernelError::Negative { value: -1, .. })));
+    assert!(matches!(
+        T::try_from(minus_one),
+        Err(KernelError::Negative { value: -1, .. })
+    ));
+    assert!(matches!(
+        "-1".parse::<T>(),
+        Err(KernelError::Negative { value: -1, .. })
+    ));
     assert!(matches!("seven".parse::<T>(), Err(KernelError::NotANumber { .. })));
 }
 
@@ -160,10 +166,16 @@ fn an_api_key_and_an_error_code_convert_from_and_to_the_number_kafka_writes() {
     let produce: ApiKey = 0_i16.into();
     let not_leader: ErrorCode = 6_i16.try_into().unwrap();
 
-    assert_eq!((produce, not_leader), (ApiKey::PRODUCE, ErrorCode::NOT_LEADER_OR_FOLLOWER));
+    assert_eq!(
+        (produce, not_leader),
+        (ApiKey::PRODUCE, ErrorCode::NOT_LEADER_OR_FOLLOWER)
+    );
     assert_eq!((i16::from(produce), i16::from(not_leader)), (0, 6));
     assert_eq!((produce.value(), not_leader.value()), (0, 6));
-    assert_eq!((produce.name(), not_leader.name()), (Some("Produce"), Some("NOT_LEADER_OR_FOLLOWER")));
+    assert_eq!(
+        (produce.name(), not_leader.name()),
+        (Some("Produce"), Some("NOT_LEADER_OR_FOLLOWER"))
+    );
     assert!(produce.is_known() && not_leader.is_known());
     assert!(ApiKey::known().any(|key| key == produce) && ErrorCode::known().any(|code| code == not_leader));
 }

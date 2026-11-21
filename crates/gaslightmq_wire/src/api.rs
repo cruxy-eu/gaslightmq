@@ -20,7 +20,10 @@ pub struct Api {
 
 impl Api {
     pub const fn new(key: ApiKey, version: i16) -> Self {
-        Self { key: key as i16, version }
+        Self {
+            key: key as i16,
+            version,
+        }
     }
 
     /// The API of request message `R`, at `version`.
