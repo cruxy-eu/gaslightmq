@@ -3,7 +3,7 @@
 use std::net::SocketAddr;
 use std::time::Duration;
 
-use gaslightmq_kafka_client::{ClientConfig, ClientError, KafkaClient};
+use gaslightmq_kafka_client_native::{ClientConfig, ClientError, KafkaClient};
 use gaslightmq_wire::messages::api_versions_response::ApiVersion;
 use gaslightmq_wire::messages::{ApiVersionsResponse, MetadataResponse};
 use gaslightmq_wire::{ApiKey, FrameDecoder, Request};

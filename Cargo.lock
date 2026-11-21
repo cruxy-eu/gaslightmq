@@ -188,11 +188,20 @@ dependencies = [
 ]
 
 [[package]]
-name = "gaslightmq_kafka_client"
+name = "gaslightmq_kafka_client_api"
+version = "0.1.0"
+dependencies = [
+ "futures",
+ "gaslightmq_wire",
+ "tokio",
+]
+
+[[package]]
+name = "gaslightmq_kafka_client_native"
 version = "0.1.0"
 dependencies = [
  "bytes",
- "futures",
+ "gaslightmq_kafka_client_api",
  "gaslightmq_wire",
  "tokio",
  "tracing",

@@ -4,7 +4,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use bytes::Bytes;
-use crate::traits::{
+use gaslightmq_kafka_client_api::{
     Admin, Consumer, PartitionMetadata, ProduceResult, Producer, TopicConfigs, TopicMetadata,
     Watermarks,
 };

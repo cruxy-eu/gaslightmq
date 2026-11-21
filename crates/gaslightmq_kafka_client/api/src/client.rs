@@ -13,11 +13,11 @@ use gaslightmq_wire::messages::{
     ProduceRequest, ProduceResponse, SyncGroupRequest, TopicName,
 };
 use gaslightmq_wire::protocol::{Request as KafkaRequest, StrBytes};
-use gaslightmq_wire::{Offset, Partition, Record, RecordBatch, Request, ResponseError, WireError};
+use gaslightmq_wire::{FrameDecoder, Offset, Partition, Record, RecordBatch, Request, Response, ResponseError, WireError};
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::net::TcpStream;
 use tokio::sync::Mutex;
 
-use crate::connection::Socket;
-use crate::error::ClientError;
 use crate::traits::{
     HeartbeatResult, JoinGroupResult, ProduceResult, Producer, ProtocolConsumer, RecordStream, SyncGroupResult,
 };
@@ -32,6 +32,34 @@ pub struct RawKafkaClient {
     addr: SocketAddr,
     socket: Mutex<Option<Socket>>,
     correlation_id: AtomicI32,
+}
+
+/// A connected stream, and the bytes read from it that no frame has taken yet.
+struct Socket {
+    stream: TcpStream,
+    frames: FrameDecoder,
+}
+
+type Failure = Box<dyn std::error::Error + Send + Sync>;
+
+impl Socket {
+    async fn connect(addr: SocketAddr) -> Result<Self, Failure> {
+        Ok(Self { stream: TcpStream::connect(addr).await?, frames: FrameDecoder::new() })
+    }
+
+    /// Send `request` and read its response.
+    async fn exchange<R: KafkaRequest>(&mut self, request: &Request) -> Result<R::Response, Failure> {
+        self.stream.write_all(&request.frame().to_bytes()).await?;
+        let frame = loop {
+            if let Some(frame) = self.frames.next_frame()? {
+                break frame;
+            }
+            if self.stream.read_buf(self.frames.buffer_mut()).await? == 0 {
+                return Err("connection closed by broker".into());
+            }
+        };
+        Ok(Response::decode(request.api(), frame)?.body()?)
+    }
 }
 
 impl From<SocketAddr> for RawKafkaClient {
@@ -55,16 +83,16 @@ impl RawKafkaClient {
         let mut slot = self.socket.lock().await;
         let socket = match slot.as_mut() {
             Some(socket) => socket,
-            None => slot.insert(Socket::connect(&self.addr.to_string()).await.unwrap()),
+            None => slot.insert(Socket::connect(self.addr).await.unwrap()),
         };
         socket.exchange::<R>(&request).await.unwrap()
     }
 }
 
 /// One Fetch for one partition on a connection of its own.
-async fn fetch_once(addr: SocketAddr, request: &FetchRequest) -> Result<Vec<Record>, ClientError> {
+async fn fetch_once(addr: SocketAddr, request: &FetchRequest) -> Result<Vec<Record>, Failure> {
     let request = Request::new(4, 0, None, request)?;
-    let response = Socket::connect(&addr.to_string()).await?.exchange::<FetchRequest>(&request).await?;
+    let response = Socket::connect(addr).await?.exchange::<FetchRequest>(&request).await?;
     Ok(records_of(&response)?)
 }
 

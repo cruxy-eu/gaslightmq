@@ -12,20 +12,20 @@ use tokio::sync::Mutex;
 use crate::error::ClientError;
 
 /// A connected stream, and the bytes read from it that no frame has taken yet.
-pub(crate) struct Socket {
+struct Socket {
     stream: TcpStream,
     frames: FrameDecoder,
 }
 
 impl Socket {
-    pub async fn connect(addr: &str) -> Result<Self, ClientError> {
+    async fn connect(addr: &str) -> Result<Self, ClientError> {
         let stream = TcpStream::connect(addr).await?;
         let _ = stream.set_nodelay(true);
         Ok(Self { stream, frames: FrameDecoder::new() })
     }
 
     /// Send `request` and read its response.
-    pub async fn exchange<R: KafkaRequest>(&mut self, request: &Request) -> Result<R::Response, ClientError> {
+    async fn exchange<R: KafkaRequest>(&mut self, request: &Request) -> Result<R::Response, ClientError> {
         self.stream.write_all(&request.frame().to_bytes()).await?;
         let response = Response::decode(request.api(), self.read_frame().await?)?;
         if response.correlation_id() != request.correlation_id() {

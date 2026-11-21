@@ -53,7 +53,7 @@ flowchart BT
   F["Workspace<br/>environment · workspace"]
   C["Control<br/>surface · quick_inject · control_api"]
   IO["IO edge<br/>listener · engine · host · backend_upstream · schema_registry<br/>workspace_fs · control_server · control_client"]
-  A["Applications<br/>gmq · ui · test · testcontainers · kafka_client"]
+  A["Applications<br/>gmq · ui · test · testcontainers · kafka_client_*"]
 
   T --> V
   P --> T
@@ -184,7 +184,8 @@ Transactions arrive later as `sim_txn`, next to `sim_log` and `sim_group`.
 | `host` | One process with several [environments](storage.md#several-environments-in-one-process): it starts and stops proxies and brokers, runs the task that drives each broker, and shares the workspace and the control plane between them. This crate does IO. | `engine`, `broker`, `listener`, `backend_upstream`, `workspace_fs`, `environment` |
 | `test` | The test library: create a proxy or a broker, activate a scenario, assert on the recording. | `host`, `control_client` |
 | `testcontainers` | A container module that starts GaslightMQ next to a test. | `control_client` |
-| `kafka_client` | A Kafka client for tests: it follows partition leaders, negotiates API versions, and reports every failure as an error. This crate does IO. | `wire` |
+| `kafka_client_api` | What a Kafka client offers to a test, whichever client it is: the producer, consumer and admin traits, one trait per protocol API, and a raw client that sends one request at a fixed version. This crate does IO. | `wire` |
+| `kafka_client_native` | Our own Kafka client behind those traits: it follows partition leaders, negotiates API versions, and reports every failure as an error. This crate does IO. | `kafka_client_api`, `wire` |
 | `gaslightmq` | The facade crate: `Proxy`, `Broker` and `Host`, and re-exports of what library users need. | The public crates |
 | `gmq` | The binary: `gmq proxy`, `gmq broker`, `gmq start` and `gmq run`. | `host`, `control_server` |
 
