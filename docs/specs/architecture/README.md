@@ -20,7 +20,10 @@ These documents call the runtime of one proxy the **engine**.
 | [Backends](backends.md) | Upstream and Simulated, their capabilities, the overlay and event emulation. |
 | [Storage and configuration](storage.md) | The workspace, environments, secrets, live state and recordings. |
 | [Control plane](control-plane.md) | The API the UI, the CLI and hardware use. |
-| [Crate layout](crates.md) | The crates of the workspace, what each one holds and which ones are sans-IO. |
+| [Crate layout](crates.md) | The crates of the workspace, what each one holds, which ones are sans-IO, and how the async IO edge drives them. |
+
+The [interactive diagram](diagram.html) shows one session, the pipeline stages and every crate with its dependencies.
+Open the file in a browser.
 
 ## Components
 
@@ -58,8 +61,8 @@ flowchart LR
 |---|---|
 | **Host** | Start and stop environments in one process. Share the workspace store and the control plane between them. |
 | **Listeners** | Accept connections on the bootstrap endpoint and one endpoint per broker. Refuse connections when a broker is down. |
-| **Sessions** | Run one connection each. Hold identity, the rule snapshot, per-session counters and in-flight calls. Share a client context with the other connections of the same client. |
-| **Pipeline** | Take one call through the stages in [request pipeline](request-pipeline.md). |
+| **Sessions** | Run one connection each. A session is a transport and a pipeline: the transport reads and writes the client's bytes, and the pipeline decides. Share a client context with the other connections of the same client. |
+| **Pipeline** | Hold the state of one session: identity, the rule snapshot, per-session counters and in-flight calls. Take each call through the stages in [request pipeline](request-pipeline.md). |
 | **Backend** | Answer a call with the truth, from a real cluster or from the World. Apply or emulate events. |
 | **Rule store** | Hold every rule and its state, workspace rules and live rules alike. Publish an immutable snapshot of armed rules in priority order on every change. Hold each armed rule's shared counter and budget as atomics. |
 | **Scenario runner** | Run the active scenario and the live set: turn the mode into a priority order, advance steps, expand events into their consequences and hand them to the backend. |
@@ -99,6 +102,12 @@ flowchart LR
   The engine keeps its live state in memory and has no database.
   After a restart, nothing is armed.
   See [live state](storage.md#live-state).
+- **Logic decides, and the edge waits.**
+  The pipeline, the broker and the logic of the scenario runner are state machines.
+  They do no IO, and they never wait.
+  The engine is async: it owns the sockets, the timers and the tasks,
+  and it calls the state machines with what happened.
+  See [the IO edge is async](crates.md#the-io-edge-is-async).
 - **The engine is headless.**
   The UI is one client of the control plane.
   The CLI and test libraries are others.
@@ -136,7 +145,7 @@ flowchart LR
       p1["Proxy"]
     end
     subgraph e2["Environment: orders-sim"]
-      p2["Proxy"] -->|function calls| b1["Broker"]
+      p2["Proxy"] -->|in memory| b1["Broker"]
     end
     subgraph e3["Environment: plain-kafka"]
       b2["Broker"]
@@ -151,9 +160,11 @@ flowchart LR
   cp <--> ui["Web UI"]
 ```
 
-- **A proxy calls its broker directly.**
-  Both are sans-IO, so the proxy hands a request to the broker as a function call.
-  There is no socket between them, and both read the same virtual clock.
+- **A proxy reaches its broker without a socket.**
+  The pipeline and the broker are both sans-IO state machines.
+  The engine hands the request that the pipeline forwards to the broker in memory,
+  and hands the broker's answer back to the pipeline.
+  Both read the same virtual clock.
 - **An [environment](storage.md#environments) names one shape.**
   A process starts one environment or several.
   Each environment has its own listeners and its own live state.

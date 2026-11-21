@@ -1,0 +1,539 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>GaslightMQ · target architecture</title>
+<style>
+:root{
+  --bg:#08090a; --panel:#0f1012; --surface:#16171a; --surface2:#1c1d21; --surface3:#24252a;
+  --hover:rgba(255,255,255,.035);
+  --border:rgba(255,255,255,.065); --border2:rgba(255,255,255,.1); --border3:rgba(255,255,255,.2);
+  --t1:#f7f8f8; --t2:#d0d6e0; --t3:#8a8f98; --t4:#62666d; --t5:#3e4147;
+  --sans:#8b8aff; --sans-bg:rgba(113,112,255,.11); --sans-bd:rgba(113,112,255,.38);
+  --io:#f2994a;   --io-bg:rgba(242,153,74,.10);   --io-bd:rgba(242,153,74,.40);
+  --sig:#f2c94c;
+  --app:#d0d6e0;  --app-bg:rgba(255,255,255,.05); --app-bd:rgba(255,255,255,.2);
+  --wasm:#2dd4bf; --green:#4cb782;
+  --mono:"JetBrains Mono","SF Mono",ui-monospace,Menlo,monospace;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{background:var(--bg);scroll-behavior:smooth}
+body{color:var(--t2);font:13px/1.5 "Inter var",Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;-webkit-font-smoothing:antialiased}
+code,.mono{font-family:var(--mono);font-size:11.5px}
+button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
+a{color:inherit;text-decoration:none}
+
+/* ── top bar ── */
+.top{position:sticky;top:0;z-index:20;display:flex;align-items:center;gap:18px;height:48px;padding:0 22px;background:rgba(8,9,10,.86);backdrop-filter:blur(10px);border-bottom:1px solid var(--border)}
+.logo{width:18px;height:18px;border-radius:5px;background:linear-gradient(135deg,#7170ff,#c084fc 55%,#f2994a);flex:none}
+.top b{color:var(--t1);font-weight:600}
+.top small{color:var(--t4);margin-left:6px;font-size:12px}
+.nav{display:flex;gap:2px;margin-left:8px}
+.nav a{height:28px;padding:0 10px;border-radius:6px;color:var(--t3);display:flex;align-items:center;font-size:12.5px}
+.nav a:hover{background:var(--hover);color:var(--t1)}
+.sp{flex:1}
+.legend{display:flex;gap:14px;align-items:center;color:var(--t3);font-size:12px;white-space:nowrap}
+.legend span{display:flex;align-items:center;gap:6px}
+.sw{width:10px;height:10px;border-radius:3px;border:1px solid}
+.sw.sans{background:var(--sans-bg);border-color:var(--sans)}
+.sw.io{background:var(--io-bg);border-color:var(--io)}
+.sw.sig{background:var(--sans-bg);border-color:var(--sig);border-style:dashed}
+.sw.app{background:var(--app-bg);border-color:var(--app-bd)}
+.dot{width:6px;height:6px;border-radius:50%;background:var(--wasm)}
+
+main{max-width:1480px;margin:0 auto;padding:10px 22px 80px}
+section{padding-top:34px}
+h2{color:var(--t1);font-size:15px;font-weight:600;letter-spacing:-.01em}
+.lead{color:var(--t3);max-width:860px;margin:4px 0 16px}
+.lead b{color:var(--t2);font-weight:500}
+.panel{background:var(--panel);border:1px solid var(--border);border-radius:10px}
+.tag{display:inline-flex;align-items:center;height:18px;padding:0 6px;border-radius:4px;font:500 10.5px var(--mono);border:1px solid;white-space:nowrap}
+.tag.sans{color:var(--sans);border-color:var(--sans-bd);background:var(--sans-bg)}
+.tag.io{color:var(--io);border-color:var(--io-bd);background:var(--io-bg)}
+.tag.sig{color:var(--sig);border-color:rgba(242,201,76,.4);border-style:dashed}
+.tag.ext{color:var(--t3);border-color:var(--border2)}
+
+/* ── 1 · session flow ── */
+.scroll{overflow-x:auto;padding:22px}
+.flow{display:flex;align-items:center;min-width:1330px}
+.ext{flex:none;width:112px;padding:14px 10px;text-align:center;border:1px dashed var(--border3);border-radius:8px;color:var(--t2)}
+.ext small,.card small{display:block;color:var(--t4);font-size:11.5px}
+.wire{flex:none;width:104px;padding:0 8px;display:flex;flex-direction:column;gap:5px;font:10.5px var(--mono);color:var(--t3)}
+.wire.wide{width:150px}
+.wire span{display:block;text-align:center;white-space:nowrap}
+.wire i{display:block;height:1px;background:var(--border3);position:relative}
+.wire i::after{content:"";position:absolute;top:-3px;right:0;border-left:6px solid var(--t3);border-top:3.5px solid transparent;border-bottom:3.5px solid transparent}
+.wire i.l::after{right:auto;left:0;border-left:0;border-right:6px solid var(--t3)}
+.wire .gap{height:6px}
+
+.task{flex:1;min-width:0;border:1px solid var(--io-bd);background:linear-gradient(var(--io-bg),transparent 70px);border-radius:10px;padding:12px}
+.task-h{display:flex;align-items:center;gap:8px;margin-bottom:12px;color:var(--t1);font-weight:600}
+.task-h small{color:var(--t3);font-weight:400}
+.task-b{display:flex;align-items:stretch}
+.card{border-radius:8px;border:1px solid var(--border2);background:var(--surface);padding:10px 12px}
+.card h4{display:flex;align-items:center;gap:7px;color:var(--t1);font-size:13px;font-weight:600;margin-bottom:4px}
+.card p{color:var(--t3);font-size:12px}
+.card.io{border-color:var(--io-bd)}
+.card.sans{border-color:var(--sans-bd);background:linear-gradient(var(--sans-bg),var(--surface) 90px)}
+.transport{flex:none;width:158px;display:flex;flex-direction:column;justify-content:center}
+.pipeline{flex:1;min-width:0}
+.sig-line{margin:8px 0;padding:6px 8px;border-radius:6px;background:rgba(0,0,0,.35);border:1px solid var(--border);color:var(--t1);font:11.5px var(--mono);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.state{display:flex;flex-wrap:wrap;gap:5px;margin-top:6px}
+.state span{padding:1px 7px;border-radius:20px;border:1px solid var(--border2);color:var(--t2);font-size:11.5px;white-space:nowrap}
+.feeds{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px;margin-top:10px}
+.feed{border:1px solid var(--border);border-radius:8px;background:var(--surface);padding:8px 10px}
+.feed b{display:block;color:var(--t1);font-weight:500;font-size:12.5px}
+.feed code{display:block;color:var(--t3);font-size:10.5px;white-space:nowrap}
+.feed code em{font-style:normal;color:var(--green)}
+.feed code u{text-decoration:none;color:var(--io)}
+.feeds-h{margin-top:12px;color:var(--t4);font-size:11px;text-transform:uppercase;letter-spacing:.06em}
+
+.seam{flex:none;display:flex;align-items:stretch;gap:10px;width:430px}
+.trait{flex:none;width:112px;display:flex;flex-direction:column;justify-content:center;border:1px dashed rgba(242,201,76,.45);border-radius:8px;padding:10px;background:rgba(242,201,76,.04)}
+.trait b{color:var(--t1);font-size:12.5px}
+.trait p{color:var(--t3);font-size:11.5px;margin-top:4px}
+.backs{flex:1;display:flex;flex-direction:column;gap:10px;min-width:0}
+.inner{margin-top:8px;border:1px solid var(--sans-bd);background:var(--sans-bg);border-radius:6px;padding:7px 9px}
+.inner b{color:var(--t1);font-weight:500;font-size:12px}
+.inner p{font-size:11.5px}
+.out{margin-top:7px;color:var(--t3);font:10.5px var(--mono)}
+
+.notes{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-top:10px}
+.note{padding:12px 14px}
+.note b{display:block;color:var(--t1);font-weight:600;margin-bottom:2px}
+.note p{color:var(--t3);font-size:12.5px}
+
+/* ── 2 · stages ── */
+.stages{display:grid;grid-template-columns:repeat(11,minmax(0,1fr));gap:6px;padding:16px;min-width:1180px}
+.stage{border:1px solid var(--sans-bd);background:var(--sans-bg);border-radius:8px;padding:8px 9px;display:flex;flex-direction:column;gap:3px;position:relative}
+.stage .n{font:500 10.5px var(--mono);color:var(--t4)}
+.stage b{color:var(--t1);font-weight:500;font-size:12.5px;line-height:1.25}
+.stage .act{margin-top:auto;padding-top:8px;font-size:11.5px;color:var(--t4)}
+.stage.acts{border-color:var(--io-bd);background:linear-gradient(var(--sans-bg) 40%,var(--io-bg))}
+.stage.acts .act{color:var(--io)}
+.stage code{font-size:10.5px;color:var(--t3);display:block}
+
+/* ── 3 · crate map ── */
+.tools{display:flex;align-items:center;gap:14px;margin-bottom:10px;flex-wrap:wrap}
+.seg{display:flex;gap:2px;background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:2px}
+.seg button{height:24px;min-width:26px;padding:0 8px;border-radius:6px;color:var(--t3);font-size:12px}
+.seg button:hover{color:var(--t1)}
+.seg button.on{background:var(--surface3);color:var(--t1)}
+.tools label{color:var(--t3);font-size:12px}
+.tools .hint{color:var(--t4);font-size:12px}
+.mapwrap{display:grid;grid-template-columns:minmax(0,1fr) 330px;gap:12px;align-items:start}
+.map{position:relative;padding:8px 14px 12px}
+.map svg{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:1}
+.row{display:grid;grid-template-columns:150px minmax(0,1fr);gap:10px;align-items:center;padding:9px 0;border-top:1px solid var(--border)}
+.row:first-of-type{border-top:0}
+.row .lbl{color:var(--t3);font-size:12px}
+.row .lbl small{display:block;color:var(--t4);font-size:11px}
+.chips{display:flex;flex-wrap:wrap;gap:7px;position:relative;z-index:2}
+.edge{display:flex;align-items:center;gap:10px;margin:6px -14px;padding:5px 14px;background:repeating-linear-gradient(90deg,var(--io-bd) 0 8px,transparent 8px 14px) top/100% 1px no-repeat,repeating-linear-gradient(90deg,var(--sans-bd) 0 8px,transparent 8px 14px) bottom/100% 1px no-repeat;font-size:11.5px}
+.edge .up{color:var(--io)} .edge .down{color:var(--sans)}
+.chip{height:26px;padding:0 9px;border-radius:6px;border:1px solid;display:inline-flex;align-items:center;gap:6px;font:500 11.5px var(--mono);transition:opacity .12s,box-shadow .12s,transform .12s;white-space:nowrap;background-color:var(--panel)}
+.chip.sans{color:#c9c8ff;border-color:var(--sans-bd);background-image:linear-gradient(var(--sans-bg),var(--sans-bg))}
+.chip.io{color:#ffd0a3;border-color:var(--io-bd);background-image:linear-gradient(var(--io-bg),var(--io-bg))}
+.chip.sig{color:#c9c8ff;border-color:var(--sig);border-style:dashed;background-image:linear-gradient(var(--sans-bg),var(--sans-bg))}
+.chip.app{color:var(--t1);border-color:var(--app-bd);background-image:linear-gradient(var(--app-bg),var(--app-bg))}
+.chip:hover{transform:translateY(-1px)}
+.chip .dot{flex:none}
+.map.focus .chip{opacity:.28}
+.map.focus .chip.sel,.map.focus .chip.dep,.map.focus .chip.user{opacity:1}
+.chip.sel{box-shadow:0 0 0 2px var(--t1)}
+.chip.dep{box-shadow:0 0 0 1.5px var(--green)}
+.chip.user{box-shadow:0 0 0 1.5px var(--t4)}
+.map.steps .chip.off{opacity:.16}
+.map.steps .chip.new{box-shadow:0 0 0 1.5px var(--sig)}
+
+.insp{position:sticky;top:60px;padding:14px 16px;min-height:300px}
+.insp h3{color:var(--t1);font:600 14px var(--mono);word-break:break-all}
+.insp .meta{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0 10px}
+.insp p{color:var(--t2);font-size:12.5px}
+.insp h5{margin:14px 0 6px;color:var(--t4);font-size:11px;font-weight:500;text-transform:uppercase;letter-spacing:.06em;display:flex;align-items:center;gap:6px}
+.insp h5 i{width:14px;height:0;border-top:1.5px solid var(--green)}
+.insp h5 i.u{border-top:1.5px dashed var(--t3)}
+.insp .list{display:flex;flex-wrap:wrap;gap:5px}
+.insp .list button{height:22px;padding:0 7px;border-radius:5px;border:1px solid var(--border2);font:11px var(--mono);color:var(--t2)}
+.insp .list button:hover{border-color:var(--border3);color:var(--t1)}
+.insp .none{color:var(--t4);font-size:12px}
+
+/* ── 4 · shapes and drivers ── */
+.grid3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+.shape{padding:14px}
+.shape h4{color:var(--t1);font-size:13px;font-weight:600}
+.shape p{color:var(--t3);font-size:12.5px;margin-top:2px}
+.mini{display:flex;align-items:center;gap:6px;margin:12px 0 10px;flex-wrap:wrap}
+.mini .b{height:28px;padding:0 9px;border-radius:6px;border:1px solid;display:inline-flex;align-items:center;font-size:12px;white-space:nowrap}
+.mini .b.sans{border-color:var(--sans-bd);background:var(--sans-bg);color:#c9c8ff}
+.mini .b.io{border-color:var(--io-bd);background:var(--io-bg);color:#ffd0a3}
+.mini .b.x{border-color:var(--border3);border-style:dashed;color:var(--t2)}
+.mini .a{color:var(--t4);font:10.5px var(--mono);white-space:nowrap}
+.shape code{color:var(--t3)}
+h3.sub{color:var(--t2);font-size:13px;font-weight:600;margin:22px 0 10px}
+</style>
+</head>
+<body>
+
+<div class="top">
+  <div class="logo"></div>
+  <div><b>GaslightMQ</b><small>target architecture · from docs/specs</small></div>
+  <nav class="nav">
+    <a href="#session">Session</a>
+    <a href="#stages">Pipeline stages</a>
+    <a href="#crates">Crates</a>
+    <a href="#shapes">Shapes and drivers</a>
+  </nav>
+  <div class="sp"></div>
+  <div class="legend">
+    <span><i class="sw sans"></i>sans-IO</span>
+    <span><i class="sw io"></i>IO edge · async</span>
+    <span><i class="sw sig"></i>async signature only</span>
+    <span><i class="sw app"></i>application</span>
+    <span><i class="dot"></i>compiles to WebAssembly</span>
+  </div>
+</div>
+
+<main>
+
+<!-- ───────────────────────── 1 · session ───────────────────────── -->
+<section id="session">
+  <h2>One session, end to end</h2>
+  <p class="lead">A session is a <b>transport</b> and a <b>pipeline</b>. The engine runs it as one async task. The task waits, the pipeline decides: every arrow into the pipeline is an <code>Input</code>, every arrow out is an <code>Output</code>.</p>
+
+  <div class="panel scroll">
+    <div class="flow">
+
+      <div class="ext">Kafka client<small>one connection</small></div>
+
+      <div class="wire"><span>TCP</span><i></i><div class="gap"></div><i class="l"></i></div>
+
+      <div class="task">
+        <div class="task-h">Session task <span class="tag io">engine · async</span><small>one per client connection, ends when the transport closes</small></div>
+        <div class="task-b">
+
+          <div class="card io transport">
+            <h4>Transport</h4>
+            <span class="tag io">listener</span>
+            <p style="margin-top:6px">Reads the client's bytes. Writes the bytes the client receives.</p>
+          </div>
+
+          <div class="wire wide">
+            <span>ClientBytes · ClientClosed</span><i></i>
+            <div class="gap"></div>
+            <i class="l"></i><span>Send · Close</span>
+          </div>
+
+          <div class="card sans pipeline">
+            <h4>Pipeline <span class="tag sans">pipeline + session</span></h4>
+            <p>A state machine for one connection. It never reads a socket, never sleeps, never looks at a clock.</p>
+            <div class="sig-line">fn handle(&amp;mut self, input: Input, now: Instant) -&gt; Outputs</div>
+            <p>Holds the session's state:</p>
+            <div class="state"><span>identity</span><span>rule snapshot</span><span>per-session counters</span><span>in-flight calls</span><span>response order</span><span>stalled</span></div>
+          </div>
+        </div>
+
+        <div class="feeds-h">The rest of the engine, as the pipeline sees it</div>
+        <div class="feeds">
+          <div class="feed"><b>Rule store</b><code><em>→</em> SnapshotPublished</code><code>&nbsp;</code></div>
+          <div class="feed"><b>Clock</b><code><u>←</u> SetTimer</code><code><em>→</em> TimerFired</code></div>
+          <div class="feed"><b>Scenario runner</b><code><u>←</u> Fire(event)</code><code>&nbsp;</code></div>
+          <div class="feed"><b>Event bus</b><code><u>←</u> Emit(call)</code><code>recorder · indexer · UI</code></div>
+          <div class="feed"><b>Shared handles</b><code>counters · budgets</code><code>client contexts</code></div>
+        </div>
+      </div>
+
+      <div class="wire"><span>Forward</span><i></i><div class="gap"></div><i class="l"></i><span>BackendAnswered</span></div>
+
+      <div class="seam">
+        <div class="trait">
+          <span class="tag sig">backend</span>
+          <b style="margin-top:8px">Backend trait</b>
+          <p>One async signature, no logic, no runtime. A request goes in under a call ID. The answer arrives later under the same ID.</p>
+        </div>
+        <div class="backs">
+          <div class="card io">
+            <h4>Upstream <span class="tag io">backend-upstream · async</span></h4>
+            <p>Connections to the real cluster.</p>
+            <div class="inner"><b>overlay</b> <span class="tag sans">sans-IO</span><p>Address translation and emulated events.</p></div>
+            <div class="out">→ TCP → real Kafka cluster</div>
+          </div>
+          <div class="card io">
+            <h4>Simulated <span class="tag io">broker task in host · async</span></h4>
+            <p>One task owns the broker and feeds it the requests of every session.</p>
+            <div class="inner"><b>broker</b> <span class="tag sans">sans-IO</span><p>Requests, events and fired timers in. Answers and timers out. Holds the World and the virtual clock.</p></div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <div class="notes">
+    <div class="panel note"><b>The edge waits, the logic decides</b><p>A task waits for a socket, a timer or a channel, then calls a state machine with what happened. That call never waits.</p></div>
+    <div class="panel note"><b>Nothing comes twice</b><p>A sans-IO crate has no blocking or async side. The edge is async only, on Tokio. A blocking test runs the edge on a runtime of its own.</p></div>
+    <div class="panel note"><b>A disconnect ends the session</b><p>A hang-up or a broker going down closes the real connection. A reconnect gets a new transport and a new pipeline. The client context and shared counters stay in the engine.</p></div>
+  </div>
+</section>
+
+<!-- ───────────────────────── 2 · stages ───────────────────────── -->
+<section id="stages">
+  <h2>A call through the pipeline</h2>
+  <p class="lead">All eleven stages run inside the pipeline. At the orange ones the session acts for it: the pipeline hands out an <code>Output</code>, and continues when the matching <code>Input</code> arrives.</p>
+  <div class="panel" style="overflow-x:auto"><div class="stages" id="stagebar"></div></div>
+</section>
+
+<!-- ───────────────────────── 3 · crates ───────────────────────── -->
+<section id="crates">
+  <h2>Crates</h2>
+  <p class="lead">Every crate carries the <code>gaslightmq-</code> prefix. Dependencies point down the page. Hover a crate to see what it needs and who uses it, click to pin it.</p>
+
+  <div class="tools">
+    <label>Build order</label>
+    <div class="seg" id="steps"></div>
+    <span class="hint" id="stephint"></span>
+  </div>
+
+  <div class="mapwrap">
+    <div class="panel map" id="map"><svg id="lines"></svg></div>
+    <aside class="panel insp" id="insp"></aside>
+  </div>
+</section>
+
+<!-- ───────────────────────── 4 · shapes ───────────────────────── -->
+<section id="shapes">
+  <h2>Shapes and drivers</h2>
+  <p class="lead">Proxies and brokers combine into three shapes. One process hosts any number of them, behind one control plane.</p>
+
+  <div class="grid3">
+    <div class="panel shape">
+      <h4>A proxy in front of a real cluster</h4>
+      <div class="mini"><span class="b x">clients</span><span class="a">TCP →</span><span class="b io">listener</span><span class="b sans">pipeline</span><span class="a">→</span><span class="b io">backend-upstream</span><span class="a">TCP →</span><span class="b x">real cluster</span></div>
+      <p>Lie about real traffic. Wall clock. <code>gmq proxy --upstream kafka:9092</code></p>
+    </div>
+    <div class="panel shape">
+      <h4>A proxy in front of a broker</h4>
+      <div class="mini"><span class="b x">clients</span><span class="a">TCP →</span><span class="b io">listener</span><span class="b sans">pipeline</span><span class="a">in memory →</span><span class="b sans">broker</span></div>
+      <p>A fake cluster that lies, fully reproducible. Both state machines read one virtual clock. <code>gmq proxy --world orders-sim</code></p>
+    </div>
+    <div class="panel shape">
+      <h4>A broker alone</h4>
+      <div class="mini"><span class="b x">clients</span><span class="a">TCP →</span><span class="b io">listener</span><span class="a">→</span><span class="b sans">broker</span></div>
+      <p>A truthful fake Kafka. No engine, no rules. <code>gmq broker --world orders-sim</code></p>
+    </div>
+  </div>
+
+  <h3 class="sub">The same pipeline interface serves three drivers</h3>
+  <div class="grid3">
+    <div class="panel shape">
+      <h4>Engine <span class="tag io">async</span></h4>
+      <p>Feeds the pipeline from real sockets, real backends and the engine's clock.</p>
+    </div>
+    <div class="panel shape">
+      <h4>Unit and property tests <span class="tag sans">plain calls</span></h4>
+      <p>Hand-written inputs and a virtual clock. No runtime, no socket.</p>
+    </div>
+    <div class="panel shape">
+      <h4>Replay <span class="tag sans">plain calls</span></h4>
+      <p>A recording goes in, and the verdicts that come out are compared with the recorded ones. Every recording is a regression test.</p>
+    </div>
+  </div>
+</section>
+
+</main>
+
+<script>
+/* ── data: crates.md, next to this file. Keep the two in step. ── */
+const LAYERS = [
+  ["Applications", "binaries, UI, test libraries"],
+  ["IO edge", "async, Tokio"],
+  ["Control", ""],
+  ["Workspace", ""],
+  ["Scenarios", ""],
+  ["World and backends", ""],
+  ["Observation", ""],
+  ["Session and pipeline", ""],
+  ["Targeting and injection", ""],
+  ["Vocabulary", "types, almost no behaviour"],
+];
+// name, layer, kind, wasm, build step, holds, deps
+const CRATES = [
+  ["gmq","Applications","app",0,5,"The binary: gmq proxy, gmq broker, gmq start and gmq run.",["host","control-server"]],
+  ["gaslightmq","Applications","app",0,null,"The facade crate: Proxy, Broker and Host, and re-exports of what library users need. Depends on the public crates.",[]],
+  ["test","Applications","app",0,5,"The test library: create a proxy or a broker, activate a scenario, assert on the recording.",["host","control-client"]],
+  ["testcontainers","Applications","app",0,null,"A container module that starts GaslightMQ next to a test.",["control-client"]],
+  ["ui","Applications","app",1,4,"The web UI, a Dioxus application.",["control-client","surface","hardware-push2","quick-inject","selector","call"]],
+
+  ["host","IO edge","io",0,4,"One process with several environments. Starts and stops proxies and brokers, and runs the task that drives each broker.",["engine","broker","listener","backend-upstream","workspace-fs","environment"]],
+  ["engine","IO edge","io",0,3,"The runtime of one proxy: one task per session that owns the transport and drives the pipeline, plus rule store, scenario runner, event bus, journal, recorder and indexer. Tasks, timers and channels; it opens no socket itself.",["pipeline","session","rule","scenario","journal","traffic","index","recording","backend","listener","workspace","environment","clock"]],
+  ["listener","IO edge","io",0,3,"Kafka on a socket: accept connections, frame bytes, and drive whatever handles a connection. Gives a session its transport.",["wire","clock"]],
+  ["backend-upstream","IO edge","io",0,3,"The Upstream backend: connections to the real cluster, with the overlay around them.",["backend","overlay"]],
+  ["schema-registry","IO edge","io",0,6,"The built-in schema registry over HTTP, and a client for a real one.",["schema"]],
+  ["workspace-fs","IO edge","io",0,5,"Loading, watching and writing back workspace files, the scratch file, and reading the files that secret references name.",["workspace"]],
+  ["control-server","IO edge","io",0,4,"The HTTP and WebSocket server in front of the host.",["host","control-api"]],
+  ["control-client","IO edge","io",1,4,"A client for the control plane, for native targets and for the browser.",["control-api"]],
+
+  ["control-api","Control","sans",1,4,"The control plane as types: resources, commands and stream messages.",["call","journal","rule","scenario","selector","surface","world","event","environment"]],
+  ["quick-inject","Control","sans",1,4,"The ⌘K sentence parser: text to a rule definition, with completions.",["selector","lie","rule"]],
+  ["surface","Control","sans",1,4,"Pad layouts, layers, pads as positions, the encoder mapping, and the intents a surface sends.",["rule"]],
+  ["hardware-push2","Control","sans",1,7,"The Push 2 mapping: controller messages to surface intents, and rule state back to pad colours.",["surface"]],
+
+  ["workspace","Workspace","sans",0,5,"The whole set of definitions as one model: cross-reference validation, cascading renames and the YAML layout. Works on file contents, not on files.",["selector","lie","event","rule","scenario","surface","world","environment"]],
+  ["environment","Workspace","sans",0,3,"Environments, secret references, and the order in which flags, variables and files set a value. It never reads a secret.",[]],
+
+  ["scenario","Scenarios","sans",1,5,"The scenario definition, modes as priority orders, the step machine of a Sequence, the live set and capture. Consumes call records, journal entries and time; emits arm and disarm commands.",["rule","trigger","call","journal","event","clock"]],
+
+  ["backend","World and backends","sig",0,3,"The backend contract: the request and answer messages, and the one async trait through which the engine reaches a backend. No logic, no runtime.",["wire","event","clock"]],
+  ["broker","World and backends","sans",0,6,"The broker instance as a state machine: routes each request to a sim-* crate, applies events to the World and owns the virtual clock.",["backend","world","sim-log","sim-group","clock"]],
+  ["sim-log","World and backends","sans",0,6,"Produce, Fetch, offsets and idempotent producers against the World.",["world","wire"]],
+  ["sim-group","World and backends","sans",0,6,"Group coordination against the World, for the classic and the consumer protocol.",["world","wire","clock"]],
+  ["world","World and backends","sans",1,6,"The World: its state, world definitions, how each event changes it, and where each topic's records come from.",["wire","event","clock","virtual-log"]],
+  ["world-seed","World and backends","sans",0,6,"Seeding a world definition from a recording.",["world","index","recording"]],
+  ["virtual-log","World and backends","sans",1,6,"Virtual records: the record at a partition and offset as a pure function of the definition.",["wire","clock","schema"]],
+  ["overlay","World and backends","sans",0,3,"The Upstream overlay: address translation, emulated events and sessionless Fetch. Rewrites requests and responses, opens no connection.",["wire","wire-edit","event"]],
+  ["schema","World and backends","sans",0,6,"Record formats and schemas: encode and decode JSON, Avro and Protobuf, one feature per format.",[]],
+
+  ["traffic","Observation","sans",0,4,"The live window of recent calls, subscriptions by selector, and statistics per rule and per API.",["call","selector"]],
+  ["index","Observation","sans",0,4,"The index: facets, counts under the active filters, suggested patterns.",["call","selector"]],
+  ["journal","Observation","sans",0,5,"The journal: its entries, and the window of recent entries the engine keeps in memory.",["event","clock"]],
+  ["recording","Observation","sans",0,5,"The recording format: append-only chunks, metadata-only mode, blanked credentials, a reader and a writer over std::io.",["call","journal","wire"]],
+
+  ["pipeline","Session and pipeline","sans",0,2,"The request pipeline as a state machine: all stages, both evaluation passes and partial refusals. handle(input, now) -> outputs.",["wire","wire-edit","selector","rule","trigger","lie","combine","session","call","event","clock"]],
+  ["session","Session and pipeline","sans",0,2,"The state of one session, which its pipeline owns: lifecycle, identity, session key, per-session counters, in-flight calls, response ordering and the stalled state. Also the client context that sessions share.",["field","wire","trigger","clock"]],
+
+  ["rule","Targeting and injection","sans",1,1,"The rule definition, its state, and the immutable snapshot of armed rules in priority order.",["selector","lie","event","trigger"]],
+  ["selector","Targeting and injection","sans",1,1,"Conditions, selectors, includes and scope. Matching against a FieldSource, and an index of selectors by API.",["field"]],
+  ["trigger","Targeting and injection","sans",1,1,"Triggers, counters, dice, budgets and lifetimes.",["clock"]],
+  ["combine","Targeting and injection","sans",0,1,"How lies combine: which conflict, which win by priority, which are shadowed or pre-empted.",["lie"]],
+  ["wire-edit","Targeting and injection","sans",0,2,"Surgery on requests and responses: remove partitions, merge responses, synthesize an error response for any API.",["wire"]],
+  ["lie-refusal","Targeting and injection","sans",0,2,"Refusals for every API, before forwarding and after the response.",["lie","wire-edit"]],
+  ["lie-topology","Targeting and injection","sans",0,7,"Rewrites of Metadata, FindCoordinator and DescribeCluster.",["lie","wire-edit"]],
+  ["lie-data","Targeting and injection","sans",0,7,"Altered, dropped, duplicated, reordered and corrupted records.",["lie","wire-edit","schema"]],
+  ["lie-progress","Targeting and injection","sans",0,7,"Rewrites of watermarks, log start offsets and committed offsets.",["lie","wire-edit"]],
+  ["lie-config","Targeting and injection","sans",0,7,"Rewrites of DescribeConfigs responses.",["lie","wire-edit"]],
+
+  ["field","Vocabulary","sans",1,1,"The field vocabulary: field names, values, and the FieldSource trait that a live call and a recorded call both implement. The shared kernel.",[]],
+  ["clock","Vocabulary","sans",0,1,"A Clock trait, the virtual clock, and instants that do not come from the system.",[]],
+  ["wire","Vocabulary","sans",0,1,"The Kafka codec: frames, headers, lazily decoded bodies and record batches.",[]],
+  ["lie","Vocabulary","sans",1,1,"The lie vocabulary: kind, stage, target, combination class, the Lie trait. Also timing, silence and hang-up.",["field","wire"]],
+  ["event","Vocabulary","sans",1,3,"The event vocabulary, the expansion into consequences, and the capabilities a backend declares.",[]],
+  ["call","Vocabulary","sans",1,2,"The call record: identity, request summary, truth, delivered response, verdict, explanation and timing.",["field","lie","event"]],
+].map(([name,layer,kind,wasm,step,holds,deps]) => ({name,layer,kind,wasm:!!wasm,step,holds,deps}));
+
+const STEPS = ["Rules evaluate against hand-written calls in tests.","The pipeline runs in tests, with partial refusals and explanations.","A proxy that lies.","The UI with live traffic, rules, pads and ⌘K.","Scenarios in files, recordings, and tests in CI.","The broker, alone and behind a proxy.","The remaining lies, hardware and transactions."];
+const KIND = {sans:"sans-IO", io:"IO edge · async", sig:"async signature only", app:"application"};
+
+const STAGES = [
+  [1,"Receive","reads the transport","ClientBytes"],
+  [2,"Decode",null],
+  [3,"Identify",null],
+  [4,"Match",null],
+  [5,"Trigger",null],
+  [6,"Resolve","passes events to the scenario runner","Fire"],
+  [7,"Before forwarding","a delay waits on the clock, a hang-up closes the transport","SetTimer · Close"],
+  [8,"Backend","passes the request on, waits for the answer","Forward"],
+  [9,"After the response","a delay waits on the clock, a hang-up closes the transport","SetTimer · Close"],
+  [10,"Send","writes the transport","Send"],
+  [11,"Emit","publishes on the event bus","Emit"],
+];
+
+/* ── stages ── */
+document.getElementById("stagebar").innerHTML = STAGES.map(([n,name,act,out]) =>
+  `<div class="stage${act?" acts":""}"><span class="n">${n}</span><b>${name}</b>${out?`<code>${out}</code>`:""}<span class="act">${act?"Session "+act+".":"Pipeline only."}</span></div>`
+).join("");
+
+/* ── crate map ── */
+const byName = Object.fromEntries(CRATES.map(c => [c.name, c]));
+const usersOf = n => CRATES.filter(c => c.deps.includes(n)).map(c => c.name);
+const map = document.getElementById("map"), svg = document.getElementById("lines"), insp = document.getElementById("insp");
+let pinned = "pipeline", hovered = null, step = 0;
+
+LAYERS.forEach(([layer, sub], i) => {
+  if (i === 2) {
+    const e = document.createElement("div");
+    e.className = "edge";
+    e.innerHTML = `<span class="up">▲ async · sockets, files, timers, tasks</span><span class="sp" style="flex:1"></span><span class="down">▼ sans-IO · plain function calls, time passed in as an argument</span>`;
+    map.appendChild(e);
+  }
+  const row = document.createElement("div");
+  row.className = "row";
+  row.innerHTML = `<div class="lbl">${layer}${sub?`<small>${sub}</small>`:""}</div><div class="chips">` +
+    CRATES.filter(c => c.layer === layer).map(c =>
+      `<button class="chip ${c.kind}" data-c="${c.name}">${c.name}${c.wasm?'<i class="dot" title="compiles to WebAssembly"></i>':""}</button>`).join("") + `</div>`;
+  map.appendChild(row);
+});
+const chipEl = n => map.querySelector(`.chip[data-c="${n}"]`);
+
+function render() {
+  const cur = hovered || pinned;
+  map.classList.toggle("focus", !!cur);
+  map.classList.toggle("steps", step > 0);
+  map.querySelectorAll(".chip").forEach(el => {
+    const c = byName[el.dataset.c];
+    el.classList.remove("sel","dep","user","off","new");
+    if (step > 0) {
+      if (c.step === null || c.step > step) el.classList.add("off");
+      else if (c.step === step) el.classList.add("new");
+    }
+  });
+  svg.innerHTML = "";
+  if (!cur) { insp.innerHTML = `<p class="none">Hover or click a crate.</p>`; return; }
+  const c = byName[cur], users = usersOf(cur);
+  chipEl(cur).classList.add("sel");
+  c.deps.forEach(d => chipEl(d).classList.add("dep"));
+  users.forEach(u => chipEl(u).classList.add("user"));
+  const box = map.getBoundingClientRect();
+  const pt = (n, top) => { const r = chipEl(n).getBoundingClientRect(); return [r.left - box.left + r.width/2, (top ? r.top : r.bottom) - box.top]; };
+  const mid = n => { const r = chipEl(n).getBoundingClientRect(); return r.top + r.height/2; };
+  const curve = (from, to, cls) => {
+    const down = mid(to) > mid(from) + 4, up = mid(to) < mid(from) - 4;
+    let a, b, d;
+    if (down)      { a = pt(from,false); b = pt(to,true);  const m = (a[1]+b[1])/2; d = `M${a[0]},${a[1]} C${a[0]},${m} ${b[0]},${m} ${b[0]},${b[1]}`; }
+    else if (up)   { a = pt(from,true);  b = pt(to,false); const m = (a[1]+b[1])/2; d = `M${a[0]},${a[1]} C${a[0]},${m} ${b[0]},${m} ${b[0]},${b[1]}`; }
+    else           { a = pt(from,true);  b = pt(to,true);  const h = a[1] - 16;     d = `M${a[0]},${a[1]} C${a[0]},${h} ${b[0]},${h} ${b[0]},${b[1]}`; }
+    const p = document.createElementNS("http://www.w3.org/2000/svg","path");
+    p.setAttribute("d", d); p.setAttribute("fill","none");
+    p.setAttribute("stroke", cls === "dep" ? "#4cb782" : "#8a8f98");
+    p.setAttribute("stroke-width","1.25"); p.setAttribute("stroke-opacity", cls === "dep" ? ".85" : ".55");
+    if (cls !== "dep") p.setAttribute("stroke-dasharray","4 4");
+    svg.appendChild(p);
+  };
+  c.deps.forEach(d => curve(cur, d, "dep"));
+  users.forEach(u => curve(u, cur, "user"));
+  const list = (ns) => ns.length ? `<div class="list">${ns.map(n => `<button data-go="${n}">${n}</button>`).join("")}</div>` : `<p class="none">None.</p>`;
+  insp.innerHTML = `
+    <h3>gaslightmq-${c.name}</h3>
+    <div class="meta">
+      <span class="tag ${c.kind === "app" ? "ext" : c.kind}">${KIND[c.kind]}</span>
+      <span class="tag ext">${c.layer}</span>
+      ${c.wasm ? `<span class="tag ext" style="color:var(--wasm)">WebAssembly</span>` : ""}
+      ${c.step ? `<span class="tag ext">build step ${c.step}</span>` : ""}
+    </div>
+    <p>${c.holds}</p>
+    <h5><i></i>Depends on · ${c.deps.length}</h5>${list(c.deps)}
+    <h5><i class="u"></i>Used by · ${users.length}</h5>${list(users)}`;
+}
+
+map.addEventListener("mouseover", e => { const el = e.target.closest(".chip"); if (el && hovered !== el.dataset.c) { hovered = el.dataset.c; render(); } });
+map.addEventListener("mouseleave", () => { if (hovered) { hovered = null; render(); } });
+map.addEventListener("click", e => { const el = e.target.closest(".chip"); pinned = el ? (pinned === el.dataset.c ? null : el.dataset.c) : null; hovered = null; render(); });
+insp.addEventListener("click", e => { const b = e.target.closest("[data-go]"); if (b) { pinned = b.dataset.go; hovered = null; render(); } });
+addEventListener("resize", render);
+
+/* ── build order ── */
+const seg = document.getElementById("steps"), hint = document.getElementById("stephint");
+seg.innerHTML = `<button data-s="0" class="on">All</button>` + STEPS.map((_, i) => `<button data-s="${i+1}">${i+1}</button>`).join("");
+seg.addEventListener("click", e => {
+  const b = e.target.closest("button"); if (!b) return;
+  step = +b.dataset.s;
+  seg.querySelectorAll("button").forEach(x => x.classList.toggle("on", x === b));
+  hint.textContent = step ? `After step ${step}: ${STEPS[step-1]} New crates have a yellow ring.` : "";
+  if (step) { pinned = null; hovered = null; }
+  render();
+});
+
+render();
+</script>
+</body>
+</html>

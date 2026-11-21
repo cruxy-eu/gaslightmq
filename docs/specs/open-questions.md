@@ -74,6 +74,11 @@ The second part lists the decisions that were settled, with the reason and the s
 - **When do transactions come to the fake broker?**
   They bring "producer fenced" to the Simulated backend,
   and events for a transaction that hangs or times out.
+- **Does a session get its own connections to the real cluster?**
+  The Upstream backend connects with the proxy's own credentials.
+  One upstream connection per session keeps a client's requests in order without extra work.
+  Shared connections need fewer sockets,
+  and one slow call on them holds back other clients.
 
 ## Settled
 
@@ -107,6 +112,15 @@ The second part lists the decisions that were settled, with the reason and the s
 |---|---|---|
 | How far does event emulation go on Upstream? | As far as the overlay can hold all the state: broker down, unresponsive and back, rebalance as a forced rejoin, records expired, committed offset reset, producer fenced. See [capabilities](architecture/backends.md#capabilities). | Anything more needs split routing or epoch translation. |
 | Can a proxy front a fake broker? | Yes. That is how a fake cluster lies: a proxy in front of a [broker](architecture/backends.md#a-broker-never-lies), in one process, without a socket. | A broker never lies, so lies still happen in one place. |
+
+### Runtime
+
+| Question | Decision | Reason |
+|---|---|---|
+| Do crates come in a blocking and an async variant? | No. Logic is sans-IO, and the IO edge is async only. See [the IO edge is async](architecture/crates.md#the-io-edge-is-async). | A state machine has no blocking or async side to choose. A second edge would be a second runtime. |
+| What is a session made of? | A transport and a pipeline. The pipeline holds the session's state, including the rule snapshot. See [parts](domains/session.md#parts). | The transport is the only part that does IO, so everything a rule decides runs in a test without a socket. |
+| Does a session survive a simulated disconnect? | No. A hang-up or a broker that goes down closes the real connection, and the session ends with it. The client context and the shared counters stay. See [disconnects](domains/session.md#disconnects). | The client must see a real close. A reconnect is a new connection, as it is with a real broker. |
+| Is a call to a broker a plain function call? | No. The broker is a state machine that answers under the call ID, at once or later. See [the broker is a state machine too](architecture/crates.md#the-broker-is-a-state-machine-too). | A Fetch that waits for records and a `JoinGroup` that waits for members cannot return at once. |
 
 ### Storage and naming
 

@@ -4,6 +4,22 @@ A session is the runtime of one client connection.
 Every call travels through exactly one session.
 The session holds everything rules need to decide about that call.
 
+## Parts
+
+A session has two parts.
+
+| Part | Holds | Does |
+|---|---|---|
+| **Transport** | The client's connection. | Reads the bytes the client sends, and writes the bytes the client receives. |
+| **Pipeline** | The session's [state](#state), including the snapshot of the armed rules. | Decides what happens to each call. See the [request pipeline](../architecture/request-pipeline.md). |
+
+The pipeline never touches the connection.
+The session tells the pipeline what happened, such as bytes that arrived or an answer from the backend,
+and carries out what the pipeline decides.
+A rule change reaches the session as a new snapshot, and the session hands it to its pipeline.
+
+The [crate layout](../architecture/crates.md#a-session-is-a-transport-and-a-pipeline) describes how the engine runs the two parts.
+
 ## Lifecycle
 
 ```mermaid
@@ -73,10 +89,10 @@ It ends when the last session of the pair has been closed for a while.
 
 ## State
 
-A session keeps this state in memory:
+The session's pipeline keeps this state in memory:
 
 - **Rule snapshot**: the armed rules at this moment.
-  The session swaps in a new snapshot whenever a rule changes.
+  The pipeline swaps in a new snapshot whenever a rule changes.
   A call always uses one consistent snapshot from start to finish.
 - **Session key**: the host, the endpoint,
   and the ordinal of this connection among the connections from that host to that endpoint.
@@ -89,6 +105,27 @@ A session keeps this state in memory:
 
 None of this state is persisted.
 A session dies with its connection.
+
+## Disconnects
+
+A session never outlives its connection.
+A simulated disconnect closes the real connection to the client,
+so it ends the session like any other close.
+
+| What happens | The session |
+|---|---|
+| A [hang-up](lies-and-events.md#lies) fires. | Closes, and records that a lie closed it. |
+| A broker goes down. | Closes, together with every other session on that broker's endpoint. The endpoint refuses new connections until the broker is back. |
+| A silence fires, or the broker is unresponsive. | Stays open and never answers. It closes when the client gives up. |
+
+A client that reconnects gets a new session,
+with a new transport and a new pipeline.
+The pipeline starts with the current snapshot, no in-flight calls, and per-session counters at zero.
+
+Two things outlive the old session, because they live in the engine:
+
+- the [client context](#client-context), so learned fields such as the group still apply,
+- each rule's shared counter and its budget.
 
 ## Dice and counters
 

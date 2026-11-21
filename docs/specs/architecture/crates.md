@@ -17,7 +17,9 @@ The tables leave it out: `selector` is the crate `gaslightmq-selector`.
   Tests drive it with plain function calls.
 - **IO lives at the edge.**
   Only a few crates touch the network, the file system or a runtime.
-  They are thin, and they call the sans-IO crates.
+  They are async and thin, and they call the sans-IO crates.
+  No crate comes in a blocking and an async variant.
+  See [the IO edge is async](#the-io-edge-is-async).
 - **A crate boundary needs a reason.**
   A crate exists because something else reuses it,
   because it keeps a heavy dependency away from the rest,
@@ -46,8 +48,8 @@ flowchart BT
   O["Observation<br/>journal · traffic · index · recording"]
   W["World and backends<br/>backend · virtual-log · world · sim-* · broker · overlay"]
   F["Workspace<br/>environment · workspace"]
-  C["Control<br/>surface · quick-inject · control-api · control-client"]
-  IO["IO edge<br/>listener · engine · host · backend-upstream · workspace-fs · control-server"]
+  C["Control<br/>surface · quick-inject · control-api"]
+  IO["IO edge<br/>listener · engine · host · backend-upstream · schema-registry<br/>workspace-fs · control-server · control-client"]
   A["Applications<br/>gmq · ui · test · testcontainers"]
 
   T --> V
@@ -76,7 +78,8 @@ flowchart BT
 ```
 
 An arrow means "depends on".
-Everything below the IO edge is sans-IO.
+Every crate outside the IO edge is sans-IO.
+The tables list each IO crate next to the domain it serves, and mark it with "This crate does IO".
 
 ## Crates
 
@@ -113,7 +116,7 @@ Every other crate speaks in them.
 
 | Crate | Holds | Depends on |
 |---|---|---|
-| `session` | The [session](../domains/session.md): lifecycle, identity, session key, client context, per-session counters, in-flight calls, response ordering and the stalled state. | `field`, `wire`, `trigger`, `clock` |
+| `session` | The state of one [session](../domains/session.md), which its pipeline owns: lifecycle, identity, session key, per-session counters, in-flight calls, response ordering and the stalled state. Also the client context that sessions share. | `field`, `wire`, `trigger`, `clock` |
 | `pipeline` | The [request pipeline](request-pipeline.md) as a state machine: all stages, both evaluation passes and partial refusals. | `wire`, `wire-edit`, `selector`, `rule`, `trigger`, `lie`, `combine`, `session`, `call`, `event`, `clock` |
 
 ### Scenarios
@@ -135,7 +138,7 @@ Every other crate speaks in them.
 
 | Crate | Holds | Depends on |
 |---|---|---|
-| `backend` | The [backend contract](backends.md#contract) as a trait: answer a request, apply an event, report endpoints. | `wire`, `event`, `clock` |
+| `backend` | The [backend contract](backends.md#contract): the request and answer messages, and the one async trait through which the engine reaches a backend. It holds no logic and needs no runtime. See [the backend seam](#the-backend-seam). | `wire`, `event`, `clock` |
 | `schema` | Record [formats and schemas](../domains/world.md#schemas): encode and decode JSON, Avro and Protobuf, one feature per format. | — |
 | `virtual-log` | [Virtual records](../domains/world.md#virtual-records): the record at a partition and offset as a pure function of the definition, templates, stable batches, and the mapping between offsets and time. | `wire`, `clock`, `schema` |
 | `schema-registry` | The built-in [schema registry](backends.md#schema-registry) and a client for a real one. This crate does IO. | `schema` |
@@ -144,7 +147,7 @@ Every other crate speaks in them.
 | `sim-log` | Produce, Fetch, offsets and idempotent producers against the World. | `world`, `wire` |
 | `sim-group` | Group coordination against the World, for the classic and the consumer protocol. | `world`, `wire`, `clock` |
 | `overlay` | The Upstream [overlay](backends.md#overlay): address translation, emulated events and sessionless Fetch. It rewrites requests and responses, and it opens no connection. | `wire`, `wire-edit`, `event` |
-| `broker` | The broker instance as a state machine: it routes each request to a `sim-*` crate, applies events to the World and owns the virtual clock. It implements the backend contract, so a proxy calls it directly. | `backend`, `world`, `sim-log`, `sim-group`, `clock` |
+| `broker` | The broker instance as a [state machine](#the-broker-is-a-state-machine-too): it routes each request to a `sim-*` crate, applies events to the World and owns the virtual clock. It speaks the messages of the backend contract, so a proxy reaches it without a socket. | `backend`, `world`, `sim-log`, `sim-group`, `clock` |
 | `backend-upstream` | The Upstream backend: connections to the real cluster, with the overlay around them. This crate does IO. | `backend`, `overlay` |
 
 Transactions arrive later as `sim-txn`, next to `sim-log` and `sim-group`.
@@ -165,17 +168,17 @@ Transactions arrive later as `sim-txn`, next to `sim-log` and `sim-group`.
 | `hardware-push2` | The Push 2 mapping: controller messages to surface intents, and rule state back to pad colours. | `surface` |
 | `quick-inject` | The ⌘K sentence parser: text to a rule definition, with completions. | `selector`, `lie`, `rule` |
 | `control-api` | The [control plane](control-plane.md) as types: resources, commands and stream messages. | `call`, `journal`, `rule`, `scenario`, `selector`, `surface`, `world`, `event`, `environment` |
-| `control-client` | A client for the control plane, for native targets and for WebAssembly. | `control-api` |
+| `control-client` | A client for the control plane, for native targets and for WebAssembly. This crate does IO. | `control-api` |
 | `control-server` | The HTTP and WebSocket server in front of the host. This crate does IO. | `host`, `control-api` |
 
 ### Runtime and applications
 
 | Crate | Holds | Depends on |
 |---|---|---|
-| `engine` | The runtime of one proxy: one task per session that drives a pipeline, the rule store, the scenario runner, the event bus, the journal, the recorder and the indexer. This crate does IO. | `pipeline`, `session`, `rule`, `scenario`, `journal`, `traffic`, `index`, `recording`, `backend`, `listener`, `workspace`, `environment`, `clock` |
+| `engine` | The runtime of one proxy: one task per session that owns the transport and drives the pipeline, the rule store, the scenario runner, the event bus, the journal, the recorder and the indexer. This crate does IO. | `pipeline`, `session`, `rule`, `scenario`, `journal`, `traffic`, `index`, `recording`, `backend`, `listener`, `workspace`, `environment`, `clock` |
 | `ui` | The web UI, a Dioxus application. | `control-client`, `surface`, `hardware-push2`, `quick-inject`, `selector`, `call` |
 | `listener` | Kafka on a socket: accept connections, frame bytes, and drive whatever handles a connection. A proxy's pipeline and a broker alone both sit behind it. This crate does IO. | `wire`, `clock` |
-| `host` | One process with several [environments](storage.md#several-environments-in-one-process): it starts and stops proxies and brokers, and shares the workspace and the control plane between them. This crate does IO. | `engine`, `broker`, `listener`, `backend-upstream`, `workspace-fs`, `environment` |
+| `host` | One process with several [environments](storage.md#several-environments-in-one-process): it starts and stops proxies and brokers, runs the task that drives each broker, and shares the workspace and the control plane between them. This crate does IO. | `engine`, `broker`, `listener`, `backend-upstream`, `workspace-fs`, `environment` |
 | `test` | The test library: create a proxy or a broker, activate a scenario, assert on the recording. | `host`, `control-client` |
 | `testcontainers` | A container module that starts GaslightMQ next to a test. | `control-client` |
 | `gaslightmq` | The facade crate: `Proxy`, `Broker` and `Host`, and re-exports of what library users need. | The public crates |
@@ -220,6 +223,10 @@ The sketch shows the shape of the interface, not its final names.
   and merges the refusals when `BackendAnswered` arrives.
 - Shared counters and budgets are handles to atomics that the engine passes in.
   The pipeline increments them, and it still does no IO.
+- The [client context](../domains/session.md#client-context) is shared the same way.
+  The engine owns the contexts and passes in a handle to them.
+  At the Identify stage, the pipeline takes the context of its `client.id` and `host` from that handle.
+  It reads learned fields from the context, and writes what it learns.
 
 The same interface serves three drivers:
 
@@ -231,15 +238,105 @@ The same interface serves three drivers:
 
 Replay makes every recording a regression test for the pipeline.
 
-A proxy in front of a broker needs no socket between the two.
-The engine takes the pipeline's `Forward` and calls the `broker` crate directly,
-and the broker's answer comes back as `BackendAnswered`.
-Both state machines run on one virtual clock, so a run is reproducible down to the order of events.
-
 The other sans-IO crates follow the same pattern.
 `scenario` consumes call records and time, and returns arm and disarm commands.
 `overlay` and the `sim-*` crates consume a request and return a response.
 `session` consumes headers and returns identity changes.
+
+## A session is a transport and a pipeline
+
+The engine runs every [session](../domains/session.md) as one task.
+The task owns the session's two parts.
+
+| Part | Comes from | Does |
+|---|---|---|
+| **Transport** | `listener`, part of the IO edge | Reads the client's bytes, and writes the bytes the client receives. |
+| **Pipeline** | `pipeline`, sans-IO | Holds the session's state from the `session` crate, and decides what happens to each call. |
+
+The task waits for the next thing to happen,
+reports it to the pipeline as an `Input`,
+and performs every `Output` the pipeline returns.
+
+| What happens | Input | Comes from |
+|---|---|---|
+| The client sends bytes. | `ClientBytes` | The transport |
+| The backend answers a call. | `BackendAnswered` | The [backend](#the-backend-seam) |
+| A timer runs out. | `TimerFired` | The engine's clock |
+| A rule changes. | `SnapshotPublished` | The rule store |
+| The client closes the connection. | `ClientClosed` | The transport |
+
+The pipeline keeps the snapshot it received last.
+A call that is in flight finishes on the snapshot it started with,
+and the next call uses the new one.
+
+The session ends when its transport closes, whoever closed it.
+The task ends, and the pipeline and its state go with it.
+A client that reconnects gets a new task, a new transport and a new pipeline.
+See [disconnects](../domains/session.md#disconnects).
+
+## The broker is a state machine too
+
+`broker` is a state machine for one simulated cluster.
+It has the shape of the pipeline:
+requests, events and fired timers go in, and answers and timers come out.
+
+A broker cannot always answer at once.
+A Fetch waits for records until its maximum wait ends,
+and a `JoinGroup` waits for the other members of the group.
+The broker therefore answers each request under its call ID,
+in the same step or in a later one.
+
+A proxy in front of a broker needs no socket between the two.
+The engine takes the pipeline's `Forward` and hands the request to the broker in memory.
+The broker's answer returns to the pipeline as `BackendAnswered`.
+Both state machines run on one virtual clock, so a run is reproducible down to the order of events.
+
+## The IO edge is async
+
+The crates that do IO are async.
+On a native target they run on Tokio.
+
+| Crate | The IO it does |
+|---|---|
+| `listener` | Client sockets. |
+| `backend-upstream` | Sockets to the real cluster. |
+| `schema-registry` | The HTTP interface of the built-in registry, and requests to a real one. |
+| `workspace-fs` | Files, and watching them. |
+| `control-server` | HTTP and WebSocket. |
+| `control-client` | HTTP and WebSocket, from a native target or from the browser. |
+| `engine` | Tasks, timers and channels. It opens no socket itself. |
+| `host` | One task per instance. |
+
+- **The edge waits, and a sans-IO crate decides.**
+  A task in the edge waits for a socket, a timer or a channel.
+  Then it calls a state machine with what happened.
+  That call never waits, so it runs inside the task.
+- **Time comes from the clock.**
+  The engine turns a `SetTimer` into a wait on its [clock](README.md#clock).
+  With a virtual clock, the wait ends when the clock reaches the instant,
+  however fast the clock runs.
+- **The edge exists once.**
+  A sans-IO crate has no blocking or async side, so it needs no second variant.
+  The edge has no blocking variant either.
+  A caller that is not async, such as a blocking test, runs the edge on a runtime of its own.
+
+### The backend seam
+
+The engine reaches its backend through one async trait in the `backend` crate.
+The engine hands over a request under a call ID,
+and the answer arrives later under the same ID.
+
+The trait is a signature without logic.
+`backend` needs no runtime, so it stays outside the IO edge.
+It is the only crate there with an async signature.
+
+| Backend | Behind the trait |
+|---|---|
+| Upstream | `backend-upstream`: connections to the real cluster, with the sans-IO `overlay` around them. |
+| Simulated | A task in `host` that owns the `broker` state machine. The task feeds the broker the requests of every session, and waits for the timers the broker sets. |
+
+The same task drives a broker that runs alone.
+The listener then stands in front of the broker, without an engine.
 
 ## Lies as crates
 
@@ -281,6 +378,8 @@ It reuses the engine's own logic instead of a second implementation in the front
 | `control-api`, `control-client` | Talk to the engine. |
 
 These crates stay free of threads, files and sockets.
+`control-client` is the exception.
+It is part of the IO edge, and in the browser it reaches the engine through the browser's own HTTP and WebSocket.
 The same `surface` and `hardware-push2` crates later serve a hardware bridge in the CLI,
 which sends the same intents through `control-client`.
 

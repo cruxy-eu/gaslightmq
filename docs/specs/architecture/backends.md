@@ -23,6 +23,18 @@ Lies happen in the pipeline, in front of and behind the backend.
 Whatever a backend answers is the truth:
 rules match on it, and explanations compare the delivered response against it.
 
+A backend takes each request under its call ID, and answers under the same ID.
+The answer does not have to come at once:
+a Fetch waits for records, and a `JoinGroup` waits for the other members of the group.
+Until the answer arrives, the call stays [in flight](../domains/session.md#state) in its session.
+
+| Backend | Does IO | How the engine reaches it |
+|---|---|---|
+| Upstream | Yes, async | Over connections to the real cluster. |
+| Simulated | No | In memory. The broker is a state machine. |
+
+See [the backend seam](crates.md#the-backend-seam).
+
 ## Capabilities
 
 | Capability | Upstream | Simulated |
@@ -52,6 +64,7 @@ The check includes each event's [consequences](../domains/lies-and-events.md#con
 ## Upstream
 
 The Upstream backend forwards calls to a real cluster.
+It does IO, and it is async like the rest of the [IO edge](crates.md#the-io-edge-is-async).
 It discovers the brokers from the bootstrap address,
 and runs one listener per real broker.
 The [environment](storage.md#environments) says which ports the listeners use
@@ -144,8 +157,10 @@ The UI shows these effects next to the preset.
 ## Simulated
 
 The Simulated backend is a broker in the same process.
-The proxy hands each request to the broker as a function call.
+The engine hands each request to the broker in memory.
 No socket sits between them.
+The broker is a sans-IO state machine.
+It answers at once, or later when a wait ends.
 
 The broker answers from its World.
 It implements the Kafka protocol against the World's state:

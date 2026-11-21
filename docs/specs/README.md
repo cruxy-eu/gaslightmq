@@ -73,3 +73,5 @@ The first version leaves these parts out:
 
 - [`mockups/proxy-ui-v2.html`](../../mockups/proxy-ui-v2.html): interactive UI mockups.
   Open the file in a browser.
+- [`architecture/diagram.html`](architecture/diagram.html): an interactive diagram of the session, the IO edge and the crates.
+  Open the file in a browser.

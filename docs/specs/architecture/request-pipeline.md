@@ -35,10 +35,33 @@ flowchart TB
 | **5 · Trigger** | Evaluates each matching rule's trigger: increments the rule's counter, rolls its die, checks its time window. A rule that fires takes from its budget, and does not fire when the budget is empty. |
 | **6 · Resolve** | Hands the events of firing rules to the scenario runner. Lets lies that do not conflict through. Resolves conflicts with the snapshot's priority order: the live set first, then the scenario's mode. Marks the losers as shadowed or pre-empted. |
 | **7 · Before forwarding** | Applies lies of the before-forwarding [stage](../domains/lies-and-events.md#stage). A silence or a hang-up ends the call. A delay holds the request back. A refusal removes its partitions from the request. A request rewrite changes the request. |
-| **8 · Backend** | Forwards what is left of the request to the real cluster, or hands it to the broker as a function call. The response is the truth. The backend does not see a request whose partitions were all refused. |
+| **8 · Backend** | Forwards what is left of the request to the real cluster, or hands it to the broker in memory. The response is the truth. The backend does not see a request whose partitions were all refused. |
 | **9 · After the response** | Merges the refusals of stage 7 into the response. Runs the response pass. Applies rewrites and after-response refusals per target. Then applies modifiers: the summed delay and the maximum throttle. A hang-up at this stage closes the connection instead of sending. |
 | **10 · Send** | Writes the delivered response to the client, in the order the client sent its requests. |
 | **11 · Emit** | Publishes the call event with request, truth, delivered response, verdict and explanation. |
+
+## Who does the IO
+
+The pipeline is a state machine, and it does no IO.
+It decides, and the [session](../domains/session.md#parts) around it acts.
+The stages describe the journey of one call.
+At these points the session acts for the pipeline:
+
+| Stage | The pipeline | The session |
+|---|---|---|
+| 1 · Receive | Takes the bytes it is given. | Reads them from the transport. |
+| 6 · Resolve | Hands out the events of firing rules. | Passes them to the scenario runner. |
+| 7 and 9 · Delay | Asks for a timer, and continues when the timer fires. | Waits on the engine's clock. |
+| 7 and 9 · Hang-up | Asks to close the connection. | Closes the transport, which ends the session. |
+| 8 · Backend | Hands out the request, and continues when the answer arrives. | Passes the request to the backend, and waits for the answer. |
+| 10 · Send | Hands out the bytes of the response. | Writes them to the transport. |
+| 11 · Emit | Hands out the call event. | Publishes it on the event bus. |
+
+The pipeline never waits.
+While one call waits for a timer or for the backend,
+the pipeline takes the next request of the same connection, within the rules of [ordering](#ordering).
+
+The [crate layout](crates.md#the-pipeline-is-sans-io) shows the interface between the two.
 
 ## Partial refusals
 

@@ -65,7 +65,7 @@ Workspace, Environment, Secret and Scratch file belong to [storage](../architect
 | **Secret reference** | The path of a file, or the name of an environment variable, that holds a secret. Definitions hold references, never values. |
 | **Scope** | A selector over connection fields, shown in the UI as *who* a rule applies to. |
 | **Selector** | A named predicate over fields that describes a set of calls. |
-| **Session** | The runtime of one client connection. |
+| **Session** | The runtime of one client connection: its transport and its pipeline. |
 | **Step** | One part of a Sequence scenario. It arms rules and ends on a condition. |
 | **Template** | A file that describes one record of a topic, with placeholders the broker fills per partition and offset. |
 | **Target** | The part of a call a lie changes: the partitions the selector matched, or the whole call. |
