@@ -121,7 +121,7 @@ Then the next step starts, and the rules the previous step armed disarm.
 | `after` | After that much time on the [engine's clock](../architecture/README.md#clock), measured from the start of the step. |
 | *(none)* | When someone advances or deactivates the scenario. |
 
-A counted `until` is a [budget](rules.md#lifetime).
+A counted `until` is a [budget](rules.md#budgets).
 `firings: 3` lets the rule fire exactly three times,
 even when several connections match it at the same moment.
 

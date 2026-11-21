@@ -267,6 +267,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "gaslightmq_trigger"
+version = "0.1.0"
+dependencies = [
+ "gaslightmq_clock",
+ "gaslightmq_kernel",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "gaslightmq_wire"
 version = "0.1.0"
 dependencies = [
