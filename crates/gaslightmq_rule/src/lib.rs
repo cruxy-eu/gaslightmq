@@ -17,10 +17,9 @@
 //! | [`ArmedRule`] | A resolved rule with the live state of one arming. It also fires by hand. |
 //! | [`HandFiring`] | What firing a rule by hand did. |
 //! | [`Snapshot`] | The armed rules at one moment, in priority order. It evaluates calls. |
-//! | [`Priority`] | Where a rule stands among the armed rules. |
 //! | [`PassEvaluation`] | What one evaluation pass gave for one call: every rule that matched. |
 //! | [`RuleEvaluation`] | One of those rules: its target, what its trigger rolled, and what it fired. |
-//! | [`Effect`] | What a rule that fired does: its lie on its target, or its incidents. |
+//! | [`FiredAction`] | What a rule that fired does: its lie on its target, or its incidents. |
 //!
 //! The [`prelude`] holds all of them, and the error of each.
 //!
@@ -194,13 +193,13 @@ mod state;
 
 pub use action::{Action, ActionRef};
 pub use armed::{ArmedRule, HandFiring, HandFiringError};
-pub use evaluation::{Effect, PassEvaluation, RuleEvaluation};
+pub use evaluation::{FiredAction, PassEvaluation, RuleEvaluation};
 pub use name::{PresetName, PresetNameError, RuleName, RuleNameError};
 pub use preset::{Preset, PresetSet, PresetSetError};
 pub use resolved::{ResolvedRule, ResolvedRuleError};
 pub use rule::Rule;
 pub use set::{RuleSet, RuleSetError};
-pub use snapshot::{Priority, Snapshot, SnapshotError};
+pub use snapshot::{Snapshot, SnapshotError};
 pub use state::{RuleState, RuleStateError};
 
 /// Every item of this crate.
@@ -220,8 +219,8 @@ pub use state::{RuleState, RuleStateError};
 pub mod prelude {
     #[doc(no_inline)]
     pub use crate::{
-        Action, ActionRef, ArmedRule, Effect, HandFiring, HandFiringError, PassEvaluation, Preset, PresetName,
-        PresetNameError, PresetSet, PresetSetError, Priority, ResolvedRule, ResolvedRuleError, Rule, RuleEvaluation,
-        RuleName, RuleNameError, RuleSet, RuleSetError, RuleState, RuleStateError, Snapshot, SnapshotError,
+        Action, ActionRef, ArmedRule, FiredAction, HandFiring, HandFiringError, PassEvaluation, Preset, PresetName,
+        PresetNameError, PresetSet, PresetSetError, ResolvedRule, ResolvedRuleError, Rule, RuleEvaluation, RuleName,
+        RuleNameError, RuleSet, RuleSetError, RuleState, RuleStateError, Snapshot, SnapshotError,
     };
 }

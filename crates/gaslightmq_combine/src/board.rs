@@ -107,7 +107,7 @@ impl Draft {
                 return;
             }
         }
-        losses.push((to, Target::Parts(BTreeSet::from([part.clone()]))));
+        losses.push((to, Target::Parts(PartSet::one(part.clone()))));
     }
 }
 

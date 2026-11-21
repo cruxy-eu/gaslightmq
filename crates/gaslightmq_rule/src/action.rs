@@ -13,7 +13,7 @@ use crate::PresetName;
 ///
 /// An action is a definition.
 /// It does not say what it lies about, nor which partition an incident without a subject changes:
-/// the call that fires the rule does, and [`Effect`](crate::Effect) holds the answer.
+/// the call that fires the rule does, and [`FiredAction`](crate::FiredAction) holds the answer.
 ///
 /// ```
 /// use gaslightmq_incident::prelude::*;

@@ -8,14 +8,13 @@
 //!
 //! | Type | Is |
 //! |---|---|
-//! | [`Priority`] | Where a lie stands in the priority order the caller provides. |
 //! | [`Claim`] | What a lie claims of a call: its class, its stage, and its target or its aspect. |
 //! | [`FiredLie`] | A lie that fired: an identity, a priority and a claim. |
 //! | [`RequestPass`] | The lies of the request pass, combined. It says what happens before forwarding. |
 //! | [`Combination`] | The lies of the whole call, combined. |
 //! | [`Fate`] | What became of one lie: where it applied, and where it was shadowed or pre-empted. |
 //! | [`Loss`] | A target a lie lost, and the lie it lost it to. |
-//! | [`Effect`] | What the lies that apply do to the call at one stage. |
+//! | [`StageEffect`] | What the lies that apply do to the call at one stage. |
 //! | [`Winners`] | Which lie holds each target, among lies that conflict there. |
 //! | [`Delay`] | How long the call waits at one stage. |
 //!
@@ -61,8 +60,8 @@
 //! let on = |part: &Part| Target::of_parts([part.clone()]).expect("one part");
 //!
 //! // Three rules fired on one Fetch. The pipeline hands over each lie with its rule's place in the priority order.
-//! let delay = LieDefinition::from(TimingLie::new().with_delay(TimeSpan::from_millis(750))).on(on(&three))?;
-//! let flap = LieDefinition::from(RefusalLie::new(ErrorCode::NOT_LEADER_OR_FOLLOWER)).on(on(&three))?;
+//! let delay = LieDefinition::from(TimingLie::new().with_delay(TimeSpan::from_millis(750))).on(on(&three));
+//! let flap = LieDefinition::from(RefusalLie::new(ErrorCode::NOT_LEADER_OR_FOLLOWER)).on(on(&three));
 //! let stale = Claim::Rewrite { aspect: Aspect::HighWatermark, target: on(&four) };
 //!
 //! let request = RequestPass::of([
@@ -159,13 +158,11 @@ mod claim;
 mod combination;
 mod effect;
 mod fate;
-mod priority;
 
 pub use claim::{Claim, ClaimError, FiredLie};
 pub use combination::{Combination, RequestPass};
-pub use effect::{Delay, Effect, Winners};
+pub use effect::{Delay, StageEffect, Winners};
 pub use fate::{Fate, Loss};
-pub use priority::Priority;
 
 /// Every type of this crate, with the error of a claim.
 ///
@@ -181,7 +178,5 @@ pub use priority::Priority;
 /// ```
 pub mod prelude {
     #[doc(no_inline)]
-    pub use crate::{
-        Claim, ClaimError, Combination, Delay, Effect, Fate, FiredLie, Loss, Priority, RequestPass, Winners,
-    };
+    pub use crate::{Claim, ClaimError, Combination, Delay, Fate, FiredLie, Loss, RequestPass, StageEffect, Winners};
 }

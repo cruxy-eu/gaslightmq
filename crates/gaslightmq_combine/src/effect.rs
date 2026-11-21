@@ -7,7 +7,7 @@ use gaslightmq_lie::prelude::*;
 
 /// Which lie won each target, among lies that conflict there.
 ///
-/// An [`Effect`] holds one for the refusals of its stage, and one for every aspect that a rewrite changes.
+/// An [`StageEffect`] holds one for the refusals of its stage, and one for every aspect that a rewrite changes.
 /// Either one lie holds the whole call, or lies hold parts of it, and never both:
 /// a lie on the whole call is one target, so it wins or loses all of it.
 ///
@@ -232,7 +232,7 @@ const fn sum(one: TimeSpan, other: TimeSpan) -> TimeSpan {
 /// # Ok::<(), PartError>(())
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Effect<Id> {
+pub struct StageEffect<Id> {
     pub(crate) stage: Stage,
     pub(crate) terminal: Option<Id>,
     pub(crate) refusals: Winners<Id>,
@@ -241,7 +241,7 @@ pub struct Effect<Id> {
     pub(crate) throttle: TimeSpan,
 }
 
-impl<Id> Effect<Id> {
+impl<Id> StageEffect<Id> {
     /// The effect of no lie at `stage`.
     pub(crate) const fn nothing(stage: Stage) -> Self {
         Self {
@@ -419,7 +419,7 @@ mod tests {
 
     #[test]
     fn the_effect_of_no_lie_changes_nothing() {
-        let effect = Effect::<u32>::nothing(Stage::AfterResponse);
+        let effect = StageEffect::<u32>::nothing(Stage::AfterResponse);
 
         assert!(effect.changes_nothing());
         assert_eq!(effect.stage(), Stage::AfterResponse);

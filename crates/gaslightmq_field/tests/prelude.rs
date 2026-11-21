@@ -119,6 +119,7 @@ mod next_to_the_others {
             Box::new(FieldValueError::Topic {
                 error: TopicNameError::Empty,
             }),
+            Box::new(PartSet::new([]).unwrap_err()),
         ];
 
         errors
@@ -180,6 +181,7 @@ fn the_prelude_names_the_error_of_every_type() {
             "topic name is empty",
             "topic partition \"x\" does not have the form topic/partition",
             "topic name is empty",
+            "a target needs at least one part",
         ]
     );
 }

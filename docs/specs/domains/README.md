@@ -36,6 +36,7 @@ Workspace, Environment, Secret and Scratch file belong to [storage](../architect
 | **Consequence** | What the engine adds to an incident, such as leaderless partitions when a broker goes down. |
 | **Counter** | The number of calls a rule matched, kept per rule or per session. |
 | **Dice** | Seeded rolls for chance triggers, derived from the seed, the rule and the match number. |
+| **Effect** | What lies do to a call: end it, refuse it, rewrite it or make it wait. One lie asks for an effect, and the lies that apply at one stage have a stage effect together. |
 | **Emulation** | How the Upstream backend fakes an incident inside its overlay. |
 | **Environment** | A named definition of instances that run together: a proxy, a broker, or a proxy in front of a broker. A process runs one or several. |
 | **Explanation** | The record of which rules matched, rolled, fired, applied, or were shadowed or pre-empted for a call. |
@@ -55,6 +56,7 @@ Workspace, Environment, Secret and Scratch file belong to [storage](../architect
 | **Pre-empted** | A lie that fired but had nothing left to change, because another lie ended the call or replaced its target. |
 | **Proxy** | The instance that stands in front of a cluster or a broker. It runs sessions, rules and scenarios, and it is the only place where lies happen. |
 | **Preset** | A named, reusable lie or incident with its parameters, such as "Delay 1 s". |
+| **Priority** | Where a rule stands among the armed rules. When two lies conflict, the lie of the rule with the higher priority wins. |
 | **Recording** | A captured stretch of calls across sessions. |
 | **Rule** | A named selector, action and trigger, with a lifetime. |
 | **Shadowed** | A lie that fired but lost a conflict to a rule with a higher priority. |

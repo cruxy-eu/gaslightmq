@@ -1,7 +1,7 @@
 use gaslightmq_field::prelude::*;
 use gaslightmq_lie::prelude::*;
 
-use crate::{Claim, FiredLie, Priority};
+use crate::{Claim, FiredLie};
 
 /// A target that a lie lost, and the lie it lost it to.
 ///

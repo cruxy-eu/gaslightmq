@@ -741,14 +741,3 @@ fn an_identity_can_be_anything_the_caller_tells_its_lies_apart_with() {
     assert_eq!(call.before_forwarding().terminal(), Some(&RuleId(9)));
     assert_eq!(call.fate_of(&RuleId(7)).unwrap().shadowed()[0].to(), &RuleId(9));
 }
-
-#[test]
-fn a_lie_on_no_part_applies_nowhere() {
-    // `Target::of_parts` never yields this target, and the variant is open to whoever builds it by hand.
-    let nowhere = Target::Parts(std::collections::BTreeSet::new());
-    let call = combine([lie("Nowhere", 0, stale_watermark(nowhere))]);
-
-    assert_eq!(fate(&call, "Nowhere"), "nothing");
-    assert!(!call.fate_of(&"Nowhere").unwrap().counts());
-    assert!(call.after_response().changes_nothing());
-}

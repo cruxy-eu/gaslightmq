@@ -38,7 +38,7 @@ mod next_to_std_the_kernel_and_the_fields {
         let hang_up = HangUpLie::new().at(Stage::AfterResponse);
         let definition = LieDefinition::from(refusal);
         let class: CombinationClass = definition.class();
-        let targeted: TargetedLie = definition.on(Target::Call).unwrap();
+        let targeted: TargetedLie = definition.on(Target::Call);
 
         vec![
             LieKind::HangUp.to_string(),
@@ -72,7 +72,6 @@ mod next_to_std_the_kernel_and_the_fields {
             Box::new(TimingLieError::ThrottleTooLong {
                 throttle: TimeSpan::from_secs(3_000_000),
             }),
-            Box::new(TargetedLieError::EmptyTarget),
             Box::new(TargetedLieError::PartsNotAllowed { kind: LieKind::Timing }),
         ];
 
@@ -115,7 +114,6 @@ fn the_prelude_names_the_error_of_every_type() {
             "no aspect is called \"x\"",
             "a jitter of 200ms is longer than the delay of 0s",
             "a throttle of 50000m is longer than 2147483647ms, the longest that Kafka can tell a client",
-            "a target needs at least one part",
             "timing always targets the whole call",
         ]
     );

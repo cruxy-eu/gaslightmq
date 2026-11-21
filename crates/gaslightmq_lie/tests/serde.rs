@@ -56,7 +56,7 @@ fn parts(texts: &[&str]) -> Target {
 }
 
 fn on(lie: LieDefinition, target: Target) -> TargetedLie {
-    lie.on(target).unwrap()
+    lie.on(target)
 }
 
 #[test]

@@ -122,7 +122,7 @@ Every other crate speaks in them.
 | `field` | The [field vocabulary](../domains/targeting.md#fields): field names, their typed values, and the `FieldSource` trait that a live call and a recorded call both implement. Also the parts of a call, and the [target](../domains/lies-and-incidents.md#target) that a match yields. Every district of the town plan [shares this vocabulary](../townplan/README.md#targeting-is-a-shared-kernel). | `kernel`, `clock` |
 | `clock` | The [clock](README.md#clock): a `Clock` trait, the virtual clock, and instants that do not come from the system. | — |
 | `wire` | The Kafka codec: frames, headers, lazily decoded bodies and record batches. | — |
-| `lie` | The [lie](../domains/lies-and-incidents.md#lies) vocabulary: kind, stage, combination class and aspect, the definition of every lie kind as data, and a lie with the [target](../domains/lies-and-incidents.md#target) it applies to. It holds no behaviour. See [lies as crates](#lies-as-crates). | `field`, `kernel`, `clock` |
+| `lie` | The [lie](../domains/lies-and-incidents.md#lies) vocabulary: kind, stage, combination class, aspect and priority, the definition of every lie kind as data, and a lie with the [target](../domains/lies-and-incidents.md#target) it applies to. It holds no behaviour. See [lies as crates](#lies-as-crates). | `field`, `kernel`, `clock` |
 | `incident` | The [incident](../domains/lies-and-incidents.md#incidents) vocabulary, the expansion into consequences, and the support a backend declares for each kind of incident. | `kernel` |
 | `call` | The [call](../domains/observation.md#call) record: identity, request summary, truth, delivered response, verdict, explanation and timing. | `field`, `lie`, `incident` |
 
@@ -135,7 +135,7 @@ Every other crate speaks in them.
 | `rule` | The rule definition, the [preset](../domains/lies-and-incidents.md#presets), the rule's state, and the immutable snapshot of armed rules in priority order. The snapshot [evaluates a call](../domains/rules.md#evaluating-one-call): for each pass and each matching rule, the target, what the trigger rolled, and the lie or the incidents it fired. | `selector`, `lie`, `incident`, `trigger`, `field`, `kernel`, `clock` |
 | `combine` | [How lies combine](../domains/lies-and-incidents.md#how-lies-combine): which lies conflict, which win by priority, which are shadowed or pre-empted, across [both evaluation passes](request-pipeline.md#two-evaluation-passes). Also what the lies that apply do to the call at each stage: the refusals and rewrites per target, the summed delay and the maximum throttle. | `lie`, `field`, `clock` |
 | `wire_edit` | Surgery on requests and responses: remove partitions, merge responses, synthesize an error response for any API, map topic IDs to names. | `wire` |
-| `lie_api` | The contract between the pipeline and a lie kind: the `Lie` trait, and the effect a lie asks the pipeline for. Also the behaviour of timing, silence and hang-up. See [lies as crates](#lies-as-crates). | `lie`, `wire` |
+| `lie_api` | The contract between the pipeline and a lie kind: the `Lie` trait, and the effect that one lie asks the pipeline for. Also the behaviour of timing, silence and hang-up. See [lies as crates](#lies-as-crates). | `lie`, `wire` |
 | `lie_refusal` | Refusals for every API, before forwarding and after the response. | `lie`, `lie_api`, `wire_edit` |
 | `lie_topology` | Rewrites of Metadata, `FindCoordinator` and `DescribeCluster`. | `lie`, `lie_api`, `wire_edit` |
 | `lie_data` | Altered, dropped, duplicated, reordered and corrupted records. | `lie`, `lie_api`, `wire_edit`, `schema` |
@@ -377,7 +377,7 @@ A lie has a definition and a behaviour, and they live in different crates.
 | Part | Crate | Holds | Reaches `wire` |
 |---|---|---|---|
 | Definition | `lie` | Every lie kind as data: its parameters, its stage and its `serde` mapping. | No |
-| Contract | `lie_api` | The `Lie` trait, and the effect a lie asks the pipeline for. | Yes |
+| Contract | `lie_api` | The `Lie` trait, and the effect that one lie asks the pipeline for. | Yes |
 | Behaviour | One crate per kind, listed below | What a kind does to a request or a response. | Yes |
 
 Rules, call records, the workspace and the control plane carry lie definitions.

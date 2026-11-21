@@ -10,6 +10,7 @@
 //! | [`Stage`] | Where in a call a lie acts: before forwarding, or after the response. |
 //! | [`CombinationClass`] | How a lie combines with the other lies on a call. |
 //! | [`Aspect`] | What a rewrite changes about its target. |
+//! | [`Priority`] | Where a lie stands when lies conflict: the position of its rule among the armed rules. |
 //! | [`LieDefinition`] | A lie as a rule's action or a preset writes it. |
 //! | [`RefusalLie`], [`TimingLie`], [`HangUpLie`] | The parameters of a refusal, a timing lie and a hang-up. |
 //! | [`TargetedLie`] | A lie with the target it applies to: one line of a verdict. |
@@ -38,7 +39,7 @@
 //!
 //! // Both rules match a Fetch, and their selector matched one of its partitions.
 //! let matched = Target::of_parts(["orders.eu/3".parse()?]).expect("one part");
-//! let verdict = [slow.on(matched.clone())?, flap.on(matched)?];
+//! let verdict = [slow.on(matched.clone()), flap.on(matched)];
 //!
 //! // The refusal changes that partition, and the delay holds the whole call back.
 //! assert_eq!(verdict[0].to_string(), "+750 ms");
@@ -66,9 +67,9 @@
 //! | [`CombinationClass`] | [`CombinationClassError`] | No combination class has that name. |
 //! | [`Aspect`] | [`AspectError`] | No aspect has that name. |
 //! | [`TimingLie`] | [`TimingLieError`] | The jitter is longer than the delay, or the throttle is longer than Kafka can tell a client. |
-//! | [`TargetedLie`] | [`TargetedLieError`] | The target has no part, or it has parts and the lie always targets the whole call. |
+//! | [`TargetedLie`] | [`TargetedLieError`] | A line of a verdict has parts, and the lie always targets the whole call. |
 //!
-//! Code that builds a lie only meets [`StageError::NotAllowed`] and [`TargetedLieError::EmptyTarget`].
+//! Code that builds a lie only meets [`StageError::NotAllowed`].
 //! Every other error comes from reading a text or, with the `serde` feature, a map.
 //! A map of the wrong shape is no error of a type, and reading says so itself:
 //! a key is missing, unknown, there twice or of another kind of lie, or the kind has no definition yet.
@@ -142,6 +143,7 @@ mod definition;
 #[cfg(feature = "serde")]
 mod form;
 mod kind;
+mod priority;
 mod stage;
 mod targeted;
 
@@ -149,6 +151,7 @@ pub use aspect::{Aspect, AspectError};
 pub use class::{CombinationClass, CombinationClassError};
 pub use definition::{HangUpLie, LieDefinition, RefusalLie, TimingLie, TimingLieError};
 pub use kind::{LieKind, LieKindError};
+pub use priority::Priority;
 pub use stage::{Stage, StageError};
 pub use targeted::{TargetedLie, TargetedLieError};
 
@@ -172,6 +175,6 @@ pub mod prelude {
     #[doc(no_inline)]
     pub use crate::{
         Aspect, AspectError, CombinationClass, CombinationClassError, HangUpLie, LieDefinition, LieKind, LieKindError,
-        RefusalLie, Stage, StageError, TargetedLie, TargetedLieError, TimingLie, TimingLieError,
+        Priority, RefusalLie, Stage, StageError, TargetedLie, TargetedLieError, TimingLie, TimingLieError,
     };
 }

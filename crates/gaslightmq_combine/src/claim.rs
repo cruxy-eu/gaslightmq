@@ -3,8 +3,6 @@ use std::fmt;
 use gaslightmq_field::prelude::*;
 use gaslightmq_lie::prelude::*;
 
-use crate::Priority;
-
 /// What a lie claims of a call: everything that combining needs to know about it.
 ///
 /// A claim is a lie reduced to its [`CombinationClass`], with what that class combines on.
@@ -28,7 +26,7 @@ use crate::Priority;
 ///
 /// let partition = Target::of_parts(["orders.eu/3".parse()?]).expect("one part");
 ///
-/// let refusal = TargetedLie::new(RefusalLie::new(ErrorCode::NOT_LEADER_OR_FOLLOWER), partition.clone())?;
+/// let refusal = TargetedLie::new(RefusalLie::new(ErrorCode::NOT_LEADER_OR_FOLLOWER), partition.clone());
 /// let claim = Claim::try_from(&refusal)?;
 /// assert_eq!(claim.class(), CombinationClass::Refusal);
 /// assert_eq!(claim.stage(), Stage::BeforeForwarding);
@@ -182,7 +180,7 @@ impl std::error::Error for ClaimError {}
 /// The identity is whatever the caller tells its lies apart with, such as the ID of the rule that fired.
 /// Combining never looks inside it.
 /// The [`Fate`](crate::Fate) of the lie carries it back,
-/// and so does every [`Loss`](crate::Loss) and [`Effect`](crate::Effect) that names the lie.
+/// and so does every [`Loss`](crate::Loss) and [`StageEffect`](crate::StageEffect) that names the lie.
 ///
 /// ```
 /// use gaslightmq_combine::prelude::*;
@@ -190,7 +188,7 @@ impl std::error::Error for ClaimError {}
 /// use gaslightmq_lie::prelude::*;
 ///
 /// // The rule "Blackhole" fired, and it is the first rule of the chain.
-/// let silence = LieDefinition::Silence.on(Target::Call)?;
+/// let silence = LieDefinition::Silence.on(Target::Call);
 /// let blackhole = FiredLie::new("Blackhole", Priority::HIGHEST, Claim::try_from(&silence)?);
 ///
 /// assert_eq!(blackhole.id(), &"Blackhole");
@@ -245,7 +243,7 @@ mod tests {
     }
 
     fn claim(lie: impl Into<LieDefinition>, target: Target) -> Claim {
-        Claim::try_from(&lie.into().on(target).unwrap()).unwrap()
+        Claim::try_from(&lie.into().on(target)).unwrap()
     }
 
     #[test]

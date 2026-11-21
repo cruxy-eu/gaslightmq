@@ -3,7 +3,7 @@ use gaslightmq_field::prelude::*;
 use gaslightmq_lie::prelude::*;
 
 use crate::board::{Board, Draft, Entry, Holders, How, Pass, Round, in_priority_order};
-use crate::{Claim, Delay, Effect, Fate, FiredLie, Loss};
+use crate::{Claim, Delay, Fate, FiredLie, Loss, StageEffect};
 
 /// The lies of the request pass, combined: what happens to the call before forwarding.
 ///
@@ -31,8 +31,8 @@ use crate::{Claim, Delay, Effect, Fate, FiredLie, Loss};
 /// let three = Target::of_parts(["orders.eu/3".parse()?]).expect("one part");
 ///
 /// // A chain of "Delay 1 s" above "Refuse the 3rd Produce": the rule's position is its priority.
-/// let delay = LieDefinition::from(TimingLie::new().with_delay(TimeSpan::from_secs(1))).on(three.clone())?;
-/// let refusal = LieDefinition::from(RefusalLie::new(ErrorCode::NOT_LEADER_OR_FOLLOWER)).on(three.clone())?;
+/// let delay = LieDefinition::from(TimingLie::new().with_delay(TimeSpan::from_secs(1))).on(three.clone());
+/// let refusal = LieDefinition::from(RefusalLie::new(ErrorCode::NOT_LEADER_OR_FOLLOWER)).on(three.clone());
 ///
 /// let request = RequestPass::of([
 ///     FiredLie::new("Delay 1 s", Priority::new(0), Claim::try_from(&delay)?),
@@ -55,13 +55,13 @@ pub struct RequestPass<Id> {
     entries: Vec<Entry<Id>>,
     board: Board,
     drafts: Vec<Draft>,
-    before: Effect<Id>,
+    before: StageEffect<Id>,
 }
 
 impl<Id: Clone> RequestPass<Id> {
     /// Combines the lies that fired in the request pass.
     ///
-    /// The lies come in any order, and their [`Priority`](crate::Priority) orders them.
+    /// The lies come in any order, and their [`Priority`] orders them.
     pub fn of(fired: impl IntoIterator<Item = FiredLie<Id>>) -> Self {
         let entries: Vec<Entry<Id>> = fired
             .into_iter()
@@ -86,9 +86,9 @@ impl<Id: Clone> RequestPass<Id> {
 
     /// What the lies do to the call before forwarding.
     ///
-    /// When it names a [terminal lie](Effect::terminal), the call ends here:
+    /// When it names a [terminal lie](StageEffect::terminal), the call ends here:
     /// the backend never sees the request, and the response pass does not run.
-    pub const fn before_forwarding(&self) -> &Effect<Id> {
+    pub const fn before_forwarding(&self) -> &StageEffect<Id> {
         &self.before
     }
 
@@ -145,7 +145,7 @@ impl<Id: Clone> RequestPass<Id> {
                     .iter()
                     .map(|entry| Draft::lost(How::PreEmpted, terminal, entry.lie.claim().target().clone())),
             );
-            (drafts, Effect::nothing(Stage::AfterResponse))
+            (drafts, StageEffect::nothing(Stage::AfterResponse))
         } else {
             let seated = first.refusals.settled(&entries);
             let drafts: Vec<Draft> = entries
@@ -209,8 +209,8 @@ impl<Id: Clone> RequestPass<Id> {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Combination<Id> {
     fates: Vec<Fate<Id>>,
-    before: Effect<Id>,
-    after: Effect<Id>,
+    before: StageEffect<Id>,
+    after: StageEffect<Id>,
 }
 
 impl<Id> Combination<Id> {
@@ -229,7 +229,7 @@ impl<Id> Combination<Id> {
 
     /// What the lies did to the call before forwarding.
     /// It is the effect the [`RequestPass`] gave.
-    pub const fn before_forwarding(&self) -> &Effect<Id> {
+    pub const fn before_forwarding(&self) -> &StageEffect<Id> {
         &self.before
     }
 
@@ -239,7 +239,7 @@ impl<Id> Combination<Id> {
     /// The refusals [before forwarding](Self::before_forwarding) merge into the response as well.
     /// A part that was refused before forwarding keeps that refusal,
     /// also when a refusal of the response pass holds the whole call here: that one replaces the truth of the rest.
-    pub const fn after_response(&self) -> &Effect<Id> {
+    pub const fn after_response(&self) -> &StageEffect<Id> {
         &self.after
     }
 }
@@ -261,15 +261,15 @@ fn delay<Id>(entries: &[Entry<Id>], modifiers: impl IntoIterator<Item = usize>) 
 }
 
 /// The effect before forwarding of what the request pass decided.
-fn before_forwarding<Id: Clone>(entries: &[Entry<Id>], board: &Board) -> Effect<Id> {
+fn before_forwarding<Id: Clone>(entries: &[Entry<Id>], board: &Board) -> StageEffect<Id> {
     let acts_now = |lie: &usize| entries[*lie].is_settled();
     let id = |lie: &usize| acts_now(lie).then(|| entries[*lie].lie.id().clone());
 
-    Effect {
+    StageEffect {
         terminal: board.terminal.as_ref().and_then(id),
         refusals: board.refusals.winners.filter_map(id),
         delay: delay(entries, board.modifiers.iter().copied().filter(acts_now)),
-        ..Effect::nothing(Stage::BeforeForwarding)
+        ..StageEffect::nothing(Stage::BeforeForwarding)
     }
 }
 
@@ -277,12 +277,12 @@ fn before_forwarding<Id: Clone>(entries: &[Entry<Id>], board: &Board) -> Effect<
 ///
 /// The throttle also counts the modifiers that applied before forwarding, in the `first` round.
 /// A call that ends after the response has no answer to carry a throttle, so its throttle is zero.
-fn after_response<Id: Clone>(entries: &[Entry<Id>], first: &Board, second: &Board) -> Effect<Id> {
+fn after_response<Id: Clone>(entries: &[Entry<Id>], first: &Board, second: &Board) -> StageEffect<Id> {
     let id = |lie: &usize| Some(entries[*lie].lie.id().clone());
     let held_back = first.modifiers.iter().copied().filter(|&lie| entries[lie].is_settled());
     let answered = second.terminal.is_none();
 
-    Effect {
+    StageEffect {
         terminal: second.terminal.as_ref().and_then(id),
         refusals: second.refusals.winners.filter_map(id),
         rewrites: second
@@ -299,7 +299,7 @@ fn after_response<Id: Clone>(entries: &[Entry<Id>], first: &Board, second: &Boar
             .map(TimingLie::throttle)
             .max()
             .unwrap_or(TimeSpan::ZERO),
-        ..Effect::nothing(Stage::AfterResponse)
+        ..StageEffect::nothing(Stage::AfterResponse)
     }
 }
 
@@ -351,7 +351,7 @@ mod tests {
     use std::collections::{BTreeMap, BTreeSet};
 
     use super::*;
-    use crate::{Priority, Winners};
+    use crate::Winners;
 
     const BEFORE: Stage = Stage::BeforeForwarding;
     const AFTER: Stage = Stage::AfterResponse;
@@ -510,7 +510,7 @@ mod tests {
     }
 
     /// The effect at `stage` that the fates tell.
-    fn effect_by_fate(call: &Combination<usize>, stage: Stage) -> Effect<usize> {
+    fn effect_by_fate(call: &Combination<usize>, stage: Stage) -> StageEffect<usize> {
         let applies = |fate: &&Fate<usize>| fate.counts();
         let timings = |stage: Option<Stage>| {
             call.fates()
@@ -543,7 +543,7 @@ mod tests {
             .filter(|(_, winners)| !winners.is_empty())
             .collect();
 
-        Effect {
+        StageEffect {
             stage,
             terminal: terminals.first().copied(),
             refusals: winners_by_fate(call, stage, |claim| claim.class() == CombinationClass::Refusal),

@@ -4,7 +4,7 @@ use gaslightmq_clock::TimeSpan;
 use gaslightmq_field::prelude::*;
 use gaslightmq_kernel::prelude::*;
 
-use crate::{Aspect, CombinationClass, LieKind, Stage, TargetedLie, TargetedLieError};
+use crate::{Aspect, CombinationClass, LieKind, Stage, TargetedLie};
 
 /// A refusal: the client is told that the request failed.
 ///
@@ -366,7 +366,7 @@ impl fmt::Display for HangUpLie {
 ///
 /// // The rule matched one partition of a Produce.
 /// let matched = Target::of_parts(["orders.eu/3".parse()?]).expect("one part");
-/// assert_eq!(lie.on(matched)?.to_string(), "NOT_LEADER_OR_FOLLOWER on orders.eu/3");
+/// assert_eq!(lie.on(matched).to_string(), "NOT_LEADER_OR_FOLLOWER on orders.eu/3");
 /// # Ok::<(), Box<dyn std::error::Error>>(())
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -420,11 +420,7 @@ impl LieDefinition {
 
     /// The lie on what a selector matched.
     /// See [`TargetedLie::new`].
-    ///
-    /// # Errors
-    ///
-    /// [`TargetedLieError::EmptyTarget`] when `target` is a set of parts without a part.
-    pub fn on(self, target: Target) -> Result<TargetedLie, TargetedLieError> {
+    pub fn on(self, target: Target) -> TargetedLie {
         TargetedLie::new(self, target)
     }
 }

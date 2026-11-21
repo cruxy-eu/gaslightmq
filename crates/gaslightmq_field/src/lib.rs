@@ -15,6 +15,7 @@
 //! | [`Part`] | One piece of a call that a lie can change on its own: a topic or a topic partition. |
 //! | [`PartFields`] | A part as a source shows it, with the truth of that part. |
 //! | [`Target`] | What a selector matched: some parts of a call, or the whole call. |
+//! | [`PartSet`] | The parts of a target: one or more. |
 //! | [`Fields`] | The fields of one call as plain data. It is the simplest source. |
 //!
 //! ```
@@ -85,7 +86,8 @@
 //!
 //! # Errors
 //!
-//! Every type that reads a text has an error of its own, named after it: [`EndpointError`], [`AcksError`], [`PartError`].
+//! Every type that checks its value has an error of its own, named after it:
+//! [`EndpointError`], [`AcksError`], [`PartError`], [`PartSetError`].
 //! The error holds only what can go wrong with that value.
 //! [`FieldValueError`] is the error of [`Field::parse_value`].
 //! It has a variant for each field, with the error of the type that the field holds.
@@ -132,7 +134,7 @@ pub use connection::{
 };
 pub use field::{Field, FieldError, FieldGroup, FieldGroupError};
 pub use fields::Fields;
-pub use part::{Part, PartError, PartFields, Target};
+pub use part::{Part, PartError, PartFields, PartSet, PartSetError, Target};
 pub use request::{Acks, AcksError, ApiVersion, ApiVersionError};
 pub use response::{Latency, LatencyError, Outcome, OutcomeError};
 pub use source::{FieldSource, Reading};
@@ -158,6 +160,6 @@ pub mod prelude {
         ClientHostError, ClientSoftware, ClientSoftwareError, ConnectionNumber, ConnectionNumberError, Endpoint,
         EndpointError, Field, FieldError, FieldGroup, FieldGroupError, FieldSource, FieldValue, FieldValueError,
         FieldValues, Fields, Latency, LatencyError, LearnedValue, Origin, Outcome, OutcomeError, Part, PartError,
-        PartFields, Reading, Target,
+        PartFields, PartSet, PartSetError, Reading, Target,
     };
 }
