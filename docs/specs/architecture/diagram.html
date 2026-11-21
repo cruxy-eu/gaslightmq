@@ -420,7 +420,7 @@ const CRATES = [
   ["field","Vocabulary","sans",1,1,"The field vocabulary: field names, their typed values, and the FieldSource trait that a live call and a recorded call both implement. Also the parts of a call, and the target that a match yields. Every district of the town plan shares this vocabulary.",["kernel","clock"]],
   ["clock","Vocabulary","sans",1,1,"A Clock trait, the virtual clock, and instants that do not come from the system.",[]],
   ["wire","Vocabulary","sans",0,1,"The Kafka codec: frames, headers, lazily decoded bodies and record batches.",[]],
-  ["lie","Vocabulary","sans",1,1,"The lie vocabulary: kind, stage and combination class, and the definition of every lie kind as data. No behaviour.",["field"]],
+  ["lie","Vocabulary","sans",1,1,"The lie vocabulary: kind, stage, combination class and aspect, the definition of every lie kind as data, and a lie with the target it applies to. No behaviour.",["field","kernel","clock"]],
   ["incident","Vocabulary","sans",1,1,"The incident vocabulary, the expansion into consequences, and the support a backend declares for each kind of incident.",["kernel"]],
   ["call","Vocabulary","sans",1,2,"The call record: identity, request summary, truth, delivered response, verdict, explanation and timing.",["field","lie","incident"]],
 ].map(([name,layer,kind,wasm,step,holds,deps]) => ({name,layer,kind,wasm:!!wasm,step,holds,deps}));

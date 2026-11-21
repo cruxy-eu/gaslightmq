@@ -1,0 +1,20 @@
+[package]
+name = "gaslightmq_lie"
+version.workspace = true
+edition.workspace = true
+
+[lints]
+workspace = true
+
+[features]
+serde = ["dep:serde", "gaslightmq_clock/serde", "gaslightmq_field/serde", "gaslightmq_kernel/serde"]
+
+[dependencies]
+gaslightmq_clock.workspace = true
+gaslightmq_field.workspace = true
+gaslightmq_kernel.workspace = true
+serde = { workspace = true, optional = true }
+
+[dev-dependencies]
+serde = { workspace = true, features = ["derive"] }
+serde_json.workspace = true
