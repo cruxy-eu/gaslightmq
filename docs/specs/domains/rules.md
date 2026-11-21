@@ -29,6 +29,14 @@ lifetime: until disarmed
 `scope` is shorthand for extra conditions over connection fields.
 The rule's effective selector is the selector **and** the scope.
 
+A rule needs a name, a selector and an action.
+`selector: {}` has no conditions, so it matches every call.
+`scope`, `trigger`, `lifetime` and `dice` are optional.
+
+A rule name has at least one character.
+It does not start or end with white space, and it holds no control character such as a line break.
+Upper and lower case differ.
+
 ### Where rules live
 
 - A **workspace rule** is a definition in the [workspace](../architecture/storage.md#workspace).
@@ -48,6 +56,40 @@ See [lies and incidents](lies-and-incidents.md).
 - An **incident** changes the world.
   The call that fired the rule passes through unchanged,
   unless another rule lies about it.
+
+A rule whose selector tests a [response field](targeting.md#response-fields) waits for the truth.
+Its lie must act after the response, and a rule with a lie before forwarding is an error.
+An incident has no stage, so such a rule can fire one.
+
+### The subject of an incident
+
+An incident changes a subject: a partition, a topic, a broker, a group or a transactional producer.
+An action names the subject, or leaves it to the call that fires the rule.
+
+```yaml
+action: { incident: leader-moves, partition: orders.eu/3 }
+```
+
+```yaml
+action: { incident: leader-moves }
+```
+
+A subject that the action leaves out comes from the call:
+
+| Subject | Comes from |
+|---|---|
+| Partitions and topics | The rule's [target](lies-and-incidents.md#target) on this call. |
+| Broker | The broker endpoint the call arrived on. |
+| Groups | The `group` field. |
+| Transactional IDs | The `transactional.id` field. |
+
+Every subject the call offers gives one incident.
+A rule that targets three partitions of a Produce moves three leaders.
+
+A call can offer no subject at all: a `Heartbeat` names no partition.
+The rule's trigger still says yes, and the incident does not happen.
+The call counts as a match, the firing goes back to the [budget](#budgets),
+and the explanation names the missing subject.
 
 ## Trigger
 
@@ -106,6 +148,9 @@ Firing a rule by hand skips its trigger once.
 Any armed rule can fire by hand, whatever its trigger.
 
 - A rule with an **incident** fires the incident immediately.
+  An incident that takes its [subject](#the-subject-of-an-incident) from the call cannot fire by hand,
+  because there is no call.
+  The hand firing is an error, and it takes nothing from the rule's budget.
 - A rule with a **lie** has no call to lie about yet.
   It lies on the next call its selector matches, once.
   That call can come from any session, and it gets a match number like every other match.
@@ -160,6 +205,7 @@ scenario seed
 - The roll does not depend on the order in which connections open.
 - Renaming a rule in the UI writes the old name as the rule's `dice` key,
   so a rename does not change which calls the rule hits.
+  A rule that has a `dice` key already keeps it.
 
 Without an active scenario, the workspace's default seed takes the scenario seed's place.
 
@@ -266,6 +312,9 @@ stateDiagram-v2
 Workspace rules load disarmed.
 A scenario, a step or a person arms them.
 
+The diagram shows every change there is.
+Arming an armed rule is not one of them: disarm the rule first to reset it.
+
 Arming a rule resets its counters, its budget and its time window.
 Changing a parameter of an armed rule resets nothing.
 A budget keeps what calls spent, and takes the new number.
@@ -287,3 +336,7 @@ For each call, the session:
 
 Rules never see each other directly.
 Only priority decides between them.
+
+The session evaluates against a snapshot of the armed rules.
+The snapshot holds each rule with its selector and its preset resolved, in priority order,
+so a call looks up no name.
