@@ -196,6 +196,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "gaslightmq_event"
+version = "0.1.0"
+dependencies = [
+ "gaslightmq_kernel",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "gaslightmq_kafka_client_api"
 version = "0.1.0"
 dependencies = [
