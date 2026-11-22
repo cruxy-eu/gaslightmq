@@ -10,6 +10,7 @@ members = [
     "crates/gaslightmq_lie",
     "crates/gaslightmq_lie_api",
     "crates/gaslightmq_lie_refusal",
+    "crates/gaslightmq_listener",
     "crates/gaslightmq_pipeline",
     "crates/gaslightmq_rule",
     "crates/gaslightmq_selector",
