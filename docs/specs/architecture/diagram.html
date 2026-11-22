@@ -361,8 +361,8 @@ const LAYERS = [
 const CRATES = [
   ["gmq","Applications","app",0,5,"The binary: gmq proxy, gmq broker, gmq start and gmq run.",["host","control_server"]],
   ["gaslightmq","Applications","app",0,null,"The facade crate: Proxy, Broker and Host, and re-exports of what library users need. Depends on the public crates.",[]],
-  ["test","Applications","app",0,5,"The test library: create a proxy or a broker, activate a scenario, assert on the recording.",["host","control_client"]],
-  ["testcontainers","Applications","app",0,null,"A container module that starts GaslightMQ next to a test.",["control_client"]],
+  ["test","Applications","app",0,5,"The test library: starts a proxy, a broker, or a proxy in front of a broker inside the test's own process, on free ports, and hands the test the addresses its clients connect to. The test then activates a scenario and asserts on the recording.",["host","control_client"]],
+  ["testcontainers","Applications","app",0,5,"A container module: starts the GaslightMQ image next to a test, with the workspace the test hands over, waits until the instance is ready, and hands the test the addresses its clients connect to.",["control_client"]],
   ["kafka_client_api","Applications","app",0,null,"What a Kafka client offers to a test, whichever client it is: producer, consumer and admin traits, one trait per protocol API, and a raw client that sends one request at a fixed version.",["wire"]],
   ["kafka_client_native","Applications","app",0,null,"Our own Kafka client behind those traits: follows partition leaders, negotiates API versions, and reports every failure as an error.",["kafka_client_api","wire"]],
   ["ui","Applications","app",1,4,"The web UI, a Dioxus application. It reaches the engine only through the control plane.",["control_api","control_client","surface","hardware_push2"]],

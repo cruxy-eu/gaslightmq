@@ -214,8 +214,8 @@ Transactions arrive later as `sim_txn`, next to `sim_log` and `sim_group`.
 | `ui` | The web UI, a Dioxus application. It reaches the engine only through the control plane. | `control_api`, `control_client`, `surface`, `hardware_push2` |
 | `listener` | Kafka on a socket: accept connections, frame bytes, and drive whatever handles a connection. A proxy's pipeline and a broker alone both sit behind it. This crate does IO. | `wire`, `clock` |
 | `host` | One process with several [environments](storage.md#several-environments-in-one-process): it starts and stops proxies and brokers, runs the task that drives each broker, and shares the workspace and the control plane between them. This crate does IO. | `engine`, `broker`, `listener`, `backend_upstream`, `workspace_fs`, `environment`, `quick_inject` |
-| `test` | The test library: create a proxy or a broker, activate a scenario, assert on the recording. | `host`, `control_client` |
-| `testcontainers` | A container module that starts GaslightMQ next to a test. | `control_client` |
+| `test` | The test library: it starts a proxy, a broker, or a proxy in front of a broker inside the test's own process, on free ports, and hands the test the addresses its clients connect to. The test then activates a scenario and asserts on the recording. See [instances in a test](#instances-in-a-test). | `host`, `control_client` |
+| `testcontainers` | A container module: it starts the GaslightMQ image next to a test, with the workspace the test hands over, waits until the instance is ready, and hands the test the addresses its clients connect to. See [instances in a test](#instances-in-a-test). | `control_client` |
 | `kafka_client_api` | What a Kafka client offers to a test, whichever client it is: the producer, consumer and admin traits, one trait per protocol API, and a raw client that sends one request at a fixed version. This crate does IO. | `wire` |
 | `kafka_client_native` | Our own Kafka client behind those traits: it follows partition leaders, negotiates API versions, and reports every failure as an error. This crate does IO. | `kafka_client_api`, `wire` |
 | `gaslightmq` | The facade crate: `Proxy`, `Broker` and `Host`, and re-exports of what library users need. | The public crates |
@@ -474,6 +474,25 @@ the dependency closures of `control_api` and `ui` never reach `kafka-protocol`.
 Two missing edges keep it that way.
 `lie` does not depend on `wire`, and `control_api` does not depend on `world`.
 
+## Instances in a test
+
+Two crates start GaslightMQ for a test.
+`test` starts it inside the test's own process, and `testcontainers` starts it in a container.
+
+| A test needs | `test` | `testcontainers` |
+|---|---|---|
+| An instance | A proxy, a broker, or a proxy in front of a broker, inside the test's own process. | A container from the GaslightMQ image, at the version the test names. It starts the [environments](storage.md#environments) the test names. |
+| Definitions | The workspace the test hands over. | The workspace the test hands over. The crate puts it into the container before the process starts. |
+| An address | Every listener takes a free port, so tests run side by side. The crate hands out the addresses the test's clients connect to. | The crate hands out the addresses under which the test reaches the Kafka endpoints and the control plane. |
+| A moment to begin | The listeners accept connections from the moment the test holds the instance. | The crate waits until the process has started its environments and their listeners accept connections. |
+
+A cluster of several brokers needs no instances of its own.
+One broker simulates a whole cluster, and its [World](../domains/world.md) says how many broker nodes the cluster has.
+A proxy in front of that broker gives the test such a cluster behind a proxy.
+
+From there, a test works the same way with both crates:
+it activates a scenario, runs its clients and [asserts on the recording](control-plane.md#tests).
+
 ## Features
 
 - Every crate with definition types has a `serde` feature.
@@ -491,6 +510,11 @@ The crates arrive in the order the [first version](../README.md#first-version) n
 | 2 | `wire_edit`, `lie_api`, `lie_refusal`, `session`, `call`, `pipeline` | The pipeline runs in tests, with partial refusals and explanations. |
 | 3 | `environment`, `backend`, `overlay`, `backend_upstream`, `listener`, `engine` | A proxy that lies. |
 | 4 | `host`, `control_api`, `control_server`, `control_client`, `traffic`, `index`, `surface`, `quick_inject`, `ui` | The UI with live traffic, rules, pads and ⌘K. |
-| 5 | `journal`, `scenario`, `workspace`, `workspace_fs`, `recording`, `test`, `gmq` | Scenarios in files, recordings, and tests in CI. |
+| 5 | `journal`, `scenario`, `workspace`, `workspace_fs`, `recording`, `test`, `testcontainers`, `gmq` | Scenarios in files, recordings, and tests in CI. |
 | 6 | `schema`, `schema_registry`, `virtual_log`, `world`, `sim_log`, `sim_group`, `broker`, `world_seed` | The broker, alone and behind a proxy. |
 | 7 | `lie_topology`, `lie_data`, `lie_progress`, `lie_config`, `hardware_push2`, `sim_txn` | The remaining lies, hardware and transactions. |
+
+`test` and `testcontainers` arrive in step 5.
+`testcontainers` needs the binary for its image, and both need the workspace files.
+Until step 6, the instance they start is a proxy in front of a real cluster.
+From step 6 on, they start a broker too.
