@@ -2,7 +2,8 @@ use std::collections::BTreeMap;
 use std::fmt;
 
 use gaslightmq_lie::prelude::*;
-use gaslightmq_wire::{Request, Response};
+use gaslightmq_wire::Response;
+use gaslightmq_wire_edit::EditableRequest;
 
 use crate::{Effect, HangUp, Lie, LieError, Silence, Timing};
 
@@ -26,6 +27,7 @@ use crate::{Effect, HangUp, Lie, LieError, Silence, Timing};
 /// use gaslightmq_lie_api::prelude::*;
 /// use gaslightmq_wire::Request;
 /// use gaslightmq_wire::messages::HeartbeatRequest;
+/// use gaslightmq_wire_edit::prelude::*;
 ///
 /// // Every build tells timing, silence and hang-up. This one leaves the refusal out.
 /// let lies = Lies::of_every_build();
@@ -33,7 +35,8 @@ use crate::{Effect, HangUp, Lie, LieError, Silence, Timing};
 /// assert!(!lies.tells(LieKind::Refusal));
 ///
 /// // The pipeline asks without naming the kind.
-/// let request = Request::new(4, 7, Some("order-ingest"), &HeartbeatRequest::default())?;
+/// let heartbeat = Request::new(4, 7, Some("order-ingest"), &HeartbeatRequest::default())?;
+/// let request = EditableRequest::decode(&heartbeat, &TopicNames::new())?;
 /// let hang_up = LieDefinition::from(HangUpLie::new()).on(Target::Call);
 /// let effect = lies.before_forwarding(&hang_up, &request)?;
 /// assert_eq!(effect.instruction(), Instruction::Close);
@@ -103,7 +106,7 @@ impl Lies {
     /// - [`LieError::InstructionNotAllowed`] when the behaviour asks for something that the class of `lie` does not allow.
     ///   Lies combine by their class before the pipeline asks, so such an effect would break what combining decided.
     /// - Every error of the behaviour itself.
-    pub fn before_forwarding(&self, lie: &TargetedLie, request: &Request) -> Result<Effect, LieError> {
+    pub fn before_forwarding(&self, lie: &TargetedLie, request: &EditableRequest) -> Result<Effect, LieError> {
         let effect = self.behaviour_of(lie)?.before_forwarding(lie, request)?;
         allowed(lie, Stage::BeforeForwarding, effect)
     }
@@ -120,7 +123,7 @@ impl Lies {
     pub fn after_response(
         &self,
         lie: &TargetedLie,
-        request: &Request,
+        request: &EditableRequest,
         response: &Response,
     ) -> Result<Effect, LieError> {
         let effect = self.behaviour_of(lie)?.after_response(lie, request, response)?;
@@ -194,7 +197,9 @@ mod tests {
     use gaslightmq_clock::TimeSpan;
     use gaslightmq_field::prelude::*;
     use gaslightmq_kernel::prelude::*;
+    use gaslightmq_wire::Request;
     use gaslightmq_wire::messages::{HeartbeatRequest, HeartbeatResponse};
+    use gaslightmq_wire_edit::TopicNames;
 
     use super::*;
     use crate::Instruction;
@@ -210,21 +215,22 @@ mod tests {
             self.kind
         }
 
-        fn before_forwarding(&self, _: &TargetedLie, _: &Request) -> Result<Effect, LieError> {
+        fn before_forwarding(&self, _: &TargetedLie, _: &EditableRequest) -> Result<Effect, LieError> {
             Ok(self.effect.clone())
         }
 
-        fn after_response(&self, _: &TargetedLie, _: &Request, _: &Response) -> Result<Effect, LieError> {
+        fn after_response(&self, _: &TargetedLie, _: &EditableRequest, _: &Response) -> Result<Effect, LieError> {
             Ok(self.effect.clone())
         }
     }
 
-    fn heartbeat() -> Request {
-        Request::new(4, 7, Some("order-ingest"), &HeartbeatRequest::default()).unwrap()
+    fn heartbeat() -> EditableRequest {
+        let request = Request::new(4, 7, Some("order-ingest"), &HeartbeatRequest::default()).unwrap();
+        EditableRequest::decode(&request, &TopicNames::new()).unwrap()
     }
 
-    fn truth(request: &Request) -> Response {
-        request.response(&HeartbeatResponse::default()).unwrap()
+    fn truth(request: &EditableRequest) -> Response {
+        request.request().response(&HeartbeatResponse::default()).unwrap()
     }
 
     fn refusal() -> TargetedLie {
@@ -389,7 +395,7 @@ mod tests {
         let lies = Lies::new()
             .with(Asks {
                 kind: LieKind::Refusal,
-                effect: Effect::Forward(request.clone()),
+                effect: Effect::Forward(request.request().clone()),
             })
             .unwrap();
 

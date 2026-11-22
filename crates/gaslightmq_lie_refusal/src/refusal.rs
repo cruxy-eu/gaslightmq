@@ -1,6 +1,6 @@
 use gaslightmq_lie::prelude::*;
 use gaslightmq_lie_api::prelude::*;
-use gaslightmq_wire::{Api, Request, Response};
+use gaslightmq_wire::{Api, Response};
 use gaslightmq_wire_edit::prelude::*;
 
 use crate::{RefusedRequest, RefusedRequestError};
@@ -8,6 +8,7 @@ use crate::{RefusedRequest, RefusedRequestError};
 /// The behaviour of a refusal: the client is told that the request failed.
 ///
 /// It tells every [`RefusalLie`], on a request of every API that `gaslightmq_wire` has messages for.
+/// The pipeline hands it the request decoded, so it decodes none itself.
 /// The engine registers it next to the kinds of every build.
 ///
 /// | Asked | The refusal refuses | It asks to |
@@ -29,11 +30,13 @@ use crate::{RefusedRequest, RefusedRequestError};
 /// use gaslightmq_lie_refusal::prelude::*;
 /// use gaslightmq_wire::Request;
 /// use gaslightmq_wire::messages::{HeartbeatRequest, HeartbeatResponse};
+/// use gaslightmq_wire_edit::prelude::*;
 ///
 /// let lies = Lies::of_every_build().with(Refusal)?;
 ///
 /// // A rule refuses a Heartbeat, so the consumer believes that its group rebalances.
-/// let request = Request::new(4, 7, Some("analytics-etl"), &HeartbeatRequest::default())?;
+/// let heartbeat = Request::new(4, 7, Some("analytics-etl"), &HeartbeatRequest::default())?;
+/// let request = EditableRequest::decode(&heartbeat, &TopicNames::new())?;
 /// let rebalance = LieDefinition::from(RefusalLie::new(ErrorCode::REBALANCE_IN_PROGRESS)).on(Target::Call);
 ///
 /// // The backend never sees the Heartbeat.
@@ -53,8 +56,7 @@ use crate::{RefusedRequest, RefusedRequestError};
 /// | What is wrong | The error |
 /// |---|---|
 /// | The lie is of another kind. | [`LieError::OtherKind`] |
-/// | `gaslightmq_wire` has no messages for the API. | [`LieError::ApiNotSupported`] |
-/// | The request or the response does not decode. | [`LieError::Unreadable`] |
+/// | The response does not decode. | [`LieError::Unreadable`] |
 /// | The request to forward or the response does not encode. | [`LieError::Unwritable`] |
 /// | The refusal targets parts that the request does not name, as on an API without parts. | [`LieError::PartsNotInRequest`] |
 /// | The refusal targets the whole call, and the response has no place for an error code. | [`LieError::NoPlaceForError`] |
@@ -62,26 +64,23 @@ use crate::{RefusedRequest, RefusedRequestError};
 ///
 /// # Topics by ID
 ///
-/// The contract hands a behaviour the request, and no names of topics.
-/// This behaviour therefore knows no topic by its ID.
-/// On a version that names topics by ID alone, a refusal of the whole call is told as on any other,
-/// and a refusal of parts fails, because the request names none of them.
-/// A [`RefusedRequest`] takes a request that someone decoded with the names, and has no such limit.
+/// The contract hands a behaviour the request as the pipeline decoded it, with the topics it knows by ID.
+/// A Fetch that names `orders.eu` by its ID therefore has `orders.eu/3` as a part, and a refusal of that part is told.
+/// A topic with an unknown ID is no part, and a refusal that targets it [cannot be told](LieError::PartsNotInRequest).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub struct Refusal;
 
 impl Refusal {
     /// `request` with what `lie` refuses of it.
-    fn refused(lie: &TargetedLie, request: &Request) -> Result<RefusedRequest, LieError> {
+    fn refused(lie: &TargetedLie, request: &EditableRequest) -> Result<RefusedRequest, LieError> {
         let LieDefinition::Refusal(refusal) = lie.lie() else {
             return Err(LieError::OtherKind {
                 tells: LieKind::Refusal,
                 lie: lie.lie().kind(),
             });
         };
-        let untold = |error| Self::untold(request.api(), error);
-        let asked = EditableRequest::decode(request, &TopicNames::new()).map_err(|error| untold(error.into()))?;
-        RefusedRequest::new(asked, lie.target(), refusal.error).map_err(untold)
+        RefusedRequest::new(request.clone(), lie.target(), refusal.error)
+            .map_err(|error| Self::untold(request.api(), error))
     }
 
     /// Why the refusal of a request of `api` could not be told, in the words of the contract.
@@ -107,8 +106,8 @@ impl Refusal {
                     answered_api,
                     answered_correlation_id,
                 },
-                // The messages of the API are unknown.
-                // A refused request also rules out that nothing failed, and surgery has no other failure today.
+                // A decoded request has messages, and a refused request rules out that nothing failed.
+                // Surgery has no other failure today.
                 _ => LieError::ApiNotSupported { kind, api },
             },
         }
@@ -123,7 +122,7 @@ impl Lie for Refusal {
     /// Asks to answer the call without the backend, or to forward what the refusal leaves of the request.
     ///
     /// See [`RefusedRequest::before_forwarding`].
-    fn before_forwarding(&self, lie: &TargetedLie, request: &Request) -> Result<Effect, LieError> {
+    fn before_forwarding(&self, lie: &TargetedLie, request: &EditableRequest) -> Result<Effect, LieError> {
         Self::refused(lie, request)?
             .before_forwarding()
             .map_err(|error| Self::untold(request.api(), error))
@@ -134,7 +133,12 @@ impl Lie for Refusal {
     /// The pipeline asks it of a refusal after the response, and again of a refusal that forwarded the rest of its request.
     /// Both get the same answer: the error stands on every refused part, also on the ones the backend never saw.
     /// See [`RefusedRequest::after_response`].
-    fn after_response(&self, lie: &TargetedLie, request: &Request, response: &Response) -> Result<Effect, LieError> {
+    fn after_response(
+        &self,
+        lie: &TargetedLie,
+        request: &EditableRequest,
+        response: &Response,
+    ) -> Result<Effect, LieError> {
         Self::refused(lie, request)?
             .after_response(response)
             .map(Effect::Answer)

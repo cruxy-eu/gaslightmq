@@ -1,0 +1,350 @@
+//! The request pipeline of one connection, as a state machine.
+
+use std::sync::Arc;
+
+use gaslightmq_call::prelude::*;
+use gaslightmq_clock::{Duration, Instant};
+use gaslightmq_lie::Stage;
+use gaslightmq_rule::Snapshot;
+use gaslightmq_session::prelude::*;
+use gaslightmq_wire::{FrameDecoder, Request, Response};
+
+use crate::in_flight::{AtRequestGate, CallInFlight, Leaving, Settled};
+use crate::{Input, Output, Outputs, SharedBySessions, TimerId};
+
+/// The request pipeline of one connection: a state machine that decides what happens to each call.
+///
+/// The engine opens one pipeline per client connection.
+/// It reports what happened as an [`Input`], with the current instant,
+/// and it performs every [`Output`] that [`handle`](Self::handle) returns, in order.
+/// The pipeline reads no socket, sets no timer and looks at no clock.
+///
+/// # The stages of a call
+///
+/// | Stage | When | The pipeline |
+/// |---|---|---|
+/// | 1 · Receive, 2 · Decode | [`Input::ClientBytes`] | Cuts the bytes into requests, and decodes each one once. |
+/// | 3 · Identify | | Identifies the session, and tells the client context what the request names. |
+/// | 4 · Match, 5 · Trigger | | Evaluates the request pass on the snapshot it received last. |
+/// | 6 · Resolve | | Combines the lies, and hands out the incidents as [`Output::Fire`]. |
+/// | 7 · Before forwarding | | Asks the lies that act now. A silence stalls the session, a hang-up closes it, a delay is an [`Output::SetTimer`]. |
+/// | 8 · Backend | The request is at the head of the line. | Hands out what is left of the request as [`Output::Forward`]. |
+/// | 9 · After the response | [`Input::BackendAnswered`] | Reads the truth, evaluates the response pass, and asks the lies that act now. |
+/// | 10 · Send, 11 · Emit | The answer is at the head of the line. | Hands out the bytes as [`Output::Send`], and the record as [`Output::Emit`]. |
+///
+/// A call never holds the pipeline up.
+/// While one call waits for a timer or for the backend, the pipeline takes the next request of the connection.
+/// Requests still reach the backend in the order they arrived, and answers leave in that order.
+///
+/// # Rules change while calls are in flight
+///
+/// [`Input::SnapshotPublished`] replaces the snapshot for the calls that arrive from then on.
+/// A call in flight keeps the snapshot it started with, so both of its passes see the same rules.
+///
+/// # How a session ends
+///
+/// | The session ends when | Closed by | The pipeline returns |
+/// |---|---|---|
+/// | [`Input::ClientClosed`] arrives. | The client | The record of every call in flight. |
+/// | A hang-up acts. | A lie | The record of every call in flight, and [`Output::Close`]. |
+/// | The bytes of the client are no request, a Produce does not say whether it expects a response, or the backend sends something that is no response to the request. | The proxy | The same. |
+///
+/// A call that was in flight when its session ended got no answer, and its record says so.
+/// Its firings go back to their budgets.
+/// A pipeline whose session ended takes no further input: every [`handle`](Self::handle) returns nothing.
+///
+/// # What the pipeline ignores
+///
+/// The engine cannot avoid every race: a backend answers a call whose session just closed,
+/// and a timer fires for a call that left.
+/// An input that names a call or a timer that the pipeline does not wait for changes nothing.
+#[derive(Debug)]
+pub struct Pipeline {
+    session: Session<CallInFlight>,
+    /// The snapshot that the next call starts with.
+    snapshot: Arc<Snapshot>,
+    shared: SharedBySessions,
+    /// The bytes of the client that are no whole request yet.
+    frames: FrameDecoder,
+}
+
+impl Pipeline {
+    /// A client connected at `now`: the pipeline of its connection.
+    ///
+    /// `ordinal` says which connection from its host to its endpoint this one is.
+    /// `shared` are the handles of the proxy, and `snapshot` holds the rules that are armed at this moment.
+    pub fn open(
+        connection: Connection,
+        ordinal: ConnectionOrdinal,
+        shared: SharedBySessions,
+        snapshot: Arc<Snapshot>,
+        now: Instant,
+    ) -> Self {
+        Self {
+            session: Session::open(connection, ordinal, shared.contexts().clone(), now),
+            snapshot,
+            shared,
+            frames: FrameDecoder::new(),
+        }
+    }
+
+    /// Takes one thing that happened at `now`, and returns what should happen, in order.
+    pub fn handle(&mut self, input: Input<'_>, now: Instant) -> Outputs {
+        let mut outputs = Outputs::default();
+        if self.session.closed().is_some() {
+            return outputs;
+        }
+        match input {
+            Input::ClientBytes(bytes) => self.receive(bytes, now, &mut outputs),
+            Input::BackendAnswered { call, response } => self.backend_answered(call, response, now, &mut outputs),
+            Input::TimerFired(timer) => self.timer_fired(timer, now, &mut outputs),
+            Input::SnapshotPublished(snapshot) => self.snapshot = snapshot,
+            Input::ClientClosed => self.close(ClosedBy::Client, None, now, &mut outputs),
+        }
+        outputs
+    }
+
+    /// The connection of the session.
+    pub const fn connection(&self) -> Connection {
+        self.session.connection()
+    }
+
+    /// The identity fields of the session, as far as they are known.
+    pub const fn identity(&self) -> &Identity {
+        self.session.identity()
+    }
+
+    /// The key that tells the session from every other one, and that is the same in every run.
+    pub const fn key(&self) -> SessionKey {
+        self.session.key()
+    }
+
+    /// Where the session is in its life.
+    pub const fn lifecycle(&self) -> Lifecycle {
+        self.session.lifecycle()
+    }
+
+    /// Who closed the session and when, or `None` while it is open.
+    pub const fn closed(&self) -> Option<Closed> {
+        self.session.closed()
+    }
+
+    /// Whether a silence stopped the connection, and by which call.
+    pub const fn stalled(&self) -> Option<Stalled> {
+        self.session.stalled()
+    }
+
+    /// How many calls are in flight: their request arrived, and their answer did not leave yet.
+    pub fn in_flight(&self) -> usize {
+        self.session.calls().len()
+    }
+
+    /// The snapshot that the next call starts with.
+    pub const fn snapshot(&self) -> &Arc<Snapshot> {
+        &self.snapshot
+    }
+
+    fn call_id(&self, number: CallNumber) -> CallId {
+        CallId::new(self.session.connection().number(), number)
+    }
+
+    /// Stage 1: cuts the bytes of the client into requests.
+    fn receive(&mut self, bytes: &[u8], now: Instant, outputs: &mut Outputs) {
+        self.frames.extend(bytes);
+        while self.session.closed().is_none() {
+            let request = match self.frames.next_frame() {
+                Ok(Some(frame)) => Request::decode(frame),
+                Ok(None) => return,
+                Err(error) => Err(error),
+            };
+            match request {
+                Ok(request) => self.arrive(request, now, outputs),
+                // Without a request header, nothing says where the next request starts or how to answer this one.
+                // A broker closes such a connection, and so does the proxy: no lie and no backend did it.
+                Err(_) => self.close(ClosedBy::Proxy, None, now, outputs),
+            }
+        }
+    }
+
+    /// Stages 2 to 7 for one request.
+    fn arrive(&mut self, request: Request, now: Instant, outputs: &mut Outputs) {
+        let snapshot = Arc::clone(&self.snapshot);
+        if self.session.stalled().is_some() {
+            // A silence stopped the connection. The request never reaches the backend and never gets an answer,
+            // so nothing happens to it: no rule is evaluated, the session takes no identity from it,
+            // and the client context learns nothing from it.
+            let call = CallInFlight::parked(request, &self.session, snapshot, &self.shared, now);
+            let number = self.session.calls_mut().arrive(call, now);
+            self.emit(number, Delivered::Nothing, outputs);
+            return;
+        }
+
+        let mut call = CallInFlight::arrived(request, &mut self.session, snapshot, &self.shared, now);
+        let arrival = call.evaluate(self.session.counters_mut(), &self.shared, now);
+        outputs.extend(arrival.incidents.into_iter().map(Output::Fire));
+        let number = self.session.calls_mut().arrive(call, now);
+
+        if arrival.unanswerable {
+            // A Produce that does not say its `acks` may get a response or not. Whichever the proxy assumed,
+            // being wrong would stall or mix up every answer behind it, so it closes the connection, as a broker does.
+            self.close(ClosedBy::Proxy, None, now, outputs);
+        } else if arrival.silenced {
+            // The call never gets an answer, and the session is stalled from now on.
+            if self.session.calls_mut().silence(number, now).is_ok() {
+                self.emit(number, Delivered::Nothing, outputs);
+            }
+        } else if let Some(at) = deadline(now, arrival.wait) {
+            let id = TimerId::new(self.call_id(number), Stage::BeforeForwarding);
+            outputs.push(Output::SetTimer { id, at });
+        } else if self.session.calls_mut().release_request(number).is_ok() {
+            self.advance(now, outputs);
+        }
+    }
+
+    /// Stage 9 begins for the call that the backend answered.
+    fn backend_answered(&mut self, call: CallId, response: Response, now: Instant, outputs: &mut Outputs) {
+        if call.connection() != self.session.connection().number() {
+            return;
+        }
+        let number = call.number();
+        let (calls, counters) = self.session.calls_and_counters_mut();
+        let Some(in_flight) = calls.get_mut(number) else {
+            return;
+        };
+        let Some(settled) = in_flight.content_mut().answered(response, now, counters, &self.shared) else {
+            return;
+        };
+        self.settled(number, settled, now, outputs);
+        self.advance(now, outputs);
+    }
+
+    /// The wait of a call ended: its request or its answer joins the line.
+    fn timer_fired(&mut self, timer: TimerId, now: Instant, outputs: &mut Outputs) {
+        if timer.call().connection() != self.session.connection().number() {
+            return;
+        }
+        let number = timer.call().number();
+        let calls = self.session.calls_mut();
+        let Some(call) = calls.get(number).map(InFlightCall::content) else {
+            return;
+        };
+        let released = match timer.stage() {
+            Stage::BeforeForwarding => call.is_held_before_forwarding() && calls.release_request(number).is_ok(),
+            Stage::AfterResponse => call.is_held_after_response() && calls.release_response(number).is_ok(),
+        };
+        if released {
+            self.advance(now, outputs);
+        }
+    }
+
+    /// Lets every request and every answer that is at the head of its line go on.
+    ///
+    /// Requests pass in the order they arrived, and so do answers.
+    /// A call that is decided without the backend joins the line of answers at once, so the two lines feed each other.
+    fn advance(&mut self, now: Instant, outputs: &mut Outputs) {
+        loop {
+            let mut moved = false;
+            while let Some(number) = self.next_request() {
+                moved = true;
+                self.at_request_gate(number, now, outputs);
+                if self.session.closed().is_some() {
+                    return;
+                }
+            }
+            while let Some(in_flight) = self.session.calls_mut().next_response() {
+                moved = true;
+                let number = in_flight.number();
+                let mut call = in_flight.into_content();
+                let (leaving, delivered) = call.leave(now);
+                if let Leaving::Send(bytes) = &leaving {
+                    outputs.push(Output::Send(bytes.clone()));
+                }
+                outputs.extend(call.record(number, delivered).map(Box::new).map(Output::Emit));
+                if let Leaving::Close(by) = leaving {
+                    self.close(by, None, now, outputs);
+                    return;
+                }
+            }
+            if !moved {
+                return;
+            }
+        }
+    }
+
+    /// The call whose request is at the head of the line, when the pipeline let it go.
+    fn next_request(&mut self) -> Option<CallNumber> {
+        self.session.calls_mut().next_request().map(|(number, _)| number)
+    }
+
+    /// Stage 8 for the request at the head of the line: the backend gets it, or the call is decided without it.
+    fn at_request_gate(&mut self, number: CallNumber, now: Instant, outputs: &mut Outputs) {
+        let id = self.call_id(number);
+        let (calls, counters) = self.session.calls_and_counters_mut();
+        let Some(in_flight) = calls.get_mut(number) else {
+            return;
+        };
+        match in_flight.content_mut().at_request_gate(now, counters, &self.shared) {
+            AtRequestGate::Forward(request) => outputs.push(Output::Forward { call: id, request }),
+            AtRequestGate::Settled { forward, settled } => {
+                outputs.extend(forward.map(|request| Output::Forward { call: id, request }));
+                self.settled(number, settled, now, outputs);
+            }
+            AtRequestGate::HangUp => self.close(ClosedBy::Lie, Some(number), now, outputs),
+            AtRequestGate::NotWaiting => {}
+        }
+    }
+
+    /// Stage 9 ran for a call: the answer waits for its delay, or joins the line of answers.
+    fn settled(&mut self, number: CallNumber, settled: Settled, now: Instant, outputs: &mut Outputs) {
+        outputs.extend(settled.incidents.into_iter().map(Output::Fire));
+        for value in settled.learned {
+            value.teach(&self.session);
+        }
+        if settled.silenced {
+            if self.session.calls_mut().silence(number, now).is_ok() {
+                self.emit(number, Delivered::Nothing, outputs);
+            }
+        } else if let Some(at) = deadline(now, settled.wait) {
+            let id = TimerId::new(self.call_id(number), Stage::AfterResponse);
+            outputs.push(Output::SetTimer { id, at });
+        } else {
+            // The call awaits its response, so this only fails for a call that is gone.
+            let _gone = self.session.calls_mut().release_response(number);
+        }
+    }
+
+    /// Stage 11 for a call that stays in flight: a silenced call never leaves.
+    fn emit(&mut self, number: CallNumber, delivered: Delivered, outputs: &mut Outputs) {
+        let call = self.session.calls_mut().get_mut(number);
+        let record = call.and_then(|call| call.content_mut().record(number, delivered));
+        outputs.extend(record.map(Box::new).map(Output::Emit));
+    }
+
+    /// The session ends at `now`. No call in flight gets an answer, and each of them is recorded.
+    ///
+    /// `hung_up` is the call whose hang-up closes the connection, when it is still in flight.
+    fn close(&mut self, by: ClosedBy, hung_up: Option<CallNumber>, now: Instant, outputs: &mut Outputs) {
+        for in_flight in self.session.close(by, now) {
+            let number = in_flight.number();
+            let delivered = if hung_up == Some(number) {
+                Delivered::ConnectionClosed
+            } else {
+                Delivered::Nothing
+            };
+            let record = in_flight.into_content().record(number, delivered);
+            outputs.extend(record.map(Box::new).map(Output::Emit));
+        }
+        if by != ClosedBy::Client {
+            outputs.push(Output::Close);
+        }
+    }
+}
+
+/// When a wait that starts at `now` ends, or `None` when the call does not wait.
+fn deadline(now: Instant, wait: Duration) -> Option<Instant> {
+    if wait.is_zero() {
+        return None;
+    }
+    // A wait that runs past the end of the clock ends with it.
+    Some(now.checked_add(wait).unwrap_or(Instant::from_nanos(u64::MAX)))
+}

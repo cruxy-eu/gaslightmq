@@ -10,7 +10,7 @@
 //! | [`Identity`] | The identity fields of a session, as far as they are known. |
 //! | [`Identification`], [`IdentityChange`] | What the header of one request changed about the identity. |
 //! | [`Lifecycle`] | Where a session is in its life: opened, identified or closed. |
-//! | [`Closed`], [`ClosedBy`] | That a session closed, when, and who closed it: the client, the backend or a lie. |
+//! | [`Closed`], [`ClosedBy`] | That a session closed, when, and who closed it: the client, the backend, a lie or the proxy itself. |
 //! | [`SessionKey`] | The host, the endpoint and the ordinal of the connection: the same in every run. |
 //! | [`ConnectionOrdinal`] | Which connection from its host to its endpoint a connection is. |
 //! | [`ConnectionOrdinals`] | The ordinals a proxy handed out, per host and endpoint. |

@@ -53,9 +53,9 @@ mod next_to_the_others {
 
         let behaviour: Refusal = Refusal;
         let asked = EditableRequest::decode(&request, &TopicNames::new()).unwrap();
+        let before = behaviour.before_forwarding(&rebalance, &asked).unwrap();
         let refused: RefusedRequest =
             RefusedRequest::new(asked, &Target::Call, ErrorCode::REBALANCE_IN_PROGRESS).unwrap();
-        let before = behaviour.before_forwarding(&rebalance, &request).unwrap();
         let after: HeartbeatResponse = refused.after_response(&truth).unwrap().body().unwrap();
 
         vec![

@@ -2,7 +2,8 @@ use std::fmt;
 
 use gaslightmq_field::PartSet;
 use gaslightmq_lie::prelude::*;
-use gaslightmq_wire::{Api, Request, Response, WireError};
+use gaslightmq_wire::{Api, Response, WireError};
+use gaslightmq_wire_edit::EditableRequest;
 
 use crate::{Effect, Instruction};
 
@@ -11,6 +12,7 @@ use crate::{Effect, Instruction};
 /// A definition says what the client is told, and it is data.
 /// An implementation of this trait does the telling for every definition of its [kind](Self::kind).
 /// It reads the request or the response, and it returns an [`Effect`].
+/// The request comes [decoded](EditableRequest), with its parts named, so no behaviour decodes it again.
 /// It keeps no state between calls, so one value serves every session.
 ///
 /// # When the pipeline asks
@@ -41,6 +43,7 @@ use crate::{Effect, Instruction};
 /// use gaslightmq_lie_api::prelude::*;
 /// use gaslightmq_wire::Request;
 /// use gaslightmq_wire::messages::{HeartbeatRequest, HeartbeatResponse};
+/// use gaslightmq_wire_edit::prelude::*;
 ///
 /// /// A kind that answers every Heartbeat itself.
 /// struct Refusal;
@@ -50,17 +53,19 @@ use crate::{Effect, Instruction};
 ///         LieKind::Refusal
 ///     }
 ///
-///     fn before_forwarding(&self, lie: &TargetedLie, request: &Request) -> Result<Effect, LieError> {
+///     fn before_forwarding(&self, lie: &TargetedLie, request: &EditableRequest) -> Result<Effect, LieError> {
 ///         let LieDefinition::Refusal(refusal) = lie.lie() else {
 ///             return Err(LieError::OtherKind { tells: self.kind(), lie: lie.lie().kind() });
 ///         };
 ///         let body = HeartbeatResponse::default().with_error_code(refusal.error.value());
-///         let response = request.response(&body).map_err(|error| LieError::Unwritable { kind: self.kind(), error })?;
-///         Ok(Effect::Answer(response))
+///         let response = request.request().response(&body);
+///         Ok(Effect::Answer(response.map_err(|error| LieError::Unwritable { kind: self.kind(), error })?))
 ///     }
 /// }
 ///
-/// let request = Request::new(4, 7, Some("order-ingest"), &HeartbeatRequest::default())?;
+/// // The pipeline decodes a request once, with the topics it knows by ID, and every lie reads that.
+/// let heartbeat = Request::new(4, 7, Some("order-ingest"), &HeartbeatRequest::default())?;
+/// let request = EditableRequest::decode(&heartbeat, &TopicNames::new())?;
 /// let lie = LieDefinition::from(RefusalLie::new(ErrorCode::REBALANCE_IN_PROGRESS)).on(Target::Call);
 ///
 /// // Before forwarding, the backend never sees the Heartbeat.
@@ -86,7 +91,8 @@ pub trait Lie: Send + Sync {
     /// What `lie` asks for before the backend sees `request`.
     ///
     /// `lie` holds the target the lie applies to at this stage, which can be less than its selector matched.
-    /// `request` is the request as the lies that were asked before this one left it.
+    /// `request` is the request as the lies that were asked before this one left it, decoded.
+    /// Its [parts](EditableRequest::parts) have their names, also where the request names a topic by its ID.
     ///
     /// # Errors
     ///
@@ -96,7 +102,7 @@ pub trait Lie: Send + Sync {
         unused_variables,
         reason = "a kind that acts at this stage reads the same parameters, under the same names"
     )]
-    fn before_forwarding(&self, lie: &TargetedLie, request: &Request) -> Result<Effect, LieError> {
+    fn before_forwarding(&self, lie: &TargetedLie, request: &EditableRequest) -> Result<Effect, LieError> {
         Err(LieError::NoBehaviourAtStage {
             kind: self.kind(),
             stage: Stage::BeforeForwarding,
@@ -106,7 +112,7 @@ pub trait Lie: Send + Sync {
     /// What `lie` asks for once the backend answered.
     ///
     /// `lie` holds the target the lie applies to at this stage.
-    /// `request` is the request as the client sent it.
+    /// `request` is the request as the client sent it, decoded.
     /// `response` is the response as the lies that were asked before this one left it:
     /// the truth, or what a lie [answered](Effect::Answer) instead.
     ///
@@ -118,7 +124,12 @@ pub trait Lie: Send + Sync {
         unused_variables,
         reason = "a kind that acts at this stage reads the same parameters, under the same names"
     )]
-    fn after_response(&self, lie: &TargetedLie, request: &Request, response: &Response) -> Result<Effect, LieError> {
+    fn after_response(
+        &self,
+        lie: &TargetedLie,
+        request: &EditableRequest,
+        response: &Response,
+    ) -> Result<Effect, LieError> {
         Err(LieError::NoBehaviourAtStage {
             kind: self.kind(),
             stage: Stage::AfterResponse,
@@ -259,7 +270,9 @@ mod tests {
 
     use gaslightmq_field::prelude::*;
     use gaslightmq_kernel::prelude::*;
+    use gaslightmq_wire::Request;
     use gaslightmq_wire::messages::{HeartbeatRequest, HeartbeatResponse};
+    use gaslightmq_wire_edit::TopicNames;
 
     use super::*;
 
@@ -272,14 +285,15 @@ mod tests {
         }
     }
 
-    fn heartbeat() -> Request {
-        Request::new(4, 7, Some("order-ingest"), &HeartbeatRequest::default()).unwrap()
+    fn heartbeat() -> EditableRequest {
+        let request = Request::new(4, 7, Some("order-ingest"), &HeartbeatRequest::default()).unwrap();
+        EditableRequest::decode(&request, &TopicNames::new()).unwrap()
     }
 
     #[test]
     fn a_kind_has_no_behaviour_at_a_stage_it_does_not_implement() {
         let request = heartbeat();
-        let response = request.response(&HeartbeatResponse::default()).unwrap();
+        let response = request.request().response(&HeartbeatResponse::default()).unwrap();
         let lie = LieDefinition::Silence.on(Target::Call);
 
         assert_eq!(

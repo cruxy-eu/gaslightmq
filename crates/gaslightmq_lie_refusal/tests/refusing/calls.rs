@@ -313,7 +313,7 @@ pub fn walk(
     let mut answered = None;
     let mut asked_to_forward = Vec::new();
     for lie in before {
-        match lies.before_forwarding(lie, &left).unwrap() {
+        match lies.before_forwarding(lie, &decoded(&left)).unwrap() {
             Effect::Forward(rest) => {
                 left = rest;
                 asked_to_forward.push(lie);
@@ -327,7 +327,7 @@ pub fn walk(
     let mut response = answered.unwrap_or_else(|| backend(&left));
 
     for lie in after.iter().chain(asked_to_forward) {
-        match lies.after_response(lie, request, &response).unwrap() {
+        match lies.after_response(lie, &decoded(request), &response).unwrap() {
             Effect::Answer(other) => response = other,
             other => panic!("{lie} asked to {other}"),
         }

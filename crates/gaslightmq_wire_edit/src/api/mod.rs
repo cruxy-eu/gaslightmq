@@ -2,7 +2,7 @@
 //!
 //! The modules follow the families of the Kafka protocol.
 //! An API with [parts](gaslightmq_field::Part) removes them from its request, and says which entries its response holds.
-//! Every API says how its response fails.
+//! Every API says how its response fails, and whether its response has an error code of its own.
 //!
 //! To give an API parts:
 //!
@@ -22,6 +22,17 @@ mod share_groups;
 mod topics;
 mod transactions;
 
+/// Says that the response of an API has an error code of its own, in the `Editable` of its request.
+///
+/// The message holds the field at every version, and it is zero where a version does not write it.
+macro_rules! response_has_error_code {
+    () => {
+        fn error_of_response(response: &Self::Response) -> i16 {
+            response.error_code
+        }
+    };
+}
+
 /// The APIs whose response fails in one place: the error code of the response itself.
 macro_rules! fails_as_a_whole {
     ($($request:ty),+ $(,)?) => {
@@ -30,9 +41,12 @@ macro_rules! fails_as_a_whole {
                 fn failed(&self, _version: i16, verdict: &$crate::body::Verdict<'_>) -> Self::Response {
                     <Self::Response>::default().with_error_code(verdict.call())
                 }
+
+                $crate::api::response_has_error_code!();
             }
         )+
     };
 }
 
 use fails_as_a_whole;
+pub(crate) use response_has_error_code;

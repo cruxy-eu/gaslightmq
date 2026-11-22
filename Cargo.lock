@@ -314,6 +314,7 @@ dependencies = [
  "gaslightmq_kernel",
  "gaslightmq_lie",
  "gaslightmq_wire",
+ "gaslightmq_wire_edit",
 ]
 
 [[package]]
@@ -325,6 +326,29 @@ dependencies = [
  "gaslightmq_kernel",
  "gaslightmq_lie",
  "gaslightmq_lie_api",
+ "gaslightmq_wire",
+ "gaslightmq_wire_edit",
+]
+
+[[package]]
+name = "gaslightmq_pipeline"
+version = "0.1.0"
+dependencies = [
+ "arc-swap",
+ "bytes",
+ "gaslightmq_call",
+ "gaslightmq_clock",
+ "gaslightmq_combine",
+ "gaslightmq_field",
+ "gaslightmq_incident",
+ "gaslightmq_kernel",
+ "gaslightmq_lie",
+ "gaslightmq_lie_api",
+ "gaslightmq_lie_refusal",
+ "gaslightmq_rule",
+ "gaslightmq_selector",
+ "gaslightmq_session",
+ "gaslightmq_trigger",
  "gaslightmq_wire",
  "gaslightmq_wire_edit",
 ]

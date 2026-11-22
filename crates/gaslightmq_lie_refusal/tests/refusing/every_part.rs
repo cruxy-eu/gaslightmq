@@ -61,13 +61,13 @@ fn the_refusal_that_removes_the_last_part_answers_with_its_own_parts() {
     let slow = refusal(TIMED_OUT, parts(&["orders.eu/4", "payments.settled/0"]));
 
     // The first refusal leaves two partitions, so it asks to forward them.
-    let Effect::Forward(left) = lies.before_forwarding(&flap, &request).unwrap() else {
+    let Effect::Forward(left) = lies.before_forwarding(&flap, &decoded(&request)).unwrap() else {
         panic!("two partitions are left to forward");
     };
     assert_eq!(named(&left), ["orders.eu/4", "payments.settled/0"]);
 
     // The second refuses both, so it answers. It knows nothing of the first refusal.
-    let Effect::Answer(answer) = lies.before_forwarding(&slow, &left).unwrap() else {
+    let Effect::Answer(answer) = lies.before_forwarding(&slow, &decoded(&left)).unwrap() else {
         panic!("nothing is left to forward");
     };
     assert_eq!(
@@ -76,7 +76,7 @@ fn the_refusal_that_removes_the_last_part_answers_with_its_own_parts() {
     );
 
     // The first is asked again with that answer, as after a response of the backend.
-    let Effect::Answer(delivered) = lies.after_response(&flap, &request, &answer).unwrap() else {
+    let Effect::Answer(delivered) = lies.after_response(&flap, &decoded(&request), &answer).unwrap() else {
         panic!("the refusal puts its error into the response");
     };
     assert_eq!(

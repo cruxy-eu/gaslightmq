@@ -2,7 +2,8 @@
 //! Each is one instruction to the pipeline, and none reads a request or a response.
 
 use gaslightmq_lie::prelude::*;
-use gaslightmq_wire::{Request, Response};
+use gaslightmq_wire::Response;
+use gaslightmq_wire_edit::EditableRequest;
 
 use crate::lie::definition_of;
 use crate::{Effect, Lie, LieError};
@@ -24,10 +25,12 @@ use crate::{Effect, Lie, LieError};
 /// use gaslightmq_lie_api::prelude::*;
 /// use gaslightmq_wire::Request;
 /// use gaslightmq_wire::messages::HeartbeatRequest;
+/// use gaslightmq_wire_edit::prelude::*;
 ///
 /// // A late Heartbeat can expire the member, and cause a real rebalance.
 /// let late = TimingLie::new().with_delay(TimeSpan::from_secs(45)).at(Stage::BeforeForwarding);
-/// let request = Request::new(4, 7, Some("order-ingest"), &HeartbeatRequest::default())?;
+/// let heartbeat = Request::new(4, 7, Some("order-ingest"), &HeartbeatRequest::default())?;
+/// let request = EditableRequest::decode(&heartbeat, &TopicNames::new())?;
 ///
 /// let effect = Timing.before_forwarding(&LieDefinition::from(late).on(Target::Call), &request)?;
 /// assert_eq!(effect.to_string(), "hold +45 s before forwarding");
@@ -55,12 +58,17 @@ impl Lie for Timing {
     }
 
     /// Asks to hold the request back.
-    fn before_forwarding(&self, lie: &TargetedLie, _request: &Request) -> Result<Effect, LieError> {
+    fn before_forwarding(&self, lie: &TargetedLie, _request: &EditableRequest) -> Result<Effect, LieError> {
         Self::hold(lie, Stage::BeforeForwarding)
     }
 
     /// Asks to hold the answer back.
-    fn after_response(&self, lie: &TargetedLie, _request: &Request, _response: &Response) -> Result<Effect, LieError> {
+    fn after_response(
+        &self,
+        lie: &TargetedLie,
+        _request: &EditableRequest,
+        _response: &Response,
+    ) -> Result<Effect, LieError> {
         Self::hold(lie, Stage::AfterResponse)
     }
 }
@@ -76,8 +84,10 @@ impl Lie for Timing {
 /// use gaslightmq_lie_api::prelude::*;
 /// use gaslightmq_wire::Request;
 /// use gaslightmq_wire::messages::HeartbeatRequest;
+/// use gaslightmq_wire_edit::prelude::*;
 ///
-/// let request = Request::new(4, 7, Some("order-ingest"), &HeartbeatRequest::default())?;
+/// let heartbeat = Request::new(4, 7, Some("order-ingest"), &HeartbeatRequest::default())?;
+/// let request = EditableRequest::decode(&heartbeat, &TopicNames::new())?;
 ///
 /// let effect = Silence.before_forwarding(&LieDefinition::Silence.on(Target::Call), &request)?;
 /// assert_eq!(effect.instruction(), Instruction::Drop);
@@ -92,7 +102,7 @@ impl Lie for Silence {
     }
 
     /// Asks to drop the call.
-    fn before_forwarding(&self, lie: &TargetedLie, _request: &Request) -> Result<Effect, LieError> {
+    fn before_forwarding(&self, lie: &TargetedLie, _request: &EditableRequest) -> Result<Effect, LieError> {
         definition_of(LieKind::Silence, lie)?;
         Ok(Effect::Drop)
     }
@@ -110,9 +120,11 @@ impl Lie for Silence {
 /// use gaslightmq_lie_api::prelude::*;
 /// use gaslightmq_wire::Request;
 /// use gaslightmq_wire::messages::{HeartbeatRequest, HeartbeatResponse};
+/// use gaslightmq_wire_edit::prelude::*;
 ///
-/// let request = Request::new(4, 7, Some("order-ingest"), &HeartbeatRequest::default())?;
-/// let truth = request.response(&HeartbeatResponse::default())?;
+/// let heartbeat = Request::new(4, 7, Some("order-ingest"), &HeartbeatRequest::default())?;
+/// let request = EditableRequest::decode(&heartbeat, &TopicNames::new())?;
+/// let truth = heartbeat.response(&HeartbeatResponse::default())?;
 /// let late = LieDefinition::from(HangUpLie::new().at(Stage::AfterResponse)).on(Target::Call);
 ///
 /// let effect = HangUp.after_response(&late, &request, &truth)?;
@@ -128,13 +140,18 @@ impl Lie for HangUp {
     }
 
     /// Asks to close the connection instead of forwarding the request.
-    fn before_forwarding(&self, lie: &TargetedLie, _request: &Request) -> Result<Effect, LieError> {
+    fn before_forwarding(&self, lie: &TargetedLie, _request: &EditableRequest) -> Result<Effect, LieError> {
         definition_of(LieKind::HangUp, lie)?;
         Ok(Effect::Close)
     }
 
     /// Asks to close the connection instead of sending the answer.
-    fn after_response(&self, lie: &TargetedLie, _request: &Request, _response: &Response) -> Result<Effect, LieError> {
+    fn after_response(
+        &self,
+        lie: &TargetedLie,
+        _request: &EditableRequest,
+        _response: &Response,
+    ) -> Result<Effect, LieError> {
         definition_of(LieKind::HangUp, lie)?;
         Ok(Effect::Close)
     }
@@ -145,7 +162,9 @@ mod tests {
     use gaslightmq_clock::TimeSpan;
     use gaslightmq_field::prelude::*;
     use gaslightmq_kernel::prelude::*;
+    use gaslightmq_wire::Request;
     use gaslightmq_wire::messages::{HeartbeatRequest, HeartbeatResponse};
+    use gaslightmq_wire_edit::TopicNames;
 
     use super::*;
     use crate::Instruction;
@@ -153,12 +172,13 @@ mod tests {
     const BEFORE: Stage = Stage::BeforeForwarding;
     const AFTER: Stage = Stage::AfterResponse;
 
-    fn heartbeat() -> Request {
-        Request::new(4, 7, Some("order-ingest"), &HeartbeatRequest::default()).unwrap()
+    fn heartbeat() -> EditableRequest {
+        let request = Request::new(4, 7, Some("order-ingest"), &HeartbeatRequest::default()).unwrap();
+        EditableRequest::decode(&request, &TopicNames::new()).unwrap()
     }
 
-    fn truth(request: &Request) -> Response {
-        request.response(&HeartbeatResponse::default()).unwrap()
+    fn truth(request: &EditableRequest) -> Response {
+        request.request().response(&HeartbeatResponse::default()).unwrap()
     }
 
     fn on_call(lie: impl Into<LieDefinition>) -> TargetedLie {

@@ -120,6 +120,8 @@ impl Editable for AlterReplicaLogDirsRequest {
 /// Since version 3 the response itself has an error code.
 /// Before that only a log directory has one, so the response names one directory without a path, which failed.
 impl Editable for DescribeLogDirsRequest {
+    crate::api::response_has_error_code!();
+
     fn failed(&self, version: i16, verdict: &Verdict<'_>) -> DescribeLogDirsResponse {
         if version >= 3 {
             DescribeLogDirsResponse::default().with_error_code(verdict.call())
@@ -131,6 +133,8 @@ impl Editable for DescribeLogDirsRequest {
 }
 
 impl Editable for ElectLeadersRequest {
+    crate::api::response_has_error_code!();
+
     fn failed(&self, version: i16, verdict: &Verdict<'_>) -> ElectLeadersResponse {
         let topics = self.topic_partitions.iter().flatten().map(|topic| {
             let partitions = topic.partitions.iter().map(|index| {
@@ -151,6 +155,8 @@ impl Editable for ElectLeadersRequest {
 }
 
 impl Editable for AlterPartitionReassignmentsRequest {
+    crate::api::response_has_error_code!();
+
     fn failed(&self, _version: i16, verdict: &Verdict<'_>) -> AlterPartitionReassignmentsResponse {
         let topics = self.topics.iter().map(|topic| {
             let partitions = topic.partitions.iter().map(|partition| {
@@ -181,6 +187,8 @@ impl Editable for DescribeTopicPartitionsRequest {
 
 /// Up to version 1 the response also names every feature the request updates, each with the error code.
 impl Editable for UpdateFeaturesRequest {
+    crate::api::response_has_error_code!();
+
     fn failed(&self, version: i16, verdict: &Verdict<'_>) -> UpdateFeaturesResponse {
         let features = self.feature_updates.iter().filter(|_| version <= 1).map(|update| {
             UpdatableFeatureResult::default()

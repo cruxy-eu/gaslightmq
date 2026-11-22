@@ -19,6 +19,7 @@ use crate::{Failures, TopicNames};
 /// | [`error_response`](Self::error_response) | A response nobody asked a backend for, in which the call or its parts failed. |
 /// | [`merge`](Self::merge) | The response of the backend, with failed parts put into it. |
 /// | [`parts_of`](Self::parts_of) | What a response says about each part. |
+/// | [`error_of`](Self::error_of) | What a response says about the call as a whole: its own error code. |
 ///
 /// It works on every API that `gaslightmq_wire` has messages for.
 /// The original request stays as it arrived, and [`request`](Self::request) gives it back.
@@ -255,6 +256,29 @@ impl EditableRequest {
             })
             .map_err(|error| EditableRequestError::UnreadableResponse { api: self.api(), error })?;
         Ok(parts)
+    }
+
+    /// The error code of `response` itself, a response to this request, or `None` when it carries none.
+    ///
+    /// That is what the response says about the call as a whole.
+    /// What it says about each part is in [`parts_of`](Self::parts_of).
+    ///
+    /// It is `None` for a response without an error, and for a response that has no error code of its own:
+    /// a Produce response answers each partition, and a Fetch response only has its own error code since version 7.
+    /// Some responses answer what the request asked for by name in entries that are no parts,
+    /// such as the groups of a `DescribeGroups` and the keys of a `FindCoordinator` since version 4.
+    /// The error code of such an entry is not read here.
+    ///
+    /// # Errors
+    ///
+    /// [`EditableRequestError::ResponseOfAnotherCall`] when `response` answers another request,
+    /// and [`EditableRequestError::UnreadableResponse`] when its body does not decode.
+    pub fn error_of(&self, response: &Response) -> Result<Option<ErrorCode>, EditableRequestError> {
+        self.check_answers(response)?;
+        self.body
+            .error_of_response(response)
+            .map(ErrorCode::from_wire)
+            .map_err(|error| EditableRequestError::UnreadableResponse { api: self.api(), error })
     }
 
     /// Checks that `response` answers this request: same API, same correlation ID.

@@ -71,6 +71,14 @@ impl fmt::Display for LostTarget {
 ///
 /// A firing [counts](Self::counts) when the lie applied on at least one target.
 ///
+/// # A lie that could not be told
+///
+/// A lie can win its target and still change nothing, because GaslightMQ itself failed to tell it:
+/// its kind is not in the build, or the request does not name a part it targets.
+/// Such a lie is [untold](Self::untold). It applied nowhere, and its [`failure`](Self::failure) says why.
+/// What it lost to other rules stays, and so does what other rules lost to it.
+/// A mistake of GaslightMQ never looks like a lie, so an untold lie is no line of the verdict, and its firing does not count.
+///
 /// ```
 /// use gaslightmq_call::prelude::*;
 /// use gaslightmq_field::prelude::*;
@@ -91,7 +99,17 @@ impl fmt::Display for LostTarget {
 ///
 /// // Shadowed on one partition and applied on another: one firing, and one line of the verdict.
 /// assert!(fate.counts());
-/// assert_eq!(fate.verdict_line(), Some(refusal.on(on(&["orders.eu/4"]))));
+/// assert_eq!(fate.verdict_line(), Some(refusal.clone().on(on(&["orders.eu/4"]))));
+///
+/// // A refusal of a partition that the request does not name cannot be told.
+/// let untold = LieFate::all_applied(refusal.on(on(&["orders.eu/9"])))
+///     .untold(Failure::new("the Produce v9 request does not name orders.eu/9"));
+/// assert!(!untold.counts());
+/// assert_eq!(untold.verdict_line(), None);
+/// assert_eq!(
+///     untold.to_string(),
+///     "NOT_LEADER_OR_FOLLOWER not told: the Produce v9 request does not name orders.eu/9"
+/// );
 /// # Ok::<(), Box<dyn std::error::Error>>(())
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -100,6 +118,7 @@ pub struct LieFate {
     applied: Option<Target>,
     shadowed: Vec<LostTarget>,
     pre_empted: Vec<LostTarget>,
+    untold: Option<Failure>,
 }
 
 impl LieFate {
@@ -129,6 +148,7 @@ impl LieFate {
             applied,
             shadowed,
             pre_empted,
+            untold: None,
         })
     }
 
@@ -139,6 +159,34 @@ impl LieFate {
             lie,
             shadowed: Vec::new(),
             pre_empted: Vec::new(),
+            untold: None,
+        }
+    }
+
+    /// GaslightMQ could not tell the lie, so it applied nowhere: `failure` says why.
+    ///
+    /// What the lie lost to other rules stays as it is.
+    #[must_use]
+    pub fn untold(mut self, failure: Failure) -> LieFate {
+        self.applied = None;
+        self.untold = Some(failure);
+        self
+    }
+
+    /// The fate of a lie that could not be told, from the parts of its `serde` form.
+    #[cfg(feature = "serde")]
+    pub(crate) const fn untold_with_losses(
+        lie: TargetedLie,
+        shadowed: Vec<LostTarget>,
+        pre_empted: Vec<LostTarget>,
+        failure: Failure,
+    ) -> LieFate {
+        LieFate {
+            lie,
+            applied: None,
+            shadowed,
+            pre_empted,
+            untold: Some(failure),
         }
     }
 
@@ -160,6 +208,11 @@ impl LieFate {
     /// The targets on which the lie had nothing left to change.
     pub fn pre_empted(&self) -> &[LostTarget] {
         &self.pre_empted
+    }
+
+    /// Why GaslightMQ could not tell the lie, or `None` for a lie that it told or that lost every target.
+    pub const fn failure(&self) -> Option<&Failure> {
+        self.untold.as_ref()
     }
 
     /// Whether the firing counts for a lifetime of firings: the lie applied on at least one target.
@@ -184,6 +237,7 @@ fn within(inner: &Target, outer: &Target) -> bool {
 }
 
 /// Writes the lie and then each fate: `NOT_LEADER_OR_FOLLOWER applied on orders.eu/4, shadowed on orders.eu/3 by Leader flap`.
+/// A lie that could not be told ends with the reason: `NOT_LEADER_OR_FOLLOWER not told: …`.
 impl fmt::Display for LieFate {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         fmt::Display::fmt(self.lie.lie(), f)?;
@@ -202,6 +256,9 @@ impl fmt::Display for LieFate {
                 separator = ", ";
             }
         }
+        if let Some(failure) = &self.untold {
+            write!(f, "{separator}not told: {failure}")?;
+        }
         Ok(())
     }
 }
@@ -214,6 +271,8 @@ pub enum LieFateError {
     Nowhere,
     /// The lie applied on a target that is no part of the target it claimed.
     AppliedOutsideTarget { applied: Target, claimed: Target },
+    /// The lie applied on a target, and it could not be told. A lie that could not be told applied nowhere.
+    AppliedUntold { applied: Target },
 }
 
 impl fmt::Display for LieFateError {
@@ -222,6 +281,9 @@ impl fmt::Display for LieFateError {
             Self::Nowhere => f.write_str("a lie that fired applied or lost somewhere, and this one did neither"),
             Self::AppliedOutsideTarget { applied, claimed } => {
                 write!(f, "a lie on {claimed} does not apply on {applied}")
+            }
+            Self::AppliedUntold { applied } => {
+                write!(f, "a lie that could not be told does not apply on {applied}")
             }
         }
     }
@@ -933,6 +995,36 @@ mod tests {
         let lie = refusal(parts(&["orders.eu/3"]));
 
         assert_eq!(LieFate::new(lie, None, vec![], vec![]), Err(LieFateError::Nowhere));
+    }
+
+    #[test]
+    fn a_lie_that_could_not_be_told_applied_nowhere_and_keeps_what_it_lost() {
+        let three = parts(&["orders.eu/3"]);
+        let both = parts(&["orders.eu/3", "orders.eu/4"]);
+        let lost = LostTarget::new(three, name("Leader flap"));
+        let failure = Failure::new("no behaviour is registered for refusal");
+        let won_a_part =
+            LieFate::new(refusal(both), Some(parts(&["orders.eu/4"])), vec![lost.clone()], vec![]).unwrap();
+
+        let untold = won_a_part.untold(failure.clone());
+
+        assert_eq!(untold.applied(), None);
+        assert_eq!(untold.shadowed(), [lost]);
+        assert_eq!(untold.failure(), Some(&failure));
+        assert!(!untold.counts());
+        assert_eq!(untold.verdict_line(), None);
+        assert_eq!(
+            untold.to_string(),
+            "NOT_LEADER_OR_FOLLOWER shadowed on orders.eu/3 by Leader flap, \
+             not told: no behaviour is registered for refusal"
+        );
+
+        // The rule fired, and its action did not take effect.
+        let line = lied("Refuse orders", 1, untold);
+        assert_eq!(statuses(&line), "matched rolled fired shadowed");
+        assert!(!line.applied());
+        // A lie that was told has no failure.
+        assert_eq!(LieFate::all_applied(refusal(Target::Call)).failure(), None);
     }
 
     #[test]
