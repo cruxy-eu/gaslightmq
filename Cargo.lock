@@ -275,7 +275,10 @@ name = "gaslightmq_kafka_client_native"
 version = "0.1.0"
 dependencies = [
  "bytes",
+ "futures",
+ "gaslightmq_clock",
  "gaslightmq_kafka_client_api",
+ "gaslightmq_kernel",
  "gaslightmq_wire",
  "tokio",
  "tracing",
