@@ -1,6 +1,5 @@
 [workspace]
 members = [
-    "crates/gaslightmq_checks",
     "crates/gaslightmq_clock",
     "crates/gaslightmq_combine",
     "crates/gaslightmq_field",
@@ -12,6 +11,7 @@ members = [
     "crates/gaslightmq_trigger",
     "crates/gaslightmq_wire",
     "crates/gaslightmq_kafka_client/*",
+    "xtask",
 ]
 resolver = "2"
 

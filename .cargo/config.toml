@@ -1,0 +1,3 @@
+[alias]
+# The workspace's own checks, in `xtask/`: `cargo xtask` runs them all, `cargo xtask crate-names` one of them.
+xtask = "run --quiet --package gaslightmq_checks --"

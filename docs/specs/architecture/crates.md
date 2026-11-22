@@ -11,6 +11,7 @@ The name in `Cargo.toml`, the directory and the path in code are then one string
 so one search finds all three.
 The tables leave the prefix out: `selector` is the crate `gaslightmq_selector`.
 Two crates stand apart: the facade is plain `gaslightmq`, and the binary is `gmq`.
+The workspace's own checks are tooling, and not product code: they live in `xtask/`, outside these tables.
 
 ## Principles
 
@@ -219,14 +220,6 @@ Transactions arrive later as `sim_txn`, next to `sim_log` and `sim_group`.
 | `kafka_client_native` | Our own Kafka client behind those traits: it follows partition leaders, negotiates API versions, and reports every failure as an error. This crate does IO. | `kafka_client_api`, `wire` |
 | `gaslightmq` | The facade crate: `Proxy`, `Broker` and `Host`, and re-exports of what library users need. | The public crates |
 | `gmq` | The binary: `gmq proxy`, `gmq broker`, `gmq start` and `gmq run`. | `host`, `control_server` |
-
-### Tooling
-
-The workspace checks itself with a crate that no other crate depends on, and that belongs to no layer.
-
-| Crate | Holds | Depends on |
-|---|---|---|
-| `checks` | The rules of this document and of `CLAUDE.md` that the compiler cannot see: every crate depends on what its row in these tables lists, and every crate is named and placed as [the rules](#principles) say. `just checks` runs them. This crate does IO. | — |
 
 ## The pipeline is sans-IO
 

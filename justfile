@@ -34,7 +34,7 @@ fmt:
 
 # The rules of crates.md and CLAUDE.md that the compiler cannot see. Name checks to run only those.
 checks *names:
-    cargo run --quiet -p gaslightmq_checks -- {{names}}
+    cargo xtask {{names}}
 
 # Lint with and without the optional features, warnings denied.
 clippy:
