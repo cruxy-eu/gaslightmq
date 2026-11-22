@@ -16,7 +16,8 @@ A backend:
 - answers a decoded request with the truth,
 - declares its **capabilities**: which incidents it can apply, and which it can only emulate,
 - applies or emulates an incident when the scenario runner fires one,
-- reports the endpoints clients should connect to.
+- reports the endpoints clients should connect to,
+- lets go of a connection when the engine says that it ended.
 
 A backend never lies.
 Lies happen in the pipeline, in front of and behind the backend.
@@ -27,6 +28,70 @@ A backend takes each request under its call ID, and answers under the same ID.
 The answer does not have to come at once:
 a Fetch waits for records, and a `JoinGroup` waits for the other members of the group.
 Until the answer arrives, the call stays [in flight](../domains/session.md#state) in its session.
+
+A request tells the backend which connection it arrived on, and which endpoint that connection is on.
+A backend takes the requests of one connection in the order in which the engine hands them over.
+It answers them in any order.
+
+### Answers
+
+A call ends at the backend in one of five ways.
+
+| The backend | The engine |
+|---|---|
+| Answers with the truth. | Hands the truth to the pipeline. |
+| Has the request, and the request has no response: a Produce with `acks=0`. | Hands nothing to the pipeline, which expects no answer. |
+| Got an answer from the cluster that is no response. | Tells the pipeline. The proxy closes the connection when that answer would be the next to leave, and the session records that the proxy closed it. |
+| Has no answer, and none will come: it cannot reach the cluster, or it lost its connection to it. | Closes the session at once, and records that the backend closed it. The record of every call in flight says why. |
+| Never answers: the broker is unresponsive. | Keeps the call in flight until the session ends. |
+
+The proxy closes a session over an answer that is no response, whoever finds that out:
+the backend, which cannot read a response in the bytes of the cluster,
+or the pipeline, which gets a response that does not answer the request.
+The backend did not go away, and the proxy [cannot keep the answers of the connection in order](request-pipeline.md#failure-inside-the-pipeline).
+
+A backend says "no response" only for a request that has none.
+The backend and the pipeline both read that from the request.
+
+A backend never turns a failure into a response.
+Kafka has no error for a proxy that lost its cluster,
+and a failure of GaslightMQ must never look like an answer of the cluster.
+A client whose broker goes away loses its connection, so that is what a failure looks like.
+
+The engine drops a call that nobody waits for any more, such as a call of a session that closed.
+The backend then owes no answer.
+The cluster may still have taken the request.
+
+### Endpoints
+
+A backend reports the endpoints that accept connections, and every change of them.
+The endpoint of a broker that is down is closed.
+The endpoint of a broker that is unresponsive is open.
+
+The engine never misses a change, however late it asks.
+An endpoint that closed and opened again counts as closed, because every connection to it ended in between.
+A broker that goes down and comes back at once still ends the sessions on its endpoint.
+
+For an endpoint that closed, the engine closes the listener and [every session on that endpoint](../domains/session.md#disconnects),
+and records that the backend closed them.
+Then it opens a listener for every endpoint that opened.
+The [environment](storage.md#environments) says where each endpoint listens.
+
+### Incidents
+
+The scenario runner hands an incident to the backend.
+The backend adds the [consequences](../domains/lies-and-incidents.md#consequences) from the topology of its cluster,
+and applies or emulates the incident and its consequences in one step.
+It returns the incident with its consequences, and the journal records both.
+
+A backend rejects an incident that it can neither apply nor emulate,
+and an incident that cannot happen in the cluster as it is, such as one about a broker the cluster does not have.
+A rejected incident changes nothing.
+
+An incident happens as a whole or not at all.
+An engine that stops waiting for an incident that it handed over does not take it back.
+
+### Reaching a backend
 
 | Backend | Does IO | How the engine reaches it |
 |---|---|---|

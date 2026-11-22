@@ -17,6 +17,9 @@ use crate::TimerId;
 /// |---|---|---|
 /// | The client sends bytes. | [`ClientBytes`](Self::ClientBytes) | The transport |
 /// | The backend answers a call. | [`BackendAnswered`](Self::BackendAnswered) | The backend |
+/// | The backend answers a call with something that is no response. | [`BackendAnswerUnreadable`](Self::BackendAnswerUnreadable) | The backend |
+/// | The backend has no answer for a call. | [`BackendFailed`](Self::BackendFailed) | The backend |
+/// | The backend closes the session. | [`BackendClosed`](Self::BackendClosed) | The backend |
 /// | A timer runs out. | [`TimerFired`](Self::TimerFired) | The engine's clock |
 /// | A rule changes. | [`SnapshotPublished`](Self::SnapshotPublished) | The rule store |
 /// | The client closes the connection. | [`ClientClosed`](Self::ClientClosed) | The transport |
@@ -30,6 +33,24 @@ pub enum Input<'a> {
     /// The response answers the request as it was forwarded.
     /// The pipeline gives it the API and the correlation ID of the client's request before anything reads it.
     BackendAnswered { call: CallId, response: Response },
+    /// The backend answered the request under `call` with something that it cannot hand over as a response.
+    /// `error` says why, in one line.
+    ///
+    /// The client must not get that answer.
+    /// The proxy closes the connection once the answer would be at the head of the line, as for a
+    /// [response](Self::BackendAnswered) that does not answer the request.
+    BackendAnswerUnreadable { call: CallId, error: String },
+    /// The backend has no answer for the request that the pipeline handed out under `call`, and none will come.
+    /// `failure` says why, in one line.
+    ///
+    /// The session ends, and the backend closed it.
+    /// The record of every call in flight keeps the line.
+    BackendFailed { call: CallId, failure: String },
+    /// The backend closed the session: the broker of its endpoint went away.
+    /// `reason` says what happened, in one line.
+    ///
+    /// The record of every call in flight keeps the line.
+    BackendClosed { reason: String },
     /// The timer that the pipeline asked for under this ID ran out.
     TimerFired(TimerId),
     /// The armed rules changed.

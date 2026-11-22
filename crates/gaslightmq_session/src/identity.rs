@@ -251,12 +251,13 @@ impl fmt::Display for Lifecycle {
 pub enum ClosedBy {
     /// The client closed the connection, or gave up on it.
     Client,
-    /// The backend went away, such as a broker that goes down.
+    /// The backend went away: it lost the cluster, or the broker of the endpoint went down.
     Backend,
     /// A hang-up lie closed the connection.
     Lie,
-    /// The proxy closed the connection itself, because the bytes of the client were no request.
-    /// No lie did this, and the backend never saw those bytes.
+    /// The proxy closed the connection itself, because it could not keep the answers of the connection in order:
+    /// the bytes of the client were no request, or the backend answered with something that is no response.
+    /// No lie did this.
     Proxy,
 }
 

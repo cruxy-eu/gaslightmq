@@ -10,6 +10,7 @@ use gaslightmq_session::prelude::*;
 use gaslightmq_wire::{FrameDecoder, Request, Response};
 
 use crate::in_flight::{AtRequestGate, CallInFlight, Leaving, Settled};
+use crate::untold::StageFailure;
 use crate::{Input, Output, Outputs, SharedBySessions, TimerId};
 
 /// The request pipeline of one connection: a state machine that decides what happens to each call.
@@ -48,6 +49,10 @@ use crate::{Input, Output, Outputs, SharedBySessions, TimerId};
 /// | [`Input::ClientClosed`] arrives. | The client | The record of every call in flight. |
 /// | A hang-up acts. | A lie | The record of every call in flight, and [`Output::Close`]. |
 /// | The bytes of the client are no request, a Produce does not say whether it expects a response, or the backend sends something that is no response to the request. | The proxy | The same. |
+/// | [`Input::BackendFailed`] or [`Input::BackendClosed`] arrives. | The backend | The same. Every record says why the backend ended the session. |
+///
+/// An answer of the backend that is no response is a [`Response`] that does not answer the request,
+/// or [`Input::BackendAnswerUnreadable`].
 ///
 /// A call that was in flight when its session ended got no answer, and its record says so.
 /// Its firings go back to their budgets.
@@ -58,6 +63,9 @@ use crate::{Input, Output, Outputs, SharedBySessions, TimerId};
 /// The engine cannot avoid every race: a backend answers a call whose session just closed,
 /// and a timer fires for a call that left.
 /// An input that names a call or a timer that the pipeline does not wait for changes nothing.
+///
+/// A failure of the backend is the exception: [`Input::BackendFailed`] ends the session whichever call of the
+/// connection it names. A Produce without a response has left by the time its failure arrives.
 #[derive(Debug)]
 pub struct Pipeline {
     session: Session<CallInFlight>,
@@ -97,9 +105,17 @@ impl Pipeline {
         match input {
             Input::ClientBytes(bytes) => self.receive(bytes, now, &mut outputs),
             Input::BackendAnswered { call, response } => self.backend_answered(call, response, now, &mut outputs),
+            Input::BackendAnswerUnreadable { call, error } => {
+                self.backend_answered_unreadably(call, error, now, &mut outputs);
+            }
+            Input::BackendFailed { call, failure } => self.backend_failed(call, failure, now, &mut outputs),
+            Input::BackendClosed { reason } => {
+                let reason = StageFailure::BackendClosed { reason };
+                self.close(ClosedBy::Backend, None, Some(&reason), now, &mut outputs);
+            }
             Input::TimerFired(timer) => self.timer_fired(timer, now, &mut outputs),
             Input::SnapshotPublished(snapshot) => self.snapshot = snapshot,
-            Input::ClientClosed => self.close(ClosedBy::Client, None, now, &mut outputs),
+            Input::ClientClosed => self.close(ClosedBy::Client, None, None, now, &mut outputs),
         }
         outputs
     }
@@ -161,7 +177,7 @@ impl Pipeline {
                 Ok(request) => self.arrive(request, now, outputs),
                 // Without a request header, nothing says where the next request starts or how to answer this one.
                 // A broker closes such a connection, and so does the proxy: no lie and no backend did it.
-                Err(_) => self.close(ClosedBy::Proxy, None, now, outputs),
+                Err(_) => self.close(ClosedBy::Proxy, None, None, now, outputs),
             }
         }
     }
@@ -187,7 +203,7 @@ impl Pipeline {
         if arrival.unanswerable {
             // A Produce that does not say its `acks` may get a response or not. Whichever the proxy assumed,
             // being wrong would stall or mix up every answer behind it, so it closes the connection, as a broker does.
-            self.close(ClosedBy::Proxy, None, now, outputs);
+            self.close(ClosedBy::Proxy, None, None, now, outputs);
         } else if arrival.silenced {
             // The call never gets an answer, and the session is stalled from now on.
             if self.session.calls_mut().silence(number, now).is_ok() {
@@ -216,6 +232,34 @@ impl Pipeline {
         };
         self.settled(number, settled, now, outputs);
         self.advance(now, outputs);
+    }
+
+    /// The backend answered a call with something that is no response.
+    /// The call has no answer, and the proxy closes the connection once that would be at the head of the line.
+    fn backend_answered_unreadably(&mut self, call: CallId, error: String, now: Instant, outputs: &mut Outputs) {
+        if call.connection() != self.session.connection().number() {
+            return;
+        }
+        let number = call.number();
+        let Some(in_flight) = self.session.calls_mut().get_mut(number) else {
+            return;
+        };
+        let Some(settled) = in_flight.content_mut().answered_unreadably(error, now) else {
+            return;
+        };
+        self.settled(number, settled, now, outputs);
+        self.advance(now, outputs);
+    }
+
+    /// The backend has no answer for a call of this connection, so the session ends.
+    ///
+    /// It ends whichever call the failure names: a Produce without a response has left by the time its failure arrives.
+    fn backend_failed(&mut self, call: CallId, failure: String, now: Instant, outputs: &mut Outputs) {
+        if call.connection() != self.session.connection().number() {
+            return;
+        }
+        let reason = StageFailure::BackendFailed { call, failure };
+        self.close(ClosedBy::Backend, Some(call.number()), Some(&reason), now, outputs);
     }
 
     /// The wait of a call ended: its request or its answer joins the line.
@@ -261,7 +305,7 @@ impl Pipeline {
                 }
                 outputs.extend(call.record(number, delivered).map(Box::new).map(Output::Emit));
                 if let Leaving::Close(by) = leaving {
-                    self.close(by, None, now, outputs);
+                    self.close(by, None, None, now, outputs);
                     return;
                 }
             }
@@ -289,7 +333,7 @@ impl Pipeline {
                 outputs.extend(forward.map(|request| Output::Forward { call: id, request }));
                 self.settled(number, settled, now, outputs);
             }
-            AtRequestGate::HangUp => self.close(ClosedBy::Lie, Some(number), now, outputs),
+            AtRequestGate::HangUp => self.close(ClosedBy::Lie, Some(number), None, now, outputs),
             AtRequestGate::NotWaiting => {}
         }
     }
@@ -322,17 +366,29 @@ impl Pipeline {
 
     /// The session ends at `now`. No call in flight gets an answer, and each of them is recorded.
     ///
-    /// `hung_up` is the call whose hang-up closes the connection, when it is still in flight.
-    fn close(&mut self, by: ClosedBy, hung_up: Option<CallNumber>, now: Instant, outputs: &mut Outputs) {
+    /// `answered_by_closing` is the call that gets the closed connection as its answer, when it is still in flight:
+    /// the call whose hang-up closes the connection, or the call that the backend has no answer for.
+    /// `reason` is why the backend ended the session, which the record of every call in flight keeps.
+    fn close(
+        &mut self,
+        by: ClosedBy,
+        answered_by_closing: Option<CallNumber>,
+        reason: Option<&StageFailure>,
+        now: Instant,
+        outputs: &mut Outputs,
+    ) {
         for in_flight in self.session.close(by, now) {
             let number = in_flight.number();
-            let delivered = if hung_up == Some(number) {
+            let delivered = if answered_by_closing == Some(number) {
                 Delivered::ConnectionClosed
             } else {
                 Delivered::Nothing
             };
-            let record = in_flight.into_content().record(number, delivered);
-            outputs.extend(record.map(Box::new).map(Output::Emit));
+            let mut call = in_flight.into_content();
+            if let Some(reason) = reason {
+                call.failed(reason.clone());
+            }
+            outputs.extend(call.record(number, delivered).map(Box::new).map(Output::Emit));
         }
         if by != ClosedBy::Client {
             outputs.push(Output::Close);

@@ -281,6 +281,45 @@ fn a_refusal_that_withheld_a_partition_stays_told_when_its_error_cannot_join_the
 }
 
 #[test]
+fn an_answer_that_the_backend_cannot_hand_over_closes_the_connection_in_its_turn() {
+    let mut driver = Driver::with([]);
+    let first = driver.send(&heartbeat(41)).forwarded();
+    let second = driver.send(&heartbeat(42)).forwarded();
+
+    // The cluster answered the second call with bytes that the backend cannot read as a response.
+    let waiting = driver.handle(gaslightmq_pipeline::Input::BackendAnswerUnreadable {
+        call: second.0,
+        error: "response header is cut short at 3 bytes".to_owned(),
+    });
+    assert!(waiting.is_empty(), "the first call still waits for its answer");
+    assert_eq!(driver.pipeline.closed(), None);
+
+    // The first call gets its answer. Then the answer of the second call would leave, and the proxy has none.
+    let closed = driver.answer(&first);
+    assert_eq!(closed.kinds(), ["send", "emit", "emit", "close"]);
+    let [answered, unanswered] = closed.calls().try_into().unwrap();
+    assert!(answered.delivered().response().is_some());
+    assert_eq!(unanswered.delivered(), &Delivered::ConnectionClosed);
+    assert_eq!(
+        unanswered.explanation().failure().map(Failure::message),
+        Some("the backend answered with what is no response: response header is cut short at 3 bytes")
+    );
+
+    // The proxy closed the connection, as for a response that does not answer the request.
+    let closed_by = driver.pipeline.closed().map(|closed| closed.by());
+    assert_eq!(closed_by, Some(gaslightmq_session::ClosedBy::Proxy));
+
+    // A call that does not wait for the backend takes no such answer.
+    let mut driver = Driver::with([]);
+    let unknown = gaslightmq_pipeline::Input::BackendAnswerUnreadable {
+        call: second.0,
+        error: "response header is cut short at 3 bytes".to_owned(),
+    };
+    assert!(driver.handle(unknown).is_empty());
+    assert_eq!(driver.pipeline.closed(), None);
+}
+
+#[test]
 fn an_answer_that_is_no_response_to_the_request_is_not_sent() {
     let mut driver = Driver::with([]);
     let first = driver.send(&heartbeat(41)).forwarded();

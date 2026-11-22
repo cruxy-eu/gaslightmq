@@ -133,8 +133,8 @@ A live rule that waits for the truth does not stop a scenario rule from ending t
 ## Incidents
 
 Incidents that rules fire go to the scenario runner during resolve.
-The runner adds their [consequences](../domains/lies-and-incidents.md#consequences)
-and hands them to the backend.
+The runner hands them to the backend,
+which adds their [consequences](../domains/lies-and-incidents.md#consequences).
 They take effect on the World or the overlay after this call,
 not during it.
 
@@ -204,3 +204,19 @@ It then closes the connection, as a broker does, and the session records that th
   A Produce whose body is broken behind its `acks` goes through untouched, and the pipeline knows whether to wait.
 - An answer of the backend that is no response to the request must not reach the client.
   The connection closes when that answer would be the next to leave.
+  It makes no difference who finds out: the backend, which cannot read the bytes of the cluster as a response,
+  or the pipeline, which gets a response that does not answer the request.
+
+## Failure of the backend
+
+A backend that has no answer for a call ends the session.
+It cannot reach the cluster, or it lost its connection to it.
+The pipeline closes the connection at once, and the session records that the backend closed it.
+The same happens when the endpoint of the session closes, because its broker went down.
+
+- No call in flight gets an answer, and none gets a response that the cluster did not send.
+- Every call in flight gets its record, and the explanation says why the backend ended the session.
+- A failure ends the session whichever call of the connection it names.
+  A Produce with `acks=0` has left the pipeline by the time its failure arrives.
+
+See [answers](backends.md#answers).

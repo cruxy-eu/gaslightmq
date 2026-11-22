@@ -1,0 +1,26 @@
+[package]
+name = "gaslightmq_backend"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+gaslightmq_call.workspace = true
+gaslightmq_field.workspace = true
+gaslightmq_incident.workspace = true
+gaslightmq_wire.workspace = true
+
+[dev-dependencies]
+# The executor that drives the hand-written backends of the tests and the examples. The crate itself needs no runtime.
+futures.workspace = true
+gaslightmq_clock.workspace = true
+gaslightmq_kernel.workspace = true
+# The pipeline whose outputs become calls on a backend, and what it takes to open one.
+# `tests/prelude.rs` also checks that no name clashes with the preludes that an engine imports next to this one.
+gaslightmq_lie_api.workspace = true
+gaslightmq_pipeline.workspace = true
+gaslightmq_rule.workspace = true
+gaslightmq_session.workspace = true

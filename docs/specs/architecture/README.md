@@ -63,9 +63,9 @@ flowchart LR
 | **Listeners** | Accept connections on the bootstrap endpoint and one endpoint per broker. Refuse connections when a broker is down. |
 | **Sessions** | Run one connection each. A session is a transport and a pipeline: the transport reads and writes the client's bytes, and the pipeline decides. Share a client context with the other connections of the same client. |
 | **Pipeline** | Hold the state of one session: identity, the rule snapshot, per-session counters and in-flight calls. Take each call through the stages in [request pipeline](request-pipeline.md). |
-| **Backend** | Answer a call with the truth, from a real cluster or from the World. Apply or emulate incidents. |
+| **Backend** | Answer a call with the truth, from a real cluster or from the World. Expand incidents into their consequences, and apply or emulate them. |
 | **Rule store** | Hold every rule and its state, workspace rules and live rules alike. Publish an immutable snapshot of armed rules in priority order on every change. Hold each armed rule's shared counter and budget as atomics. |
-| **Scenario runner** | Run the active scenario and the live set: turn the mode into a priority order, advance steps, expand incidents into their consequences and hand them to the backend. |
+| **Scenario runner** | Run the active scenario and the live set: turn the mode into a priority order, advance steps, and hand incidents to the backend. |
 | **Clock** | Tell the time for triggers, lifetimes, steps, arriving records and timeouts. |
 | **Event bus** | Carry call events, rule changes and world changes to everyone who listens. |
 | **Recorder** | Write call events and journal entries to a recording while recording is on. |

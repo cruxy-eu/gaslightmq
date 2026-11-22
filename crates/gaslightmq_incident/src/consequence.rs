@@ -20,7 +20,7 @@ pub trait Topology {
 /// What an incident brings about besides its own effect.
 ///
 /// The cluster does not react to an incident by itself.
-/// Whatever follows from an incident is a consequence that the engine adds,
+/// Whatever follows from an incident is a consequence that a backend adds with [`Incident::expand`],
 /// so both backends see the same list.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Consequence {

@@ -386,7 +386,7 @@ const CRATES = [
 
   ["scenario","Scenarios","sans",1,5,"The scenario definition, modes as priority orders, the step machine of a Sequence, the live set and capture. Consumes call records, journal entries and time; emits arm and disarm commands.",["rule","trigger","call","journal","incident","clock"]],
 
-  ["backend","World and backends","sig",0,3,"The backend contract: the request and answer messages, and the one async trait through which the engine reaches a backend. No logic, no runtime.",["wire","incident","clock"]],
+  ["backend","World and backends","sig",0,3,"The backend contract: the request and answer messages, and the one async trait through which the engine reaches a backend. No logic, no runtime.",["wire","incident","call","field"]],
   ["broker","World and backends","sans",0,6,"The broker instance as a state machine: routes each request to a sim_* crate, applies incidents to the World and owns the virtual clock.",["backend","world","sim_log","sim_group","clock"]],
   ["sim_log","World and backends","sans",0,6,"Produce, Fetch, offsets and idempotent producers against the World.",["world","wire"]],
   ["sim_group","World and backends","sans",0,6,"Group coordination against the World, for the classic and the consumer protocol.",["world","wire","clock"]],
