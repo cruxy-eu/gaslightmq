@@ -4,12 +4,14 @@
 //! The check compares a crate's dependencies on other workspace crates with its row, both ways:
 //! a dependency the row does not list fails, and so does a listed dependency the crate does not have.
 //! A row for a crate that does not exist yet is a plan, and passes.
+//! The tooling in `xtask/` is not product code, and needs no row.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 use std::io;
 use std::path::Path;
 
+use crate::crate_names::full_name;
 use crate::workspace::Workspace;
 
 /// Where the crate tables live, relative to the workspace root.
@@ -17,9 +19,6 @@ pub const PATH: &str = "docs/specs/architecture/crates.md";
 
 /// The header row that starts a crate table.
 const HEADER: &str = "| Crate | Holds | Depends on |";
-
-/// The prefix of every crate name, which the tables leave out.
-const PREFIX: &str = "gaslightmq_";
 
 /// Every row of every crate table, by full crate name.
 pub struct CrateLayout {
@@ -66,7 +65,7 @@ impl CrateLayout {
     /// Everything in which the workspace differs from the tables.
     pub fn violations(&self, workspace: &Workspace) -> Vec<LayoutViolation> {
         let mut violations = Vec::new();
-        for member in &workspace.members {
+        for member in workspace.members.iter().filter(|member| !member.is_tooling()) {
             let name = &member.name;
             match self.rows.get(name) {
                 None => violations.push(LayoutViolation::NoRow { name: name.clone() }),
@@ -121,10 +120,6 @@ fn parse_row(line: usize, text: &str) -> Result<(String, Dependencies), CrateLay
 fn in_backticks(cell: &str) -> Option<&str> {
     let name = cell.strip_prefix('`')?.strip_suffix('`')?;
     (!name.is_empty() && !name.contains('`')).then_some(name)
-}
-
-fn full_name(name: &str) -> String {
-    format!("{PREFIX}{name}")
 }
 
 /// A way in which the workspace differs from the crate tables.
@@ -289,15 +284,28 @@ Some prose in between.
     }
 
     #[test]
+    fn the_tooling_needs_no_row() {
+        let layout = CrateLayout::parse(TABLES).unwrap();
+        let mut members = following_the_tables();
+        members.push(Member {
+            name: "gaslightmq_checks".to_owned(),
+            dir: PathBuf::from("xtask"),
+            dependencies: BTreeSet::new(),
+        });
+
+        assert_eq!(layout.violations(&workspace(members)), []);
+    }
+
+    #[test]
     fn a_crate_whose_row_describes_its_dependencies_in_words_fails() {
         let layout = CrateLayout::parse(TABLES).unwrap();
         let mut members = following_the_tables();
-        members.push(member("gaslightmq_gaslightmq", &["gaslightmq_kernel"]));
+        members.push(member("gaslightmq", &["gaslightmq_kernel"]));
 
         assert_eq!(
             layout.violations(&workspace(members)),
             [LayoutViolation::Described {
-                name: "gaslightmq_gaslightmq".to_owned(),
+                name: "gaslightmq".to_owned(),
                 words: "The public crates".to_owned()
             }]
         );
@@ -343,7 +351,7 @@ Some prose in between.
 
     #[test]
     fn the_crate_tables_of_this_repository_parse() {
-        let layout = CrateLayout::parse(include_str!("../../../docs/specs/architecture/crates.md")).unwrap();
+        let layout = CrateLayout::parse(include_str!("../../docs/specs/architecture/crates.md")).unwrap();
 
         assert_eq!(layout.rows["gaslightmq_kernel"], Dependencies::Listed(BTreeSet::new()));
     }

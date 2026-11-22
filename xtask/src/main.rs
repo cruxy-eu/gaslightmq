@@ -1,6 +1,6 @@
 //! The workspace's own checks: rules of `crates.md` and `CLAUDE.md` that the compiler and clippy cannot see.
 //!
-//! `cargo run -p gaslightmq_checks -- [check ...]` runs the named checks, or every check without a name.
+//! `cargo xtask [check ...]` runs the named checks, or every check without a name.
 //! It prints one line per violation, and fails when it finds one.
 
 mod crate_layout;

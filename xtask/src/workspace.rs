@@ -8,6 +8,11 @@ use std::process::Command;
 
 use serde::Deserialize;
 
+/// The directory of the workspace's tooling, which is not product code: the checks themselves.
+///
+/// Its crates need no row in `crates.md`, and they are the one exception to the rule that a directory carries a crate's name.
+pub const TOOLING: &str = "xtask";
+
 /// The crates of the workspace, and the workspace crates each one depends on.
 pub struct Workspace {
     /// The directory of the workspace's `Cargo.toml`.
@@ -23,6 +28,13 @@ pub struct Member {
     pub dir: PathBuf,
     /// The workspace crates it needs to build, without its dev-dependencies.
     pub dependencies: BTreeSet<String>,
+}
+
+impl Member {
+    /// Whether the crate is tooling rather than product code.
+    pub fn is_tooling(&self) -> bool {
+        self.dir.starts_with(TOOLING)
+    }
 }
 
 impl Workspace {

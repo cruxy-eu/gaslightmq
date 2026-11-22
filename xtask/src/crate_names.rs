@@ -1,15 +1,30 @@
 //! The check that every crate is named as `CLAUDE.md` says.
 //!
 //! A crate name starts with `gaslightmq_` and uses lowercase letters, digits and underscores.
+//! The facade `gaslightmq` and the binary `gmq` stand apart, as `crates.md` says, and need no prefix.
 //! The directory carries the name: `crates/gaslightmq_wire` holds `gaslightmq_wire`,
 //! and a family shares a directory, so `crates/gaslightmq_kafka_client/api` holds `gaslightmq_kafka_client_api`.
+//! The tooling in `xtask/` is the one exception to where a crate lives, and not to its name.
 
 use std::fmt;
 use std::path::{Component, Path, PathBuf};
 
 use crate::workspace::Workspace;
 
-const PREFIX: &str = "gaslightmq_";
+/// The prefix of every crate name.
+pub const PREFIX: &str = "gaslightmq_";
+
+/// The two crates that stand apart, and carry no prefix: the facade and the binary.
+pub const UNPREFIXED: [&str; 2] = ["gaslightmq", "gmq"];
+
+/// The crate that a name in the tables of `crates.md` stands for: `selector` is `gaslightmq_selector`.
+pub fn full_name(name: &str) -> String {
+    if UNPREFIXED.contains(&name) {
+        name.to_owned()
+    } else {
+        format!("{PREFIX}{name}")
+    }
+}
 
 /// The directory that holds every crate.
 const CRATES: &str = "crates";
@@ -19,7 +34,7 @@ pub fn violations(workspace: &Workspace) -> Vec<NameViolation> {
     let mut violations = Vec::new();
     for member in &workspace.members {
         let name = &member.name;
-        if !name.starts_with(PREFIX) {
+        if !name.starts_with(PREFIX) && !UNPREFIXED.contains(&name.as_str()) {
             violations.push(NameViolation::NoPrefix { name: name.clone() });
         }
         if !name
@@ -28,7 +43,7 @@ pub fn violations(workspace: &Workspace) -> Vec<NameViolation> {
         {
             violations.push(NameViolation::NotSnakeCase { name: name.clone() });
         }
-        if spelled_by(&member.dir).as_deref() != Some(name.as_str()) {
+        if !member.is_tooling() && spelled_by(&member.dir).as_deref() != Some(name.as_str()) {
             violations.push(NameViolation::Elsewhere {
                 name: name.clone(),
                 dir: member.dir.clone(),
@@ -123,9 +138,39 @@ mod tests {
     #[test]
     fn a_name_without_the_prefix_fails() {
         assert_eq!(
-            violations(&workspace(&[("gmq", "crates/gmq")])),
-            [NameViolation::NoPrefix { name: "gmq".to_owned() }]
+            violations(&workspace(&[("proxy", "crates/proxy")])),
+            [NameViolation::NoPrefix {
+                name: "proxy".to_owned()
+            }]
         );
+    }
+
+    #[test]
+    fn the_facade_and_the_binary_need_no_prefix() {
+        let workspace = workspace(&[("gaslightmq", "crates/gaslightmq"), ("gmq", "crates/gmq")]);
+
+        assert_eq!(violations(&workspace), []);
+    }
+
+    #[test]
+    fn the_tooling_lives_in_xtask() {
+        assert_eq!(violations(&workspace(&[("gaslightmq_checks", "xtask")])), []);
+    }
+
+    #[test]
+    fn the_tooling_needs_the_prefix_too() {
+        assert_eq!(
+            violations(&workspace(&[("checks", "xtask")])),
+            [NameViolation::NoPrefix {
+                name: "checks".to_owned()
+            }]
+        );
+    }
+
+    #[test]
+    fn a_table_name_stands_for_the_crate_with_the_prefix() {
+        assert_eq!(full_name("selector"), "gaslightmq_selector");
+        assert_eq!(full_name("gmq"), "gmq");
     }
 
     #[test]

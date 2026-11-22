@@ -6,6 +6,7 @@
 - Use native async traits, not `async-trait`.
 - Use workspace dependency versions (`dep.workspace = true`), not inline versions.
 - Crate names start with `gaslightmq_` and use underscores, never hyphens. The directory carries the crate's name: `crates/gaslightmq_wire`. A family of crates shares a directory: `crates/gaslightmq_kafka_client/api` is the crate `gaslightmq_kafka_client_api`.
+- Tooling that is not product code, such as the workspace checks, lives in `xtask/` and has no row in `crates.md`. `cargo xtask` runs the checks.
 - A name says what a thing means, never which crate, module or type it came from, or how it is built:
   `InvalidPartition`, not `Kernel`.
 - A value object owns its error, named after it: `TopicName` has `TopicNameError`.
