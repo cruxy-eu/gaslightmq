@@ -1,5 +1,10 @@
 //! The prelude holds every type, and its names clash with none of `std`, of the clock or of the other preludes.
 
+#![expect(
+    clippy::unwrap_used,
+    reason = "a panic is how a test fails, also in a helper outside a `#[test]` function"
+)]
+
 /// Imports the prelude next to the standard prelude, the clock, the preludes of the kernel, the fields and the lies,
 /// and the modules of `std` that code imports most.
 ///
@@ -7,7 +12,7 @@
 /// A name that two of them hold is ambiguous, and using it does not compile.
 /// This module names every item of the prelude, so it only compiles while no name clashes.
 mod next_to_the_others {
-    #![allow(unused_imports)]
+    #![expect(unused_imports, reason = "the imports only have to compile next to each other")]
 
     use std::borrow::*;
     use std::collections::*;

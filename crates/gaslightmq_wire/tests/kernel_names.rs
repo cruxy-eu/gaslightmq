@@ -14,6 +14,11 @@
 //!
 //! Then run the test without the variable, and commit the file.
 
+#![expect(
+    clippy::unwrap_used,
+    reason = "a panic is how a test fails, also in a helper outside a `#[test]` function"
+)]
+
 use std::fmt::Write;
 use std::path::PathBuf;
 

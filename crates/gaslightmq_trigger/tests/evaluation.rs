@@ -1,5 +1,10 @@
 //! Evaluating matching calls: every trigger kind, combined triggers, counters per rule and per session, and hand firings.
 
+#![expect(
+    clippy::unwrap_used,
+    reason = "a panic is how a test fails, also in a helper outside a `#[test]` function"
+)]
+
 use gaslightmq_clock::{Duration, Instant, TimeSpan};
 use gaslightmq_trigger::prelude::*;
 

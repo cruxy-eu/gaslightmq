@@ -7,7 +7,7 @@
 /// A name that two of them hold is ambiguous, and using it does not compile.
 /// This module names every item of the prelude, so it only compiles while no name clashes.
 mod next_to_std_the_kernel_and_the_fields {
-    #![allow(unused_imports)]
+    #![expect(unused_imports, reason = "the imports only have to compile next to each other")]
 
     use std::borrow::*;
     use std::collections::*;

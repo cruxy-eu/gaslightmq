@@ -1,6 +1,10 @@
 //! The `serde` form of every definition type, and what reading rejects.
 
 #![cfg(feature = "serde")]
+#![expect(
+    clippy::unwrap_used,
+    reason = "a panic is how a test fails, also in a helper outside a `#[test]` function"
+)]
 
 use std::fmt::Debug;
 

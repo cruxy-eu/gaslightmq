@@ -1,12 +1,17 @@
 //! The prelude holds every value object and its error, and its names clash with none of `std`.
 
+#![expect(
+    clippy::unwrap_used,
+    reason = "a panic is how a test fails, also in a helper outside a `#[test]` function"
+)]
+
 /// Imports the prelude next to the standard prelude and the modules of `std` that code imports most.
 ///
 /// All of them are glob imports, so they rank the same.
 /// A name that two of them hold is ambiguous, and using it does not compile.
 /// This module names every item of the prelude, so it only compiles while no name clashes.
 mod next_to_std {
-    #![allow(unused_imports)]
+    #![expect(unused_imports, reason = "the imports only have to compile next to each other")]
 
     use std::borrow::*;
     use std::collections::*;

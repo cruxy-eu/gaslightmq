@@ -75,11 +75,10 @@ impl ErrorCode {
     }
 
     /// A code of the name table, which holds no zero.
+    ///
+    /// The table makes a constant of each of its codes, so a zero in it does not compile.
     pub(crate) const fn named(code: i16) -> Self {
-        match NonZeroI16::new(code) {
-            Some(code) => Self(code),
-            None => panic!("the name table holds the code 0, which means \"no error\""),
-        }
+        Self(NonZeroI16::new(code).expect("the name table holds no code 0, because 0 means \"no error\""))
     }
 
     /// The error code as a plain number, as Kafka writes it.

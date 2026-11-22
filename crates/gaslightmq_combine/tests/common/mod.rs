@@ -1,6 +1,10 @@
 //! What the tests of combining share: short names for lies, and a fate as one line of text.
 
-#![allow(dead_code)]
+#![expect(
+    clippy::unwrap_used,
+    clippy::panic,
+    reason = "a panic is how a test fails, also in a helper outside a `#[test]` function"
+)]
 
 use gaslightmq_clock::TimeSpan;
 use gaslightmq_combine::prelude::*;

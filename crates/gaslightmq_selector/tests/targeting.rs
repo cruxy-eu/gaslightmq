@@ -1,5 +1,10 @@
 //! The targeting spec, example by example: each rule of `docs/specs/domains/targeting.md` as a plain function call.
 
+#![expect(
+    clippy::unwrap_used,
+    reason = "a panic is how a test fails, also in a helper outside a `#[test]` function"
+)]
+
 use gaslightmq_field::prelude::*;
 use gaslightmq_kernel::prelude::*;
 use gaslightmq_selector::prelude::*;

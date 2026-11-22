@@ -1,6 +1,6 @@
 use std::collections::{BTreeMap, HashMap};
 use std::net::SocketAddr;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::Duration;
 
 use bytes::Bytes;
@@ -137,6 +137,22 @@ struct Inner {
     versions: OnceCell<HashMap<i16, i16>>,
 }
 
+impl Inner {
+    /// The brokers and leaders the client knows.
+    fn cluster(&self) -> MutexGuard<'_, ClusterState> {
+        self.cluster
+            .lock()
+            .expect("no code panics while it holds the cluster lock, so the lock is never poisoned")
+    }
+
+    /// The connections the client keeps, by broker.
+    fn nodes(&self) -> MutexGuard<'_, HashMap<i32, Arc<Connection>>> {
+        self.nodes
+            .lock()
+            .expect("no code panics while it holds the nodes lock, so the lock is never poisoned")
+    }
+}
+
 impl From<SocketAddr> for KafkaClient {
     fn from(addr: SocketAddr) -> Self {
         Self::new(ClientConfig::new(addr.to_string()))
@@ -172,7 +188,7 @@ impl KafkaClient {
     /// Connections to try for cluster-wide requests: known brokers first,
     /// then the bootstrap addresses.
     fn any_connections(&self) -> Vec<Arc<Connection>> {
-        let brokers: Vec<i32> = self.inner.cluster.lock().unwrap().brokers.keys().copied().collect();
+        let brokers: Vec<i32> = self.inner.cluster().brokers.keys().copied().collect();
         let mut conns: Vec<Arc<Connection>> = brokers.into_iter().filter_map(|id| self.node(id).ok()).collect();
         conns.extend(self.inner.bootstrap.iter().cloned());
         conns
@@ -181,14 +197,12 @@ impl KafkaClient {
     fn node(&self, node_id: i32) -> Result<Arc<Connection>, ClientError> {
         let addr = self
             .inner
-            .cluster
-            .lock()
-            .unwrap()
+            .cluster()
             .brokers
             .get(&node_id)
             .cloned()
             .ok_or_else(|| ClientError::Protocol(format!("unknown broker {node_id}")))?;
-        let mut nodes = self.inner.nodes.lock().unwrap();
+        let mut nodes = self.inner.nodes();
         match nodes.get(&node_id) {
             Some(conn) if conn.addr() == addr => Ok(conn.clone()),
             _ => {
@@ -253,7 +267,7 @@ impl KafkaClient {
                 .collect()
         }));
         let resp: MetadataResponse = self.on_any(version, &req, timeout).await?;
-        let mut cluster = self.inner.cluster.lock().unwrap();
+        let mut cluster = self.inner.cluster();
         cluster.brokers = resp
             .brokers
             .iter()
@@ -278,9 +292,7 @@ impl KafkaClient {
     async fn leader(&self, topic: &str, partition: i32, timeout: Duration) -> Result<Arc<Connection>, ClientError> {
         let cached = self
             .inner
-            .cluster
-            .lock()
-            .unwrap()
+            .cluster()
             .leaders
             .get(&(topic.to_string(), partition))
             .copied();
@@ -297,9 +309,7 @@ impl KafkaClient {
                 return Err(e);
             }
             self.inner
-                .cluster
-                .lock()
-                .unwrap()
+                .cluster()
                 .leaders
                 .get(&(topic.to_string(), partition))
                 .copied()
@@ -313,12 +323,7 @@ impl KafkaClient {
 
     /// Forget a partition's leader so the next attempt asks again.
     fn forget_leader(&self, topic: &str, partition: i32) {
-        self.inner
-            .cluster
-            .lock()
-            .unwrap()
-            .leaders
-            .remove(&(topic.to_string(), partition));
+        self.inner.cluster().leaders.remove(&(topic.to_string(), partition));
     }
 
     // -----------------------------------------------------------------
@@ -592,13 +597,25 @@ impl Producer for KafkaClient {
     }
 }
 
+/// The methods of [`Consumer`] return a value and no error.
+/// A test that wants the error calls the method of the same name on [`KafkaClient`] itself.
+#[expect(
+    clippy::panic,
+    reason = "the methods of `Consumer` return a value and no error, so a failure panics, as each method documents"
+)]
 impl Consumer for KafkaClient {
+    /// # Panics
+    ///
+    /// When [`KafkaClient::fetch`] fails.
     async fn fetch(&self, topic: &str, partition: Partition, offset: Offset) -> Vec<Record> {
         KafkaClient::fetch(self, topic, i32::from(partition), i64::from(offset))
             .await
             .unwrap_or_else(|e| panic!("fetch {topic}-{partition} failed: {e}"))
     }
 
+    /// # Panics
+    ///
+    /// When [`KafkaClient::topic_metadata`] fails, or when it holds no metadata for `topic`.
     async fn metadata_for_topic(&self, topic: &str) -> TopicMetadata {
         self.topic_metadata(Some(topic))
             .await
@@ -608,12 +625,18 @@ impl Consumer for KafkaClient {
             .unwrap_or_else(|| panic!("no metadata for {topic}"))
     }
 
+    /// # Panics
+    ///
+    /// When [`KafkaClient::topic_metadata`] fails.
     async fn metadata_for_all_topics(&self) -> Vec<TopicMetadata> {
         self.topic_metadata(None)
             .await
             .unwrap_or_else(|e| panic!("metadata failed: {e}"))
     }
 
+    /// # Panics
+    ///
+    /// When [`KafkaClient::watermarks`] fails.
     async fn watermarks(&self, topic: &str, partition: Partition) -> Watermarks {
         KafkaClient::watermarks(self, topic, i32::from(partition))
             .await
