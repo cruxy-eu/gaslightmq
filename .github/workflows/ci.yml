@@ -39,6 +39,17 @@ jobs:
       - uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4
       - run: just checks
 
+  wasm:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: rustup toolchain install
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+      - uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4
+      - run: just wasm
+
   clippy:
     runs-on: ubuntu-latest
     steps:
@@ -76,7 +87,7 @@ jobs:
   ci-success:
     name: CI
     if: always()
-    needs: [fmt, checks, clippy, test, doc]
+    needs: [fmt, checks, wasm, clippy, test, doc]
     runs-on: ubuntu-latest
     steps:
       - name: Every job passed

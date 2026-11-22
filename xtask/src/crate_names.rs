@@ -115,6 +115,7 @@ mod tests {
                     name: name.to_owned(),
                     dir: PathBuf::from(dir),
                     dependencies: [].into(),
+                    outside_dependencies: [].into(),
                 })
                 .collect(),
         }

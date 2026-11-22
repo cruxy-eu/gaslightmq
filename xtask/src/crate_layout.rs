@@ -11,7 +11,7 @@ use std::fmt;
 use std::io;
 use std::path::Path;
 
-use crate::crate_names::full_name;
+use crate::table::{self, Row};
 use crate::workspace::Workspace;
 
 /// Where the crate tables live, relative to the workspace root.
@@ -42,24 +42,21 @@ impl CrateLayout {
 
     pub fn parse(text: &str) -> Result<Self, CrateLayoutError> {
         let mut rows = BTreeMap::new();
-        let mut in_table = false;
-        for (index, line) in text.lines().enumerate() {
-            let line = line.trim();
-            if line == HEADER {
-                in_table = true;
-            } else if !line.starts_with('|') {
-                in_table = false;
-            } else if in_table && !line.starts_with("|---") {
-                let (name, dependencies) = parse_row(index + 1, line)?;
-                if rows.insert(name.clone(), dependencies).is_some() {
-                    return Err(CrateLayoutError::TwoRows { line: index + 1, name });
-                }
+        for row in table::rows(text, HEADER) {
+            let (name, dependencies) = parse_row(&row)?;
+            if rows.insert(name.clone(), dependencies).is_some() {
+                return Err(CrateLayoutError::TwoRows { line: row.line, name });
             }
         }
         if rows.is_empty() {
             return Err(CrateLayoutError::NoTables);
         }
         Ok(CrateLayout { rows })
+    }
+
+    /// Whether a crate, by its full name, has a row.
+    pub fn has_row(&self, name: &str) -> bool {
+        self.rows.contains_key(name)
     }
 
     /// Everything in which the workspace differs from the tables.
@@ -95,31 +92,21 @@ impl CrateLayout {
     }
 }
 
-fn parse_row(line: usize, text: &str) -> Result<(String, Dependencies), CrateLayoutError> {
-    let malformed = || CrateLayoutError::MalformedRow { line };
-    let cells: Vec<&str> = text.trim_matches('|').split('|').map(str::trim).collect();
-    let [name, _holds, dependencies] = cells[..] else {
+fn parse_row(row: &Row<'_>) -> Result<(String, Dependencies), CrateLayoutError> {
+    let malformed = || CrateLayoutError::MalformedRow { line: row.line };
+    let [name, _holds, dependencies] = row.cells[..] else {
         return Err(malformed());
     };
-    let name = in_backticks(name).ok_or_else(malformed)?;
+    let name = table::crate_name(name).ok_or_else(malformed)?;
     let dependencies = if dependencies == "—" {
         Dependencies::Listed(BTreeSet::new())
     } else if dependencies.contains('`') {
-        let names: Option<BTreeSet<String>> = dependencies
-            .split(',')
-            .map(|cell| in_backticks(cell.trim()).map(full_name))
-            .collect();
-        Dependencies::Listed(names.ok_or_else(malformed)?)
+        let names = table::crate_names(dependencies).ok_or_else(malformed)?;
+        Dependencies::Listed(names.into_iter().collect())
     } else {
         Dependencies::Described(dependencies.to_owned())
     };
-    Ok((full_name(name), dependencies))
-}
-
-/// The name between a pair of backticks that hold the whole cell.
-fn in_backticks(cell: &str) -> Option<&str> {
-    let name = cell.strip_prefix('`')?.strip_suffix('`')?;
-    (!name.is_empty() && !name.contains('`')).then_some(name)
+    Ok((name, dependencies))
 }
 
 /// A way in which the workspace differs from the crate tables.
@@ -214,6 +201,7 @@ Some prose in between.
             name: name.to_owned(),
             dir: PathBuf::from("crates").join(name),
             dependencies: dependencies.iter().map(|&dependency| dependency.to_owned()).collect(),
+            outside_dependencies: BTreeSet::new(),
         }
     }
 
@@ -291,6 +279,7 @@ Some prose in between.
             name: "gaslightmq_checks".to_owned(),
             dir: PathBuf::from("xtask"),
             dependencies: BTreeSet::new(),
+            outside_dependencies: BTreeSet::new(),
         });
 
         assert_eq!(layout.violations(&workspace(members)), []);
