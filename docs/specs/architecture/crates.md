@@ -67,9 +67,61 @@ The workspace's own checks are tooling, and not product code: they live in `xtas
   The variant keeps the other error in a field, named `error`, for code that wants to look at it.
   The path of a value in a file comes from the [reader](storage.md#reading), and not from the error of the value:
   `trigger.every: a count is at least one`.
+- **Nothing tunable is hardcoded.**
+  A timeout, a wait, a size, a count or an interval that someone may want to change is a property of a configuration.
+  The property has a name and a default, and the code that waits or counts reads the property.
+  A client waits for a response for its `request_timeout`, which is 30 seconds until someone sets it,
+  and not for a `Duration::from_secs(30)` in the code that sends the request.
+  A value with rules is a value object: a number of attempts that is at least one is not a plain `u32`.
+  A number that the Kafka protocol fixes is not tunable, and stays a constant.
+- **A Kafka client has Kafka's own properties.**
+  A property that Kafka's own clients have keeps its name, its meaning, its unit and its default in our client.
+  The configuration of the Java client is the reference.
+  The doc comment of the field names the property, so someone who knows Kafka finds it at once:
+  `request_timeout` is `request.timeout.ms`.
+  A property that Kafka does not have is added only when the client needs it, and its doc comment says that it is ours.
+  No property exists for behaviour that the client does not have.
 
 The workspace rules apply to every crate:
 Rust edition 2024, native async traits and workspace dependency versions.
+
+## Checks
+
+`cargo xtask` checks the rules of this document that a machine can decide and the compiler cannot see.
+`cargo xtask sans-io` runs one check alone.
+`just checks` and CI run them all.
+
+| Check | Fails when |
+|---|---|
+| `dependencies` | A crate depends on a workspace crate that its row does not list, or its row lists one that it does not depend on. |
+| `crate-names` | A crate name does not start with `gaslightmq_` or holds a hyphen, or the crate's directory does not carry the name. |
+| `wasm-boundary` | A crate that [compiles to WebAssembly](#what-compiles-to-webassembly) reaches `kafka-protocol`. |
+| `workspace-rules` | A crate builds with another edition than 2024, depends on `async-trait`, or names a dependency without `workspace = true`. |
+| `sans-io` | [Sans-IO code](#sans-io-code) is async, or it names a runtime, a socket, the file system, the system clock, the process or global randomness. |
+| `wrapped-errors` | An error type holds another error in a field that is not named `error`, or its `source()` returns something other than `None`. |
+
+A check reads the names in the code, and not what the code does.
+The documentation of each check, in `xtask/src/`, says what it does not catch.
+The other principles need a reviewer.
+
+### Sans-IO code
+
+A crate whose row does not say "This crate does IO" is sans-IO as a whole.
+The `sans-io` check reads its dependencies and every file of its source.
+
+A crate that does IO declares the modules it keeps sans-IO in its `Cargo.toml`:
+
+```toml
+[package.metadata.gaslightmq]
+sans_io_modules = ["logic"]
+```
+
+The check then reads `src/logic.rs`, or `src/logic/mod.rs` and every file below `src/logic/`, as it reads a sans-IO crate.
+A sans-IO module names nothing of its own crate outside the sans-IO modules.
+A module that holds the types it works on, such as a configuration or an error, is therefore declared too.
+
+One sans-IO crate has an async signature: [`backend`](#the-backend-seam).
+The check lets its trait declare async functions, and no other async code.
 
 ## Layers
 
@@ -211,15 +263,15 @@ Transactions arrive later as `sim_txn`, next to `sim_log` and `sim_group`.
 | Crate | Holds | Depends on |
 |---|---|---|
 | `engine` | The runtime of one proxy: one task per session that owns the transport and drives the pipeline, the rule store, the scenario runner, the event bus, the journal, the recorder and the indexer. This crate does IO. | `pipeline`, `session`, `rule`, `scenario`, `journal`, `traffic`, `index`, `recording`, `backend`, `listener`, `workspace`, `environment`, `clock` |
-| `ui` | The web UI, a Dioxus application. It reaches the engine only through the control plane. | `control_api`, `control_client`, `surface`, `hardware_push2` |
+| `ui` | The web UI, a Dioxus application. It reaches the engine only through the control plane. This crate does IO. | `control_api`, `control_client`, `surface`, `hardware_push2` |
 | `listener` | Kafka on a socket: accept connections, frame bytes, and drive whatever handles a connection. A proxy's pipeline and a broker alone both sit behind it. This crate does IO. | `wire`, `clock` |
 | `host` | One process with several [environments](storage.md#several-environments-in-one-process): it starts and stops proxies and brokers, runs the task that drives each broker, and shares the workspace and the control plane between them. This crate does IO. | `engine`, `broker`, `listener`, `backend_upstream`, `workspace_fs`, `environment`, `quick_inject` |
-| `test` | The test library: it starts a proxy, a broker, or a proxy in front of a broker inside the test's own process, on free ports, and hands the test the addresses its clients connect to. The test then activates a scenario and asserts on the recording. See [instances in a test](#instances-in-a-test). | `host`, `control_client` |
-| `testcontainers` | A container module: it starts the GaslightMQ image next to a test, with the workspace the test hands over, waits until the instance is ready, and hands the test the addresses its clients connect to. See [instances in a test](#instances-in-a-test). | `control_client` |
+| `test` | The test library: it starts a proxy, a broker, or a proxy in front of a broker inside the test's own process, on free ports, and hands the test the addresses its clients connect to. The test then activates a scenario and asserts on the recording. This crate does IO. See [instances in a test](#instances-in-a-test). | `host`, `control_client` |
+| `testcontainers` | A container module: it starts the GaslightMQ image next to a test, with the workspace the test hands over, waits until the instance is ready, and hands the test the addresses its clients connect to. This crate does IO. See [instances in a test](#instances-in-a-test). | `control_client` |
 | `kafka_client_api` | What a Kafka client offers to a test, whichever client it is: the producer, consumer and admin traits, one trait per protocol API, and a raw client that sends one request at a fixed version. This crate does IO. | `wire` |
 | `kafka_client_native` | Our own Kafka client behind those traits: it follows partition leaders, negotiates API versions, and reports every failure as an error. This crate does IO. | `kafka_client_api`, `wire` |
-| `gaslightmq` | The facade crate: `Proxy`, `Broker` and `Host`, and re-exports of what library users need. | The public crates |
-| `gmq` | The binary: `gmq proxy`, `gmq broker`, `gmq start` and `gmq run`. | `host`, `control_server` |
+| `gaslightmq` | The facade crate: `Proxy`, `Broker` and `Host`, and re-exports of what library users need. This crate does IO. | The public crates |
+| `gmq` | The binary: `gmq proxy`, `gmq broker`, `gmq start` and `gmq run`. This crate does IO. | `host`, `control_server` |
 
 ## The pipeline is sans-IO
 

@@ -84,7 +84,7 @@ async fn a_peer_that_hangs_up_is_a_delivery_timeout() {
     let err = client.topic_metadata(None).await.unwrap_err();
 
     assert!(
-        matches!(err, ClientError::DeliveryTimeout(ref last) if matches!(**last, ClientError::ConnectionFailed(_))),
+        matches!(err, ClientError::DeliveryTimeout { ref error } if matches!(**error, ClientError::ConnectionFailed(_))),
         "{err}"
     );
 }

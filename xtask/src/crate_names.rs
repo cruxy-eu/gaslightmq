@@ -112,10 +112,8 @@ mod tests {
             members: members
                 .iter()
                 .map(|&(name, dir)| Member {
-                    name: name.to_owned(),
                     dir: PathBuf::from(dir),
-                    dependencies: [].into(),
-                    outside_dependencies: [].into(),
+                    ..Member::alone(name)
                 })
                 .collect(),
         }

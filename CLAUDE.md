@@ -13,5 +13,9 @@
   No crate has one error type for everything in it.
 - An error says everything in one message.
   A variant that wraps another error keeps it in a field `error`, writes it once, and returns `None` from `source()`.
+- Nothing tunable is hardcoded.
+  A timeout, a size, a count or an interval that someone may want to change is a named property of a configuration, with a default.
+- A Kafka client has Kafka's own properties: the name, meaning, unit and default of the Java client's property.
+  The doc comment names the property (`request.timeout.ms`), and no property exists for behaviour the code does not have.
 
-The full text of the last three rules is in [crates.md → Principles](docs/specs/architecture/crates.md#principles).
+The full text of the last five rules is in [crates.md → Principles](docs/specs/architecture/crates.md#principles).
