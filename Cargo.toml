@@ -12,6 +12,7 @@ members = [
     "crates/gaslightmq_lie_api",
     "crates/gaslightmq_lie_refusal",
     "crates/gaslightmq_listener",
+    "crates/gaslightmq_overlay",
     "crates/gaslightmq_pipeline",
     "crates/gaslightmq_rule",
     "crates/gaslightmq_selector",
@@ -30,6 +31,7 @@ version = "0.1.0"
 license = "MIT OR Apache-2.0"
 
 [workspace.dependencies]
+gaslightmq_backend = { path = "crates/gaslightmq_backend" }
 gaslightmq_call = { path = "crates/gaslightmq_call" }
 gaslightmq_clock = { path = "crates/gaslightmq_clock" }
 gaslightmq_combine = { path = "crates/gaslightmq_combine" }
