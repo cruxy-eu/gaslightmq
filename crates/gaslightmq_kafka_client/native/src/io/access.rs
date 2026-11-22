@@ -39,8 +39,6 @@ impl ClusterAccess {
     /// Carry out `operation` as one call that may take `timeout`, with every retry,
     /// and that tries again `retries` times, or as often as its time allows when there is no number.
     ///
-    /// The [`Call`] decides every step. This loop sends, waits and reports back.
-    ///
     /// # Errors
     ///
     /// The failure the call ended with.
@@ -50,6 +48,20 @@ impl ClusterAccess {
         timeout: TimeSpan,
         retries: Option<u32>,
     ) -> Result<O::Output, ClientError> {
+        self.carry_out(operation, timeout, retries).await.1
+    }
+
+    /// As [`call`](Self::call), and hand the operation back as the call left it, with what it learned.
+    ///
+    /// The [`Call`] decides every step. This loop sends, waits and reports back.
+    /// An exchange ends at the instant the call names, also while its request still waits for its turn
+    /// on a connection that another request holds.
+    pub async fn carry_out<O: Operation>(
+        &self,
+        operation: O,
+        timeout: TimeSpan,
+        retries: Option<u32>,
+    ) -> (O, Result<O::Output, ClientError>) {
         let limits = Limits::new(&self.configuration, timeout, retries);
         let mut call = Call::new(operation, limits, self.clock.now());
         let mut input = Input::Started;
@@ -58,9 +70,12 @@ impl ClusterAccess {
             input = match step {
                 Step::Exchange(exchange) => {
                     let connection = self.connections.to(&exchange.destination);
-                    let answer = connection
-                        .exchange(&exchange, |conversation| call.request(&exchange, conversation))
-                        .await;
+                    let answer = tokio::time::timeout(
+                        self.clock.time_until(exchange.not_after),
+                        connection.exchange(&exchange, |conversation| call.request(&exchange, conversation)),
+                    )
+                    .await
+                    .unwrap_or(Err(ClientError::RequestTimedOut));
                     match answer {
                         Ok(response) => Input::Answered(exchange, response),
                         Err(error) => {
@@ -73,7 +88,7 @@ impl ClusterAccess {
                     self.clock.wait_until(until).await;
                     Input::Waited
                 }
-                Step::Done(result) => return result,
+                Step::Done(result) => return (call.into_operation(), result),
             };
         }
     }

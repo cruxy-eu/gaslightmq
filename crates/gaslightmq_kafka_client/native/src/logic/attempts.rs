@@ -38,6 +38,20 @@ impl Limits {
     }
 }
 
+/// How much longer a call waits after each failure: twice as long.
+/// Kafka's clients fix this number, and have no property for it.
+const BACKOFF_GROWTH: u32 = 2;
+
+/// Which request of a call failed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Failed {
+    /// The request of the operation. Trying it again uses one of the retries, as `retries` means in Kafka.
+    Operation,
+    /// A question that comes before it: who leads the partition, or who coordinates the group.
+    /// Asking again uses no retry. Only the time of the call ends it.
+    Lookup,
+}
+
 /// What a call does after a retriable failure.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum AfterFailure {
@@ -70,6 +84,11 @@ impl Attempts {
         }
     }
 
+    /// The instant the call ends.
+    pub fn deadline(&self) -> Instant {
+        self.deadline
+    }
+
     /// How much time the call has left.
     pub fn remaining(&self, now: Instant) -> Duration {
         self.deadline.duration_since(now)
@@ -79,16 +98,18 @@ impl Attempts {
     ///
     /// The first wait is the retry backoff, and every wait after it is twice the one before,
     /// until the longest wait.
-    pub fn after_failure(&mut self, now: Instant) -> AfterFailure {
-        if self.retries_left == Some(0) {
+    pub fn after_failure(&mut self, failed: Failed, now: Instant) -> AfterFailure {
+        if failed == Failed::Operation && self.retries_left == Some(0) {
             return AfterFailure::OutOfRetries;
         }
         let retry_at = now + self.backoff.min(self.backoff_max);
         if retry_at >= self.deadline {
             return AfterFailure::OutOfTime;
         }
-        self.retries_left = self.retries_left.map(|retries| retries.saturating_sub(1));
-        self.backoff = self.backoff.saturating_mul(2);
+        if failed == Failed::Operation {
+            self.retries_left = self.retries_left.map(|retries| retries.saturating_sub(1));
+        }
+        self.backoff = self.backoff.saturating_mul(BACKOFF_GROWTH);
         AfterFailure::RetryAt(retry_at)
     }
 }
@@ -116,7 +137,10 @@ mod tests {
     fn a_call_tries_again_after_the_backoff() {
         let mut attempts = Attempts::new(&limits(None), at(0));
 
-        assert_eq!(attempts.after_failure(at(250)), AfterFailure::RetryAt(at(350)));
+        assert_eq!(
+            attempts.after_failure(Failed::Operation, at(250)),
+            AfterFailure::RetryAt(at(350))
+        );
     }
 
     #[test]
@@ -124,7 +148,7 @@ mod tests {
         let mut attempts = Attempts::new(&limits(None), at(0));
 
         let waits: Vec<_> = (0..6)
-            .map(|_| match attempts.after_failure(at(0)) {
+            .map(|_| match attempts.after_failure(Failed::Operation, at(0)) {
                 AfterFailure::RetryAt(retry_at) => retry_at.duration_since(at(0)).as_millis(),
                 other => panic!("the call has time and retries left: {other:?}"),
             })
@@ -139,8 +163,14 @@ mod tests {
         limits.retry_backoff = Duration::from_secs(3);
         let mut attempts = Attempts::new(&limits, at(0));
 
-        assert_eq!(attempts.after_failure(at(0)), AfterFailure::RetryAt(at(1_000)));
-        assert_eq!(attempts.after_failure(at(0)), AfterFailure::RetryAt(at(1_000)));
+        assert_eq!(
+            attempts.after_failure(Failed::Operation, at(0)),
+            AfterFailure::RetryAt(at(1_000))
+        );
+        assert_eq!(
+            attempts.after_failure(Failed::Operation, at(0)),
+            AfterFailure::RetryAt(at(1_000))
+        );
     }
 
     #[test]
@@ -148,8 +178,14 @@ mod tests {
         let mut attempts = Attempts::new(&limits(None), at(1_000));
 
         assert_eq!(attempts.remaining(at(1_000)), Duration::from_secs(10));
-        assert_eq!(attempts.after_failure(at(10_899)), AfterFailure::RetryAt(at(10_999)));
-        assert_eq!(attempts.after_failure(at(10_800)), AfterFailure::OutOfTime);
+        assert_eq!(
+            attempts.after_failure(Failed::Operation, at(10_899)),
+            AfterFailure::RetryAt(at(10_999))
+        );
+        assert_eq!(
+            attempts.after_failure(Failed::Operation, at(10_800)),
+            AfterFailure::OutOfTime
+        );
         assert_eq!(attempts.remaining(at(12_000)), Duration::ZERO);
     }
 
@@ -157,16 +193,58 @@ mod tests {
     fn a_call_stops_when_it_has_used_every_retry() {
         let mut attempts = Attempts::new(&limits(Some(2)), at(0));
 
-        assert_eq!(attempts.after_failure(at(0)), AfterFailure::RetryAt(at(100)));
-        assert_eq!(attempts.after_failure(at(100)), AfterFailure::RetryAt(at(300)));
-        assert_eq!(attempts.after_failure(at(300)), AfterFailure::OutOfRetries);
+        assert_eq!(
+            attempts.after_failure(Failed::Operation, at(0)),
+            AfterFailure::RetryAt(at(100))
+        );
+        assert_eq!(
+            attempts.after_failure(Failed::Operation, at(100)),
+            AfterFailure::RetryAt(at(300))
+        );
+        assert_eq!(
+            attempts.after_failure(Failed::Operation, at(300)),
+            AfterFailure::OutOfRetries
+        );
+    }
+
+    #[test]
+    fn asking_again_for_a_leader_or_a_coordinator_uses_no_retry() {
+        let mut attempts = Attempts::new(&limits(Some(1)), at(0));
+
+        assert_eq!(
+            attempts.after_failure(Failed::Lookup, at(0)),
+            AfterFailure::RetryAt(at(100))
+        );
+        assert_eq!(
+            attempts.after_failure(Failed::Lookup, at(100)),
+            AfterFailure::RetryAt(at(300))
+        );
+        assert_eq!(
+            attempts.after_failure(Failed::Operation, at(300)),
+            AfterFailure::RetryAt(at(700))
+        );
+        assert_eq!(
+            attempts.after_failure(Failed::Operation, at(700)),
+            AfterFailure::OutOfRetries
+        );
+        assert_eq!(
+            attempts.after_failure(Failed::Lookup, at(700)),
+            AfterFailure::RetryAt(at(1_500))
+        );
+        assert_eq!(
+            attempts.after_failure(Failed::Lookup, at(9_500)),
+            AfterFailure::OutOfTime
+        );
     }
 
     #[test]
     fn a_call_without_retries_stops_at_its_first_failure() {
         let mut attempts = Attempts::new(&limits(Some(0)), at(0));
 
-        assert_eq!(attempts.after_failure(at(0)), AfterFailure::OutOfRetries);
+        assert_eq!(
+            attempts.after_failure(Failed::Operation, at(0)),
+            AfterFailure::OutOfRetries
+        );
     }
 
     #[test]

@@ -1,6 +1,6 @@
 //! The cluster as one role instance knows it, and the connection each request belongs on.
 
-use std::collections::{BTreeMap, HashMap, VecDeque};
+use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 use std::fmt;
 use std::time::Duration;
 
@@ -52,20 +52,35 @@ pub(crate) enum Route {
     Coordinator(GroupId),
 }
 
+/// What a connection carries.
+///
+/// A role instance keeps the two apart: a request of one kind never waits for a request of the other.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub(crate) enum Traffic {
+    /// Records, offsets, Metadata and the requests of an admin.
+    Data,
+    /// Everything a consumer says about a group: asking who coordinates it, and talking to the coordinator.
+    /// A Fetch that waits for records therefore never holds up a Heartbeat.
+    Group,
+}
+
+/// Who a connection leads to.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub(crate) enum Peer {
+    /// A bootstrap address, by its place in the configuration.
+    Bootstrap(usize),
+    /// A broker the role learned from the cluster.
+    Broker(BrokerId),
+}
+
 /// One of the connections a role instance keeps.
 ///
 /// A role instance has at most one connection of each ID,
 /// and a request waits for the request before it on the same connection.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub(crate) enum ConnectionId {
-    /// To a bootstrap address, by its place in the configuration.
-    /// It serves until the role knows the brokers.
-    Bootstrap(usize),
-    /// To a broker, for everything except its work as a group coordinator.
-    Broker(BrokerId),
-    /// To a broker in its work as a group coordinator.
-    /// It is a connection of its own, so a Fetch that waits never holds up a Heartbeat.
-    Coordinator(BrokerId),
+pub(crate) struct ConnectionId {
+    pub traffic: Traffic,
+    pub peer: Peer,
 }
 
 /// A connection, and the address it leads to.
@@ -109,6 +124,8 @@ pub(crate) struct ClusterView {
     brokers: BTreeMap<BrokerId, BrokerAddress>,
     leaders: HashMap<TopicPartition, Leader>,
     coordinators: HashMap<GroupId, Destination>,
+    /// The connections whose last request got no response.
+    failing: HashSet<ConnectionId>,
 }
 
 impl ClusterView {
@@ -121,6 +138,7 @@ impl ClusterView {
             brokers: BTreeMap::new(),
             leaders: HashMap::new(),
             coordinators: HashMap::new(),
+            failing: HashSet::new(),
         }
     }
 
@@ -164,7 +182,10 @@ impl ClusterView {
         self.coordinators.insert(
             group.clone(),
             Destination {
-                connection: ConnectionId::Coordinator(broker),
+                connection: ConnectionId {
+                    traffic: Traffic::Group,
+                    peer: Peer::Broker(broker),
+                },
                 address,
             },
         );
@@ -181,7 +202,10 @@ impl ClusterView {
             return None;
         }
         Some(Destination {
-            connection: ConnectionId::Broker(leader.broker),
+            connection: ConnectionId {
+                traffic: Traffic::Data,
+                peer: Peer::Broker(leader.broker),
+            },
             address: self.brokers.get(&leader.broker)?.clone(),
         })
     }
@@ -191,26 +215,49 @@ impl ClusterView {
         self.coordinators.get(group).cloned()
     }
 
-    /// The connections for a request that any broker answers:
-    /// the brokers the view knows, in the order of their IDs, and then the bootstrap addresses.
-    pub fn any_broker(&self) -> Candidates {
-        let known = self.brokers.iter().map(|(broker, address)| Destination {
-            connection: ConnectionId::Broker(*broker),
-            address: address.clone(),
-        });
-        let bootstrap = self.bootstrap.iter().enumerate().map(|(place, address)| Destination {
-            connection: ConnectionId::Bootstrap(place),
-            address: address.clone(),
-        });
-        let mut all = known.chain(bootstrap);
-        let first = all.next().unwrap_or_else(|| Destination {
-            connection: ConnectionId::Bootstrap(0),
+    /// The connections of one kind of traffic for a request that any broker answers.
+    ///
+    /// The brokers the view knows come first, in the order of their IDs, and then the bootstrap addresses.
+    /// The bootstrap addresses stay in, because they are the way back when the brokers of the view are wrong.
+    /// A connection whose last request got no response moves behind the others,
+    /// so a broker that is down costs one wait, and not one for every request.
+    pub fn any_broker(&self, traffic: Traffic) -> Candidates {
+        let known = self
+            .brokers
+            .iter()
+            .map(|(broker, address)| (Peer::Broker(*broker), address));
+        let bootstrap = self
+            .bootstrap
+            .iter()
+            .enumerate()
+            .map(|(place, address)| (Peer::Bootstrap(place), address));
+        let mut all: VecDeque<Destination> = known
+            .chain(bootstrap)
+            .map(|(peer, address)| Destination {
+                connection: ConnectionId { traffic, peer },
+                address: address.clone(),
+            })
+            .collect();
+        all.make_contiguous()
+            .sort_by_key(|destination| self.failing.contains(&destination.connection));
+        let first = all.pop_front().unwrap_or_else(|| Destination {
+            connection: ConnectionId {
+                traffic,
+                peer: Peer::Bootstrap(0),
+            },
             address: self.bootstrap.first().clone(),
         });
-        Candidates {
-            first,
-            others: all.collect(),
-        }
+        Candidates { first, others: all }
+    }
+
+    /// A request on `connection` got no response.
+    pub fn failed(&mut self, connection: ConnectionId) {
+        self.failing.insert(connection);
+    }
+
+    /// A request on `connection` got its response.
+    pub fn answered(&mut self, connection: ConnectionId) {
+        self.failing.remove(&connection);
     }
 
     /// Forget who leads `partition`, so the next request for it asks again.
@@ -280,16 +327,30 @@ pub(crate) mod tests {
         TopicPartition::new(topic, Partition::from(partition))
     }
 
+    pub fn for_data(peer: Peer) -> ConnectionId {
+        ConnectionId {
+            traffic: Traffic::Data,
+            peer,
+        }
+    }
+
+    pub fn for_groups(peer: Peer) -> ConnectionId {
+        ConnectionId {
+            traffic: Traffic::Group,
+            peer,
+        }
+    }
+
     pub fn to_broker(id: i32) -> Destination {
         Destination {
-            connection: ConnectionId::Broker(BrokerId(id)),
+            connection: for_data(Peer::Broker(BrokerId(id))),
             address: BrokerAddress::new(format!("broker-{id}"), 9092).unwrap(),
         }
     }
 
     fn to_bootstrap(place: usize, host: &str) -> Destination {
         Destination {
-            connection: ConnectionId::Bootstrap(place),
+            connection: for_data(Peer::Bootstrap(place)),
             address: BrokerAddress::new(host, 9092).unwrap(),
         }
     }
@@ -300,7 +361,7 @@ pub(crate) mod tests {
 
         assert_eq!(view.leader(&partition("orders", 0), Instant::ZERO), None);
         assert_eq!(
-            view.any_broker(),
+            view.any_broker(Traffic::Data),
             Candidates {
                 first: to_bootstrap(0, "bootstrap-a"),
                 others: VecDeque::from([to_bootstrap(1, "bootstrap-b")]),
@@ -325,7 +386,7 @@ pub(crate) mod tests {
 
         view.learn(&metadata(&[2, 1], vec![]), Instant::ZERO);
 
-        let candidates = view.any_broker();
+        let candidates = view.any_broker(Traffic::Data);
         assert_eq!(candidates.first, to_broker(1));
         assert_eq!(
             candidates.others,
@@ -335,6 +396,49 @@ pub(crate) mod tests {
                 to_bootstrap(1, "bootstrap-b")
             ]
         );
+    }
+
+    #[test]
+    fn the_two_kinds_of_traffic_share_no_connection() {
+        let mut view = view();
+        view.learn(&metadata(&[1], vec![]), Instant::ZERO);
+
+        let data = view.any_broker(Traffic::Data);
+        let groups = view.any_broker(Traffic::Group);
+
+        assert_eq!(data.first.connection, for_data(Peer::Broker(BrokerId(1))));
+        assert_eq!(groups.first.connection, for_groups(Peer::Broker(BrokerId(1))));
+        assert_eq!(data.first.address, groups.first.address);
+        let others: Vec<_> = groups.others.iter().map(|other| other.connection).collect();
+        assert_eq!(others, [for_groups(Peer::Bootstrap(0)), for_groups(Peer::Bootstrap(1))]);
+    }
+
+    #[test]
+    fn a_connection_that_got_no_response_moves_behind_the_others() {
+        let mut view = view();
+        view.learn(&metadata(&[1, 2], vec![]), Instant::ZERO);
+
+        view.failed(for_data(Peer::Broker(BrokerId(1))));
+
+        let candidates = view.any_broker(Traffic::Data);
+        assert_eq!(candidates.first, to_broker(2));
+        assert_eq!(
+            candidates.others,
+            [
+                to_bootstrap(0, "bootstrap-a"),
+                to_bootstrap(1, "bootstrap-b"),
+                to_broker(1)
+            ]
+        );
+        assert_eq!(
+            view.any_broker(Traffic::Group).first.connection,
+            for_groups(Peer::Broker(BrokerId(1))),
+            "the other kind of traffic has a connection of its own to that broker"
+        );
+
+        view.answered(for_data(Peer::Broker(BrokerId(1))));
+
+        assert_eq!(view.any_broker(Traffic::Data).first, to_broker(1));
     }
 
     #[test]
@@ -399,7 +503,7 @@ pub(crate) mod tests {
         view.learn(&response, Instant::ZERO);
 
         assert_eq!(view.leader(&partition("orders", 0), Instant::ZERO), None);
-        assert_eq!(view.any_broker().first, to_bootstrap(0, "bootstrap-a"));
+        assert_eq!(view.any_broker(Traffic::Data).first, to_bootstrap(0, "bootstrap-a"));
     }
 
     #[test]
@@ -424,8 +528,8 @@ pub(crate) mod tests {
 
         let coordinator = view.coordinator(&group).unwrap();
         let leader = view.leader(&partition("orders", 0), Instant::ZERO).unwrap();
-        assert_eq!(coordinator.connection, ConnectionId::Coordinator(BrokerId(1)));
-        assert_eq!(leader.connection, ConnectionId::Broker(BrokerId(1)));
+        assert_eq!(coordinator.connection, for_groups(Peer::Broker(BrokerId(1))));
+        assert_eq!(leader.connection, for_data(Peer::Broker(BrokerId(1))));
         assert_eq!(coordinator.address, leader.address);
 
         view.forget_coordinator(&group);

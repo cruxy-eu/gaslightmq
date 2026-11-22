@@ -18,6 +18,7 @@ use gaslightmq_wire::protocol::StrBytes;
 
 use crate::configuration::ConsumerConfiguration;
 use crate::error::ClientError;
+use crate::logic::attempts::Limits;
 use crate::logic::call::{Operation, Reading};
 use crate::logic::cluster::Route;
 use crate::logic::versions::Versions;
@@ -129,6 +130,17 @@ impl Membership {
         }
     }
 
+    /// A join failed with `error`, after the coordinator may have handed the consumer a member ID.
+    ///
+    /// The consumer keeps that ID and joins under it the next time.
+    /// Without it, every further join would leave one more member behind at the coordinator.
+    pub fn join_failed(&mut self, join: &JoinGroup<'_>, error: &ClientError) {
+        if !join.member_id.is_empty() {
+            self.member_id = join.member_id.clone();
+        }
+        self.refused(error);
+    }
+
     /// The coordinator, or the way to it, failed a request with `error`.
     ///
     /// A coordinator that does not know the member ends the membership: the consumer joins as a new member.
@@ -210,6 +222,12 @@ impl Operation for JoinGroup<'_> {
             .max_poll_interval
             .duration()
             .saturating_add(request_timeout)
+    }
+
+    /// One try of a join may take longer than the other calls of a consumer, and the call has time for it.
+    /// Kafka's own consumer does not bound a join by `default.api.timeout.ms` either.
+    fn call_within(&self, limits: &Limits) -> Duration {
+        limits.call_timeout.max(self.answer_within(limits.request_timeout))
     }
 
     /// A coordinator that wants a member ID first hands one out, and the consumer joins again under it.
@@ -312,14 +330,17 @@ impl Operation for Heartbeat {
 #[cfg(test)]
 mod tests {
     use bytes::BytesMut;
-    use gaslightmq_clock::TimeSpan;
+    use gaslightmq_clock::{Instant, TimeSpan};
     use gaslightmq_wire::messages::join_group_response::JoinGroupResponseMember;
-    use gaslightmq_wire::messages::{ConsumerProtocolAssignment, ConsumerProtocolSubscription};
+    use gaslightmq_wire::messages::{BrokerId, ConsumerProtocolAssignment, ConsumerProtocolSubscription};
     use gaslightmq_wire::protocol::Encodable;
 
     use super::*;
     use crate::address::BootstrapServers;
+    use crate::logic::call::tests::limits;
+    use crate::logic::call::{Call, Input, Step};
     use crate::logic::cluster::group_id;
+    use crate::logic::cluster::tests::view;
 
     fn configuration() -> ConsumerConfiguration {
         ConsumerConfiguration::new("localhost:9092".parse::<BootstrapServers>().unwrap())
@@ -451,6 +472,73 @@ mod tests {
             Err(refusal(ResponseError::MemberIdRequired)),
             "the join asks again once, and never without end"
         );
+    }
+
+    #[test]
+    fn a_member_id_that_was_handed_out_survives_a_join_that_fails() {
+        let configuration = configuration();
+        let mut membership = Membership::default();
+        let mut join = membership.join(&configuration, group());
+        let wants_an_id = JoinGroupResponse::default()
+            .with_error_code(ResponseError::MemberIdRequired.code())
+            .with_member_id(id("consumer-1"));
+        assert_eq!(join.read(wants_an_id), Ok(Reading::Again));
+
+        membership.join_failed(&join, &ClientError::RequestTimedOut);
+
+        assert_eq!(membership.member_id(), "consumer-1");
+        assert_eq!(membership.generation(), -1);
+        let again = membership.join(&configuration, group()).request(Duration::ZERO);
+        assert_eq!(again.member_id.as_str(), "consumer-1");
+    }
+
+    #[test]
+    fn a_join_that_fails_because_the_member_is_unknown_drops_the_member_id() {
+        let configuration = configuration();
+        let mut membership = leading();
+        let join = membership.join(&configuration, group());
+
+        membership.join_failed(&join, &refusal(ResponseError::UnknownMemberId));
+
+        assert_eq!(membership, Membership::default());
+    }
+
+    #[test]
+    fn a_join_has_the_time_of_a_rebalance_also_when_other_calls_have_less() {
+        let mut configuration = configuration();
+        configuration.max_poll_interval = TimeSpan::from_secs(300);
+        let mut cluster = view();
+        cluster.learn_coordinator(&group(), BrokerId(1), "broker-1", 9092);
+        let limits = Limits {
+            call_timeout: Duration::from_secs(60),
+            request_timeout: Duration::from_secs(30),
+            ..limits()
+        };
+        let join = Membership::default().join(&configuration, group());
+        assert_eq!(join.call_within(&limits), Duration::from_secs(330));
+
+        let mut call = Call::new(join, limits, Instant::ZERO);
+        let Step::Exchange(joining) = call.handle(Input::Started, &mut cluster, Instant::ZERO) else {
+            panic!("the join goes to the coordinator")
+        };
+
+        assert_eq!(joining.answer_within, Duration::from_secs(330));
+        assert_eq!(joining.not_after, Instant::ZERO + Duration::from_secs(330));
+    }
+
+    #[test]
+    fn a_join_never_has_less_time_than_the_other_calls() {
+        let mut configuration = configuration();
+        configuration.max_poll_interval = TimeSpan::from_secs(1);
+        let limits = Limits {
+            call_timeout: Duration::from_secs(60),
+            request_timeout: Duration::from_secs(30),
+            ..limits()
+        };
+
+        let join = Membership::default().join(&configuration, group());
+
+        assert_eq!(join.call_within(&limits), Duration::from_secs(60));
     }
 
     #[test]

@@ -1,6 +1,6 @@
 //! The clock a role reads.
 
-use gaslightmq_clock::{Clock, Instant};
+use gaslightmq_clock::{Clock, Duration, Instant};
 
 /// The time since a role instance was built, as the runtime counts it.
 pub(crate) struct MonotonicClock {
@@ -15,9 +15,14 @@ impl MonotonicClock {
         }
     }
 
+    /// How long it takes until the clock reaches `instant`. No time at all when it already has.
+    pub fn time_until(&self, instant: Instant) -> Duration {
+        instant.duration_since(self.now())
+    }
+
     /// Wait until the clock reaches `instant`. Returns at once when it already has.
     pub async fn wait_until(&self, instant: Instant) {
-        tokio::time::sleep(instant.duration_since(self.now())).await;
+        tokio::time::sleep(self.time_until(instant)).await;
     }
 }
 

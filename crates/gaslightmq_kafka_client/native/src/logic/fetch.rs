@@ -38,6 +38,15 @@ impl Operation for FetchRecords<'_> {
         self.configuration.allow_auto_create_topics
     }
 
+    /// The broker holds a Fetch for as long as the request tells it to.
+    /// The response then still needs the time of a request to arrive.
+    fn answer_within(&self, request_timeout: Duration) -> Duration {
+        self.configuration
+            .fetch_max_wait
+            .duration()
+            .saturating_add(request_timeout)
+    }
+
     fn request(&self, _within: Duration) -> FetchRequest {
         let configuration = self.configuration;
         FetchRequest::default()
@@ -137,6 +146,19 @@ mod tests {
         assert_eq!(asked.fetch_offset, 42);
         assert_eq!(asked.partition_max_bytes, 1_024);
         assert_eq!(fetch(&configuration).route(), Route::Leader(partition("orders", 3)));
+    }
+
+    #[test]
+    fn a_fetch_waits_as_long_as_the_broker_may_hold_it_and_then_for_the_response() {
+        let mut configuration = configuration();
+        configuration.fetch_max_wait = TimeSpan::from_secs(2);
+
+        let fetch = fetch(&configuration);
+
+        assert_eq!(
+            fetch.answer_within(Duration::from_millis(100)),
+            Duration::from_millis(2_100)
+        );
     }
 
     #[test]

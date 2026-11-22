@@ -38,6 +38,9 @@ pub struct ClientConfiguration {
     ///
     /// How long one request waits for its response.
     /// The greeting on a new connection waits that long too.
+    /// A request that tells the broker to hold it waits that time on top:
+    /// a Fetch its `fetch.max.wait.ms`, and a `JoinGroup` its rebalance timeout.
+    /// Kafka's clients do so for a `JoinGroup` only.
     pub request_timeout: TimeSpan,
     /// Kafka: `socket.connection.setup.timeout.ms`. Default: 10 seconds.
     ///
@@ -156,9 +159,10 @@ pub struct ProducerConfiguration {
     pub delivery_timeout: TimeSpan,
     /// Kafka: `retries`. Default: 2147483647.
     ///
-    /// How often a send tries again after a retriable failure.
+    /// How often a send tries its Produce request again after a retriable failure.
     /// A send that runs out of retries fails with its last error.
     /// The delivery timeout ends a send that has retries left.
+    /// Asking who leads the partition uses no retry: only the delivery timeout ends that.
     pub retries: u32,
 }
 
@@ -174,15 +178,20 @@ impl ProducerConfiguration {
     }
 }
 
-/// Which records a consumer reads from a partition that holds transactions.
+/// Which records the broker gives a consumer from a partition that holds transactions.
 ///
 /// Kafka: `isolation.level`, with the values `read_uncommitted` and `read_committed`.
+///
+/// The level travels in every Fetch and `ListOffsets` request, and the broker acts on it.
+/// Kafka's own consumer then also leaves out the records of aborted transactions and the transaction markers.
+/// This consumer does not: it returns every record the broker sends, at either level.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum IsolationLevel {
-    /// Every record, also one of a transaction that is open or aborted.
+    /// The broker gives every record, also one of a transaction that is still open.
     #[default]
     ReadUncommitted,
-    /// Only records outside a transaction and records of a committed one.
+    /// The broker stops before the first record of a transaction that is still open,
+    /// and the latest offset it reports is that of this record.
     ReadCommitted,
 }
 
@@ -407,6 +416,8 @@ pub struct ConsumerConfiguration {
     /// Kafka: `fetch.max.wait.ms`. Default: 500 milliseconds.
     ///
     /// How long the broker holds a Fetch that has fewer bytes than [`fetch_min_bytes`](Self::fetch_min_bytes).
+    /// The consumer waits that long for the response, and the request timeout on top,
+    /// so a Fetch that finds no records returns none instead of timing out.
     pub fetch_max_wait: TimeSpan,
     /// Kafka: `fetch.min.bytes`. Default: 1.
     ///
@@ -422,7 +433,8 @@ pub struct ConsumerConfiguration {
     pub max_partition_fetch_bytes: u32,
     /// Kafka: `isolation.level`. Default: `read_uncommitted`.
     ///
-    /// Which records the consumer reads from a partition that holds transactions.
+    /// Which records the broker gives the consumer from a partition that holds transactions.
+    /// The consumer itself leaves out nothing: see [`IsolationLevel`].
     pub isolation_level: IsolationLevel,
     /// Kafka: `allow.auto.create.topics`. Default: true.
     ///
@@ -437,7 +449,9 @@ pub struct ConsumerConfiguration {
     ///
     /// The consumer sends it as the rebalance timeout when it joins a group:
     /// how long the coordinator waits for every member to join again when the group rebalances.
-    /// A `JoinGroup` waits that long for its response, on top of the request timeout.
+    /// A `JoinGroup` waits that long for its response, and the request timeout on top.
+    /// A join has that much time, also when the default API timeout is shorter:
+    /// Kafka's consumer does not bound a join by `default.api.timeout.ms` either.
     /// This consumer has no poll loop, so the property has no other effect.
     pub max_poll_interval: TimeSpan,
     /// Kafka: `partition.assignment.strategy`. Default: `range`, then `cooperative-sticky`.
@@ -477,7 +491,7 @@ pub struct AdminConfiguration {
     pub default_api_timeout: TimeSpan,
     /// Kafka: `retries`. Default: 2147483647.
     ///
-    /// How often a call tries again after a retriable failure.
+    /// How often a call tries its request again after a retriable failure.
     /// A call that runs out of retries fails with its last error.
     /// The default API timeout ends a call that has retries left.
     pub retries: u32,

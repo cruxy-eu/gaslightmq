@@ -7,6 +7,10 @@ license.workspace = true
 [lints]
 workspace = true
 
+# The modules that decide and never wait: `cargo xtask sans-io` holds them to that.
+[package.metadata.gaslightmq]
+sans_io_modules = ["logic", "error", "configuration", "address"]
+
 [dependencies]
 gaslightmq_clock.workspace = true
 gaslightmq_kafka_client_api.workspace = true

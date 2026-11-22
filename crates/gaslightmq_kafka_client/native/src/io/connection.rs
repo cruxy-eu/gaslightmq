@@ -77,6 +77,7 @@ impl Connection {
     /// and return its response.
     ///
     /// The request waits until the one before it on this connection has its response.
+    /// Whoever calls this bounds that wait: giving up while the request waits or is on its way is safe.
     /// The socket stays open only when the response arrived whole:
     /// a failure, a timeout or a caller that gives up closes it,
     /// so no later request reads a response that was meant for this one.

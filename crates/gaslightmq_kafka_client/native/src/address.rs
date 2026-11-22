@@ -26,18 +26,22 @@ pub struct BrokerAddress {
 
 impl BrokerAddress {
     /// Keep `host` and `port` as the address of a broker.
+    /// An IPv6 address may stand in brackets, as a broker may advertise it: `[::1]` is the host `::1`.
     ///
     /// # Errors
     ///
     /// [`BrokerAddressError::MissingHost`] when `host` is empty.
-    pub fn new(host: impl Into<String>, port: u16) -> Result<Self, BrokerAddressError> {
-        let host = host.into();
+    pub fn new(host: impl AsRef<str>, port: u16) -> Result<Self, BrokerAddressError> {
+        let host = without_brackets(host.as_ref());
         if host.is_empty() {
             return Err(BrokerAddressError::MissingHost {
                 input: format!(":{port}"),
             });
         }
-        Ok(Self { host, port })
+        Ok(Self {
+            host: host.to_owned(),
+            port,
+        })
     }
 
     /// The name or IP address, without brackets.
@@ -64,13 +68,23 @@ impl FromStr for BrokerAddress {
 
     fn from_str(text: &str) -> Result<Self, Self::Err> {
         let input = || text.to_owned();
-        let (host, port) = text
-            .rsplit_once(':')
-            .ok_or_else(|| BrokerAddressError::MissingPort { input: input() })?;
-        let host = host
-            .strip_prefix('[')
-            .and_then(|host| host.strip_suffix(']'))
-            .unwrap_or(host);
+        let (host, port) = if let Some(bracketed) = text.strip_prefix('[') {
+            let (host, rest) = bracketed
+                .split_once(']')
+                .ok_or_else(|| BrokerAddressError::MissingBrackets { input: input() })?;
+            let port = rest
+                .strip_prefix(':')
+                .ok_or_else(|| BrokerAddressError::MissingPort { input: input() })?;
+            (host, port)
+        } else {
+            let (host, port) = text
+                .rsplit_once(':')
+                .ok_or_else(|| BrokerAddressError::MissingPort { input: input() })?;
+            if host.contains(':') {
+                return Err(BrokerAddressError::MissingBrackets { input: input() });
+            }
+            (host, port)
+        };
         if host.is_empty() {
             return Err(BrokerAddressError::MissingHost { input: input() });
         }
@@ -82,6 +96,13 @@ impl FromStr for BrokerAddress {
             port,
         })
     }
+}
+
+/// `host` without the pair of brackets that an IPv6 address may stand in.
+fn without_brackets(host: &str) -> &str {
+    host.strip_prefix('[')
+        .and_then(|host| host.strip_suffix(']'))
+        .unwrap_or(host)
 }
 
 impl fmt::Display for BrokerAddress {
@@ -102,17 +123,23 @@ pub enum BrokerAddressError {
     MissingPort { input: String },
     /// Nothing stands before the port.
     MissingHost { input: String },
+    /// The host holds a `:`, as an IPv6 address does, and does not stand in a pair of brackets.
+    MissingBrackets { input: String },
     /// The port is not a number from 0 to 65535.
     InvalidPort { input: String },
 }
 
 impl fmt::Display for BrokerAddressError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let (Self::MissingPort { input } | Self::MissingHost { input } | Self::InvalidPort { input }) = self;
+        let (Self::MissingPort { input }
+        | Self::MissingHost { input }
+        | Self::MissingBrackets { input }
+        | Self::InvalidPort { input }) = self;
         write!(f, "invalid broker address `{input}`: ")?;
         match self {
             Self::MissingPort { .. } => f.write_str("missing port, expected host:port"),
             Self::MissingHost { .. } => f.write_str("missing host, expected host:port"),
+            Self::MissingBrackets { .. } => f.write_str("a host with `:` in it stands in brackets, as in [::1]:9092"),
             Self::InvalidPort { .. } => f.write_str("the port is not a number from 0 to 65535"),
         }
     }
@@ -250,6 +277,41 @@ mod tests {
         assert_eq!(
             BrokerAddress::from("[::1]:9092".parse::<SocketAddr>().unwrap()),
             address
+        );
+    }
+
+    #[test]
+    fn a_host_in_brackets_is_the_same_host_however_the_address_is_built() {
+        let parsed: BrokerAddress = "[::1]:9092".parse().unwrap();
+        let built = BrokerAddress::new("[::1]", 9092).unwrap();
+
+        assert_eq!(built, parsed);
+        assert_eq!(built, BrokerAddress::new("::1", 9092).unwrap());
+        assert_eq!(built.host(), "::1");
+        assert_eq!(built.to_string(), "[::1]:9092");
+        assert_eq!(
+            BrokerAddress::new("[]", 9092),
+            Err(BrokerAddressError::MissingHost { input: ":9092".into() })
+        );
+    }
+
+    #[test]
+    fn an_ipv6_address_without_brackets_is_not_an_address() {
+        let message = |text: &str| text.parse::<BrokerAddress>().unwrap_err().to_string();
+
+        assert_eq!(
+            message("::1:9092"),
+            "invalid broker address `::1:9092`: a host with `:` in it stands in brackets, as in [::1]:9092"
+        );
+        assert_eq!(
+            "[::1:9092".parse::<BrokerAddress>(),
+            Err(BrokerAddressError::MissingBrackets {
+                input: "[::1:9092".into()
+            })
+        );
+        assert_eq!(
+            message("[::1]"),
+            "invalid broker address `[::1]`: missing port, expected host:port"
         );
     }
 

@@ -2,11 +2,14 @@
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::time::Duration;
 
 use gaslightmq_clock::TimeSpan;
 use gaslightmq_kafka_client_api::ProtocolConsumer;
 use gaslightmq_kafka_client_native::{ClientError, ConsumerConfiguration, JoinedGroup, KafkaConsumer};
-use gaslightmq_wire::messages::{HeartbeatRequest, HeartbeatResponse, JoinGroupRequest, SyncGroupRequest};
+use gaslightmq_wire::messages::{
+    HeartbeatRequest, HeartbeatResponse, JoinGroupRequest, JoinGroupResponse, SyncGroupRequest,
+};
 use gaslightmq_wire::{ApiKey, ResponseError};
 
 use crate::support::{Arrival, Cluster, FakeBroker};
@@ -152,6 +155,76 @@ async fn a_coordinator_that_forgot_the_member_makes_the_consumer_join_as_a_new_o
         "",
         "the consumer joins without its old member ID"
     );
+}
+
+#[tokio::test]
+async fn a_member_id_that_was_handed_out_is_used_again_after_a_join_that_failed() {
+    let broker = FakeBroker::bind().await;
+    let cluster = Cluster::of(&[(1, &broker)]);
+    let refuse_once = Arc::new(AtomicBool::new(true));
+    broker.serve(move |request| {
+        let cluster = cluster.clone();
+        let refuse_once = Arc::clone(&refuse_once);
+        async move {
+            if request.api().known() == Some(ApiKey::JoinGroup) {
+                let joining: JoinGroupRequest = request.body().unwrap();
+                if !joining.member_id.is_empty() && refuse_once.swap(false, Ordering::Relaxed) {
+                    let refused =
+                        JoinGroupResponse::default().with_error_code(ResponseError::GroupAuthorizationFailed.code());
+                    return request.response(&refused).unwrap();
+                }
+            }
+            cluster.answer(&request)
+        }
+    });
+    let consumer = KafkaConsumer::from(broker.address());
+
+    let refused = consumer.join_group("analytics").await;
+    let joined = consumer.join_group("analytics").await.unwrap();
+
+    assert_eq!(
+        refused,
+        Err(ClientError::Broker {
+            error: ResponseError::GroupAuthorizationFailed
+        })
+    );
+    assert_eq!(joined.member_id, "member-1");
+    let member_ids: Vec<String> = broker
+        .arrivals_of(ApiKey::JoinGroup)
+        .iter()
+        .map(|arrival| {
+            let joining: JoinGroupRequest = arrival.request.body().unwrap();
+            joining.member_id.as_str().to_owned()
+        })
+        .collect();
+    assert_eq!(member_ids, ["", "member-1", "member-1"]);
+}
+
+#[tokio::test]
+async fn a_join_has_the_time_of_a_rebalance_also_when_other_calls_have_less() {
+    let broker = FakeBroker::bind().await;
+    let cluster = Cluster::of(&[(1, &broker)]);
+    broker.serve(move |request| {
+        let cluster = cluster.clone();
+        async move {
+            if request.api().known() == Some(ApiKey::JoinGroup) {
+                let joining: JoinGroupRequest = request.body().unwrap();
+                if !joining.member_id.is_empty() {
+                    // The coordinator waits for the other members of the group.
+                    tokio::time::sleep(Duration::from_millis(400)).await;
+                }
+            }
+            cluster.answer(&request)
+        }
+    });
+    let mut configuration = ConsumerConfiguration::new(broker.address());
+    configuration.default_api_timeout = TimeSpan::from_millis(100);
+    configuration.max_poll_interval = TimeSpan::from_secs(5);
+    let consumer = KafkaConsumer::new(configuration);
+
+    let joined = consumer.join_group("analytics").await;
+
+    assert_eq!(joined.map(|joined| joined.generation), Ok(1));
 }
 
 #[tokio::test]

@@ -13,7 +13,7 @@ use gaslightmq_wire::messages::{FetchRequest, MetadataRequest, ProduceRequest};
 use gaslightmq_wire::{ApiKey, Offset, Partition, Record, ResponseError};
 use tokio::net::TcpListener;
 
-use crate::support::{Cluster, TOPIC};
+use crate::support::{Cluster, FakeBroker, TOPIC};
 
 fn partition() -> Partition {
     Partition::from(0)
@@ -113,6 +113,33 @@ async fn a_request_carries_what_its_role_is_configured_with() {
 }
 
 #[tokio::test]
+async fn a_fetch_that_the_broker_holds_longer_than_the_request_timeout_brings_no_records() {
+    let broker = FakeBroker::bind().await;
+    let cluster = Cluster::of(&[(1, &broker)]);
+    broker.serve(move |request| {
+        let cluster = cluster.clone();
+        async move {
+            if request.api().known() == Some(ApiKey::Fetch) {
+                // The partition has no records, so the broker holds the Fetch as long as it was told to.
+                let asked: FetchRequest = request.body().unwrap();
+                let held = u64::try_from(asked.max_wait_ms).unwrap();
+                tokio::time::sleep(std::time::Duration::from_millis(held)).await;
+            }
+            cluster.answer(&request)
+        }
+    });
+    let mut configuration = ConsumerConfiguration::new(broker.address());
+    configuration.client.request_timeout = TimeSpan::from_millis(100);
+    configuration.fetch_max_wait = TimeSpan::from_millis(300);
+    let consumer = KafkaConsumer::new(configuration);
+
+    let read = consumer.fetch(TOPIC, partition(), Offset::from(0i64)).await;
+
+    assert_eq!(read, Ok(vec![]));
+    assert_eq!(broker.arrivals_of(ApiKey::Fetch).len(), 1);
+}
+
+#[tokio::test]
 async fn a_consumer_asks_for_the_partitions_of_a_topic() {
     let (_, broker) = Cluster::of_one().await;
     let mut configuration = ConsumerConfiguration::new(broker.address());
@@ -195,7 +222,7 @@ async fn a_trait_without_an_error_carries_a_failure_as_the_closest_kafka_error()
         }
     });
     let mut producing = ProducerConfiguration::new(address);
-    producing.retries = 0;
+    producing.delivery_timeout = TimeSpan::from_millis(200);
     let mut administering = AdminConfiguration::new(address);
     administering.default_api_timeout = TimeSpan::from_millis(200);
 
@@ -208,6 +235,6 @@ async fn a_trait_without_an_error_carries_a_failure_as_the_closest_kafka_error()
     .await;
     let configs = Admin::describe_topic_configs(&KafkaAdmin::new(administering), TOPIC, &[]).await;
 
-    assert_eq!(written.error, Some(ResponseError::NetworkException));
+    assert_eq!(written.error, Some(ResponseError::RequestTimedOut));
     assert_eq!(configs.error, Some(ResponseError::RequestTimedOut));
 }

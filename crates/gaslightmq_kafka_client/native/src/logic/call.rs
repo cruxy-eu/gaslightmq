@@ -18,8 +18,8 @@ use gaslightmq_wire::protocol::Request as KafkaRequest;
 use gaslightmq_wire::{Request, Response};
 
 use crate::error::ClientError;
-use crate::logic::attempts::{AfterFailure, Attempts, Limits};
-use crate::logic::cluster::{Candidates, ClusterView, Destination, Route, TopicPartition};
+use crate::logic::attempts::{AfterFailure, Attempts, Failed, Limits};
+use crate::logic::cluster::{Candidates, ClusterView, Destination, Route, TopicPartition, Traffic};
 use crate::logic::conversation::Conversation;
 use crate::logic::topics;
 use crate::logic::versions::Versions;
@@ -55,8 +55,15 @@ pub(crate) trait Operation {
     fn request(&self, within: Duration) -> Self::Request;
 
     /// How long a try waits for its response, for a role with this request timeout.
+    /// An operation that tells the broker to hold its request waits longer, and says so here.
     fn answer_within(&self, request_timeout: Duration) -> Duration {
         request_timeout
+    }
+
+    /// How long the call may take with every retry, for a role with these limits.
+    /// An operation whose single try may take longer than the calls of its role says so here.
+    fn call_within(&self, limits: &Limits) -> Duration {
+        limits.call_timeout
     }
 
     /// Whether the broker may create the topic, when the call has to ask who leads a partition of it.
@@ -101,6 +108,9 @@ pub(crate) struct Exchange {
     pub greet_within: Duration,
     /// How long the request waits for its response.
     pub answer_within: Duration,
+    /// The instant the call ends.
+    /// The exchange is over by then, however long the request waits for its turn on the connection.
+    pub not_after: Instant,
     purpose: Purpose,
     /// The connections to try when this one fails.
     fallbacks: VecDeque<Destination>,
@@ -141,6 +151,10 @@ pub(crate) struct Call<O: Operation> {
 impl<O: Operation> Call<O> {
     /// A call that starts at `now`.
     pub fn new(operation: O, limits: Limits, now: Instant) -> Self {
+        let limits = Limits {
+            call_timeout: operation.call_within(&limits),
+            ..limits
+        };
         Self {
             operation,
             limits,
@@ -156,17 +170,21 @@ impl<O: Operation> Call<O> {
                 Some(until) if now < until => Step::Wait { until },
                 _ => self.send(cluster, now),
             },
-            Input::Answered(exchange, response) => match self.read(&exchange, &response, cluster, now) {
-                Ok(Some(output)) => Step::Done(Ok(output)),
-                Ok(None) => self.send(cluster, now),
-                Err(error) => self.fail(&exchange, error, cluster, now),
-            },
+            Input::Answered(exchange, response) => {
+                cluster.answered(exchange.destination.connection);
+                match self.read(&exchange, &response, cluster, now) {
+                    Ok(Some(output)) => Step::Done(Ok(output)),
+                    Ok(None) => self.send(cluster, now),
+                    Err(error) => self.fail(&exchange, error, cluster, now),
+                }
+            }
             Input::Failed(mut exchange, error) => {
-                if error.is_retriable()
-                    && let Some(next) = exchange.fallbacks.pop_front()
-                {
-                    exchange.destination = next;
-                    return Step::Exchange(self.limited(exchange, now));
+                if error.is_retriable() {
+                    cluster.failed(exchange.destination.connection);
+                    if let Some(next) = exchange.fallbacks.pop_front() {
+                        exchange.destination = next;
+                        return Step::Exchange(self.limited(exchange, now));
+                    }
                 }
                 self.fail(&exchange, error, cluster, now)
             }
@@ -195,19 +213,26 @@ impl<O: Operation> Call<O> {
         }
     }
 
+    /// The operation, as the call left it.
+    pub fn into_operation(self) -> O {
+        self.operation
+    }
+
     /// Start the next exchange: the operation when the view knows where it goes,
     /// and otherwise the question that tells it.
+    ///
+    /// The question about a group travels with the group's traffic, and never on a connection that carries data.
     fn send(&mut self, cluster: &ClusterView, now: Instant) -> Step<O::Output> {
         self.retry_at = None;
         let (purpose, candidates) = match self.operation.route() {
-            Route::AnyBroker => (Purpose::Operation, cluster.any_broker()),
+            Route::AnyBroker => (Purpose::Operation, cluster.any_broker(Traffic::Data)),
             Route::Leader(partition) => match cluster.leader(&partition, now) {
                 Some(leader) => (Purpose::Operation, Candidates::from(leader)),
-                None => (Purpose::LocateLeader(partition), cluster.any_broker()),
+                None => (Purpose::LocateLeader(partition), cluster.any_broker(Traffic::Data)),
             },
             Route::Coordinator(group) => match cluster.coordinator(&group) {
                 Some(coordinator) => (Purpose::Operation, Candidates::from(coordinator)),
-                None => (Purpose::LocateCoordinator(group), cluster.any_broker()),
+                None => (Purpose::LocateCoordinator(group), cluster.any_broker(Traffic::Group)),
             },
         };
         let exchange = Exchange {
@@ -215,6 +240,7 @@ impl<O: Operation> Call<O> {
             connect_within: Duration::ZERO,
             greet_within: Duration::ZERO,
             answer_within: Duration::ZERO,
+            not_after: self.attempts.deadline(),
             purpose,
             fallbacks: candidates.others,
         };
@@ -287,6 +313,7 @@ impl<O: Operation> Call<O> {
     ///
     /// A retriable failure of the operation makes the view forget where the request went,
     /// so the next try asks for the leader or the coordinator again.
+    /// Only a failure of the operation uses one of the retries.
     fn fail(
         &mut self,
         exchange: &Exchange,
@@ -297,14 +324,17 @@ impl<O: Operation> Call<O> {
         if !error.is_retriable() {
             return Step::Done(Err(error));
         }
-        if exchange.purpose == Purpose::Operation {
+        let failed = if exchange.purpose == Purpose::Operation {
             match self.operation.route() {
                 Route::AnyBroker => {}
                 Route::Leader(partition) => cluster.forget_leader(&partition),
                 Route::Coordinator(group) => cluster.forget_coordinator(&group),
             }
-        }
-        match self.attempts.after_failure(now) {
+            Failed::Operation
+        } else {
+            Failed::Lookup
+        };
+        match self.attempts.after_failure(failed, now) {
             AfterFailure::RetryAt(until) => {
                 self.retry_at = Some(until);
                 Step::Wait { until }
@@ -322,8 +352,8 @@ pub(crate) mod tests {
     use gaslightmq_wire::{Api, ApiKey, ResponseError};
 
     use super::*;
-    use crate::logic::cluster::ConnectionId;
-    use crate::logic::cluster::tests::{MAX_AGE, metadata, partition, to_broker, topic, view};
+    use crate::logic::cluster::Peer;
+    use crate::logic::cluster::tests::{MAX_AGE, for_data, for_groups, metadata, partition, to_broker, topic, view};
     use crate::logic::cluster::{group_id, topic_name};
     use crate::logic::versions::BrokerVersions;
 
@@ -452,7 +482,7 @@ pub(crate) mod tests {
 
         let asking = exchange_of(call.handle(Input::Started, &mut cluster, at(0)));
 
-        assert_eq!(asking.destination.connection, ConnectionId::Bootstrap(0));
+        assert_eq!(asking.destination.connection, for_data(Peer::Bootstrap(0)));
         assert_eq!(api_of(&call, &asking), Api::new(ApiKey::Metadata, 12));
         let request = call.request(&asking, &mut conversation()).unwrap();
         let asked: gaslightmq_wire::messages::MetadataRequest = request.body().unwrap();
@@ -517,21 +547,21 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn a_partition_without_a_leader_fails_with_the_error_of_its_topic() {
+    fn a_partition_without_a_leader_fails_with_the_error_of_its_topic_when_the_time_is_over() {
         let mut cluster = view();
-        let mut limits = limits();
-        limits.retries = Some(0);
-        let mut call = Call::new(to_leader_of_orders(), limits, at(0));
+        let mut call = Call::new(to_leader_of_orders(), limits(), at(0));
         let asking = exchange_of(call.handle(Input::Started, &mut cluster, at(0)));
         let unknown = topic("orders", &[]).with_error_code(ResponseError::UnknownTopicOrPartition.code());
 
         let input = answered(&call, asking, &metadata(&[1], vec![unknown]));
-        let step = call.handle(input, &mut cluster, at(0));
+        let step = call.handle(input, &mut cluster, at(9_950));
 
         assert_eq!(
             step,
-            Step::Done(Err(ClientError::Broker {
-                error: ResponseError::UnknownTopicOrPartition
+            Step::Done(Err(ClientError::CallTimedOut {
+                error: Box::new(ClientError::Broker {
+                    error: ResponseError::UnknownTopicOrPartition
+                })
             }))
         );
     }
@@ -539,19 +569,51 @@ pub(crate) mod tests {
     #[test]
     fn a_partition_without_a_leader_and_without_an_error_has_no_leader() {
         let mut cluster = view();
-        let mut limits = limits();
-        limits.retries = Some(0);
-        let mut call = Call::new(to_leader_of_orders(), limits, at(0));
+        let mut call = Call::new(to_leader_of_orders(), limits(), at(0));
         let asking = exchange_of(call.handle(Input::Started, &mut cluster, at(0)));
 
         let input = answered(&call, asking, &metadata(&[1], vec![topic("orders", &[-1])]));
-        let step = call.handle(input, &mut cluster, at(0));
+        let step = call.handle(input, &mut cluster, at(9_950));
 
         assert_eq!(
             step,
-            Step::Done(Err(ClientError::NoLeader {
-                topic: "orders".into(),
-                partition: 0
+            Step::Done(Err(ClientError::CallTimedOut {
+                error: Box::new(ClientError::NoLeader {
+                    topic: "orders".into(),
+                    partition: 0
+                })
+            }))
+        );
+    }
+
+    #[test]
+    fn a_call_without_retries_still_asks_again_for_its_leader() {
+        let mut cluster = view();
+        let mut limits = limits();
+        limits.retries = Some(0);
+        let mut call = Call::new(to_leader_of_orders(), limits, at(0));
+
+        // No leader yet, twice: asking again uses no retry.
+        for asked_at in [0, 100] {
+            let step = call.handle(Input::Waited, &mut cluster, at(asked_at));
+            let input = answered(&call, exchange_of(step), &metadata(&[1], vec![topic("orders", &[-1])]));
+            assert_eq!(
+                call.handle(input, &mut cluster, at(asked_at)),
+                Step::Wait {
+                    until: at(asked_at + 100)
+                }
+            );
+        }
+
+        // The leader is there, and the one try of the operation fails for good.
+        let asking = exchange_of(call.handle(Input::Waited, &mut cluster, at(200)));
+        let input = answered(&call, asking, &metadata(&[1], vec![topic("orders", &[1])]));
+        let sending = exchange_of(call.handle(input, &mut cluster, at(200)));
+        let input = answered(&call, sending, &refusal(ResponseError::NotLeaderOrFollower));
+        assert_eq!(
+            call.handle(input, &mut cluster, at(200)),
+            Step::Done(Err(ClientError::Broker {
+                error: ResponseError::NotLeaderOrFollower
             }))
         );
     }
@@ -664,12 +726,38 @@ pub(crate) mod tests {
         let first = exchange_of(call.handle(Input::Started, &mut cluster, at(0)));
         assert_eq!(first.destination, to_broker(1));
         let second = exchange_of(call.handle(Input::Failed(first, failed()), &mut cluster, at(1)));
-        assert_eq!(second.destination.connection, ConnectionId::Bootstrap(0));
+        assert_eq!(second.destination.connection, for_data(Peer::Bootstrap(0)));
         let third = exchange_of(call.handle(Input::Failed(second, failed()), &mut cluster, at(2)));
-        assert_eq!(third.destination.connection, ConnectionId::Bootstrap(1));
+        assert_eq!(third.destination.connection, for_data(Peer::Bootstrap(1)));
 
         let step = call.handle(Input::Failed(third, failed()), &mut cluster, at(3));
         assert_eq!(step, Step::Wait { until: at(103) });
+    }
+
+    #[test]
+    fn a_broker_that_gave_no_response_is_asked_last_by_the_next_try() {
+        let mut cluster = view();
+        cluster.learn(&metadata(&[1, 2], vec![]), at(0));
+        let mut call = Call::new(Ping::to(Route::AnyBroker), limits(), at(0));
+        let first = exchange_of(call.handle(Input::Started, &mut cluster, at(0)));
+        assert_eq!(first.destination, to_broker(1));
+
+        let second = exchange_of(call.handle(Input::Failed(first, ClientError::RequestTimedOut), &mut cluster, at(1)));
+        assert_eq!(second.destination, to_broker(2));
+        let input = answered(&call, second, &refusal(ResponseError::RequestTimedOut));
+        assert_eq!(call.handle(input, &mut cluster, at(1)), Step::Wait { until: at(101) });
+
+        let third = exchange_of(call.handle(Input::Waited, &mut cluster, at(101)));
+        assert_eq!(third.destination, to_broker(2));
+
+        // A response from broker 1 puts it back in front.
+        cluster.learn(&metadata(&[1, 2], vec![topic("orders", &[1])]), at(101));
+        let mut other = Call::new(to_leader_of_orders(), limits(), at(101));
+        let sending = exchange_of(other.handle(Input::Started, &mut cluster, at(101)));
+        assert_eq!(sending.destination, to_broker(1));
+        let input = answered(&other, sending, &pong());
+        other.handle(input, &mut cluster, at(101));
+        assert_eq!(cluster.any_broker(Traffic::Data).first, to_broker(1));
     }
 
     #[test]
@@ -684,13 +772,16 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn a_request_for_a_group_goes_to_its_coordinator_on_a_connection_of_its_own() {
+    fn everything_a_group_needs_stays_off_the_connections_that_carry_data() {
         let mut cluster = view();
         cluster.learn(&metadata(&[1, 2], vec![topic("orders", &[2])]), at(0));
         let mut call = Call::new(Ping::to(Route::Coordinator(group_id("analytics"))), limits(), at(0));
 
+        // The question who coordinates the group goes to broker 1, and not on the connection a Fetch would use.
         let asking = exchange_of(call.handle(Input::Started, &mut cluster, at(0)));
-        assert_eq!(asking.destination, to_broker(1));
+        assert_eq!(asking.destination.connection, for_groups(Peer::Broker(BrokerId(1))));
+        assert_ne!(asking.destination.connection, to_broker(1).connection);
+        assert_eq!(asking.destination.address, to_broker(1).address);
         let request = call.request(&asking, &mut conversation()).unwrap();
         assert_eq!(request.api(), Api::new(ApiKey::FindCoordinator, 3));
         assert_eq!(
@@ -701,7 +792,7 @@ pub(crate) mod tests {
         let input = answered(&call, asking, &found(2));
         let sending = exchange_of(call.handle(input, &mut cluster, at(5)));
 
-        assert_eq!(sending.destination.connection, ConnectionId::Coordinator(BrokerId(2)));
+        assert_eq!(sending.destination.connection, for_groups(Peer::Broker(BrokerId(2))));
         assert_eq!(sending.destination.address, to_broker(2).address);
         assert_eq!(api_of(&call, &sending).known(), Some(ApiKey::Heartbeat));
     }
@@ -752,6 +843,7 @@ pub(crate) mod tests {
         assert_eq!(early.connect_within, Duration::from_secs(1));
         assert_eq!(early.greet_within, Duration::from_secs(5));
         assert_eq!(early.answer_within, Duration::from_secs(5));
+        assert_eq!(early.not_after, at(10_000));
 
         let step = call.handle(
             Input::Failed(early, ClientError::RequestTimedOut),

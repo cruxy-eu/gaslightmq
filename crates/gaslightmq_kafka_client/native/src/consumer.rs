@@ -35,8 +35,9 @@ static NAMES: RoleNames = RoleNames::new("consumer");
 ///
 /// A consumer is one member of each group it joins: it has its own member ID and generation there.
 /// Two consumers that join the same group are two members of it, as two applications would be.
-/// The consumer reaches the coordinator of a group on a connection of its own,
-/// so a Fetch that waits for records never holds up a Heartbeat.
+/// Everything the consumer says about a group travels on connections of its own:
+/// asking who coordinates the group, and talking to the coordinator.
+/// A Fetch that waits for records therefore never holds up a Heartbeat.
 ///
 /// A consumer joins a group without a subscription, so the group assigns it no partition.
 /// It sends a heartbeat when [`heartbeat`](Self::heartbeat) is called, and not on its own.
@@ -168,23 +169,39 @@ impl KafkaConsumer {
 
     /// Join `group` as a member, or join it again under the member ID the consumer has there.
     ///
+    /// The coordinator holds a join until every member of the group joined, for at most
+    /// [`max_poll_interval`](ConsumerConfiguration::max_poll_interval).
+    /// A join may therefore take that long and the request timeout on top,
+    /// also when the default API timeout is shorter.
+    ///
     /// # Errors
     ///
     /// The error the coordinator or the connection gave,
-    /// or [`ClientError::CallTimedOut`] when retriable errors lasted until the default API timeout.
+    /// or [`ClientError::CallTimedOut`] when retriable errors lasted until the time of the join was over.
     pub async fn join_group(&self, group: &str) -> Result<JoinedGroup, ClientError> {
         let inner = &self.inner;
         let group = group_id(group);
         let join = inner.membership(&group).join(&inner.configuration, group.clone());
-        let joined = inner.call(join).await;
-        inner.remember(group, joined, |membership, joined| {
-            membership.joined(joined);
-            JoinedGroup {
-                member_id: membership.member_id().to_owned(),
-                generation: membership.generation(),
-                leader: membership.leader().to_owned(),
+        let (join, joined) = inner
+            .cluster
+            .carry_out(join, inner.configuration.default_api_timeout, None)
+            .await;
+        let mut memberships = inner.memberships();
+        let membership = memberships.entry(group).or_default();
+        match joined {
+            Ok(joined) => {
+                membership.joined(joined);
+                Ok(JoinedGroup {
+                    member_id: membership.member_id().to_owned(),
+                    generation: membership.generation(),
+                    leader: membership.leader().to_owned(),
+                })
             }
-        })
+            Err(error) => {
+                membership.join_failed(&join, &error);
+                Err(error)
+            }
+        }
     }
 
     /// Take the assignment of the generation the consumer joined, and return it as it arrived.

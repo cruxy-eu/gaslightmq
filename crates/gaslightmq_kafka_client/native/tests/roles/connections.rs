@@ -232,6 +232,32 @@ async fn a_producer_without_retries_returns_the_first_error() {
 }
 
 #[tokio::test]
+async fn a_producer_without_retries_still_waits_for_a_leader() {
+    let broker = FakeBroker::bind().await;
+    let cluster = Cluster::of(&[(1, &broker)]);
+    let electing_once = Arc::new(AtomicBool::new(true));
+    broker.serve(move |request| {
+        let cluster = cluster.clone();
+        let electing_once = Arc::clone(&electing_once);
+        async move {
+            if request.api().known() == Some(ApiKey::Metadata) && electing_once.swap(false, Ordering::Relaxed) {
+                return cluster.metadata(&request, -1);
+            }
+            cluster.answer(&request)
+        }
+    });
+    let mut configuration = ProducerConfiguration::new(broker.address());
+    configuration.retries = 0;
+    let producer = KafkaProducer::new(configuration);
+
+    let offset = producer.send(TOPIC, Partition::from(0), &[Record::new("paid")]).await;
+
+    assert_eq!(offset, Ok(Offset::from(0i64)));
+    assert_eq!(broker.arrivals_of(ApiKey::Metadata).len(), 2);
+    assert_eq!(broker.arrivals_of(ApiKey::Produce).len(), 1);
+}
+
+#[tokio::test]
 async fn a_call_waits_the_backoff_between_two_tries() {
     let broker = cluster_that_refuses_the_first_produce().await;
     let mut configuration = ProducerConfiguration::new(broker.address());
@@ -267,12 +293,12 @@ async fn the_wait_between_two_tries_grows_up_to_the_longest_wait() {
 
     consumer.metadata_for_all_topics().await.unwrap_err();
 
-    // The waits are 50, 100, 100 and 100 milliseconds. Without the longest wait, the third would be 200.
+    // The waits are at least 50, 100 and 100 milliseconds.
+    // That the third is not 200 is checked where no real time passes, in the tests of the logic.
     let connected = connected.lock().unwrap();
     let waits: Vec<Duration> = connected.windows(2).map(|pair| pair[1] - pair[0]).collect();
     assert!(waits.len() >= 3, "{waits:?}");
     assert!(waits[0] >= Duration::from_millis(50), "{waits:?}");
     assert!(waits[1] >= Duration::from_millis(100), "{waits:?}");
     assert!(waits[2] >= Duration::from_millis(100), "{waits:?}");
-    assert!(waits[2] < Duration::from_millis(190), "{waits:?}");
 }
