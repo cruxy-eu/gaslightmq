@@ -89,7 +89,7 @@
 //!
 //! | Type | Error | What is wrong |
 //! |---|---|---|
-//! | [`Lie`] | [`LieError`] | A lie could not be told: no behaviour is registered for its kind, the kind has no behaviour at the stage, the effect is not allowed, or the request or the response could not be read or written. |
+//! | [`Lie`] | [`LieError`] | A lie could not be told: no behaviour is registered for its kind, the kind has no behaviour at the stage, the effect is not allowed, the request or the response could not be read or written, the request does not name a part the lie targets, the response has no place for an error code, or the response answers another request. |
 //! | [`Lies`] | [`LiesError`] | Two behaviours tell the same kind of lie. |
 //!
 //! [`Effect`] and [`Instruction`] take every value, so they have no error.
@@ -107,7 +107,8 @@
 //!
 //! # No IO
 //!
-//! The crate depends on `gaslightmq_lie` for the definitions, and on `gaslightmq_wire` for the request and the response.
+//! The crate depends on `gaslightmq_lie` for the definitions, on `gaslightmq_wire` for the request and the response,
+//! and on `gaslightmq_field` for the parts of a call that an error names.
 //! A behaviour is a pure function of what it is given:
 //! the crate has no async code, no IO, no clock and no randomness.
 //! It reaches the Kafka codec, so it does not compile to WebAssembly, and no crate that the UI shares depends on it.

@@ -312,6 +312,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "gaslightmq_lie_refusal"
+version = "0.1.0"
+dependencies = [
+ "gaslightmq_call",
+ "gaslightmq_field",
+ "gaslightmq_kernel",
+ "gaslightmq_lie",
+ "gaslightmq_lie_api",
+ "gaslightmq_wire",
+ "gaslightmq_wire_edit",
+]
+
+[[package]]
 name = "gaslightmq_rule"
 version = "0.1.0"
 dependencies = [
