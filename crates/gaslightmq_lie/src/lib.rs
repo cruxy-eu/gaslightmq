@@ -10,12 +10,12 @@
 //! | [`Stage`] | Where in a call a lie acts: before forwarding, or after the response. |
 //! | [`CombinationClass`] | How a lie combines with the other lies on a call. |
 //! | [`Aspect`] | What a rewrite changes about its target. |
+//! | [`Priority`] | Where a lie stands when lies conflict: the position of its rule among the armed rules. |
 //! | [`LieDefinition`] | A lie as a rule's action or a preset writes it. |
 //! | [`RefusalLie`], [`TimingLie`], [`HangUpLie`] | The parameters of a refusal, a timing lie and a hang-up. |
 //! | [`TargetedLie`] | A lie with the target it applies to: one line of a verdict. |
-//! | [`LieError`] | Why a value cannot become a part of a lie. |
 //!
-//! The [`prelude`] holds all of them.
+//! The [`prelude`] holds all of them, with their [errors](#errors).
 //!
 //! # From a definition to a verdict
 //!
@@ -39,7 +39,7 @@
 //!
 //! // Both rules match a Fetch, and their selector matched one of its partitions.
 //! let matched = Target::of_parts(["orders.eu/3".parse()?]).expect("one part");
-//! let verdict = [slow.on(matched.clone())?, flap.on(matched)?];
+//! let verdict = [slow.on(matched.clone()), flap.on(matched)];
 //!
 //! // The refusal changes that partition, and the delay holds the whole call back.
 //! assert_eq!(verdict[0].to_string(), "+750 ms");
@@ -54,6 +54,26 @@
 //!
 //! [`LieDefinition`] has the four kinds that need no payload: refusal, timing, silence and hang-up.
 //! Topology, data, progress and configuration get their definition here when their behaviour arrives.
+//!
+//! # Errors
+//!
+//! Every type that checks its value has an error of its own, named after it.
+//! The error holds only what can go wrong with that value.
+//!
+//! | Type | Error | What is wrong |
+//! |---|---|---|
+//! | [`LieKind`] | [`LieKindError`] | No kind of lie has that name. |
+//! | [`Stage`] | [`StageError`] | No stage has that name, or a lie of that kind never acts at the stage. |
+//! | [`CombinationClass`] | [`CombinationClassError`] | No combination class has that name. |
+//! | [`Aspect`] | [`AspectError`] | No aspect has that name. |
+//! | [`TimingLie`] | [`TimingLieError`] | The jitter is longer than the delay, or the throttle is longer than Kafka can tell a client. |
+//! | [`TargetedLie`] | [`TargetedLieError`] | A line of a verdict has parts, and the lie always targets the whole call. |
+//!
+//! Code that builds a lie only meets [`StageError::NotAllowed`].
+//! Every other error comes from reading a text or, with the `serde` feature, a map.
+//! A map of the wrong shape is no error of a type, and reading says so itself:
+//! a key is missing, unknown, there twice or of another kind of lie, or the kind has no definition yet.
+//! The message of every error is complete, so no error has a [`source`](std::error::Error::source).
 //!
 //! # The `serde` feature
 //!
@@ -120,22 +140,22 @@
 mod aspect;
 mod class;
 mod definition;
-mod error;
 #[cfg(feature = "serde")]
 mod form;
 mod kind;
+mod priority;
 mod stage;
 mod targeted;
 
-pub use aspect::Aspect;
-pub use class::CombinationClass;
-pub use definition::{HangUpLie, LieDefinition, RefusalLie, TimingLie};
-pub use error::LieError;
-pub use kind::LieKind;
-pub use stage::Stage;
-pub use targeted::TargetedLie;
+pub use aspect::{Aspect, AspectError};
+pub use class::{CombinationClass, CombinationClassError};
+pub use definition::{HangUpLie, LieDefinition, RefusalLie, TimingLie, TimingLieError};
+pub use kind::{LieKind, LieKindError};
+pub use priority::Priority;
+pub use stage::{Stage, StageError};
+pub use targeted::{TargetedLie, TargetedLieError};
 
-/// Every type of this crate.
+/// Every type of this crate, with its error.
 ///
 /// Import it whole wherever code speaks in lies, next to the preludes of `gaslightmq_kernel` and `gaslightmq_field`.
 /// No name in it is a name of those preludes or of the standard one, so the import shadows nothing.
@@ -147,11 +167,14 @@ pub use targeted::TargetedLie;
 /// let lie = LieDefinition::from(RefusalLie::new(ErrorCode::REQUEST_TIMED_OUT).at(Stage::AfterResponse));
 /// assert_eq!(lie.kind(), LieKind::Refusal);
 /// assert_eq!(lie.to_string(), "REQUEST_TIMED_OUT after the response");
+///
+/// let kind: Result<LieKind, LieKindError> = "refusal".parse();
+/// assert_eq!(kind, Ok(lie.kind()));
 /// ```
 pub mod prelude {
     #[doc(no_inline)]
     pub use crate::{
-        Aspect, CombinationClass, HangUpLie, LieDefinition, LieError, LieKind, RefusalLie, Stage, TargetedLie,
-        TimingLie,
+        Aspect, AspectError, CombinationClass, CombinationClassError, HangUpLie, LieDefinition, LieKind, LieKindError,
+        Priority, RefusalLie, Stage, StageError, TargetedLie, TargetedLieError, TimingLie, TimingLieError,
     };
 }

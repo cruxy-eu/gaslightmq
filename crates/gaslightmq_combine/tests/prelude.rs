@@ -53,10 +53,9 @@ mod next_to_the_others {
         let call: Combination<&str> = request.without_response_pass();
         let fate: &Fate<&str> = call.fate_of(&"Lost acknowledgement").unwrap();
         let loss: &Loss<&str> = &fate.shadowed()[0];
-        let effect: &Effect<&str> = call.after_response();
+        let effect: &StageEffect<&str> = call.after_response();
         let winners: &Winners<&str> = effect.refusals();
         let delay: Delay = effect.delay();
-        let error: CombineError = CombineError::NoAspect { kind: LieKind::Data };
 
         vec![
             priority.position().to_string(),
@@ -66,8 +65,25 @@ mod next_to_the_others {
             effect.terminal().unwrap().to_string(),
             winners.is_empty().to_string(),
             delay.to_string(),
-            error.to_string(),
         ]
+    }
+
+    /// One error of every type of the prelude, each named without a path.
+    ///
+    /// A message says everything, so no error has a source.
+    pub fn every_error() -> Vec<String> {
+        let errors: Vec<Box<dyn std::error::Error>> = vec![
+            Box::new(ClaimError::NoAspect { kind: LieKind::Data }),
+            Box::new(ClaimError::NoTiming { kind: LieKind::Timing }),
+        ];
+
+        errors
+            .iter()
+            .map(|error| {
+                assert!(error.source().is_none(), "{error}");
+                error.to_string()
+            })
+            .collect()
     }
 }
 
@@ -85,7 +101,17 @@ fn the_prelude_names_every_type_next_to_the_other_preludes() {
             "Late disconnect",
             "true",
             "+0 s",
+        ]
+    );
+}
+
+#[test]
+fn the_prelude_names_the_error_of_every_type() {
+    assert_eq!(
+        next_to_the_others::every_error(),
+        [
             "a data lie rewrites, and its definition names no aspect",
+            "a timing lie is a modifier, and its definition holds no timing",
         ]
     );
 }
@@ -99,12 +125,8 @@ fn the_prelude_is_enough_to_combine_the_lies_of_a_call() {
     use gaslightmq_lie::prelude::*;
 
     let matched = Target::of_parts(["orders.eu/3".parse().unwrap()]).unwrap();
-    let delay = LieDefinition::from(TimingLie::new().with_delay(TimeSpan::from_secs(1)))
-        .on(matched.clone())
-        .unwrap();
-    let refusal = LieDefinition::from(RefusalLie::new(ErrorCode::NOT_LEADER_OR_FOLLOWER))
-        .on(matched)
-        .unwrap();
+    let delay = LieDefinition::from(TimingLie::new().with_delay(TimeSpan::from_secs(1))).on(matched.clone());
+    let refusal = LieDefinition::from(RefusalLie::new(ErrorCode::NOT_LEADER_OR_FOLLOWER)).on(matched);
 
     let call = RequestPass::of([
         FiredLie::new("Delay 1 s", Priority::new(0), Claim::try_from(&delay).unwrap()),

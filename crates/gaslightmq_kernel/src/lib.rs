@@ -22,10 +22,18 @@
 //! | [`ErrorCode`] | The code of a Kafka error. | `NOT_LEADER_OR_FOLLOWER` |
 //!
 //! A value of one of these types is always valid.
-//! A constructor checks the raw value and returns a [`KernelError`] for one that breaks the type's rule.
+//! A constructor checks the raw value, and returns the error of its type for one that breaks the type's rule.
 //! No other code has to check a topic name or an offset again.
 //!
-//! The [`prelude`] holds every type of the table and [`KernelError`].
+//! Every type has an error of its own, named after it: [`TopicNameError`], [`OffsetError`], [`ApiKeyError`].
+//! The error holds only what can go wrong with that value.
+//! A topic name is empty, too long, reserved or has an invalid character, and an offset is negative or too large.
+//! A type made of parts says which part is wrong, and keeps the error of that part:
+//! [`TopicPartitionError::InvalidPartition`] holds a [`PartitionNumberError`].
+//! Its message names the whole text first, and then says what is wrong with the part.
+//! The message of every error is complete, so no error has a [`source`](std::error::Error::source).
+//!
+//! The [`prelude`] holds every type of the table and its error.
 //! A crate that speaks in these types imports it whole, instead of one type at a time.
 //!
 //! ```
@@ -43,8 +51,11 @@
 //!
 //! // A value that breaks the rule never becomes a value object.
 //! assert!(TopicName::new("orders/eu").is_err());
-//! assert!("orders.eu/-1".parse::<TopicPartition>().is_err());
-//! # Ok::<(), KernelError>(())
+//! assert_eq!(TopicName::new("orders/eu").unwrap_err().to_string(), "topic name \"orders/eu\" has the invalid character '/' at position 6");
+//! let error = "orders.eu/-1".parse::<TopicPartition>().unwrap_err();
+//! assert!(matches!(error, TopicPartitionError::InvalidPartition { .. }));
+//! assert_eq!(error.to_string(), "topic partition \"orders.eu/-1\": partition number cannot be negative: -1");
+//! # Ok::<(), Box<dyn std::error::Error>>(())
 //! ```
 //!
 //! # Conversions
@@ -104,7 +115,7 @@
 //! let leader: Option<BrokerId> = BrokerId::from_wire(-1)?;
 //! assert_eq!(leader, None);
 //! assert_eq!(Offset::to_wire(Some(Offset::from(42))), 42);
-//! # Ok::<(), KernelError>(())
+//! # Ok::<(), BrokerIdError>(())
 //! ```
 //!
 //! A [`PartitionNumber`] has no such number, and its `TryFrom<i32>` rejects every negative one.
@@ -130,7 +141,6 @@ mod api;
 mod client;
 mod cluster;
 mod code;
-mod error;
 mod error_code;
 mod group;
 mod names;
@@ -141,18 +151,22 @@ mod producer;
 mod text;
 mod topic;
 
-pub use api::ApiKey;
-pub use client::ClientId;
-pub use cluster::{BrokerId, LeaderEpoch};
-pub use error::KernelError;
-pub use error_code::ErrorCode;
-pub use group::{GroupId, GroupInstanceId, MemberId};
-pub use offset::Offset;
-pub use partition::{PartitionNumber, PartitionOffset, TopicPartition, TopicPartitionOffset};
-pub use producer::{ProducerEpoch, ProducerId, TransactionalId};
-pub use topic::{TopicId, TopicName};
+pub use api::{ApiKey, ApiKeyError};
+pub use client::{ClientId, ClientIdError};
+pub use cluster::{BrokerId, BrokerIdError, LeaderEpoch, LeaderEpochError};
+pub use error_code::{ErrorCode, ErrorCodeError};
+pub use group::{GroupId, GroupIdError, GroupInstanceId, GroupInstanceIdError, MemberId, MemberIdError};
+pub use offset::{Offset, OffsetError};
+pub use partition::{
+    PartitionNumber, PartitionNumberError, PartitionOffset, PartitionOffsetError, TopicPartition, TopicPartitionError,
+    TopicPartitionOffset, TopicPartitionOffsetError,
+};
+pub use producer::{
+    ProducerEpoch, ProducerEpochError, ProducerId, ProducerIdError, TransactionalId, TransactionalIdError,
+};
+pub use topic::{TopicId, TopicIdError, TopicName, TopicNameError};
 
-/// Every value object of this crate, and [`KernelError`].
+/// Every value object of this crate, and the error of each.
 ///
 /// Import it whole wherever code speaks in these types.
 /// No name in it is a name of the standard prelude, so the import shadows nothing.
@@ -160,15 +174,18 @@ pub use topic::{TopicId, TopicName};
 /// ```
 /// use gaslightmq_kernel::prelude::*;
 ///
-/// let committed: Result<TopicPartitionOffset, KernelError> = "orders.eu/3@42".parse();
+/// let committed: Result<TopicPartitionOffset, TopicPartitionOffsetError> = "orders.eu/3@42".parse();
 /// assert_eq!(committed?.offset(), Offset::from(42));
-/// # Ok::<(), KernelError>(())
+/// # Ok::<(), TopicPartitionOffsetError>(())
 /// ```
 pub mod prelude {
     #[doc(no_inline)]
     pub use crate::{
-        ApiKey, BrokerId, ClientId, ErrorCode, GroupId, GroupInstanceId, KernelError, LeaderEpoch, MemberId, Offset,
-        PartitionNumber, PartitionOffset, ProducerEpoch, ProducerId, TopicId, TopicName, TopicPartition,
-        TopicPartitionOffset, TransactionalId,
+        ApiKey, ApiKeyError, BrokerId, BrokerIdError, ClientId, ClientIdError, ErrorCode, ErrorCodeError, GroupId,
+        GroupIdError, GroupInstanceId, GroupInstanceIdError, LeaderEpoch, LeaderEpochError, MemberId, MemberIdError,
+        Offset, OffsetError, PartitionNumber, PartitionNumberError, PartitionOffset, PartitionOffsetError,
+        ProducerEpoch, ProducerEpochError, ProducerId, ProducerIdError, TopicId, TopicIdError, TopicName,
+        TopicNameError, TopicPartition, TopicPartitionError, TopicPartitionOffset, TopicPartitionOffsetError,
+        TransactionalId, TransactionalIdError,
     };
 }

@@ -13,7 +13,7 @@ use crate::PresetName;
 ///
 /// An action is a definition.
 /// It does not say what it lies about, nor which partition an incident without a subject changes:
-/// the call that fires the rule does, and [`Effect`](crate::Effect) holds the answer.
+/// the call that fires the rule does, and [`FiredAction`](crate::FiredAction) holds the answer.
 ///
 /// ```
 /// use gaslightmq_incident::prelude::*;
@@ -96,7 +96,7 @@ impl fmt::Display for Action {
 ///
 /// assert_eq!(named.preset().map(PresetName::as_str), Some("Delay 1 s"));
 /// assert_eq!(inline.preset(), None);
-/// # Ok::<(), RuleError>(())
+/// # Ok::<(), Box<dyn std::error::Error>>(())
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum ActionRef {

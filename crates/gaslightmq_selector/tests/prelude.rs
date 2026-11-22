@@ -53,7 +53,6 @@ mod next_to_the_others {
             .with_part(TopicName::new("orders.eu").unwrap());
         let matched: Match = effective.evaluate(&call);
         let index: ApiIndex<SelectorName> = ApiIndex::new([(name.clone(), effective.clone())]);
-        let error: SelectorError = Glob::new("").unwrap_err();
 
         vec![
             pattern.to_string(),
@@ -71,8 +70,35 @@ mod next_to_the_others {
             format!("{apis:?}"),
             format!("{matched:?}"),
             index.matches(&call).count().to_string(),
-            error.to_string(),
         ]
+    }
+
+    /// One error of every type of the prelude, each named without a path.
+    ///
+    /// A message says everything, so no error has a source.
+    pub fn every_error() -> Vec<String> {
+        let name: SelectorName = "Order producers".parse().unwrap();
+        let errors: Vec<Box<dyn std::error::Error>> = vec![
+            Box::new(GlobError::Empty),
+            Box::new(SelectorNameError::Empty),
+            Box::new(OperatorError::Unknown {
+                name: "isnt".to_owned(),
+            }),
+            Box::new(ValueSetError::Empty),
+            Box::new(ConditionError::InvalidValue {
+                error: Field::Topic.parse_value("").unwrap_err(),
+            }),
+            Box::new(ScopeError::NotAConnectionField { field: Field::Topic }),
+            Box::new(SelectorSetError::UnknownSelector { name }),
+        ];
+
+        errors
+            .iter()
+            .map(|error| {
+                assert!(error.source().is_none(), "{error}");
+                error.to_string()
+            })
+            .collect()
     }
 }
 
@@ -80,8 +106,24 @@ mod next_to_the_others {
 fn the_prelude_names_every_item_next_to_the_other_preludes() {
     let items = next_to_the_others::every_item();
 
-    assert_eq!(items.len(), 16);
+    assert_eq!(items.len(), 15);
     assert!(items.iter().all(|item| !item.is_empty()));
+}
+
+#[test]
+fn the_prelude_names_the_error_of_every_type() {
+    assert_eq!(
+        next_to_the_others::every_error(),
+        [
+            "a pattern is empty",
+            "selector name \"\" is empty",
+            "no operator is named \"isnt\"",
+            "a condition needs at least one value",
+            "topic: topic name is empty",
+            "a scope only tests connection fields, and topic is a request field",
+            "no selector is named \"Order producers\"",
+        ]
+    );
 }
 
 #[test]

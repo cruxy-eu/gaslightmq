@@ -1,8 +1,7 @@
 use std::fmt;
 use std::str::FromStr;
 
-use crate::KernelError;
-use crate::code::{self, code_serde};
+use crate::code::{self, code_error, code_serde};
 use crate::text::text_conversions;
 
 /// The key of a Kafka API: the number that says which request a client sends.
@@ -32,12 +31,10 @@ use crate::text::text_conversions;
 /// assert_eq!("4711".parse::<ApiKey>()?, unknown);
 ///
 /// assert!("Prodcue".parse::<ApiKey>().is_err());
-/// # Ok::<(), KernelError>(())
+/// # Ok::<(), Box<dyn std::error::Error>>(())
 /// ```
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ApiKey(i16);
-
-const WHAT: &str = "API key";
 
 /// Define a constant for every API that Kafka names, and the table of those names.
 ///
@@ -100,10 +97,12 @@ impl From<ApiKey> for i16 {
 
 /// Reads the name of an API as Kafka spells it, or the number of any key.
 impl FromStr for ApiKey {
-    type Err = KernelError;
+    type Err = ApiKeyError;
 
     fn from_str(text: &str) -> Result<Self, Self::Err> {
-        code::parse(WHAT, Self::NAMES, text).map(Self)
+        code::parse(Self::NAMES, text)
+            .map(Self)
+            .map_err(|flaw| ApiKeyError::of(flaw, text))
     }
 }
 
@@ -123,7 +122,14 @@ impl fmt::Debug for ApiKey {
     }
 }
 
-text_conversions!(ApiKey);
+code_error! {
+    /// Why a text is not an [`ApiKey`].
+    ///
+    /// Every `i16` is an API key, so only a text can fail.
+    ApiKeyError, "API key"
+}
+
+text_conversions!(ApiKey, ApiKeyError);
 code_serde!(ApiKey, "the name or the number of a Kafka API");
 
 #[cfg(test)]
@@ -191,26 +197,21 @@ mod tests {
         for text in ["Prodcue", "produce", "PRODUCE", "Produce ", "ProduceRequest"] {
             assert_eq!(
                 text.parse::<ApiKey>(),
-                Err(KernelError::UnknownName {
-                    what: "API key",
-                    input: text.to_owned()
-                }),
+                Err(ApiKeyError::UnknownName { input: text.to_owned() }),
                 "{text:?}"
             );
         }
-        assert_eq!("".parse::<ApiKey>(), Err(KernelError::Empty { what: "API key" }));
+        assert_eq!("".parse::<ApiKey>(), Err(ApiKeyError::Empty));
         assert_eq!(
             "32768".parse::<ApiKey>(),
-            Err(KernelError::TooLarge {
-                what: "API key",
+            Err(ApiKeyError::TooLarge {
                 value: 32_768,
                 max: 32_767
             })
         );
         assert_eq!(
             "-32769".parse::<ApiKey>(),
-            Err(KernelError::TooSmall {
-                what: "API key",
+            Err(ApiKeyError::TooSmall {
                 value: -32_769,
                 min: -32_768
             })
@@ -248,5 +249,36 @@ mod tests {
     fn api_keys_order_as_numbers() {
         assert!(ApiKey::PRODUCE < ApiKey::FETCH);
         assert!(ApiKey::from(-1) < ApiKey::PRODUCE);
+    }
+
+    #[test]
+    fn the_error_of_an_api_key_says_what_is_wrong_with_it() {
+        let cases = [
+            (ApiKeyError::Empty, "API key is empty"),
+            (
+                ApiKeyError::UnknownName {
+                    input: "Prodcue".into(),
+                },
+                "unknown API key: \"Prodcue\"",
+            ),
+            (
+                ApiKeyError::TooSmall {
+                    value: -40_000,
+                    min: -32_768,
+                },
+                "API key -40000 is below the minimum of -32768",
+            ),
+            (
+                ApiKeyError::TooLarge {
+                    value: 40_000,
+                    max: 32_767,
+                },
+                "API key 40000 exceeds the maximum of 32767",
+            ),
+        ];
+
+        for (error, message) in cases {
+            assert_eq!(error.to_string(), message);
+        }
     }
 }

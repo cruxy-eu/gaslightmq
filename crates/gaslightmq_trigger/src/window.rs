@@ -4,8 +4,6 @@ use std::fmt;
 
 use gaslightmq_clock::{Duration, Instant, TimeSpan};
 
-use crate::TriggerError;
-
 /// When a time trigger agrees, measured from the moment the rule was armed.
 ///
 /// | Definition | The window is open |
@@ -28,7 +26,7 @@ use crate::TriggerError;
 /// // The engine sets a timer for the moment the window opens.
 /// let armed_at = Instant::ZERO + Duration::from_secs(5);
 /// assert_eq!(window.opens_at(armed_at), Instant::ZERO + Duration::from_secs(15));
-/// # Ok::<(), TriggerError>(())
+/// # Ok::<(), TimeWindowError>(())
 /// ```
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct TimeWindow {
@@ -46,10 +44,10 @@ impl TimeWindow {
     ///
     /// # Errors
     ///
-    /// [`TriggerError::EmptyWindow`] when `until` is not later than `from`.
-    pub fn between(from: TimeSpan, until: TimeSpan) -> Result<TimeWindow, TriggerError> {
+    /// [`TimeWindowError::Empty`] when `until` is not later than `from`.
+    pub fn between(from: TimeSpan, until: TimeSpan) -> Result<TimeWindow, TimeWindowError> {
         if until <= from {
-            return Err(TriggerError::EmptyWindow { from, until });
+            return Err(TimeWindowError::Empty { from, until });
         }
         Ok(TimeWindow {
             opens: from,
@@ -92,6 +90,26 @@ impl fmt::Display for TimeWindow {
         }
     }
 }
+
+/// Why two time spans are not a [`TimeWindow`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum TimeWindowError {
+    /// The window closes before it opens, or at the moment it opens.
+    Empty { from: TimeSpan, until: TimeSpan },
+}
+
+impl fmt::Display for TimeWindowError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Empty { from, until } => {
+                write!(f, "a window between {from} and {until} never opens")
+            }
+        }
+    }
+}
+
+impl std::error::Error for TimeWindowError {}
 
 #[cfg(test)]
 mod tests {
@@ -138,18 +156,27 @@ mod tests {
     fn a_window_that_never_opens_is_an_error() {
         assert_eq!(
             TimeWindow::between(secs(40), secs(10)),
-            Err(TriggerError::EmptyWindow {
+            Err(TimeWindowError::Empty {
                 from: secs(40),
                 until: secs(10)
             }),
         );
         assert_eq!(
             TimeWindow::between(secs(10), secs(10)),
-            Err(TriggerError::EmptyWindow {
+            Err(TimeWindowError::Empty {
                 from: secs(10),
                 until: secs(10)
             }),
         );
+    }
+
+    #[test]
+    fn a_window_error_says_what_is_wrong() {
+        let error = TimeWindowError::Empty {
+            from: secs(40),
+            until: secs(10),
+        };
+        assert_eq!(error.to_string(), "a window between 40s and 10s never opens");
     }
 
     #[test]

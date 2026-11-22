@@ -1,4 +1,3 @@
-use crate::KernelError;
 use crate::text::{self, text_value};
 
 text_value! {
@@ -13,9 +12,9 @@ text_value! {
     /// let group = GroupId::new("analytics-etl")?;
     /// assert_eq!(group, "analytics-etl");
     /// assert!(GroupId::new("").is_err());
-    /// # Ok::<(), KernelError>(())
+    /// # Ok::<(), Box<dyn std::error::Error>>(())
     /// ```
-    GroupId, "group ID", max: text::MAX_STRING_LEN, rule: text::non_empty
+    GroupId, GroupIdError, "group ID", max: text::MAX_STRING_LEN, rule: non_empty
 }
 
 text_value! {
@@ -33,9 +32,9 @@ text_value! {
     /// assert_eq!(member, Some(MemberId::new("consumer-1-4f2a")?));
     /// assert_eq!(MemberId::from_wire("")?, None);
     /// assert_eq!(MemberId::to_wire(None), "");
-    /// # Ok::<(), KernelError>(())
+    /// # Ok::<(), Box<dyn std::error::Error>>(())
     /// ```
-    MemberId, "member ID", max: text::MAX_STRING_LEN, rule: text::non_empty
+    MemberId, MemberIdError, "member ID", max: text::MAX_STRING_LEN, rule: non_empty
 }
 
 impl MemberId {
@@ -44,7 +43,7 @@ impl MemberId {
     /// # Errors
     ///
     /// The error of [`new`](Self::new), when `raw` is not empty and breaks the rule for a member ID.
-    pub fn from_wire(raw: &str) -> Result<Option<Self>, KernelError> {
+    pub fn from_wire(raw: &str) -> Result<Option<Self>, MemberIdError> {
         if raw.is_empty() {
             Ok(None)
         } else {
@@ -73,9 +72,9 @@ text_value! {
     /// let instance = GroupInstanceId::new("etl-0")?;
     /// assert_eq!(instance, "etl-0");
     /// assert!(GroupInstanceId::new("etl 0").is_err());
-    /// # Ok::<(), KernelError>(())
+    /// # Ok::<(), Box<dyn std::error::Error>>(())
     /// ```
-    GroupInstanceId, "group instance ID", max: text::MAX_NAME_LEN, rule: text::name
+    GroupInstanceId, GroupInstanceIdError, "group instance ID", max: text::MAX_NAME_LEN, rule: name
 }
 
 #[cfg(test)]
@@ -89,7 +88,7 @@ mod tests {
         for value in ["analytics-etl", "analytics etl/é", "."] {
             assert_eq!(GroupId::new(value).unwrap().as_str(), value);
         }
-        assert_eq!(GroupId::new(""), Err(KernelError::Empty { what: "group ID" }));
+        assert_eq!(GroupId::new(""), Err(GroupIdError::Empty));
     }
 
     #[test]
@@ -98,8 +97,7 @@ mod tests {
         assert!(GroupId::new("a".repeat(32_767)).is_ok());
         assert_eq!(
             GroupId::new("a".repeat(32_768)),
-            Err(KernelError::TooLong {
-                what: "group ID",
+            Err(GroupIdError::TooLong {
                 len: 32_768,
                 max: 32_767
             })
@@ -132,12 +130,11 @@ mod tests {
     #[test]
     fn a_member_id_takes_any_text_but_none() {
         assert_eq!(MemberId::new("consumer-1-4f2a").unwrap().as_str(), "consumer-1-4f2a");
-        assert_eq!(MemberId::new(""), Err(KernelError::Empty { what: "member ID" }));
+        assert_eq!(MemberId::new(""), Err(MemberIdError::Empty));
         assert_eq!(MemberId::MAX_LEN, 32_767);
         assert_eq!(
             MemberId::new("a".repeat(32_768)),
-            Err(KernelError::TooLong {
-                what: "member ID",
+            Err(MemberIdError::TooLong {
                 len: 32_768,
                 max: 32_767
             })
@@ -165,8 +162,7 @@ mod tests {
         assert_eq!(MemberId::from_wire("consumer-1-4f2a"), Ok(Some(member.clone())));
         assert_eq!(
             MemberId::from_wire(&"a".repeat(32_768)),
-            Err(KernelError::TooLong {
-                what: "member ID",
+            Err(MemberIdError::TooLong {
                 len: 32_768,
                 max: 32_767
             })
@@ -182,29 +178,17 @@ mod tests {
         assert!(GroupInstanceId::new("a".repeat(249)).is_ok());
         assert_eq!(
             GroupInstanceId::new("a".repeat(250)),
-            Err(KernelError::TooLong {
-                what: "group instance ID",
-                len: 250,
-                max: 249
-            })
+            Err(GroupInstanceIdError::TooLong { len: 250, max: 249 })
         );
-        assert_eq!(
-            GroupInstanceId::new(""),
-            Err(KernelError::Empty {
-                what: "group instance ID"
-            })
-        );
+        assert_eq!(GroupInstanceId::new(""), Err(GroupInstanceIdError::Empty));
         assert_eq!(
             GroupInstanceId::new("."),
-            Err(KernelError::Reserved {
-                what: "group instance ID",
-                value: ".".into()
-            })
+            Err(GroupInstanceIdError::Reserved { value: ".".into() })
         );
         assert_eq!(
             GroupInstanceId::new("etl 0"),
-            Err(KernelError::InvalidCharacter {
-                what: "group instance ID",
+            Err(GroupInstanceIdError::InvalidCharacter {
+                input: "etl 0".to_owned(),
                 character: ' ',
                 position: 3
             })

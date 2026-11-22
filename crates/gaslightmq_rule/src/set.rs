@@ -1,7 +1,8 @@
 use std::collections::BTreeMap;
 use std::collections::btree_map;
+use std::fmt;
 
-use crate::{Rule, RuleError, RuleName};
+use crate::{Rule, RuleName};
 
 /// Rules by name: what a scenario, a step or a pad references a rule in.
 ///
@@ -27,7 +28,7 @@ use crate::{Rule, RuleError, RuleName};
 /// rules.rename(&"Blackhole metadata".parse()?, "Silent metadata".parse()?)?;
 /// let rule = rules.get(&"Silent metadata".parse()?).expect("the rule has its new name");
 /// assert_eq!(rule.dice_key().as_str(), "Blackhole metadata");
-/// # Ok::<(), RuleError>(())
+/// # Ok::<(), Box<dyn std::error::Error>>(())
 /// ```
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct RuleSet {
@@ -39,12 +40,12 @@ impl RuleSet {
     ///
     /// # Errors
     ///
-    /// [`RuleError::DuplicateRule`] when two rules have one name.
-    pub fn new(rules: impl IntoIterator<Item = Rule>) -> Result<Self, RuleError> {
+    /// [`RuleSetError::DuplicateName`] when two rules have one name.
+    pub fn new(rules: impl IntoIterator<Item = Rule>) -> Result<Self, RuleSetError> {
         let mut by_name = BTreeMap::new();
         for rule in rules {
             if let Some(twice) = by_name.insert(rule.name().clone(), rule) {
-                return Err(RuleError::DuplicateRule {
+                return Err(RuleSetError::DuplicateName {
                     name: twice.name().clone(),
                 });
             }
@@ -83,17 +84,17 @@ impl RuleSet {
     ///
     /// # Errors
     ///
-    /// [`RuleError::UnknownRule`] when no rule is named `from`,
-    /// and [`RuleError::DuplicateRule`] when another rule is named `to` already.
-    pub fn rename(&mut self, from: &RuleName, to: RuleName) -> Result<(), RuleError> {
+    /// [`RuleSetError::UnknownRule`] when no rule is named `from`,
+    /// and [`RuleSetError::DuplicateName`] when another rule is named `to` already.
+    pub fn rename(&mut self, from: &RuleName, to: RuleName) -> Result<(), RuleSetError> {
         if !self.contains(from) {
-            return Err(RuleError::UnknownRule { name: from.clone() });
+            return Err(RuleSetError::UnknownRule { name: from.clone() });
         }
         if *from == to {
             return Ok(());
         }
         if self.contains(&to) {
-            return Err(RuleError::DuplicateRule { name: to });
+            return Err(RuleSetError::DuplicateName { name: to });
         }
         if let Some(rule) = self.by_name.remove(from) {
             self.by_name.insert(to.clone(), rule.renamed(to));
@@ -119,6 +120,27 @@ impl IntoIterator for RuleSet {
         self.by_name.into_values()
     }
 }
+
+/// Why rules are not a [`RuleSet`], or why the set does not have what it is asked for.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum RuleSetError {
+    /// Two rules have the same name.
+    DuplicateName { name: RuleName },
+    /// No rule of the set has this name.
+    UnknownRule { name: RuleName },
+}
+
+impl fmt::Display for RuleSetError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::DuplicateName { name } => write!(f, "two rules are named {:?}", name.as_str()),
+            Self::UnknownRule { name } => write!(f, "no rule is named {:?}", name.as_str()),
+        }
+    }
+}
+
+impl std::error::Error for RuleSetError {}
 
 #[cfg(test)]
 mod tests {
@@ -168,7 +190,7 @@ mod tests {
     fn two_rules_with_one_name_are_an_error() {
         assert_eq!(
             RuleSet::new([rule("A"), rule("B"), rule("A")]),
-            Err(RuleError::DuplicateRule { name: name("A") })
+            Err(RuleSetError::DuplicateName { name: name("A") })
         );
     }
 
@@ -191,15 +213,15 @@ mod tests {
 
         assert_eq!(
             set.rename(&name("X"), name("Y")),
-            Err(RuleError::UnknownRule { name: name("X") })
+            Err(RuleSetError::UnknownRule { name: name("X") })
         );
         assert_eq!(
             set.rename(&name("X"), name("A")),
-            Err(RuleError::UnknownRule { name: name("X") })
+            Err(RuleSetError::UnknownRule { name: name("X") })
         );
         assert_eq!(
             set.rename(&name("A"), name("B")),
-            Err(RuleError::DuplicateRule { name: name("B") })
+            Err(RuleSetError::DuplicateName { name: name("B") })
         );
         assert_eq!(set.rename(&name("A"), name("A")), Ok(()));
         assert_eq!(set, before);

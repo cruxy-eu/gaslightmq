@@ -15,6 +15,7 @@
 //! | [`Part`] | One piece of a call that a lie can change on its own: a topic or a topic partition. |
 //! | [`PartFields`] | A part as a source shows it, with the truth of that part. |
 //! | [`Target`] | What a selector matched: some parts of a call, or the whole call. |
+//! | [`PartSet`] | The parts of a target: one or more. |
 //! | [`Fields`] | The fields of one call as plain data. It is the simplest source. |
 //!
 //! ```
@@ -47,7 +48,7 @@
 //!     .map(|part| part.part().clone());
 //! let target = Target::of_parts(matched).expect("the request names orders.eu");
 //! assert_eq!(target.to_string(), "orders.eu/3");
-//! # Ok::<(), FieldError>(())
+//! # Ok::<(), Box<dyn std::error::Error>>(())
 //! ```
 //!
 //! # Values
@@ -83,6 +84,17 @@
 //!
 //! A successful answer has no `error.code`: the field is absent, and it is never `NONE`.
 //!
+//! # Errors
+//!
+//! Every type that checks its value has an error of its own, named after it:
+//! [`EndpointError`], [`AcksError`], [`PartError`], [`PartSetError`].
+//! The error holds only what can go wrong with that value.
+//! [`FieldValueError`] is the error of [`Field::parse_value`].
+//! It has a variant for each field, with the error of the type that the field holds.
+//! Its message names the field first: `topic: topic name is empty`.
+//! An error that holds another error always names its own value first, and then says what the other error says.
+//! The message of every error is complete, so no error has a [`source`](std::error::Error::source).
+//!
 //! # The `serde` feature
 //!
 //! With the `serde` feature, every definition type has a `serde` form.
@@ -107,7 +119,6 @@
 //! It has no async code, no IO, no system clock and no randomness, and it compiles to WebAssembly.
 
 mod connection;
-mod error;
 mod field;
 mod fields;
 mod part;
@@ -119,15 +130,17 @@ mod source;
 mod text;
 mod value;
 
-pub use connection::{ClientAddress, ClientHost, ClientSoftware, ConnectionNumber, Endpoint};
-pub use error::FieldError;
-pub use field::{Field, FieldGroup};
+pub use connection::{
+    ClientAddress, ClientAddressError, ClientHost, ClientHostError, ClientSoftware, ClientSoftwareError,
+    ConnectionNumber, ConnectionNumberError, Endpoint, EndpointError,
+};
+pub use field::{Field, FieldError, FieldGroup, FieldGroupError};
 pub use fields::Fields;
-pub use part::{Part, PartFields, Target};
-pub use request::{Acks, ApiVersion};
-pub use response::{Latency, Outcome};
+pub use part::{Part, PartError, PartFields, PartSet, PartSetError, Target};
+pub use request::{Acks, AcksError, ApiVersion, ApiVersionError};
+pub use response::{Latency, LatencyError, Outcome, OutcomeError};
 pub use source::{FieldSource, Reading};
-pub use value::{CallValue, FieldValue, FieldValues, LearnedValue, Origin};
+pub use value::{CallValue, FieldValue, FieldValueError, FieldValues, LearnedValue, Origin};
 
 /// Every item of this crate.
 ///
@@ -138,15 +151,17 @@ pub use value::{CallValue, FieldValue, FieldValues, LearnedValue, Origin};
 /// use gaslightmq_field::prelude::*;
 /// use gaslightmq_kernel::prelude::*;
 ///
-/// let value: Result<FieldValue, FieldError> = Field::Topic.parse_value("orders.eu");
+/// let value: Result<FieldValue, FieldValueError> = Field::Topic.parse_value("orders.eu");
 /// assert_eq!(value?, FieldValue::Topic(TopicName::new("orders.eu")?));
-/// # Ok::<(), FieldError>(())
+/// # Ok::<(), Box<dyn std::error::Error>>(())
 /// ```
 pub mod prelude {
     #[doc(no_inline)]
     pub use crate::{
-        Acks, ApiVersion, CallValue, ClientAddress, ClientHost, ClientSoftware, ConnectionNumber, Endpoint, Field,
-        FieldError, FieldGroup, FieldSource, FieldValue, FieldValues, Fields, Latency, LearnedValue, Origin, Outcome,
-        Part, PartFields, Reading, Target,
+        Acks, AcksError, ApiVersion, ApiVersionError, CallValue, ClientAddress, ClientAddressError, ClientHost,
+        ClientHostError, ClientSoftware, ClientSoftwareError, ConnectionNumber, ConnectionNumberError, Endpoint,
+        EndpointError, Field, FieldError, FieldGroup, FieldGroupError, FieldSource, FieldValue, FieldValueError,
+        FieldValues, Fields, Latency, LatencyError, LearnedValue, Origin, Outcome, OutcomeError, Part, PartError,
+        PartFields, PartSet, PartSetError, Reading, Target,
     };
 }

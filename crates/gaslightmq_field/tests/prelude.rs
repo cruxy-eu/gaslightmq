@@ -60,7 +60,6 @@ mod next_to_the_others {
     /// One value of every type of the prelude, each named without a path.
     pub fn every_item() -> Vec<String> {
         let part: Part = "orders.eu/3".parse().unwrap();
-        let error: FieldError = "client.name".parse::<Field>().unwrap_err();
         let call = Fields::new().with(Acks::ALL).with_part(PartFields::new(part.clone()));
 
         vec![
@@ -82,8 +81,55 @@ mod next_to_the_others {
             Heartbeat.read(Field::Group).present().unwrap().to_string(),
             format!("{:?}", Heartbeat.read(Field::Outcome)),
             Heartbeat.whole_target().to_string(),
-            error.to_string(),
         ]
+    }
+
+    /// One error of every type of the prelude, each named without a path.
+    ///
+    /// A message says everything, so no error has a source.
+    pub fn every_error() -> Vec<String> {
+        let input = || "x".to_owned();
+        let errors: Vec<Box<dyn std::error::Error>> = vec![
+            Box::new(FieldError::Unknown { name: input() }),
+            Box::new(FieldGroupError::Unknown { name: input() }),
+            Box::new(ConnectionNumberError::Malformed { input: input() }),
+            Box::new(ClientAddressError::Malformed { input: input() }),
+            Box::new(ClientHostError::Malformed { input: input() }),
+            Box::new(EndpointError::Malformed { input: input() }),
+            Box::new(EndpointError::InvalidBroker {
+                input: "broker -1".to_owned(),
+                error: BrokerIdError::Negative { value: -1 },
+            }),
+            Box::new(ClientSoftwareError::Malformed { input: input() }),
+            Box::new(ApiVersionError::Malformed { input: input() }),
+            Box::new(ApiVersionError::OutOfRange {
+                input: "40000".to_owned(),
+            }),
+            Box::new(AcksError::Malformed { input: input() }),
+            Box::new(AcksError::OutOfRange {
+                input: "40000".to_owned(),
+            }),
+            Box::new(OutcomeError::Unknown { name: input() }),
+            Box::new(LatencyError::Malformed { input: input() }),
+            Box::new(PartError::InvalidTopic {
+                error: TopicNameError::Empty,
+            }),
+            Box::new(PartError::InvalidPartition {
+                error: TopicPartitionError::Malformed { input: input() },
+            }),
+            Box::new(FieldValueError::Topic {
+                error: TopicNameError::Empty,
+            }),
+            Box::new(PartSet::new([]).unwrap_err()),
+        ];
+
+        errors
+            .iter()
+            .map(|error| {
+                assert!(error.source().is_none(), "{error}");
+                error.to_string()
+            })
+            .collect()
     }
 }
 
@@ -110,7 +156,33 @@ fn the_prelude_names_every_item_next_to_the_other_preludes() {
             "analytics-etl",
             "Pending",
             "call",
-            "no field is named \"client.name\"",
+        ]
+    );
+}
+
+#[test]
+fn the_prelude_names_the_error_of_every_type() {
+    assert_eq!(
+        next_to_the_others::every_error(),
+        [
+            "no field is named \"x\"",
+            "unknown field group: \"x\"",
+            "connection number \"x\" does not have the form #N",
+            "client address \"x\" does not have the form an IP address and a port, such as 10.0.4.27:51459",
+            "client host \"x\" does not have the form an IP address, such as 10.0.4.27",
+            "endpoint \"x\" does not have the form bootstrap or broker N",
+            "endpoint \"broker -1\": broker ID cannot be negative: -1",
+            "client software \"x\" does not have the form a name and a version, such as librdkafka 2.6.1",
+            "API version \"x\" does not have the form a whole number",
+            "API version 40000 is not between 0 and 32767",
+            "acks \"x\" does not have the form a whole number",
+            "acks 40000 is not between -32768 and 32767",
+            "unknown outcome: \"x\"",
+            "latency \"x\" does not have the form a whole number and a unit, such as 14ms",
+            "part: topic name is empty",
+            "part: topic partition \"x\" does not have the form topic/partition",
+            "topic: topic name is empty",
+            "a target needs at least one part",
         ]
     );
 }

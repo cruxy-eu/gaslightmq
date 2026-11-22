@@ -232,7 +232,7 @@ impl KafkaClient {
         req: &R,
         timeout: Duration,
     ) -> Result<R::Response, ClientError> {
-        let mut last = ClientError::Io("no brokers to connect to".into());
+        let mut last = ClientError::ConnectionFailed("no brokers to connect to".into());
         for conn in self.any_connections() {
             match conn.request(version, req, timeout).await {
                 Ok(resp) => return Ok(resp),

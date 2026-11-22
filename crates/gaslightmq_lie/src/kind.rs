@@ -1,7 +1,7 @@
 use std::fmt;
 use std::str::FromStr;
 
-use crate::{Aspect, CombinationClass, LieError, Stage};
+use crate::{Aspect, CombinationClass, Stage, StageError};
 
 /// A lie without its parameters: which of the eight kinds it is.
 ///
@@ -33,7 +33,7 @@ use crate::{Aspect, CombinationClass, LieError, Stage};
 /// assert_eq!(kind.stage_for(None)?, Stage::BeforeForwarding);
 /// assert_eq!(kind.stage_for(Some(Stage::AfterResponse))?, Stage::AfterResponse);
 /// assert!(LieKind::Silence.stage_for(Some(Stage::AfterResponse)).is_err());
-/// # Ok::<(), LieError>(())
+/// # Ok::<(), Box<dyn std::error::Error>>(())
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum LieKind {
@@ -146,12 +146,12 @@ impl LieKind {
     ///
     /// # Errors
     ///
-    /// [`LieError::StageNotAllowed`] when a lie of this kind never acts at `stage`.
-    pub fn stage_for(self, stage: Option<Stage>) -> Result<Stage, LieError> {
+    /// [`StageError::NotAllowed`] when a lie of this kind never acts at `stage`.
+    pub fn stage_for(self, stage: Option<Stage>) -> Result<Stage, StageError> {
         match stage {
             None => Ok(self.default_stage()),
             Some(stage) if self.allows(stage) => Ok(stage),
-            Some(stage) => Err(LieError::StageNotAllowed { lie: self, stage }),
+            Some(stage) => Err(StageError::NotAllowed { kind: self, stage }),
         }
     }
 
@@ -185,18 +185,41 @@ impl fmt::Display for LieKind {
 
 /// Reads the name a file uses, as [`Display`](fmt::Display) writes it.
 impl FromStr for LieKind {
-    type Err = LieError;
+    type Err = LieKindError;
 
     fn from_str(name: &str) -> Result<Self, Self::Err> {
         Self::ALL
             .into_iter()
             .find(|kind| kind.name() == name)
-            .ok_or_else(|| LieError::UnknownName {
-                what: "lie",
-                name: name.to_owned(),
-            })
+            .ok_or_else(|| LieKindError::Unknown { name: name.to_owned() })
     }
 }
+
+/// Why a text is not a [`LieKind`].
+///
+/// ```
+/// use gaslightmq_lie::prelude::*;
+///
+/// let error = "hangup".parse::<LieKind>().unwrap_err();
+/// assert_eq!(error, LieKindError::Unknown { name: "hangup".to_owned() });
+/// assert_eq!(error.to_string(), "no lie is called \"hangup\"");
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum LieKindError {
+    /// No kind of lie has this name.
+    Unknown { name: String },
+}
+
+impl fmt::Display for LieKindError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Unknown { name } => write!(f, "no lie is called {name:?}"),
+        }
+    }
+}
+
+impl std::error::Error for LieKindError {}
 
 #[cfg(test)]
 mod tests {
@@ -251,12 +274,16 @@ mod tests {
         for name in ["hangup", "Hang-up", "REFUSAL", "delay", ""] {
             assert_eq!(
                 name.parse::<LieKind>(),
-                Err(LieError::UnknownName {
-                    what: "lie",
-                    name: name.to_owned()
-                }),
+                Err(LieKindError::Unknown { name: name.to_owned() }),
             );
         }
+    }
+
+    #[test]
+    fn a_kind_error_says_what_is_wrong() {
+        let error = LieKindError::Unknown { name: "hangup".into() };
+
+        assert_eq!(error.to_string(), "no lie is called \"hangup\"");
     }
 
     #[test]
@@ -312,8 +339,8 @@ mod tests {
         );
         assert_eq!(
             silence.stage_for(Some(Stage::AfterResponse)),
-            Err(LieError::StageNotAllowed {
-                lie: silence,
+            Err(StageError::NotAllowed {
+                kind: silence,
                 stage: Stage::AfterResponse
             })
         );
@@ -327,8 +354,8 @@ mod tests {
             assert_eq!(kind.stage_for(None), Ok(Stage::AfterResponse), "{kind}");
             assert_eq!(
                 kind.stage_for(Some(Stage::BeforeForwarding)),
-                Err(LieError::StageNotAllowed {
-                    lie: kind,
+                Err(StageError::NotAllowed {
+                    kind,
                     stage: Stage::BeforeForwarding
                 })
             );

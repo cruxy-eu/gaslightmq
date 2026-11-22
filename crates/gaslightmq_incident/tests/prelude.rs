@@ -1,4 +1,4 @@
-//! The prelude holds every type, and its names clash with none of `std` or of the kernel's prelude.
+//! The prelude holds every type and every error, and its names clash with none of `std` or of the kernel's prelude.
 
 /// Imports the prelude next to the standard prelude, the kernel's prelude
 /// and the modules of `std` that code imports most.
@@ -67,6 +67,27 @@ mod next_to_std_and_the_kernel {
             format!("{incident:?} {consequences:?} {requirement:?} {coordinator:?}"),
         ]
     }
+
+    /// One error of every type of the prelude, each named without a path.
+    pub fn every_error() -> Vec<String> {
+        let requirements = Requirements::from(&IncidentDefinition::Rebalance { group: None });
+        let unsupported: UnsupportedIncidents = IncidentSupport::none().check(&requirements).unwrap_err();
+
+        vec![
+            IncidentKindError::Unknown {
+                name: "leader-move".to_owned(),
+            }
+            .to_string(),
+            IncidentError::MissingSubject {
+                incident: IncidentKind::Rebalance,
+                subject: "group",
+            }
+            .to_string(),
+            PartitionCountError::OutOfRange { value: 0, max: 9 }.to_string(),
+            RecordCountError::OutOfRange { value: 0, max: 9 }.to_string(),
+            unsupported.to_string(),
+        ]
+    }
 }
 
 #[test]
@@ -76,4 +97,27 @@ fn the_prelude_names_every_type_next_to_std_and_the_kernel() {
     assert_eq!(items[1], "emulated");
     assert_eq!(items[2], "partition-added needs a topic, and none is named");
     assert_eq!(items[3], "the backend cannot apply or emulate: partition-added");
+}
+
+#[test]
+fn the_prelude_holds_every_error() {
+    assert_eq!(
+        next_to_std_and_the_kernel::every_error(),
+        [
+            "no incident is called \"leader-move\"",
+            "rebalance needs a group, and none is named",
+            "partition count 0 is not between 1 and 9",
+            "record count 0 is not between 1 and 9",
+            "the backend cannot apply or emulate: rebalance",
+        ]
+    );
+}
+
+#[test]
+fn the_prelude_and_the_crate_root_export_the_same_types() {
+    let from_root: gaslightmq_incident::IncidentKindError =
+        "leader-move".parse::<gaslightmq_incident::IncidentKind>().unwrap_err();
+    let from_prelude: gaslightmq_incident::prelude::IncidentKindError = from_root.clone();
+
+    assert_eq!(from_root, from_prelude);
 }

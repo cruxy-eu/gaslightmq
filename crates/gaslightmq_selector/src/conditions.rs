@@ -5,7 +5,7 @@ use std::fmt;
 use gaslightmq_field::prelude::*;
 use gaslightmq_kernel::prelude::*;
 
-use crate::{Condition, SelectorError};
+use crate::Condition;
 
 /// A set of conditions, which combine with **and**: the `match` of a selector, a filter, a scope.
 ///
@@ -29,7 +29,7 @@ use crate::{Condition, SelectorError};
 /// assert_eq!(order_producers.to_string(), "api is Produce and topic matches orders.*");
 /// assert_eq!(order_producers.get(Field::Api), Some(&Condition::is(ApiKey::PRODUCE)));
 /// assert!(!order_producers.is_scope());
-/// # Ok::<(), SelectorError>(())
+/// # Ok::<(), Box<dyn std::error::Error>>(())
 /// ```
 #[derive(Debug, Clone, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Conditions(BTreeMap<Field, Condition>);
@@ -185,7 +185,7 @@ pub(crate) fn write_conjunction<'a>(
 /// assert_eq!(ingest.to_string(), "client.id is order-ingest");
 ///
 /// let not_a_scope = Scope::new(Condition::is(ApiKey::PRODUCE).into());
-/// assert_eq!(not_a_scope, Err(SelectorError::NotAConnectionField { field: Field::Api }));
+/// assert_eq!(not_a_scope, Err(ScopeError::NotAConnectionField { field: Field::Api }));
 /// ```
 #[derive(Debug, Clone, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Scope(Conditions);
@@ -195,10 +195,10 @@ impl Scope {
     ///
     /// # Errors
     ///
-    /// [`SelectorError::NotAConnectionField`] with the first field that does not describe the connection.
-    pub fn new(conditions: Conditions) -> Result<Self, SelectorError> {
+    /// [`ScopeError::NotAConnectionField`] with the first field that does not describe the connection.
+    pub fn new(conditions: Conditions) -> Result<Self, ScopeError> {
         match conditions.first_outside_scope() {
-            Some(field) => Err(SelectorError::NotAConnectionField { field }),
+            Some(field) => Err(ScopeError::NotAConnectionField { field }),
             None => Ok(Self(conditions)),
         }
     }
@@ -245,7 +245,7 @@ impl Scope {
 }
 
 impl TryFrom<Conditions> for Scope {
-    type Error = SelectorError;
+    type Error = ScopeError;
 
     fn try_from(conditions: Conditions) -> Result<Self, Self::Error> {
         Self::new(conditions)
@@ -264,6 +264,29 @@ impl fmt::Display for Scope {
         fmt::Display::fmt(&self.0, f)
     }
 }
+
+/// Why conditions are not a [`Scope`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum ScopeError {
+    /// A condition tests a field that does not describe the connection.
+    /// `field` is the first such field.
+    NotAConnectionField { field: Field },
+}
+
+impl fmt::Display for ScopeError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::NotAConnectionField { field } => write!(
+                f,
+                "a scope only tests connection fields, and {field} is a {} field",
+                field.group()
+            ),
+        }
+    }
+}
+
+impl std::error::Error for ScopeError {}
 
 #[cfg(test)]
 mod tests {
@@ -412,7 +435,7 @@ mod tests {
             if field.group() == FieldGroup::Connection {
                 assert_eq!(scope.map(Scope::into_conditions), Ok(condition.into()), "{field}");
             } else {
-                assert_eq!(scope, Err(SelectorError::NotAConnectionField { field }), "{field}");
+                assert_eq!(scope, Err(ScopeError::NotAConnectionField { field }), "{field}");
             }
         }
     }
@@ -423,7 +446,7 @@ mod tests {
 
         assert_eq!(
             Scope::try_from(conditions),
-            Err(SelectorError::NotAConnectionField { field: Field::Api })
+            Err(ScopeError::NotAConnectionField { field: Field::Api })
         );
     }
 

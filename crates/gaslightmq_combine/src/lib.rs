@@ -8,19 +8,17 @@
 //!
 //! | Type | Is |
 //! |---|---|
-//! | [`Priority`] | Where a lie stands in the priority order the caller provides. |
 //! | [`Claim`] | What a lie claims of a call: its class, its stage, and its target or its aspect. |
 //! | [`FiredLie`] | A lie that fired: an identity, a priority and a claim. |
 //! | [`RequestPass`] | The lies of the request pass, combined. It says what happens before forwarding. |
 //! | [`Combination`] | The lies of the whole call, combined. |
 //! | [`Fate`] | What became of one lie: where it applied, and where it was shadowed or pre-empted. |
 //! | [`Loss`] | A target a lie lost, and the lie it lost it to. |
-//! | [`Effect`] | What the lies that apply do to the call at one stage. |
+//! | [`StageEffect`] | What the lies that apply do to the call at one stage. |
 //! | [`Winners`] | Which lie holds each target, among lies that conflict there. |
 //! | [`Delay`] | How long the call waits at one stage. |
-//! | [`CombineError`] | Why a lie cannot become a claim. |
 //!
-//! The [`prelude`] holds all of them.
+//! The [`prelude`] holds all of them, with the one [error](#errors).
 //!
 //! # The rules
 //!
@@ -62,8 +60,8 @@
 //! let on = |part: &Part| Target::of_parts([part.clone()]).expect("one part");
 //!
 //! // Three rules fired on one Fetch. The pipeline hands over each lie with its rule's place in the priority order.
-//! let delay = LieDefinition::from(TimingLie::new().with_delay(TimeSpan::from_millis(750))).on(on(&three))?;
-//! let flap = LieDefinition::from(RefusalLie::new(ErrorCode::NOT_LEADER_OR_FOLLOWER)).on(on(&three))?;
+//! let delay = LieDefinition::from(TimingLie::new().with_delay(TimeSpan::from_millis(750))).on(on(&three));
+//! let flap = LieDefinition::from(RefusalLie::new(ErrorCode::NOT_LEADER_OR_FOLLOWER)).on(on(&three));
 //! let stale = Claim::Rewrite { aspect: Aspect::HighWatermark, target: on(&four) };
 //!
 //! let request = RequestPass::of([
@@ -133,6 +131,15 @@
 //! A lie that is shadowed on one partition and applies on another counts as one firing.
 //! A lie that was shadowed or pre-empted on every target gives its firing back to the budget.
 //!
+//! # Errors
+//!
+//! Combining never fails: every lie gets a [`Fate`], and a lie that loses is no error.
+//! Only [`Claim`] checks a value, so it has the one error of the crate, [`ClaimError`].
+//! A [`TargetedLie`](gaslightmq_lie::TargetedLie) does not become a claim when its definition breaks its own word:
+//! it is a rewrite without an aspect, or a modifier without a timing.
+//! No definition of today's `gaslightmq_lie` does.
+//! The message of the error is complete, so it has no [`source`](std::error::Error::source).
+//!
 //! # No `serde` feature
 //!
 //! Nothing in this crate is a definition, and nothing travels in a recording.
@@ -150,18 +157,14 @@ mod board;
 mod claim;
 mod combination;
 mod effect;
-mod error;
 mod fate;
-mod priority;
 
-pub use claim::{Claim, FiredLie};
+pub use claim::{Claim, ClaimError, FiredLie};
 pub use combination::{Combination, RequestPass};
-pub use effect::{Delay, Effect, Winners};
-pub use error::CombineError;
+pub use effect::{Delay, StageEffect, Winners};
 pub use fate::{Fate, Loss};
-pub use priority::Priority;
 
-/// Every type of this crate.
+/// Every type of this crate, with the error of a claim.
 ///
 /// Import it whole wherever code combines lies, next to the preludes of `gaslightmq_field` and `gaslightmq_lie`.
 /// No name in it is a name of those preludes or of the standard one, so the import shadows nothing.
@@ -175,7 +178,5 @@ pub use priority::Priority;
 /// ```
 pub mod prelude {
     #[doc(no_inline)]
-    pub use crate::{
-        Claim, Combination, CombineError, Delay, Effect, Fate, FiredLie, Loss, Priority, RequestPass, Winners,
-    };
+    pub use crate::{Claim, ClaimError, Combination, Delay, Fate, FiredLie, Loss, RequestPass, StageEffect, Winners};
 }

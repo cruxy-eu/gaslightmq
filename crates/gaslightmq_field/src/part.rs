@@ -5,7 +5,7 @@ use std::str::FromStr;
 use gaslightmq_kernel::prelude::*;
 
 use crate::text::text_form;
-use crate::{Field, FieldError, FieldValue, Outcome, Reading};
+use crate::{Field, FieldValue, Outcome, Reading};
 
 /// One piece of a call that a lie can change on its own: a topic, or one partition of a topic.
 ///
@@ -28,7 +28,7 @@ use crate::{Field, FieldError, FieldValue, Outcome, Reading};
 /// let topic = Part::from(TopicName::new("orders.eu")?);
 /// assert_eq!(topic.partition(), None);
 /// assert_eq!(topic.to_string(), "orders.eu");
-/// # Ok::<(), FieldError>(())
+/// # Ok::<(), Box<dyn std::error::Error>>(())
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Part {
@@ -75,7 +75,7 @@ impl From<TopicPartition> for Part {
 
 /// Reads `orders.eu/3` as a partition, and text without a `/` as a topic.
 impl FromStr for Part {
-    type Err = FieldError;
+    type Err = PartError;
 
     fn from_str(text: &str) -> Result<Self, Self::Err> {
         if text.contains('/') {
@@ -95,7 +95,45 @@ impl fmt::Display for Part {
     }
 }
 
-text_form!(Part);
+text_form!(Part, PartError);
+
+/// Why a text is not a [`Part`].
+///
+/// A part is a topic or a partition of a topic, and the error says which of the two the text failed to be.
+/// Its message says that a part is wrong, and then what is wrong with it.
+/// The error it holds read the same text, so that error names the text.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum PartError {
+    /// The text has no `/`, and it is not a topic name.
+    InvalidTopic { error: TopicNameError },
+    /// The text has a `/`, and it is not a topic partition.
+    InvalidPartition { error: TopicPartitionError },
+}
+
+impl fmt::Display for PartError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::InvalidTopic { error } => write!(f, "part: {error}"),
+            Self::InvalidPartition { error } => write!(f, "part: {error}"),
+        }
+    }
+}
+
+/// The message is complete, so no variant has a source.
+impl std::error::Error for PartError {}
+
+impl From<TopicNameError> for PartError {
+    fn from(error: TopicNameError) -> Self {
+        Self::InvalidTopic { error }
+    }
+}
+
+impl From<TopicPartitionError> for PartError {
+    fn from(error: TopicPartitionError) -> Self {
+        Self::InvalidPartition { error }
+    }
+}
 
 /// A part of a call as a [`FieldSource`](crate::FieldSource) shows it:
 /// which part it is, and the truth of that part once there is one.
@@ -125,7 +163,7 @@ text_form!(Part);
 /// // After the answer, it has a truth of its own.
 /// let answered = asked.failed(ErrorCode::NOT_LEADER_OR_FOLLOWER);
 /// assert_eq!(answered.own(Field::Outcome), Some(Reading::Present(Outcome::Error.into())));
-/// # Ok::<(), FieldError>(())
+/// # Ok::<(), Box<dyn std::error::Error>>(())
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct PartFields {
@@ -238,6 +276,7 @@ impl From<TopicPartition> for PartFields {
 ///
 /// A match always has a target with at least one part.
 /// A selector that matches no part does not match the call, which is what [`of_parts`](Self::of_parts) says.
+/// A [`PartSet`] always has a part, so every target is the whole call or at least one part.
 ///
 /// ```
 /// use gaslightmq_field::prelude::*;
@@ -252,7 +291,7 @@ impl From<TopicPartition> for PartFields {
 ///
 /// assert!(Target::Call.covers(&settled));
 /// assert_eq!(Target::of_parts([]), None);
-/// # Ok::<(), FieldError>(())
+/// # Ok::<(), Box<dyn std::error::Error>>(())
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize), serde(rename_all = "lowercase"))]
@@ -260,7 +299,7 @@ pub enum Target {
     /// The whole call.
     Call,
     /// Some parts of the call, and at least one.
-    Parts(BTreeSet<Part>),
+    Parts(PartSet),
 }
 
 /// Reads `call`, or a map with the one entry `parts` and the list of parts.
@@ -288,12 +327,7 @@ impl<'de> serde::Deserialize<'de> for Target {
 impl Target {
     /// The target of those parts, or `None` when there is no part.
     pub fn of_parts(parts: impl IntoIterator<Item = Part>) -> Option<Self> {
-        let parts: BTreeSet<Part> = parts.into_iter().collect();
-        if parts.is_empty() {
-            None
-        } else {
-            Some(Target::Parts(parts))
-        }
+        PartSet::new(parts).ok().map(Target::Parts)
     }
 
     /// Whether the target is the whole call.
@@ -337,6 +371,110 @@ impl fmt::Display for Target {
     }
 }
 
+/// The target of those parts.
+impl From<PartSet> for Target {
+    fn from(parts: PartSet) -> Self {
+        Target::Parts(parts)
+    }
+}
+
+/// One or more parts of a call: what a [`Target`] of parts holds.
+///
+/// The set always has a part.
+/// It takes more parts, and it never gives one up, so a target of parts is never a target of nothing.
+///
+/// ```
+/// use gaslightmq_field::prelude::*;
+///
+/// let eu: Part = "orders.eu/3".parse()?;
+/// let settled: Part = "payments.settled/3".parse()?;
+///
+/// let mut parts = PartSet::one(eu.clone());
+/// parts.insert(settled.clone());
+/// assert_eq!(parts.len(), 2);
+/// assert!(parts.contains(&settled));
+///
+/// assert_eq!(PartSet::new([]), Err(PartSetError::Empty));
+/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize), serde(transparent))]
+pub struct PartSet(BTreeSet<Part>);
+
+impl PartSet {
+    /// The set of those parts.
+    ///
+    /// # Errors
+    ///
+    /// [`PartSetError::Empty`] when there is no part.
+    pub fn new(parts: impl IntoIterator<Item = Part>) -> Result<Self, PartSetError> {
+        let parts: BTreeSet<Part> = parts.into_iter().collect();
+        if parts.is_empty() {
+            Err(PartSetError::Empty)
+        } else {
+            Ok(Self(parts))
+        }
+    }
+
+    /// The set of one part.
+    pub fn one(part: impl Into<Part>) -> Self {
+        Self(BTreeSet::from([part.into()]))
+    }
+
+    /// Adds a part, and says whether the set did not have it yet.
+    pub fn insert(&mut self, part: Part) -> bool {
+        self.0.insert(part)
+    }
+
+    /// The parts as a plain set, to read them.
+    pub const fn as_set(&self) -> &BTreeSet<Part> {
+        &self.0
+    }
+}
+
+/// Reads the parts as a plain set: `iter`, `contains`, `len` and the comparisons of sets.
+impl std::ops::Deref for PartSet {
+    type Target = BTreeSet<Part>;
+
+    fn deref(&self) -> &BTreeSet<Part> {
+        &self.0
+    }
+}
+
+impl<'a> IntoIterator for &'a PartSet {
+    type Item = &'a Part;
+    type IntoIter = std::collections::btree_set::Iter<'a, Part>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.iter()
+    }
+}
+
+/// The set of that one part.
+impl From<Part> for PartSet {
+    fn from(part: Part) -> Self {
+        Self::one(part)
+    }
+}
+
+/// Why parts are not a [`PartSet`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum PartSetError {
+    /// There is no part, and a target of no part is no target.
+    Empty,
+}
+
+impl fmt::Display for PartSetError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Empty => f.write_str("a target needs at least one part"),
+        }
+    }
+}
+
+impl std::error::Error for PartSetError {}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -367,13 +505,29 @@ mod tests {
         for text in ["orders.eu", "orders.eu/3", "__consumer_offsets/49"] {
             assert_eq!(part(text).to_string(), text);
         }
-        assert!(matches!(
+        assert_eq!(
             "".parse::<Part>(),
-            Err(FieldError::Kernel(KernelError::Empty { .. }))
+            Err(PartError::InvalidTopic {
+                error: TopicNameError::Empty
+            })
+        );
+        assert_eq!(
+            "orders.eu/".parse::<Part>(),
+            Err(PartError::InvalidPartition {
+                error: TopicPartitionError::InvalidPartition {
+                    input: "orders.eu/".to_owned(),
+                    error: PartitionNumberError::Empty
+                }
+            })
+        );
+        assert!(matches!(
+            "orders.eu/x".parse::<Part>(),
+            Err(PartError::InvalidPartition { .. })
         ));
-        assert!(matches!("orders.eu/".parse::<Part>(), Err(FieldError::Kernel(_))));
-        assert!(matches!("orders.eu/x".parse::<Part>(), Err(FieldError::Kernel(_))));
-        assert!(matches!("orders eu".parse::<Part>(), Err(FieldError::Kernel(_))));
+        assert!(matches!(
+            "orders eu".parse::<Part>(),
+            Err(PartError::InvalidTopic { .. })
+        ));
     }
 
     #[test]

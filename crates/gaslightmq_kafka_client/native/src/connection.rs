@@ -48,7 +48,7 @@ impl Socket {
                 return Ok(frame);
             }
             if self.stream.read_buf(self.frames.buffer_mut()).await? == 0 {
-                return Err(ClientError::Io("connection closed by broker".into()));
+                return Err(ClientError::ConnectionFailed("connection closed by broker".into()));
             }
         }
     }

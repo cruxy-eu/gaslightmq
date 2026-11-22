@@ -1,7 +1,8 @@
 use std::collections::BTreeMap;
 use std::collections::btree_map;
+use std::fmt;
 
-use crate::{Action, ActionRef, PresetName, RuleError};
+use crate::{Action, ActionRef, PresetName};
 
 /// A named, reusable lie or incident with its parameters.
 ///
@@ -31,7 +32,7 @@ use crate::{Action, ActionRef, PresetName, RuleError};
 ///
 /// assert_eq!(preset.name(), "Delay 1 s");
 /// assert_eq!(preset.action().to_string(), "+1 s ±200 ms");
-/// # Ok::<(), RuleError>(())
+/// # Ok::<(), Box<dyn std::error::Error>>(())
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -100,7 +101,7 @@ impl Preset {
 /// assert_eq!(presets.resolve(&named).map(ToString::to_string), Some("NOT_LEADER_OR_FOLLOWER".into()));
 /// assert_eq!(presets.resolve(&inline).map(ToString::to_string), Some("silence".into()));
 /// assert_eq!(presets.resolve(&"Blackhole".parse::<PresetName>()?.into()), None);
-/// # Ok::<(), RuleError>(())
+/// # Ok::<(), Box<dyn std::error::Error>>(())
 /// ```
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct PresetSet {
@@ -112,12 +113,12 @@ impl PresetSet {
     ///
     /// # Errors
     ///
-    /// [`RuleError::DuplicatePreset`] when two presets have one name.
-    pub fn new(presets: impl IntoIterator<Item = Preset>) -> Result<Self, RuleError> {
+    /// [`PresetSetError::DuplicateName`] when two presets have one name.
+    pub fn new(presets: impl IntoIterator<Item = Preset>) -> Result<Self, PresetSetError> {
         let mut by_name = BTreeMap::new();
         for preset in presets {
             if let Some(twice) = by_name.insert(preset.name().clone(), preset) {
-                return Err(RuleError::DuplicatePreset {
+                return Err(PresetSetError::DuplicateName {
                     name: twice.name().clone(),
                 });
             }
@@ -178,6 +179,24 @@ impl IntoIterator for PresetSet {
         self.by_name.into_values()
     }
 }
+
+/// Why presets are not a [`PresetSet`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum PresetSetError {
+    /// Two presets have the same name.
+    DuplicateName { name: PresetName },
+}
+
+impl fmt::Display for PresetSetError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::DuplicateName { name } => write!(f, "two presets are named {:?}", name.as_str()),
+        }
+    }
+}
+
+impl std::error::Error for PresetSetError {}
 
 #[cfg(test)]
 mod tests {
@@ -258,7 +277,7 @@ mod tests {
     fn two_presets_with_one_name_are_an_error() {
         assert_eq!(
             PresetSet::new([delay(), flap(), delay().with_action(LieDefinition::Silence)]),
-            Err(RuleError::DuplicatePreset {
+            Err(PresetSetError::DuplicateName {
                 name: name("Delay 1 s")
             })
         );

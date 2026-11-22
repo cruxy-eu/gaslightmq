@@ -3,7 +3,6 @@ use std::fmt;
 use std::str::FromStr;
 use std::sync::Arc;
 
-use crate::SelectorError;
 use crate::text::text_form;
 
 /// The name of a selector, such as `Order producers`.
@@ -35,7 +34,7 @@ use crate::text::text_form;
 /// assert!(SelectorName::new("Order producers ").is_err());
 /// // A zero-width space hides between the two words.
 /// assert!(SelectorName::new("Order\u{200b}producers").is_err());
-/// # Ok::<(), SelectorError>(())
+/// # Ok::<(), Box<dyn std::error::Error>>(())
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct SelectorName(Arc<str>);
@@ -45,42 +44,41 @@ impl SelectorName {
     ///
     /// # Errors
     ///
-    /// [`SelectorError::InvalidName`] when the text is empty, starts or ends with white space,
-    /// or holds a control character or a format character.
-    pub fn new(name: impl AsRef<str>) -> Result<Self, SelectorError> {
+    /// The [`SelectorNameError`] that says which part of the rule the text breaks:
+    /// it is empty, starts or ends with white space, or holds a control character or a format character.
+    pub fn new(name: impl AsRef<str>) -> Result<Self, SelectorNameError> {
         let name = name.as_ref();
-        match Self::broken_rule(name) {
-            None => Ok(Self(name.into())),
-            Some(reason) => Err(SelectorError::InvalidName {
-                input: name.to_owned(),
-                reason,
-            }),
-        }
+        Self::check(name)?;
+        Ok(Self(name.into()))
     }
 
-    /// How `text` breaks the [rule for names](Self#the-rule-for-names), or `None` when it keeps the rule.
+    /// Checks `text` against the [rule for names](Self#the-rule-for-names), and keeps nothing.
     ///
-    /// The result is the `reason` of [`SelectorError::InvalidName`], such as `is empty`.
-    /// Whatever else has a name takes it by this one rule, and says the reason in its own error:
-    /// a rule and a preset do.
+    /// Whatever else has a name takes it by this one rule, without building a selector name:
+    /// a rule and a preset do, and they say the same in an error of their own.
     ///
     /// ```
     /// use gaslightmq_selector::prelude::*;
     ///
-    /// assert_eq!(SelectorName::broken_rule("Order producers"), None);
-    /// assert_eq!(SelectorName::broken_rule("Order\u{feff}producers"), Some("holds a format character"));
+    /// assert_eq!(SelectorName::check("Order producers"), Ok(()));
+    /// assert_eq!(SelectorName::check(""), Err(SelectorNameError::Empty));
     /// ```
-    pub fn broken_rule(text: &str) -> Option<&'static str> {
+    ///
+    /// # Errors
+    ///
+    /// The [`SelectorNameError`] that says which part of the rule the text breaks.
+    pub fn check(text: &str) -> Result<(), SelectorNameError> {
+        let input = || text.to_owned();
         if text.is_empty() {
-            Some("is empty")
+            Err(SelectorNameError::Empty)
         } else if text.trim() != text {
-            Some("starts or ends with white space")
+            Err(SelectorNameError::SurroundingWhiteSpace { input: input() })
         } else if text.chars().any(char::is_control) {
-            Some("holds a control character")
+            Err(SelectorNameError::ControlCharacter { input: input() })
         } else if text.chars().any(is_format) {
-            Some("holds a format character")
+            Err(SelectorNameError::FormatCharacter { input: input() })
         } else {
-            None
+            Ok(())
         }
     }
 
@@ -123,7 +121,7 @@ const fn is_format(character: char) -> bool {
 }
 
 impl FromStr for SelectorName {
-    type Err = SelectorError;
+    type Err = SelectorNameError;
 
     fn from_str(text: &str) -> Result<Self, Self::Err> {
         Self::new(text)
@@ -161,7 +159,48 @@ impl PartialEq<&str> for SelectorName {
     }
 }
 
-text_form!(SelectorName);
+text_form!(SelectorName, SelectorNameError);
+
+/// Why a text is not a [`SelectorName`]: the part of the [rule for names](SelectorName#the-rule-for-names) it breaks.
+///
+/// The rule has four parts, and the error has one variant for each.
+/// It is exhaustive on purpose.
+/// Whatever else has a name takes it by this one rule, and says the same in an error of its own:
+/// a rule and a preset do, and they match on every variant.
+///
+/// ```
+/// use gaslightmq_selector::prelude::*;
+///
+/// let error = SelectorName::new("Order\u{feff}producers").unwrap_err();
+/// assert_eq!(error, SelectorNameError::FormatCharacter { input: "Order\u{feff}producers".to_owned() });
+/// assert_eq!(error.to_string(), "selector name \"Order\\u{feff}producers\" holds a format character");
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SelectorNameError {
+    /// The text has no character.
+    Empty,
+    /// The text starts or ends with white space.
+    SurroundingWhiteSpace { input: String },
+    /// The text holds a control character, such as a line break.
+    ControlCharacter { input: String },
+    /// The text holds a format character, such as a zero-width space, which nobody sees.
+    FormatCharacter { input: String },
+}
+
+impl fmt::Display for SelectorNameError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Empty => f.write_str("selector name \"\" is empty"),
+            Self::SurroundingWhiteSpace { input } => {
+                write!(f, "selector name {input:?} starts or ends with white space")
+            }
+            Self::ControlCharacter { input } => write!(f, "selector name {input:?} holds a control character"),
+            Self::FormatCharacter { input } => write!(f, "selector name {input:?} holds a format character"),
+        }
+    }
+}
+
+impl std::error::Error for SelectorNameError {}
 
 #[cfg(test)]
 mod tests {
@@ -185,49 +224,50 @@ mod tests {
 
     #[test]
     fn a_name_that_breaks_the_rule_is_an_error() {
-        let cases = [
-            ("", "is empty"),
-            (" ", "starts or ends with white space"),
-            (" Order producers", "starts or ends with white space"),
-            ("Order producers\n", "starts or ends with white space"),
-            ("Order\nproducers", "holds a control character"),
-            ("Order\tproducers", "holds a control character"),
+        use SelectorNameError::{ControlCharacter, FormatCharacter, SurroundingWhiteSpace};
+
+        type Breaks = fn(String) -> SelectorNameError;
+        let cases: [(&str, Breaks); 10] = [
+            (" ", |input| SurroundingWhiteSpace { input }),
+            (" Order producers", |input| SurroundingWhiteSpace { input }),
+            ("Order producers\n", |input| SurroundingWhiteSpace { input }),
+            ("Order\nproducers", |input| ControlCharacter { input }),
+            ("Order\tproducers", |input| ControlCharacter { input }),
             // A zero-width space, a right-to-left override and a byte order mark.
-            ("Order\u{200b}producers", "holds a format character"),
-            ("Order \u{202e}producers", "holds a format character"),
-            ("\u{feff}Order producers", "holds a format character"),
-            ("Order producers\u{200d}", "holds a format character"),
-            ("Order\u{ad}producers", "holds a format character"),
+            ("Order\u{200b}producers", |input| FormatCharacter { input }),
+            ("Order \u{202e}producers", |input| FormatCharacter { input }),
+            ("\u{feff}Order producers", |input| FormatCharacter { input }),
+            ("Order producers\u{200d}", |input| FormatCharacter { input }),
+            ("Order\u{ad}producers", |input| FormatCharacter { input }),
         ];
 
-        for (text, reason) in cases {
-            assert_eq!(
-                SelectorName::new(text),
-                Err(SelectorError::InvalidName {
-                    input: text.to_owned(),
-                    reason
-                }),
-                "{text:?}"
-            );
+        assert_eq!(SelectorName::new(""), Err(SelectorNameError::Empty));
+        for (text, error) in cases {
+            assert_eq!(SelectorName::new(text), Err(error(text.to_owned())), "{text:?}");
         }
     }
 
     #[test]
-    fn the_rule_says_how_a_text_breaks_it() {
-        assert_eq!(SelectorName::broken_rule("Order producers"), None);
-        assert_eq!(SelectorName::broken_rule(""), Some("is empty"));
-        assert_eq!(
-            SelectorName::broken_rule("Order producers "),
-            Some("starts or ends with white space")
-        );
-        assert_eq!(
-            SelectorName::broken_rule("Order\nproducers"),
-            Some("holds a control character")
-        );
-        assert_eq!(
-            SelectorName::broken_rule("Order\u{2060}producers"),
-            Some("holds a format character")
-        );
+    fn the_error_says_which_part_of_the_rule_a_text_breaks() {
+        let cases = [
+            ("", "selector name \"\" is empty"),
+            (
+                "Order producers ",
+                "selector name \"Order producers \" starts or ends with white space",
+            ),
+            (
+                "Order\nproducers",
+                "selector name \"Order\\nproducers\" holds a control character",
+            ),
+            (
+                "Order\u{2060}producers",
+                "selector name \"Order\\u{2060}producers\" holds a format character",
+            ),
+        ];
+
+        for (text, message) in cases {
+            assert_eq!(SelectorName::new(text).unwrap_err().to_string(), message);
+        }
     }
 
     #[test]
@@ -275,7 +315,7 @@ mod tests {
             "Order \u{2764}\u{fe0f}",
             "Order 🚀",
         ] {
-            assert_eq!(SelectorName::broken_rule(text), None, "{text:?}");
+            assert!(SelectorName::new(text).is_ok(), "{text:?}");
         }
     }
 

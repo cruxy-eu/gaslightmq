@@ -17,12 +17,12 @@ number_value! {
     /// assert_eq!(Offset::from_wire(-1)?, None);
     /// assert_eq!(Offset::to_wire(None), -1);
     /// assert!(Offset::try_from(-1_i64).is_err());
-    /// # Ok::<(), KernelError>(())
+    /// # Ok::<(), Box<dyn std::error::Error>>(())
     /// ```
-    Offset, "offset", value: u64, wire: i64, small: u32
+    Offset, OffsetError, "offset", value: u64, wire: i64, small: u32
 }
 
-number_sentinel!(Offset, "offset", wire: i64, none: "\"no offset\"");
+number_sentinel!(Offset, OffsetError, "offset", wire: i64, none: "\"no offset\"");
 
 impl Offset {
     /// The offset of the first record a log ever holds.
@@ -37,7 +37,6 @@ impl Offset {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::KernelError;
 
     const MAX: u64 = i64::MAX as u64;
 
@@ -47,8 +46,7 @@ mod tests {
         assert_eq!(Offset::new(MAX).map(Offset::value), Ok(MAX));
         assert_eq!(
             Offset::new(MAX + 1),
-            Err(KernelError::TooLarge {
-                what: "offset",
+            Err(OffsetError::TooLarge {
                 value: MAX + 1,
                 max: MAX
             })
@@ -66,25 +64,15 @@ mod tests {
         assert_eq!(Offset::try_from(i64::MAX).map(Offset::value), Ok(MAX));
         assert_eq!(
             Offset::try_from(u64::MAX),
-            Err(KernelError::TooLarge {
-                what: "offset",
+            Err(OffsetError::TooLarge {
                 value: u64::MAX,
                 max: MAX
             })
         );
-        assert_eq!(
-            Offset::try_from(-1_i64),
-            Err(KernelError::Negative {
-                what: "offset",
-                value: -1
-            })
-        );
+        assert_eq!(Offset::try_from(-1_i64), Err(OffsetError::Negative { value: -1 }));
         assert_eq!(
             Offset::try_from(i64::MIN),
-            Err(KernelError::Negative {
-                what: "offset",
-                value: i64::MIN
-            })
+            Err(OffsetError::Negative { value: i64::MIN })
         );
     }
 
@@ -103,13 +91,7 @@ mod tests {
         assert_eq!(Offset::from_wire(-1), Ok(None));
         assert_eq!(Offset::from_wire(0), Ok(Some(Offset::ZERO)));
         assert_eq!(Offset::from_wire(42), Ok(Some(Offset::from(42))));
-        assert_eq!(
-            Offset::from_wire(-2),
-            Err(KernelError::Negative {
-                what: "offset",
-                value: -2
-            })
-        );
+        assert_eq!(Offset::from_wire(-2), Err(OffsetError::Negative { value: -2 }));
         assert_eq!(Offset::to_wire(None), -1);
         assert_eq!(Offset::to_wire(Some(Offset::from(42))), 42);
     }
@@ -125,27 +107,17 @@ mod tests {
         assert_eq!(MAX.to_string().parse::<Offset>().map(Offset::value), Ok(MAX));
         assert_eq!(
             "9223372036854775808".parse::<Offset>(),
-            Err(KernelError::TooLarge {
-                what: "offset",
+            Err(OffsetError::TooLarge {
                 value: MAX + 1,
                 max: MAX
             })
         );
-        assert_eq!(
-            "-1".parse::<Offset>(),
-            Err(KernelError::Negative {
-                what: "offset",
-                value: -1
-            })
-        );
+        assert_eq!("-1".parse::<Offset>(), Err(OffsetError::Negative { value: -1 }));
         assert_eq!(
             "latest".parse::<Offset>(),
-            Err(KernelError::NotANumber {
-                what: "offset",
-                input: "latest".into()
-            })
+            Err(OffsetError::NotANumber { input: "latest".into() })
         );
-        assert_eq!("".parse::<Offset>(), Err(KernelError::Empty { what: "offset" }));
+        assert_eq!("".parse::<Offset>(), Err(OffsetError::Empty));
     }
 
     #[test]

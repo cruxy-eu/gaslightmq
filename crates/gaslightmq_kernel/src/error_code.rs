@@ -2,8 +2,7 @@ use std::fmt;
 use std::num::NonZeroI16;
 use std::str::FromStr;
 
-use crate::KernelError;
-use crate::code::{self, code_serde};
+use crate::code::{self, code_error, code_serde};
 use crate::text::text_conversions;
 
 /// The code of a Kafka error: the number a broker answers when a request failed.
@@ -36,12 +35,10 @@ use crate::text::text_conversions;
 ///
 /// let unknown = ErrorCode::try_from(999)?;
 /// assert_eq!(unknown.to_string(), "999");
-/// # Ok::<(), KernelError>(())
+/// # Ok::<(), Box<dyn std::error::Error>>(())
 /// ```
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ErrorCode(NonZeroI16);
-
-const WHAT: &str = "error code";
 
 /// The name Kafka gives the code `0`, which means "no error".
 const NONE: &str = "NONE";
@@ -70,10 +67,9 @@ impl ErrorCode {
     ///
     /// # Errors
     ///
-    /// [`KernelError::Reserved`] when `code` is zero.
-    pub fn new(code: i16) -> Result<Self, KernelError> {
-        Self::from_wire(code).ok_or_else(|| KernelError::Reserved {
-            what: WHAT,
+    /// [`ErrorCodeError::Reserved`] when `code` is zero.
+    pub fn new(code: i16) -> Result<Self, ErrorCodeError> {
+        Self::from_wire(code).ok_or_else(|| ErrorCodeError::Reserved {
             value: code.to_string(),
         })
     }
@@ -119,7 +115,7 @@ impl ErrorCode {
 
 /// Reads the type Kafka writes an error code as, and rejects zero.
 impl TryFrom<i16> for ErrorCode {
-    type Error = KernelError;
+    type Error = ErrorCodeError;
 
     fn try_from(code: i16) -> Result<Self, Self::Error> {
         Self::new(code)
@@ -134,16 +130,13 @@ impl From<ErrorCode> for i16 {
 
 /// Reads the name of an error as Kafka spells it, or the number of any code.
 impl FromStr for ErrorCode {
-    type Err = KernelError;
+    type Err = ErrorCodeError;
 
     fn from_str(text: &str) -> Result<Self, Self::Err> {
         if text == NONE {
-            return Err(KernelError::Reserved {
-                what: WHAT,
-                value: NONE.to_owned(),
-            });
+            return Err(ErrorCodeError::Reserved { value: NONE.to_owned() });
         }
-        Self::new(code::parse(WHAT, Self::NAMES, text)?)
+        Self::new(code::parse(Self::NAMES, text).map_err(|flaw| ErrorCodeError::of(flaw, text))?)
     }
 }
 
@@ -163,7 +156,14 @@ impl fmt::Debug for ErrorCode {
     }
 }
 
-text_conversions!(ErrorCode);
+code_error! {
+    /// Why a number or a text is not an [`ErrorCode`].
+    ErrorCodeError, "error code",
+    /// The code is `0`, which Kafka calls `NONE`: it means "no error", and it is never an error code.
+    Reserved { value: String } => "cannot be {:?}"
+}
+
+text_conversions!(ErrorCode, ErrorCodeError);
 code_serde!(ErrorCode, "the name or the number of a Kafka error");
 
 #[cfg(test)]
@@ -187,20 +187,14 @@ mod tests {
 
     #[test]
     fn zero_is_no_error_code() {
-        let reserved = KernelError::Reserved {
-            what: "error code",
-            value: "0".into(),
-        };
+        let reserved = ErrorCodeError::Reserved { value: "0".into() };
 
         assert_eq!(ErrorCode::new(0), Err(reserved.clone()));
         assert_eq!(ErrorCode::try_from(0), Err(reserved.clone()));
         assert_eq!("0".parse::<ErrorCode>(), Err(reserved));
         assert_eq!(
             "NONE".parse::<ErrorCode>(),
-            Err(KernelError::Reserved {
-                what: "error code",
-                value: "NONE".into()
-            })
+            Err(ErrorCodeError::Reserved { value: "NONE".into() })
         );
         assert!(ErrorCode::known().all(|code| code.value() != 0));
     }
@@ -285,18 +279,14 @@ mod tests {
         ] {
             assert_eq!(
                 text.parse::<ErrorCode>(),
-                Err(KernelError::UnknownName {
-                    what: "error code",
-                    input: text.to_owned()
-                }),
+                Err(ErrorCodeError::UnknownName { input: text.to_owned() }),
                 "{text:?}"
             );
         }
-        assert_eq!("".parse::<ErrorCode>(), Err(KernelError::Empty { what: "error code" }));
+        assert_eq!("".parse::<ErrorCode>(), Err(ErrorCodeError::Empty));
         assert_eq!(
             "32768".parse::<ErrorCode>(),
-            Err(KernelError::TooLarge {
-                what: "error code",
+            Err(ErrorCodeError::TooLarge {
                 value: 32_768,
                 max: 32_767
             })

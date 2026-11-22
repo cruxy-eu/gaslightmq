@@ -41,7 +41,7 @@
 //! assert_eq!(wait, Duration::from_millis(500));
 //! clock.run_for(wait);
 //! assert_eq!(clock.now(), deadline);
-//! # Ok::<(), gaslightmq_clock::ParseTimeSpanError>(())
+//! # Ok::<(), gaslightmq_clock::TimeSpanError>(())
 //! ```
 //!
 //! The wall clock is not in this crate.
@@ -59,7 +59,7 @@ mod virtual_clock;
 pub use clock::Clock;
 pub use instant::Instant;
 pub use speed::Speed;
-pub use time_span::{ParseTimeSpanError, TimeSpan};
+pub use time_span::{TimeSpan, TimeSpanError};
 pub use virtual_clock::VirtualClock;
 
 pub use core::time::Duration;

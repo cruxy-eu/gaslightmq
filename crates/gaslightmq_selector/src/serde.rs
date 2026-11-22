@@ -11,7 +11,9 @@ use serde::de::{DeserializeSeed, Error, IntoDeserializer, MapAccess, SeqAccess, 
 use serde::ser::SerializeMap;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
-use crate::{Condition, Conditions, Glob, Operator, Scope, SelectorError, SelectorName, SelectorRef, ValueSet};
+use crate::{
+    Condition, ConditionError, Conditions, Glob, Operator, Scope, SelectorName, SelectorRef, ValueSet, ValueSetError,
+};
 
 /// The keys of the operators, for the message about a key that is none of them.
 const OPERATOR_KEYS: [&str; 4] = [
@@ -320,11 +322,11 @@ impl Visitor<'_> for ValueOf {
         let field = self.field;
         if !self.named && Glob::is_pattern(text) {
             let pattern = text.to_owned();
-            return Err(E::custom(SelectorError::PatternAmongValues { field, pattern }));
+            return Err(E::custom(ValueSetError::PatternAmongValues { field, pattern }));
         }
         field
             .parse_value(text)
-            .map_err(|error| E::custom(SelectorError::Value { field, error }))
+            .map_err(|error| E::custom(ConditionError::InvalidValue { error }))
     }
 
     fn visit_i64<E: Error>(self, number: i64) -> Result<FieldValue, E> {

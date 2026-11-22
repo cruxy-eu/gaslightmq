@@ -62,7 +62,7 @@ fn a_position_writes_its_text_form() {
 fn reading_a_name_or_an_id_applies_its_rule() {
     rejects::<TopicName>(
         r#""orders/eu""#,
-        "topic name has the invalid character '/' at position 6",
+        "topic name \"orders/eu\" has the invalid character '/' at position 6",
     );
     rejects::<TopicName>(r#""""#, "topic name is empty");
     rejects::<TopicName>(r#""..""#, "topic name cannot be \"..\"");
@@ -74,7 +74,7 @@ fn reading_a_name_or_an_id_applies_its_rule() {
     rejects::<MemberId>(r#""""#, "member ID is empty");
     rejects::<GroupInstanceId>(
         r#""etl 0""#,
-        "group instance ID has the invalid character ' ' at position 3",
+        "group instance ID \"etl 0\" has the invalid character ' ' at position 3",
     );
     rejects::<TransactionalId>(r#""""#, "transactional ID is empty");
     rejects::<ClientId>(
@@ -127,7 +127,7 @@ fn reading_a_position_applies_the_rule_of_every_part() {
     );
     rejects::<TopicPartition>(
         r#""orders.*/3""#,
-        "topic name has the invalid character '*' at position 7",
+        "topic partition \"orders.*/3\": topic name \"orders.*\" has the invalid character '*' at position 7",
     );
     rejects::<TopicPartition>(r#""orders.eu/-1""#, "partition number cannot be negative: -1");
     rejects::<PartitionOffset>(r#""3""#, "does not have the form partition@offset");

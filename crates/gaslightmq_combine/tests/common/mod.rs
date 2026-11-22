@@ -30,7 +30,7 @@ pub fn lie(id: &'static str, position: usize, claim: impl Into<Claim>) -> FiredL
 
 /// The claim of a lie with a definition, on what a selector matched.
 pub fn claim(lie: impl Into<LieDefinition>, matched: Target) -> Claim {
-    Claim::try_from(&lie.into().on(matched).unwrap()).unwrap()
+    Claim::try_from(&lie.into().on(matched)).unwrap()
 }
 
 /// A refusal before forwarding.

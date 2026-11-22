@@ -14,12 +14,12 @@ number_value! {
     /// let leader = BrokerId::from_wire(2)?;
     /// assert_eq!(leader, Some(BrokerId::from(2)));
     /// assert_eq!(BrokerId::from_wire(-1)?, None);
-    /// # Ok::<(), KernelError>(())
+    /// # Ok::<(), Box<dyn std::error::Error>>(())
     /// ```
-    BrokerId, "broker ID", value: u32, wire: i32, small: u16
+    BrokerId, BrokerIdError, "broker ID", value: u32, wire: i32, small: u16
 }
 
-number_sentinel!(BrokerId, "broker ID", wire: i32, none: "\"no broker\"");
+number_sentinel!(BrokerId, BrokerIdError, "broker ID", wire: i32, none: "\"no broker\"");
 
 number_value! {
     /// The epoch of a partition's leader.
@@ -36,12 +36,12 @@ number_value! {
     /// let epoch = LeaderEpoch::from(7);
     /// assert_eq!(epoch.checked_next(), Some(LeaderEpoch::from(8)));
     /// assert_eq!(LeaderEpoch::from_wire(-1)?, None);
-    /// # Ok::<(), KernelError>(())
+    /// # Ok::<(), Box<dyn std::error::Error>>(())
     /// ```
-    LeaderEpoch, "leader epoch", value: u32, wire: i32, small: u16
+    LeaderEpoch, LeaderEpochError, "leader epoch", value: u32, wire: i32, small: u16
 }
 
-number_sentinel!(LeaderEpoch, "leader epoch", wire: i32, none: "\"unknown epoch\"");
+number_sentinel!(LeaderEpoch, LeaderEpochError, "leader epoch", wire: i32, none: "\"unknown epoch\"");
 
 impl LeaderEpoch {
     /// The epoch after this one, or `None` when this is the highest epoch.
@@ -53,7 +53,6 @@ impl LeaderEpoch {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::KernelError;
 
     const MAX: u32 = i32::MAX as u32;
 
@@ -63,8 +62,7 @@ mod tests {
         assert_eq!(BrokerId::new(MAX).map(BrokerId::value), Ok(MAX));
         assert_eq!(
             BrokerId::new(MAX + 1),
-            Err(KernelError::TooLarge {
-                what: "broker ID",
+            Err(BrokerIdError::TooLarge {
                 value: u64::from(MAX) + 1,
                 max: u64::from(MAX)
             })
@@ -78,13 +76,7 @@ mod tests {
         assert_eq!(BrokerId::from(2_u16), broker);
         assert_eq!(BrokerId::try_from(2_u32), Ok(broker));
         assert_eq!(BrokerId::try_from(2_i32), Ok(broker));
-        assert_eq!(
-            BrokerId::try_from(-1_i32),
-            Err(KernelError::Negative {
-                what: "broker ID",
-                value: -1
-            })
-        );
+        assert_eq!(BrokerId::try_from(-1_i32), Err(BrokerIdError::Negative { value: -1 }));
         assert!(BrokerId::try_from(u32::MAX).is_err());
         assert_eq!(broker.value(), 2);
         assert_eq!(u32::from(broker), 2);
@@ -96,13 +88,7 @@ mod tests {
     fn the_wire_writes_no_broker_as_minus_one() {
         assert_eq!(BrokerId::from_wire(-1), Ok(None));
         assert_eq!(BrokerId::from_wire(0), Ok(Some(BrokerId::from(0))));
-        assert_eq!(
-            BrokerId::from_wire(-2),
-            Err(KernelError::Negative {
-                what: "broker ID",
-                value: -2
-            })
-        );
+        assert_eq!(BrokerId::from_wire(-2), Err(BrokerIdError::Negative { value: -2 }));
         assert_eq!(BrokerId::to_wire(None), -1);
         assert_eq!(BrokerId::to_wire(Some(BrokerId::from(2))), 2);
     }
@@ -113,15 +99,13 @@ mod tests {
         assert_eq!(BrokerId::from(2).to_string(), "2");
         assert_eq!(
             "broker 2".parse::<BrokerId>(),
-            Err(KernelError::NotANumber {
-                what: "broker ID",
+            Err(BrokerIdError::NotANumber {
                 input: "broker 2".into()
             })
         );
         assert_eq!(
             "2147483648".parse::<BrokerId>(),
-            Err(KernelError::TooLarge {
-                what: "broker ID",
+            Err(BrokerIdError::TooLarge {
                 value: 2_147_483_648,
                 max: 2_147_483_647
             })
@@ -133,8 +117,7 @@ mod tests {
         assert_eq!(LeaderEpoch::new(MAX).map(LeaderEpoch::value), Ok(MAX));
         assert_eq!(
             LeaderEpoch::new(MAX + 1),
-            Err(KernelError::TooLarge {
-                what: "leader epoch",
+            Err(LeaderEpochError::TooLarge {
                 value: u64::from(MAX) + 1,
                 max: u64::from(MAX)
             })
@@ -150,10 +133,7 @@ mod tests {
         assert_eq!(LeaderEpoch::try_from(7_i32), Ok(epoch));
         assert_eq!(
             LeaderEpoch::try_from(-1_i32),
-            Err(KernelError::Negative {
-                what: "leader epoch",
-                value: -1
-            })
+            Err(LeaderEpochError::Negative { value: -1 })
         );
         assert_eq!(u32::from(epoch), 7);
         assert_eq!(i32::from(epoch), 7);
@@ -165,10 +145,7 @@ mod tests {
         assert_eq!(LeaderEpoch::from_wire(7), Ok(Some(LeaderEpoch::from(7))));
         assert_eq!(
             LeaderEpoch::from_wire(-7),
-            Err(KernelError::Negative {
-                what: "leader epoch",
-                value: -7
-            })
+            Err(LeaderEpochError::Negative { value: -7 })
         );
         assert_eq!(LeaderEpoch::to_wire(None), -1);
         assert_eq!(LeaderEpoch::to_wire(Some(LeaderEpoch::from(7))), 7);

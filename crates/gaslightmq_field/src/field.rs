@@ -1,7 +1,6 @@
 use std::fmt;
 use std::str::FromStr;
 
-use crate::FieldError;
 use crate::text::text_form;
 
 /// A named property of a connection or a call, such as `client.id` or `topic`.
@@ -31,7 +30,7 @@ use crate::text::text_form;
 /// // A rule that tests a response field can only match after the backend answered.
 /// let selector = [Field::Api, Field::Topic, Field::Outcome];
 /// assert!(selector.iter().any(|field| field.group() == FieldGroup::Response));
-/// # Ok::<(), FieldError>(())
+/// # Ok::<(), Box<dyn std::error::Error>>(())
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Field {
@@ -156,7 +155,7 @@ impl FromStr for Field {
         Field::ALL
             .into_iter()
             .find(|field| field.name() == text)
-            .ok_or_else(|| FieldError::UnknownField { name: text.to_owned() })
+            .ok_or_else(|| FieldError::Unknown { name: text.to_owned() })
     }
 }
 
@@ -166,7 +165,33 @@ impl fmt::Display for Field {
     }
 }
 
-text_form!(Field);
+text_form!(Field, FieldError);
+
+/// Why a text is not a [`Field`].
+///
+/// ```
+/// use gaslightmq_field::prelude::*;
+///
+/// let error = "client.name".parse::<Field>().unwrap_err();
+/// assert_eq!(error, FieldError::Unknown { name: "client.name".to_owned() });
+/// assert_eq!(error.to_string(), "no field is named \"client.name\"");
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum FieldError {
+    /// No field has this name.
+    Unknown { name: String },
+}
+
+impl fmt::Display for FieldError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Unknown { name } => write!(f, "no field is named {name:?}"),
+        }
+    }
+}
+
+impl std::error::Error for FieldError {}
 
 /// Where the values of a field come from.
 ///
@@ -236,13 +261,13 @@ impl FieldGroup {
 
 /// Reads the name of a group, as [`Display`](fmt::Display) writes it.
 impl FromStr for FieldGroup {
-    type Err = FieldError;
+    type Err = FieldGroupError;
 
     fn from_str(text: &str) -> Result<Self, Self::Err> {
         FieldGroup::ALL
             .into_iter()
             .find(|group| group.name() == text)
-            .ok_or_else(|| FieldError::unknown_name("field group", text))
+            .ok_or_else(|| FieldGroupError::Unknown { name: text.to_owned() })
     }
 }
 
@@ -252,7 +277,25 @@ impl fmt::Display for FieldGroup {
     }
 }
 
-text_form!(FieldGroup);
+text_form!(FieldGroup, FieldGroupError);
+
+/// Why a text is not a [`FieldGroup`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum FieldGroupError {
+    /// No group of fields has this name.
+    Unknown { name: String },
+}
+
+impl fmt::Display for FieldGroupError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Unknown { name } => write!(f, "unknown field group: {name:?}"),
+        }
+    }
+}
+
+impl std::error::Error for FieldGroupError {}
 
 #[cfg(test)]
 mod tests {
@@ -304,7 +347,7 @@ mod tests {
         for text in ["", "Topic", "client_id", "client", "client.id ", "clientid", "error"] {
             assert_eq!(
                 text.parse::<Field>(),
-                Err(FieldError::UnknownField { name: text.to_owned() }),
+                Err(FieldError::Unknown { name: text.to_owned() }),
                 "{text:?}"
             );
         }
@@ -368,7 +411,9 @@ mod tests {
         }
         assert_eq!(
             "Response".parse::<FieldGroup>(),
-            Err(FieldError::unknown_name("field group", "Response"))
+            Err(FieldGroupError::Unknown {
+                name: "Response".to_owned()
+            })
         );
     }
 

@@ -450,7 +450,7 @@ fn things_reference_selectors_by_name_and_a_rename_updates_the_includes() {
     assert_eq!(selectors.effective(&name("Order producers from ingest")), Ok(before));
     assert_eq!(
         selectors.resolve(&SelectorRef::Named(name("Order producers"))),
-        Err(SelectorError::UnknownSelector {
+        Err(SelectorSetError::UnknownSelector {
             name: name("Order producers")
         })
     );
@@ -559,11 +559,11 @@ fn a_scope_is_a_selector_that_only_uses_connection_fields() {
     assert_eq!(Scope::new(who.clone()).map(Scope::into_conditions), Ok(who.clone()));
     assert_eq!(
         Scope::new(who.clone().with(on(Field::Topic, "orders.*"))),
-        Err(SelectorError::NotAConnectionField { field: Field::Topic })
+        Err(ScopeError::NotAConnectionField { field: Field::Topic })
     );
     assert_eq!(
         Scope::new(who.with(on(Field::Group, "analytics-etl"))),
-        Err(SelectorError::NotAConnectionField { field: Field::Group })
+        Err(ScopeError::NotAConnectionField { field: Field::Group })
     );
 }
 

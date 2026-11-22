@@ -96,7 +96,7 @@ impl Incident {
     ///         Consequence::CoordinatorUnavailable { coordinator: GroupId::new("payments")?.into() },
     ///     ]
     /// );
-    /// # Ok::<(), KernelError>(())
+    /// # Ok::<(), Box<dyn std::error::Error>>(())
     /// ```
     pub fn expand<T: Topology + ?Sized>(self, topology: &T) -> ExpandedIncident {
         let consequences = match &self {

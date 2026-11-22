@@ -55,7 +55,7 @@
 //!     panic!("the Produce names an orders topic");
 //! };
 //! assert_eq!(target.to_string(), "orders.eu/3");
-//! # Ok::<(), SelectorError>(())
+//! # Ok::<(), Box<dyn std::error::Error>>(())
 //! ```
 //!
 //! # A definition and what matches
@@ -125,6 +125,23 @@
 //!   host: { is-not: 10.0.4.27 }
 //! ```
 //!
+//! # Errors
+//!
+//! Every type that checks its value has an error of its own, named after it.
+//!
+//! | Type | Error | What is wrong |
+//! |---|---|---|
+//! | [`Glob`] | [`GlobError`] | The pattern is empty. |
+//! | [`SelectorName`] | [`SelectorNameError`] | The text breaks a part of the rule for names. |
+//! | [`Operator`] | [`OperatorError`] | No operator has this name. |
+//! | [`ValueSet`] | [`ValueSetError`] | There is no value, the values belong to different fields, or a list holds a pattern. |
+//! | [`Condition`] | [`ConditionError`] | The text is not a value of the field. |
+//! | [`Scope`] | [`ScopeError`] | A condition tests a field that does not describe the connection. |
+//! | [`SelectorSet`] | [`SelectorSetError`] | Two selectors share a name, a name is unknown, or selectors include each other in a circle. |
+//!
+//! The message of every error is complete, so no error has a [`source`](std::error::Error::source).
+//! [`ConditionError::InvalidValue`] writes the message of the [`FieldValueError`](gaslightmq_field::FieldValueError) it holds, once.
+//!
 //! # No IO
 //!
 //! The crate depends on `gaslightmq_field` for the field vocabulary,
@@ -134,7 +151,6 @@
 mod condition;
 mod conditions;
 mod effective;
-mod error;
 mod glob;
 mod index;
 mod name;
@@ -144,15 +160,14 @@ mod serde;
 mod set;
 mod text;
 
-pub use condition::{Condition, Operator, ValueSet};
-pub use conditions::{Conditions, Scope};
+pub use condition::{Condition, ConditionError, Operator, OperatorError, ValueSet, ValueSetError};
+pub use conditions::{Conditions, Scope, ScopeError};
 pub use effective::{Apis, EffectiveSelector, Match, Pass};
-pub use error::SelectorError;
-pub use glob::Glob;
+pub use glob::{Glob, GlobError};
 pub use index::ApiIndex;
-pub use name::SelectorName;
+pub use name::{SelectorName, SelectorNameError};
 pub use selector::{Selector, SelectorRef};
-pub use set::SelectorSet;
+pub use set::{SelectorSet, SelectorSetError};
 
 /// Every item of this crate.
 ///
@@ -164,14 +179,15 @@ pub use set::SelectorSet;
 /// use gaslightmq_kernel::prelude::*;
 /// use gaslightmq_selector::prelude::*;
 ///
-/// let condition: Result<Condition, SelectorError> = Condition::parse(Field::Api, "Produce");
+/// let condition: Result<Condition, ConditionError> = Condition::parse(Field::Api, "Produce");
 /// assert_eq!(condition?, Condition::is(ApiKey::PRODUCE));
-/// # Ok::<(), SelectorError>(())
+/// # Ok::<(), Box<dyn std::error::Error>>(())
 /// ```
 pub mod prelude {
     #[doc(no_inline)]
     pub use crate::{
-        ApiIndex, Apis, Condition, Conditions, EffectiveSelector, Glob, Match, Operator, Pass, Scope, Selector,
-        SelectorError, SelectorName, SelectorRef, SelectorSet, ValueSet,
+        ApiIndex, Apis, Condition, ConditionError, Conditions, EffectiveSelector, Glob, GlobError, Match, Operator,
+        OperatorError, Pass, Scope, ScopeError, Selector, SelectorName, SelectorNameError, SelectorRef, SelectorSet,
+        SelectorSetError, ValueSet, ValueSetError,
     };
 }

@@ -74,7 +74,7 @@ impl Counter {
 /// // Arming the rule again gives it a new counter.
 /// let armed_again = Counter::new();
 /// assert_eq!(first.count(&armed_again).value(), 1);
-/// # Ok::<(), TriggerError>(())
+/// # Ok::<(), CounterKeyError>(())
 /// ```
 #[derive(Debug)]
 pub struct SessionCounters {

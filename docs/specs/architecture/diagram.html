@@ -381,7 +381,7 @@ const CRATES = [
   ["surface","Control","sans",1,4,"Pad layouts, layers, pads as positions, the encoder mapping, and the intents a surface sends.",["rule"]],
   ["hardware_push2","Control","sans",1,7,"The Push 2 mapping: controller messages to surface intents, and rule state back to pad colours.",["surface"]],
 
-  ["workspace","Workspace","sans",0,5,"The whole set of definitions as one model: cross-reference validation, cascading renames and the YAML layout. Works on file contents, not on files.",["selector","lie","incident","rule","scenario","surface","world","environment"]],
+  ["workspace","Workspace","sans",0,5,"The whole set of definitions as one model: cross-reference validation, cascading renames and the YAML layout. A reading error names the path of the key that failed. Works on file contents, not on files.",["selector","lie","incident","rule","scenario","surface","world","environment"]],
   ["environment","Workspace","sans",1,3,"Environments, secret references, and the order in which flags, variables and files set a value. It never reads a secret.",[]],
 
   ["scenario","Scenarios","sans",1,5,"The scenario definition, modes as priority orders, the step machine of a Sequence, the live set and capture. Consumes call records, journal entries and time; emits arm and disarm commands.",["rule","trigger","call","journal","incident","clock"]],

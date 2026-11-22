@@ -52,7 +52,7 @@ use crate::{
 /// // The action applied, which spends the one firing and ends the lifetime.
 /// assert!(firing.confirm().ends_lifetime());
 /// assert!(arming.has_ended(now));
-/// # Ok::<(), TriggerError>(())
+/// # Ok::<(), Box<dyn std::error::Error>>(())
 /// ```
 #[derive(Clone, Debug)]
 pub struct Arming {

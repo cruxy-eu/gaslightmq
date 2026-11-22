@@ -105,7 +105,7 @@ fn a_lifetime_writes_its_text() {
 #[test]
 fn a_text_that_is_no_lifetime_is_rejected() {
     rejects::<Lifetime>(r#""forever""#, "`forever` is not a lifetime");
-    rejects::<Lifetime>(r#""0 firings""#, "a count is at least one");
+    rejects::<Lifetime>(r#""0 firings""#, "lifetime `0 firings`: a count is at least one");
     rejects::<Lifetime>("30", "expected `until disarmed`, a time span such as `30s`");
     rejects::<Lifetime>(r#"{"firings":3}"#, "expected `until disarmed`");
 }

@@ -3,7 +3,7 @@
 use std::fmt;
 use std::str::FromStr;
 
-use crate::{MatchNumber, Roll, TriggerError};
+use crate::{MatchNumber, Roll};
 
 /// The offset basis of 64-bit FNV-1a.
 const FNV_OFFSET_BASIS: u64 = 0xcbf2_9ce4_8422_2325;
@@ -65,11 +65,11 @@ impl fmt::Display for Seed {
     }
 }
 
-/// Define a key that holds text of at least one character.
+/// Define a key that holds text of at least one character, and the error that says why a text is not one.
 macro_rules! text_key {
     (
         $(#[$meta:meta])*
-        $name:ident, $what:literal
+        $name:ident, $error:ident, $what:literal
     ) => {
         $(#[$meta])*
         #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -80,11 +80,11 @@ macro_rules! text_key {
             ///
             /// # Errors
             ///
-            /// [`TriggerError::EmptyKey`] when `text` is empty.
-            pub fn new(text: impl Into<String>) -> Result<$name, TriggerError> {
+            #[doc = concat!("[`", stringify!($error), "::Empty`] when `text` is empty.")]
+            pub fn new(text: impl Into<String>) -> Result<$name, $error> {
                 let text = text.into();
                 if text.is_empty() {
-                    return Err(TriggerError::EmptyKey { what: $what });
+                    return Err($error::Empty);
                 }
                 Ok($name(text))
             }
@@ -95,18 +95,36 @@ macro_rules! text_key {
             }
         }
 
-        impl FromStr for $name {
-            type Err = TriggerError;
+        #[doc = concat!("Why a text is not a [`", stringify!($name), "`].")]
+        #[derive(Debug, Clone, PartialEq, Eq)]
+        #[non_exhaustive]
+        pub enum $error {
+            /// The text has no characters.
+            Empty,
+        }
 
-            fn from_str(text: &str) -> Result<$name, TriggerError> {
+        impl fmt::Display for $error {
+            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                match self {
+                    Self::Empty => f.write_str(concat!("a ", $what, " is not empty")),
+                }
+            }
+        }
+
+        impl std::error::Error for $error {}
+
+        impl FromStr for $name {
+            type Err = $error;
+
+            fn from_str(text: &str) -> Result<$name, $error> {
                 $name::new(text)
             }
         }
 
         impl TryFrom<String> for $name {
-            type Error = TriggerError;
+            type Error = $error;
 
-            fn try_from(text: String) -> Result<$name, TriggerError> {
+            fn try_from(text: String) -> Result<$name, $error> {
                 $name::new(text)
             }
         }
@@ -144,12 +162,12 @@ text_key! {
     ///
     /// let key = DiceKey::new("Slow down order producers")?;
     /// assert_eq!(key.as_str(), "Slow down order producers");
-    /// assert!(DiceKey::new("").is_err());
-    /// # Ok::<(), TriggerError>(())
+    /// assert_eq!(DiceKey::new(""), Err(DiceKeyError::Empty));
+    /// # Ok::<(), DiceKeyError>(())
     /// ```
     ///
     /// With the `serde` feature, a dice key serializes as its text.
-    DiceKey, "dice key"
+    DiceKey, DiceKeyError, "dice key"
 }
 
 text_key! {
@@ -169,10 +187,10 @@ text_key! {
     ///
     /// let key = CounterKey::new("10.0.4.27 broker 2 #1")?;
     /// assert_eq!(key.to_string(), "10.0.4.27 broker 2 #1");
-    /// assert!(CounterKey::new("").is_err());
-    /// # Ok::<(), TriggerError>(())
+    /// assert_eq!(CounterKey::new(""), Err(CounterKeyError::Empty));
+    /// # Ok::<(), CounterKeyError>(())
     /// ```
-    CounterKey, "counter key"
+    CounterKey, CounterKeyError, "counter key"
 }
 
 /// The die of one rule, or of one rule on one session.
@@ -220,7 +238,7 @@ text_key! {
 /// // With `per: session`, every session rolls a die of its own.
 /// let session = die.for_counter(&CounterKey::new("10.0.4.27 broker 2 #1")?);
 /// assert_ne!(session.roll(third), die.roll(third));
-/// # Ok::<(), TriggerError>(())
+/// # Ok::<(), Box<dyn std::error::Error>>(())
 /// ```
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct Die(u64);
@@ -267,9 +285,18 @@ mod tests {
 
     #[test]
     fn a_key_is_not_empty() {
-        assert_eq!(DiceKey::new(""), Err(TriggerError::EmptyKey { what: "dice key" }));
-        assert_eq!(CounterKey::new(""), Err(TriggerError::EmptyKey { what: "counter key" }));
-        assert_eq!("".parse::<DiceKey>(), Err(TriggerError::EmptyKey { what: "dice key" }));
+        assert_eq!(DiceKey::new(""), Err(DiceKeyError::Empty));
+        assert_eq!("".parse::<DiceKey>(), Err(DiceKeyError::Empty));
+        assert_eq!(DiceKey::try_from(String::new()), Err(DiceKeyError::Empty));
+        assert_eq!(CounterKey::new(""), Err(CounterKeyError::Empty));
+        assert_eq!("".parse::<CounterKey>(), Err(CounterKeyError::Empty));
+        assert_eq!(CounterKey::try_from(String::new()), Err(CounterKeyError::Empty));
+    }
+
+    #[test]
+    fn each_error_says_what_is_wrong() {
+        assert_eq!(DiceKeyError::Empty.to_string(), "a dice key is not empty");
+        assert_eq!(CounterKeyError::Empty.to_string(), "a counter key is not empty");
     }
 
     #[test]

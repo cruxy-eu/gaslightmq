@@ -1,7 +1,7 @@
+use std::fmt;
+
 use gaslightmq_field::prelude::*;
 use gaslightmq_lie::prelude::*;
-
-use crate::{CombineError, Priority};
 
 /// What a lie claims of a call: everything that combining needs to know about it.
 ///
@@ -26,7 +26,7 @@ use crate::{CombineError, Priority};
 ///
 /// let partition = Target::of_parts(["orders.eu/3".parse()?]).expect("one part");
 ///
-/// let refusal = TargetedLie::new(RefusalLie::new(ErrorCode::NOT_LEADER_OR_FOLLOWER), partition.clone())?;
+/// let refusal = TargetedLie::new(RefusalLie::new(ErrorCode::NOT_LEADER_OR_FOLLOWER), partition.clone());
 /// let claim = Claim::try_from(&refusal)?;
 /// assert_eq!(claim.class(), CombinationClass::Refusal);
 /// assert_eq!(claim.stage(), Stage::BeforeForwarding);
@@ -107,10 +107,10 @@ impl From<TimingLie> for Claim {
 /// Only for a definition that breaks its own word.
 /// No definition of today's `gaslightmq_lie` does.
 ///
-/// - [`CombineError::NoAspect`] when the lie is a rewrite, and its definition names no aspect.
-/// - [`CombineError::NoTiming`] when the lie is a modifier, and its definition is not a timing lie.
+/// - [`ClaimError::NoAspect`] when the lie is a rewrite, and its definition names no aspect.
+/// - [`ClaimError::NoTiming`] when the lie is a modifier, and its definition is not a timing lie.
 impl TryFrom<&TargetedLie> for Claim {
-    type Error = CombineError;
+    type Error = ClaimError;
 
     fn try_from(lie: &TargetedLie) -> Result<Self, Self::Error> {
         let definition = lie.lie();
@@ -120,14 +120,14 @@ impl TryFrom<&TargetedLie> for Claim {
         match definition.class() {
             CombinationClass::Modifier => match definition {
                 LieDefinition::Timing(timing) => Ok(Self::Modifier(*timing)),
-                _ => Err(CombineError::NoTiming { kind }),
+                _ => Err(ClaimError::NoTiming { kind }),
             },
             CombinationClass::Rewrite => match definition.aspect() {
                 Some(aspect) => Ok(Self::Rewrite {
                     aspect,
                     target: target(),
                 }),
-                None => Err(CombineError::NoAspect { kind }),
+                None => Err(ClaimError::NoAspect { kind }),
             },
             CombinationClass::Refusal => Ok(Self::Refusal {
                 stage: definition.stage(),
@@ -140,12 +140,47 @@ impl TryFrom<&TargetedLie> for Claim {
     }
 }
 
+/// Why a lie cannot become a [`Claim`].
+///
+/// No definition of today's `gaslightmq_lie` causes either error.
+/// They stand for a definition that breaks its own word,
+/// so that a mistake in a new kind of lie is an error here and never a lie that combines wrongly.
+///
+/// ```
+/// use gaslightmq_combine::prelude::*;
+/// use gaslightmq_lie::prelude::*;
+///
+/// let error = ClaimError::NoAspect { kind: LieKind::Progress };
+/// assert_eq!(error.to_string(), "a progress lie rewrites, and its definition names no aspect");
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum ClaimError {
+    /// The lie is a rewrite, and its definition names no aspect.
+    /// Rewrites conflict per aspect, so nothing says what this one conflicts with.
+    NoAspect { kind: LieKind },
+    /// The lie is a modifier, and its definition is not a timing lie.
+    /// Nothing says how long the call waits.
+    NoTiming { kind: LieKind },
+}
+
+impl fmt::Display for ClaimError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::NoAspect { kind } => write!(f, "a {kind} lie rewrites, and its definition names no aspect"),
+            Self::NoTiming { kind } => write!(f, "a {kind} lie is a modifier, and its definition holds no timing"),
+        }
+    }
+}
+
+impl std::error::Error for ClaimError {}
+
 /// A lie that fired on a call: who it is, where it stands in the priority order, and what it claims.
 ///
 /// The identity is whatever the caller tells its lies apart with, such as the ID of the rule that fired.
 /// Combining never looks inside it.
 /// The [`Fate`](crate::Fate) of the lie carries it back,
-/// and so does every [`Loss`](crate::Loss) and [`Effect`](crate::Effect) that names the lie.
+/// and so does every [`Loss`](crate::Loss) and [`StageEffect`](crate::StageEffect) that names the lie.
 ///
 /// ```
 /// use gaslightmq_combine::prelude::*;
@@ -153,7 +188,7 @@ impl TryFrom<&TargetedLie> for Claim {
 /// use gaslightmq_lie::prelude::*;
 ///
 /// // The rule "Blackhole" fired, and it is the first rule of the chain.
-/// let silence = LieDefinition::Silence.on(Target::Call)?;
+/// let silence = LieDefinition::Silence.on(Target::Call);
 /// let blackhole = FiredLie::new("Blackhole", Priority::HIGHEST, Claim::try_from(&silence)?);
 ///
 /// assert_eq!(blackhole.id(), &"Blackhole");
@@ -208,7 +243,7 @@ mod tests {
     }
 
     fn claim(lie: impl Into<LieDefinition>, target: Target) -> Claim {
-        Claim::try_from(&lie.into().on(target).unwrap()).unwrap()
+        Claim::try_from(&lie.into().on(target)).unwrap()
     }
 
     #[test]
@@ -286,6 +321,26 @@ mod tests {
             assert_eq!(claimed.class(), lie.class(), "{lie}");
             assert_eq!(claimed.stage(), lie.stage(), "{lie}");
             assert_eq!(claimed.aspect(), None, "{lie}");
+        }
+    }
+
+    #[test]
+    fn a_claim_error_says_what_is_wrong() {
+        let cases = [
+            (
+                ClaimError::NoAspect {
+                    kind: LieKind::Progress,
+                },
+                "a progress lie rewrites, and its definition names no aspect",
+            ),
+            (
+                ClaimError::NoTiming { kind: LieKind::Timing },
+                "a timing lie is a modifier, and its definition holds no timing",
+            ),
+        ];
+
+        for (error, message) in cases {
+            assert_eq!(error.to_string(), message);
         }
     }
 

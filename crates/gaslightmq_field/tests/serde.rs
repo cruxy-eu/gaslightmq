@@ -224,7 +224,7 @@ fn a_field_value_names_one_field_and_a_value_of_that_field() {
     rejects::<FieldValue>(r#"{"client.name":"x"}"#, "no field is named \"client.name\"");
     rejects::<FieldValue>(
         r#"{"topic":"orders/eu"}"#,
-        "topic name has the invalid character '/' at position 6",
+        "topic name \"orders/eu\" has the invalid character '/' at position 6",
     );
     rejects::<FieldValue>(r#"{"api":"Prodcue"}"#, "unknown API key: \"Prodcue\"");
     rejects::<FieldValue>(r#"{"partition":-1}"#, "invalid value: integer `-1`, expected u32");
@@ -324,7 +324,7 @@ fn a_target_writes_call_or_its_parts() {
     );
     rejects::<Target>(
         r#"{"parts":["orders eu"]}"#,
-        "topic name has the invalid character ' ' at position 6",
+        "part: topic name \"orders eu\" has the invalid character ' ' at position 6",
     );
     rejects::<Target>(r#"{"parts":["orders/eu"]}"#, "partition number is not a number: \"eu\"");
 }

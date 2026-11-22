@@ -2,7 +2,7 @@ use std::fmt::{self, Write};
 use std::str::FromStr;
 
 use crate::text::{self, text_form, text_value};
-use crate::{KernelError, PartitionNumber, TopicPartition};
+use crate::{PartitionNumber, TopicPartition};
 
 text_value! {
     /// The name of a topic.
@@ -17,9 +17,9 @@ text_value! {
     /// let orders = TopicName::new("orders.eu")?;
     /// assert_eq!(orders, "orders.eu");
     /// assert!(TopicName::new("orders/eu").is_err());
-    /// # Ok::<(), KernelError>(())
+    /// # Ok::<(), Box<dyn std::error::Error>>(())
     /// ```
-    TopicName, "topic name", max: text::MAX_NAME_LEN, rule: text::name
+    TopicName, TopicNameError, "topic name", max: text::MAX_NAME_LEN, rule: name
 }
 
 impl TopicName {
@@ -44,12 +44,11 @@ impl TopicName {
 /// assert_eq!(id.as_bytes(), b"foobarbazqux1234");
 /// assert_eq!(id.to_string(), "Zm9vYmFyYmF6cXV4MTIzNA");
 /// assert_eq!(TopicId::from_wire([0; 16]), None);
-/// # Ok::<(), KernelError>(())
+/// # Ok::<(), Box<dyn std::error::Error>>(())
 /// ```
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct TopicId([u8; 16]);
 
-const WHAT: &str = "topic ID";
 const TEXT_LEN: usize = 22;
 const TEXT_FORM: &str = "22 characters of URL-safe base64";
 const ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
@@ -59,10 +58,9 @@ impl TopicId {
     ///
     /// # Errors
     ///
-    /// [`KernelError::Reserved`] when `bytes` are all zero.
-    pub fn new(bytes: [u8; 16]) -> Result<Self, KernelError> {
-        Self::from_wire(bytes).ok_or_else(|| KernelError::Reserved {
-            what: WHAT,
+    /// [`TopicIdError::Reserved`] when `bytes` are all zero.
+    pub fn new(bytes: [u8; 16]) -> Result<Self, TopicIdError> {
+        Self::from_wire(bytes).ok_or_else(|| TopicIdError::Reserved {
             value: Self(bytes).to_string(),
         })
     }
@@ -83,13 +81,13 @@ impl TopicId {
     }
 
     /// The six bits that one character of the text form stands for.
-    fn sextet(character: char, position: usize) -> Result<u8, KernelError> {
+    fn sextet(text: &str, character: char, position: usize) -> Result<u8, TopicIdError> {
         let byte = u8::try_from(character).ok();
         (0u8..)
             .zip(ALPHABET)
             .find_map(|(index, &letter)| (Some(letter) == byte).then_some(index))
-            .ok_or(KernelError::InvalidCharacter {
-                what: WHAT,
+            .ok_or_else(|| TopicIdError::InvalidCharacter {
+                input: text.to_owned(),
                 character,
                 position,
             })
@@ -97,7 +95,7 @@ impl TopicId {
 }
 
 impl TryFrom<[u8; 16]> for TopicId {
-    type Error = KernelError;
+    type Error = TopicIdError;
 
     fn try_from(bytes: [u8; 16]) -> Result<Self, Self::Error> {
         Self::new(bytes)
@@ -112,7 +110,7 @@ impl From<TopicId> for [u8; 16] {
 
 /// Reads the UUID as one number, with the first byte as the most significant.
 impl TryFrom<u128> for TopicId {
-    type Error = KernelError;
+    type Error = TopicIdError;
 
     fn try_from(value: u128) -> Result<Self, Self::Error> {
         Self::new(value.to_be_bytes())
@@ -128,21 +126,17 @@ impl From<TopicId> for u128 {
 
 /// Reads the text form: 22 characters of URL-safe base64 without padding.
 impl FromStr for TopicId {
-    type Err = KernelError;
+    type Err = TopicIdError;
 
     fn from_str(text: &str) -> Result<Self, Self::Err> {
-        let malformed = || KernelError::Malformed {
-            what: WHAT,
-            input: text.to_owned(),
-            expected: TEXT_FORM,
-        };
+        let malformed = || TopicIdError::Malformed { input: text.to_owned() };
         if text.is_empty() {
-            return Err(KernelError::Empty { what: WHAT });
+            return Err(TopicIdError::Empty);
         }
         let mut sextets = [0u8; TEXT_LEN];
         let mut count = 0;
         for (position, character) in text.chars().enumerate() {
-            let sextet = Self::sextet(character, position)?;
+            let sextet = Self::sextet(text, character, position)?;
             *sextets.get_mut(position).ok_or_else(malformed)? = sextet;
             count += 1;
         }
@@ -191,7 +185,48 @@ impl fmt::Debug for TopicId {
     }
 }
 
-text_form!(TopicId);
+text_form!(TopicId, TopicIdError);
+
+/// Why bytes or a text are not a [`TopicId`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum TopicIdError {
+    /// The text has no characters.
+    Empty,
+    /// The text has a character that URL-safe base64 does not have.
+    /// `position` counts characters from zero.
+    InvalidCharacter {
+        input: String,
+        character: char,
+        position: usize,
+    },
+    /// The text is not 22 characters of URL-safe base64 that stand for 16 bytes.
+    Malformed { input: String },
+    /// The UUID is all zeros, which Kafka writes for "no topic ID".
+    Reserved { value: String },
+}
+
+impl fmt::Display for TopicIdError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Empty => f.write_str("topic ID is empty"),
+            Self::InvalidCharacter {
+                input,
+                character,
+                position,
+            } => {
+                write!(
+                    f,
+                    "topic ID {input:?} has the invalid character {character:?} at position {position}"
+                )
+            }
+            Self::Malformed { input } => write!(f, "topic ID {input:?} does not have the form {TEXT_FORM}"),
+            Self::Reserved { value } => write!(f, "topic ID cannot be {value:?}"),
+        }
+    }
+}
+
+impl std::error::Error for TopicIdError {}
 
 #[cfg(test)]
 mod tests {
@@ -218,24 +253,17 @@ mod tests {
         assert!(TopicName::new("a".repeat(249)).is_ok());
         assert_eq!(
             TopicName::new("a".repeat(250)),
-            Err(KernelError::TooLong {
-                what: "topic name",
-                len: 250,
-                max: 249
-            })
+            Err(TopicNameError::TooLong { len: 250, max: 249 })
         );
-        assert_eq!(TopicName::new(""), Err(KernelError::Empty { what: "topic name" }));
+        assert_eq!(TopicName::new(""), Err(TopicNameError::Empty));
         assert_eq!(
             TopicName::new(".."),
-            Err(KernelError::Reserved {
-                what: "topic name",
-                value: "..".into()
-            })
+            Err(TopicNameError::Reserved { value: "..".into() })
         );
         assert_eq!(
             TopicName::new("orders.*"),
-            Err(KernelError::InvalidCharacter {
-                what: "topic name",
+            Err(TopicNameError::InvalidCharacter {
+                input: "orders.*".to_owned(),
                 character: '*',
                 position: 7
             })
@@ -308,8 +336,7 @@ mod tests {
 
     #[test]
     fn a_topic_id_is_not_all_zeros() {
-        let reserved = KernelError::Reserved {
-            what: "topic ID",
+        let reserved = TopicIdError::Reserved {
             value: "AAAAAAAAAAAAAAAAAAAAAA".into(),
         };
 
@@ -373,15 +400,11 @@ mod tests {
         for text in ["Zm9v", "Zm9vYmFyYmF6cXV4MTIzN", "Zm9vYmFyYmF6cXV4MTIzNAA"] {
             assert_eq!(
                 text.parse::<TopicId>(),
-                Err(KernelError::Malformed {
-                    what: "topic ID",
-                    input: text.to_owned(),
-                    expected: "22 characters of URL-safe base64"
-                }),
+                Err(TopicIdError::Malformed { input: text.to_owned() }),
                 "{text:?}"
             );
         }
-        assert_eq!("".parse::<TopicId>(), Err(KernelError::Empty { what: "topic ID" }));
+        assert_eq!("".parse::<TopicId>(), Err(TopicIdError::Empty));
     }
 
     #[test]
@@ -394,8 +417,8 @@ mod tests {
         ] {
             assert_eq!(
                 text.parse::<TopicId>(),
-                Err(KernelError::InvalidCharacter {
-                    what: "topic ID",
+                Err(TopicIdError::InvalidCharacter {
+                    input: text.to_owned(),
                     character,
                     position
                 }),
@@ -409,7 +432,7 @@ mod tests {
         // `B` ends in the bits 0001, which no UUID has room for.
         assert!(matches!(
             "Zm9vYmFyYmF6cXV4MTIzNB".parse::<TopicId>(),
-            Err(KernelError::Malformed { .. })
+            Err(TopicIdError::Malformed { .. })
         ));
     }
 
@@ -417,5 +440,34 @@ mod tests {
     fn topic_ids_order_as_their_bytes() {
         assert!(TopicId::try_from(1u128).unwrap() < TopicId::try_from(2u128).unwrap());
         assert!(TopicId::new([1; 16]).unwrap() < TopicId::new([2; 16]).unwrap());
+    }
+
+    #[test]
+    fn the_error_of_a_topic_id_says_what_is_wrong_with_it() {
+        let cases = [
+            (TopicIdError::Empty, "topic ID is empty"),
+            (
+                TopicIdError::InvalidCharacter {
+                    input: "Zm9+".into(),
+                    character: '+',
+                    position: 3,
+                },
+                "topic ID \"Zm9+\" has the invalid character '+' at position 3",
+            ),
+            (
+                TopicIdError::Malformed { input: "Zm9v".into() },
+                "topic ID \"Zm9v\" does not have the form 22 characters of URL-safe base64",
+            ),
+            (
+                TopicIdError::Reserved {
+                    value: "AAAAAAAAAAAAAAAAAAAAAA".into(),
+                },
+                "topic ID cannot be \"AAAAAAAAAAAAAAAAAAAAAA\"",
+            ),
+        ];
+
+        for (error, message) in cases {
+            assert_eq!(error.to_string(), message);
+        }
     }
 }

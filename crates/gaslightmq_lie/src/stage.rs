@@ -1,7 +1,7 @@
 use std::fmt;
 use std::str::FromStr;
 
-use crate::LieError;
+use crate::LieKind;
 
 /// Where in a call a lie acts.
 ///
@@ -13,7 +13,7 @@ use crate::LieError;
 /// A refusal before forwarding writes nothing.
 /// A refusal after the response tells the client that a Produce failed, though the backend wrote the records.
 ///
-/// A [`LieKind`](crate::LieKind) says at which stages it can act, and at which one it acts by default.
+/// A [`LieKind`] says at which stages it can act, and at which one it acts by default.
 ///
 /// ```
 /// use gaslightmq_lie::prelude::*;
@@ -22,7 +22,7 @@ use crate::LieError;
 /// assert_eq!(stage, Stage::AfterResponse);
 /// assert_eq!(stage.to_string(), "after");
 /// assert_eq!(stage.phrase(), "after the response");
-/// # Ok::<(), LieError>(())
+/// # Ok::<(), StageError>(())
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Stage {
@@ -63,18 +63,48 @@ impl fmt::Display for Stage {
 
 /// Reads the name a file uses, as [`Display`](fmt::Display) writes it.
 impl FromStr for Stage {
-    type Err = LieError;
+    type Err = StageError;
 
     fn from_str(name: &str) -> Result<Self, Self::Err> {
         Self::ALL
             .into_iter()
             .find(|stage| stage.name() == name)
-            .ok_or_else(|| LieError::UnknownName {
-                what: "stage",
-                name: name.to_owned(),
-            })
+            .ok_or_else(|| StageError::Unknown { name: name.to_owned() })
     }
 }
+
+/// Why a text is not a [`Stage`], or why a lie cannot act at one.
+///
+/// ```
+/// use gaslightmq_lie::prelude::*;
+///
+/// let error = "during".parse::<Stage>().unwrap_err();
+/// assert_eq!(error, StageError::Unknown { name: "during".to_owned() });
+/// assert_eq!(error.to_string(), "no stage is called \"during\"");
+///
+/// let error = LieKind::Silence.stage_for(Some(Stage::AfterResponse)).unwrap_err();
+/// assert_eq!(error.to_string(), "silence cannot act after the response");
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum StageError {
+    /// No stage has this name.
+    Unknown { name: String },
+    /// The stage exists, and a lie of this kind never acts at it.
+    /// Silence always acts before forwarding, and a rewrite always acts after the response.
+    NotAllowed { kind: LieKind, stage: Stage },
+}
+
+impl fmt::Display for StageError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Unknown { name } => write!(f, "no stage is called {name:?}"),
+            Self::NotAllowed { kind, stage } => write!(f, "{kind} cannot act {}", stage.phrase()),
+        }
+    }
+}
+
+impl std::error::Error for StageError {}
 
 #[cfg(test)]
 mod tests {
@@ -110,11 +140,36 @@ mod tests {
         for name in ["Before", "before forwarding", "during", ""] {
             assert_eq!(
                 name.parse::<Stage>(),
-                Err(LieError::UnknownName {
-                    what: "stage",
-                    name: name.to_owned()
-                }),
+                Err(StageError::Unknown { name: name.to_owned() }),
             );
+        }
+    }
+
+    #[test]
+    fn a_stage_error_says_what_is_wrong() {
+        let cases = [
+            (
+                StageError::Unknown { name: "during".into() },
+                "no stage is called \"during\"",
+            ),
+            (
+                StageError::NotAllowed {
+                    kind: LieKind::Silence,
+                    stage: Stage::AfterResponse,
+                },
+                "silence cannot act after the response",
+            ),
+            (
+                StageError::NotAllowed {
+                    kind: LieKind::Topology,
+                    stage: Stage::BeforeForwarding,
+                },
+                "topology cannot act before forwarding",
+            ),
+        ];
+
+        for (error, message) in cases {
+            assert_eq!(error.to_string(), message);
         }
     }
 }

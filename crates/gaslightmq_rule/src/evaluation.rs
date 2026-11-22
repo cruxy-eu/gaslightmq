@@ -1,13 +1,13 @@
 use gaslightmq_clock::Instant;
 use gaslightmq_field::prelude::*;
 use gaslightmq_incident::{Incident, IncidentError, Subjects};
-use gaslightmq_lie::TargetedLie;
+use gaslightmq_lie::{Priority, TargetedLie};
 use gaslightmq_selector::Pass;
 use gaslightmq_trigger::{Confirmed, Firing, Rolled, SessionCounters};
 
-use crate::{Action, ArmedRule, Priority, RuleName};
+use crate::{Action, ArmedRule, RuleName};
 
-/// What a rule that fired does to its call, or to the world.
+/// The action of a rule that fired: what the rule does to its call, or to the world.
 ///
 /// An [`Action`] is a definition, and the call that fires the rule makes it specific:
 ///
@@ -15,7 +15,7 @@ use crate::{Action, ArmedRule, Priority, RuleName};
 /// - An incident that leaves its subject out gets it from this call.
 ///   A call that targets three partitions moves three leaders.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Effect {
+pub enum FiredAction {
     /// The lie, on the part of the call it changes.
     /// Whether it applies is for the other lies on the call to say: one can shadow it or pre-empt it.
     Lie(TargetedLie),
@@ -24,35 +24,31 @@ pub enum Effect {
     Incidents(Vec<Incident>),
 }
 
-impl Effect {
+impl FiredAction {
     /// The lie, when the rule fired one.
     pub const fn lie(&self) -> Option<&TargetedLie> {
         match self {
-            Effect::Lie(lie) => Some(lie),
-            Effect::Incidents(_) => None,
+            FiredAction::Lie(lie) => Some(lie),
+            FiredAction::Incidents(_) => None,
         }
     }
 
     /// The incidents the rule fired, and none for a rule with a lie.
     pub fn incidents(&self) -> &[Incident] {
         match self {
-            Effect::Lie(_) => &[],
-            Effect::Incidents(incidents) => incidents,
+            FiredAction::Lie(_) => &[],
+            FiredAction::Incidents(incidents) => incidents,
         }
     }
 
     /// What `action` does when its rule fires on `call`, where the rule's selector matched `target`.
-    fn of<S: FieldSource + ?Sized>(
-        action: &Action,
-        call: &S,
-        target: &Target,
-    ) -> Result<Option<Effect>, IncidentError> {
+    fn of<S: FieldSource + ?Sized>(action: &Action, call: &S, target: &Target) -> Result<FiredAction, IncidentError> {
         match action {
-            // Only a target without a part is no target of a lie, and `Snapshot::evaluate` passes none on.
-            Action::Lie(lie) => Ok(lie.clone().on(target.clone()).ok().map(Effect::Lie)),
+            // Every target is the whole call or at least one part, so every target takes the lie.
+            Action::Lie(lie) => Ok(FiredAction::Lie(lie.clone().on(target.clone()))),
             Action::Incident(incident) => {
                 let incidents = incident.resolve(&Self::subjects(call, target))?;
-                Ok(Some(Effect::Incidents(incidents)))
+                Ok(FiredAction::Incidents(incidents))
             }
         }
     }
@@ -98,7 +94,7 @@ impl Effect {
 /// |---|---|---|
 /// | [`target`](Self::target) | Matched | The part of the call the selector matched. |
 /// | [`rolled`](Self::rolled) | Rolled | The match number, the die roll, the time window, the budget, and how it came out. |
-/// | [`effect`](Self::effect) | Fired | What the rule does: its lie on its target, or its incidents. |
+/// | [`fired_action`](Self::fired_action) | Fired | What the rule does: its lie on its target, or its incidents. |
 /// | [`take_firing`](Self::take_firing) | | The firing that the call settles. |
 ///
 /// # Fired means one thing
@@ -132,7 +128,7 @@ pub struct RuleEvaluation {
     priority: Priority,
     target: Target,
     rolled: Rolled,
-    effect: Option<Effect>,
+    fired_action: Option<FiredAction>,
     firing: Option<Firing>,
     missing_subject: Option<IncidentError>,
 }
@@ -148,15 +144,14 @@ impl RuleEvaluation {
         session: &mut SessionCounters,
     ) -> Self {
         let evaluated = rule.arming().evaluate(now, session);
-        let (rolled, effect, firing, missing_subject) = if evaluated.fired() {
-            match Effect::of(rule.rule().action(), call, &target) {
-                Ok(Some(effect)) => {
+        let (rolled, fired_action, firing, missing_subject) = if evaluated.fired() {
+            match FiredAction::of(rule.rule().action(), call, &target) {
+                Ok(action) => {
                     let (rolled, firing) = evaluated.into_parts();
-                    (rolled, Some(effect), firing, None)
+                    (rolled, Some(action), firing, None)
                 }
-                // The action has nothing to act on in this call, so the rule does not fire after all.
-                // The firing goes back, and the record says so.
-                Ok(None) => (evaluated.nothing_to_act_on(), None, None, None),
+                // The incident has no subject in this call, so the rule does not fire after all.
+                // The firing goes back, and the record says so and keeps the reason.
                 Err(error) => (evaluated.nothing_to_act_on(), None, None, Some(error)),
             }
         } else {
@@ -167,7 +162,7 @@ impl RuleEvaluation {
             priority,
             target,
             rolled,
-            effect,
+            fired_action,
             firing,
             missing_subject,
         }
@@ -203,26 +198,26 @@ impl RuleEvaluation {
         &self.rolled
     }
 
-    /// Whether the rule fired, so it has an [effect](Self::effect).
+    /// Whether the rule fired, so it has an [action on this call](Self::fired_action).
     ///
     /// The outcome of [`rolled`](Self::rolled) says the same.
     pub fn fired(&self) -> bool {
-        self.effect.is_some()
+        self.fired_action.is_some()
     }
 
     /// What the rule does, when it fired.
-    pub fn effect(&self) -> Option<&Effect> {
-        self.effect.as_ref()
+    pub fn fired_action(&self) -> Option<&FiredAction> {
+        self.fired_action.as_ref()
     }
 
     /// The lie the rule fired, on the part of the call it changes.
     pub fn lie(&self) -> Option<&TargetedLie> {
-        self.effect.as_ref().and_then(Effect::lie)
+        self.fired_action.as_ref().and_then(FiredAction::lie)
     }
 
     /// The incidents the rule fired, and none for a rule that did not fire or that has a lie.
     pub fn incidents(&self) -> &[Incident] {
-        self.effect.as_ref().map_or(&[], Effect::incidents)
+        self.fired_action.as_ref().map_or(&[], FiredAction::incidents)
     }
 
     /// Why the trigger agreed and the rule did not fire: the incident takes a subject from the call,

@@ -23,7 +23,10 @@ use gaslightmq_kernel::prelude::*;
 use serde::de::{self, Deserialize, Deserializer, MapAccess, Visitor};
 use serde::ser::{Serialize, SerializeMap, Serializer};
 
-use crate::{Aspect, CombinationClass, HangUpLie, LieDefinition, LieKind, RefusalLie, Stage, TargetedLie, TimingLie};
+use crate::{
+    Aspect, CombinationClass, HangUpLie, LieDefinition, LieKind, RefusalLie, Stage, TargetedLie, TargetedLieError,
+    TimingLie,
+};
 
 const LIE: &str = "lie";
 const ERROR: &str = "error";
@@ -141,8 +144,9 @@ impl Fields {
     fn into_targeted<E: de::Error>(mut self) -> Result<TargetedLie, E> {
         let target = self.target.take().unwrap_or(Target::Call);
         let lie = self.into_definition()?;
-        if lie.kind().targets_whole_call() && !target.is_call() {
-            return Err(E::custom(format_args!("{} always targets the whole call", lie.kind())));
+        let kind = lie.kind();
+        if kind.targets_whole_call() && !target.is_call() {
+            return Err(E::custom(TargetedLieError::PartsNotAllowed { kind }));
         }
         Ok(TargetedLie { lie, target })
     }

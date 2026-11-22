@@ -15,9 +15,9 @@ text_value! {
     /// let client = ClientId::new("order-ingest")?;
     /// assert_eq!(client, "order-ingest");
     /// assert_eq!(ClientId::new("")?.as_str(), "");
-    /// # Ok::<(), KernelError>(())
+    /// # Ok::<(), Box<dyn std::error::Error>>(())
     /// ```
-    ClientId, "client ID", max: text::MAX_STRING_LEN, rule: text::any
+    ClientId, ClientIdError, "client ID", max: text::MAX_STRING_LEN, rule: any
 }
 
 #[cfg(test)]
@@ -25,7 +25,6 @@ mod tests {
     use std::collections::HashSet;
 
     use super::*;
-    use crate::KernelError;
 
     #[test]
     fn a_client_id_takes_any_text() {
@@ -40,8 +39,7 @@ mod tests {
         assert!(ClientId::new("a".repeat(32_767)).is_ok());
         assert_eq!(
             ClientId::new("a".repeat(32_768)),
-            Err(KernelError::TooLong {
-                what: "client ID",
+            Err(ClientIdError::TooLong {
                 len: 32_768,
                 max: 32_767
             })

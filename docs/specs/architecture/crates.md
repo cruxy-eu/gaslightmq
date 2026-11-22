@@ -41,6 +41,31 @@ Two crates stand apart: the facade is plain `gaslightmq`, and the binary is `gmq
   It shares the engine's definition types.
   It runs none of the engine's behaviour and none of the Kafka codec.
   See [what compiles to WebAssembly](#what-compiles-to-webassembly).
+- **A name says what a thing means.**
+  A type, a variant, a method or a module carries a word of the [glossary](../domains/README.md#glossary),
+  or it says what it holds or what went wrong.
+  It never says which crate, module or type a thing came from, and it never says how the thing is built.
+  A partition number that is not a number is an `InvalidPartition`, and not a `Kernel` error.
+- **A value object owns its error.**
+  A type that checks its value has an error type of its own, named after it:
+  `TopicName` has `TopicNameError`, and `Offset` has `OffsetError`.
+  Its constructor, its `TryFrom`, its `FromStr` and its `serde` form all return that type.
+  The error holds only what can go wrong with that value, and each variant says what is wrong:
+  a topic name is `Empty` or `TooLong`, and an offset is `Negative`.
+  A type made of parts says which part failed, and it keeps the error of that part:
+  `TopicPartitionError::InvalidPartition` holds a `PartitionNumberError`.
+  A whole that checks its members does the same: `SelectorSet` has `SelectorSetError`.
+  No crate has one error type for everything in it.
+  Types may share their checks as private helpers.
+- **An error says everything in one message.**
+  A file reader, the control plane and the UI show one line, and not a chain of causes.
+  A variant that holds another error names its own value first, and then writes that error, once.
+  It names the text it read too, when the other error read only a part of it:
+  ``lifetime `0 firings`: a count is at least one``.
+  Its `source()` returns `None`, because a reporter that walks the chain would print the cause twice.
+  The variant keeps the other error in a field, named `error`, for code that wants to look at it.
+  The path of a value in a file comes from the [reader](storage.md#reading), and not from the error of the value:
+  `trigger.every: a count is at least one`.
 
 The workspace rules apply to every crate:
 Rust edition 2024, native async traits and workspace dependency versions.
@@ -101,7 +126,7 @@ Every other crate speaks in them.
 | `field` | The [field vocabulary](../domains/targeting.md#fields): field names, their typed values, and the `FieldSource` trait that a live call and a recorded call both implement. Also the parts of a call, and the [target](../domains/lies-and-incidents.md#target) that a match yields. Every district of the town plan [shares this vocabulary](../townplan/README.md#targeting-is-a-shared-kernel). | `kernel`, `clock` |
 | `clock` | The [clock](README.md#clock): a `Clock` trait, the virtual clock, and instants that do not come from the system. | — |
 | `wire` | The Kafka codec: frames, headers, lazily decoded bodies and record batches. | — |
-| `lie` | The [lie](../domains/lies-and-incidents.md#lies) vocabulary: kind, stage, combination class and aspect, the definition of every lie kind as data, and a lie with the [target](../domains/lies-and-incidents.md#target) it applies to. It holds no behaviour. See [lies as crates](#lies-as-crates). | `field`, `kernel`, `clock` |
+| `lie` | The [lie](../domains/lies-and-incidents.md#lies) vocabulary: kind, stage, combination class, aspect and priority, the definition of every lie kind as data, and a lie with the [target](../domains/lies-and-incidents.md#target) it applies to. It holds no behaviour. See [lies as crates](#lies-as-crates). | `field`, `kernel`, `clock` |
 | `incident` | The [incident](../domains/lies-and-incidents.md#incidents) vocabulary, the expansion into consequences, and the support a backend declares for each kind of incident. | `kernel` |
 | `call` | The [call](../domains/observation.md#call) record: identity, request summary, truth, delivered response, verdict, explanation and timing. | `field`, `lie`, `incident` |
 
@@ -114,7 +139,7 @@ Every other crate speaks in them.
 | `rule` | The rule definition, the [preset](../domains/lies-and-incidents.md#presets), the rule's state, and the immutable snapshot of armed rules in priority order. The snapshot [evaluates a call](../domains/rules.md#evaluating-one-call): for each pass and each matching rule, the target, what the trigger rolled, and the lie or the incidents it fired. | `selector`, `lie`, `incident`, `trigger`, `field`, `kernel`, `clock` |
 | `combine` | [How lies combine](../domains/lies-and-incidents.md#how-lies-combine): which lies conflict, which win by priority, which are shadowed or pre-empted, across [both evaluation passes](request-pipeline.md#two-evaluation-passes). Also what the lies that apply do to the call at each stage: the refusals and rewrites per target, the summed delay and the maximum throttle. | `lie`, `field`, `clock` |
 | `wire_edit` | Surgery on requests and responses: remove partitions, merge responses, synthesize an error response for any API, map topic IDs to names. | `wire` |
-| `lie_api` | The contract between the pipeline and a lie kind: the `Lie` trait, and the effect a lie asks the pipeline for. Also the behaviour of timing, silence and hang-up. See [lies as crates](#lies-as-crates). | `lie`, `wire` |
+| `lie_api` | The contract between the pipeline and a lie kind: the `Lie` trait, and the effect that one lie asks the pipeline for. Also the behaviour of timing, silence and hang-up. See [lies as crates](#lies-as-crates). | `lie`, `wire` |
 | `lie_refusal` | Refusals for every API, before forwarding and after the response. | `lie`, `lie_api`, `wire_edit` |
 | `lie_topology` | Rewrites of Metadata, `FindCoordinator` and `DescribeCluster`. | `lie`, `lie_api`, `wire_edit` |
 | `lie_data` | Altered, dropped, duplicated, reordered and corrupted records. | `lie`, `lie_api`, `wire_edit`, `schema` |
@@ -166,7 +191,7 @@ Transactions arrive later as `sim_txn`, next to `sim_log` and `sim_group`.
 | Crate | Holds | Depends on |
 |---|---|---|
 | `environment` | [Environments](storage.md#environments), [secret references](storage.md#secrets), and the order in which flags, variables and files set a value. It never reads a secret. | — |
-| `workspace` | The whole set of definitions as one model: cross-reference validation, renames that cascade, and the YAML layout of the [workspace](storage.md#workspace). It works on file contents, not on files. | `selector`, `lie`, `incident`, `rule`, `scenario`, `surface`, `world`, `environment` |
+| `workspace` | The whole set of definitions as one model: cross-reference validation, renames that cascade, and the YAML layout of the [workspace](storage.md#workspace). A [reading error](storage.md#reading) names the path of the key that failed. It works on file contents, not on files. | `selector`, `lie`, `incident`, `rule`, `scenario`, `surface`, `world`, `environment` |
 | `workspace_fs` | Loading, watching and writing back, the scratch file, and reading the files that secret references name. This crate does IO. | `workspace` |
 
 ### Control
@@ -356,7 +381,7 @@ A lie has a definition and a behaviour, and they live in different crates.
 | Part | Crate | Holds | Reaches `wire` |
 |---|---|---|---|
 | Definition | `lie` | Every lie kind as data: its parameters, its stage and its `serde` mapping. | No |
-| Contract | `lie_api` | The `Lie` trait, and the effect a lie asks the pipeline for. | Yes |
+| Contract | `lie_api` | The `Lie` trait, and the effect that one lie asks the pipeline for. | Yes |
 | Behaviour | One crate per kind, listed below | What a kind does to a request or a response. | Yes |
 
 Rules, call records, the workspace and the control plane carry lie definitions.

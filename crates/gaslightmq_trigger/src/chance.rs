@@ -3,8 +3,6 @@
 use std::fmt;
 use std::str::FromStr;
 
-use crate::TriggerError;
-
 /// One whole, in parts per million.
 const WHOLE: u32 = 1_000_000;
 /// One percent, in parts per million.
@@ -33,7 +31,7 @@ const DECIMALS: usize = 4;
 /// assert_eq!("0.5 %".parse::<Chance>()?.to_string(), "0.5%");
 /// assert!("40".parse::<Chance>().is_err());
 /// assert!("140%".parse::<Chance>().is_err());
-/// # Ok::<(), TriggerError>(())
+/// # Ok::<(), ChanceError>(())
 /// ```
 ///
 /// With the `serde` feature, a chance serializes as its text.
@@ -51,10 +49,10 @@ impl Chance {
     ///
     /// # Errors
     ///
-    /// [`TriggerError::ChanceOutOfRange`] when `ppm` is above one million.
-    pub fn from_ppm(ppm: u32) -> Result<Chance, TriggerError> {
+    /// [`ChanceError::OutOfRange`] when `ppm` is above one million.
+    pub fn from_ppm(ppm: u32) -> Result<Chance, ChanceError> {
         if ppm > WHOLE {
-            return Err(TriggerError::ChanceOutOfRange {
+            return Err(ChanceError::OutOfRange {
                 chance: Percentage(u64::from(ppm)).to_string(),
             });
         }
@@ -65,8 +63,8 @@ impl Chance {
     ///
     /// # Errors
     ///
-    /// [`TriggerError::ChanceOutOfRange`] when `percent` is above one hundred.
-    pub fn from_percent(percent: u8) -> Result<Chance, TriggerError> {
+    /// [`ChanceError::OutOfRange`] when `percent` is above one hundred.
+    pub fn from_percent(percent: u8) -> Result<Chance, ChanceError> {
         Chance::from_ppm(u32::from(percent) * PERCENT)
     }
 
@@ -83,13 +81,13 @@ impl Chance {
 
 /// Reads a percentage with at most four decimals, such as `40%`, `0.5%` or `12.5 %`.
 impl FromStr for Chance {
-    type Err = TriggerError;
+    type Err = ChanceError;
 
-    fn from_str(text: &str) -> Result<Chance, TriggerError> {
+    fn from_str(text: &str) -> Result<Chance, ChanceError> {
         let ppm = parse_percentage(text)?;
         match u32::try_from(ppm) {
             Ok(ppm) if ppm <= WHOLE => Ok(Chance(ppm)),
-            _ => Err(TriggerError::ChanceOutOfRange {
+            _ => Err(ChanceError::OutOfRange {
                 chance: text.to_owned(),
             }),
         }
@@ -105,6 +103,45 @@ impl fmt::Display for Chance {
     }
 }
 
+/// Why a number or a text is not a [`Chance`].
+///
+/// ```
+/// use gaslightmq_trigger::prelude::*;
+///
+/// let error = "40".parse::<Chance>().unwrap_err();
+/// assert_eq!(error, ChanceError::NotAPercentage { input: "40".into() });
+/// assert_eq!(error.to_string(), "`40` is not a percentage such as `40%`");
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum ChanceError {
+    /// The text is not a percentage such as `40%`.
+    NotAPercentage { input: String },
+    /// The text has more than four decimals, and a chance is a whole number of parts per million.
+    TooFine { input: String },
+    /// The chance is above `100%`.
+    /// `chance` is the percentage as the text wrote it, or as the number reads.
+    OutOfRange { chance: String },
+}
+
+impl fmt::Display for ChanceError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::NotAPercentage { input } => {
+                write!(f, "`{input}` is not a percentage such as `40%`")
+            }
+            Self::TooFine { input } => {
+                write!(f, "chance `{input}` has more than four decimals")
+            }
+            Self::OutOfRange { chance } => {
+                write!(f, "chance `{chance}` is not between 0% and 100%")
+            }
+        }
+    }
+}
+
+impl std::error::Error for ChanceError {}
+
 /// What a die rolled for one match.
 ///
 /// A roll is a whole number of parts per million, from `0` up to and not including one million.
@@ -119,7 +156,7 @@ impl fmt::Display for Chance {
 /// assert!(roll.is_under(chance));
 /// assert!(!Roll::from_ppm(400_000)?.is_under(chance));
 /// assert_eq!(roll.to_string(), "39.9999%");
-/// # Ok::<(), TriggerError>(())
+/// # Ok::<(), Box<dyn std::error::Error>>(())
 /// ```
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Roll(u32);
@@ -135,10 +172,10 @@ impl Roll {
     ///
     /// # Errors
     ///
-    /// [`TriggerError::RollOutOfRange`] when `ppm` is one million or more.
-    pub fn from_ppm(ppm: u32) -> Result<Roll, TriggerError> {
+    /// [`RollError::OutOfRange`] when `ppm` is one million or more.
+    pub fn from_ppm(ppm: u32) -> Result<Roll, RollError> {
         if ppm >= WHOLE {
-            return Err(TriggerError::RollOutOfRange { ppm });
+            return Err(RollError::OutOfRange { ppm });
         }
         Ok(Roll(ppm))
     }
@@ -170,6 +207,26 @@ impl fmt::Display for Roll {
     }
 }
 
+/// Why a number is not a [`Roll`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum RollError {
+    /// The number is one million or more, and a die never rolls a whole million.
+    OutOfRange { ppm: u32 },
+}
+
+impl fmt::Display for RollError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::OutOfRange { ppm } => {
+                write!(f, "a roll of {ppm} parts per million is not below one million")
+            }
+        }
+    }
+}
+
+impl std::error::Error for RollError {}
+
 /// Parts per million as a percentage with as few decimals as it needs.
 struct Percentage(u64);
 
@@ -187,8 +244,8 @@ impl fmt::Display for Percentage {
 
 /// Reads a percentage as parts per million.
 /// A percentage too large for a `u64` reads as `u64::MAX`, which is above every chance.
-fn parse_percentage(text: &str) -> Result<u64, TriggerError> {
-    let not_a_percentage = || TriggerError::NotAPercentage { text: text.to_owned() };
+fn parse_percentage(text: &str) -> Result<u64, ChanceError> {
+    let not_a_percentage = || ChanceError::NotAPercentage { input: text.to_owned() };
     let digits = |part: &str| !part.is_empty() && part.bytes().all(|byte| byte.is_ascii_digit());
 
     let number = text.strip_suffix('%').ok_or_else(not_a_percentage)?;
@@ -202,7 +259,7 @@ fn parse_percentage(text: &str) -> Result<u64, TriggerError> {
         return Err(not_a_percentage());
     }
     if decimals.len() > DECIMALS {
-        return Err(TriggerError::ChanceTooFine { text: text.to_owned() });
+        return Err(ChanceError::TooFine { input: text.to_owned() });
     }
 
     let padded = format!("{decimals:0<DECIMALS$}");
@@ -224,7 +281,7 @@ mod tests {
             .unwrap_or_else(|error| panic!("`{text}` should parse: {error}"))
     }
 
-    fn error(text: &str) -> TriggerError {
+    fn error(text: &str) -> ChanceError {
         text.parse::<Chance>().expect_err(text)
     }
 
@@ -305,7 +362,7 @@ mod tests {
         ] {
             assert_eq!(
                 error(text),
-                TriggerError::NotAPercentage { text: text.into() },
+                ChanceError::NotAPercentage { input: text.into() },
                 "`{text}`"
             );
         }
@@ -320,21 +377,17 @@ mod tests {
             "99999999999999999999999999%",
             "1844674407370955.1616%",
         ] {
-            assert_eq!(
-                error(text),
-                TriggerError::ChanceOutOfRange { chance: text.into() },
-                "`{text}`"
-            );
+            assert_eq!(error(text), ChanceError::OutOfRange { chance: text.into() }, "`{text}`");
         }
         assert_eq!(
             Chance::from_ppm(1_000_001),
-            Err(TriggerError::ChanceOutOfRange {
+            Err(ChanceError::OutOfRange {
                 chance: "100.0001%".into()
             }),
         );
         assert_eq!(
             Chance::from_percent(101),
-            Err(TriggerError::ChanceOutOfRange { chance: "101%".into() }),
+            Err(ChanceError::OutOfRange { chance: "101%".into() }),
         );
         assert_eq!(Chance::from_percent(100), Ok(Chance::ALWAYS));
     }
@@ -342,12 +395,35 @@ mod tests {
     #[test]
     fn a_chance_is_no_finer_than_a_part_per_million() {
         for text in ["0.00001%", "40.12345%", "0.00005%"] {
-            assert_eq!(
-                error(text),
-                TriggerError::ChanceTooFine { text: text.into() },
-                "`{text}`"
-            );
+            assert_eq!(error(text), ChanceError::TooFine { input: text.into() }, "`{text}`");
         }
+    }
+
+    #[test]
+    fn a_chance_error_says_what_is_wrong() {
+        let cases = [
+            (
+                ChanceError::NotAPercentage { input: "40".into() },
+                "`40` is not a percentage such as `40%`",
+            ),
+            (
+                ChanceError::TooFine {
+                    input: "0.00001%".into(),
+                },
+                "chance `0.00001%` has more than four decimals",
+            ),
+            (
+                ChanceError::OutOfRange { chance: "140%".into() },
+                "chance `140%` is not between 0% and 100%",
+            ),
+        ];
+        for (error, message) in cases {
+            assert_eq!(error.to_string(), message);
+        }
+        assert_eq!(
+            Chance::from_ppm(1_400_000).unwrap_err().to_string(),
+            "chance `140%` is not between 0% and 100%",
+        );
     }
 
     #[test]
@@ -377,9 +453,14 @@ mod tests {
     #[test]
     fn a_roll_is_below_one_million() {
         assert_eq!(Roll::from_ppm(999_999), Ok(Roll::HIGHEST));
+        assert_eq!(Roll::from_ppm(1_000_000), Err(RollError::OutOfRange { ppm: 1_000_000 }));
+    }
+
+    #[test]
+    fn a_roll_error_says_what_is_wrong() {
         assert_eq!(
-            Roll::from_ppm(1_000_000),
-            Err(TriggerError::RollOutOfRange { ppm: 1_000_000 })
+            RollError::OutOfRange { ppm: 1_000_000 }.to_string(),
+            "a roll of 1000000 parts per million is not below one million",
         );
     }
 

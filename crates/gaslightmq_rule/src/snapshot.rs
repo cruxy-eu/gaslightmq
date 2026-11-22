@@ -4,58 +4,11 @@ use std::fmt;
 use gaslightmq_clock::Instant;
 use gaslightmq_field::prelude::*;
 use gaslightmq_kernel::prelude::*;
+use gaslightmq_lie::Priority;
 use gaslightmq_selector::{ApiIndex, Pass};
 use gaslightmq_trigger::SessionCounters;
 
-use crate::{ArmedRule, PassEvaluation, RuleError, RuleEvaluation, RuleName};
-
-/// Where a rule stands among the armed rules: its position in the [`Snapshot`], counted from zero.
-///
-/// The first rule has the highest priority, and it wins a conflict with every rule after it.
-/// Priorities sort in that order, so the smallest one is the highest.
-///
-/// Both evaluation passes share one order.
-/// A lie of the request pass and a lie of the response pass that meet after the response compare by priority too.
-///
-/// ```
-/// use gaslightmq_rule::prelude::*;
-///
-/// let first = Priority::HIGHEST;
-/// let second = Priority::new(1);
-///
-/// assert!(first.outranks(second));
-/// assert!(first < second);
-/// assert_eq!(second.to_string(), "#2");
-/// ```
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Priority(usize);
-
-impl Priority {
-    /// The priority of the first rule, which wins every conflict.
-    pub const HIGHEST: Priority = Priority(0);
-
-    /// The priority of the rule at that position, counted from zero.
-    pub const fn new(position: usize) -> Self {
-        Self(position)
-    }
-
-    /// The position among the armed rules, counted from zero.
-    pub const fn position(self) -> usize {
-        self.0
-    }
-
-    /// Whether a rule of this priority wins a conflict with a rule of the `other` one.
-    pub const fn outranks(self, other: Priority) -> bool {
-        self.0 < other.0
-    }
-}
-
-/// Writes the rank as people count it: `#1` for the highest priority.
-impl fmt::Display for Priority {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "#{}", self.0.saturating_add(1))
-    }
-}
+use crate::{ArmedRule, PassEvaluation, RuleEvaluation, RuleName};
 
 /// The armed rules at one moment, in priority order.
 ///
@@ -140,15 +93,15 @@ impl Snapshot {
     ///
     /// # Errors
     ///
-    /// [`RuleError::DuplicateRule`] when two of the rules have one name.
+    /// [`SnapshotError::DuplicateName`] when two of the rules have one name.
     /// An explanation names a rule, so one name is one rule.
-    pub fn new(rules: impl IntoIterator<Item = ArmedRule>) -> Result<Self, RuleError> {
+    pub fn new(rules: impl IntoIterator<Item = ArmedRule>) -> Result<Self, SnapshotError> {
         let rules: Vec<ArmedRule> = rules.into_iter().collect();
 
         let mut by_name = BTreeMap::new();
         for (position, rule) in rules.iter().enumerate() {
             if by_name.insert(rule.name().clone(), Priority::new(position)).is_some() {
-                return Err(RuleError::DuplicateRule {
+                return Err(SnapshotError::DuplicateName {
                     name: rule.name().clone(),
                 });
             }
@@ -233,9 +186,7 @@ impl Snapshot {
     ) -> PassEvaluation {
         let mut rules = Vec::new();
         for (priority, target) in self.index(pass).matches(call) {
-            // A selector that matches no part does not match the call.
-            let matched_something = target.is_call() || target.parts().next().is_some();
-            if let Some(rule) = self.rule(*priority).filter(|_| matched_something) {
+            if let Some(rule) = self.rule(*priority) {
                 rules.push(RuleEvaluation::of(rule, *priority, target, call, now, session));
             }
         }
@@ -281,6 +232,24 @@ impl<'a> IntoIterator for &'a Snapshot {
     }
 }
 
+/// Why armed rules are not a [`Snapshot`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum SnapshotError {
+    /// Two of the rules have the same name.
+    DuplicateName { name: RuleName },
+}
+
+impl fmt::Display for SnapshotError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::DuplicateName { name } => write!(f, "two rules are named {:?}", name.as_str()),
+        }
+    }
+}
+
+impl std::error::Error for SnapshotError {}
+
 #[cfg(test)]
 mod tests {
     use gaslightmq_clock::TimeSpan;
@@ -290,7 +259,7 @@ mod tests {
     use gaslightmq_trigger::prelude::*;
 
     use super::*;
-    use crate::{Effect, HandFiring, PresetSet, Rule};
+    use crate::{FiredAction, HandFiring, PresetSet, Rule};
 
     const NOW: Instant = Instant::ZERO;
 
@@ -466,7 +435,7 @@ mod tests {
 
         let error = Snapshot::new([arm(&refuse), arm(&twice)]).unwrap_err();
 
-        assert_eq!(error, RuleError::DuplicateRule { name: name("Refuse") });
+        assert_eq!(error, SnapshotError::DuplicateName { name: name("Refuse") });
     }
 
     #[test]
@@ -524,9 +493,9 @@ mod tests {
         assert!(refuse.fired());
         assert_eq!(refuse.rolled().outcome(), TriggerOutcome::Fired);
         assert_eq!(
-            refuse.effect(),
-            Some(&Effect::Lie(
-                LieDefinition::from(flap()).on(refuse.target().clone()).unwrap()
+            refuse.fired_action(),
+            Some(&FiredAction::Lie(
+                LieDefinition::from(flap()).on(refuse.target().clone())
             ))
         );
         assert_eq!(
@@ -559,7 +528,7 @@ mod tests {
         assert!(!held.fired());
         assert_eq!(held.rolled().outcome(), TriggerOutcome::Held);
         assert_eq!(held.rolled().match_number(), Some(MatchNumber::new(1).unwrap()));
-        assert_eq!(held.effect(), None);
+        assert_eq!(held.fired_action(), None);
         assert_eq!(held.lie(), None);
         assert!(!held.is_unsettled());
         assert_eq!(first.fired().count(), 0);
@@ -771,7 +740,7 @@ mod tests {
         );
         // Nothing happened, so there is nothing to settle.
         assert!(!missed.fired());
-        assert_eq!(missed.effect(), None);
+        assert_eq!(missed.fired_action(), None);
         assert_eq!(missed.incidents(), []);
         assert!(!missed.is_unsettled());
         assert!(missed.take_firing().is_none());

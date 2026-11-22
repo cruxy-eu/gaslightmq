@@ -1,7 +1,7 @@
 use gaslightmq_field::prelude::*;
 use gaslightmq_lie::prelude::*;
 
-use crate::{Claim, FiredLie, Priority};
+use crate::{Claim, FiredLie};
 
 /// A target that a lie lost, and the lie it lost it to.
 ///
@@ -70,7 +70,7 @@ impl<Id> Loss<Id> {
 ///
 /// // Shadowed on one partition and applied on another: one firing.
 /// assert!(fate.counts());
-/// # Ok::<(), FieldError>(())
+/// # Ok::<(), PartError>(())
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Fate<Id> {

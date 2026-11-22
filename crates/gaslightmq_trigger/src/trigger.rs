@@ -3,7 +3,7 @@
 use std::fmt;
 use std::str::FromStr;
 
-use crate::{Chance, Count, MatchNumber, TimeWindow, TriggerError};
+use crate::{Chance, Count, MatchNumber, TimeWindow};
 
 /// Whose matches a rule counts: `per: rule` or `per: session`.
 ///
@@ -33,13 +33,13 @@ impl Per {
 }
 
 impl FromStr for Per {
-    type Err = TriggerError;
+    type Err = PerError;
 
-    fn from_str(text: &str) -> Result<Per, TriggerError> {
+    fn from_str(text: &str) -> Result<Per, PerError> {
         match text {
             "rule" => Ok(Per::Rule),
             "session" => Ok(Per::Session),
-            _ => Err(TriggerError::UnknownPer { text: text.to_owned() }),
+            _ => Err(PerError::Unknown { name: text.to_owned() }),
         }
     }
 }
@@ -49,6 +49,26 @@ impl fmt::Display for Per {
         f.write_str(self.name())
     }
 }
+
+/// Why a text is not a [`Per`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum PerError {
+    /// The text is not `rule` and not `session`.
+    Unknown { name: String },
+}
+
+impl fmt::Display for PerError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Unknown { name } => {
+                write!(f, "counters are per `rule` or per `session`, not per `{name}`")
+            }
+        }
+    }
+}
+
+impl std::error::Error for PerError {}
 
 /// The parts of a trigger that fires by itself: a chance, count parts, a time window, and what it counts per.
 ///
@@ -85,7 +105,7 @@ impl fmt::Display for Per {
 /// assert!(!parts.counts(MatchNumber::new(100)?));
 /// assert!(parts.counts(MatchNumber::new(105)?));
 /// assert!(!parts.counts(MatchNumber::new(106)?));
-/// # Ok::<(), TriggerError>(())
+/// # Ok::<(), Box<dyn std::error::Error>>(())
 /// ```
 ///
 /// With the `serde` feature, the parts serialize as a map that only holds the parts they have.
@@ -237,7 +257,7 @@ impl TriggerParts {
 /// assert!(!trigger.is_always());
 /// assert!(Trigger::default().is_always());
 /// assert!(Trigger::Manual.is_manual());
-/// # Ok::<(), TriggerError>(())
+/// # Ok::<(), CountError>(())
 /// ```
 ///
 /// With the `serde` feature, a trigger serializes as the text `manual` or as the map of its parts.
@@ -429,9 +449,20 @@ mod tests {
         assert_eq!(Per::default(), Per::Rule);
         assert_eq!(
             "connection".parse::<Per>(),
-            Err(TriggerError::UnknownPer {
-                text: "connection".into()
+            Err(PerError::Unknown {
+                name: "connection".into()
             }),
+        );
+    }
+
+    #[test]
+    fn a_per_error_says_what_is_wrong() {
+        let error = PerError::Unknown {
+            name: "connection".into(),
+        };
+        assert_eq!(
+            error.to_string(),
+            "counters are per `rule` or per `session`, not per `connection`",
         );
     }
 }

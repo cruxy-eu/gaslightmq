@@ -15,9 +15,20 @@
 //! | [`IncidentSupport`] | The support a backend declares for every kind. |
 //! | [`Requirements`], [`Requirement`] | The kinds of incidents a scenario needs, and why. |
 //! | [`UnsupportedIncidents`] | The incidents a scenario needs and its backend cannot do. |
-//! | [`IncidentError`] | Why a value cannot become an incident, or a part of one. |
 //!
-//! The [`prelude`] holds all of them.
+//! A type that checks its value has an error of its own, named after it.
+//! The error holds only what can go wrong with that value.
+//!
+//! | Error | Says |
+//! |---|---|
+//! | [`IncidentKindError`] | Why a text is not an [`IncidentKind`]: no incident has that name. |
+//! | [`IncidentError`] | Why an [`IncidentDefinition`] does not become an [`Incident`]: it names no subject, and the call offers none. |
+//! | [`PartitionCountError`], [`RecordCountError`] | Why a number is not a [`PartitionCount`] or a [`RecordCount`]: it is zero, or too high. |
+//!
+//! [`UnsupportedIncidents`] is an error too: [`IncidentSupport::check`] returns it.
+//! The message of every error is complete, so no error has a [`source`](std::error::Error::source).
+//!
+//! The [`prelude`] holds every type of both tables.
 //!
 //! # From a definition to a change
 //!
@@ -116,7 +127,6 @@
 mod consequence;
 mod count;
 mod definition;
-mod error;
 #[cfg(feature = "serde")]
 mod form;
 mod incident;
@@ -125,15 +135,14 @@ mod requirement;
 mod support;
 
 pub use consequence::{Consequence, ExpandedIncident, Topology};
-pub use count::{PartitionCount, RecordCount};
+pub use count::{PartitionCount, PartitionCountError, RecordCount, RecordCountError};
 pub use definition::{IncidentDefinition, Subjects};
-pub use error::IncidentError;
-pub use incident::{Coordinator, Incident};
-pub use kind::IncidentKind;
+pub use incident::{Coordinator, Incident, IncidentError};
+pub use kind::{IncidentKind, IncidentKindError};
 pub use requirement::{Requirement, Requirements};
 pub use support::{IncidentSupport, Support, UnsupportedIncidents};
 
-/// Every type of this crate.
+/// Every type of this crate, and the error of each type that has one.
 ///
 /// Import it whole wherever code speaks in incidents, next to the prelude of `gaslightmq_kernel`.
 /// No name in it is a name of that prelude or of the standard one, so the import shadows nothing.
@@ -144,13 +153,13 @@ pub use support::{IncidentSupport, Support, UnsupportedIncidents};
 ///
 /// let incident = Incident::LeaderMoves { partition: "orders.eu/3".parse()?, to: None };
 /// assert_eq!(incident.kind(), IncidentKind::LeaderMoves);
-/// # Ok::<(), KernelError>(())
+/// # Ok::<(), TopicPartitionError>(())
 /// ```
 pub mod prelude {
     #[doc(no_inline)]
     pub use crate::{
         Consequence, Coordinator, ExpandedIncident, Incident, IncidentDefinition, IncidentError, IncidentKind,
-        IncidentSupport, PartitionCount, RecordCount, Requirement, Requirements, Subjects, Support, Topology,
-        UnsupportedIncidents,
+        IncidentKindError, IncidentSupport, PartitionCount, PartitionCountError, RecordCount, RecordCountError,
+        Requirement, Requirements, Subjects, Support, Topology, UnsupportedIncidents,
     };
 }

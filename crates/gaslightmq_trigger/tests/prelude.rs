@@ -1,4 +1,4 @@
-//! The prelude holds every type, and its names clash with none of `std`, of the clock or of the kernel's prelude.
+//! The prelude holds every type and every error, and its names clash with none of `std`, of the clock or of the kernel's prelude.
 
 /// Imports the prelude next to the standard prelude, the clock, the kernel's prelude
 /// and the modules of `std` that code imports most.
@@ -42,7 +42,6 @@ mod next_to_std_the_clock_and_the_kernel {
             .with_per(Per::Session);
         let trigger = Trigger::from(parts);
         let lifetime = Lifetime::Firings(count);
-        let zero: TriggerError = Count::new(0).unwrap_err();
 
         let seed = Seed::new(42);
         let dice_key = DiceKey::new("Stale metadata").unwrap();
@@ -69,10 +68,69 @@ mod next_to_std_the_clock_and_the_kernel {
         vec![
             chance.to_string(),
             lifetime.to_string(),
-            zero.to_string(),
             roll.to_string(),
             window.to_string(),
             format!("{trigger:?} {reading:?} {spent:?} {outcome:?} {confirmed:?}"),
+        ]
+    }
+
+    /// One error of every type of the prelude, each named without a path.
+    pub fn every_error() -> Vec<String> {
+        vec![
+            ChanceError::NotAPercentage { input: "40".into() }.to_string(),
+            RollError::OutOfRange { ppm: 1_000_000 }.to_string(),
+            CountError::Zero.to_string(),
+            MatchNumberError::Zero.to_string(),
+            TimeWindowError::Empty {
+                from: TimeSpan::from_secs(40),
+                until: TimeSpan::from_secs(10),
+            }
+            .to_string(),
+            PerError::Unknown {
+                name: "connection".into(),
+            }
+            .to_string(),
+            LifetimeError::Malformed {
+                input: "forever".into(),
+            }
+            .to_string(),
+            LifetimeError::InvalidCount {
+                input: "0 firings".into(),
+                error: CountError::Zero,
+            }
+            .to_string(),
+            DiceKeyError::Empty.to_string(),
+            CounterKeyError::Empty.to_string(),
+        ]
+    }
+}
+
+/// Imports the prelude alone, as a consumer does, and uses the standard prelude as usual.
+mod alone {
+    use gaslightmq_trigger::prelude::*;
+
+    /// Each constructor returns the error of its own type, and `?` turns every one into a standard error.
+    pub fn every_error_is_a_standard_error() -> Vec<Box<dyn std::error::Error>> {
+        fn boxed<T, E: std::error::Error + 'static>(result: Result<T, E>) -> Box<dyn std::error::Error> {
+            match result {
+                Ok(_) => panic!("the value should not be valid"),
+                Err(error) => Box::new(error),
+            }
+        }
+
+        let span = gaslightmq_clock::TimeSpan::from_secs;
+        vec![
+            boxed::<Chance, ChanceError>("40".parse()),
+            boxed::<Chance, ChanceError>(Chance::from_ppm(1_400_000)),
+            boxed::<Roll, RollError>(Roll::from_ppm(1_000_000)),
+            boxed::<Count, CountError>(Count::try_from(0)),
+            boxed::<MatchNumber, MatchNumberError>(MatchNumber::try_from(0)),
+            boxed::<TimeWindow, TimeWindowError>(TimeWindow::between(span(40), span(10))),
+            boxed::<Per, PerError>("connection".parse()),
+            boxed::<Lifetime, LifetimeError>("forever".parse()),
+            boxed::<Lifetime, LifetimeError>("0 firings".parse()),
+            boxed::<DiceKey, DiceKeyError>(String::new().try_into()),
+            boxed::<CounterKey, CounterKeyError>("".parse()),
         ]
     }
 }
@@ -82,6 +140,53 @@ fn the_prelude_names_every_type_next_to_std_the_clock_and_the_kernel() {
     let items = next_to_std_the_clock_and_the_kernel::every_item();
     assert_eq!(items[0], "40%");
     assert_eq!(items[1], "3 firings");
-    assert_eq!(items[2], "a count is at least one");
-    assert_eq!(items[4], "after 10s");
+    assert_eq!(items[3], "after 10s");
+}
+
+#[test]
+fn the_prelude_holds_the_error_of_every_type() {
+    assert_eq!(
+        next_to_std_the_clock_and_the_kernel::every_error(),
+        [
+            "`40` is not a percentage such as `40%`",
+            "a roll of 1000000 parts per million is not below one million",
+            "a count is at least one",
+            "a match number is at least one",
+            "a window between 40s and 10s never opens",
+            "counters are per `rule` or per `session`, not per `connection`",
+            "`forever` is not a lifetime: expected `until disarmed`, a time span such as `30s`, \
+             or a count such as `100 matches` or `3 firings`",
+            "lifetime `0 firings`: a count is at least one",
+            "a dice key is not empty",
+            "a counter key is not empty",
+        ]
+    );
+}
+
+#[test]
+fn every_error_is_a_standard_error_with_a_complete_message() {
+    let messages: Vec<String> = alone::every_error_is_a_standard_error()
+        .iter()
+        .map(|error| {
+            assert!(error.source().is_none(), "{error} has a source");
+            error.to_string()
+        })
+        .collect();
+    assert_eq!(
+        messages,
+        [
+            "`40` is not a percentage such as `40%`",
+            "chance `140%` is not between 0% and 100%",
+            "a roll of 1000000 parts per million is not below one million",
+            "a count is at least one",
+            "a match number is at least one",
+            "a window between 40s and 10s never opens",
+            "counters are per `rule` or per `session`, not per `connection`",
+            "`forever` is not a lifetime: expected `until disarmed`, a time span such as `30s`, \
+             or a count such as `100 matches` or `3 firings`",
+            "lifetime `0 firings`: a count is at least one",
+            "a dice key is not empty",
+            "a counter key is not empty",
+        ]
+    );
 }
