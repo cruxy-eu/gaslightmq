@@ -1,0 +1,17 @@
+[package]
+name = "gaslightmq_session"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+arc-swap.workspace = true
+gaslightmq_call.workspace = true
+gaslightmq_clock.workspace = true
+gaslightmq_field.workspace = true
+gaslightmq_kernel.workspace = true
+gaslightmq_trigger.workspace = true
+gaslightmq_wire.workspace = true
