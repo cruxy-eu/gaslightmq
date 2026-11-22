@@ -3,6 +3,12 @@
 //! The bounds below are the contract.
 //! A type that misses one conversion does not compile here.
 
+#![expect(
+    clippy::unwrap_used,
+    clippy::panic,
+    reason = "a panic is how a test fails, also in a helper outside a `#[test]` function"
+)]
+
 use std::borrow::Borrow;
 use std::collections::{BTreeSet, HashSet};
 use std::fmt::{Debug, Display};

@@ -4,6 +4,11 @@
 //! This file has the smallest matcher that follows the spec, and it only speaks to a [`FieldSource`].
 //! Whatever it can decide, a real selector can decide too.
 
+#![expect(
+    clippy::unwrap_used,
+    reason = "a panic is how a test fails, also in a helper outside a `#[test]` function"
+)]
+
 use gaslightmq_field::prelude::*;
 use gaslightmq_kernel::prelude::*;
 

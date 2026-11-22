@@ -42,6 +42,17 @@ tracing = "0.1"
 pedantic = { level = "warn", priority = -1 }
 # Noise: wants `#[must_use]` on every public getter, yet skips the ones that touch `Bytes` or a mutex.
 must_use_candidate = "allow"
+# A library returns its error; it doesn't panic, and it leaves no debugging behind.
+unwrap_used = "warn"
+panic = "warn"
+todo = "warn"
+unimplemented = "warn"
+dbg_macro = "warn"
+print_stdout = "warn"
+print_stderr = "warn"
+# An exception is an `#[expect]` with a reason, so it warns once it is no longer needed.
+allow_attributes = "warn"
+allow_attributes_without_reason = "warn"
 
 [profile.release]
 lto = true

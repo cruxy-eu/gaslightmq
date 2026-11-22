@@ -1,5 +1,10 @@
 //! Every error says everything in one message, and none has a source.
 
+#![expect(
+    clippy::unwrap_used,
+    reason = "a panic is how a test fails, also in a helper outside a `#[test]` function"
+)]
+
 use std::error::Error;
 
 use gaslightmq_incident::{IncidentError, IncidentKind};

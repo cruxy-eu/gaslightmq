@@ -1,5 +1,10 @@
 //! The client against a hand-written peer that speaks just enough Kafka.
 
+#![expect(
+    clippy::unwrap_used,
+    reason = "a panic is how a test fails, also in a helper outside a `#[test]` function"
+)]
+
 use std::net::SocketAddr;
 use std::time::Duration;
 

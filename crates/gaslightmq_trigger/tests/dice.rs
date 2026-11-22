@@ -1,5 +1,10 @@
 //! Dice are reproducible: fixed rolls for a fixed seed, and independent dice for each rule and each session.
 
+#![expect(
+    clippy::unwrap_used,
+    reason = "a panic is how a test fails, also in a helper outside a `#[test]` function"
+)]
+
 use gaslightmq_trigger::prelude::*;
 
 const RULE: &str = "Slow down order producers";

@@ -1,5 +1,10 @@
 //! The prelude holds every item of the crate, and its names clash with none of the preludes next to it.
 
+#![expect(
+    clippy::unwrap_used,
+    reason = "a panic is how a test fails, also in a helper outside a `#[test]` function"
+)]
+
 /// Imports the prelude next to the standard prelude, the modules of `std` that code imports most,
 /// and the preludes of the kernel and of the fields.
 ///
@@ -7,7 +12,7 @@
 /// A name that two of them hold is ambiguous, and using it does not compile.
 /// This module names every item of the prelude, so it only compiles while no name clashes.
 mod next_to_the_others {
-    #![allow(unused_imports)]
+    #![expect(unused_imports, reason = "the imports only have to compile next to each other")]
 
     use std::borrow::*;
     use std::collections::*;

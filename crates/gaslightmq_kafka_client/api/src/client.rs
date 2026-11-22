@@ -28,8 +28,14 @@ use crate::{ApiVersions, CreateTopics, DeleteTopics, Fetch, FindCoordinator, Lis
 /// Sends each request as it is given, to one address, at a fixed version.
 ///
 /// It follows no leaders, negotiates no versions and retries nothing, so a
-/// test sees exactly what one request gets back. It panics when the
-/// connection fails or the response does not decode.
+/// test sees exactly what one request gets back.
+///
+/// # Panics
+///
+/// Every method that sends a request panics when the request does not
+/// encode, when the connection fails, or when the response does not decode.
+/// The traits it implements return a response and no error, so a test that
+/// gets a response knows the exchange took place.
 pub struct RawKafkaClient {
     addr: SocketAddr,
     socket: Mutex<Option<Socket>>,
@@ -86,15 +92,33 @@ impl RawKafkaClient {
         self.addr
     }
 
+    /// Send `body` at `version` and return its response.
+    ///
+    /// # Panics
+    ///
+    /// When `body` does not encode at `version`, when the connection fails,
+    /// or when the response does not decode.
+    #[expect(
+        clippy::panic,
+        reason = "the API traits return a response and no error, so a failed exchange panics, as the type documents"
+    )]
     async fn request<R: KafkaRequest>(&self, version: i16, body: &R) -> R::Response {
         let correlation_id = self.correlation_id.fetch_add(1, Ordering::Relaxed);
-        let request = Request::new(version, correlation_id, None, body).unwrap();
+        let request = Request::new(version, correlation_id, None, body)
+            .unwrap_or_else(|error| panic!("the request does not encode at version {version}: {error}"));
         let mut slot = self.socket.lock().await;
         let socket = match slot.as_mut() {
             Some(socket) => socket,
-            None => slot.insert(Socket::connect(self.addr).await.unwrap()),
+            None => slot.insert(
+                Socket::connect(self.addr)
+                    .await
+                    .unwrap_or_else(|error| panic!("connecting to {} failed: {error}", self.addr)),
+            ),
         };
-        socket.exchange::<R>(&request).await.unwrap()
+        socket
+            .exchange::<R>(&request)
+            .await
+            .unwrap_or_else(|error| panic!("the exchange with {} failed: {error}", self.addr))
     }
 }
 
@@ -194,7 +218,18 @@ impl DeleteTopics for RawKafkaClient {
 }
 
 impl Producer for RawKafkaClient {
+    /// # Panics
+    ///
+    /// When `records` do not encode, when the exchange fails, or when the
+    /// response holds no result for the partition.
+    #[expect(
+        clippy::panic,
+        reason = "`Producer::send` returns a result and no error, so records that do not encode panic, as the type documents"
+    )]
     async fn send(&self, topic: &str, partition: Partition, records: &[Record]) -> ProduceResult {
+        let batch = RecordBatch::new(records)
+            .encode()
+            .unwrap_or_else(|error| panic!("the records do not encode: {error}"));
         let request = ProduceRequest::default()
             .with_acks(-1)
             .with_timeout_ms(5000)
@@ -204,7 +239,7 @@ impl Producer for RawKafkaClient {
                     .with_partition_data(vec![
                         PartitionProduceData::default()
                             .with_index(i32::from(partition))
-                            .with_records(Some(RecordBatch::new(records).encode().unwrap())),
+                            .with_records(Some(batch)),
                     ]),
             ]);
 
@@ -220,11 +255,19 @@ impl Producer for RawKafkaClient {
 }
 
 impl ProtocolConsumer for RawKafkaClient {
+    /// # Panics
+    ///
+    /// When the exchange fails, or when the records of the response do not
+    /// decode.
+    #[expect(
+        clippy::panic,
+        reason = "`ProtocolConsumer::fetch` returns records and no error, so records that do not decode panic, as the type documents"
+    )]
     async fn fetch(&self, topic: &str, partition: Partition, offset: Offset) -> Vec<Record> {
         let response = self
             .request(4, &fetch_request(topic, partition, i64::from(offset), 1000))
             .await;
-        records_of(&response).unwrap()
+        records_of(&response).unwrap_or_else(|error| panic!("the fetched records do not decode: {error}"))
     }
 
     /// Records from `offset` on, fetched one request at a time, each on a

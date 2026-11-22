@@ -1,5 +1,10 @@
 //! Lifetimes and budgets: when a rule ends, what counts as a firing, and what arming resets.
 
+#![expect(
+    clippy::unwrap_used,
+    reason = "a panic is how a test fails, also in a helper outside a `#[test]` function"
+)]
+
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::thread;
 
