@@ -119,6 +119,18 @@ The workspace works in git.
 Teams review scenarios in pull requests,
 and CI runs them with `gmq run`.
 
+### Reading
+
+The engine reads the YAML files with `serde_saphyr`.
+It reads them through `serde_path_to_error`, so an error names the key that failed:
+
+```
+trigger.every: a count is at least one
+```
+
+The path comes from the reader.
+The message after it comes from the type of the value, which knows nothing about files.
+
 ### Names
 
 - Every definition has a name, unique within its kind.
