@@ -130,6 +130,7 @@ fn what_the_client_received_is_a_response_or_a_word() {
         &Delivered::Response(ResponseSummary::new(Answer::Ok)),
         r#"{"response":{"answer":"ok"}}"#,
     );
+    writes(&Delivered::UnreadResponse, r#""unread-response""#);
     writes(&Delivered::Nothing, r#""nothing""#);
     writes(&Delivered::ConnectionClosed, r#""connection-closed""#);
 }
@@ -246,6 +247,32 @@ fn a_fate_writes_where_the_lie_went() {
     writes(
         &LieFate::all_applied(LieDefinition::Silence.on(Target::Call)),
         r#"{"fired":{"lie":"silence"},"applied":"call"}"#,
+    );
+}
+
+#[test]
+fn a_fate_writes_why_the_lie_could_not_be_told() {
+    let three = parts(&["orders.eu/3"]);
+    let lost = LostTarget::new(three.clone(), name("Leader flap"));
+    let failure = || Failure::new("no behaviour is registered for refusal");
+
+    // The lie won its target and changed nothing there.
+    writes(
+        &LieFate::all_applied(refusal(three.clone())).untold(failure()),
+        &format!(r#"{{"fired":{REFUSAL},"untold":"no behaviour is registered for refusal"}}"#),
+    );
+    // What it lost to another rule stays.
+    writes(
+        &LieFate::new(refusal(three.clone()), None, vec![lost], vec![])
+            .unwrap()
+            .untold(failure()),
+        &format!(
+            r#"{{"fired":{REFUSAL},"shadowed":[{{"on":{THREE},"to":"Leader flap"}}],"untold":"no behaviour is registered for refusal"}}"#
+        ),
+    );
+    rejects::<LieFate>(
+        &format!(r#"{{"fired":{REFUSAL},"applied":{THREE},"untold":"no behaviour is registered for refusal"}}"#),
+        "a lie that could not be told does not apply on orders.eu/3",
     );
 }
 

@@ -60,10 +60,13 @@ fn a_refused_call_gives_the_same_response_at_both_stages() {
     for request in calls_with_parts().into_iter().chain([heartbeat()]) {
         let lies = every_lie();
 
-        let Effect::Answer(before) = lies.before_forwarding(&timed_out(), &request).unwrap() else {
+        let Effect::Answer(before) = lies.before_forwarding(&timed_out(), &decoded(&request)).unwrap() else {
             panic!("a refusal of the whole call answers it");
         };
-        let Effect::Answer(after) = lies.after_response(&timed_out(), &request, &backend(&request)).unwrap() else {
+        let Effect::Answer(after) = lies
+            .after_response(&timed_out(), &decoded(&request), &backend(&request))
+            .unwrap()
+        else {
             panic!("a refusal of the whole call answers it");
         };
 
@@ -137,7 +140,7 @@ fn a_call_without_parts_is_refused_after_the_response_too() {
 fn the_error_stands_wherever_the_response_of_an_api_has_a_place_for_it() {
     let lies = every_lie();
     let not_available = refusal(ErrorCode::COORDINATOR_NOT_AVAILABLE, Target::Call);
-    let answer = |request: &Request| match lies.before_forwarding(&not_available, request).unwrap() {
+    let answer = |request: &Request| match lies.before_forwarding(&not_available, &decoded(request)).unwrap() {
         Effect::Answer(response) => response,
         other => panic!("the refusal asked to {other}"),
     };

@@ -94,6 +94,13 @@ where
         assert!(matches!(asked.without(std::iter::empty()), Ok(Remainder::Whole)));
         assert_eq!(asked.merge(&failed, &Failures::none()).unwrap().frame(), failed.frame());
         asked.parts_of(&failed).unwrap();
+
+        // The response itself says that error, or it has no error code of its own.
+        let of_response = asked.error_of(&failed).unwrap();
+        assert!(
+            of_response.is_none() || of_response == Some(error),
+            "the response of {api:?} v{version} reads as {of_response:?}"
+        );
     }
     checked.push(api);
 }
@@ -309,6 +316,56 @@ fn check_the_apis_that_fail_in_the_response_itself(checked: &mut Vec<ApiKey>) {
         AlterShareGroupOffsets => AlterShareGroupOffsetsRequest,
         DeleteShareGroupOffsets => DeleteShareGroupOffsetsRequest,
     );
+}
+
+#[test]
+fn the_error_code_of_a_response_itself_reads_back() {
+    let timed_out = ErrorCode::REQUEST_TIMED_OUT;
+    let error_of = |request: &Request| {
+        let asked = EditableRequest::decode(request, &topic_names()).unwrap();
+        let failed = asked.error_response(&Failures::whole_call(timed_out)).unwrap();
+        asked.error_of(&failed).unwrap()
+    };
+    let request = |version: i16, body: &dyn Fn(i16) -> Request| body(version);
+    let heartbeat = |version| Request::new(version, 7, None, &HeartbeatRequest::default()).unwrap();
+    let produce = |version| Request::new(version, 7, None, &common::produce(version)).unwrap();
+    let fetch = |version| Request::new(version, 7, None, &common::fetch(version)).unwrap();
+    let find_coordinator = |version| {
+        let body = if version >= 4 {
+            FindCoordinatorRequest::default().with_coordinator_keys(vec![text("analytics-etl")])
+        } else {
+            FindCoordinatorRequest::default().with_key(text("analytics-etl"))
+        };
+        Request::new(version, 7, None, &body).unwrap()
+    };
+
+    // A Heartbeat response has an error code of its own.
+    assert_eq!(error_of(&request(4, &heartbeat)), Some(timed_out));
+    // A Produce response answers each partition, and has none.
+    assert_eq!(error_of(&request(9, &produce)), None);
+    // A Fetch response has one since version 7.
+    assert_eq!(error_of(&request(4, &fetch)), None);
+    assert_eq!(error_of(&request(13, &fetch)), Some(timed_out));
+    // A FindCoordinator response has one up to version 3. Since version 4 each key fails, and a key is no part.
+    assert_eq!(error_of(&request(3, &find_coordinator)), Some(timed_out));
+    assert_eq!(error_of(&request(4, &find_coordinator)), None);
+
+    // A response without an error reads as none.
+    let asked = EditableRequest::decode(&heartbeat(4), &topic_names()).unwrap();
+    let truth = heartbeat(4)
+        .response(&gaslightmq_wire::messages::HeartbeatResponse::default())
+        .unwrap();
+    assert_eq!(asked.error_of(&truth), Ok(None));
+
+    // A response to another request is not read.
+    let other = heartbeat(4)
+        .response(&gaslightmq_wire::messages::HeartbeatResponse::default())
+        .unwrap();
+    let asked = EditableRequest::decode(&produce(9), &topic_names()).unwrap();
+    assert!(matches!(
+        asked.error_of(&other),
+        Err(EditableRequestError::ResponseOfAnotherCall { .. })
+    ));
 }
 
 #[test]

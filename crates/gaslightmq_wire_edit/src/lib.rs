@@ -106,6 +106,19 @@
 //! A client then sees what a broker says about one partition, such as "not the leader",
 //! and not a failure of the whole request.
 //!
+//! # Reading a response
+//!
+//! A response answers the call in two places, and each has its reader.
+//!
+//! | Reader | Reads |
+//! |---|---|
+//! | [`EditableRequest::parts_of`] | The error code of each part. |
+//! | [`EditableRequest::error_of`] | The error code of the response itself, on an API and a version that has one. |
+//!
+//! An entry that answers something that is no part is read by neither:
+//! a group of a `DescribeGroups`, a key of a `FindCoordinator` since version 4, a configuration resource.
+//! A response in which only such entries failed reads as a response without an error.
+//!
 //! # The order of a response
 //!
 //! A merged response names its parts in the order of the request, whoever answered them:

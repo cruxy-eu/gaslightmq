@@ -20,6 +20,8 @@ fn name_or_empty(name: Option<&TopicName>) -> &str {
 
 /// A Metadata request that asks for every topic names none, so it has no parts.
 impl Editable for MetadataRequest {
+    crate::api::response_has_error_code!();
+
     fn retain_parts(&mut self, _version: i16, keep: &mut Keep<'_>) {
         if let Some(topics) = &mut self.topics {
             topics.retain(|topic| {

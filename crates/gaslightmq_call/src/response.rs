@@ -157,6 +157,7 @@ impl fmt::Display for ResponseSummary {
 /// | The client received | After |
 /// |---|---|
 /// | A response | Every call that no terminal lie ended. It is the truth, unless a lie changed it. |
+/// | A response that nobody read | A response that GaslightMQ could not decode. The client got its bytes, and the record does not guess what they say. |
 /// | Nothing | A silence, or a connection that ended while the call was in flight. |
 /// | A closed connection | A hang-up. |
 ///
@@ -169,7 +170,7 @@ impl fmt::Display for ResponseSummary {
 /// ```
 ///
 /// With the `serde` feature, it serializes as a map with the one key `response`,
-/// or as the text `nothing` or `connection-closed`.
+/// or as the text `unread-response`, `nothing` or `connection-closed`.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 #[cfg_attr(
     feature = "serde",
@@ -179,6 +180,9 @@ impl fmt::Display for ResponseSummary {
 pub enum Delivered {
     /// The client received this response.
     Response(ResponseSummary),
+    /// The client received a response, and GaslightMQ could not read what it says.
+    /// The record keeps no answer for it: a response that nobody read is not a response without an error.
+    UnreadResponse,
     /// The client received nothing, and its connection stayed open.
     Nothing,
     /// The client found its connection closed instead of an answer.
@@ -190,7 +194,7 @@ impl Delivered {
     pub const fn response(&self) -> Option<&ResponseSummary> {
         match self {
             Delivered::Response(response) => Some(response),
-            Delivered::Nothing | Delivered::ConnectionClosed => None,
+            Delivered::UnreadResponse | Delivered::Nothing | Delivered::ConnectionClosed => None,
         }
     }
 }
@@ -201,11 +205,12 @@ impl From<ResponseSummary> for Delivered {
     }
 }
 
-/// Writes the response, `nothing` or `connection closed`.
+/// Writes the response, `unread response`, `nothing` or `connection closed`.
 impl fmt::Display for Delivered {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Delivered::Response(response) => fmt::Display::fmt(response, f),
+            Delivered::UnreadResponse => f.write_str("unread response"),
             Delivered::Nothing => f.write_str("nothing"),
             Delivered::ConnectionClosed => f.write_str("connection closed"),
         }
@@ -272,6 +277,8 @@ mod tests {
         assert_eq!(Delivered::from(response.clone()).response(), Some(&response));
         assert_eq!(Delivered::Nothing.response(), None);
         assert_eq!(Delivered::ConnectionClosed.response(), None);
+        assert_eq!(Delivered::UnreadResponse.response(), None);
+        assert_eq!(Delivered::UnreadResponse.to_string(), "unread response");
         assert_eq!(Delivered::Nothing.to_string(), "nothing");
         assert_eq!(Delivered::from(response).to_string(), "ok");
     }

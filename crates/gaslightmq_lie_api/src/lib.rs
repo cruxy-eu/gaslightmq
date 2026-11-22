@@ -19,6 +19,8 @@
 //!
 //! The pipeline holds a set of [`Lies`] and names no kind.
 //! It asks the set with a lie and its target, and it does what the effect says.
+//! It decodes a request once, with the topics it knows by ID, and every lie reads that decoded request:
+//! no behaviour decodes a request again, and a part has its name also where the request names its topic by ID.
 //!
 //! ```
 //! use gaslightmq_clock::TimeSpan;
@@ -27,12 +29,14 @@
 //! use gaslightmq_lie_api::prelude::*;
 //! use gaslightmq_wire::Request;
 //! use gaslightmq_wire::messages::{HeartbeatRequest, HeartbeatResponse};
+//! use gaslightmq_wire_edit::prelude::*;
 //!
 //! // The engine registers the kinds of its build. These three are in every build.
 //! let lies = Lies::of_every_build();
 //!
 //! // A Heartbeat arrives, and two rules fire on it.
-//! let request = Request::new(4, 7, Some("order-ingest"), &HeartbeatRequest::default())?;
+//! let heartbeat = Request::new(4, 7, Some("order-ingest"), &HeartbeatRequest::default())?;
+//! let request = EditableRequest::decode(&heartbeat, &TopicNames::new())?;
 //! let slow = LieDefinition::from(TimingLie::new().with_delay(TimeSpan::from_secs(45)).at(Stage::BeforeForwarding));
 //! let late_hang_up = LieDefinition::from(HangUpLie::new().at(Stage::AfterResponse));
 //!
@@ -41,7 +45,7 @@
 //! assert_eq!(effect.to_string(), "hold +45 s before forwarding");
 //!
 //! // The backend answers, and the hang-up asks to close the connection instead of sending the answer.
-//! let truth = request.response(&HeartbeatResponse::default())?;
+//! let truth = heartbeat.response(&HeartbeatResponse::default())?;
 //! let effect = lies.after_response(&late_hang_up.on(Target::Call), &request, &truth)?;
 //! assert_eq!(effect.instruction(), Instruction::Close);
 //! assert!(effect.ends_call());
@@ -107,7 +111,8 @@
 //!
 //! # No IO
 //!
-//! The crate depends on `gaslightmq_lie` for the definitions, on `gaslightmq_wire` for the request and the response,
+//! The crate depends on `gaslightmq_lie` for the definitions, on `gaslightmq_wire` for the response,
+//! on `gaslightmq_wire_edit` for the request as the pipeline decoded it,
 //! and on `gaslightmq_field` for the parts of a call that an error names.
 //! A behaviour is a pure function of what it is given:
 //! the crate has no async code, no IO, no clock and no randomness.

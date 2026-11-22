@@ -27,6 +27,8 @@ const NOWHERE: i32 = -1;
 /// Up to version 3 a `FindCoordinator` asks for one key, and the response itself fails.
 /// Since version 4 it asks for several keys, and each of them fails.
 impl Editable for FindCoordinatorRequest {
+    crate::api::response_has_error_code!();
+
     fn failed(&self, version: i16, verdict: &Verdict<'_>) -> FindCoordinatorResponse {
         if version >= 4 {
             let coordinators = self.coordinator_keys.iter().map(|key| {

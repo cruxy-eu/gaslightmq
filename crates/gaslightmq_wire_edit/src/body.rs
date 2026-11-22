@@ -159,6 +159,15 @@ pub(crate) trait Editable: KafkaRequest {
 
     /// Shows every part of `response` with its error code. A response without parts shows nothing.
     fn each_answered_part(_response: &Self::Response, _see: &mut dyn FnMut(TopicKey<'_>, Option<i32>, i16)) {}
+
+    /// The error code of `response` itself, or zero when it has none.
+    ///
+    /// An API whose response has an error code of its own says so with
+    /// [`response_has_error_code!`](crate::api::response_has_error_code).
+    /// The field is zero on a version that does not write it.
+    fn error_of_response(_response: &Self::Response) -> i16 {
+        0
+    }
 }
 
 /// Why a request and a response did not merge.
@@ -191,6 +200,9 @@ pub(crate) trait Body: fmt::Debug + Send + Sync {
         response: &Response,
         see: &mut dyn FnMut(TopicKey<'_>, Option<i32>, i16),
     ) -> Result<(), WireError>;
+
+    /// The error code of `response` itself, a response to the request, or zero when it has none.
+    fn error_of_response(&self, response: &Response) -> Result<i16, WireError>;
 }
 
 impl<R> Body for R
@@ -245,6 +257,10 @@ where
     ) -> Result<(), WireError> {
         R::each_answered_part(&response.body()?, see);
         Ok(())
+    }
+
+    fn error_of_response(&self, response: &Response) -> Result<i16, WireError> {
+        Ok(R::error_of_response(&response.body()?))
     }
 }
 

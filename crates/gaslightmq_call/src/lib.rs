@@ -9,7 +9,7 @@
 //! | [`Call`] | The record: the fields of the call, what the client received, the explanation and the timing. |
 //! | [`CallNumber`], [`CallId`] | Which call of its session this is, and which call of its engine. |
 //! | [`Answer`], [`ResponseSummary`] | A response without its payload: the answer for the call, and for each part with its own. |
-//! | [`Delivered`] | What the client actually received: a response, nothing, or a closed connection. |
+//! | [`Delivered`] | What the client actually received: a response, a response that nobody could read, nothing, or a closed connection. |
 //! | [`Verdict`] | Pass, or the lies that applied. |
 //! | [`Explanation`] | Why the verdict came out this way: every rule the call touched. |
 //! | [`RuleExplanation`] | One of those rules: what its selector matched, what its trigger decided, and what its action did. |
@@ -17,7 +17,7 @@
 //! | [`TriggerExplanation`] | What a trigger looked at and decided: the match number, the checks, the budget. |
 //! | [`TriggerDecision`] | Whether the rule fired, and why not when it did not. |
 //! | [`TriggerChecks`], [`DieCheck`], [`WindowCheck`], [`BudgetCheck`] | What the parts of a trigger said, as plain numbers. |
-//! | [`LieFate`], [`LostTarget`] | What became of a lie that fired: where it applied, and where it lost to which rule. |
+//! | [`LieFate`], [`LostTarget`] | What became of a lie that fired: where it applied, where it lost to which rule, and why it could not be told. |
 //! | [`RecordedRuleName`] | The name a rule had when the call met it. |
 //! | [`Failure`] | What went wrong inside GaslightMQ while it handled the call. |
 //! | [`CallTiming`] | When the call arrived, how long the backend took, and how long the client waited. |
@@ -53,6 +53,7 @@
 //!   a [`WindowCheck`] holds the window and the time since arming, and a [`BudgetCheck`] holds what was left of how much.
 //! - A lie is the [`TargetedLie`](gaslightmq_lie::TargetedLie) the rule fired, in a [`LieFate`]
 //!   that says where it applied and where it lost, and each [`LostTarget`] names the rule that won.
+//!   A lie that GaslightMQ could not tell is [untold](LieFate::untold), with the [`Failure`] that says why.
 //!
 //! Whoever evaluates a call writes these down.
 //! A record only checks that it does not contradict itself:
@@ -113,7 +114,7 @@
 //! | [`WindowCheck`] | [`WindowCheckError`] | The window is never open. |
 //! | [`BudgetCheck`] | [`BudgetCheckError`] | More is left than the budget allows. |
 //! | [`TriggerExplanation`] | [`TriggerExplanationError`] | The decision contradicts the match number or a check. |
-//! | [`LieFate`] | [`LieFateError`] | The lie went nowhere, or it applied outside its target. |
+//! | [`LieFate`] | [`LieFateError`] | The lie went nowhere, it applied outside its target, or it applied although it could not be told. |
 //! | [`RuleExplanation`] | [`RuleExplanationError`] | The trigger and the action contradict each other. |
 //! | [`Explanation`] | [`ExplanationError`] | A rule has two lines, or a line names a rule that has none. |
 //! | [`CallTiming`] | [`CallTimingError`] | A moment comes before the one it follows. |
@@ -133,14 +134,14 @@
 //! | [`CallId`], [`RecordedRuleName`], [`TriggerDecision`], [`Failure`] | The text. |
 //! | [`Answer`] | `ok`, or `{ error: NOT_LEADER_OR_FOLLOWER }`. |
 //! | [`ResponseSummary`] | A map with `answer`, and with `parts` when a part has its own answer: a map from the part to its answer. |
-//! | [`Delivered`] | `{ response: … }`, `nothing` or `connection-closed`. |
+//! | [`Delivered`] | `{ response: … }`, `unread-response`, `nothing` or `connection-closed`. |
 //! | [`Verdict`] | The list of its lies. A pass is the empty list. |
 //! | [`DieCheck`] | `{ roll: 374213, chance: 400000 }`, in parts per million. |
 //! | [`WindowCheck`] | `{ opens-after: 10s, closes-after: 40s, since-armed: 12s }`. |
 //! | [`BudgetCheck`] | `{ left: 2, limit: 3 }`. |
 //! | [`TriggerExplanation`] | A map with `decision`, and with `match-number`, `count-agreed`, `die`, `window`, `budget` and `reason` when it has them. |
 //! | [`LostTarget`] | `{ on: …, to: Leader flap }`. |
-//! | [`LieFate`] | A map with `fired`, and with `applied`, `shadowed` and `pre-empted` when it has them. |
+//! | [`LieFate`] | A map with `fired`, and with `applied`, `shadowed`, `pre-empted` and `untold` when it has them. `untold` is the failure of a lie that GaslightMQ could not tell. |
 //! | [`RuleExplanation`] | A map with `rule` and `priority`, and the keys of how far the rule got. |
 //! | [`Explanation`] | A map with `rules` and `failure`, each when it has it. |
 //! | [`CallTiming`] | A map with `arrived`, and with `forwarded`, `answered` and `delivered` when it has them. |

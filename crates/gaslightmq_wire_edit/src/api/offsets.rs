@@ -63,6 +63,8 @@ partition!(OffsetCommitResponsePartition, partition_index, error_code);
 /// Since version 8 it asks for several groups, each with its topics.
 /// A group that asks for every topic names none, so it has no parts.
 impl Editable for OffsetFetchRequest {
+    crate::api::response_has_error_code!();
+
     fn retain_parts(&mut self, _version: i16, keep: &mut Keep<'_>) {
         if let Some(topics) = &mut self.topics {
             topics.retain_mut(|topic| {
@@ -162,6 +164,8 @@ topic!(
 partition!(OffsetFetchResponsePartitions, partition_index, error_code);
 
 impl Editable for OffsetDeleteRequest {
+    crate::api::response_has_error_code!();
+
     fn retain_parts(&mut self, _version: i16, keep: &mut Keep<'_>) {
         self.topics.retain_mut(|topic| {
             keep.partitions(TopicKey::named(&topic.name), &mut topic.partitions, |partition| {

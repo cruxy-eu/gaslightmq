@@ -41,14 +41,16 @@ fn a_refusal_of_parts_cannot_be_told_on_a_call_without_parts() {
     let lies = every_lie();
 
     // It does not widen to the whole call, and it does not pass in silence.
-    let error = lies.before_forwarding(&flap, &request).unwrap_err();
+    let error = lies.before_forwarding(&flap, &decoded(&request)).unwrap_err();
     assert_eq!(error, not_in_request(&request, &["orders.eu/3"]));
     assert_eq!(
         error.to_string(),
         "refusal targets parts that the Heartbeat v4 request does not name: orders.eu/3"
     );
 
-    let error = lies.after_response(&flap, &request, &backend(&request)).unwrap_err();
+    let error = lies
+        .after_response(&flap, &decoded(&request), &backend(&request))
+        .unwrap_err();
     assert_eq!(error, not_in_request(&request, &["orders.eu/3"]));
 }
 
@@ -93,7 +95,7 @@ fn a_refusal_is_told_on_all_of_its_parts_or_on_none() {
 
         // The contract keeps the reason, and names the part.
         let error = every_lie()
-            .before_forwarding(&refusal(NOT_LEADER, target), &request)
+            .before_forwarding(&refusal(NOT_LEADER, target), &decoded(&request))
             .unwrap_err();
         assert_eq!(error, not_in_request(&request, &[&missing.to_string()]));
     }
@@ -112,22 +114,29 @@ fn a_part_of_another_kind_than_the_request_names_is_not_in_the_request() {
 }
 
 #[test]
-fn the_behaviour_knows_no_topic_by_its_id() {
+fn the_behaviour_names_a_topic_by_the_id_that_the_pipeline_knows() {
     let request = fetch_by_id(&["orders.eu/3", "orders.eu/4"]);
     let lies = every_lie();
-
-    // The contract hands over no topic names, so the request names no part that the behaviour can read.
     let flap = refusal(NOT_LEADER, parts(&["orders.eu/3"]));
-    let error = lies.before_forwarding(&flap, &request).unwrap_err();
+
+    // The pipeline decoded the request with the topics it knows by ID, so the refusal finds its part.
+    let Effect::Forward(left) = lies.before_forwarding(&flap, &decoded(&request)).unwrap() else {
+        panic!("one partition is left to forward");
+    };
+    assert_eq!(decoded(&left).parts(), [part("orders.eu/4")]);
+
+    // Decoded by someone who knows no topic, the request names no part.
+    let unnamed = EditableRequest::decode(&request, &TopicNames::new()).unwrap();
+    let error = lies.before_forwarding(&flap, &unnamed).unwrap_err();
     assert_eq!(error, not_in_request(&request, &["orders.eu/3"]));
     assert_eq!(
         error.to_string(),
         "refusal targets parts that the Fetch v13 request does not name: orders.eu/3"
     );
 
-    // The whole call is refused as on any other version, and its partitions fail with it.
+    // The whole call is refused either way, and its partitions fail with it.
     let Effect::Answer(response) = lies
-        .before_forwarding(&refusal(NOT_LEADER, Target::Call), &request)
+        .before_forwarding(&refusal(NOT_LEADER, Target::Call), &unnamed)
         .unwrap()
     else {
         panic!("a refusal of the whole call answers it");
@@ -147,7 +156,7 @@ fn a_refusal_cannot_be_told_where_the_response_has_no_place_for_the_error() {
     let unknown = refusal(ErrorCode::UNKNOWN_TOPIC_OR_PARTITION, Target::Call);
     let lies = every_lie();
 
-    let error = lies.before_forwarding(&unknown, &request).unwrap_err();
+    let error = lies.before_forwarding(&unknown, &decoded(&request)).unwrap_err();
     assert_eq!(error, no_place_for_error(&request));
     assert_eq!(
         error.to_string(),
@@ -156,7 +165,7 @@ fn a_refusal_cannot_be_told_where_the_response_has_no_place_for_the_error() {
 
     // After the response it fails as well, so the client gets the truth, and not an empty cluster.
     let truth = request.response(&MetadataResponse::default()).unwrap();
-    let error = lies.after_response(&unknown, &request, &truth).unwrap_err();
+    let error = lies.after_response(&unknown, &decoded(&request), &truth).unwrap_err();
     assert_eq!(error, no_place_for_error(&request));
 
     let error =
@@ -205,7 +214,7 @@ fn the_behaviour_only_tells_refusals() {
     let request = heartbeat();
     let silence = LieDefinition::Silence.on(Target::Call);
 
-    let error = Refusal.before_forwarding(&silence, &request).unwrap_err();
+    let error = Refusal.before_forwarding(&silence, &decoded(&request)).unwrap_err();
 
     assert_eq!(
         error,
@@ -216,7 +225,7 @@ fn the_behaviour_only_tells_refusals() {
     );
     assert_eq!(
         Refusal
-            .after_response(&silence, &request, &backend(&request))
+            .after_response(&silence, &decoded(&request), &backend(&request))
             .unwrap_err(),
         error
     );
@@ -224,50 +233,23 @@ fn the_behaviour_only_tells_refusals() {
 }
 
 #[test]
-fn a_call_of_an_unknown_api_cannot_be_refused() {
+fn a_request_that_does_not_decode_never_reaches_a_refusal() {
     // The header of a request of API key 9999: the key, the version, the correlation ID and no client ID.
     let header: &[u8] = &[0x27, 0x0F, 0, 0, 0, 0, 0, 7, 0xFF, 0xFF];
-    let request = Request::decode(Frame::new(header.to_vec())).unwrap();
-
-    let error = every_lie()
-        .before_forwarding(&refusal(TIMED_OUT, Target::Call), &request)
-        .unwrap_err();
-
-    assert_eq!(
-        error,
-        LieError::ApiNotSupported {
-            kind: LieKind::Refusal,
-            api: request.api()
-        }
-    );
-    assert_eq!(error.to_string(), "refusal cannot be told on api 9999 v0");
-}
-
-#[test]
-fn a_request_that_does_not_decode_cannot_be_refused() {
+    let unknown = Request::decode(Frame::new(header.to_vec())).unwrap();
     // A Produce whose body is cut short.
     let whole = produce(&["orders.eu/3"]);
     let payload = whole.frame().payload();
     let cut = Request::decode(Frame::new(payload.slice(..payload.len() - 3))).unwrap();
 
-    let error = every_lie()
-        .before_forwarding(&refusal(TIMED_OUT, Target::Call), &cut)
-        .unwrap_err();
-
-    assert!(
-        matches!(
-            error,
-            LieError::Unreadable {
-                kind: LieKind::Refusal,
-                ..
-            }
-        ),
-        "{error}"
+    // A lie is asked with a decoded request, so whoever decodes finds out first, and no lie is asked.
+    assert_eq!(
+        EditableRequest::decode(&unknown, &TopicNames::new()).unwrap_err(),
+        EditableRequestError::UnknownApi { api: unknown.api() }
     );
+    let error = EditableRequest::decode(&cut, &TopicNames::new()).unwrap_err();
     assert!(
-        error
-            .to_string()
-            .starts_with("refusal cannot read the call: cannot decode request body: "),
+        matches!(error, EditableRequestError::UnreadableRequest { .. }),
         "{error}"
     );
 }
@@ -280,7 +262,7 @@ fn a_response_that_does_not_decode_cannot_take_a_refusal() {
     let cut = Response::decode(request.api(), Frame::new(payload.slice(..payload.len() - 3))).unwrap();
 
     let error = every_lie()
-        .after_response(&refusal(TIMED_OUT, parts(&["orders.eu/3"])), &request, &cut)
+        .after_response(&refusal(TIMED_OUT, parts(&["orders.eu/3"])), &decoded(&request), &cut)
         .unwrap_err();
 
     assert!(
@@ -321,7 +303,7 @@ fn a_response_to_another_request_cannot_take_a_refusal() {
     );
 
     let error = every_lie()
-        .after_response(&refusal(TIMED_OUT, target), &request, &answer_to_other)
+        .after_response(&refusal(TIMED_OUT, target), &decoded(&request), &answer_to_other)
         .unwrap_err();
     assert_eq!(
         error,
@@ -348,7 +330,7 @@ fn a_produce_that_expects_no_response_is_refused_as_any_other() {
 
     // The whole call: the refusal builds the response, and whoever sends responses knows that this call has none.
     let Effect::Answer(response) = lies
-        .before_forwarding(&refusal(NOT_LEADER, Target::Call), &request)
+        .before_forwarding(&refusal(NOT_LEADER, Target::Call), &decoded(&request))
         .unwrap()
     else {
         panic!("a refusal of the whole call answers it");
@@ -361,7 +343,7 @@ fn a_produce_that_expects_no_response_is_refused_as_any_other() {
 
     // Some parts: the refused records never reach the backend, and the request still expects no response.
     let Effect::Forward(forwarded) = lies
-        .before_forwarding(&refusal(NOT_LEADER, parts(&["orders.eu/3"])), &request)
+        .before_forwarding(&refusal(NOT_LEADER, parts(&["orders.eu/3"])), &decoded(&request))
         .unwrap()
     else {
         panic!("one partition is left to forward");

@@ -57,6 +57,8 @@ topic!(
 partition!(PartitionProduceResponse, index, error_code);
 
 impl Editable for FetchRequest {
+    crate::api::response_has_error_code!();
+
     fn retain_parts(&mut self, _version: i16, keep: &mut Keep<'_>) {
         self.topics.retain_mut(|topic| {
             let asked = TopicKey::new(&topic.topic, topic.topic_id.into_bytes());

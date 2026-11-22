@@ -27,7 +27,7 @@ stateDiagram-v2
   [*] --> Opened: client connects
   Opened --> Identified: first request carries client.id
   Identified --> Identified: calls
-  Identified --> Closed: client, backend or lie hangs up
+  Identified --> Closed: client, backend, lie or proxy closes
   Opened --> Closed: hang-up before the first request
   Closed --> [*]
 ```
@@ -41,7 +41,7 @@ stateDiagram-v2
   The session takes the client software from the first `ApiVersions` request that names it validly.
   From here on, every connection field is known.
 - **Closed**: the session ends.
-  The session records who closed it: the client, the backend or a lie.
+  The session records who closed it: the client, the backend, a lie or the proxy itself.
 
 Rules scoped to a client cannot apply before the session is identified.
 Lies that act before identification, such as refusing the connection,
@@ -122,6 +122,7 @@ so it ends the session like any other close.
 | A [hang-up](lies-and-incidents.md#lies) fires. | Closes, and records that a lie closed it. |
 | A broker goes down. | Closes, together with every other session on that broker's endpoint. The endpoint refuses new connections until the broker is back. |
 | A silence fires, or the broker is unresponsive. | Stays open and never answers. It closes when the client gives up. |
+| The proxy cannot keep the answers of the connection in order: the client sends bytes that are no request, or the backend sends something that is no response. | Closes, and records that the proxy closed it. See [failure inside the pipeline](../architecture/request-pipeline.md#failure-inside-the-pipeline). |
 
 A client that reconnects gets a new session,
 with a new transport and a new pipeline.

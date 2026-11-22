@@ -22,6 +22,7 @@
 //! use gaslightmq_wire::messages::produce_response::{PartitionProduceResponse, TopicProduceResponse};
 //! use gaslightmq_wire::messages::{ProduceRequest, ProduceResponse};
 //! use gaslightmq_wire::protocol::StrBytes;
+//! use gaslightmq_wire_edit::prelude::*;
 //!
 //! // The engine registers the refusal next to the kinds of every build.
 //! let lies = Lies::of_every_build().with(Refusal)?;
@@ -31,11 +32,13 @@
 //! let partition = |index| PartitionProduceData::default().with_index(index);
 //! let topic = TopicProduceData::default().with_name(orders()).with_partition_data(vec![partition(3), partition(4)]);
 //! let request = Request::new(9, 42, Some("order-ingest"), &ProduceRequest::default().with_topic_data(vec![topic]))?;
+//! // The pipeline decodes the request once, with the topics it knows by ID.
+//! let asked = EditableRequest::decode(&request, &TopicNames::new())?;
 //! let three = Target::of_parts(["orders.eu/3".parse()?]).expect("one part");
 //! let flap = LieDefinition::from(RefusalLie::new(ErrorCode::NOT_LEADER_OR_FOLLOWER)).on(three);
 //!
 //! // Before forwarding, the refusal asks to forward the request without `orders.eu/3`.
-//! let Effect::Forward(forwarded) = lies.before_forwarding(&flap, &request)? else {
+//! let Effect::Forward(forwarded) = lies.before_forwarding(&flap, &asked)? else {
 //!     panic!("one partition is left to forward");
 //! };
 //! let left: ProduceRequest = forwarded.body()?;
@@ -47,7 +50,7 @@
 //! let truth = forwarded.response(&ProduceResponse::default().with_responses(vec![answered]))?;
 //!
 //! // The pipeline asks the refusal again, and the client gets one response for both partitions.
-//! let Effect::Answer(delivered) = lies.after_response(&flap, &request, &truth)? else {
+//! let Effect::Answer(delivered) = lies.after_response(&flap, &asked, &truth)? else {
 //!     panic!("the refusal puts its error into the response");
 //! };
 //! let body: ProduceResponse = delivered.body()?;

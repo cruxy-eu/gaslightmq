@@ -45,8 +45,11 @@ mod next_to_the_others {
 
     /// One value of every item of the prelude, each named without a path.
     pub fn every_item() -> Vec<String> {
-        let request: Request = Request::new(4, 7, Some("order-ingest"), &HeartbeatRequest::default()).unwrap();
-        let truth: Response = request.response(&HeartbeatResponse::default()).unwrap();
+        let heartbeat: Request = Request::new(4, 7, Some("order-ingest"), &HeartbeatRequest::default()).unwrap();
+        let truth: Response = heartbeat.response(&HeartbeatResponse::default()).unwrap();
+        let request =
+            gaslightmq_wire_edit::EditableRequest::decode(&heartbeat, &gaslightmq_wire_edit::TopicNames::new())
+                .unwrap();
 
         let lies: Lies = Lies::new()
             .with(Timing)
@@ -138,7 +141,9 @@ fn the_prelude_is_enough_to_tell_a_lie() {
     use gaslightmq_wire::Request;
     use gaslightmq_wire::messages::HeartbeatRequest;
 
-    let request = Request::new(4, 7, None, &HeartbeatRequest::default()).unwrap();
+    let heartbeat = Request::new(4, 7, None, &HeartbeatRequest::default()).unwrap();
+    let request =
+        gaslightmq_wire_edit::EditableRequest::decode(&heartbeat, &gaslightmq_wire_edit::TopicNames::new()).unwrap();
     let silence = LieDefinition::Silence.on(Target::Call);
 
     let effect = Lies::of_every_build().before_forwarding(&silence, &request).unwrap();

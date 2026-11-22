@@ -54,6 +54,8 @@ fn failed_partitions(topics: &[AddPartitionsToTxnTopic], verdict: &Verdict<'_>) 
 /// Up to version 3 an `AddPartitionsToTxn` is about one transaction, and its topics stand in the request itself.
 /// Since version 4 it is about several transactions, each with its topics.
 impl Editable for AddPartitionsToTxnRequest {
+    crate::api::response_has_error_code!();
+
     fn retain_parts(&mut self, _version: i16, keep: &mut Keep<'_>) {
         retain_partitions(&mut self.v3_and_below_topics, keep);
         self.transactions.retain_mut(|transaction| {

@@ -276,6 +276,9 @@ struct LieFateForm {
     shadowed: Vec<LostTarget>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pre_empted: Vec<LostTarget>,
+    /// Why GaslightMQ could not tell the lie.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    untold: Option<Failure>,
 }
 
 impl From<&LieFate> for LieFateForm {
@@ -285,6 +288,7 @@ impl From<&LieFate> for LieFateForm {
             applied: fate.applied().cloned(),
             shadowed: fate.shadowed().to_vec(),
             pre_empted: fate.pre_empted().to_vec(),
+            untold: fate.failure().cloned(),
         }
     }
 }
@@ -293,7 +297,16 @@ impl TryFrom<LieFateForm> for LieFate {
     type Error = LieFateError;
 
     fn try_from(form: LieFateForm) -> Result<Self, Self::Error> {
-        LieFate::new(form.fired, form.applied, form.shadowed, form.pre_empted)
+        match (form.untold, form.applied) {
+            (None, applied) => LieFate::new(form.fired, applied, form.shadowed, form.pre_empted),
+            (Some(_), Some(applied)) => Err(LieFateError::AppliedUntold { applied }),
+            (Some(failure), None) => Ok(LieFate::untold_with_losses(
+                form.fired,
+                form.shadowed,
+                form.pre_empted,
+                failure,
+            )),
+        }
     }
 }
 

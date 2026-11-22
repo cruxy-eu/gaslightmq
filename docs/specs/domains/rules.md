@@ -250,11 +250,17 @@ It uses 64-bit unsigned arithmetic that wraps, and no hasher of the standard lib
 | The die of a rule on one session, with `per: session` | `mix(die ^ fnv1a(counter key))` |
 | The bits for one match | `mix(die + match number × 0x9e3779b97f4a7c15)` |
 | The roll | `(bits × 1 000 000) >> 64` |
+| The die of the jitter of a rule's delay | `mix(die ^ fnv1a("jitter"))` |
+| The wait of a delay, for one match | `delay − jitter + (2 × jitter × roll) / 1 000 000`, in whole milliseconds |
 
 - `fnv1a` is 64-bit FNV-1a over the UTF-8 bytes of the key.
 - `mix` is the finalizer of SplitMix64.
 - The bits for match *n* are output number *n* of the SplitMix64 generator that starts at the die.
   A die keeps no state, so the order in which calls arrive does not change a roll.
+- The jitter of a delay rolls a die of its own, below the die of its rule.
+  With `per: session`, that is the die of the rule on the session.
+  It rolls for the match that fired the rule, so the same seed gives the same waits.
+  The wait does not follow the roll of the rule's chance trigger.
 
 A change to this derivation changes which calls every existing scenario hits.
 The `trigger` crate pins it in its tests, with fixed rolls for fixed seeds.

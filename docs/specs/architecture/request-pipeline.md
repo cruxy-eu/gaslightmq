@@ -36,7 +36,7 @@ flowchart TB
 | **6 · Resolve** | Hands the incidents of firing rules to the scenario runner. Lets lies that do not conflict through. Resolves conflicts with the snapshot's priority order: the live set first, then the scenario's mode. Marks the losers as shadowed or pre-empted, and gives their firings back to the budget. |
 | **7 · Before forwarding** | Applies lies of the before-forwarding [stage](../domains/lies-and-incidents.md#stage). A silence or a hang-up ends the call. A delay holds the request back. A refusal removes its partitions from the request. A request rewrite changes the request. |
 | **8 · Backend** | Forwards what is left of the request to the real cluster, or hands it to the broker in memory. The response is the truth. The backend does not see a request whose partitions were all refused. |
-| **9 · After the response** | Merges the refusals of stage 7 into the response. Runs the response pass. Applies rewrites and after-response refusals per target. Then applies modifiers: the summed delay and the maximum throttle. A hang-up at this stage closes the connection instead of sending. |
+| **9 · After the response** | Learns what the truth teaches: the member ID of the client, and the topics that the cluster names with their ID. Runs the response pass. Applies rewrites and after-response refusals per target, and then merges the refusals of stage 7 into the response, so each refused partition keeps its own refusal. Then applies modifiers: the summed delay and the maximum throttle. A hang-up at this stage closes the connection instead of sending. |
 | **10 · Send** | Writes the delivered response to the client, in the order the client sent its requests. |
 | **11 · Emit** | Publishes the call event with request, truth, delivered response, verdict and explanation. |
 
@@ -150,9 +150,57 @@ A delayed or silenced call must not let later calls overtake it.
   The session stops forwarding:
   later requests on the same connection never reach the backend and never get an answer.
   The client sees a stalled connection, as it would with a real hung broker.
+  No rule is evaluated for a request behind a silence: it counts as no match, and it sets no firing aside.
+  Such a request does not identify the session either, and the client context learns nothing from it.
+  Calls before the silence still finish.
+- A **hang-up** acts when its call is at the head of the line.
+  Before forwarding, that is once every request before it went on.
+  After the response, it is once every answer before it left.
+
+A delay before forwarding counts from the moment the request arrived.
+A delay after the response counts from the moment the backend answered.
+
+A session can end while calls are in flight: the client closes the connection, or a hang-up acts.
+Each of those calls ends without an answer, and its record says so.
+A lie that already acted stays applied: a refused partition never reached the backend, and a held request did wait.
+A lie whose turn had not come is not told, and its firing goes back to the [budget](../domains/rules.md#budgets).
+A lie acts before forwarding when its request goes on, and after the response when its answer leaves.
+
+## Calls without a response
+
+A Produce with `acks=0` has no response.
+The pipeline forwards it and sends nothing, also when a refusal answered the call before forwarding.
+Such a call has no truth, so the response pass does not run for it.
+A lie that acts after the response is not told, and the explanation says so.
 
 ## Failure inside the pipeline
 
-When a stage fails, for example because a frame cannot be decoded,
-the pipeline forwards the call untouched and records the failure in the explanation.
 A bug in GaslightMQ must never look like a lie.
+What fails changes nothing, and the explanation says what failed and why.
+
+- A request whose body cannot be decoded goes through untouched.
+  No rule sees it.
+- A lie that cannot be told changes nothing.
+  Its kind can be missing from the build, or the response can have no place for its error code.
+  The other lies of the call still apply, as the lies combined:
+  a lie that it shadowed stays shadowed, and its explanation still names the winner.
+  The verdict does not list the lie, and its firing goes back to the [budget](../domains/rules.md#budgets).
+- A lie that kept a partition from the backend did act, also when it then cannot put its error into the response.
+  It stays applied, and the explanation says what the response lacks.
+- A silence or a hang-up before forwarding that cannot be told ends nothing, and it takes nothing from the other lies.
+  Nothing acted on the call yet, so the lies combine again without it:
+  the lies that it would have shadowed or pre-empted apply, and the rules that wait for the truth get their pass.
+- A truth that cannot be read goes to the client as the backend sent it.
+  It has no outcome, so the response pass does not run, and the record does not say what the client received:
+  a response that nobody read is no success.
+- A call always has a record.
+  A moment that does not follow the one before it is missing from its timing, and the explanation says which.
+
+Sometimes the pipeline cannot keep the answers of a connection in order.
+It then closes the connection, as a broker does, and the session records that the proxy closed it.
+
+- Bytes that are no request cannot be answered, and nothing says where the next request starts.
+- A Produce whose body ends before its `acks` does not say whether a response comes.
+  A Produce whose body is broken behind its `acks` goes through untouched, and the pipeline knows whether to wait.
+- An answer of the backend that is no response to the request must not reach the client.
+  The connection closes when that answer would be the next to leave.

@@ -139,8 +139,8 @@ Every other crate speaks in them.
 | `trigger` | [Triggers](../domains/rules.md#trigger), counters, dice, budgets and lifetimes. | `clock` |
 | `rule` | The rule definition, the [preset](../domains/lies-and-incidents.md#presets), the rule's state, and the immutable snapshot of armed rules in priority order. The snapshot [evaluates a call](../domains/rules.md#evaluating-one-call): for each pass and each matching rule, the target, what the trigger rolled, and the lie or the incidents it fired. | `selector`, `lie`, `incident`, `trigger`, `field`, `kernel`, `clock` |
 | `combine` | [How lies combine](../domains/lies-and-incidents.md#how-lies-combine): which lies conflict, which win by priority, which are shadowed or pre-empted, across [both evaluation passes](request-pipeline.md#two-evaluation-passes). Also what the lies that apply do to the call at each stage: the refusals and rewrites per target, the summed delay and the maximum throttle. | `lie`, `field`, `clock` |
-| `wire_edit` | Surgery on requests and responses: remove partitions, merge responses, synthesize an error response for any API, map topic IDs to names. It also reads what a response says about each [part](../domains/lies-and-incidents.md#target) of its request. | `wire`, `field`, `kernel` |
-| `lie_api` | The contract between the pipeline and a lie kind: the `Lie` trait, and the effect that one lie asks the pipeline for. Also the behaviour of timing, silence and hang-up. See [lies as crates](#lies-as-crates). | `lie`, `wire`, `field` |
+| `wire_edit` | Surgery on requests and responses: remove partitions, merge responses, synthesize an error response for any API, map topic IDs to names. It also reads what a response says about each [part](../domains/lies-and-incidents.md#target) of its request, and the error code of the response itself. | `wire`, `field`, `kernel` |
+| `lie_api` | The contract between the pipeline and a lie kind: the `Lie` trait, and the effect that one lie asks the pipeline for. A lie gets the request decoded, with its parts named. Also the behaviour of timing, silence and hang-up. See [lies as crates](#lies-as-crates). | `lie`, `wire`, `wire_edit`, `field` |
 | `lie_refusal` | Refusals for every API, before forwarding and after the response. | `lie`, `lie_api`, `wire_edit`, `wire`, `field`, `kernel` |
 | `lie_topology` | Rewrites of Metadata, `FindCoordinator` and `DescribeCluster`. | `lie`, `lie_api`, `wire_edit` |
 | `lie_data` | Altered, dropped, duplicated, reordered and corrupted records. | `lie`, `lie_api`, `wire_edit`, `schema` |
@@ -152,7 +152,7 @@ Every other crate speaks in them.
 | Crate | Holds | Depends on |
 |---|---|---|
 | `session` | The state of one [session](../domains/session.md), which its pipeline owns: lifecycle, identity, session key, per-session counters, in-flight calls, response ordering and the stalled state. Also the client context that sessions share. | `field`, `kernel`, `call`, `wire`, `trigger`, `clock` |
-| `pipeline` | The [request pipeline](request-pipeline.md) as a state machine: all stages, both evaluation passes and partial refusals. | `wire`, `wire_edit`, `selector`, `rule`, `trigger`, `lie`, `lie_api`, `combine`, `session`, `call`, `incident`, `clock` |
+| `pipeline` | The [request pipeline](request-pipeline.md) as a state machine: all stages, both evaluation passes and partial refusals. Also the topics that a proxy knows by ID, which its sessions share. | `wire`, `wire_edit`, `selector`, `rule`, `trigger`, `lie`, `lie_api`, `combine`, `session`, `call`, `incident`, `field`, `kernel`, `clock` |
 
 ### Scenarios
 
@@ -243,27 +243,38 @@ pub enum Output {
     Send(Bytes),
     SetTimer { id: TimerId, at: Instant },
     Close,
-    Emit(Call),
+    Emit(Box<Call>),
     Fire(Incident),
 }
 
 impl Pipeline {
+    pub fn open(connection: Connection, ordinal: ConnectionOrdinal, shared: SharedBySessions, snapshot: Arc<Snapshot>, now: Instant) -> Pipeline;
     pub fn handle(&mut self, input: Input<'_>, now: Instant) -> Outputs;
 }
 ```
 
-The sketch shows the shape of the interface, not its final names.
-
-- A delay is a `SetTimer`, and the delayed response leaves on `TimerFired`.
+- A delay is a `SetTimer`, and the delayed request or response leaves on `TimerFired`.
+  A `TimerId` names the call that waits and the stage it waits at.
 - A silence returns no `Send` and marks the session stalled.
+- A hang-up returns a `Close`, and the record of every call that was in flight.
 - A partial refusal returns a `Forward` with fewer partitions,
   and merges the refusals when `BackendAnswered` arrives.
-- Shared counters and budgets are handles to atomics that the engine passes in.
+- A call ID is the connection and the number of the call on it, so it names one call of the engine.
+- An input that names a call or a timer the pipeline does not wait for changes nothing.
+  The engine cannot avoid every race, such as an answer for a call whose session just closed.
+- Shared counters and budgets are handles to atomics.
+  They travel inside the armed rules of the snapshot.
   The pipeline increments them, and it still does no IO.
-- The [client context](../domains/session.md#client-context) is shared the same way.
-  The engine owns the contexts and passes in a handle to them.
-  At the Identify stage, the pipeline takes the context of its `client.id` and `host` from that handle.
-  It reads learned fields from the context, and writes what it learns.
+- The engine passes in the other handles that the sessions of a proxy share, as `SharedBySessions`:
+  - The [client contexts](../domains/session.md#client-context).
+    At the Identify stage, the pipeline takes the context of its `client.id` and `host` from that handle.
+    It reads learned fields from the context, and writes what it learns.
+    The engine expires the contexts that no session has shared for a while.
+  - The topics that the cluster named with their ID.
+    A topic ID is a fact of the cluster, so the names belong to the proxy, and not to one client.
+    Every pipeline learns them from the truth of Metadata, `CreateTopics` and `DescribeTopicPartitions` calls,
+    and decodes its requests with what all of them learned.
+  - The lies of the build, one behaviour per kind.
 
 The same interface serves three drivers:
 
@@ -388,6 +399,8 @@ A lie has a definition and a behaviour, and they live in different crates.
 Rules, call records, the workspace and the control plane carry lie definitions.
 A definition needs no Kafka codec, so none of them reaches `wire` through `lie`.
 The `Lie` trait reads requests and responses, so `lie_api` depends on `wire`.
+The pipeline decodes a request once, with the topics it knows by ID, and every lie reads that:
+the trait takes the decoded request of `wire_edit`, and no behaviour decodes it again.
 
 The split rests on one rule:
 every lie definition is data in `lie`, and the `lie_*` crates hold behaviour only.
@@ -410,6 +423,12 @@ and they change at their own pace.
 Every kind implements the `Lie` trait from `lie_api`.
 The pipeline works with a set of lies that the engine registers,
 so `pipeline` depends on `lie` and `lie_api`, and on none of the crates of a lie kind.
+
+The pipeline asks a lie when only the lie knows what to do to this call:
+a refusal and a rewrite carry a request or a response, and a silence and a hang-up say whether to drop or to close.
+It does not ask a timing lie.
+The wait of a stage is the sum of the delays that apply there, and the throttle is their maximum.
+Both are sums over lies, so they come from `combine`, and the pipeline holds the call once for all of them.
 A new kind adds its definition to `lie` and its behaviour to a crate of its own, and it does not touch the pipeline.
 A build can leave a kind out.
 Such a build still reads that kind's definitions, because they are data in `lie`.

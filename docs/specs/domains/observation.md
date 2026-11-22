@@ -55,6 +55,11 @@ An explanation records every rule the call touched:
 A rule that waits for the truth is also pre-empted
 when a lie ends the call before forwarding.
 
+A lie can fire and still not be told, because GaslightMQ itself failed:
+the build has no behaviour for its kind, or the response has no place for its error code.
+The explanation then says that the rule fired, that its lie was not told, and why.
+Such a lie is not part of the verdict, and it does not count as a firing.
+
 Without explanations, any combination rule feels like magic.
 With them, the UI answers *why did this call fail?*
 and *why did my rule not fire?*

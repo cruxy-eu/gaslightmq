@@ -20,7 +20,7 @@ fn late(error: ErrorCode, target: Target) -> TargetedLie {
 
 /// The response that `lie` asks for after `response`.
 fn answer_after(lie: &TargetedLie, request: &gaslightmq_wire::Request, response: &Response) -> Response {
-    match every_lie().after_response(lie, request, response).unwrap() {
+    match every_lie().after_response(lie, &decoded(request), response).unwrap() {
         Effect::Answer(response) => response,
         other => panic!("{lie} asked to {other}"),
     }
@@ -140,7 +140,7 @@ fn a_refusal_that_forwarded_gives_the_same_response_when_it_is_asked_again() {
     for request in calls_with_parts() {
         let [_, second, _] = three_parts(&request);
         let flap = refusal(NOT_LEADER, only(&second));
-        let Effect::Forward(left) = every_lie().before_forwarding(&flap, &request).unwrap() else {
+        let Effect::Forward(left) = every_lie().before_forwarding(&flap, &decoded(&request)).unwrap() else {
             panic!("two parts are left to forward");
         };
 

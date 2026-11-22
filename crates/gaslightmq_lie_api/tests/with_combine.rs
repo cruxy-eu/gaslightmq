@@ -27,6 +27,7 @@ use gaslightmq_wire::messages::{
 };
 use gaslightmq_wire::protocol::{Encodable, StrBytes};
 use gaslightmq_wire::{ApiKey as WireApiKey, Request, Response};
+use gaslightmq_wire_edit::prelude::*;
 
 const BEFORE: Stage = Stage::BeforeForwarding;
 const AFTER: Stage = Stage::AfterResponse;
@@ -114,8 +115,9 @@ impl Lie for Refusal {
         LieKind::Refusal
     }
 
-    fn before_forwarding(&self, lie: &TargetedLie, request: &Request) -> Result<Effect, LieError> {
+    fn before_forwarding(&self, lie: &TargetedLie, request: &EditableRequest) -> Result<Effect, LieError> {
         let error = Self::error(lie)?;
+        let request = request.request();
         match request.api().known() {
             Some(WireApiKey::Heartbeat) => {
                 Self::answer(request, &HeartbeatResponse::default().with_error_code(error.value()))
@@ -152,8 +154,14 @@ impl Lie for Refusal {
         }
     }
 
-    fn after_response(&self, lie: &TargetedLie, request: &Request, response: &Response) -> Result<Effect, LieError> {
+    fn after_response(
+        &self,
+        lie: &TargetedLie,
+        request: &EditableRequest,
+        response: &Response,
+    ) -> Result<Effect, LieError> {
         let error = Self::error(lie)?;
+        let request = request.request();
         match request.api().known() {
             Some(WireApiKey::Heartbeat) => {
                 Self::answer(request, &HeartbeatResponse::default().with_error_code(error.value()))
@@ -232,6 +240,8 @@ fn walk(lies: &Lies, fired: &[Fired], request: &Request, backend: impl Fn(&Reque
         let fired = fired.iter().find(|fired| fired.rule == rule).unwrap();
         fired.lie.clone().on(target)
     };
+    // The pipeline decodes a request once, and every lie reads that.
+    let asked = decoded(request);
     let end = |effect: Effect| match effect {
         Effect::Drop => End::Dropped,
         Effect::Close => End::Closed,
@@ -246,7 +256,7 @@ fn walk(lies: &Lies, fired: &[Fired], request: &Request, backend: impl Fn(&Reque
     // Before forwarding: a terminal lie ends the call, and every refusal changes what is forwarded.
     let before = pass.before_forwarding().clone();
     if let Some(rule) = before.terminal() {
-        let effect = lies.before_forwarding(&targeted(rule, Target::Call), request).unwrap();
+        let effect = lies.before_forwarding(&targeted(rule, Target::Call), &asked).unwrap();
         return Walked {
             forwarded: None,
             end: end(effect),
@@ -259,7 +269,7 @@ fn walk(lies: &Lies, fired: &[Fired], request: &Request, backend: impl Fn(&Reque
     let mut asked_to_forward = Vec::new();
     for (rule, target) in holders(before.refusals()) {
         let lie = targeted(rule, target);
-        match lies.before_forwarding(&lie, &forward).unwrap() {
+        match lies.before_forwarding(&lie, &decoded(&forward)).unwrap() {
             Effect::Forward(other) => {
                 forward = other;
                 asked_to_forward.push(lie);
@@ -281,7 +291,7 @@ fn walk(lies: &Lies, fired: &[Fired], request: &Request, backend: impl Fn(&Reque
         .into_iter()
         .map(|(rule, target)| targeted(rule, target));
     for lie in asked_to_forward.into_iter().chain(of_this_stage) {
-        match lies.after_response(&lie, request, &response).unwrap() {
+        match lies.after_response(&lie, &asked, &response).unwrap() {
             Effect::Answer(other) => response = other,
             Effect::Nothing => {}
             other => panic!("{lie} asked to {other}"),
@@ -289,7 +299,7 @@ fn walk(lies: &Lies, fired: &[Fired], request: &Request, backend: impl Fn(&Reque
     }
     let end = match after.terminal() {
         Some(rule) => end(lies
-            .after_response(&targeted(rule, Target::Call), request, &response)
+            .after_response(&targeted(rule, Target::Call), &asked, &response)
             .unwrap()),
         None => End::Sent(response),
     };
@@ -323,6 +333,11 @@ fn holders(winners: &Winners<&'static str>) -> Vec<(&'static str, Target)> {
 }
 
 // Calls, and a backend that answers them.
+
+/// A request as a lie gets it: decoded once, by whoever asks.
+fn decoded(request: &Request) -> EditableRequest {
+    EditableRequest::decode(request, &TopicNames::new()).unwrap()
+}
 
 fn every_lie() -> Lies {
     Lies::of_every_build().with(Refusal).unwrap()
@@ -597,10 +612,12 @@ fn the_wait_of_a_stage_comes_from_combining_and_a_hold_is_one_lie_s() {
     let holds: Vec<TimingLie> = rules
         .iter()
         .map(|fired| fired.lie.clone().on(Target::Call))
-        .map(|lie| match lies.after_response(&lie, &request, &truth).unwrap() {
-            Effect::Hold(timing) => timing,
-            other => panic!("{lie} asked to {other}"),
-        })
+        .map(
+            |lie| match lies.after_response(&lie, &decoded(&request), &truth).unwrap() {
+                Effect::Hold(timing) => timing,
+                other => panic!("{lie} asked to {other}"),
+            },
+        )
         .collect();
     assert_eq!(holds, [second, more]);
 }
@@ -611,7 +628,7 @@ fn a_delay_before_forwarding_asks_to_hold_the_request_back() {
     let late = TimingLie::new().with_delay(TimeSpan::from_secs(45)).at(BEFORE);
 
     let effect = every_lie()
-        .before_forwarding(&LieDefinition::from(late).on(Target::Call), &request)
+        .before_forwarding(&LieDefinition::from(late).on(Target::Call), &decoded(&request))
         .unwrap();
 
     assert_eq!(effect.to_string(), "hold +45 s before forwarding");
@@ -622,7 +639,7 @@ fn a_kind_that_cannot_tell_its_lie_on_an_api_says_so() {
     let request = Request::new(9, 7, Some("order-ingest"), &MetadataRequest::default()).unwrap();
     let lie = LieDefinition::from(leader_flap()).on(Target::Call);
 
-    let error = every_lie().before_forwarding(&lie, &request).unwrap_err();
+    let error = every_lie().before_forwarding(&lie, &decoded(&request)).unwrap_err();
 
     assert_eq!(
         error,
@@ -636,13 +653,18 @@ fn a_kind_that_cannot_tell_its_lie_on_an_api_says_so() {
 
 #[test]
 fn a_kind_that_cannot_read_the_call_says_so() {
-    // A Produce whose body is cut short.
-    let whole = produce(&["orders.eu/3"]);
+    // A request arrives decoded, so only a response can be unreadable: this one is cut short.
+    let request = produce(&["orders.eu/3"]);
+    let whole = backend(&request);
     let payload = whole.frame().payload();
-    let cut = Request::decode(gaslightmq_wire::Frame::new(payload.slice(..payload.len() - 3))).unwrap();
+    let cut = Response::decode(
+        request.api(),
+        gaslightmq_wire::Frame::new(payload.slice(..payload.len() - 3)),
+    )
+    .unwrap();
     let lie = LieDefinition::from(leader_flap()).on(Target::Call);
 
-    let error = every_lie().before_forwarding(&lie, &cut).unwrap_err();
+    let error = every_lie().after_response(&lie, &decoded(&request), &cut).unwrap_err();
 
     assert!(
         matches!(
@@ -657,6 +679,6 @@ fn a_kind_that_cannot_read_the_call_says_so() {
     assert!(
         error
             .to_string()
-            .starts_with("refusal cannot read the call: cannot decode request body: ")
+            .starts_with("refusal cannot read the call: cannot decode response body: ")
     );
 }

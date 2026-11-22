@@ -255,6 +255,9 @@ pub enum ClosedBy {
     Backend,
     /// A hang-up lie closed the connection.
     Lie,
+    /// The proxy closed the connection itself, because the bytes of the client were no request.
+    /// No lie did this, and the backend never saw those bytes.
+    Proxy,
 }
 
 impl ClosedBy {
@@ -264,6 +267,7 @@ impl ClosedBy {
             ClosedBy::Client => "the client",
             ClosedBy::Backend => "the backend",
             ClosedBy::Lie => "a lie",
+            ClosedBy::Proxy => "the proxy",
         }
     }
 }
@@ -472,8 +476,8 @@ mod tests {
             ["opened", "identified", "closed"]
         );
         assert_eq!(
-            [ClosedBy::Client, ClosedBy::Backend, ClosedBy::Lie].map(|by| by.to_string()),
-            ["the client", "the backend", "a lie"]
+            [ClosedBy::Client, ClosedBy::Backend, ClosedBy::Lie, ClosedBy::Proxy].map(|by| by.to_string()),
+            ["the client", "the backend", "a lie", "the proxy"]
         );
         assert!(Lifecycle::Opened < Lifecycle::Identified && Lifecycle::Identified < Lifecycle::Closed);
     }

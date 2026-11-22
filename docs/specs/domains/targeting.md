@@ -47,6 +47,8 @@ The engine fills the gaps, so `topic` and `partition` mean the same on every req
 - **Topic IDs.**
   Newer request versions name topics by ID.
   The engine learns the IDs from Metadata responses and always exposes the topic name.
+  The names belong to the cluster, so every session of a proxy knows what any of them learned.
+  A topic whose ID no response named yet has no name, and no selector on `topic` matches it.
 - **Fetch sessions.**
   A client with an incremental fetch session only names the partitions that changed since its last Fetch.
   Both backends decline fetch sessions,
