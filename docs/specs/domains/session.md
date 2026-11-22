@@ -35,7 +35,10 @@ stateDiagram-v2
 - **Opened**: the connection exists, but the client is anonymous.
   Only connection fields such as the address and the endpoint are known.
 - **Identified**: the first request carries `client.id`.
+  A first request without a `client.id` identifies the session too, and its `client.id` stays absent.
+  The session keeps the `client.id` of its first request, whatever a later request carries.
   An `ApiVersions` request also carries the client software name and version.
+  The session takes the client software from the first `ApiVersions` request that names it validly.
   From here on, every connection field is known.
 - **Closed**: the session ends.
   The session records who closed it: the client, the backend or a lie.
@@ -71,6 +74,7 @@ and fetches on other connections.
 
 The engine therefore keeps a **client context** for every pair of `client.id` and `host`.
 Sessions with the same pair share it.
+Sessions from one host that send no `client.id` share one context too.
 The context remembers what any of those sessions learned:
 
 | Learned field | Learned from |
@@ -86,6 +90,7 @@ although a Fetch request never names a group.
 
 The context lives in the engine, because it outlives single connections.
 It ends when the last session of the pair has been closed for a while.
+Until then it only adds values, and it forgets them all when it ends.
 
 ## State
 
