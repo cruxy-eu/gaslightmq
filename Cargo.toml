@@ -13,6 +13,7 @@ members = [
     "crates/gaslightmq_session",
     "crates/gaslightmq_trigger",
     "crates/gaslightmq_wire",
+    "crates/gaslightmq_wire_edit",
     "crates/gaslightmq_kafka_client/*",
     "xtask",
 ]
