@@ -121,8 +121,7 @@ and CI runs them with `gmq run`.
 
 ### Reading
 
-The engine reads the YAML files with `serde_saphyr`.
-It reads them through `serde_path_to_error`, so an error names the key that failed:
+When the engine cannot read a file, the error names the path of the key that failed:
 
 ```
 trigger.every: a count is at least one
