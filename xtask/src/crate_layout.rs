@@ -5,6 +5,9 @@
 //! a dependency the row does not list fails, and so does a listed dependency the crate does not have.
 //! A row for a crate that does not exist yet is a plan, and passes.
 //! The tooling in `xtask/` is not product code, and needs no row.
+//!
+//! The middle cell of a row says "This crate does IO" for a crate of the IO edge.
+//! Every other crate is sans-IO, and the check in `sans_io` holds it to that.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
@@ -20,9 +23,19 @@ pub const PATH: &str = "docs/specs/architecture/crates.md";
 /// The header row that starts a crate table.
 const HEADER: &str = "| Crate | Holds | Depends on |";
 
+/// The words with which a row marks a crate of the IO edge.
+pub const DOES_IO: &str = "This crate does IO";
+
 /// Every row of every crate table, by full crate name.
 pub struct CrateLayout {
-    rows: BTreeMap<String, Dependencies>,
+    rows: BTreeMap<String, CrateRow>,
+}
+
+/// What one row says about its crate.
+struct CrateRow {
+    /// Whether the row marks the crate as one that does IO.
+    does_io: bool,
+    dependencies: Dependencies,
 }
 
 /// The last cell of a row.
@@ -43,8 +56,8 @@ impl CrateLayout {
     pub fn parse(text: &str) -> Result<Self, CrateLayoutError> {
         let mut rows = BTreeMap::new();
         for row in table::rows(text, HEADER) {
-            let (name, dependencies) = parse_row(&row)?;
-            if rows.insert(name.clone(), dependencies).is_some() {
+            let (name, crate_row) = parse_row(&row)?;
+            if rows.insert(name.clone(), crate_row).is_some() {
                 return Err(CrateLayoutError::TwoRows { line: row.line, name });
             }
         }
@@ -59,12 +72,30 @@ impl CrateLayout {
         self.rows.contains_key(name)
     }
 
+    /// Whether the row of a crate, by its full name, says that the crate does IO.
+    /// `None` for a crate without a row.
+    pub fn does_io(&self, name: &str) -> Option<bool> {
+        self.rows.get(name).map(|row| row.does_io)
+    }
+
+    /// Every crate with a row, by its full name, with the crates that its row lists.
+    /// A row that describes its dependencies in words lists none.
+    pub fn rows(&self) -> impl Iterator<Item = (&str, impl Iterator<Item = &str>)> {
+        self.rows.iter().map(|(name, row)| {
+            let listed = match &row.dependencies {
+                Dependencies::Listed(listed) => Some(listed),
+                Dependencies::Described(_) => None,
+            };
+            (name.as_str(), listed.into_iter().flatten().map(String::as_str))
+        })
+    }
+
     /// Everything in which the workspace differs from the tables.
     pub fn violations(&self, workspace: &Workspace) -> Vec<LayoutViolation> {
         let mut violations = Vec::new();
         for member in workspace.members.iter().filter(|member| !member.is_tooling()) {
             let name = &member.name;
-            match self.rows.get(name) {
+            match self.rows.get(name).map(|row| &row.dependencies) {
                 None => violations.push(LayoutViolation::NoRow { name: name.clone() }),
                 Some(Dependencies::Described(words)) => {
                     violations.push(LayoutViolation::Described {
@@ -92,9 +123,9 @@ impl CrateLayout {
     }
 }
 
-fn parse_row(row: &Row<'_>) -> Result<(String, Dependencies), CrateLayoutError> {
+fn parse_row(row: &Row<'_>) -> Result<(String, CrateRow), CrateLayoutError> {
     let malformed = || CrateLayoutError::MalformedRow { line: row.line };
-    let [name, _holds, dependencies] = row.cells[..] else {
+    let [name, holds, dependencies] = row.cells[..] else {
         return Err(malformed());
     };
     let name = table::crate_name(name).ok_or_else(malformed)?;
@@ -106,7 +137,11 @@ fn parse_row(row: &Row<'_>) -> Result<(String, Dependencies), CrateLayoutError> 
     } else {
         Dependencies::Described(dependencies.to_owned())
     };
-    Ok((name, dependencies))
+    let crate_row = CrateRow {
+        does_io: holds.contains(DOES_IO),
+        dependencies,
+    };
+    Ok((name, crate_row))
 }
 
 /// A way in which the workspace differs from the crate tables.
@@ -188,6 +223,7 @@ Some prose in between.
 | Crate | Holds | Depends on |
 |---|---|---|
 | `clock` | The clock. | — |
+| `listener` | Kafka on a socket. This crate does IO. | `clock` |
 | `gaslightmq` | The facade crate. | The public crates |
 | `planned` | A crate that does not exist yet. | `kernel` |
 
@@ -198,10 +234,8 @@ Some prose in between.
 
     fn member(name: &str, dependencies: &[&str]) -> Member {
         Member {
-            name: name.to_owned(),
-            dir: PathBuf::from("crates").join(name),
             dependencies: dependencies.iter().map(|&dependency| dependency.to_owned()).collect(),
-            outside_dependencies: BTreeSet::new(),
+            ..Member::alone(name)
         }
     }
 
@@ -276,10 +310,8 @@ Some prose in between.
         let layout = CrateLayout::parse(TABLES).unwrap();
         let mut members = following_the_tables();
         members.push(Member {
-            name: "gaslightmq_checks".to_owned(),
             dir: PathBuf::from("xtask"),
-            dependencies: BTreeSet::new(),
-            outside_dependencies: BTreeSet::new(),
+            ..Member::alone("gaslightmq_checks")
         });
 
         assert_eq!(layout.violations(&workspace(members)), []);
@@ -339,9 +371,23 @@ Some prose in between.
     }
 
     #[test]
+    fn a_row_marks_a_crate_that_does_io() {
+        let layout = CrateLayout::parse(TABLES).unwrap();
+
+        assert_eq!(layout.does_io("gaslightmq_listener"), Some(true));
+        assert_eq!(layout.does_io("gaslightmq_clock"), Some(false));
+        assert_eq!(layout.does_io("gaslightmq_wire"), None);
+    }
+
+    #[test]
     fn the_crate_tables_of_this_repository_parse() {
         let layout = CrateLayout::parse(include_str!("../../docs/specs/architecture/crates.md")).unwrap();
 
-        assert_eq!(layout.rows["gaslightmq_kernel"], Dependencies::Listed(BTreeSet::new()));
+        assert_eq!(
+            layout.rows["gaslightmq_kernel"].dependencies,
+            Dependencies::Listed(BTreeSet::new())
+        );
+        assert_eq!(layout.does_io("gaslightmq_kernel"), Some(false));
+        assert_eq!(layout.does_io("gaslightmq_listener"), Some(true));
     }
 }

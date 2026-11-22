@@ -56,7 +56,7 @@ macro_rules! retry {
             };
             debug!(error = %err, "retrying");
             if Instant::now() + config.retry_backoff >= deadline {
-                break Err(ClientError::DeliveryTimeout(Box::new(err)));
+                break Err(ClientError::DeliveryTimeout { error: Box::new(err) });
             }
             tokio::time::sleep(config.retry_backoff).await;
         }

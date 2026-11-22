@@ -8,9 +8,14 @@
 
 mod crate_layout;
 mod crate_names;
+mod manifest;
+mod sans_io;
+mod source;
 mod table;
 mod wasm_crates;
 mod workspace;
+mod workspace_rules;
+mod wrapped_errors;
 
 use std::process::ExitCode;
 
@@ -30,16 +35,32 @@ enum Check {
     CrateNames,
     /// No crate that compiles to WebAssembly reaches the Kafka codec.
     WasmBoundary,
+    /// Every crate builds with edition 2024, takes its dependencies from the workspace, and leaves `async-trait` out.
+    WorkspaceRules,
+    /// Sans-IO code is not async, and reaches no runtime, socket, file or system clock.
+    SansIo,
+    /// An error type keeps an error it holds in a field `error`, and its `source()` returns `None`.
+    WrappedErrors,
 }
 
 impl Check {
-    const ALL: [Check; 3] = [Check::Dependencies, Check::CrateNames, Check::WasmBoundary];
+    const ALL: [Check; 6] = [
+        Check::Dependencies,
+        Check::CrateNames,
+        Check::WasmBoundary,
+        Check::WorkspaceRules,
+        Check::SansIo,
+        Check::WrappedErrors,
+    ];
 
     fn name(self) -> &'static str {
         match self {
             Check::Dependencies => "dependencies",
             Check::CrateNames => "crate-names",
             Check::WasmBoundary => "wasm-boundary",
+            Check::WorkspaceRules => "workspace-rules",
+            Check::SansIo => "sans-io",
+            Check::WrappedErrors => "wrapped-errors",
         }
     }
 
@@ -59,6 +80,19 @@ impl Check {
                 let layout = CrateLayout::load(&workspace.root).map_err(|error| error.to_string())?;
                 let wasm_crates = WasmCrates::load(&workspace.root).map_err(|error| error.to_string())?;
                 Ok(lines(&wasm_crates.violations(&layout, workspace)))
+            }
+            Check::WorkspaceRules => {
+                let violations = workspace_rules::violations(workspace).map_err(|error| error.to_string())?;
+                Ok(lines(&violations))
+            }
+            Check::SansIo => {
+                let layout = CrateLayout::load(&workspace.root).map_err(|error| error.to_string())?;
+                let violations = sans_io::violations(&layout, workspace).map_err(|error| error.to_string())?;
+                Ok(lines(&violations))
+            }
+            Check::WrappedErrors => {
+                let violations = wrapped_errors::violations(workspace).map_err(|error| error.to_string())?;
+                Ok(lines(&violations))
             }
         }
     }

@@ -188,10 +188,9 @@ mod tests {
     fn member(name: &str, dependencies: &[&str], outside_dependencies: &[&str]) -> Member {
         let owned = |names: &[&str]| names.iter().map(|&name| name.to_owned()).collect();
         Member {
-            name: name.to_owned(),
-            dir: PathBuf::from("crates").join(name),
             dependencies: owned(dependencies),
             outside_dependencies: owned(outside_dependencies),
+            ..Member::alone(name)
         }
     }
 
