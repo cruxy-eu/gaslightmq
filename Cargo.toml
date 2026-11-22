@@ -6,6 +6,7 @@ members = [
     "crates/gaslightmq_incident",
     "crates/gaslightmq_kernel",
     "crates/gaslightmq_lie",
+    "crates/gaslightmq_lie_api",
     "crates/gaslightmq_rule",
     "crates/gaslightmq_selector",
     "crates/gaslightmq_trigger",
@@ -22,6 +23,7 @@ license = "MIT OR Apache-2.0"
 
 [workspace.dependencies]
 gaslightmq_clock = { path = "crates/gaslightmq_clock" }
+gaslightmq_combine = { path = "crates/gaslightmq_combine" }
 gaslightmq_field = { path = "crates/gaslightmq_field" }
 gaslightmq_incident = { path = "crates/gaslightmq_incident" }
 gaslightmq_kafka_client_api = { path = "crates/gaslightmq_kafka_client/api" }

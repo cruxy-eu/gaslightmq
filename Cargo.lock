@@ -274,6 +274,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "gaslightmq_lie_api"
+version = "0.1.0"
+dependencies = [
+ "gaslightmq_clock",
+ "gaslightmq_combine",
+ "gaslightmq_field",
+ "gaslightmq_kernel",
+ "gaslightmq_lie",
+ "gaslightmq_wire",
+]
+
+[[package]]
 name = "gaslightmq_rule"
 version = "0.1.0"
 dependencies = [
