@@ -264,7 +264,7 @@ Transactions arrive later as `sim_txn`, next to `sim_log` and `sim_group`.
 |---|---|---|
 | `engine` | The runtime of one proxy: one task per session that owns the transport and drives the pipeline, the rule store, the scenario runner, the event bus, the journal, the recorder and the indexer. This crate does IO. | `pipeline`, `session`, `rule`, `scenario`, `journal`, `traffic`, `index`, `recording`, `backend`, `listener`, `workspace`, `environment`, `clock` |
 | `ui` | The web UI, a Dioxus application. It reaches the engine only through the control plane. This crate does IO. | `control_api`, `control_client`, `surface`, `hardware_push2` |
-| `listener` | Kafka on a socket: accept connections, frame bytes, and drive whatever handles a connection. A proxy's pipeline and a broker alone both sit behind it. This crate does IO. | `wire`, `clock` |
+| `listener` | Kafka on a socket: accept connections, frame bytes, and run whatever [handles a connection](#the-connection-handler). A proxy's pipeline and a broker alone both sit behind it. This crate does IO. | `wire`, `field`, `clock` |
 | `host` | One process with several [environments](storage.md#several-environments-in-one-process): it starts and stops proxies and brokers, runs the task that drives each broker, and shares the workspace and the control plane between them. This crate does IO. | `engine`, `broker`, `listener`, `backend_upstream`, `workspace_fs`, `environment`, `quick_inject` |
 | `test` | The test library: it starts a proxy, a broker, or a proxy in front of a broker inside the test's own process, on free ports, and hands the test the addresses its clients connect to. The test then activates a scenario and asserts on the recording. This crate does IO. See [instances in a test](#instances-in-a-test). | `host`, `control_client` |
 | `testcontainers` | A container module: it starts the GaslightMQ image next to a test, with the workspace the test hands over, waits until the instance is ready, and hands the test the addresses its clients connect to. This crate does IO. See [instances in a test](#instances-in-a-test). | `control_client` |
@@ -419,6 +419,48 @@ On a native target they run on Tokio.
   A sans-IO crate has no blocking or async side, so it needs no second variant.
   The edge has no blocking variant either.
   A caller that is not async, such as a blocking test, runs the edge on a runtime of its own.
+
+### The connection handler
+
+The listener hands every connection it accepts to a connection handler, as a transport.
+The handler runs in a task of that connection alone, and the connection lives as long as the handler runs.
+The listener knows nothing about what a handler does with the client's bytes.
+
+| Instance | Behind the listener |
+|---|---|
+| A proxy | The `engine`: the handler is the task of a session, which owns the transport and drives the pipeline. |
+| A broker that runs alone | The `host`: the handler passes each request to the task that drives the broker, and writes the answer. |
+
+- **A transport carries what a session opens with.**
+  It knows the connection number, the address of the client and the endpoint.
+  The listeners of one proxy number their connections together,
+  so a number names one connection of the proxy, whichever endpoint the client connected to.
+- **Frames come in, and bytes go out.**
+  The transport hands out whole frames, however the bytes of the client arrive.
+  A client that announces a frame over the listener's limit sends no frame, and the handler closes the connection.
+  The transport writes bytes as they are, so whoever builds a response puts its length in front.
+- **Every side can end a connection.**
+  The transport tells the handler when the client closed the connection, and whether it did so inside a frame.
+  A handler that closes its transport lets the client read everything that was sent:
+  the transport waits until the client has closed its side, for a time that the listener's configuration limits.
+  A handler that only lets go of its transport ends the connection at once,
+  and the client may lose bytes that were on their way.
+- **Closing a listener ends its endpoint.**
+  The address refuses new connections, and every open transport tells its handler that the listener closed.
+  A handler that waits for a frame hears it at once, and so does a handler that waits for a client to take bytes.
+  The handler ends its session and closes the connection.
+  Whoever closes the listener can wait until every handler has done so.
+  A client that stopped reading cannot hold that wait up, and a handler that never returns can.
+  A new listener then opens on the same address, as when a [broker is back](backends.md#emulating-incidents).
+- **A handler that panics ends its own connection.**
+  The listener and the other connections go on.
+  That holds for a build that unwinds on a panic.
+  The release build aborts on a panic, so there a handler that panics ends the process.
+- **A failed accept does not stop a listener.**
+  A connection that failed on its way in costs nothing, and the listener accepts the next one at once.
+  A process that has run out of sockets or of memory waits for a time that the configuration sets, and accepts again.
+- **A listener takes any free port.**
+  It says which address it got, so several instances run side by side in one process and in one test.
 
 ### The backend seam
 

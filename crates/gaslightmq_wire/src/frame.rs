@@ -106,6 +106,10 @@ impl FrameDecoder {
     /// before the payload arrives. After an error the connection is of no
     /// use: there is no way to find the start of the next frame.
     ///
+    /// An incomplete frame makes room in the buffer for as many bytes again
+    /// as arrived, and for no more than the frame still misses. The buffer
+    /// therefore never holds far more than a peer really sent.
+    ///
     /// # Errors
     ///
     /// [`WireError::EmptyFrame`] when the prefix announces zero bytes, and
@@ -123,7 +127,10 @@ impl FrameDecoder {
             return Err(WireError::FrameTooLarge { len, max: self.max_len });
         }
         if self.buffer.len() < 4 + len {
-            self.buffer.reserve(4 + len - self.buffer.len());
+            // The room for the rest grows with the bytes that arrived, and not with the length the prefix announces:
+            // a client that sends four bytes does not make the decoder hold room for the largest frame.
+            let missing = 4 + len - self.buffer.len();
+            self.buffer.reserve(missing.min(self.buffer.len()));
             return Ok(None);
         }
         self.buffer.advance(4);
@@ -180,6 +187,35 @@ mod tests {
         let mut decoder = FrameDecoder::with_max_len(8);
         decoder.extend(&9u32.to_be_bytes());
         assert_eq!(decoder.next_frame(), Err(WireError::FrameTooLarge { len: 9, max: 8 }));
+    }
+
+    #[test]
+    fn a_length_alone_takes_no_room_for_its_payload() {
+        let mut decoder = FrameDecoder::new();
+        decoder.extend(&u32::try_from(Frame::MAX_LEN).unwrap().to_be_bytes());
+
+        assert_eq!(decoder.next_frame(), Ok(None));
+        assert!(
+            decoder.buffer_mut().capacity() < 1024,
+            "{} bytes for a frame of which four bytes arrived",
+            decoder.buffer_mut().capacity()
+        );
+    }
+
+    #[test]
+    fn the_room_for_a_frame_grows_with_the_bytes_that_arrived() {
+        let payload = vec![7u8; 64 * 1024];
+        let bytes = Frame::new(payload.clone()).to_bytes();
+        let mut decoder = FrameDecoder::new();
+
+        for piece in bytes.chunks(1000) {
+            assert_eq!(decoder.next_frame(), Ok(None));
+            // What the decoder holds ready is never far more than what arrived.
+            assert!(decoder.buffer_mut().capacity() <= 4 * decoder.buffered().max(64));
+            decoder.extend(piece);
+        }
+
+        assert_eq!(decoder.next_frame(), Ok(Some(Frame::new(payload))));
     }
 
     #[test]
