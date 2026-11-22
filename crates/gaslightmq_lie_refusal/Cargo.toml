@@ -1,0 +1,19 @@
+[package]
+name = "gaslightmq_lie_refusal"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+gaslightmq_field.workspace = true
+gaslightmq_kernel.workspace = true
+gaslightmq_lie.workspace = true
+gaslightmq_lie_api.workspace = true
+gaslightmq_wire.workspace = true
+gaslightmq_wire_edit.workspace = true
+
+[dev-dependencies]
+gaslightmq_call.workspace = true

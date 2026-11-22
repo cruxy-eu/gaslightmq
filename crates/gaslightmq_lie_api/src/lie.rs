@@ -1,5 +1,6 @@
 use std::fmt;
 
+use gaslightmq_field::PartSet;
 use gaslightmq_lie::prelude::*;
 use gaslightmq_wire::{Api, Request, Response, WireError};
 
@@ -164,6 +165,26 @@ pub enum LieError {
     Unreadable { kind: LieKind, error: WireError },
     /// The lie could not write the request or the response it asks for.
     Unwritable { kind: LieKind, error: WireError },
+    /// The lie targets parts that the request does not name.
+    ///
+    /// A request of an API without parts names none.
+    /// The lie is not told on the other parts of its target, and never on the whole call instead:
+    /// it changes exactly its target, or nothing.
+    PartsNotInRequest { kind: LieKind, api: Api, parts: PartSet },
+    /// The lie tells the client an error, and the response to the request has no place for an error code.
+    ///
+    /// The request asks for nothing by name, and its API has no error code in the response itself at this version.
+    /// A Metadata request for every topic is one, on most versions.
+    NoPlaceForError { kind: LieKind, api: Api },
+    /// The response the lie was given answers another request than the one it was given:
+    /// its API or its correlation ID differs.
+    ResponseOfAnotherCall {
+        kind: LieKind,
+        api: Api,
+        correlation_id: i32,
+        answered_api: Api,
+        answered_correlation_id: i32,
+    },
 }
 
 impl fmt::Display for LieError {
@@ -185,6 +206,29 @@ impl fmt::Display for LieError {
             Self::ApiNotSupported { kind, api } => write!(f, "{kind} cannot be told on {api}"),
             Self::Unreadable { kind, error } => write!(f, "{kind} cannot read the call: {error}"),
             Self::Unwritable { kind, error } => write!(f, "{kind} cannot rewrite the call: {error}"),
+            Self::PartsNotInRequest { kind, api, parts } => {
+                let parts: Vec<String> = parts.iter().map(ToString::to_string).collect();
+                write!(
+                    f,
+                    "{kind} targets parts that the {api} request does not name: {}",
+                    parts.join(", ")
+                )
+            }
+            Self::NoPlaceForError { kind, api } => write!(
+                f,
+                "{kind} cannot be told on this {api} request: its response has no place for an error code"
+            ),
+            Self::ResponseOfAnotherCall {
+                kind,
+                api,
+                correlation_id,
+                answered_api,
+                answered_correlation_id,
+            } => write!(
+                f,
+                "{kind} was given the {answered_api} response {answered_correlation_id}, \
+                 which does not answer the {api} request {correlation_id}"
+            ),
         }
     }
 }
@@ -329,6 +373,31 @@ mod tests {
                     error: wire,
                 },
                 "data cannot rewrite the call: body of api key 12 read as api key 0",
+            ),
+            (
+                LieError::PartsNotInRequest {
+                    kind: LieKind::Refusal,
+                    api: Api::from_wire(0, 9),
+                    parts: PartSet::new(["orders.eu/4".parse().unwrap(), "orders.eu/3".parse().unwrap()]).unwrap(),
+                },
+                "refusal targets parts that the Produce v9 request does not name: orders.eu/3, orders.eu/4",
+            ),
+            (
+                LieError::NoPlaceForError {
+                    kind: LieKind::Refusal,
+                    api: Api::from_wire(3, 9),
+                },
+                "refusal cannot be told on this Metadata v9 request: its response has no place for an error code",
+            ),
+            (
+                LieError::ResponseOfAnotherCall {
+                    kind: LieKind::Refusal,
+                    api: Api::from_wire(0, 9),
+                    correlation_id: 7,
+                    answered_api: Api::from_wire(1, 11),
+                    answered_correlation_id: 8,
+                },
+                "refusal was given the Fetch v11 response 8, which does not answer the Produce v9 request 7",
             ),
         ];
 

@@ -8,6 +8,7 @@ members = [
     "crates/gaslightmq_kernel",
     "crates/gaslightmq_lie",
     "crates/gaslightmq_lie_api",
+    "crates/gaslightmq_lie_refusal",
     "crates/gaslightmq_rule",
     "crates/gaslightmq_selector",
     "crates/gaslightmq_session",
@@ -33,10 +34,12 @@ gaslightmq_incident = { path = "crates/gaslightmq_incident" }
 gaslightmq_kafka_client_api = { path = "crates/gaslightmq_kafka_client/api" }
 gaslightmq_kernel = { path = "crates/gaslightmq_kernel" }
 gaslightmq_lie = { path = "crates/gaslightmq_lie" }
+gaslightmq_lie_api = { path = "crates/gaslightmq_lie_api" }
 gaslightmq_rule = { path = "crates/gaslightmq_rule" }
 gaslightmq_selector = { path = "crates/gaslightmq_selector" }
 gaslightmq_trigger = { path = "crates/gaslightmq_trigger" }
 gaslightmq_wire = { path = "crates/gaslightmq_wire" }
+gaslightmq_wire_edit = { path = "crates/gaslightmq_wire_edit" }
 arc-swap = "1"
 bytes = "1"
 futures = "0.3"
