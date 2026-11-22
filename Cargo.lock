@@ -188,6 +188,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "gaslightmq_checks"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "gaslightmq_clock"
 version = "0.1.0"
 dependencies = [

@@ -1,3 +1,54 @@
+# The checks are recipes here, and `.github/workflows/ci.yml` runs these recipes,
+# so a check that passes locally passes in CI.
+#
+#   just              list every recipe
+#   just pre-commit   the fast checks, before every commit
+#   just ci           everything CI runs
+
+set shell := ["bash", "-eu", "-o", "pipefail", "-c"]
+
+# Show every recipe.
+default:
+    @just --list --unsorted
+
+# Everything CI runs, cheapest first, so a formatting slip fails in seconds.
+ci: fmt-check checks clippy test doc
+    @echo "✓ ci passed"
+
+# The fast checks.
+pre-commit: fmt-check checks clippy
+    @echo "✓ pre-commit passed"
+
+# Run `just pre-commit` before every commit.
+install-hooks:
+    printf '#!/usr/bin/env bash\nexec just pre-commit\n' > "$(git rev-parse --git-path hooks)/pre-commit"
+    chmod +x "$(git rev-parse --git-path hooks)/pre-commit"
+
+# Formatting, without changing a file.
+fmt-check:
+    cargo fmt --all -- --check
+
+# Format every file.
+fmt:
+    cargo fmt --all
+
+# The rules of crates.md and CLAUDE.md that the compiler cannot see. Name checks to run only those.
+checks *names:
+    cargo run --quiet -p gaslightmq_checks -- {{names}}
+
+# Lint with and without the optional features, warnings denied.
+clippy:
+    cargo clippy --workspace --all-targets -- -D warnings
+    cargo clippy --workspace --all-targets --all-features -- -D warnings
+
+# Every test, with every feature.
+test *args:
+    cargo test --workspace --all-features {{args}}
+
+# The API docs, warnings and broken links denied.
+doc:
+    RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps --all-features
+
 image:
     docker build -t ghcr.io/cruxy-eu/gaslightmq:latest .
 

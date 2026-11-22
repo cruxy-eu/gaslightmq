@@ -220,6 +220,14 @@ Transactions arrive later as `sim_txn`, next to `sim_log` and `sim_group`.
 | `gaslightmq` | The facade crate: `Proxy`, `Broker` and `Host`, and re-exports of what library users need. | The public crates |
 | `gmq` | The binary: `gmq proxy`, `gmq broker`, `gmq start` and `gmq run`. | `host`, `control_server` |
 
+### Tooling
+
+The workspace checks itself with a crate that no other crate depends on, and that belongs to no layer.
+
+| Crate | Holds | Depends on |
+|---|---|---|
+| `checks` | The rules of this document and of `CLAUDE.md` that the compiler cannot see: every crate depends on what its row in these tables lists, and every crate is named and placed as [the rules](#principles) say. `just checks` runs them. This crate does IO. | — |
+
 ## The pipeline is sans-IO
 
 `pipeline` is a state machine for one connection.
