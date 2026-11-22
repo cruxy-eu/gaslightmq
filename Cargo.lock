@@ -349,6 +349,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "gaslightmq_wire_edit"
+version = "0.1.0"
+dependencies = [
+ "bytes",
+ "gaslightmq_field",
+ "gaslightmq_kernel",
+ "gaslightmq_wire",
+]
+
+[[package]]
 name = "getrandom"
 version = "0.3.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
