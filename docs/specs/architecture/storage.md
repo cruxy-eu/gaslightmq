@@ -235,6 +235,16 @@ broker:
     advertise: localhost
 ```
 
+The name of an environment follows the same rule as the [name of a rule](../domains/rules.md#rule),
+and so does the name of the world that a broker names.
+
+An environment has one of these three shapes.
+A proxy stands in front of its `upstream` or in front of the broker of its environment, and never in front of both.
+A broker behind a proxy has no listeners of its own, because clients reach it through the proxy.
+
+The bootstrap listener and the broker listeners use different ports.
+A listener on port `0` takes a free port that the system picks.
+
 An environment can also name a [schema registry](backends.md#schema-registry):
 a built-in one next to a broker, or the real one of a real cluster.
 
@@ -248,6 +258,7 @@ The proxy asks the bootstrap address for Metadata,
 discovers the brokers and opens one listener per broker from the port range.
 It assigns ports in the order of the broker IDs,
 so a broker keeps its port for as long as the set of brokers stays the same.
+A cluster with more brokers than the range has ports is an error.
 An environment can pin a broker to a port when the ports are published one by one:
 
 ```yaml
@@ -257,6 +268,8 @@ listen:
     2: 0.0.0.0:19093
     3: 0.0.0.0:19094
 ```
+
+Every broker of the cluster then needs a pin.
 
 The brokers of a simulated cluster come from the [world definition](../domains/world.md#seeding).
 
@@ -275,6 +288,9 @@ A process starts one environment or several.
   Nothing restarts, and no client loses its connection.
 - **Listeners must not overlap.**
   The process refuses to start two environments that claim the same port.
+  Two listeners claim the same port when they name it on the same address.
+  `0.0.0.0` stands for every IPv4 address, and `::` for every address, so they share a port with those.
+  A built-in schema registry is a listener too.
 
 The flags of `gmq proxy` and `gmq broker` describe an environment without a file.
 See [deployment shapes](README.md#deployment-shapes).
@@ -286,6 +302,7 @@ A secret is a password, a private key or a token.
 - **A secret field takes a reference, never a value.**
   The reference names a file, or an environment variable for quick local runs.
   The engine rejects a literal, so a secret cannot land in git by accident.
+  No error about a secret reference repeats what it read: not the literal, and not a key, a path or a name.
 - **Files are the default.**
   Container platforms mount secrets as files, and TLS material is files anyway.
 - **The engine reads a secret when it needs it.**

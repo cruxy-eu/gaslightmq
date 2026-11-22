@@ -219,6 +219,9 @@ schema_registry:
   url: https://schema-registry.staging.internal:8081   # the real one
 ```
 
+The URL of a real registry holds no user name and no password, because [no file holds a secret](storage.md#secrets).
+The error for such a URL does not repeat it.
+
 The built-in registry gives every schema an ID that follows from the workspace alone,
 so the bytes of a record are the same in every run.
 A subject is named after its topic, such as `orders.eu-value`, unless the topic says otherwise.
