@@ -2,15 +2,24 @@
 //!
 //! `cargo xtask [check ...]` runs the named checks, or every check without a name.
 //! It prints one line per violation, and fails when it finds one.
+//!
+//! `cargo xtask --wasm-packages` runs no check.
+//! It prints the crates that compile to WebAssembly, as the `--package` arguments of a cargo command.
 
 mod crate_layout;
 mod crate_names;
+mod table;
+mod wasm_crates;
 mod workspace;
 
 use std::process::ExitCode;
 
 use crate::crate_layout::CrateLayout;
+use crate::wasm_crates::WasmCrates;
 use crate::workspace::Workspace;
+
+/// The argument that asks for the crates that compile to WebAssembly, instead of a check.
+const WASM_PACKAGES: &str = "--wasm-packages";
 
 /// One check, by the name it has on the command line.
 #[derive(Clone, Copy)]
@@ -19,15 +28,18 @@ enum Check {
     Dependencies,
     /// Every crate name starts with `gaslightmq_`, and its directory carries it.
     CrateNames,
+    /// No crate that compiles to WebAssembly reaches the Kafka codec.
+    WasmBoundary,
 }
 
 impl Check {
-    const ALL: [Check; 2] = [Check::Dependencies, Check::CrateNames];
+    const ALL: [Check; 3] = [Check::Dependencies, Check::CrateNames, Check::WasmBoundary];
 
     fn name(self) -> &'static str {
         match self {
             Check::Dependencies => "dependencies",
             Check::CrateNames => "crate-names",
+            Check::WasmBoundary => "wasm-boundary",
         }
     }
 
@@ -43,8 +55,31 @@ impl Check {
                 Ok(lines(&layout.violations(workspace)))
             }
             Check::CrateNames => Ok(lines(&crate_names::violations(workspace))),
+            Check::WasmBoundary => {
+                let layout = CrateLayout::load(&workspace.root).map_err(|error| error.to_string())?;
+                let wasm_crates = WasmCrates::load(&workspace.root).map_err(|error| error.to_string())?;
+                Ok(lines(&wasm_crates.violations(&layout, workspace)))
+            }
         }
     }
+}
+
+/// The crates of the WebAssembly table that exist, each as a `--package` argument of a cargo command.
+fn wasm_packages() -> Result<Vec<String>, String> {
+    let workspace = Workspace::load().map_err(|error| error.to_string())?;
+    let wasm_crates = WasmCrates::load(&workspace.root).map_err(|error| error.to_string())?;
+    let packages = wasm_crates.existing(&workspace);
+    if packages.is_empty() {
+        // Without a package, cargo would build the whole workspace.
+        return Err(format!(
+            "the workspace holds no crate that {} lists as compiling to WebAssembly",
+            crate_layout::PATH
+        ));
+    }
+    Ok(packages
+        .into_iter()
+        .map(|member| format!("--package {}", member.name))
+        .collect())
 }
 
 fn lines(violations: &[impl ToString]) -> Vec<String> {
@@ -57,8 +92,22 @@ fn lines(violations: &[impl ToString]) -> Vec<String> {
     reason = "a check reports on the terminal"
 )]
 fn main() -> ExitCode {
+    let arguments: Vec<String> = std::env::args().skip(1).collect();
+    if arguments == [WASM_PACKAGES] {
+        return match wasm_packages() {
+            Ok(packages) => {
+                println!("{}", packages.join("\n"));
+                ExitCode::SUCCESS
+            }
+            Err(reason) => {
+                eprintln!("{reason}");
+                ExitCode::from(2)
+            }
+        };
+    }
+
     let mut checks = Vec::new();
-    for name in std::env::args().skip(1) {
+    for name in arguments {
         let Some(check) = Check::named(&name) else {
             let names: Vec<&str> = Check::ALL.iter().map(|check| check.name()).collect();
             eprintln!("there is no check `{name}`; the checks are {}", names.join(", "));

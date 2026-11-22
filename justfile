@@ -12,7 +12,7 @@ default:
     @just --list --unsorted
 
 # Everything CI runs, cheapest first, so a formatting slip fails in seconds.
-ci: fmt-check checks clippy test doc
+ci: fmt-check checks wasm clippy test doc
     @echo "✓ ci passed"
 
 # The fast checks.
@@ -35,6 +35,12 @@ fmt:
 # The rules of crates.md and CLAUDE.md that the compiler cannot see. Name checks to run only those.
 checks *names:
     cargo xtask {{names}}
+
+# The list is read first, so a list that cannot be read stops the recipe, and cargo does not build every crate.
+# Build what the UI shares for the browser, with every feature. The WebAssembly table of crates.md lists the crates.
+wasm: (checks "wasm-boundary")
+    packages="$(cargo xtask --wasm-packages)" \
+        && cargo build --target wasm32-unknown-unknown --all-features $packages
 
 # Lint with and without the optional features, warnings denied.
 clippy:

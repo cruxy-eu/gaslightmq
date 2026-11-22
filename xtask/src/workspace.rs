@@ -28,6 +28,9 @@ pub struct Member {
     pub dir: PathBuf,
     /// The workspace crates it needs to build, without its dev-dependencies.
     pub dependencies: BTreeSet<String>,
+    /// The packages from outside the workspace that it names as a dependency, without its dev-dependencies.
+    /// An optional one counts, and so does one for a single target.
+    pub outside_dependencies: BTreeSet<String>,
 }
 
 impl Member {
@@ -66,17 +69,17 @@ impl Workspace {
                 let dir = manifest_dir
                     .strip_prefix(&metadata.workspace_root)
                     .unwrap_or(manifest_dir);
-                let dependencies = package
+                let (dependencies, outside_dependencies) = package
                     .dependencies
                     .iter()
                     .filter(|dependency| dependency.kind.as_deref() != Some("dev"))
-                    .filter(|dependency| names.contains(dependency.name.as_str()))
                     .map(|dependency| dependency.name.clone())
-                    .collect();
+                    .partition(|name| names.contains(name.as_str()));
                 Member {
                     name: package.name.clone(),
                     dir: dir.to_path_buf(),
                     dependencies,
+                    outside_dependencies,
                 }
             })
             .collect();
@@ -138,7 +141,10 @@ mod tests {
             {
                 "name": "gaslightmq_kernel",
                 "manifest_path": "/repo/crates/gaslightmq_kernel/Cargo.toml",
-                "dependencies": [{ "name": "serde", "kind": null }]
+                "dependencies": [
+                    { "name": "serde", "kind": null },
+                    { "name": "serde_json", "kind": "dev" }
+                ]
             },
             {
                 "name": "gaslightmq_field",
@@ -181,6 +187,14 @@ mod tests {
             field.dependencies,
             BTreeSet::from(["gaslightmq_clock".to_owned(), "gaslightmq_kernel".to_owned()])
         );
+    }
+
+    #[test]
+    fn a_member_names_the_packages_from_outside_the_workspace_it_builds_with() {
+        let workspace = Workspace::from_metadata(METADATA).unwrap();
+
+        let kernel = &workspace.members[0];
+        assert_eq!(kernel.outside_dependencies, BTreeSet::from(["serde".to_owned()]));
     }
 
     #[test]

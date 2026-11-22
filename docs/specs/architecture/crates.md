@@ -469,8 +469,10 @@ The crates in the table stay free of threads, files and sockets.
 `control_client` is the exception.
 It is part of the IO edge, and in the browser it reaches the engine through the browser's own HTTP and WebSocket.
 
-CI enforces the boundary:
-the dependency closures of `control_api` and `ui` never reach `kafka-protocol`.
+The dependency closures of `control_api` and `ui` never reach `kafka-protocol`.
+CI enforces the boundary for the crates in the table that exist.
+It builds each one for WebAssembly, with all its features,
+and it checks that the dependency closure of none of them reaches `kafka-protocol`.
 Two missing edges keep it that way.
 `lie` does not depend on `wire`, and `control_api` does not depend on `world`.
 

@@ -1,3 +1,5 @@
 [toolchain]
 channel = "1.100.0"
 components = ["clippy", "rustfmt"]
+# What the UI shares with the engine builds for the browser: `just wasm`.
+targets = ["wasm32-unknown-unknown"]
