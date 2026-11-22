@@ -2,7 +2,7 @@
 
 use std::fmt;
 
-use gaslightmq_call::{CallError, CallTimingError};
+use gaslightmq_call::{CallError, CallId, CallTimingError};
 use gaslightmq_lie_api::{Instruction, LieError};
 use gaslightmq_session::IdentityError;
 use gaslightmq_wire::{Api, WireError};
@@ -113,6 +113,12 @@ pub(crate) enum StageFailure {
     Unrecorded { error: CallError },
     /// The explanation of the call contradicts itself.
     Unexplained { error: UnexplainedRule },
+    /// The backend answered the call with something that it could not hand over as a response.
+    UnreadableAnswer { error: String },
+    /// The backend had no answer for `call`, so the session ended.
+    BackendFailed { call: CallId, failure: String },
+    /// The backend closed the session.
+    BackendClosed { reason: String },
 }
 
 impl fmt::Display for StageFailure {
@@ -153,6 +159,9 @@ impl fmt::Display for StageFailure {
             Self::Mistimed { error } => write!(f, "a moment of the call is missing: {error}"),
             Self::Unrecorded { error } => write!(f, "the record keeps no field of the call: {error}"),
             Self::Unexplained { error } => write!(f, "the explanation is incomplete: {error}"),
+            Self::UnreadableAnswer { error } => write!(f, "the backend answered with what is no response: {error}"),
+            Self::BackendFailed { call, failure } => write!(f, "the backend has no answer for call {call}: {failure}"),
+            Self::BackendClosed { reason } => write!(f, "the backend closed the session: {reason}"),
         }
     }
 }
@@ -290,6 +299,25 @@ mod tests {
                     },
                 },
                 "no member ID was learned from the JoinGroup v9 response: body of api key 12 read as api key 11",
+            ),
+            (
+                StageFailure::UnreadableAnswer {
+                    error: "response header is cut short at 3 bytes".to_owned(),
+                },
+                "the backend answered with what is no response: response header is cut short at 3 bytes",
+            ),
+            (
+                StageFailure::BackendFailed {
+                    call: "#7.3".parse().unwrap(),
+                    failure: "the connection to the cluster ended before the answer arrived".to_owned(),
+                },
+                "the backend has no answer for call #7.3: the connection to the cluster ended before the answer arrived",
+            ),
+            (
+                StageFailure::BackendClosed {
+                    reason: "endpoint `broker 2` accepts no connections any more".to_owned(),
+                },
+                "the backend closed the session: endpoint `broker 2` accepts no connections any more",
             ),
             (
                 StageFailure::Unexplained {

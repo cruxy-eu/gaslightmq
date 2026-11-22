@@ -174,8 +174,8 @@ Every incident that a firing rule causes takes effect.
 ### Consequences
 
 Some incidents have consequences.
-The engine expands an incident into its consequences before it reaches the backend,
-so both backends see the same list.
+A backend expands an incident into its consequences before it applies or emulates it.
+The expansion is one rule that both backends share, so both see the same list for the same cluster.
 
 | Incident | Consequences |
 |---|---|

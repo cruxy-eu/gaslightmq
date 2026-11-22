@@ -1,5 +1,6 @@
 [workspace]
 members = [
+    "crates/gaslightmq_backend",
     "crates/gaslightmq_call",
     "crates/gaslightmq_clock",
     "crates/gaslightmq_combine",
@@ -39,6 +40,7 @@ gaslightmq_kernel = { path = "crates/gaslightmq_kernel" }
 gaslightmq_lie = { path = "crates/gaslightmq_lie" }
 gaslightmq_lie_api = { path = "crates/gaslightmq_lie_api" }
 gaslightmq_lie_refusal = { path = "crates/gaslightmq_lie_refusal" }
+gaslightmq_pipeline = { path = "crates/gaslightmq_pipeline" }
 gaslightmq_rule = { path = "crates/gaslightmq_rule" }
 gaslightmq_selector = { path = "crates/gaslightmq_selector" }
 gaslightmq_session = { path = "crates/gaslightmq_session" }

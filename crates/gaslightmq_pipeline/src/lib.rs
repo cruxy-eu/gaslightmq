@@ -8,7 +8,7 @@
 //! | Type | Is |
 //! |---|---|
 //! | [`Pipeline`] | The state machine of one connection. It holds the state of its session. |
-//! | [`Input`] | What happened: bytes of the client, an answer of the backend, a timer, a new snapshot, a close. |
+//! | [`Input`] | What happened: bytes of the client, an answer or a failure of the backend, a timer, a new snapshot, a close. |
 //! | [`Output`] | What should happen: forward, send, set a timer, close, emit a call record, fire an incident. |
 //! | [`Outputs`] | What one input leads to, in the order the engine performs it. |
 //! | [`TimerId`] | Which wait a timer ends: the call that waits, and the stage it waits at. |
@@ -170,6 +170,13 @@
 //! - A Produce ends before its `acks`, so nothing says whether a response comes.
 //! - The backend answers with something that is no response to the request, so the client must not get it.
 //!   The connection closes when that answer would be at the head of the line.
+//!   The answer is a response that does not fit the request, or [`Input::BackendAnswerUnreadable`].
+//!
+//! The backend ends a session too.
+//! [`Input::BackendFailed`] says that it has no answer for a call, and [`Input::BackendClosed`] that the broker of
+//! the endpoint went away.
+//! The session then ends at once, the session records that the backend closed it,
+//! and the record of every call in flight says why.
 //!
 //! Two things are not written yet, and the record says so, once, instead of claiming them:
 //! the throttle of an answer, and the answer of a call whose error only stands in an entry that is no part.
@@ -185,6 +192,7 @@
 //! What goes wrong while a call is handled is part of the record of that call.
 //! An input that names a call or a timer that the pipeline does not wait for changes nothing:
 //! the engine cannot avoid every race, such as an answer for a call whose session just closed.
+//! Only [`Input::BackendFailed`] ends the session whichever call of the connection it names.
 //!
 //! # What the engine does
 //!
@@ -192,7 +200,7 @@
 //! - It turns an [`Output::SetTimer`] into a wait on its clock. It need not cancel a timer: a stale one changes nothing.
 //! - It [expires](gaslightmq_session::ClientContexts::expire) the client contexts that no session shares any more.
 //! - It disarms a rule whose lifetime ended. The armed rules of a snapshot say so, and a call record names the rules that applied.
-//! - It passes the incidents of [`Output::Fire`] to the scenario runner, which expands them.
+//! - It passes the incidents of [`Output::Fire`] to the scenario runner, which hands them to the backend.
 //!
 //! # No IO
 //!

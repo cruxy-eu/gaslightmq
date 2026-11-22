@@ -33,7 +33,7 @@ Workspace, Environment, Secret and Scratch file belong to [storage](../architect
 | **Client context** | What the engine learned about one client instance across its connections, such as its group. |
 | **Clock** | The engine's time: virtual on the Simulated backend, the wall clock on the Upstream backend. |
 | **Condition** | One clause of a selector: a field, an operator and one or more values. |
-| **Consequence** | What the engine adds to an incident, such as leaderless partitions when a broker goes down. |
+| **Consequence** | What a backend adds to an incident, such as leaderless partitions when a broker goes down. |
 | **Counter** | The number of calls a rule matched, kept per rule or per session. |
 | **Dice** | Seeded rolls for chance triggers, derived from the seed, the rule and the match number. |
 | **Effect** | What lies do to a call: end it, refuse it, rewrite it or make it wait. One lie asks for an effect, and the lies that apply at one stage have a stage effect together. |

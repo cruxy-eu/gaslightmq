@@ -6,8 +6,8 @@ use crate::{IncidentKind, PartitionCount, RecordCount};
 
 /// A change to the truth, with everything it needs to happen.
 ///
-/// A rule fires an incident, the engine [expands](Incident::expand) it,
-/// and a backend applies it to its World or emulates it in its overlay.
+/// A rule fires an incident, and a backend [expands](Incident::expand) it,
+/// and applies it to its World or emulates it in its overlay.
 /// After that, every call and every client sees the same new world.
 ///
 /// An incident names what it changes.

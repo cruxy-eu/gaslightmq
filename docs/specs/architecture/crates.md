@@ -225,7 +225,7 @@ Every other crate speaks in them.
 
 | Crate | Holds | Depends on |
 |---|---|---|
-| `backend` | The [backend contract](backends.md#contract): the request and answer messages, and the one async trait through which the engine reaches a backend. It holds no logic and needs no runtime. See [the backend seam](#the-backend-seam). | `wire`, `incident`, `clock` |
+| `backend` | The [backend contract](backends.md#contract): the request and answer messages, and the one async trait through which the engine reaches a backend. It holds no logic and needs no runtime. See [the backend seam](#the-backend-seam). | `wire`, `incident`, `call`, `field` |
 | `schema` | Record [formats and schemas](../domains/world.md#schemas): encode and decode JSON, Avro and Protobuf, one feature per format. | — |
 | `virtual_log` | [Virtual records](../domains/world.md#virtual-records): the record at a partition and offset as a pure function of the definition, templates, stable batches, and the mapping between offsets and time. | `wire`, `clock`, `schema` |
 | `schema_registry` | The built-in [schema registry](backends.md#schema-registry) and a client for a real one. This crate does IO. | `schema` |
@@ -284,6 +284,9 @@ The pipeline never reads a socket, never sleeps and never looks at a clock.
 pub enum Input<'a> {
     ClientBytes(&'a [u8]),
     BackendAnswered { call: CallId, response: Response },
+    BackendAnswerUnreadable { call: CallId, error: String },
+    BackendFailed { call: CallId, failure: String },
+    BackendClosed { reason: String },
     TimerFired(TimerId),
     SnapshotPublished(Arc<Snapshot>),
     ClientClosed,
@@ -309,11 +312,15 @@ impl Pipeline {
   A `TimerId` names the call that waits and the stage it waits at.
 - A silence returns no `Send` and marks the session stalled.
 - A hang-up returns a `Close`, and the record of every call that was in flight.
+- `BackendFailed` and `BackendClosed` return the same, and every record says why the backend ended the session.
+  The reason is text, because the pipeline knows no backend.
+- `BackendAnswerUnreadable` leaves its call without an answer, and returns a `Close` once that answer would be the next to leave.
 - A partial refusal returns a `Forward` with fewer partitions,
   and merges the refusals when `BackendAnswered` arrives.
 - A call ID is the connection and the number of the call on it, so it names one call of the engine.
 - An input that names a call or a timer the pipeline does not wait for changes nothing.
   The engine cannot avoid every race, such as an answer for a call whose session just closed.
+  Only `BackendFailed` ends the session whichever call of the connection it names.
 - Shared counters and budgets are handles to atomics.
   They travel inside the armed rules of the snapshot.
   The pipeline increments them, and it still does no IO.
@@ -361,6 +368,9 @@ and performs every `Output` the pipeline returns.
 |---|---|---|
 | The client sends bytes. | `ClientBytes` | The transport |
 | The backend answers a call. | `BackendAnswered` | The [backend](#the-backend-seam) |
+| The backend answers a call with something that is no response. | `BackendAnswerUnreadable` | The backend |
+| The backend has no answer for a call. | `BackendFailed` | The backend |
+| The endpoint of the session closes. | `BackendClosed` | The backend |
 | A timer runs out. | `TimerFired` | The engine's clock |
 | A rule changes. | `SnapshotPublished` | The rule store |
 | The client closes the connection. | `ClientClosed` | The transport |

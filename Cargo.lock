@@ -197,6 +197,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "gaslightmq_backend"
+version = "0.1.0"
+dependencies = [
+ "futures",
+ "gaslightmq_call",
+ "gaslightmq_clock",
+ "gaslightmq_field",
+ "gaslightmq_incident",
+ "gaslightmq_kernel",
+ "gaslightmq_lie_api",
+ "gaslightmq_pipeline",
+ "gaslightmq_rule",
+ "gaslightmq_session",
+ "gaslightmq_wire",
+]
+
+[[package]]
 name = "gaslightmq_call"
 version = "0.1.0"
 dependencies = [

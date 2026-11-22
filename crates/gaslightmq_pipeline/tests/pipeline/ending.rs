@@ -198,6 +198,108 @@ fn a_client_that_closes_ends_its_calls_without_an_answer() {
 }
 
 #[test]
+fn a_backend_without_an_answer_ends_the_session_and_every_record_says_why() {
+    let mut driver = Driver::with([]);
+    let first = driver.send(&heartbeat(41)).forwarded();
+    let second = driver.send(&produce(42, &["orders.eu/3"])).forwarded();
+
+    // The backend lost the cluster while the second call was there.
+    let failure = "the connection to the cluster ended before the answer arrived: reset by the broker";
+    let ended = driver.handle(Input::BackendFailed {
+        call: second.0,
+        failure: failure.to_owned(),
+    });
+
+    // No call gets an answer, and nothing is made up for the client: the connection closes.
+    assert_eq!(ended.kinds(), ["emit", "emit", "close"]);
+    assert_eq!(ended.sends().len(), 0, "a failure is no response");
+    let [heartbeat, produce] = ended.calls().try_into().unwrap();
+    assert_eq!(heartbeat.delivered(), &Delivered::Nothing);
+    assert_eq!(produce.delivered(), &Delivered::ConnectionClosed);
+    for record in [&heartbeat, &produce] {
+        assert_eq!(
+            record.explanation().failure().map(Failure::message),
+            Some(format!("the backend has no answer for call #7.2: {failure}").as_str())
+        );
+        assert!(record.verdict().is_pass(), "a failure of the backend is no lie");
+    }
+
+    // The backend closed the session, and the pipeline takes no further input.
+    let closed = driver.pipeline.closed().unwrap();
+    assert_eq!((closed.by(), closed.at()), (ClosedBy::Backend, driver.now()));
+    assert_eq!(driver.pipeline.in_flight(), 0);
+    assert!(driver.answer(&first).is_empty());
+}
+
+#[test]
+fn a_failure_ends_the_session_whichever_call_of_the_connection_it_names() {
+    let mut driver = Driver::with([]);
+
+    // A Produce without a response leaves at once, and a Heartbeat waits for the backend.
+    let no_acks = driver.send(&produce_with_acks(41, &["orders.eu/3"], 0));
+    assert_eq!(no_acks.kinds(), ["forward", "emit"]);
+    driver.send(&heartbeat(42));
+
+    // A failure for a call of another connection is not for this session.
+    let elsewhere = driver.handle(Input::BackendFailed {
+        call: "#8.1".parse().unwrap(),
+        failure: "the backend cannot reach the cluster".to_owned(),
+    });
+    assert!(elsewhere.is_empty());
+    assert_eq!(driver.pipeline.closed(), None);
+
+    // The backend could not hand on the Produce. That call is gone, and the session ends all the same.
+    let ended = driver.handle(Input::BackendFailed {
+        call: no_acks.forwarded().0,
+        failure: "the backend cannot reach the cluster".to_owned(),
+    });
+    assert_eq!(ended.kinds(), ["emit", "close"]);
+    let record = ended.emitted();
+    assert_eq!(record.id(), Driver::call(2));
+    assert_eq!(record.delivered(), &Delivered::Nothing);
+    assert_eq!(
+        record.explanation().failure().map(Failure::message),
+        Some("the backend has no answer for call #7.1: the backend cannot reach the cluster")
+    );
+    assert_eq!(
+        driver.pipeline.closed().map(|closed| closed.by()),
+        Some(ClosedBy::Backend)
+    );
+}
+
+#[test]
+fn a_backend_that_closes_the_session_ends_every_call_in_flight() {
+    let mut driver = Driver::with([]);
+    driver.send(&heartbeat(41));
+    driver.send(&produce(42, &["orders.eu/3"]));
+
+    // The broker of the endpoint went down.
+    let ended = driver.handle(Input::BackendClosed {
+        reason: "endpoint `broker 2` accepts no connections any more".to_owned(),
+    });
+
+    assert_eq!(ended.kinds(), ["emit", "emit", "close"]);
+    for record in ended.calls() {
+        assert_eq!(record.delivered(), &Delivered::Nothing);
+        assert_eq!(
+            record.explanation().failure().map(Failure::message),
+            Some("the backend closed the session: endpoint `broker 2` accepts no connections any more")
+        );
+    }
+    assert_eq!(
+        driver.pipeline.closed().map(|closed| closed.by()),
+        Some(ClosedBy::Backend)
+    );
+
+    // A session that ended ends once: the client that closes afterwards changes nothing.
+    assert!(driver.handle(Input::ClientClosed).is_empty());
+    assert_eq!(
+        driver.pipeline.closed().map(|closed| closed.by()),
+        Some(ClosedBy::Backend)
+    );
+}
+
+#[test]
 fn bytes_that_are_no_request_close_the_connection() {
     let mut driver = Driver::with([]);
     let arrived = driver.send(&heartbeat(41));

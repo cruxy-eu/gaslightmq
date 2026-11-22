@@ -36,7 +36,7 @@ which is the point.
 The World does not react to an incident by itself.
 A broker node that goes down leaves its partitions without a leader,
 until a "leader moves" incident gives them one.
-The engine adds such [consequences](lies-and-incidents.md#consequences) to the incident,
+A backend adds such [consequences](lies-and-incidents.md#consequences) to the incident,
 the same way for both backends.
 
 ## The World never lies
