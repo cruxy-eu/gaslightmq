@@ -1,7 +1,8 @@
 use std::borrow::Borrow;
 use std::fmt;
 use std::str::FromStr;
-use std::sync::Arc;
+
+use gaslightmq_resource::{ResourceName, ResourceNameError};
 
 use crate::text::text_form;
 
@@ -36,8 +37,8 @@ use crate::text::text_form;
 /// assert!(SelectorName::new("Order\u{200b}producers").is_err());
 /// # Ok::<(), SelectorNameError>(())
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct SelectorName(Arc<str>);
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct SelectorName(ResourceName);
 
 impl SelectorName {
     /// Checks the [rule for names](Self#the-rule-for-names).
@@ -47,77 +48,27 @@ impl SelectorName {
     /// The [`SelectorNameError`] that says which part of the rule the text breaks:
     /// it is empty, starts or ends with white space, or holds a control character or a format character.
     pub fn new(name: impl AsRef<str>) -> Result<Self, SelectorNameError> {
-        let name = name.as_ref();
-        Self::check(name)?;
-        Ok(Self(name.into()))
-    }
-
-    /// Checks `text` against the [rule for names](Self#the-rule-for-names), and keeps nothing.
-    ///
-    /// Whatever else has a name takes it by this one rule, without building a selector name:
-    /// a rule and a preset do, and they say the same in an error of their own.
-    ///
-    /// ```
-    /// use gaslightmq_selector::prelude::*;
-    ///
-    /// assert_eq!(SelectorName::check("Order producers"), Ok(()));
-    /// assert_eq!(SelectorName::check(""), Err(SelectorNameError::Empty));
-    /// ```
-    ///
-    /// # Errors
-    ///
-    /// The [`SelectorNameError`] that says which part of the rule the text breaks.
-    pub fn check(text: &str) -> Result<(), SelectorNameError> {
-        let input = || text.to_owned();
-        if text.is_empty() {
-            Err(SelectorNameError::Empty)
-        } else if text.trim() != text {
-            Err(SelectorNameError::SurroundingWhiteSpace { input: input() })
-        } else if text.chars().any(char::is_control) {
-            Err(SelectorNameError::ControlCharacter { input: input() })
-        } else if text.chars().any(is_format) {
-            Err(SelectorNameError::FormatCharacter { input: input() })
-        } else {
-            Ok(())
+        match ResourceName::new(name) {
+            Ok(name) => Ok(Self(name)),
+            Err(ResourceNameError::Empty) => Err(SelectorNameError::Empty),
+            Err(ResourceNameError::SurroundingWhiteSpace { input }) => {
+                Err(SelectorNameError::SurroundingWhiteSpace { input })
+            }
+            Err(ResourceNameError::ControlCharacter { input }) => Err(SelectorNameError::ControlCharacter { input }),
+            Err(ResourceNameError::FormatCharacter { input }) => Err(SelectorNameError::FormatCharacter { input }),
         }
     }
 
     /// The name as text.
     pub fn as_str(&self) -> &str {
-        &self.0
+        self.0.as_str()
     }
 }
 
-/// Whether the character is a format character: one of the Unicode general category `Cf`, as of Unicode 16.0.
-///
-/// The standard library has no table of it, so the ranges stand here.
-const fn is_format(character: char) -> bool {
-    matches!(
-        character,
-        // The soft hyphen.
-        '\u{00AD}'
-        // The Arabic number signs, the Arabic letter mark and the end of ayah.
-        | '\u{0600}'..='\u{0605}' | '\u{061C}' | '\u{06DD}' | '\u{0890}'..='\u{0891}' | '\u{08E2}'
-        // The Syriac abbreviation mark and the Mongolian vowel separator.
-        | '\u{070F}' | '\u{180E}'
-        // The zero-width space, non-joiner and joiner, and the left-to-right and right-to-left marks.
-        | '\u{200B}'..='\u{200F}'
-        // The embeddings and overrides of the text direction.
-        | '\u{202A}'..='\u{202E}'
-        // The word joiner and the invisible operators.
-        | '\u{2060}'..='\u{2064}'
-        // The isolates of the text direction, and the deprecated format characters.
-        | '\u{2066}'..='\u{206F}'
-        // The byte order mark, which is also the zero-width no-break space.
-        | '\u{FEFF}'
-        // The interlinear annotation marks.
-        | '\u{FFF9}'..='\u{FFFB}'
-        // The Kaithi number signs, and the format controls of Egyptian hieroglyphs, of shorthand and of music.
-        | '\u{110BD}' | '\u{110CD}' | '\u{13430}'..='\u{1343F}' | '\u{1BCA0}'..='\u{1BCA3}'
-        | '\u{1D173}'..='\u{1D17A}'
-        // The language tag and the tag characters.
-        | '\u{E0001}' | '\u{E0020}'..='\u{E007F}'
-    )
+impl fmt::Debug for SelectorName {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_tuple("SelectorName").field(&self.as_str()).finish()
+    }
 }
 
 impl FromStr for SelectorName {
@@ -130,20 +81,20 @@ impl FromStr for SelectorName {
 
 impl fmt::Display for SelectorName {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.pad(&self.0)
+        fmt::Display::fmt(&self.0, f)
     }
 }
 
 impl AsRef<str> for SelectorName {
     fn as_ref(&self) -> &str {
-        &self.0
+        self.as_str()
     }
 }
 
 /// A map by name finds its entry with plain text.
 impl Borrow<str> for SelectorName {
     fn borrow(&self) -> &str {
-        &self.0
+        self.as_str()
     }
 }
 
@@ -164,9 +115,6 @@ text_form!(SelectorName, SelectorNameError);
 /// Why a text is not a [`SelectorName`]: the part of the [rule for names](SelectorName#the-rule-for-names) it breaks.
 ///
 /// The rule has four parts, and the error has one variant for each.
-/// It is exhaustive on purpose.
-/// Whatever else has a name takes it by this one rule, and says the same in an error of its own:
-/// a rule and a preset do, and they match on every variant.
 ///
 /// ```
 /// use gaslightmq_selector::prelude::*;
@@ -176,6 +124,7 @@ text_form!(SelectorName, SelectorNameError);
 /// assert_eq!(error.to_string(), "selector name \"Order\\u{feff}producers\" holds a format character");
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[non_exhaustive]
 pub enum SelectorNameError {
     /// The text has no character.
     #[error("selector name \"\" is empty")]
@@ -193,7 +142,7 @@ pub enum SelectorNameError {
 
 #[cfg(test)]
 mod tests {
-    use std::collections::BTreeMap;
+    use std::collections::{BTreeMap, HashMap};
 
     use super::*;
 
@@ -205,7 +154,9 @@ mod tests {
             assert_eq!(name.to_string(), text);
             assert_eq!(name, text);
             assert_eq!(name, *text);
+            assert_eq!(name.as_ref(), text);
             assert_eq!(text.parse::<SelectorName>(), Ok(name.clone()));
+            assert_eq!(SelectorName::try_from(text), Ok(name.clone()));
             assert_eq!(SelectorName::try_from(text.to_owned()), Ok(name.clone()));
             assert_eq!(String::from(name), text);
         }
@@ -260,52 +211,10 @@ mod tests {
     }
 
     #[test]
-    fn the_format_characters_are_those_of_the_category_cf() {
-        // Every range of the general category Cf in Unicode 16.0, which holds 170 characters.
-        let ranges = [
-            (0x00AD, 0x00AD),
-            (0x0600, 0x0605),
-            (0x061C, 0x061C),
-            (0x06DD, 0x06DD),
-            (0x070F, 0x070F),
-            (0x0890, 0x0891),
-            (0x08E2, 0x08E2),
-            (0x180E, 0x180E),
-            (0x200B, 0x200F),
-            (0x202A, 0x202E),
-            (0x2060, 0x2064),
-            (0x2066, 0x206F),
-            (0xFEFF, 0xFEFF),
-            (0xFFF9, 0xFFFB),
-            (0x110BD, 0x110BD),
-            (0x110CD, 0x110CD),
-            (0x13430, 0x1343F),
-            (0x1BCA0, 0x1BCA3),
-            (0x1D173, 0x1D17A),
-            (0xE0001, 0xE0001),
-            (0xE0020, 0xE007F),
-        ];
+    fn a_name_shows_as_its_text_when_debugging() {
+        let name = SelectorName::new("Order producers").unwrap();
 
-        let format: Vec<u32> = (0..=u32::from(char::MAX))
-            .filter(|code| char::from_u32(*code).is_some_and(is_format))
-            .collect();
-        let expected: Vec<u32> = ranges.iter().flat_map(|(first, last)| *first..=*last).collect();
-
-        assert_eq!(format.len(), 170);
-        assert_eq!(format, expected);
-    }
-
-    #[test]
-    fn a_name_takes_the_characters_next_to_the_format_characters() {
-        // A no-break space, a combining accent, a variation selector and an emoji are no format characters.
-        for text in [
-            "Order\u{a0}producers",
-            "Orde\u{301}r",
-            "Order \u{2764}\u{fe0f}",
-            "Order 🚀",
-        ] {
-            assert!(SelectorName::new(text).is_ok(), "{text:?}");
-        }
+        assert_eq!(format!("{name:?}"), "SelectorName(\"Order producers\")");
     }
 
     #[test]
@@ -318,10 +227,18 @@ mod tests {
 
     #[test]
     fn a_map_by_name_finds_its_entry_with_text() {
-        let mut by_name = BTreeMap::new();
-        by_name.insert(SelectorName::new("Order producers").unwrap(), 1);
+        let name = || SelectorName::new("Order producers").unwrap();
+        let sorted = BTreeMap::from([(name(), 1)]);
+        let hashed = HashMap::from([(name(), 1)]);
 
-        assert_eq!(by_name.get("Order producers"), Some(&1));
-        assert_eq!(by_name.get("Order consumers"), None);
+        assert_eq!(sorted.get("Order producers"), Some(&1));
+        assert_eq!(sorted.get("Order consumers"), None);
+        assert_eq!(hashed.get("Order producers"), Some(&1));
+        assert_eq!(hashed.get("Order consumers"), None);
+    }
+
+    #[test]
+    fn a_name_pads_like_text() {
+        assert_eq!(format!("{:>8}|", SelectorName::new("Flap").unwrap()), "    Flap|");
     }
 }

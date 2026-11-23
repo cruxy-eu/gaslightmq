@@ -22,6 +22,7 @@ gaslightmq_field.workspace = true
 gaslightmq_incident.workspace = true
 gaslightmq_kernel.workspace = true
 gaslightmq_lie.workspace = true
+gaslightmq_resource.workspace = true
 gaslightmq_selector.workspace = true
 gaslightmq_trigger.workspace = true
 serde = { workspace = true, optional = true }

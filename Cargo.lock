@@ -245,6 +245,7 @@ dependencies = [
  "gaslightmq_incident",
  "gaslightmq_kernel",
  "gaslightmq_lie",
+ "gaslightmq_resource",
  "gaslightmq_rule",
  "gaslightmq_selector",
  "gaslightmq_trigger",
@@ -294,6 +295,7 @@ dependencies = [
  "gaslightmq_incident",
  "gaslightmq_kernel",
  "gaslightmq_lie",
+ "gaslightmq_resource",
  "gaslightmq_rule",
  "gaslightmq_selector",
  "gaslightmq_trigger",
@@ -452,6 +454,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "gaslightmq_resource"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "thiserror",
+]
+
+[[package]]
 name = "gaslightmq_rule"
 version = "0.1.0"
 dependencies = [
@@ -460,6 +471,7 @@ dependencies = [
  "gaslightmq_incident",
  "gaslightmq_kernel",
  "gaslightmq_lie",
+ "gaslightmq_resource",
  "gaslightmq_selector",
  "gaslightmq_trigger",
  "serde",
@@ -473,6 +485,7 @@ version = "0.1.0"
 dependencies = [
  "gaslightmq_field",
  "gaslightmq_kernel",
+ "gaslightmq_resource",
  "serde",
  "serde_json",
  "serde_test",

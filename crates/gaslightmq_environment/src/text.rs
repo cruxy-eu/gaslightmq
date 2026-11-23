@@ -49,13 +49,14 @@ macro_rules! text_form {
 /// Give a type that keeps its text as written what a text has: the text itself, comparison with text, and
 /// [`text_form`].
 ///
-/// The type is a tuple struct around an `Arc<str>`, and it has a `new` that checks the text.
+/// The type is a tuple struct around its text, which is an `Arc<str>` or a type that is a text itself,
+/// and it has a `new` that checks the text.
 macro_rules! kept_text {
     ($name:ident, $error:ident) => {
         impl $name {
             /// The value as text.
             pub fn as_str(&self) -> &str {
-                &self.0
+                self.0.as_ref()
             }
         }
 
@@ -69,20 +70,20 @@ macro_rules! kept_text {
 
         impl std::fmt::Display for $name {
             fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-                f.pad(&self.0)
+                f.pad(self.as_str())
             }
         }
 
         impl AsRef<str> for $name {
             fn as_ref(&self) -> &str {
-                &self.0
+                self.as_str()
             }
         }
 
         /// A map by this text finds its entry with plain text.
         impl std::borrow::Borrow<str> for $name {
             fn borrow(&self) -> &str {
-                &self.0
+                self.as_str()
             }
         }
 

@@ -38,6 +38,10 @@ pub struct Member {
     ///
     /// The manifest lists them as `sans_io_modules` under `[package.metadata.gaslightmq]`.
     pub sans_io_modules: Vec<String>,
+    /// Whether it declares itself internal in its manifest: its types stay inside the crates that use it.
+    ///
+    /// The manifest says `internal = true` under `[package.metadata.gaslightmq]`.
+    pub internal: bool,
 }
 
 impl Member {
@@ -96,6 +100,7 @@ impl Workspace {
                     dev_dependencies: dev.into_iter().map(|dependency| dependency.name.clone()).collect(),
                     edition: package.edition.clone(),
                     sans_io_modules: declared.map_or_else(Vec::new, |declared| declared.sans_io_modules.clone()),
+                    internal: declared.is_some_and(|declared| declared.internal),
                 }
             })
             .collect();
@@ -136,6 +141,8 @@ struct PackageMetadata {
 struct Declared {
     #[serde(default)]
     sans_io_modules: Vec<String>,
+    #[serde(default)]
+    internal: bool,
 }
 
 #[derive(Deserialize)]
@@ -168,6 +175,7 @@ impl Member {
             dev_dependencies: BTreeSet::new(),
             edition: "2024".to_owned(),
             sans_io_modules: Vec::new(),
+            internal: false,
         }
     }
 }
@@ -205,6 +213,7 @@ mod tests {
                 "name": "gaslightmq_clock",
                 "manifest_path": "/repo/crates/gaslightmq_clock/Cargo.toml",
                 "edition": "2024",
+                "metadata": { "gaslightmq": { "internal": true } },
                 "dependencies": []
             },
             {
@@ -272,6 +281,14 @@ mod tests {
 
         assert_eq!(workspace.members[0].sans_io_modules, [""; 0]);
         assert_eq!(workspace.members[1].sans_io_modules, ["logic", "logic::cluster"]);
+    }
+
+    #[test]
+    fn a_member_declares_in_its_manifest_that_it_is_internal() {
+        let workspace = Workspace::from_metadata(METADATA).unwrap();
+
+        let internal: Vec<bool> = workspace.members.iter().map(|member| member.internal).collect();
+        assert_eq!(internal, [false, false, true, false]);
     }
 
     #[test]

@@ -134,7 +134,7 @@
 //!
 //! | Type | Error | What is wrong |
 //! |---|---|---|
-//! | [`EnvironmentName`], [`WorldName`] | [`EnvironmentNameError`], [`WorldNameError`] | The text breaks a part of the rule for names. |
+//! | [`EnvironmentName`], [`WorldName`] | [`EnvironmentNameError`], [`WorldNameError`] | The text breaks a part of the [rule for names](EnvironmentName#the-rule-for-names). |
 //! | [`HostName`] | [`HostNameError`] | The text is no IP address and no name of a host. |
 //! | [`ServerAddress`] | [`ServerAddressError`] | The host or the port is missing or wrong. |
 //! | [`ListenAddress`] | [`ListenAddressError`] | The text is not an IP address and a port. |

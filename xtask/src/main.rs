@@ -8,6 +8,7 @@
 
 mod crate_layout;
 mod crate_names;
+mod internal_crates;
 mod manifest;
 mod sans_io;
 mod source;
@@ -41,16 +42,19 @@ enum Check {
     SansIo,
     /// An error type keeps an error it holds in a field `error`, and its `source()` returns `None`.
     WrappedErrors,
+    /// No crate shows a type of an internal crate, in what it offers or in what it documents.
+    InternalCrates,
 }
 
 impl Check {
-    const ALL: [Check; 6] = [
+    const ALL: [Check; 7] = [
         Check::Dependencies,
         Check::CrateNames,
         Check::WasmBoundary,
         Check::WorkspaceRules,
         Check::SansIo,
         Check::WrappedErrors,
+        Check::InternalCrates,
     ];
 
     fn name(self) -> &'static str {
@@ -61,6 +65,7 @@ impl Check {
             Check::WorkspaceRules => "workspace-rules",
             Check::SansIo => "sans-io",
             Check::WrappedErrors => "wrapped-errors",
+            Check::InternalCrates => "internal-crates",
         }
     }
 
@@ -92,6 +97,10 @@ impl Check {
             }
             Check::WrappedErrors => {
                 let violations = wrapped_errors::violations(workspace).map_err(|error| error.to_string())?;
+                Ok(lines(&violations))
+            }
+            Check::InternalCrates => {
+                let violations = internal_crates::violations(workspace).map_err(|error| error.to_string())?;
                 Ok(lines(&violations))
             }
         }
