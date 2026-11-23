@@ -463,9 +463,7 @@ The listener knows nothing about what a handler does with the client's bytes.
   A client that stopped reading cannot hold that wait up, and a handler that never returns can.
   A new listener then opens on the same address, as when a [broker is back](backends.md#emulating-incidents).
 - **A handler that panics ends its own connection.**
-  The listener and the other connections go on.
-  That holds for a build that unwinds on a panic.
-  The release build aborts on a panic, so there a handler that panics ends the process.
+  The listener and the other connections go on, in every build.
 - **A failed accept does not stop a listener.**
   A connection that failed on its way in costs nothing, and the listener accepts the next one at once.
   A process that has run out of sockets or of memory waits for a time that the configuration sets, and accepts again.

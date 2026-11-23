@@ -98,8 +98,6 @@
 //! such as its next request.
 //!
 //! A handler that panics ends its own connection, and the listener and the other connections go on.
-//! That holds for a build that unwinds on a panic.
-//! The release build of this workspace aborts on a panic, so there a handler that panics ends the process.
 //!
 //! # Errors
 //!

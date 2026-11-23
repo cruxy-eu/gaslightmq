@@ -41,8 +41,7 @@ use crate::{ConnectionHandler, ConnectionNumbers, ListenerConfiguration, Transpo
 ///
 /// Every connection runs in a task of its own, so a panic in a handler ends that task and closes that connection.
 /// The listener reports it and goes on, and the other connections do not notice.
-/// That holds for a build that unwinds on a panic, as debug and test builds do.
-/// A build that aborts on a panic, as the release build of this workspace does, ends the whole process instead.
+/// Every build of this workspace unwinds on a panic, so that holds in a release build too.
 #[derive(Debug)]
 pub struct Listener {
     address: SocketAddr,
@@ -230,7 +229,6 @@ impl AcceptFailure {
 }
 
 /// Says so when the handler of a connection panicked. The connection closed with it, and the listener goes on.
-/// A build that aborts on a panic never gets here: the process ends with the handler.
 fn report(endpoint: Endpoint, ended: Result<(), JoinError>) {
     if let Err(panicked) = ended
         && panicked.is_panic()

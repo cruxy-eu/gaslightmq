@@ -81,7 +81,7 @@ allow_attributes_without_reason = "warn"
 lto = true
 codegen-units = 1
 strip = true
-panic = "abort"
+# No `panic = "abort"`: a panic unwinds, so the listener keeps a handler's panic to its own connection.
 
 # Used by `dx build --release --platform web`. `strip = true` would make dx
 # run `objcopy --strip-all` on the wasm, which drops wasm-bindgen's custom

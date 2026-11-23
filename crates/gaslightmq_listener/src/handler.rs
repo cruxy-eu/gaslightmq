@@ -38,8 +38,7 @@ pub trait ConnectionHandler: Send + Sync + 'static {
     /// The connection ends when the call returns, whatever the client still wanted to say.
     /// A handler that wants the client to read its last response [closes](Transport::close) the transport first.
     ///
-    /// A call that panics ends its own connection only, in a build that unwinds on a panic.
-    /// In a build that aborts on a panic, it ends the process.
+    /// A call that panics ends its own connection only.
     fn handle(&self, transport: Transport) -> impl Future<Output = ()> + Send;
 }
 
