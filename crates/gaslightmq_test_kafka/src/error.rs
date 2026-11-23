@@ -26,19 +26,23 @@ use gaslightmq_wire::{ApiKey, ResponseError};
 ///     "CreateTopics for topic `orders`: the cluster answered TopicAlreadyExists: Topic 'orders' already exists."
 /// );
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 #[non_exhaustive]
 pub enum KafkaClusterError {
     /// The cluster did not start.
     /// `reason` says why, and `log` holds the last lines the brokers wrote, when they wrote any.
+    #[error("the Kafka cluster did not start: {reason}{}", end_of(.log))]
     NotStarted { reason: String, log: String },
     /// The name of a new topic is no topic name.
+    #[error("new topic: {error}")]
     InvalidTopicName { error: TopicNameError },
     /// The records make no batch that a broker takes. `reason` says why.
+    #[error("the records make no batch: {reason}")]
     InvalidRecords { reason: String },
     /// A broker answered a request of `api` with an error of Kafka.
     /// `about` names the topic, the partition or the transaction the request was about,
     /// and `detail` is what the broker said on top of the error, when it said something.
+    #[error("{api:?} for {about}: the cluster answered {error:?}{}", said_on_top(.detail.as_deref()))]
     Refused {
         api: ApiKey,
         error: ResponseError,
@@ -47,9 +51,11 @@ pub enum KafkaClusterError {
     },
     /// A broker did not answer a request, or its answer could not be read.
     /// `request` names the request, and `reason` says what went wrong.
+    #[error("{request}: {reason}")]
     Unanswered { request: String, reason: String },
     /// The cluster did not get somewhere within the time the configuration gives it.
     /// `about` names what did not settle: a topic that not every broker knows yet, or a transaction that does not end.
+    #[error("{about}: the cluster did not settle it within {} ms", .waited.as_millis())]
     NotSettledInTime { about: String, waited: TimeSpan },
 }
 
@@ -105,42 +111,19 @@ impl KafkaClusterError {
     }
 }
 
-impl fmt::Display for KafkaClusterError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::NotStarted { reason, log } => {
-                write!(f, "the Kafka cluster did not start: {reason}")?;
-                if log.is_empty() {
-                    Ok(())
-                } else {
-                    write!(f, "\nthe end of the log of its brokers:\n{log}")
-                }
-            }
-            Self::InvalidTopicName { error } => write!(f, "new topic: {error}"),
-            Self::InvalidRecords { reason } => write!(f, "the records make no batch: {reason}"),
-            Self::Refused {
-                api,
-                error,
-                about,
-                detail,
-            } => {
-                write!(f, "{api:?} for {about}: the cluster answered {error:?}")?;
-                detail.iter().try_for_each(|detail| write!(f, ": {detail}"))
-            }
-            Self::Unanswered { request, reason } => write!(f, "{request}: {reason}"),
-            Self::NotSettledInTime { about, waited } => {
-                write!(
-                    f,
-                    "{about}: the cluster did not settle it within {} ms",
-                    waited.as_millis()
-                )
-            }
-        }
+/// What the message of a cluster that did not start adds for `log`: nothing when the brokers wrote nothing.
+fn end_of(log: &str) -> String {
+    if log.is_empty() {
+        String::new()
+    } else {
+        format!("\nthe end of the log of its brokers:\n{log}")
     }
 }
 
-/// The message names the cause, so the error has no source.
-impl std::error::Error for KafkaClusterError {}
+/// What the message of a refused request adds for `detail`: nothing when the broker said nothing on top of the error.
+fn said_on_top(detail: Option<&str>) -> String {
+    detail.map_or_default(|detail| format!(": {detail}"))
+}
 
 #[cfg(test)]
 mod tests {

@@ -12,11 +12,13 @@
 //! - A field that holds an error is named `error`. A field of a tuple has no name, and fails.
 //! - A `source()` that an error type writes returns `None` and nothing else.
 //!   Leaving `source()` out is the same, and passes.
-//! - A derived `Error` has no field with `#[source]` or `#[from]`, which make its `source()` return that field.
+//! - A derived `Error` makes no field its source: no field has `#[source]` or `#[from]`, and no field is named `source`.
+//!   Each makes its `source()` return that field, whatever the type of the field is.
+//! - A derived `Error` is not `#[error(transparent)]`, which hands its message and its `source()` to the error it holds.
 //!
 //! What the check does not catch:
 //!
-//! - Whether the message writes the error it holds, and writes it once. No check reads a `Display`.
+//! - Whether the message writes the error it holds, and writes it once. No check reads a message.
 //! - An error behind a type parameter, a type alias or a collection: `E`, `Failure` or `Vec<TopicNameError>`.
 //! - An error type that a macro writes, or one inside a function body. See [`source`].
 //! - Two types of one crate with the same name, of which one is an error type. The check knows a type by its name.
@@ -43,6 +45,15 @@ const WRAPPERS: [&str; 4] = ["Arc", "Box", "Option", "Rc"];
 
 /// The attributes with which a derived `Error` makes a field its source.
 const SOURCE_ATTRIBUTES: [&str; 2] = ["from", "source"];
+
+/// The name with which a derived `Error` makes a field its source, without an attribute.
+const SOURCE_FIELD: &str = "source";
+
+/// The attribute that holds the message of a derived `Error`.
+const MESSAGE_ATTRIBUTE: &str = "error";
+
+/// What a derived `Error` writes in place of a message, to pass on the message and the source of the error it holds.
+const TRANSPARENT: &str = "transparent";
 
 /// Every error type of the workspace that holds another error the wrong way.
 pub fn violations(workspace: &Workspace) -> Result<Vec<WrappedErrorViolation>, SourceError> {
@@ -100,13 +111,22 @@ fn in_item(
     match item {
         Item::Enum(item) if own.contains(&item.ident.to_string()) => {
             let derived = derives_error(&item.attrs);
+            if derived {
+                in_message(&item.attrs, &item.ident.to_string(), file, violations);
+            }
             for variant in &item.variants {
                 let holder = format!("{}::{}", item.ident, variant.ident);
+                if derived {
+                    in_message(&variant.attrs, &holder, file, violations);
+                }
                 in_fields(&variant.fields, &holder, derived, file, known, violations);
             }
         }
         Item::Struct(item) if own.contains(&item.ident.to_string()) => {
             let derived = derives_error(&item.attrs);
+            if derived {
+                in_message(&item.attrs, &item.ident.to_string(), file, violations);
+            }
             in_fields(&item.fields, &item.ident.to_string(), derived, file, known, violations);
         }
         Item::Impl(implementation) if implements_error(implementation) => {
@@ -128,6 +148,26 @@ fn in_item(
     }
 }
 
+/// Checks the attributes of a derived error struct, of a derived error enum or of one of its variants:
+/// none of them is `#[error(transparent)]`.
+fn in_message(attributes: &[Attribute], holder: &str, file: &SourceFile, violations: &mut Vec<WrappedErrorViolation>) {
+    for attribute in attributes {
+        if !attribute.path().is_ident(MESSAGE_ATTRIBUTE) {
+            continue;
+        }
+        // A message that is no `transparent` does not parse as a name, and passes.
+        if let Ok(written) = attribute.parse_args::<syn::Ident>()
+            && written == TRANSPARENT
+        {
+            violations.push(WrappedErrorViolation::PassesSourceOn {
+                path: file.path.clone(),
+                line: written.span().start().line,
+                holder: holder.to_owned(),
+            });
+        }
+    }
+}
+
 /// Checks the fields of one error struct, or of one variant of an error enum.
 fn in_fields(
     fields: &Fields,
@@ -138,36 +178,54 @@ fn in_fields(
     violations: &mut Vec<WrappedErrorViolation>,
 ) {
     for field in fields {
-        let Some((held, line)) = held_error(&field.ty, known) else {
-            continue;
-        };
         let (path, holder) = (file.path.clone(), holder.to_owned());
-        match &field.ident {
-            Some(name) if name == ERROR_FIELD => {
-                let makes_it_the_source = field
-                    .attrs
-                    .iter()
-                    .any(|attribute| SOURCE_ATTRIBUTES.iter().any(|source| attribute.path().is_ident(source)));
-                if derived && makes_it_the_source {
-                    let line = name.span().start().line;
+        // The line on which a derived `Error` makes the field its source: that of the attribute, or of the name.
+        let made_source = if derived { made_source(field) } else { None };
+        match (held_error(&field.ty, known), &field.ident) {
+            (Some(_), Some(name)) if name == ERROR_FIELD => {
+                if let Some(line) = made_source {
                     violations.push(WrappedErrorViolation::HasSource { path, line, holder });
                 }
             }
-            Some(name) => violations.push(WrappedErrorViolation::NamedOtherwise {
+            (Some((held, _)), Some(name)) => violations.push(WrappedErrorViolation::NamedOtherwise {
                 path,
                 line: name.span().start().line,
                 holder,
                 field: name.to_string(),
                 held,
             }),
-            None => violations.push(WrappedErrorViolation::WithoutName {
+            (Some((held, line)), None) => violations.push(WrappedErrorViolation::WithoutName {
                 path,
                 line,
                 holder,
                 held,
             }),
+            // The check does not know the type as an error, and the derive makes the field a source all the same.
+            (None, _) => {
+                if let Some(line) = made_source {
+                    violations.push(WrappedErrorViolation::HasSource { path, line, holder });
+                }
+            }
         }
     }
+}
+
+/// The line on which a derived `Error` makes a field its source:
+/// the field has `#[source]` or `#[from]`, or it is named `source`.
+fn made_source(field: &syn::Field) -> Option<usize> {
+    let by_attribute = field.attrs.iter().find_map(|attribute| {
+        let name = attribute.path().get_ident()?;
+        SOURCE_ATTRIBUTES
+            .iter()
+            .any(|source| name == source)
+            .then(|| name.span().start().line)
+    });
+    let by_name = field
+        .ident
+        .as_ref()
+        .filter(|name| *name == SOURCE_FIELD)
+        .map(|name| name.span().start().line);
+    by_attribute.or(by_name)
 }
 
 /// The error that a field of this type holds, as the code writes its type, with the line of that type.
@@ -273,6 +331,8 @@ pub enum WrappedErrorViolation {
     },
     /// The `source()` of the error type returns something, or a derive makes it return a field.
     HasSource { path: PathBuf, line: usize, holder: String },
+    /// A derive makes the error type pass on the message and the `source()` of the error it holds.
+    PassesSourceOn { path: PathBuf, line: usize, holder: String },
 }
 
 impl fmt::Display for WrappedErrorViolation {
@@ -305,6 +365,12 @@ impl fmt::Display for WrappedErrorViolation {
                 f,
                 "{}:{line}: the `source()` of `{holder}` returns an error, and not `None`; \
                  the message of `{holder}` already says it",
+                path.display()
+            ),
+            Self::PassesSourceOn { path, line, holder } => write!(
+                f,
+                "{}:{line}: `{holder}` passes on the message and the `source()` of the error it holds; \
+                 it writes a message of its own, and has no source",
                 path.display()
             ),
         }
@@ -497,6 +563,65 @@ mod tests {
                 "crates/gaslightmq_kafka_client_native/src/error.rs:4: \
                  the `source()` of `ClientError::Unreadable` returns an error, and not `None`; \
                  the message of `ClientError::Unreadable` already says it",
+            ]
+        );
+    }
+
+    #[test]
+    fn a_derived_error_makes_no_field_its_source_whatever_the_type_of_the_field() {
+        let text = "#[derive(Debug, thiserror::Error)]
+                    pub enum ClientError {
+                        Unreadable { #[source] cause: Failure },
+                        Refused(#[from] Failure),
+                        Unanswered { source: Failure, attempts: u32 },
+                        Unwritable { reason: String, attempts: u32 },
+                    }";
+
+        assert_eq!(
+            lines(text),
+            [
+                "crates/gaslightmq_kafka_client_native/src/error.rs:3: \
+                 the `source()` of `ClientError::Unreadable` returns an error, and not `None`; \
+                 the message of `ClientError::Unreadable` already says it",
+                "crates/gaslightmq_kafka_client_native/src/error.rs:4: \
+                 the `source()` of `ClientError::Refused` returns an error, and not `None`; \
+                 the message of `ClientError::Refused` already says it",
+                "crates/gaslightmq_kafka_client_native/src/error.rs:5: \
+                 the `source()` of `ClientError::Unanswered` returns an error, and not `None`; \
+                 the message of `ClientError::Unanswered` already says it",
+            ]
+        );
+    }
+
+    #[test]
+    fn a_field_named_source_is_no_source_of_an_error_that_is_not_derived() {
+        let text = format!("pub enum ClientError {{ Unanswered {{ source: Failure }} }}\n{IMPLEMENTS}");
+
+        assert_eq!(lines(&text), [""; 0]);
+    }
+
+    #[test]
+    fn a_derived_error_that_passes_its_source_on_fails() {
+        let text = "#[derive(Debug, thiserror::Error)]
+                    pub enum ClientError {
+                        #[error(transparent)]
+                        Broker { error: ResponseError },
+                        #[error(\"connection lost: {reason}\")]
+                        ConnectionLost { reason: String },
+                    }
+                    #[derive(Debug, thiserror::Error)]
+                    #[error(transparent)]
+                    pub struct ReadError { error: WireError }";
+
+        assert_eq!(
+            lines(text),
+            [
+                "crates/gaslightmq_kafka_client_native/src/error.rs:3: \
+                 `ClientError::Broker` passes on the message and the `source()` of the error it holds; \
+                 it writes a message of its own, and has no source",
+                "crates/gaslightmq_kafka_client_native/src/error.rs:9: \
+                 `ReadError` passes on the message and the `source()` of the error it holds; \
+                 it writes a message of its own, and has no source",
             ]
         );
     }

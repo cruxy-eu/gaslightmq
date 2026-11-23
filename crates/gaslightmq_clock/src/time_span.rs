@@ -167,38 +167,22 @@ impl From<TimeSpan> for String {
 ///     "invalid time span `1.5s`: unknown unit `.5s`, expected ms, s, m or h",
 /// );
 /// ```
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
 #[non_exhaustive]
 pub enum TimeSpanError {
     /// The text does not start with a whole number.
+    #[error("invalid time span `{input}`: expected a whole number and a unit, such as `10s`")]
     NoNumber { input: String },
     /// The text is a number without a unit.
+    #[error("invalid time span `{input}`: missing unit, expected ms, s, m or h")]
     NoUnit { input: String },
     /// The text after the number is not `ms`, `s`, `m` or `h`.
+    #[error("invalid time span `{input}`: unknown unit `{unit}`, expected ms, s, m or h")]
     UnknownUnit { input: String, unit: String },
     /// The time span is more milliseconds than a `u64` holds.
+    #[error("invalid time span `{input}`: too long")]
     TooLong { input: String },
 }
-
-impl fmt::Display for TimeSpanError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let (Self::NoNumber { input }
-        | Self::NoUnit { input }
-        | Self::UnknownUnit { input, .. }
-        | Self::TooLong { input }) = self;
-        write!(f, "invalid time span `{input}`: ")?;
-        match self {
-            Self::NoNumber { .. } => write!(f, "expected a whole number and a unit, such as `10s`"),
-            Self::NoUnit { .. } => write!(f, "missing unit, expected ms, s, m or h"),
-            Self::UnknownUnit { unit, .. } => {
-                write!(f, "unknown unit `{unit}`, expected ms, s, m or h")
-            }
-            Self::TooLong { .. } => write!(f, "too long"),
-        }
-    }
-}
-
-impl core::error::Error for TimeSpanError {}
 
 #[cfg(test)]
 mod tests {

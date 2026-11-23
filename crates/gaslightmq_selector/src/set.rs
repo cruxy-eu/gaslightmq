@@ -1,6 +1,5 @@
 use std::collections::BTreeMap;
 use std::collections::btree_map;
-use std::fmt;
 
 use crate::{EffectiveSelector, Selector, SelectorName, SelectorRef};
 
@@ -197,49 +196,32 @@ impl IntoIterator for SelectorSet {
 }
 
 /// Why selectors are not a [`SelectorSet`], or why the set does not have what it is asked for.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 #[non_exhaustive]
 pub enum SelectorSetError {
     /// Two selectors have the same name.
+    #[error("two selectors are named {:?}", .name.as_str())]
     DuplicateName { name: SelectorName },
     /// No selector of the set has this name.
+    #[error("no selector is named {:?}", .name.as_str())]
     UnknownSelector { name: SelectorName },
     /// A selector includes a name that no selector of the set has.
+    #[error("selector {:?} includes {:?}, and no selector has that name", .selector.as_str(), .include.as_str())]
     UnknownInclude {
         selector: SelectorName,
         include: SelectorName,
     },
     /// A selector includes itself, directly or through other selectors.
     /// The path starts and ends with the same name.
+    #[error("selectors include each other in a circle: {}", circle(.path))]
     IncludeCycle { path: Vec<SelectorName> },
 }
 
-impl fmt::Display for SelectorSetError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::DuplicateName { name } => write!(f, "two selectors are named {:?}", name.as_str()),
-            Self::UnknownSelector { name } => write!(f, "no selector is named {:?}", name.as_str()),
-            Self::UnknownInclude { selector, include } => write!(
-                f,
-                "selector {:?} includes {:?}, and no selector has that name",
-                selector.as_str(),
-                include.as_str()
-            ),
-            Self::IncludeCycle { path } => {
-                f.write_str("selectors include each other in a circle: ")?;
-                for (index, name) in path.iter().enumerate() {
-                    if index > 0 {
-                        f.write_str(" includes ")?;
-                    }
-                    write!(f, "{:?}", name.as_str())?;
-                }
-                Ok(())
-            }
-        }
-    }
+/// The names of a circle as a message writes them: each in quotes, with ` includes ` between them.
+fn circle(path: &[SelectorName]) -> String {
+    let names: Vec<String> = path.iter().map(|name| format!("{:?}", name.as_str())).collect();
+    names.join(" includes ")
 }
-
-impl std::error::Error for SelectorSetError {}
 
 #[cfg(test)]
 mod tests {

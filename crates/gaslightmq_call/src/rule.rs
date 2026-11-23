@@ -107,22 +107,13 @@ impl PartialEq<&str> for RecordedRuleName {
 }
 
 /// Why a text is not a [`RecordedRuleName`].
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 #[non_exhaustive]
 pub enum RecordedRuleNameError {
     /// The text has no character, and every rule has a name.
+    #[error("the recorded name of a rule is empty")]
     Empty,
 }
-
-impl fmt::Display for RecordedRuleNameError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Empty => f.write_str("the recorded name of a rule is empty"),
-        }
-    }
-}
-
-impl std::error::Error for RecordedRuleNameError {}
 
 #[cfg(test)]
 mod tests {

@@ -66,22 +66,13 @@ impl fmt::Display for Outcome {
 text_form!(Outcome, OutcomeError);
 
 /// Why a text is not an [`Outcome`].
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 #[non_exhaustive]
 pub enum OutcomeError {
     /// No outcome has this name.
+    #[error("unknown outcome: {name:?}")]
     Unknown { name: String },
 }
-
-impl fmt::Display for OutcomeError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Unknown { name } => write!(f, "unknown outcome: {name:?}"),
-        }
-    }
-}
-
-impl std::error::Error for OutcomeError {}
 
 /// How long the backend took to answer, which is the value of the field `latency`.
 ///
@@ -170,25 +161,13 @@ impl fmt::Display for Latency {
 text_form!(Latency, LatencyError);
 
 /// Why a text is not a [`Latency`].
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 #[non_exhaustive]
 pub enum LatencyError {
     /// The text is not a whole number and a unit: `ms`, `s`, `m` or `h`.
+    #[error("latency {input:?} does not have the form a whole number and a unit, such as 14ms")]
     Malformed { input: String },
 }
-
-impl fmt::Display for LatencyError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Malformed { input } => write!(
-                f,
-                "latency {input:?} does not have the form a whole number and a unit, such as 14ms"
-            ),
-        }
-    }
-}
-
-impl std::error::Error for LatencyError {}
 
 #[cfg(test)]
 mod tests {

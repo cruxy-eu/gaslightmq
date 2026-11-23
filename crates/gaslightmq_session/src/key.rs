@@ -114,39 +114,28 @@ impl FromStr for SessionKey {
 ///
 /// A variant that names a part keeps the error of that part.
 /// Its message names the whole text first, and then says what is wrong with the part.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 #[non_exhaustive]
 pub enum SessionKeyError {
     /// The text is not three parts with a space between them.
+    #[error(
+        "session key {input:?} does not have the form a host, an endpoint and an ordinal, \
+         such as 10.0.4.27 broker 2 #1"
+    )]
     Malformed { input: String },
     /// The first part is not a host.
+    #[error("session key {input:?}: {error}")]
     InvalidHost { input: String, error: ClientHostError },
     /// The middle part is not an endpoint.
+    #[error("session key {input:?}: {error}")]
     InvalidEndpoint { input: String, error: EndpointError },
     /// The last part is not an ordinal.
+    #[error("session key {input:?}: {error}")]
     InvalidOrdinal {
         input: String,
         error: ConnectionOrdinalError,
     },
 }
-
-impl fmt::Display for SessionKeyError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Malformed { input } => write!(
-                f,
-                "session key {input:?} does not have the form a host, an endpoint and an ordinal, \
-                 such as 10.0.4.27 broker 2 #1"
-            ),
-            Self::InvalidHost { input, error } => write!(f, "session key {input:?}: {error}"),
-            Self::InvalidEndpoint { input, error } => write!(f, "session key {input:?}: {error}"),
-            Self::InvalidOrdinal { input, error } => write!(f, "session key {input:?}: {error}"),
-        }
-    }
-}
-
-/// The message is complete, so no variant has a source.
-impl std::error::Error for SessionKeyError {}
 
 #[cfg(test)]
 mod tests {

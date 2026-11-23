@@ -122,22 +122,13 @@ impl FromStr for RuleState {
 }
 
 /// Why a text is not a [`RuleState`].
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 #[non_exhaustive]
 pub enum RuleStateError {
     /// No state has this name.
+    #[error("no state is called {name:?}")]
     Unknown { name: String },
 }
-
-impl fmt::Display for RuleStateError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Unknown { name } => write!(f, "no state is called {name:?}"),
-        }
-    }
-}
-
-impl std::error::Error for RuleStateError {}
 
 #[cfg(test)]
 mod tests {

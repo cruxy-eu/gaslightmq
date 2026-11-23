@@ -96,22 +96,13 @@ macro_rules! text_key {
         }
 
         #[doc = concat!("Why a text is not a [`", stringify!($name), "`].")]
-        #[derive(Debug, Clone, PartialEq, Eq)]
+        #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
         #[non_exhaustive]
         pub enum $error {
             /// The text has no characters.
+            #[error("a {} is not empty", $what)]
             Empty,
         }
-
-        impl fmt::Display for $error {
-            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-                match self {
-                    Self::Empty => f.write_str(concat!("a ", $what, " is not empty")),
-                }
-            }
-        }
-
-        impl std::error::Error for $error {}
 
         impl FromStr for $name {
             type Err = $error;

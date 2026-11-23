@@ -1,6 +1,5 @@
 use std::collections::BTreeMap;
 use std::collections::btree_map;
-use std::fmt;
 
 use crate::{Action, ActionRef, PresetName};
 
@@ -182,22 +181,13 @@ impl IntoIterator for PresetSet {
 }
 
 /// Why presets are not a [`PresetSet`].
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 #[non_exhaustive]
 pub enum PresetSetError {
     /// Two presets have the same name.
+    #[error("two presets are named {:?}", .name.as_str())]
     DuplicateName { name: PresetName },
 }
-
-impl fmt::Display for PresetSetError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::DuplicateName { name } => write!(f, "two presets are named {:?}", name.as_str()),
-        }
-    }
-}
-
-impl std::error::Error for PresetSetError {}
 
 #[cfg(test)]
 mod tests {

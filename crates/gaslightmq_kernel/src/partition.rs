@@ -130,34 +130,22 @@ text_form!(TopicPartition, TopicPartitionError);
 ///
 /// The text has two parts, and the error says which one is wrong.
 /// Its message names the whole text, and then says what is wrong with that part.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 #[non_exhaustive]
 pub enum TopicPartitionError {
     /// The text has no characters.
+    #[error("topic partition is empty")]
     Empty,
     /// The text has no `/` between a topic and a partition.
+    #[error("topic partition {input:?} does not have the form topic/partition")]
     Malformed { input: String },
     /// The text before the last `/` is not a topic name.
+    #[error("topic partition {input:?}: {error}")]
     InvalidTopic { input: String, error: TopicNameError },
     /// The text after the last `/` is not a partition number.
+    #[error("topic partition {input:?}: {error}")]
     InvalidPartition { input: String, error: PartitionNumberError },
 }
-
-impl fmt::Display for TopicPartitionError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Empty => f.write_str("topic partition is empty"),
-            Self::Malformed { input } => {
-                write!(f, "topic partition {input:?} does not have the form topic/partition")
-            }
-            Self::InvalidTopic { input, error } => write!(f, "topic partition {input:?}: {error}"),
-            Self::InvalidPartition { input, error } => write!(f, "topic partition {input:?}: {error}"),
-        }
-    }
-}
-
-/// The message is complete, so no variant has a source.
-impl std::error::Error for TopicPartitionError {}
 
 /// An offset in one partition of a topic that the context names.
 ///
@@ -256,34 +244,22 @@ text_form!(PartitionOffset, PartitionOffsetError);
 ///
 /// The text has two parts, and the error says which one is wrong.
 /// Its message names the whole text, and then says what is wrong with that part.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 #[non_exhaustive]
 pub enum PartitionOffsetError {
     /// The text has no characters.
+    #[error("partition offset is empty")]
     Empty,
     /// The text has no `@` between a partition and an offset.
+    #[error("partition offset {input:?} does not have the form partition@offset")]
     Malformed { input: String },
     /// The text before the last `@` is not a partition number.
+    #[error("partition offset {input:?}: {error}")]
     InvalidPartition { input: String, error: PartitionNumberError },
     /// The text after the last `@` is not an offset.
+    #[error("partition offset {input:?}: {error}")]
     InvalidOffset { input: String, error: OffsetError },
 }
-
-impl fmt::Display for PartitionOffsetError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Empty => f.write_str("partition offset is empty"),
-            Self::Malformed { input } => {
-                write!(f, "partition offset {input:?} does not have the form partition@offset")
-            }
-            Self::InvalidPartition { input, error } => write!(f, "partition offset {input:?}: {error}"),
-            Self::InvalidOffset { input, error } => write!(f, "partition offset {input:?}: {error}"),
-        }
-    }
-}
-
-/// The message is complete, so no variant has a source.
-impl std::error::Error for PartitionOffsetError {}
 
 /// An offset in one partition of one topic: the place of one record in a cluster.
 ///
@@ -412,38 +388,25 @@ text_form!(TopicPartitionOffset, TopicPartitionOffsetError);
 ///
 /// The text has three parts, and the error says which one is wrong.
 /// Its message names the whole text, and then says what is wrong with that part.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 #[non_exhaustive]
 pub enum TopicPartitionOffsetError {
     /// The text has no characters.
+    #[error("topic partition offset is empty")]
     Empty,
     /// The text has no `@` before an offset, or no `/` between a topic and a partition.
+    #[error("topic partition offset {input:?} does not have the form topic/partition@offset")]
     Malformed { input: String },
     /// The text before the last `/` is not a topic name.
+    #[error("topic partition offset {input:?}: {error}")]
     InvalidTopic { input: String, error: TopicNameError },
     /// The text between the last `/` and the last `@` is not a partition number.
+    #[error("topic partition offset {input:?}: {error}")]
     InvalidPartition { input: String, error: PartitionNumberError },
     /// The text after the last `@` is not an offset.
+    #[error("topic partition offset {input:?}: {error}")]
     InvalidOffset { input: String, error: OffsetError },
 }
-
-impl fmt::Display for TopicPartitionOffsetError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Empty => f.write_str("topic partition offset is empty"),
-            Self::Malformed { input } => write!(
-                f,
-                "topic partition offset {input:?} does not have the form topic/partition@offset"
-            ),
-            Self::InvalidTopic { input, error } => write!(f, "topic partition offset {input:?}: {error}"),
-            Self::InvalidPartition { input, error } => write!(f, "topic partition offset {input:?}: {error}"),
-            Self::InvalidOffset { input, error } => write!(f, "topic partition offset {input:?}: {error}"),
-        }
-    }
-}
-
-/// The message is complete, so no variant has a source.
-impl std::error::Error for TopicPartitionOffsetError {}
 
 #[cfg(test)]
 mod tests {

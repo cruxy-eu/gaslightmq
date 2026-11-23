@@ -112,28 +112,16 @@ text_form!(PortRange, PortRangeError);
 /// assert_eq!(error, PortRangeError::Backwards { first: 19191, last: 19092 });
 /// assert_eq!(error.to_string(), "port range 19191-19092 ends before it starts");
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 #[non_exhaustive]
 pub enum PortRangeError {
     /// A port is not a number between 1 and 65535.
+    #[error("port range {input:?} has a port that is no number between 1 and 65535")]
     InvalidPort { input: String },
     /// The last port is below the first.
+    #[error("port range {first}-{last} ends before it starts")]
     Backwards { first: u16, last: u16 },
 }
-
-impl fmt::Display for PortRangeError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::InvalidPort { input } => write!(
-                f,
-                "port range {input:?} has a port that is no number between 1 and 65535"
-            ),
-            Self::Backwards { first, last } => write!(f, "port range {first}-{last} ends before it starts"),
-        }
-    }
-}
-
-impl std::error::Error for PortRangeError {}
 
 /// The ports that listeners take on one IP address.
 #[derive(Debug, Clone, Copy)]

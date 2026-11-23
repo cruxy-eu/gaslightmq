@@ -1,5 +1,3 @@
-use std::fmt;
-
 use gaslightmq_kernel::prelude::*;
 
 use crate::{IncidentKind, PartitionCount, RecordCount};
@@ -97,28 +95,17 @@ impl Incident {
 /// The definition does not become an incident when it names no subject and the call offers none.
 /// [`IncidentDefinition::resolve`](crate::IncidentDefinition::resolve) returns this error then.
 /// The `TryFrom` that reads a definition as one incident has no call, so it returns it for any subject left out.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 #[non_exhaustive]
 pub enum IncidentError {
     /// The incident needs a `subject`, such as a partition or a group.
     /// The definition names none, and the call that fired it offers none.
+    #[error("{incident} needs a {subject}, and none is named")]
     MissingSubject {
         incident: IncidentKind,
         subject: &'static str,
     },
 }
-
-impl fmt::Display for IncidentError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::MissingSubject { incident, subject } => {
-                write!(f, "{incident} needs a {subject}, and none is named")
-            }
-        }
-    }
-}
-
-impl std::error::Error for IncidentError {}
 
 /// Whose coordinator: the one of a consumer group, or the one of a transactional producer.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]

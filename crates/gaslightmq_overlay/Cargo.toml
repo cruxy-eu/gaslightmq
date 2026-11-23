@@ -14,6 +14,7 @@ gaslightmq_incident.workspace = true
 gaslightmq_kernel.workspace = true
 gaslightmq_wire.workspace = true
 gaslightmq_wire_edit.workspace = true
+thiserror.workspace = true
 
 [dev-dependencies]
 bytes.workspace = true

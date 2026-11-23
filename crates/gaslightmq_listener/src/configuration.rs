@@ -146,29 +146,19 @@ impl fmt::Display for FrameSizeLimit {
 }
 
 /// Why a number of bytes is not a [`FrameSizeLimit`].
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 #[non_exhaustive]
 pub enum FrameSizeLimitError {
     /// The limit is zero, and a frame holds at least one byte.
+    #[error("a frame size limit is at least one byte")]
     Zero,
     /// The limit is more than the length of a frame can say.
+    #[error(
+        "frame size limit of {bytes} bytes is more than the {} that the length of a frame can say",
+        FrameSizeLimit::MAX
+    )]
     TooLarge { bytes: usize },
 }
-
-impl fmt::Display for FrameSizeLimitError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Zero => f.write_str("a frame size limit is at least one byte"),
-            Self::TooLarge { bytes } => write!(
-                f,
-                "frame size limit of {bytes} bytes is more than the {} that the length of a frame can say",
-                FrameSizeLimit::MAX
-            ),
-        }
-    }
-}
-
-impl std::error::Error for FrameSizeLimitError {}
 
 #[cfg(test)]
 mod tests {

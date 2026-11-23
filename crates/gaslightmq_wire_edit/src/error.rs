@@ -17,20 +17,26 @@ use gaslightmq_wire::Api;
 /// let error = SurgeryError::NothingFailed { api: Api::from_wire(0, 9) };
 /// assert_eq!(error.to_string(), "nothing that the Produce v9 request asks failed");
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 #[non_exhaustive]
 pub enum SurgeryError {
     /// There are no messages for the API of the request, so its body has no known shape.
+    #[error("a request of {api} cannot be edited: its messages are unknown")]
     UnknownApi { api: Api },
     /// The body of the request does not decode.
+    #[error("the {api} request cannot be read: {reason}")]
     UnreadableRequest { api: Api, reason: String },
     /// What is left of the request does not encode.
+    #[error("what is left of the {api} request cannot be written: {reason}")]
     UnwritableRequest { api: Api, reason: String },
     /// The body of the response does not decode.
+    #[error("the {api} response cannot be read: {reason}")]
     UnreadableResponse { api: Api, reason: String },
     /// The response does not encode.
+    #[error("the {api} response cannot be written: {reason}")]
     UnwritableResponse { api: Api, reason: String },
     /// The response belongs to another request: its API or its correlation ID differs.
+    #[error("the {answered_api} response {answered_correlation_id} does not answer the {api} request {correlation_id}")]
     ResponseOfAnotherCall {
         api: Api,
         correlation_id: i32,
@@ -38,6 +44,7 @@ pub enum SurgeryError {
         answered_correlation_id: i32,
     },
     /// The failures name nothing that the request asks, so there is no error to answer with.
+    #[error("nothing that the {api} request asks failed")]
     NothingFailed { api: Api },
 }
 
@@ -74,30 +81,3 @@ impl SurgeryError {
         }
     }
 }
-
-impl fmt::Display for SurgeryError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::UnknownApi { api } => write!(f, "a request of {api} cannot be edited: its messages are unknown"),
-            Self::UnreadableRequest { api, reason } => write!(f, "the {api} request cannot be read: {reason}"),
-            Self::UnwritableRequest { api, reason } => {
-                write!(f, "what is left of the {api} request cannot be written: {reason}")
-            }
-            Self::UnreadableResponse { api, reason } => write!(f, "the {api} response cannot be read: {reason}"),
-            Self::UnwritableResponse { api, reason } => write!(f, "the {api} response cannot be written: {reason}"),
-            Self::ResponseOfAnotherCall {
-                api,
-                correlation_id,
-                answered_api,
-                answered_correlation_id,
-            } => write!(
-                f,
-                "the {answered_api} response {answered_correlation_id} does not answer the {api} request {correlation_id}"
-            ),
-            Self::NothingFailed { api } => write!(f, "nothing that the {api} request asks failed"),
-        }
-    }
-}
-
-/// The message is complete, so no variant has a source.
-impl std::error::Error for SurgeryError {}

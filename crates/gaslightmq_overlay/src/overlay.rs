@@ -1,5 +1,3 @@
-use std::fmt;
-
 use gaslightmq_backend::Truth;
 use gaslightmq_field::prelude::*;
 use gaslightmq_incident::prelude::*;
@@ -321,23 +319,30 @@ where
 /// Why the overlay could not say what happens to a request or to a response.
 ///
 /// An error changes nothing in the overlay, except for what it had already [learned](Overlay::real_address).
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 #[non_exhaustive]
 pub enum OverlayError {
     /// The client connected to the endpoint of this broker, and the real cluster never named such a broker.
     /// Nothing says where the request goes.
+    #[error("a request for broker {broker} has nowhere to go: the cluster named no such broker")]
     UnknownBroker { broker: BrokerId },
     /// The body of the request does not decode.
+    #[error("the {api} request cannot be read: {error}")]
     UnreadableRequest { api: Api, error: WireError },
     /// The request without its fetch session does not encode.
+    #[error("the {api} request cannot be written without its fetch session: {error}")]
     UnwritableRequest { api: Api, error: WireError },
     /// The overlay answers the request itself, and that answer cannot be written.
+    #[error("the {api} request cannot be answered without the cluster: {error}")]
     UnansweredRequest { api: Api, error: SurgeryError },
     /// The body of the real cluster's response does not decode.
+    #[error("the {api} response of the cluster cannot be read: {error}")]
     UnreadableResponse { api: Api, error: WireError },
     /// The truth does not encode.
+    #[error("the truth of the {api} response cannot be written: {error}")]
     UnwritableResponse { api: Api, error: WireError },
     /// The response belongs to another request: its API or its correlation ID differs.
+    #[error("the {answered_api} response {answered_correlation_id} does not answer the {api} request {correlation_id}")]
     ResponseOfAnotherCall {
         api: Api,
         correlation_id: i32,
@@ -345,44 +350,3 @@ pub enum OverlayError {
         answered_correlation_id: i32,
     },
 }
-
-impl fmt::Display for OverlayError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::UnknownBroker { broker } => {
-                write!(
-                    f,
-                    "a request for broker {broker} has nowhere to go: the cluster named no such broker"
-                )
-            }
-            Self::UnreadableRequest { api, error } => write!(f, "the {api} request cannot be read: {error}"),
-            Self::UnwritableRequest { api, error } => {
-                write!(
-                    f,
-                    "the {api} request cannot be written without its fetch session: {error}"
-                )
-            }
-            Self::UnansweredRequest { api, error } => {
-                write!(f, "the {api} request cannot be answered without the cluster: {error}")
-            }
-            Self::UnreadableResponse { api, error } => {
-                write!(f, "the {api} response of the cluster cannot be read: {error}")
-            }
-            Self::UnwritableResponse { api, error } => {
-                write!(f, "the truth of the {api} response cannot be written: {error}")
-            }
-            Self::ResponseOfAnotherCall {
-                api,
-                correlation_id,
-                answered_api,
-                answered_correlation_id,
-            } => write!(
-                f,
-                "the {answered_api} response {answered_correlation_id} does not answer the {api} request {correlation_id}"
-            ),
-        }
-    }
-}
-
-/// The message is complete, so no variant has a source.
-impl std::error::Error for OverlayError {}

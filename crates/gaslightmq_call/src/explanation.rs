@@ -264,32 +264,19 @@ impl fmt::Display for LieFate {
 }
 
 /// Why a lie and its targets are not a [`LieFate`].
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 #[non_exhaustive]
 pub enum LieFateError {
     /// The lie neither applied nor lost a target, and a lie that fired went somewhere.
+    #[error("a lie that fired applied or lost somewhere, and this one did neither")]
     Nowhere,
     /// The lie applied on a target that is no part of the target it claimed.
+    #[error("a lie on {claimed} does not apply on {applied}")]
     AppliedOutsideTarget { applied: Target, claimed: Target },
     /// The lie applied on a target, and it could not be told. A lie that could not be told applied nowhere.
+    #[error("a lie that could not be told does not apply on {applied}")]
     AppliedUntold { applied: Target },
 }
-
-impl fmt::Display for LieFateError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Nowhere => f.write_str("a lie that fired applied or lost somewhere, and this one did neither"),
-            Self::AppliedOutsideTarget { applied, claimed } => {
-                write!(f, "a lie on {claimed} does not apply on {applied}")
-            }
-            Self::AppliedUntold { applied } => {
-                write!(f, "a lie that could not be told does not apply on {applied}")
-            }
-        }
-    }
-}
-
-impl std::error::Error for LieFateError {}
 
 /// A status a rule can have in the explanation of a call.
 ///
@@ -669,47 +656,25 @@ impl fmt::Display for RuleExplanation {
 }
 
 /// Why the parts of a line are not a [`RuleExplanation`]: the trigger and the action contradict each other.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 #[non_exhaustive]
 pub enum RuleExplanationError {
     /// The trigger says that the rule fired, and the line has no lie and no incident.
+    #[error("rule {:?} fired, and the explanation has no lie and no incident of it", .rule.as_str())]
     FiredWithoutAction { rule: RecordedRuleName },
     /// The line has a lie or incidents, and the trigger says that the rule did not fire.
+    #[error(
+        "rule {:?} did not fire (`{decision}`), and the explanation has a lie or an incident of it",
+        .rule.as_str()
+    )]
     ActionWithoutFiring {
         rule: RecordedRuleName,
         decision: TriggerDecision,
     },
     /// The rule fired incidents, and the list has none.
+    #[error("rule {:?} fired incidents, and the explanation lists none", .rule.as_str())]
     NoIncident { rule: RecordedRuleName },
 }
-
-impl fmt::Display for RuleExplanationError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::FiredWithoutAction { rule } => {
-                write!(
-                    f,
-                    "rule {:?} fired, and the explanation has no lie and no incident of it",
-                    rule.as_str()
-                )
-            }
-            Self::ActionWithoutFiring { rule, decision } => write!(
-                f,
-                "rule {:?} did not fire (`{decision}`), and the explanation has a lie or an incident of it",
-                rule.as_str()
-            ),
-            Self::NoIncident { rule } => {
-                write!(
-                    f,
-                    "rule {:?} fired incidents, and the explanation lists none",
-                    rule.as_str()
-                )
-            }
-        }
-    }
-}
-
-impl std::error::Error for RuleExplanationError {}
 
 /// What went wrong inside GaslightMQ while it handled a call, in one line.
 ///
@@ -917,33 +882,19 @@ impl<'a> IntoIterator for &'a Explanation {
 }
 
 /// Why a list of lines is not an [`Explanation`].
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 #[non_exhaustive]
 pub enum ExplanationError {
     /// Two lines are of one rule, and a rule is in one evaluation pass.
+    #[error("rule {:?} has two lines in one explanation", .rule.as_str())]
     RuleTwice { rule: RecordedRuleName },
     /// The line of `named_by` says that `rule` won a target or ended the call, and `rule` has no line of its own.
+    #[error("rule {:?} lost to rule {:?}, which has no line in the explanation", .named_by.as_str(), .rule.as_str())]
     UnlistedRule {
         rule: RecordedRuleName,
         named_by: RecordedRuleName,
     },
 }
-
-impl fmt::Display for ExplanationError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::RuleTwice { rule } => write!(f, "rule {:?} has two lines in one explanation", rule.as_str()),
-            Self::UnlistedRule { rule, named_by } => write!(
-                f,
-                "rule {:?} lost to rule {:?}, which has no line in the explanation",
-                named_by.as_str(),
-                rule.as_str()
-            ),
-        }
-    }
-}
-
-impl std::error::Error for ExplanationError {}
 
 #[cfg(test)]
 mod tests {

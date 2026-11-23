@@ -1,6 +1,5 @@
 use std::collections::BTreeMap;
 use std::collections::btree_map;
-use std::fmt;
 
 use crate::address::ListenAddress;
 use crate::environment::Environment;
@@ -181,37 +180,23 @@ impl IntoIterator for EnvironmentSet {
 }
 
 /// Why environments are not an [`EnvironmentSet`], or why a set cannot do what was asked.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 #[non_exhaustive]
 pub enum EnvironmentSetError {
     /// Two environments have this name.
+    #[error("two environments are named {:?}", .name.as_str())]
     DuplicateName { name: EnvironmentName },
     /// No environment has this name.
+    #[error("no environment is named {:?}", .name.as_str())]
     UnknownEnvironment { name: EnvironmentName },
     /// Two environments that start together would listen on the same port of the same address.
+    #[error("environments {:?} and {:?} both listen on {address}", .first.as_str(), .second.as_str())]
     SharedListener {
         first: EnvironmentName,
         second: EnvironmentName,
         address: ListenAddress,
     },
 }
-
-impl fmt::Display for EnvironmentSetError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::DuplicateName { name } => write!(f, "two environments are named {:?}", name.as_str()),
-            Self::UnknownEnvironment { name } => write!(f, "no environment is named {:?}", name.as_str()),
-            Self::SharedListener { first, second, address } => write!(
-                f,
-                "environments {:?} and {:?} both listen on {address}",
-                first.as_str(),
-                second.as_str()
-            ),
-        }
-    }
-}
-
-impl std::error::Error for EnvironmentSetError {}
 
 #[cfg(test)]
 mod tests {

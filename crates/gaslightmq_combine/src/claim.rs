@@ -1,5 +1,3 @@
-use std::fmt;
-
 use gaslightmq_field::prelude::*;
 use gaslightmq_lie::prelude::*;
 
@@ -153,27 +151,18 @@ impl TryFrom<&TargetedLie> for Claim {
 /// let error = ClaimError::NoAspect { kind: LieKind::Progress };
 /// assert_eq!(error.to_string(), "a progress lie rewrites, and its definition names no aspect");
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 #[non_exhaustive]
 pub enum ClaimError {
     /// The lie is a rewrite, and its definition names no aspect.
     /// Rewrites conflict per aspect, so nothing says what this one conflicts with.
+    #[error("a {kind} lie rewrites, and its definition names no aspect")]
     NoAspect { kind: LieKind },
     /// The lie is a modifier, and its definition is not a timing lie.
     /// Nothing says how long the call waits.
+    #[error("a {kind} lie is a modifier, and its definition holds no timing")]
     NoTiming { kind: LieKind },
 }
-
-impl fmt::Display for ClaimError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::NoAspect { kind } => write!(f, "a {kind} lie rewrites, and its definition names no aspect"),
-            Self::NoTiming { kind } => write!(f, "a {kind} lie is a modifier, and its definition holds no timing"),
-        }
-    }
-}
-
-impl std::error::Error for ClaimError {}
 
 /// A lie that fired on a call: who it is, where it stands in the priority order, and what it claims.
 ///

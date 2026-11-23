@@ -1,7 +1,6 @@
 //! The crates of the workspace, as `cargo metadata` describes them.
 
 use std::collections::BTreeSet;
-use std::fmt;
 use std::io;
 use std::path::PathBuf;
 use std::process::Command;
@@ -147,24 +146,15 @@ struct Dependency {
 }
 
 /// Why the checks could not learn what the workspace holds.
-#[derive(Debug)]
+#[derive(Debug, thiserror::Error)]
 pub enum WorkspaceError {
+    #[error("`cargo metadata` did not start: {error}")]
     CargoDidNotStart { error: io::Error },
+    #[error("`cargo metadata` failed: {stderr}")]
     CargoFailed { stderr: String },
+    #[error("`cargo metadata` printed what the checks cannot read: {error}")]
     Unreadable { error: serde_json::Error },
 }
-
-impl fmt::Display for WorkspaceError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::CargoDidNotStart { error } => write!(f, "`cargo metadata` did not start: {error}"),
-            Self::CargoFailed { stderr } => write!(f, "`cargo metadata` failed: {stderr}"),
-            Self::Unreadable { error } => write!(f, "`cargo metadata` printed what the checks cannot read: {error}"),
-        }
-    }
-}
-
-impl std::error::Error for WorkspaceError {}
 
 #[cfg(test)]
 impl Member {

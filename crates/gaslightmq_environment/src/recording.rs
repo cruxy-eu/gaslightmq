@@ -67,25 +67,13 @@ impl fmt::Display for RecordingMode {
 text_form!(RecordingMode, RecordingModeError);
 
 /// Why a text is not a [`RecordingMode`].
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 #[non_exhaustive]
 pub enum RecordingModeError {
     /// No mode has this name.
+    #[error("no recording mode is named {name:?}: there are full and metadata-only")]
     Unknown { name: String },
 }
-
-impl fmt::Display for RecordingModeError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Unknown { name } => write!(
-                f,
-                "no recording mode is named {name:?}: there are full and metadata-only"
-            ),
-        }
-    }
-}
-
-impl std::error::Error for RecordingModeError {}
 
 #[cfg(test)]
 mod tests {

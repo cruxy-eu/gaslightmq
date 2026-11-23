@@ -24,6 +24,7 @@ gaslightmq_incident.workspace = true
 gaslightmq_kernel.workspace = true
 gaslightmq_lie.workspace = true
 serde = { workspace = true, optional = true }
+thiserror.workspace = true
 
 [dev-dependencies]
 # The preludes that code imports next to this one. `tests/prelude.rs` checks that no name clashes.

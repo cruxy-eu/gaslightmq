@@ -108,25 +108,16 @@ impl fmt::Display for ApiVersion {
 number_form!(ApiVersion, ApiVersionError, u16, "an API version such as 11");
 
 /// Why a number or a text is not an [`ApiVersion`].
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 #[non_exhaustive]
 pub enum ApiVersionError {
     /// The text is not a whole number.
+    #[error("API version {input:?} does not have the form a whole number")]
     Malformed { input: String },
     /// The number is below zero or above [`i16::MAX`].
+    #[error("API version {input} is not between 0 and {}", i16::MAX)]
     OutOfRange { input: String },
 }
-
-impl fmt::Display for ApiVersionError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Malformed { input } => write!(f, "API version {input:?} does not have the form a whole number"),
-            Self::OutOfRange { input } => write!(f, "API version {input} is not between 0 and {}", i16::MAX),
-        }
-    }
-}
-
-impl std::error::Error for ApiVersionError {}
 
 /// The acknowledgements a Produce request asks for, which is the value of the field `acks`.
 ///
@@ -214,25 +205,16 @@ number_form!(
 /// Why a text is not an [`Acks`].
 ///
 /// Every `i16` is a value of `acks`, so only a text can fail.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 #[non_exhaustive]
 pub enum AcksError {
     /// The text is not `all`, and not a whole number.
+    #[error("acks {input:?} does not have the form a whole number")]
     Malformed { input: String },
     /// The number does not fit an `i16`.
+    #[error("acks {input} is not between {} and {}", i16::MIN, i16::MAX)]
     OutOfRange { input: String },
 }
-
-impl fmt::Display for AcksError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Malformed { input } => write!(f, "acks {input:?} does not have the form a whole number"),
-            Self::OutOfRange { input } => write!(f, "acks {input} is not between {} and {}", i16::MIN, i16::MAX),
-        }
-    }
-}
-
-impl std::error::Error for AcksError {}
 
 #[cfg(test)]
 mod tests {

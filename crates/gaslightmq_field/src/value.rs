@@ -105,11 +105,12 @@ macro_rules! field_values {
         /// );
         /// assert_eq!(error.to_string(), "topic: topic name \"orders/eu\" has the invalid character '/' at position 6");
         /// ```
-        #[derive(Debug, Clone, PartialEq, Eq)]
+        #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
         #[non_exhaustive]
         pub enum FieldValueError {
             $(
                 #[doc = concat!("The text is not a value of [`Field::", stringify!($variant), "`].")]
+                #[error("{}: {error}", Field::$variant)]
                 $variant { error: $error },
             )*
         }
@@ -122,17 +123,6 @@ macro_rules! field_values {
                 }
             }
         }
-
-        impl fmt::Display for FieldValueError {
-            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-                match self {
-                    $(FieldValueError::$variant { error } => write!(f, "{}: {error}", self.field()),)*
-                }
-            }
-        }
-
-        /// The message is complete, so no variant has a source.
-        impl std::error::Error for FieldValueError {}
 
         #[cfg(feature = "serde")]
         impl FieldValue {

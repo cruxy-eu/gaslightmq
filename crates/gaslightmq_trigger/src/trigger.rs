@@ -51,24 +51,13 @@ impl fmt::Display for Per {
 }
 
 /// Why a text is not a [`Per`].
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 #[non_exhaustive]
 pub enum PerError {
     /// The text is not `rule` and not `session`.
+    #[error("counters are per `rule` or per `session`, not per `{name}`")]
     Unknown { name: String },
 }
-
-impl fmt::Display for PerError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Unknown { name } => {
-                write!(f, "counters are per `rule` or per `session`, not per `{name}`")
-            }
-        }
-    }
-}
-
-impl std::error::Error for PerError {}
 
 /// The parts of a trigger that fires by itself: a chance, count parts, a time window, and what it counts per.
 ///

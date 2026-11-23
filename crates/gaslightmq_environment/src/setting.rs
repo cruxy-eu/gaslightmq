@@ -84,25 +84,13 @@ impl fmt::Display for SettingSource {
 text_form!(SettingSource, SettingSourceError);
 
 /// Why a text is not a [`SettingSource`].
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 #[non_exhaustive]
 pub enum SettingSourceError {
     /// No source has this name.
+    #[error("no source of a setting is named {name:?}: there are flag, variable, environment, workspace and default")]
     Unknown { name: String },
 }
-
-impl fmt::Display for SettingSourceError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Unknown { name } => write!(
-                f,
-                "no source of a setting is named {name:?}: there are flag, variable, environment, workspace and default"
-            ),
-        }
-    }
-}
-
-impl std::error::Error for SettingSourceError {}
 
 /// One setting, with what each [source](SettingSource) gave for it.
 ///

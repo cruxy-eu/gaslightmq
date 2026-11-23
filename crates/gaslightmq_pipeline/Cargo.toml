@@ -24,6 +24,7 @@ gaslightmq_session.workspace = true
 gaslightmq_trigger.workspace = true
 gaslightmq_wire.workspace = true
 gaslightmq_wire_edit.workspace = true
+thiserror.workspace = true
 
 [dev-dependencies]
 # The kinds of lies that the tests register. The pipeline itself names no kind.

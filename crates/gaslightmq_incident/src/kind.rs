@@ -113,22 +113,13 @@ impl FromStr for IncidentKind {
 }
 
 /// Why a text is not an [`IncidentKind`].
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 #[non_exhaustive]
 pub enum IncidentKindError {
     /// No incident has this name.
+    #[error("no incident is called {name:?}")]
     Unknown { name: String },
 }
-
-impl fmt::Display for IncidentKindError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Unknown { name } => write!(f, "no incident is called {name:?}"),
-        }
-    }
-}
-
-impl std::error::Error for IncidentKindError {}
 
 #[cfg(test)]
 mod tests {

@@ -117,31 +117,19 @@ impl fmt::Display for KafkaImage {
 }
 
 /// Why a text is not a [`KafkaImage`].
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 #[non_exhaustive]
 pub enum KafkaImageError {
     /// Nothing stands before the tag.
+    #[error("invalid Kafka image `{input}`: missing repository, expected repository:tag")]
     MissingRepository { input: String },
     /// The text names no tag, so it does not say which version of Kafka to run.
+    #[error("invalid Kafka image `{input}`: missing tag, expected repository:tag")]
     MissingTag { input: String },
     /// The text holds a character that no image name holds.
+    #[error("invalid Kafka image `{input}`: an image name cannot hold {character:?}")]
     InvalidCharacter { input: String, character: char },
 }
-
-impl fmt::Display for KafkaImageError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let (Self::MissingRepository { input } | Self::MissingTag { input } | Self::InvalidCharacter { input, .. }) =
-            self;
-        write!(f, "invalid Kafka image `{input}`: ")?;
-        match self {
-            Self::MissingRepository { .. } => f.write_str("missing repository, expected repository:tag"),
-            Self::MissingTag { .. } => f.write_str("missing tag, expected repository:tag"),
-            Self::InvalidCharacter { character, .. } => write!(f, "an image name cannot hold {character:?}"),
-        }
-    }
-}
-
-impl std::error::Error for KafkaImageError {}
 
 #[cfg(test)]
 mod tests {

@@ -140,28 +140,18 @@ impl fmt::Display for WasmViolation {
 }
 
 /// Why the table could not be read.
-#[derive(Debug)]
+#[derive(Debug, thiserror::Error)]
 pub enum WasmCratesError {
+    #[error("{PATH} cannot be read: {error}")]
     Unreadable { error: io::Error },
+    #[error("{PATH} has no table that starts with `{HEADER}`")]
     NoTable,
+    #[error(
+        "{PATH}:{line}: a row of the WebAssembly table has two cells: \
+         the crates in backticks, and what the UI uses them for"
+    )]
     MalformedRow { line: usize },
 }
-
-impl fmt::Display for WasmCratesError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Unreadable { error } => write!(f, "{PATH} cannot be read: {error}"),
-            Self::NoTable => write!(f, "{PATH} has no table that starts with `{HEADER}`"),
-            Self::MalformedRow { line } => write!(
-                f,
-                "{PATH}:{line}: a row of the WebAssembly table has two cells: \
-                 the crates in backticks, and what the UI uses them for"
-            ),
-        }
-    }
-}
-
-impl std::error::Error for WasmCratesError {}
 
 #[cfg(test)]
 mod tests {

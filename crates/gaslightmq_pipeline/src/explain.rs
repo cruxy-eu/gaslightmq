@@ -73,7 +73,8 @@ fn checks_of(rolled: &Rolled) -> Result<TriggerChecks, UnexplainedRule> {
 ///
 /// The evaluation and the record follow the same rules, so this only happens when one of the two is wrong.
 /// The explanation then says so, and it does not guess a line.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[error("a rule has no line: {reason}")]
 pub(crate) struct UnexplainedRule {
     /// What the record said about the line it was given.
     reason: String,
@@ -86,11 +87,3 @@ impl UnexplainedRule {
         }
     }
 }
-
-impl fmt::Display for UnexplainedRule {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "a rule has no line: {}", self.reason)
-    }
-}
-
-impl std::error::Error for UnexplainedRule {}

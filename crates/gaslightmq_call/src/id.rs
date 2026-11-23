@@ -85,25 +85,16 @@ impl fmt::Display for CallNumber {
 }
 
 /// Why a number or a text is not a [`CallNumber`].
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 #[non_exhaustive]
 pub enum CallNumberError {
     /// The number is zero, and the first call of a session has number one.
+    #[error("a call number is at least one")]
     Zero,
     /// The text is not a whole number that a call number can hold.
+    #[error("call number {input:?} is not a whole number")]
     Malformed { input: String },
 }
-
-impl fmt::Display for CallNumberError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Zero => f.write_str("a call number is at least one"),
-            Self::Malformed { input } => write!(f, "call number {input:?} is not a whole number"),
-        }
-    }
-}
-
-impl std::error::Error for CallNumberError {}
 
 /// Which call this is among all the calls of an engine: the connection, and the number of the call on it.
 ///
@@ -180,36 +171,22 @@ impl fmt::Display for CallId {
 /// assert_eq!(error, CallIdError::InvalidNumber { input: "#7.0".into(), error: CallNumberError::Zero });
 /// assert_eq!(error.to_string(), "call ID `#7.0`: a call number is at least one");
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 #[non_exhaustive]
 pub enum CallIdError {
     /// The text has no dot between a connection and a call number.
+    #[error("call ID `{input}` is not a connection and a call number, such as `#7.3`")]
     Malformed { input: String },
     /// The part before the dot is not a connection number.
+    #[error("call ID `{input}`: {error}")]
     InvalidConnection {
         input: String,
         error: ConnectionNumberError,
     },
     /// The part after the dot is not a call number.
+    #[error("call ID `{input}`: {error}")]
     InvalidNumber { input: String, error: CallNumberError },
 }
-
-impl fmt::Display for CallIdError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Malformed { input } => {
-                write!(
-                    f,
-                    "call ID `{input}` is not a connection and a call number, such as `#7.3`"
-                )
-            }
-            Self::InvalidConnection { input, error } => write!(f, "call ID `{input}`: {error}"),
-            Self::InvalidNumber { input, error } => write!(f, "call ID `{input}`: {error}"),
-        }
-    }
-}
-
-impl std::error::Error for CallIdError {}
 
 #[cfg(test)]
 mod tests {

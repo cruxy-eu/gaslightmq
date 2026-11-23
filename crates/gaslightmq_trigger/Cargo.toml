@@ -13,6 +13,7 @@ serde = ["dep:serde", "gaslightmq_clock/serde"]
 [dependencies]
 gaslightmq_clock.workspace = true
 serde = { workspace = true, optional = true }
+thiserror.workspace = true
 
 [dev-dependencies]
 gaslightmq_kernel.workspace = true

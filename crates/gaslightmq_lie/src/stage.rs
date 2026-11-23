@@ -85,26 +85,17 @@ impl FromStr for Stage {
 /// let error = LieKind::Silence.stage_for(Some(Stage::AfterResponse)).unwrap_err();
 /// assert_eq!(error.to_string(), "silence cannot act after the response");
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 #[non_exhaustive]
 pub enum StageError {
     /// No stage has this name.
+    #[error("no stage is called {name:?}")]
     Unknown { name: String },
     /// The stage exists, and a lie of this kind never acts at it.
     /// Silence always acts before forwarding, and a rewrite always acts after the response.
+    #[error("{kind} cannot act {}", .stage.phrase())]
     NotAllowed { kind: LieKind, stage: Stage },
 }
-
-impl fmt::Display for StageError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Unknown { name } => write!(f, "no stage is called {name:?}"),
-            Self::NotAllowed { kind, stage } => write!(f, "{kind} cannot act {}", stage.phrase()),
-        }
-    }
-}
-
-impl std::error::Error for StageError {}
 
 #[cfg(test)]
 mod tests {

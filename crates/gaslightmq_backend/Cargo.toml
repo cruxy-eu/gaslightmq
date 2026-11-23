@@ -12,6 +12,7 @@ gaslightmq_call.workspace = true
 gaslightmq_field.workspace = true
 gaslightmq_incident.workspace = true
 gaslightmq_wire.workspace = true
+thiserror.workspace = true
 
 [dev-dependencies]
 # The executor that drives the hand-written backends of the tests and the examples. The crate itself needs no runtime.

@@ -1,5 +1,3 @@
-use std::fmt;
-
 use gaslightmq_field::PartSet;
 use gaslightmq_lie::prelude::*;
 use gaslightmq_wire::{Api, Response};
@@ -154,45 +152,59 @@ pub trait Lie: Send + Sync {
 /// let error = LieError::ApiNotSupported { kind: LieKind::Refusal, api: Api::from_wire(9999, 4) };
 /// assert_eq!(error.to_string(), "refusal cannot be told on api 9999 v4");
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 #[non_exhaustive]
 pub enum LieError {
     /// Two behaviours tell the same kind of lie, so nothing says which one the pipeline asks.
     /// [`Lies::with`](crate::Lies::with) returns it, and the set stays without the second behaviour.
+    #[error("{kind} is registered twice")]
     KindTwice { kind: LieKind },
     /// No behaviour is registered for the kind of the lie.
     /// The build left the kind out, or nobody registered it.
+    #[error("no behaviour is registered for {kind}")]
     NotRegistered { kind: LieKind },
     /// The behaviour tells one kind of lie, and it was asked to tell a lie of another kind.
+    #[error("the behaviour of {tells} cannot tell a {lie} lie")]
     OtherKind { tells: LieKind, lie: LieKind },
     /// The kind has no behaviour at the stage it was asked at.
+    #[error("{kind} has no behaviour {}", .stage.phrase())]
     NoBehaviourAtStage { kind: LieKind, stage: Stage },
     /// The lie asked for something that its class or the stage does not allow.
     /// See [`Instruction::fits`] and [`Instruction::allowed_at`].
+    #[error("a {kind} lie cannot ask to {} {}", .instruction.phrase(), .stage.phrase())]
     InstructionNotAllowed {
         kind: LieKind,
         stage: Stage,
         instruction: Instruction,
     },
     /// The kind has no way to tell its lie on calls of this API.
+    #[error("{kind} cannot be told on {api}")]
     ApiNotSupported { kind: LieKind, api: Api },
     /// The lie could not read the request or the response. `reason` says what is wrong with it.
+    #[error("{kind} cannot read the call: {reason}")]
     Unreadable { kind: LieKind, reason: String },
     /// The lie could not write the request or the response it asks for. `reason` says what stood in the way.
+    #[error("{kind} cannot rewrite the call: {reason}")]
     Unwritable { kind: LieKind, reason: String },
     /// The lie targets parts that the request does not name.
     ///
     /// A request of an API without parts names none.
     /// The lie is not told on the other parts of its target, and never on the whole call instead:
     /// it changes exactly its target, or nothing.
+    #[error("{kind} targets parts that the {api} request does not name: {}", listed(.parts))]
     PartsNotInRequest { kind: LieKind, api: Api, parts: PartSet },
     /// The lie tells the client an error, and the response to the request has no place for an error code.
     ///
     /// The request asks for nothing by name, and its API has no error code in the response itself at this version.
     /// A Metadata request for every topic is one, on most versions.
+    #[error("{kind} cannot be told on this {api} request: its response has no place for an error code")]
     NoPlaceForError { kind: LieKind, api: Api },
     /// The response the lie was given answers another request than the one it was given:
     /// its API or its correlation ID differs.
+    #[error(
+        "{kind} was given the {answered_api} response {answered_correlation_id}, \
+         which does not answer the {api} request {correlation_id}"
+    )]
     ResponseOfAnotherCall {
         kind: LieKind,
         api: Api,
@@ -202,55 +214,11 @@ pub enum LieError {
     },
 }
 
-impl fmt::Display for LieError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::KindTwice { kind } => write!(f, "{kind} is registered twice"),
-            Self::NotRegistered { kind } => write!(f, "no behaviour is registered for {kind}"),
-            Self::OtherKind { tells, lie } => write!(f, "the behaviour of {tells} cannot tell a {lie} lie"),
-            Self::NoBehaviourAtStage { kind, stage } => write!(f, "{kind} has no behaviour {}", stage.phrase()),
-            Self::InstructionNotAllowed {
-                kind,
-                stage,
-                instruction,
-            } => write!(
-                f,
-                "a {kind} lie cannot ask to {} {}",
-                instruction.phrase(),
-                stage.phrase()
-            ),
-            Self::ApiNotSupported { kind, api } => write!(f, "{kind} cannot be told on {api}"),
-            Self::Unreadable { kind, reason } => write!(f, "{kind} cannot read the call: {reason}"),
-            Self::Unwritable { kind, reason } => write!(f, "{kind} cannot rewrite the call: {reason}"),
-            Self::PartsNotInRequest { kind, api, parts } => {
-                let parts: Vec<String> = parts.iter().map(ToString::to_string).collect();
-                write!(
-                    f,
-                    "{kind} targets parts that the {api} request does not name: {}",
-                    parts.join(", ")
-                )
-            }
-            Self::NoPlaceForError { kind, api } => write!(
-                f,
-                "{kind} cannot be told on this {api} request: its response has no place for an error code"
-            ),
-            Self::ResponseOfAnotherCall {
-                kind,
-                api,
-                correlation_id,
-                answered_api,
-                answered_correlation_id,
-            } => write!(
-                f,
-                "{kind} was given the {answered_api} response {answered_correlation_id}, \
-                 which does not answer the {api} request {correlation_id}"
-            ),
-        }
-    }
+/// The parts as a message lists them, with a comma between them.
+fn listed(parts: &PartSet) -> String {
+    let parts: Vec<String> = parts.iter().map(ToString::to_string).collect();
+    parts.join(", ")
 }
-
-/// The message says everything, also the reason it holds, so the error has no source.
-impl std::error::Error for LieError {}
 
 /// The definition of `lie`, when `lie` is of the kind that a behaviour tells.
 ///

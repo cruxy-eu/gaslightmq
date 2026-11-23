@@ -260,29 +260,16 @@ impl fmt::Display for AssignorName {
 }
 
 /// Why a text is not an [`AssignorName`].
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 #[non_exhaustive]
 pub enum AssignorNameError {
     /// The name has no characters.
+    #[error("assignor name cannot be empty")]
     Empty,
     /// The name has more bytes than a Kafka message carries in one string.
+    #[error("assignor name has {len} bytes, and the most is {}", AssignorName::MAX_LEN)]
     TooLong { len: usize },
 }
-
-impl fmt::Display for AssignorNameError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Empty => f.write_str("assignor name cannot be empty"),
-            Self::TooLong { len } => write!(
-                f,
-                "assignor name has {len} bytes, and the most is {}",
-                AssignorName::MAX_LEN
-            ),
-        }
-    }
-}
-
-impl std::error::Error for AssignorNameError {}
 
 /// The assignors a consumer offers when it joins a group, the one it likes best first.
 ///
@@ -374,28 +361,16 @@ impl fmt::Display for PartitionAssignmentStrategy {
 }
 
 /// Why a list is not a [`PartitionAssignmentStrategy`].
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 #[non_exhaustive]
 pub enum PartitionAssignmentStrategyError {
     /// The list holds no assignor.
+    #[error("partition assignment strategy needs at least one assignor")]
     Empty,
     /// One name of the text `input` is not an assignor name.
+    #[error("partition assignment strategy `{input}`: {error}")]
     InvalidAssignor { input: String, error: AssignorNameError },
 }
-
-impl fmt::Display for PartitionAssignmentStrategyError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Empty => f.write_str("partition assignment strategy needs at least one assignor"),
-            Self::InvalidAssignor { input, error } => {
-                write!(f, "partition assignment strategy `{input}`: {error}")
-            }
-        }
-    }
-}
-
-/// The message says what is wrong with the name, so the error has no source.
-impl std::error::Error for PartitionAssignmentStrategyError {}
 
 /// What a [`KafkaConsumer`](crate::KafkaConsumer) is configured with.
 ///

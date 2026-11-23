@@ -1,7 +1,5 @@
 //! When a call arrived, how long the backend took, and how long the client waited.
 
-use std::fmt;
-
 use gaslightmq_clock::{Duration, Instant};
 
 /// The moments of one call, on the clock of its engine.
@@ -127,32 +125,23 @@ impl CallTiming {
 }
 
 /// Why a moment does not fit the [`CallTiming`] of a call.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 #[non_exhaustive]
 pub enum CallTimingError {
     /// The request left for the backend before it arrived.
+    #[error("a request does not leave for the backend before it arrives")]
     ForwardedBeforeArrival,
     /// The backend answered a request that never left for it.
+    #[error("a backend does not answer a request that never left for it")]
     AnsweredWithoutForwarding,
     /// The backend answered before the request left for it.
+    #[error("a backend does not answer before the request leaves for it")]
     AnsweredBeforeForwarding,
     /// The response left for the client before the request arrived, before it was forwarded,
     /// or before the backend answered.
+    #[error("a response does not leave for the client before the call got that far")]
     DeliveredTooEarly,
 }
-
-impl fmt::Display for CallTimingError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(match self {
-            Self::ForwardedBeforeArrival => "a request does not leave for the backend before it arrives",
-            Self::AnsweredWithoutForwarding => "a backend does not answer a request that never left for it",
-            Self::AnsweredBeforeForwarding => "a backend does not answer before the request leaves for it",
-            Self::DeliveredTooEarly => "a response does not leave for the client before the call got that far",
-        })
-    }
-}
-
-impl std::error::Error for CallTimingError {}
 
 #[cfg(test)]
 mod tests {

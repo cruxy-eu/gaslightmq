@@ -1,6 +1,5 @@
 //! What a listener or the connection of a client cannot do.
 
-use std::fmt;
 use std::net::SocketAddr;
 
 /// Why a listener could not open its endpoint, or why the connection of a client has no next frame or takes no bytes.
@@ -25,43 +24,31 @@ use std::net::SocketAddr;
 /// let error = ListenerError::FrameCutShort { buffered: 6 };
 /// assert_eq!(error.to_string(), "the client closed the connection 6 bytes into a frame");
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum ListenerError {
     /// The address cannot take a listener: another socket holds the port, or the address is not one of this machine.
     /// `reason` says which.
+    #[error("cannot listen on {address}: {reason}")]
     CannotListen { address: SocketAddr, reason: String },
     /// The client closed the connection after a whole frame, or before its first one.
+    #[error("the client closed the connection")]
     ClientClosed,
     /// The client closed the connection inside a frame. `buffered` bytes of that frame arrived.
+    #[error("the client closed the connection {buffered} bytes into a frame")]
     FrameCutShort { buffered: usize },
     /// The bytes of the client are no frame: they announce a frame of no bytes, or one over the limit of the listener.
     /// Nothing says where the next frame starts, so the connection is of no use.
+    #[error("the bytes of the client are no frame: {reason}")]
     NotAFrame { reason: String },
     /// The connection broke while the transport read from it or wrote to it, or the client closed it before it took the
     /// bytes. `reason` says how it broke.
+    #[error("the connection to the client broke: {reason}")]
     ConnectionLost { reason: String },
     /// The listener that accepted the connection closed.
     /// A send that waited for its client stopped there, and a part of its bytes may be written.
+    #[error("the listener of the connection closed")]
     ListenerClosed,
 }
-
-impl fmt::Display for ListenerError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::CannotListen { address, reason } => write!(f, "cannot listen on {address}: {reason}"),
-            Self::ClientClosed => f.write_str("the client closed the connection"),
-            Self::FrameCutShort { buffered } => {
-                write!(f, "the client closed the connection {buffered} bytes into a frame")
-            }
-            Self::NotAFrame { reason } => write!(f, "the bytes of the client are no frame: {reason}"),
-            Self::ConnectionLost { reason } => write!(f, "the connection to the client broke: {reason}"),
-            Self::ListenerClosed => f.write_str("the listener of the connection closed"),
-        }
-    }
-}
-
-/// The message is complete, so the error has no source.
-impl std::error::Error for ListenerError {}
 
 #[cfg(test)]
 mod tests {

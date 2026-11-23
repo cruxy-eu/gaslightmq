@@ -178,30 +178,20 @@ impl fmt::Display for LayoutViolation {
 }
 
 /// Why the crate tables could not be read.
-#[derive(Debug)]
+#[derive(Debug, thiserror::Error)]
 pub enum CrateLayoutError {
+    #[error("{PATH} cannot be read: {error}")]
     Unreadable { error: io::Error },
+    #[error("{PATH} has no table that starts with `{HEADER}`")]
     NoTables,
+    #[error(
+        "{PATH}:{line}: a row of a crate table has three cells: \
+         the crate in backticks, what it holds, and its dependencies in backticks or `—`"
+    )]
     MalformedRow { line: usize },
+    #[error("{PATH}:{line}: `{name}` has a second row")]
     TwoRows { line: usize, name: String },
 }
-
-impl fmt::Display for CrateLayoutError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Unreadable { error } => write!(f, "{PATH} cannot be read: {error}"),
-            Self::NoTables => write!(f, "{PATH} has no table that starts with `{HEADER}`"),
-            Self::MalformedRow { line } => write!(
-                f,
-                "{PATH}:{line}: a row of a crate table has three cells: \
-                 the crate in backticks, what it holds, and its dependencies in backticks or `—`"
-            ),
-            Self::TwoRows { line, name } => write!(f, "{PATH}:{line}: `{name}` has a second row"),
-        }
-    }
-}
-
-impl std::error::Error for CrateLayoutError {}
 
 #[cfg(test)]
 mod tests {

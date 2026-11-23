@@ -211,6 +211,7 @@ dependencies = [
  "gaslightmq_rule",
  "gaslightmq_session",
  "gaslightmq_wire",
+ "thiserror",
 ]
 
 [[package]]
@@ -228,6 +229,7 @@ dependencies = [
  "gaslightmq_trigger",
  "serde",
  "serde_json",
+ "thiserror",
 ]
 
 [[package]]
@@ -238,6 +240,7 @@ dependencies = [
  "serde",
  "serde_json",
  "syn 3.0.10",
+ "thiserror",
 ]
 
 [[package]]
@@ -246,6 +249,7 @@ version = "0.1.0"
 dependencies = [
  "serde",
  "serde_json",
+ "thiserror",
 ]
 
 [[package]]
@@ -256,6 +260,7 @@ dependencies = [
  "gaslightmq_field",
  "gaslightmq_kernel",
  "gaslightmq_lie",
+ "thiserror",
 ]
 
 [[package]]
@@ -273,6 +278,7 @@ dependencies = [
  "gaslightmq_trigger",
  "serde",
  "serde_json",
+ "thiserror",
 ]
 
 [[package]]
@@ -284,6 +290,7 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_test",
+ "thiserror",
 ]
 
 [[package]]
@@ -293,6 +300,7 @@ dependencies = [
  "gaslightmq_kernel",
  "serde",
  "serde_json",
+ "thiserror",
 ]
 
 [[package]]
@@ -316,6 +324,7 @@ dependencies = [
  "gaslightmq_kernel",
  "gaslightmq_test_kafka",
  "gaslightmq_wire",
+ "thiserror",
  "tokio",
  "tracing",
 ]
@@ -327,6 +336,7 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_test",
+ "thiserror",
 ]
 
 [[package]]
@@ -338,6 +348,7 @@ dependencies = [
  "gaslightmq_kernel",
  "serde",
  "serde_json",
+ "thiserror",
 ]
 
 [[package]]
@@ -351,6 +362,7 @@ dependencies = [
  "gaslightmq_lie",
  "gaslightmq_wire",
  "gaslightmq_wire_edit",
+ "thiserror",
 ]
 
 [[package]]
@@ -375,6 +387,7 @@ dependencies = [
  "gaslightmq_kafka_client_api",
  "gaslightmq_kernel",
  "gaslightmq_wire",
+ "thiserror",
  "tokio",
  "tracing",
 ]
@@ -390,6 +403,7 @@ dependencies = [
  "gaslightmq_kernel",
  "gaslightmq_wire",
  "gaslightmq_wire_edit",
+ "thiserror",
 ]
 
 [[package]]
@@ -413,6 +427,7 @@ dependencies = [
  "gaslightmq_trigger",
  "gaslightmq_wire",
  "gaslightmq_wire_edit",
+ "thiserror",
 ]
 
 [[package]]
@@ -428,6 +443,7 @@ dependencies = [
  "gaslightmq_trigger",
  "serde",
  "serde_json",
+ "thiserror",
 ]
 
 [[package]]
@@ -439,6 +455,7 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_test",
+ "thiserror",
 ]
 
 [[package]]
@@ -452,6 +469,7 @@ dependencies = [
  "gaslightmq_kernel",
  "gaslightmq_trigger",
  "gaslightmq_wire",
+ "thiserror",
 ]
 
 [[package]]
@@ -463,6 +481,7 @@ dependencies = [
  "gaslightmq_clock",
  "gaslightmq_kernel",
  "gaslightmq_wire",
+ "thiserror",
  "tokio",
 ]
 
@@ -474,6 +493,7 @@ dependencies = [
  "gaslightmq_kernel",
  "serde",
  "serde_json",
+ "thiserror",
 ]
 
 [[package]]
@@ -484,6 +504,7 @@ dependencies = [
  "gaslightmq_kernel",
  "indexmap",
  "kafka-protocol",
+ "thiserror",
 ]
 
 [[package]]
@@ -494,6 +515,7 @@ dependencies = [
  "gaslightmq_field",
  "gaslightmq_kernel",
  "gaslightmq_wire",
+ "thiserror",
 ]
 
 [[package]]
@@ -798,6 +820,26 @@ dependencies = [
  "proc-macro2",
  "quote",
  "unicode-ident",
+]
+
+[[package]]
+name = "thiserror"
+version = "2.0.21"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "09e52cb86a36cede5cb101bf8908837b3e4c6e5e59fe7fd85c23fb56200d189e"
+dependencies = [
+ "thiserror-impl",
+]
+
+[[package]]
+name = "thiserror-impl"
+version = "2.0.21"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fe5197923287db20a58125f0bc85c062f7f2c892de97b18c356f9efb14b28524"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 3.0.10",
 ]
 
 [[package]]
