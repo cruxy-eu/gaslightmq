@@ -77,34 +77,25 @@ impl fmt::Display for SecretRef {
 ///     "a secret is a reference and never the value: write { file: … } or { env: … }"
 /// );
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 #[non_exhaustive]
 pub enum SecretRefError {
     /// The field holds a value, and not a reference to where the value lives.
+    #[error("a secret is a reference and never the value: write {{ file: … }} or {{ env: … }}")]
     Literal,
     /// The reference names neither a file nor an environment variable.
+    #[error("a secret reference names a file or an environment variable: {{ file: … }} or {{ env: … }}")]
     NoPlace,
     /// The reference names a file and an environment variable, or one of them twice.
+    #[error("a secret reference names one place: a file or an environment variable, and not both")]
     TwoPlaces,
     /// The reference has a key that is neither `file` nor `env`.
+    #[error("a secret reference has the key `file` or the key `env`")]
     UnknownKey,
     /// The path of the file or the name of the variable is not text.
+    #[error("a secret reference names its file or its environment variable as text")]
     NotText,
 }
-
-impl fmt::Display for SecretRefError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(match self {
-            Self::Literal => "a secret is a reference and never the value: write { file: … } or { env: … }",
-            Self::NoPlace => "a secret reference names a file or an environment variable: { file: … } or { env: … }",
-            Self::TwoPlaces => "a secret reference names one place: a file or an environment variable, and not both",
-            Self::UnknownKey => "a secret reference has the key `file` or the key `env`",
-            Self::NotText => "a secret reference names its file or its environment variable as text",
-        })
-    }
-}
-
-impl std::error::Error for SecretRefError {}
 
 /// The path of a file, as someone wrote it: `/run/secrets/kafka-ca.pem` or `secrets/kafka-password`.
 ///
@@ -148,25 +139,16 @@ kept_text!(FilePath, FilePathError);
 ///
 /// The error does not repeat the text.
 /// A secret reference holds a path, and someone who writes the secret where the path belongs wrote a secret.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 #[non_exhaustive]
 pub enum FilePathError {
     /// The text has no character.
+    #[error("file path \"\" is empty")]
     Empty,
     /// The text holds a control character, such as a line break.
+    #[error("a file path holds the control character {character:?}")]
     ControlCharacter { character: char },
 }
-
-impl fmt::Display for FilePathError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Empty => f.write_str("file path \"\" is empty"),
-            Self::ControlCharacter { character } => write!(f, "a file path holds the control character {character:?}"),
-        }
-    }
-}
-
-impl std::error::Error for FilePathError {}
 
 /// The name of an environment variable, such as `KAFKA_PASSWORD`.
 ///
@@ -212,28 +194,16 @@ kept_text!(VariableName, VariableNameError);
 ///
 /// The error does not repeat the text.
 /// Someone who writes `KAFKA_PASSWORD=hunter2` where a name belongs wrote a secret.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 #[non_exhaustive]
 pub enum VariableNameError {
     /// The text has no character.
+    #[error("the name of an environment variable is empty")]
     Empty,
     /// The text holds a `=`, white space or a control character.
+    #[error("the name of an environment variable holds the character {character:?}")]
     InvalidCharacter { character: char },
 }
-
-impl fmt::Display for VariableNameError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Empty => f.write_str("the name of an environment variable is empty"),
-            Self::InvalidCharacter { character } => write!(
-                f,
-                "the name of an environment variable holds the character {character:?}"
-            ),
-        }
-    }
-}
-
-impl std::error::Error for VariableNameError {}
 
 #[cfg(test)]
 mod tests {

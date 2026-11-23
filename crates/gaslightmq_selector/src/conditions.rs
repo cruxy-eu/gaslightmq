@@ -266,27 +266,14 @@ impl fmt::Display for Scope {
 }
 
 /// Why conditions are not a [`Scope`].
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 #[non_exhaustive]
 pub enum ScopeError {
     /// A condition tests a field that does not describe the connection.
     /// `field` is the first such field.
+    #[error("a scope only tests connection fields, and {field} is a {} field", .field.group())]
     NotAConnectionField { field: Field },
 }
-
-impl fmt::Display for ScopeError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::NotAConnectionField { field } => write!(
-                f,
-                "a scope only tests connection fields, and {field} is a {} field",
-                field.group()
-            ),
-        }
-    }
-}
-
-impl std::error::Error for ScopeError {}
 
 #[cfg(test)]
 mod tests {

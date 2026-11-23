@@ -1,4 +1,3 @@
-use std::fmt;
 use std::net::IpAddr;
 use std::sync::Arc;
 
@@ -107,44 +106,28 @@ kept_text!(HostName, HostNameError);
 /// let error = HostName::new("kafka 1").unwrap_err();
 /// assert_eq!(error.to_string(), "host name \"kafka 1\" holds the character ' '");
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 #[non_exhaustive]
 pub enum HostNameError {
     /// The text has no character.
+    #[error("host name \"\" is empty")]
     Empty,
     /// The name has more than [`HostName::MAX_LENGTH`] characters.
+    #[error("host name {input:?} has more than {} characters", HostName::MAX_LENGTH)]
     TooLong { input: String },
     /// Two dots follow each other, or the name starts or ends with a dot.
+    #[error("host name {input:?} has an empty part between its dots")]
     EmptyPart { input: String },
     /// A part between two dots has more than [`HostName::MAX_PART_LENGTH`] characters.
+    #[error(
+        "host name {input:?} has the part {part:?} of more than {} characters",
+        HostName::MAX_PART_LENGTH
+    )]
     PartTooLong { input: String, part: String },
     /// The text holds a character that no name holds, and it is no IP address.
+    #[error("host name {input:?} holds the character {character:?}")]
     InvalidCharacter { input: String, character: char },
 }
-
-impl fmt::Display for HostNameError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Empty => f.write_str("host name \"\" is empty"),
-            Self::TooLong { input } => write!(
-                f,
-                "host name {input:?} has more than {} characters",
-                HostName::MAX_LENGTH
-            ),
-            Self::EmptyPart { input } => write!(f, "host name {input:?} has an empty part between its dots"),
-            Self::PartTooLong { input, part } => write!(
-                f,
-                "host name {input:?} has the part {part:?} of more than {} characters",
-                HostName::MAX_PART_LENGTH
-            ),
-            Self::InvalidCharacter { input, character } => {
-                write!(f, "host name {input:?} holds the character {character:?}")
-            }
-        }
-    }
-}
-
-impl std::error::Error for HostNameError {}
 
 #[cfg(test)]
 mod tests {

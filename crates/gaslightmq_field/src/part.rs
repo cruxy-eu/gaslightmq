@@ -102,26 +102,16 @@ text_form!(Part, PartError);
 /// A part is a topic or a partition of a topic, and the error says which of the two the text failed to be.
 /// Its message says that a part is wrong, and then what is wrong with it.
 /// The error it holds read the same text, so that error names the text.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 #[non_exhaustive]
 pub enum PartError {
     /// The text has no `/`, and it is not a topic name.
+    #[error("part: {error}")]
     InvalidTopic { error: TopicNameError },
     /// The text has a `/`, and it is not a topic partition.
+    #[error("part: {error}")]
     InvalidPartition { error: TopicPartitionError },
 }
-
-impl fmt::Display for PartError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::InvalidTopic { error } => write!(f, "part: {error}"),
-            Self::InvalidPartition { error } => write!(f, "part: {error}"),
-        }
-    }
-}
-
-/// The message is complete, so no variant has a source.
-impl std::error::Error for PartError {}
 
 impl From<TopicNameError> for PartError {
     fn from(error: TopicNameError) -> Self {
@@ -458,22 +448,13 @@ impl From<Part> for PartSet {
 }
 
 /// Why parts are not a [`PartSet`].
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 #[non_exhaustive]
 pub enum PartSetError {
     /// There is no part, and a target of no part is no target.
+    #[error("a target needs at least one part")]
     Empty,
 }
-
-impl fmt::Display for PartSetError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Empty => f.write_str("a target needs at least one part"),
-        }
-    }
-}
-
-impl std::error::Error for PartSetError {}
 
 #[cfg(test)]
 mod tests {

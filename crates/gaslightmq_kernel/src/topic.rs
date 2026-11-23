@@ -188,45 +188,27 @@ impl fmt::Debug for TopicId {
 text_form!(TopicId, TopicIdError);
 
 /// Why bytes or a text are not a [`TopicId`].
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 #[non_exhaustive]
 pub enum TopicIdError {
     /// The text has no characters.
+    #[error("topic ID is empty")]
     Empty,
     /// The text has a character that URL-safe base64 does not have.
     /// `position` counts characters from zero.
+    #[error("topic ID {input:?} has the invalid character {character:?} at position {position}")]
     InvalidCharacter {
         input: String,
         character: char,
         position: usize,
     },
     /// The text is not 22 characters of URL-safe base64 that stand for 16 bytes.
+    #[error("topic ID {input:?} does not have the form {TEXT_FORM}")]
     Malformed { input: String },
     /// The UUID is all zeros, which Kafka writes for "no topic ID".
+    #[error("topic ID cannot be {value:?}")]
     Reserved { value: String },
 }
-
-impl fmt::Display for TopicIdError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Empty => f.write_str("topic ID is empty"),
-            Self::InvalidCharacter {
-                input,
-                character,
-                position,
-            } => {
-                write!(
-                    f,
-                    "topic ID {input:?} has the invalid character {character:?} at position {position}"
-                )
-            }
-            Self::Malformed { input } => write!(f, "topic ID {input:?} does not have the form {TEXT_FORM}"),
-            Self::Reserved { value } => write!(f, "topic ID cannot be {value:?}"),
-        }
-    }
-}
-
-impl std::error::Error for TopicIdError {}
 
 #[cfg(test)]
 mod tests {

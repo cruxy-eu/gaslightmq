@@ -175,32 +175,21 @@ text_form!(SelectorName, SelectorNameError);
 /// assert_eq!(error, SelectorNameError::FormatCharacter { input: "Order\u{feff}producers".to_owned() });
 /// assert_eq!(error.to_string(), "selector name \"Order\\u{feff}producers\" holds a format character");
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum SelectorNameError {
     /// The text has no character.
+    #[error("selector name \"\" is empty")]
     Empty,
     /// The text starts or ends with white space.
+    #[error("selector name {input:?} starts or ends with white space")]
     SurroundingWhiteSpace { input: String },
     /// The text holds a control character, such as a line break.
+    #[error("selector name {input:?} holds a control character")]
     ControlCharacter { input: String },
     /// The text holds a format character, such as a zero-width space, which nobody sees.
+    #[error("selector name {input:?} holds a format character")]
     FormatCharacter { input: String },
 }
-
-impl fmt::Display for SelectorNameError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Empty => f.write_str("selector name \"\" is empty"),
-            Self::SurroundingWhiteSpace { input } => {
-                write!(f, "selector name {input:?} starts or ends with white space")
-            }
-            Self::ControlCharacter { input } => write!(f, "selector name {input:?} holds a control character"),
-            Self::FormatCharacter { input } => write!(f, "selector name {input:?} holds a format character"),
-        }
-    }
-}
-
-impl std::error::Error for SelectorNameError {}
 
 #[cfg(test)]
 mod tests {

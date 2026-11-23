@@ -1,5 +1,4 @@
 use std::collections::BTreeMap;
-use std::fmt;
 
 use gaslightmq_kernel::prelude::*;
 
@@ -123,10 +122,11 @@ impl AdvertisedAddresses {
 }
 
 /// Why [`AdvertisedAddresses`] cannot hold an address.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 #[non_exhaustive]
 pub enum AdvertisedAddressesError {
     /// Another broker is advertised at the address already.
+    #[error("broker {broker} cannot be advertised at {address}: broker {advertised_there} is advertised there")]
     SharedAddress {
         address: BrokerAddress,
         /// The broker that was to be advertised.
@@ -135,24 +135,6 @@ pub enum AdvertisedAddressesError {
         advertised_there: BrokerId,
     },
 }
-
-impl fmt::Display for AdvertisedAddressesError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::SharedAddress {
-                address,
-                broker,
-                advertised_there,
-            } => write!(
-                f,
-                "broker {broker} cannot be advertised at {address}: broker {advertised_there} is advertised there"
-            ),
-        }
-    }
-}
-
-/// The message is complete, so no variant has a source.
-impl std::error::Error for AdvertisedAddressesError {}
 
 #[cfg(test)]
 mod tests {

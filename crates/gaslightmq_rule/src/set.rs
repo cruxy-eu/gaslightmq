@@ -1,6 +1,5 @@
 use std::collections::BTreeMap;
 use std::collections::btree_map;
-use std::fmt;
 
 use crate::{Rule, RuleName};
 
@@ -122,25 +121,16 @@ impl IntoIterator for RuleSet {
 }
 
 /// Why rules are not a [`RuleSet`], or why the set does not have what it is asked for.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 #[non_exhaustive]
 pub enum RuleSetError {
     /// Two rules have the same name.
+    #[error("two rules are named {:?}", .name.as_str())]
     DuplicateName { name: RuleName },
     /// No rule of the set has this name.
+    #[error("no rule is named {:?}", .name.as_str())]
     UnknownRule { name: RuleName },
 }
-
-impl fmt::Display for RuleSetError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::DuplicateName { name } => write!(f, "two rules are named {:?}", name.as_str()),
-            Self::UnknownRule { name } => write!(f, "no rule is named {:?}", name.as_str()),
-        }
-    }
-}
-
-impl std::error::Error for RuleSetError {}
 
 #[cfg(test)]
 mod tests {

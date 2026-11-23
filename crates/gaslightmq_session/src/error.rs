@@ -1,7 +1,5 @@
 //! What a session cannot do, or cannot keep.
 
-use std::fmt;
-
 use gaslightmq_call::CallNumber;
 use gaslightmq_field::prelude::*;
 use gaslightmq_kernel::prelude::*;
@@ -26,47 +24,29 @@ use crate::CallPhase;
 /// let error = SessionError::CallNotInFlight { call: CallNumber::FIRST };
 /// assert_eq!(error.to_string(), "call 1 is not in flight");
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 #[non_exhaustive]
 pub enum SessionError {
     /// The `client.id` in the header is not a client ID. The session stays unidentified.
+    #[error("{}: {error}", Field::ClientId)]
     InvalidClientId { error: ClientIdError },
     /// The body of the `ApiVersions` request, which names the client software, does not decode.
     /// `reason` says what is wrong with it.
+    #[error("{}: {reason}", Field::ClientSoftware)]
     UnreadableClientSoftware { reason: String },
     /// The name and the version in the `ApiVersions` request are not client software.
+    #[error("{}: {error}", Field::ClientSoftware)]
     InvalidClientSoftware { error: ClientSoftwareError },
     /// No call with that number is in flight: it never arrived, it left, or it ended with its session.
+    #[error("call {call} is not in flight")]
     CallNotInFlight { call: CallNumber },
     /// The request of the call cannot be let go, because the pipeline does not hold it any more.
+    #[error("the request of call {call} is not held: the call is in the phase {phase}")]
     RequestNotHeld { call: CallNumber, phase: CallPhase },
     /// The response of the call cannot be let go, because the call does not await one.
+    #[error("call {call} does not await its response: the call is in the phase {phase}")]
     ResponseNotAwaited { call: CallNumber, phase: CallPhase },
 }
-
-impl fmt::Display for SessionError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::InvalidClientId { error } => write!(f, "{}: {error}", Field::ClientId),
-            Self::UnreadableClientSoftware { reason } => write!(f, "{}: {reason}", Field::ClientSoftware),
-            Self::InvalidClientSoftware { error } => write!(f, "{}: {error}", Field::ClientSoftware),
-            Self::CallNotInFlight { call } => write!(f, "call {call} is not in flight"),
-            Self::RequestNotHeld { call, phase } => {
-                write!(
-                    f,
-                    "the request of call {call} is not held: the call is in the phase {phase}"
-                )
-            }
-            Self::ResponseNotAwaited { call, phase } => write!(
-                f,
-                "call {call} does not await its response: the call is in the phase {phase}"
-            ),
-        }
-    }
-}
-
-/// The message is complete, so no variant has a source.
-impl std::error::Error for SessionError {}
 
 #[cfg(test)]
 mod tests {

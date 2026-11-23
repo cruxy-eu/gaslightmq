@@ -83,25 +83,16 @@ number_form!(
 );
 
 /// Why a text is not a [`ConnectionNumber`].
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 #[non_exhaustive]
 pub enum ConnectionNumberError {
     /// The text is not digits, with or without a `#` before them.
+    #[error("connection number {input:?} does not have the form #N")]
     Malformed { input: String },
     /// The number is more than a `u64` holds.
+    #[error("connection number {input} is not between 0 and {}", u64::MAX)]
     OutOfRange { input: String },
 }
-
-impl fmt::Display for ConnectionNumberError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Malformed { input } => write!(f, "connection number {input:?} does not have the form #N"),
-            Self::OutOfRange { input } => write!(f, "connection number {input} is not between 0 and {}", u64::MAX),
-        }
-    }
-}
-
-impl std::error::Error for ConnectionNumberError {}
 
 /// The address a client connects from, which is the value of the field `address`.
 ///
@@ -180,25 +171,13 @@ impl fmt::Display for ClientAddress {
 text_form!(ClientAddress, ClientAddressError);
 
 /// Why a text is not a [`ClientAddress`].
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 #[non_exhaustive]
 pub enum ClientAddressError {
     /// The text is not an IP address and a port.
+    #[error("client address {input:?} does not have the form an IP address and a port, such as 10.0.4.27:51459")]
     Malformed { input: String },
 }
-
-impl fmt::Display for ClientAddressError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Malformed { input } => write!(
-                f,
-                "client address {input:?} does not have the form an IP address and a port, such as 10.0.4.27:51459"
-            ),
-        }
-    }
-}
-
-impl std::error::Error for ClientAddressError {}
 
 /// The IP address a client connects from, which is the value of the field `host`.
 ///
@@ -266,25 +245,13 @@ impl fmt::Display for ClientHost {
 text_form!(ClientHost, ClientHostError);
 
 /// Why a text is not a [`ClientHost`].
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 #[non_exhaustive]
 pub enum ClientHostError {
     /// The text is not an IP address.
+    #[error("client host {input:?} does not have the form an IP address, such as 10.0.4.27")]
     Malformed { input: String },
 }
-
-impl fmt::Display for ClientHostError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Malformed { input } => write!(
-                f,
-                "client host {input:?} does not have the form an IP address, such as 10.0.4.27"
-            ),
-        }
-    }
-}
-
-impl std::error::Error for ClientHostError {}
 
 /// The endpoint a client connected to, which is the value of the field `endpoint`.
 ///
@@ -363,26 +330,16 @@ impl fmt::Display for Endpoint {
 text_form!(Endpoint, EndpointError);
 
 /// Why a text is not an [`Endpoint`].
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 #[non_exhaustive]
 pub enum EndpointError {
     /// The text is not `bootstrap`, and it does not start with `broker` and one space.
+    #[error("endpoint {input:?} does not have the form bootstrap or broker N")]
     Malformed { input: String },
     /// The text after `broker` is not a broker ID.
+    #[error("endpoint {input:?}: {error}")]
     InvalidBroker { input: String, error: BrokerIdError },
 }
-
-impl fmt::Display for EndpointError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Malformed { input } => write!(f, "endpoint {input:?} does not have the form bootstrap or broker N"),
-            Self::InvalidBroker { input, error } => write!(f, "endpoint {input:?}: {error}"),
-        }
-    }
-}
-
-/// The message is complete, so no variant has a source.
-impl std::error::Error for EndpointError {}
 
 /// The client library of a connection, which is the value of the field `client.software`.
 ///
@@ -475,26 +432,14 @@ impl fmt::Debug for ClientSoftware {
 text_form!(ClientSoftware, ClientSoftwareError);
 
 /// Why a text is not a [`ClientSoftware`].
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 #[non_exhaustive]
 pub enum ClientSoftwareError {
     /// The text is not a name, one space and a version.
     /// The name or the version is empty, or one of them has white space or a control character.
+    #[error("client software {input:?} does not have the form a name and a version, such as librdkafka 2.6.1")]
     Malformed { input: String },
 }
-
-impl fmt::Display for ClientSoftwareError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Malformed { input } => write!(
-                f,
-                "client software {input:?} does not have the form a name and a version, such as librdkafka 2.6.1"
-            ),
-        }
-    }
-}
-
-impl std::error::Error for ClientSoftwareError {}
 
 #[cfg(test)]
 mod tests {

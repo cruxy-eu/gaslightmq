@@ -70,37 +70,22 @@ macro_rules! name {
         #[doc = concat!("Why a text is not a [`", stringify!($name), "`]: the part of the rule for names it breaks.")]
         ///
         /// The variants are those of [`SelectorNameError`], because every name takes the same rule.
-        #[derive(Debug, Clone, PartialEq, Eq)]
+        #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
         #[non_exhaustive]
         pub enum $error {
             /// The text has no character.
+            #[error("{} \"\" is empty", $what)]
             Empty,
             /// The text starts or ends with white space.
+            #[error("{} {input:?} starts or ends with white space", $what)]
             SurroundingWhiteSpace { input: String },
             /// The text holds a control character, such as a line break.
+            #[error("{} {input:?} holds a control character", $what)]
             ControlCharacter { input: String },
             /// The text holds a format character, such as a zero-width space, which nobody sees.
+            #[error("{} {input:?} holds a format character", $what)]
             FormatCharacter { input: String },
         }
-
-        impl fmt::Display for $error {
-            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-                match self {
-                    Self::Empty => f.write_str(concat!($what, " \"\" is empty")),
-                    Self::SurroundingWhiteSpace { input } => {
-                        write!(f, concat!($what, " {:?} starts or ends with white space"), input)
-                    }
-                    Self::ControlCharacter { input } => {
-                        write!(f, concat!($what, " {:?} holds a control character"), input)
-                    }
-                    Self::FormatCharacter { input } => {
-                        write!(f, concat!($what, " {:?} holds a format character"), input)
-                    }
-                }
-            }
-        }
-
-        impl std::error::Error for $error {}
 
         impl From<$name> for String {
             fn from(name: $name) -> Self {

@@ -112,35 +112,20 @@ impl fmt::Display for Chance {
 /// assert_eq!(error, ChanceError::NotAPercentage { input: "40".into() });
 /// assert_eq!(error.to_string(), "`40` is not a percentage such as `40%`");
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 #[non_exhaustive]
 pub enum ChanceError {
     /// The text is not a percentage such as `40%`.
+    #[error("`{input}` is not a percentage such as `40%`")]
     NotAPercentage { input: String },
     /// The text has more than four decimals, and a chance is a whole number of parts per million.
+    #[error("chance `{input}` has more than four decimals")]
     TooFine { input: String },
     /// The chance is above `100%`.
     /// `chance` is the percentage as the text wrote it, or as the number reads.
+    #[error("chance `{chance}` is not between 0% and 100%")]
     OutOfRange { chance: String },
 }
-
-impl fmt::Display for ChanceError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::NotAPercentage { input } => {
-                write!(f, "`{input}` is not a percentage such as `40%`")
-            }
-            Self::TooFine { input } => {
-                write!(f, "chance `{input}` has more than four decimals")
-            }
-            Self::OutOfRange { chance } => {
-                write!(f, "chance `{chance}` is not between 0% and 100%")
-            }
-        }
-    }
-}
-
-impl std::error::Error for ChanceError {}
 
 /// What a die rolled for one match.
 ///
@@ -208,24 +193,13 @@ impl fmt::Display for Roll {
 }
 
 /// Why a number is not a [`Roll`].
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 #[non_exhaustive]
 pub enum RollError {
     /// The number is one million or more, and a die never rolls a whole million.
+    #[error("a roll of {ppm} parts per million is not below one million")]
     OutOfRange { ppm: u32 },
 }
-
-impl fmt::Display for RollError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::OutOfRange { ppm } => {
-                write!(f, "a roll of {ppm} parts per million is not below one million")
-            }
-        }
-    }
-}
-
-impl std::error::Error for RollError {}
 
 /// Parts per million as a percentage with as few decimals as it needs.
 struct Percentage(u64);

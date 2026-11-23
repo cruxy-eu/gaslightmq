@@ -1,7 +1,5 @@
 //! Why a backend did not apply or emulate an incident.
 
-use std::fmt;
-
 use gaslightmq_incident::{IncidentKind, UnsupportedIncidents};
 
 /// Why a backend rejects an incident.
@@ -18,31 +16,21 @@ use gaslightmq_incident::{IncidentKind, UnsupportedIncidents};
 /// };
 /// assert_eq!(rejection.to_string(), "broker-goes-down cannot happen: the cluster has no broker 9");
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 #[non_exhaustive]
 pub enum IncidentRejection {
     /// The backend can neither apply nor emulate the incident, or one of the incidents that follow from it.
     ///
     /// A scenario is checked against the [support](crate::Backend::incident_support) of its backend when it loads.
     /// This rejection is for an incident that reaches the backend without that check.
+    // The error names the incidents itself, and which incident each one follows from.
+    #[error("{error}")]
     Unsupported { error: UnsupportedIncidents },
     /// The incident cannot happen in the cluster as it is.
     /// `reason` says why: the cluster has no such broker, or the new leader is no replica of the partition.
+    #[error("{incident} cannot happen: {reason}")]
     Impossible { incident: IncidentKind, reason: String },
 }
-
-impl fmt::Display for IncidentRejection {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            // The error names the incidents itself, and which incident each one follows from.
-            Self::Unsupported { error } => write!(f, "{error}"),
-            Self::Impossible { incident, reason } => write!(f, "{incident} cannot happen: {reason}"),
-        }
-    }
-}
-
-/// The message is complete, so a rejection has no source.
-impl std::error::Error for IncidentRejection {}
 
 impl From<UnsupportedIncidents> for IncidentRejection {
     fn from(error: UnsupportedIncidents) -> Self {

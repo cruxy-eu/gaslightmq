@@ -204,22 +204,13 @@ impl FromStr for LieKind {
 /// assert_eq!(error, LieKindError::Unknown { name: "hangup".to_owned() });
 /// assert_eq!(error.to_string(), "no lie is called \"hangup\"");
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 #[non_exhaustive]
 pub enum LieKindError {
     /// No kind of lie has this name.
+    #[error("no lie is called {name:?}")]
     Unknown { name: String },
 }
-
-impl fmt::Display for LieKindError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Unknown { name } => write!(f, "no lie is called {name:?}"),
-        }
-    }
-}
-
-impl std::error::Error for LieKindError {}
 
 #[cfg(test)]
 mod tests {

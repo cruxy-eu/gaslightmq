@@ -76,35 +76,24 @@ macro_rules! number_value {
         }
 
         #[doc = concat!("Why a number or a text is not a [`", stringify!($name), "`].")]
-        #[derive(Debug, Clone, PartialEq, Eq)]
+        #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
         #[non_exhaustive]
         pub enum $error {
             /// The text has no characters.
+            #[error("{} is empty", $what)]
             Empty,
             /// The text is not a decimal number.
+            #[error("{} is not a number: {input:?}", $what)]
             NotANumber { input: String },
             /// The number is below zero.
             /// `value` stops at [`i64::MIN`] for a text with more digits than that.
+            #[error("{} cannot be negative: {value}", $what)]
             Negative { value: i64 },
             #[doc = concat!("The number is above the highest ", $what, ".")]
             /// `value` stops at [`u64::MAX`] for a text with more digits than that.
+            #[error("{} {value} exceeds the maximum of {max}", $what)]
             TooLarge { value: u64, max: u64 },
         }
-
-        impl std::fmt::Display for $error {
-            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-                match self {
-                    Self::Empty => f.write_str(concat!($what, " is empty")),
-                    Self::NotANumber { input } => write!(f, concat!($what, " is not a number: {:?}"), input),
-                    Self::Negative { value } => write!(f, concat!($what, " cannot be negative: {}"), value),
-                    Self::TooLarge { value, max } => {
-                        write!(f, concat!($what, " {} exceeds the maximum of {}"), value, max)
-                    }
-                }
-            }
-        }
-
-        impl std::error::Error for $error {}
 
         impl From<$small> for $name {
             fn from(value: $small) -> Self {

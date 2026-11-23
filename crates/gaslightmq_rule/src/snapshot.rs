@@ -1,5 +1,4 @@
 use std::collections::BTreeMap;
-use std::fmt;
 
 use gaslightmq_clock::Instant;
 use gaslightmq_field::prelude::*;
@@ -234,22 +233,13 @@ impl<'a> IntoIterator for &'a Snapshot {
 }
 
 /// Why armed rules are not a [`Snapshot`].
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 #[non_exhaustive]
 pub enum SnapshotError {
     /// Two of the rules have the same name.
+    #[error("two rules are named {:?}", .name.as_str())]
     DuplicateName { name: RuleName },
 }
-
-impl fmt::Display for SnapshotError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::DuplicateName { name } => write!(f, "two rules are named {:?}", name.as_str()),
-        }
-    }
-}
-
-impl std::error::Error for SnapshotError {}
 
 #[cfg(test)]
 mod tests {

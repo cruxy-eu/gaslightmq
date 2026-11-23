@@ -1,6 +1,5 @@
 //! Why a backend has no answer for a call.
 
-use std::fmt;
 use std::time::Duration;
 
 use gaslightmq_field::Endpoint;
@@ -22,43 +21,28 @@ use gaslightmq_wire::WireError;
 /// let failure = BackendFailure::TimedOut { after: Duration::from_secs(30) };
 /// assert_eq!(failure.to_string(), "the cluster did not answer within 30s");
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 #[non_exhaustive]
 pub enum BackendFailure {
     /// The backend has no connection to the cluster, and cannot make one.
     /// `reason` says what stood in the way, such as a refused connection.
+    #[error("the backend cannot reach the cluster: {reason}")]
     Unreachable { reason: String },
     /// The connection to the cluster ended before the answer arrived.
     /// `reason` says how it ended.
+    #[error("the connection to the cluster ended before the answer arrived: {reason}")]
     ConnectionLost { reason: String },
     /// The backend waited `after` for the answer, and gave up.
+    #[error("the cluster did not answer within {after:?}")]
     TimedOut { after: Duration },
     /// The backend answers the request itself, and could not build its response.
     /// The cluster sent nothing that is wrong.
+    #[error("the backend could not build its response: {error}")]
     ResponseNotBuilt { error: WireError },
     /// The request arrived on an endpoint that the cluster does not have, or whose broker is down.
+    #[error("the cluster takes no requests on endpoint `{endpoint}`")]
     NoSuchEndpoint { endpoint: Endpoint },
 }
-
-impl fmt::Display for BackendFailure {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Unreachable { reason } => write!(f, "the backend cannot reach the cluster: {reason}"),
-            Self::ConnectionLost { reason } => {
-                write!(
-                    f,
-                    "the connection to the cluster ended before the answer arrived: {reason}"
-                )
-            }
-            Self::TimedOut { after } => write!(f, "the cluster did not answer within {after:?}"),
-            Self::ResponseNotBuilt { error } => write!(f, "the backend could not build its response: {error}"),
-            Self::NoSuchEndpoint { endpoint } => write!(f, "the cluster takes no requests on endpoint `{endpoint}`"),
-        }
-    }
-}
-
-/// The message is complete, so a failure has no source.
-impl std::error::Error for BackendFailure {}
 
 #[cfg(test)]
 mod tests {

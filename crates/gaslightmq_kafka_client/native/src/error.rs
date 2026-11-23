@@ -1,24 +1,29 @@
-use std::fmt;
-
 use gaslightmq_wire::{ResponseError, WireError};
 
 /// Why a call of a producer, a consumer or an admin failed.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum ClientError {
     /// The broker answered with an error code. `error` is the error Kafka gives that code.
+    #[error("broker error: {error}")]
     Broker { error: ResponseError },
     /// A request got no answer within the time it had.
+    #[error("request timed out")]
     RequestTimedOut,
     /// Retriable failures kept happening until the time of the call ran out.
     /// `error` is the last of them.
+    #[error("the call ran out of time, last error: {error}")]
     CallTimedOut { error: Box<ClientError> },
     /// Connecting failed or the connection dropped.
+    #[error("connection error: {0}")]
     ConnectionFailed(String),
     /// The broker sent something we can't make sense of.
+    #[error("protocol error: {0}")]
     Protocol(String),
     /// No version of the API is spoken by both client and broker.
+    #[error("no common version for api key {api_key}")]
     UnsupportedVersion { api_key: i16 },
     /// The partition has no known leader.
+    #[error("no leader for {topic}-{partition}")]
     NoLeader { topic: String, partition: i32 },
 }
 
@@ -48,23 +53,6 @@ impl ClientError {
         }
     }
 }
-
-impl fmt::Display for ClientError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Broker { error } => write!(f, "broker error: {error}"),
-            Self::RequestTimedOut => f.write_str("request timed out"),
-            Self::CallTimedOut { error } => write!(f, "the call ran out of time, last error: {error}"),
-            Self::ConnectionFailed(reason) => write!(f, "connection error: {reason}"),
-            Self::Protocol(reason) => write!(f, "protocol error: {reason}"),
-            Self::UnsupportedVersion { api_key } => write!(f, "no common version for api key {api_key}"),
-            Self::NoLeader { topic, partition } => write!(f, "no leader for {topic}-{partition}"),
-        }
-    }
-}
-
-/// The message is complete, so the error has no source.
-impl std::error::Error for ClientError {}
 
 impl From<std::io::Error> for ClientError {
     fn from(error: std::io::Error) -> Self {

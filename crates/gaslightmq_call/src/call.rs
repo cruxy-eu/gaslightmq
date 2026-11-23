@@ -1,7 +1,5 @@
 //! The record of one call.
 
-use std::fmt;
-
 use gaslightmq_field::prelude::*;
 
 use crate::{CallId, CallNumber, CallTiming, Delivered, Explanation, ResponseSummary, Verdict};
@@ -199,27 +197,16 @@ impl FieldSource for Call {
 }
 
 /// Why the parts of a record are not a [`Call`].
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 #[non_exhaustive]
 pub enum CallError {
     /// The fields do not have exactly one `connection`, so nothing says which session the call ran on.
+    #[error("a call record needs the one `connection` its call ran on")]
     NoConnection,
     /// The response fields still wait for the backend, and a record is of a call that ended.
+    #[error("a call record is of a call that ended, and its response fields still wait for the backend")]
     TruthPending,
 }
-
-impl fmt::Display for CallError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(match self {
-            Self::NoConnection => "a call record needs the one `connection` its call ran on",
-            Self::TruthPending => {
-                "a call record is of a call that ended, and its response fields still wait for the backend"
-            }
-        })
-    }
-}
-
-impl std::error::Error for CallError {}
 
 #[cfg(test)]
 mod tests {

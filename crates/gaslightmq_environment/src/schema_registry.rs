@@ -64,27 +64,16 @@ impl SchemaRegistry {
 }
 
 /// Why what a file holds is not a [`SchemaRegistry`].
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 #[non_exhaustive]
 pub enum SchemaRegistryError {
     /// The registry has neither an address to listen on nor a URL.
+    #[error("a schema registry has `listen` for the built-in one, or `url` for the real one")]
     NoPlace,
     /// The registry has an address to listen on and a URL.
+    #[error("a schema registry is the built-in one or the real one: it has `listen` or `url`, and not both")]
     TwoPlaces,
 }
-
-impl fmt::Display for SchemaRegistryError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(match self {
-            Self::NoPlace => "a schema registry has `listen` for the built-in one, or `url` for the real one",
-            Self::TwoPlaces => {
-                "a schema registry is the built-in one or the real one: it has `listen` or `url`, and not both"
-            }
-        })
-    }
-}
-
-impl std::error::Error for SchemaRegistryError {}
 
 /// Where a real schema registry answers, such as `https://schema-registry.staging.internal:8081`.
 ///
@@ -217,51 +206,29 @@ text_form!(SchemaRegistryUrl, SchemaRegistryUrlError);
 ///
 /// [`Credentials`](Self::Credentials) and [`QueryOrFragment`](Self::QueryOrFragment) do not repeat the text,
 /// because it can hold a password or a token.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 #[non_exhaustive]
 pub enum SchemaRegistryUrlError {
     /// The text holds an `@` before its path, so it names a user, and maybe a password.
     /// Or it holds an `@` and is no URL, as when a password holds a `/`.
+    #[error("a schema registry URL holds no user name and no password: a secret is a reference and never the value")]
     Credentials,
     /// The text holds a `?` or a `#`.
+    #[error("a schema registry URL holds no query and no fragment")]
     QueryOrFragment,
     /// The text does not start with `http://` or `https://`.
+    #[error("schema registry URL {input:?} does not start with http:// or https://")]
     UnknownScheme { input: String },
     /// What follows the scheme is not a host.
+    #[error("schema registry URL {input:?}: {error}")]
     InvalidHost { input: String, error: HostNameError },
     /// The port is not a number between 1 and 65535.
+    #[error("schema registry URL {input:?} has a port that is no number between 1 and 65535")]
     InvalidPort { input: String },
     /// The path holds white space or a control character.
+    #[error("schema registry URL {input:?} holds the character {character:?} in its path")]
     InvalidPath { input: String, character: char },
 }
-
-impl fmt::Display for SchemaRegistryUrlError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Credentials => f.write_str(
-                "a schema registry URL holds no user name and no password: a secret is a reference and never the value",
-            ),
-            Self::QueryOrFragment => f.write_str("a schema registry URL holds no query and no fragment"),
-            Self::UnknownScheme { input } => write!(
-                f,
-                "schema registry URL {input:?} does not start with http:// or https://"
-            ),
-            Self::InvalidHost { input, error } => write!(f, "schema registry URL {input:?}: {error}"),
-            Self::InvalidPort { input } => write!(
-                f,
-                "schema registry URL {input:?} has a port that is no number between 1 and 65535"
-            ),
-            Self::InvalidPath { input, character } => {
-                write!(
-                    f,
-                    "schema registry URL {input:?} holds the character {character:?} in its path"
-                )
-            }
-        }
-    }
-}
-
-impl std::error::Error for SchemaRegistryUrlError {}
 
 #[cfg(test)]
 mod tests {

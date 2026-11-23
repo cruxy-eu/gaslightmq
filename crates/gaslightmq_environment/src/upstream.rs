@@ -236,25 +236,13 @@ impl fmt::Display for SaslMechanism {
 text_form!(SaslMechanism, SaslMechanismError);
 
 /// Why a text is not a [`SaslMechanism`].
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 #[non_exhaustive]
 pub enum SaslMechanismError {
     /// No mechanism that logs in with a password has this name.
+    #[error("no SASL mechanism is named {name:?}: there are PLAIN, SCRAM-SHA-256 and SCRAM-SHA-512")]
     Unknown { name: String },
 }
-
-impl fmt::Display for SaslMechanismError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Unknown { name } => write!(
-                f,
-                "no SASL mechanism is named {name:?}: there are PLAIN, SCRAM-SHA-256 and SCRAM-SHA-512"
-            ),
-        }
-    }
-}
-
-impl std::error::Error for SaslMechanismError {}
 
 /// The user a proxy logs in to a cluster as, such as `gaslight`.
 ///
@@ -290,22 +278,13 @@ impl SaslUsername {
 kept_text!(SaslUsername, SaslUsernameError);
 
 /// Why a text is not a [`SaslUsername`].
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 #[non_exhaustive]
 pub enum SaslUsernameError {
     /// The text has no character.
+    #[error("SASL user name \"\" is empty")]
     Empty,
 }
-
-impl fmt::Display for SaslUsernameError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Empty => f.write_str("SASL user name \"\" is empty"),
-        }
-    }
-}
-
-impl std::error::Error for SaslUsernameError {}
 
 #[cfg(test)]
 mod tests {

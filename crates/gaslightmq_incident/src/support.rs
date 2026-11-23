@@ -146,7 +146,8 @@ impl IncidentSupport {
 /// The incidents a scenario needs and its backend can neither apply nor emulate.
 ///
 /// It names at least one incident.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[error("the backend cannot apply or emulate: {}", listed(.incidents))]
 pub struct UnsupportedIncidents {
     incidents: Vec<Requirement>,
 }
@@ -159,23 +160,17 @@ impl UnsupportedIncidents {
     }
 }
 
-impl fmt::Display for UnsupportedIncidents {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("the backend cannot apply or emulate: ")?;
-        for (position, incident) in self.incidents.iter().enumerate() {
-            if position > 0 {
-                f.write_str(", ")?;
-            }
-            write!(f, "{}", incident.kind())?;
-            if let Some(cause) = incident.consequence_of() {
-                write!(f, " (a consequence of {cause})")?;
-            }
-        }
-        Ok(())
-    }
+/// The incidents as the message lists them: each kind, and the incident it follows from when it has one.
+fn listed(incidents: &[Requirement]) -> String {
+    let incidents: Vec<String> = incidents
+        .iter()
+        .map(|incident| match incident.consequence_of() {
+            Some(cause) => format!("{} (a consequence of {cause})", incident.kind()),
+            None => incident.kind().to_string(),
+        })
+        .collect();
+    incidents.join(", ")
 }
-
-impl std::error::Error for UnsupportedIncidents {}
 
 #[cfg(test)]
 mod tests {

@@ -152,28 +152,19 @@ impl fmt::Display for ConnectionOrdinal {
 }
 
 /// Why a number or a text is not a [`ConnectionOrdinal`].
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 #[non_exhaustive]
 pub enum ConnectionOrdinalError {
     /// The number is zero, and the first connection has the ordinal one.
+    #[error("a connection ordinal is at least one")]
     Zero,
     /// The text is not a `#` and digits.
+    #[error("connection ordinal {input:?} does not have the form #N")]
     Malformed { input: String },
     /// The number is more than a `u64` holds.
+    #[error("connection ordinal {input} is not between 1 and {}", u64::MAX)]
     OutOfRange { input: String },
 }
-
-impl fmt::Display for ConnectionOrdinalError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Zero => f.write_str("a connection ordinal is at least one"),
-            Self::Malformed { input } => write!(f, "connection ordinal {input:?} does not have the form #N"),
-            Self::OutOfRange { input } => write!(f, "connection ordinal {input} is not between 1 and {}", u64::MAX),
-        }
-    }
-}
-
-impl std::error::Error for ConnectionOrdinalError {}
 
 /// The ordinals of the connections a proxy accepted, per host and endpoint.
 ///

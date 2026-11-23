@@ -108,22 +108,13 @@ impl FromStr for Aspect {
 /// assert_eq!(error, AspectError::Unknown { name: "watermark".to_owned() });
 /// assert_eq!(error.to_string(), "no aspect is called \"watermark\"");
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 #[non_exhaustive]
 pub enum AspectError {
     /// No aspect has this name.
+    #[error("no aspect is called {name:?}")]
     Unknown { name: String },
 }
-
-impl fmt::Display for AspectError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Unknown { name } => write!(f, "no aspect is called {name:?}"),
-        }
-    }
-}
-
-impl std::error::Error for AspectError {}
 
 #[cfg(test)]
 mod tests {

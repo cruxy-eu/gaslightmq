@@ -86,22 +86,13 @@ impl fmt::Display for TriggerDecision {
 }
 
 /// Why a text is not a [`TriggerDecision`].
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 #[non_exhaustive]
 pub enum TriggerDecisionError {
     /// No decision has this name.
+    #[error("no trigger decision is called {name:?}")]
     Unknown { name: String },
 }
-
-impl fmt::Display for TriggerDecisionError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Unknown { name } => write!(f, "no trigger decision is called {name:?}"),
-        }
-    }
-}
-
-impl std::error::Error for TriggerDecisionError {}
 
 /// The die of a chance trigger on one call: what it rolled, and the chance the roll had to be under.
 ///
@@ -170,29 +161,16 @@ impl fmt::Display for DieCheck {
 }
 
 /// Why two numbers are not a [`DieCheck`].
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 #[non_exhaustive]
 pub enum DieCheckError {
     /// The roll is one million or more, and a die never rolls a whole million.
+    #[error("a roll of {ppm} parts per million is not below one million")]
     RollOutOfRange { ppm: u32 },
     /// The chance is above one million, which is `100%`.
+    #[error("a chance of {ppm} parts per million is above one million")]
     ChanceOutOfRange { ppm: u32 },
 }
-
-impl fmt::Display for DieCheckError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::RollOutOfRange { ppm } => {
-                write!(f, "a roll of {ppm} parts per million is not below one million")
-            }
-            Self::ChanceOutOfRange { ppm } => {
-                write!(f, "a chance of {ppm} parts per million is above one million")
-            }
-        }
-    }
-}
-
-impl std::error::Error for DieCheckError {}
 
 /// Parts per million as a percentage with as few decimals as it needs.
 struct Percentage(u32);
@@ -290,31 +268,16 @@ impl fmt::Display for WindowCheck {
 }
 
 /// Why three time spans are not a [`WindowCheck`].
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 #[non_exhaustive]
 pub enum WindowCheckError {
     /// The window closes before it opens, or at the moment it opens, so it is never open.
+    #[error("a time window from {opens_after} to {closes_after} after arming is never open")]
     Empty {
         opens_after: TimeSpan,
         closes_after: TimeSpan,
     },
 }
-
-impl fmt::Display for WindowCheckError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Empty {
-                opens_after,
-                closes_after,
-            } => write!(
-                f,
-                "a time window from {opens_after} to {closes_after} after arming is never open"
-            ),
-        }
-    }
-}
-
-impl std::error::Error for WindowCheckError {}
 
 /// The budget of a rule after one call took from it: how much the lifetime allows, and how much was left.
 ///
@@ -370,24 +333,13 @@ impl fmt::Display for BudgetCheck {
 }
 
 /// Why two numbers are not a [`BudgetCheck`].
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 #[non_exhaustive]
 pub enum BudgetCheckError {
     /// More is left than the budget allows.
+    #[error("a budget of {limit} does not have {left} left")]
     LeftAboveLimit { left: u64, limit: NonZeroU64 },
 }
-
-impl fmt::Display for BudgetCheckError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::LeftAboveLimit { left, limit } => {
-                write!(f, "a budget of {limit} does not have {left} left")
-            }
-        }
-    }
-}
-
-impl std::error::Error for BudgetCheckError {}
 
 /// What each part of a trigger looked at on one call.
 ///
@@ -639,36 +591,20 @@ impl fmt::Display for TriggerExplanation {
 }
 
 /// Why a decision, a match number and checks are not a [`TriggerExplanation`]: they contradict each other.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 #[non_exhaustive]
 pub enum TriggerExplanationError {
     /// There is no match number, and only a rule whose lifetime had ended does not count the call.
+    #[error("a trigger that decided `{decision}` counted the call, and the match number is missing")]
     Uncounted { decision: TriggerDecision },
     /// The lifetime had ended, and there is a match number or a check.
     /// Such a rule neither counts the call nor rolls for it.
+    #[error("a rule whose lifetime is over neither counts the call nor checks its trigger")]
     EvaluatedAfterLifetime,
     /// The trigger fired, and one of its checks did not agree. Every part of a trigger has to agree.
+    #[error("a trigger does not fire while one of its parts does not agree")]
     FiredAgainstCheck,
 }
-
-impl fmt::Display for TriggerExplanationError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Uncounted { decision } => {
-                write!(
-                    f,
-                    "a trigger that decided `{decision}` counted the call, and the match number is missing"
-                )
-            }
-            Self::EvaluatedAfterLifetime => {
-                f.write_str("a rule whose lifetime is over neither counts the call nor checks its trigger")
-            }
-            Self::FiredAgainstCheck => f.write_str("a trigger does not fire while one of its parts does not agree"),
-        }
-    }
-}
-
-impl std::error::Error for TriggerExplanationError {}
 
 #[cfg(test)]
 mod tests {

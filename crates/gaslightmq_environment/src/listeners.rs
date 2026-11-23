@@ -204,53 +204,35 @@ impl fmt::Display for BrokerListeners {
 /// assert_eq!(error.to_string(), "3 brokers need a port each, and the range 19092-19093 has 2");
 /// # Ok::<(), BrokerListenersError>(())
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 #[non_exhaustive]
 pub enum BrokerListenersError {
     /// The text does not start with an IP address and a colon.
+    #[error("broker listeners {input:?} are not an IP address and a range of ports, such as 0.0.0.0:19092-19191")]
     InvalidAddress { input: String },
     /// What follows the IP address is not a range of ports.
+    #[error("broker listeners {input:?}: {error}")]
     InvalidPorts { input: String, error: PortRangeError },
     /// No broker is pinned.
+    #[error("broker listeners pin no broker to an address")]
     NoBroker,
     /// One broker is pinned to two addresses.
+    #[error("broker {broker} is pinned to two addresses")]
     PinnedTwice { broker: BrokerId },
     /// Two pinned brokers would listen on the same port of the same address.
+    #[error("brokers {first} and {second} are both pinned to {address}")]
     SharedAddress {
         first: BrokerId,
         second: BrokerId,
         address: ListenAddress,
     },
     /// The cluster has more brokers than the range has ports.
+    #[error("{brokers} brokers need a port each, and the range {ports} has {}", .ports.count())]
     TooFewPorts { brokers: usize, ports: PortRange },
     /// The brokers are pinned, and the cluster has a broker that is not.
+    #[error("broker {broker} is not pinned to an address")]
     NotPinned { broker: BrokerId },
 }
-
-impl fmt::Display for BrokerListenersError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::InvalidAddress { input } => write!(
-                f,
-                "broker listeners {input:?} are not an IP address and a range of ports, such as 0.0.0.0:19092-19191"
-            ),
-            Self::InvalidPorts { input, error } => write!(f, "broker listeners {input:?}: {error}"),
-            Self::NoBroker => f.write_str("broker listeners pin no broker to an address"),
-            Self::PinnedTwice { broker } => write!(f, "broker {broker} is pinned to two addresses"),
-            Self::SharedAddress { first, second, address } => {
-                write!(f, "brokers {first} and {second} are both pinned to {address}")
-            }
-            Self::TooFewPorts { brokers, ports } => write!(
-                f,
-                "{brokers} brokers need a port each, and the range {ports} has {}",
-                ports.count()
-            ),
-            Self::NotPinned { broker } => write!(f, "broker {broker} is not pinned to an address"),
-        }
-    }
-}
-
-impl std::error::Error for BrokerListenersError {}
 
 /// Where an instance listens for Kafka clients, and the host those clients see.
 ///
@@ -349,25 +331,13 @@ impl Listeners {
 }
 
 /// Why addresses are not [`Listeners`].
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 #[non_exhaustive]
 pub enum ListenersError {
     /// The bootstrap listener and a broker listener would listen on the same port of the same address.
+    #[error("the bootstrap listener and a broker listener both listen on {address}")]
     BootstrapAmongBrokers { address: ListenAddress },
 }
-
-impl fmt::Display for ListenersError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::BootstrapAmongBrokers { address } => write!(
-                f,
-                "the bootstrap listener and a broker listener both listen on {address}"
-            ),
-        }
-    }
-}
-
-impl std::error::Error for ListenersError {}
 
 #[cfg(test)]
 mod tests {

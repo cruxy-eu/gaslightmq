@@ -13,6 +13,7 @@ serde = ["dep:serde", "gaslightmq_kernel/serde"]
 [dependencies]
 gaslightmq_kernel.workspace = true
 serde = { workspace = true, optional = true }
+thiserror.workspace = true
 
 [dev-dependencies]
 serde = { workspace = true, features = ["derive"] }

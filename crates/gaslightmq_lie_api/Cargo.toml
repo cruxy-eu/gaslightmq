@@ -12,6 +12,7 @@ gaslightmq_field.workspace = true
 gaslightmq_lie.workspace = true
 gaslightmq_wire.workspace = true
 gaslightmq_wire_edit.workspace = true
+thiserror.workspace = true
 
 [dev-dependencies]
 gaslightmq_clock.workspace = true

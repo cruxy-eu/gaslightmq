@@ -119,30 +119,19 @@ impl fmt::Display for Lifetime {
 /// assert_eq!(error, LifetimeError::InvalidCount { input: "0 firings".to_owned(), error: CountError::Zero });
 /// assert_eq!(error.to_string(), "lifetime `0 firings`: a count is at least one");
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 #[non_exhaustive]
 pub enum LifetimeError {
     /// The text is not `until disarmed`, not a time span, and not a count of matches or firings.
+    #[error(
+        "`{input}` is not a lifetime: expected `until disarmed`, a time span such as `30s`, \
+         or a count such as `100 matches` or `3 firings`"
+    )]
     Malformed { input: String },
     /// The number of matches or firings is not a count.
+    #[error("lifetime `{input}`: {error}")]
     InvalidCount { input: String, error: CountError },
 }
-
-impl fmt::Display for LifetimeError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Malformed { input } => write!(
-                f,
-                "`{input}` is not a lifetime: expected `until disarmed`, a time span such as `30s`, \
-                 or a count such as `100 matches` or `3 firings`"
-            ),
-            Self::InvalidCount { input, error } => write!(f, "lifetime `{input}`: {error}"),
-        }
-    }
-}
-
-/// The message is complete, so no variant has a source.
-impl std::error::Error for LifetimeError {}
 
 #[cfg(test)]
 mod tests {

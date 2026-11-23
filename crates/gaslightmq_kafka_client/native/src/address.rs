@@ -116,36 +116,22 @@ impl fmt::Display for BrokerAddress {
 }
 
 /// Why a text is not a [`BrokerAddress`].
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 #[non_exhaustive]
 pub enum BrokerAddressError {
     /// The text has no `:` between a host and a port.
+    #[error("invalid broker address `{input}`: missing port, expected host:port")]
     MissingPort { input: String },
     /// Nothing stands before the port.
+    #[error("invalid broker address `{input}`: missing host, expected host:port")]
     MissingHost { input: String },
     /// The host holds a `:`, as an IPv6 address does, and does not stand in a pair of brackets.
+    #[error("invalid broker address `{input}`: a host with `:` in it stands in brackets, as in [::1]:9092")]
     MissingBrackets { input: String },
     /// The port is not a number from 0 to 65535.
+    #[error("invalid broker address `{input}`: the port is not a number from 0 to 65535")]
     InvalidPort { input: String },
 }
-
-impl fmt::Display for BrokerAddressError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let (Self::MissingPort { input }
-        | Self::MissingHost { input }
-        | Self::MissingBrackets { input }
-        | Self::InvalidPort { input }) = self;
-        write!(f, "invalid broker address `{input}`: ")?;
-        match self {
-            Self::MissingPort { .. } => f.write_str("missing port, expected host:port"),
-            Self::MissingHost { .. } => f.write_str("missing host, expected host:port"),
-            Self::MissingBrackets { .. } => f.write_str("a host with `:` in it stands in brackets, as in [::1]:9092"),
-            Self::InvalidPort { .. } => f.write_str("the port is not a number from 0 to 65535"),
-        }
-    }
-}
-
-impl std::error::Error for BrokerAddressError {}
 
 /// The addresses a client asks first, to learn which brokers the cluster has.
 ///
@@ -233,26 +219,16 @@ impl fmt::Display for BootstrapServers {
 }
 
 /// Why a list is not a [`BootstrapServers`].
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 #[non_exhaustive]
 pub enum BootstrapServersError {
     /// The list holds no address.
+    #[error("bootstrap servers need at least one address")]
     Empty,
     /// One address of the text `input` is not a broker address.
+    #[error("bootstrap servers `{input}`: {error}")]
     InvalidAddress { input: String, error: BrokerAddressError },
 }
-
-impl fmt::Display for BootstrapServersError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Empty => f.write_str("bootstrap servers need at least one address"),
-            Self::InvalidAddress { input, error } => write!(f, "bootstrap servers `{input}`: {error}"),
-        }
-    }
-}
-
-/// The message names the address that is wrong, so the error has no source.
-impl std::error::Error for BootstrapServersError {}
 
 #[cfg(test)]
 mod tests {

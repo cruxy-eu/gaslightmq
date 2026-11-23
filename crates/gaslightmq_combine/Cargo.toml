@@ -11,6 +11,7 @@ workspace = true
 gaslightmq_clock.workspace = true
 gaslightmq_field.workspace = true
 gaslightmq_lie.workspace = true
+thiserror.workspace = true
 
 [dev-dependencies]
 gaslightmq_kernel.workspace = true

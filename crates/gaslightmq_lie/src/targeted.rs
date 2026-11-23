@@ -93,23 +93,14 @@ impl fmt::Display for TargetedLie {
 ///
 /// Only reading returns it, with the `serde` feature.
 /// [`TargetedLie::new`] takes every lie and every target.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 #[non_exhaustive]
 pub enum TargetedLieError {
     /// The target is a set of parts, and a lie of this kind always targets the whole call.
     /// [`TargetedLie::new`] gives such a lie the whole call instead.
+    #[error("{kind} always targets the whole call")]
     PartsNotAllowed { kind: LieKind },
 }
-
-impl fmt::Display for TargetedLieError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::PartsNotAllowed { kind } => write!(f, "{kind} always targets the whole call"),
-        }
-    }
-}
-
-impl std::error::Error for TargetedLieError {}
 
 #[cfg(test)]
 mod tests {

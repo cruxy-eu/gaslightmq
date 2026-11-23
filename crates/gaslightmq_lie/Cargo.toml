@@ -15,6 +15,7 @@ gaslightmq_clock.workspace = true
 gaslightmq_field.workspace = true
 gaslightmq_kernel.workspace = true
 serde = { workspace = true, optional = true }
+thiserror.workspace = true
 
 [dev-dependencies]
 serde = { workspace = true, features = ["derive"] }

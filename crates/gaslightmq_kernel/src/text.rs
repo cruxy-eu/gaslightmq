@@ -188,103 +188,53 @@ macro_rules! text_rule {
 macro_rules! text_error {
     (name, $name:ident, $error:ident, $what:literal) => {
         #[doc = concat!("Why a text is not a [`", stringify!($name), "`].")]
-        #[derive(Debug, Clone, PartialEq, Eq)]
+        #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
         #[non_exhaustive]
         pub enum $error {
             /// The text has no characters.
+            #[error("{} is empty", $what)]
             Empty,
             #[doc = concat!("The text has more bytes than a ", $what, " has at most.")]
+            #[error("{} of {len} bytes exceeds the limit of {max}", $what)]
             TooLong { len: usize, max: usize },
             #[doc = concat!("The text has a character that Kafka does not allow in a ", $what, ".")]
             /// `position` counts characters from zero.
+            #[error(
+                "{} {input:?} has the invalid character {character:?} at position {position}",
+                $what
+            )]
             InvalidCharacter {
                 input: String,
                 character: char,
                 position: usize,
             },
             /// Kafka reserves the text: `.` and `..` are paths.
+            #[error("{} cannot be {value:?}", $what)]
             Reserved { value: String },
         }
-
-        impl std::fmt::Display for $error {
-            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-                match self {
-                    Self::Empty => f.write_str(concat!($what, " is empty")),
-                    Self::TooLong { len, max } => {
-                        write!(
-                            f,
-                            concat!($what, " of {} bytes exceeds the limit of {}"),
-                            len, max
-                        )
-                    }
-                    Self::InvalidCharacter {
-                        input,
-                        character,
-                        position,
-                    } => write!(
-                        f,
-                        concat!($what, " {:?} has the invalid character {:?} at position {}"),
-                        input, character, position
-                    ),
-                    Self::Reserved { value } => write!(f, concat!($what, " cannot be {:?}"), value),
-                }
-            }
-        }
-
-        impl std::error::Error for $error {}
     };
     (non_empty, $name:ident, $error:ident, $what:literal) => {
         #[doc = concat!("Why a text is not a [`", stringify!($name), "`].")]
-        #[derive(Debug, Clone, PartialEq, Eq)]
+        #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
         #[non_exhaustive]
         pub enum $error {
             /// The text has no characters.
+            #[error("{} is empty", $what)]
             Empty,
             #[doc = concat!("The text has more bytes than a ", $what, " has at most.")]
+            #[error("{} of {len} bytes exceeds the limit of {max}", $what)]
             TooLong { len: usize, max: usize },
         }
-
-        impl std::fmt::Display for $error {
-            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-                match self {
-                    Self::Empty => f.write_str(concat!($what, " is empty")),
-                    Self::TooLong { len, max } => {
-                        write!(
-                            f,
-                            concat!($what, " of {} bytes exceeds the limit of {}"),
-                            len, max
-                        )
-                    }
-                }
-            }
-        }
-
-        impl std::error::Error for $error {}
     };
     (any, $name:ident, $error:ident, $what:literal) => {
         #[doc = concat!("Why a text is not a [`", stringify!($name), "`].")]
-        #[derive(Debug, Clone, PartialEq, Eq)]
+        #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
         #[non_exhaustive]
         pub enum $error {
             #[doc = concat!("The text has more bytes than a ", $what, " has at most.")]
+            #[error("{} of {len} bytes exceeds the limit of {max}", $what)]
             TooLong { len: usize, max: usize },
         }
-
-        impl std::fmt::Display for $error {
-            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-                match self {
-                    Self::TooLong { len, max } => {
-                        write!(
-                            f,
-                            concat!($what, " of {} bytes exceeds the limit of {}"),
-                            len, max
-                        )
-                    }
-                }
-            }
-        }
-
-        impl std::error::Error for $error {}
     };
 }
 

@@ -140,59 +140,32 @@ impl fmt::Display for BrokerAddress {
 }
 
 /// Why a host and a port, or a text, are not a [`BrokerAddress`].
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 #[non_exhaustive]
 pub enum BrokerAddressError {
     /// The host has no character.
+    #[error("the host of a broker address cannot be empty")]
     EmptyHost,
     /// The host has more bytes than a host name can have.
+    #[error("the host of a broker address is {len} bytes long, and the limit is {max}")]
     HostTooLong { len: usize, max: usize },
     /// The host holds whitespace or a control character, at this position, counted from one.
+    #[error("the host {host:?} of a broker address has the invalid character {character:?} at position {position}")]
     InvalidHostCharacter {
         host: String,
         character: char,
         position: usize,
     },
     /// The port is zero, which no client connects to.
+    #[error("the port of a broker address cannot be zero")]
     PortZero,
     /// The text is not a host, a colon and a port.
+    #[error("broker address {input:?} does not have the form of a host and a port, such as kafka-2.internal:9092")]
     Malformed { input: String },
     /// What follows the last colon of the text is not a port between 1 and 65535.
+    #[error("broker address {input:?} does not end in a port between 1 and 65535")]
     InvalidPort { input: String },
 }
-
-impl fmt::Display for BrokerAddressError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::EmptyHost => f.write_str("the host of a broker address cannot be empty"),
-            Self::HostTooLong { len, max } => {
-                write!(
-                    f,
-                    "the host of a broker address is {len} bytes long, and the limit is {max}"
-                )
-            }
-            Self::InvalidHostCharacter {
-                host,
-                character,
-                position,
-            } => write!(
-                f,
-                "the host {host:?} of a broker address has the invalid character {character:?} at position {position}"
-            ),
-            Self::PortZero => f.write_str("the port of a broker address cannot be zero"),
-            Self::Malformed { input } => write!(
-                f,
-                "broker address {input:?} does not have the form of a host and a port, such as kafka-2.internal:9092"
-            ),
-            Self::InvalidPort { input } => {
-                write!(f, "broker address {input:?} does not end in a port between 1 and 65535")
-            }
-        }
-    }
-}
-
-/// The message is complete, so no variant has a source.
-impl std::error::Error for BrokerAddressError {}
 
 #[cfg(test)]
 mod tests {

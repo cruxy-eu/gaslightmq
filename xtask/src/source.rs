@@ -8,7 +8,6 @@
 //! a type or a function that a macro writes stays unseen.
 //! Code under `#[cfg(test)]` or `#[test]` is test code, and the checks pass over it.
 
-use std::fmt;
 use std::io;
 use std::path::{Path, PathBuf};
 
@@ -164,36 +163,18 @@ pub fn attributes(item: &Item) -> &[Attribute] {
 }
 
 /// Why the source of a crate could not be read.
-#[derive(Debug)]
+#[derive(Debug, thiserror::Error)]
 pub enum SourceError {
-    Unreadable {
-        path: PathBuf,
-        error: io::Error,
-    },
+    #[error("{} cannot be read: {error}", .path.display())]
+    Unreadable { path: PathBuf, error: io::Error },
     /// The file does not parse as Rust. `line` is where the parser stopped.
+    #[error("{}:{line}: the checks cannot read this as Rust: {error}", .path.display())]
     NotRust {
         path: PathBuf,
         line: usize,
         error: syn::Error,
     },
 }
-
-impl fmt::Display for SourceError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Unreadable { path, error } => write!(f, "{} cannot be read: {error}", path.display()),
-            Self::NotRust { path, line, error } => {
-                write!(
-                    f,
-                    "{}:{line}: the checks cannot read this as Rust: {error}",
-                    path.display()
-                )
-            }
-        }
-    }
-}
-
-impl std::error::Error for SourceError {}
 
 #[cfg(test)]
 mod tests {

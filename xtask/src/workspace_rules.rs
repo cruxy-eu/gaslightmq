@@ -108,20 +108,11 @@ impl fmt::Display for RuleViolation {
 }
 
 /// Why a manifest could not be read.
-#[derive(Debug)]
+#[derive(Debug, thiserror::Error)]
 pub enum ManifestError {
+    #[error("{} cannot be read: {error}", .path.display())]
     Unreadable { path: PathBuf, error: io::Error },
 }
-
-impl fmt::Display for ManifestError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Unreadable { path, error } => write!(f, "{} cannot be read: {error}", path.display()),
-        }
-    }
-}
-
-impl std::error::Error for ManifestError {}
 
 #[cfg(test)]
 mod tests {

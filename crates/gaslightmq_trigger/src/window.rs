@@ -92,24 +92,13 @@ impl fmt::Display for TimeWindow {
 }
 
 /// Why two time spans are not a [`TimeWindow`].
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 #[non_exhaustive]
 pub enum TimeWindowError {
     /// The window closes before it opens, or at the moment it opens.
+    #[error("a window between {from} and {until} never opens")]
     Empty { from: TimeSpan, until: TimeSpan },
 }
-
-impl fmt::Display for TimeWindowError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Empty { from, until } => {
-                write!(f, "a window between {from} and {until} never opens")
-            }
-        }
-    }
-}
-
-impl std::error::Error for TimeWindowError {}
 
 #[cfg(test)]
 mod tests {

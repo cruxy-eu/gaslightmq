@@ -268,31 +268,19 @@ impl fmt::Display for TimingLie {
 /// };
 /// assert_eq!(error.to_string(), "a jitter of 200ms is longer than the delay of 0s");
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 #[non_exhaustive]
 pub enum TimingLieError {
     /// The jitter is longer than the delay, so the shortest wait would be less than no time.
+    #[error("a jitter of {jitter} is longer than the delay of {delay}")]
     JitterExceedsDelay { jitter: TimeSpan, delay: TimeSpan },
     /// The throttle is longer than [`TimingLie::MAX_THROTTLE`].
+    #[error(
+        "a throttle of {throttle} is longer than {}, the longest that Kafka can tell a client",
+        TimingLie::MAX_THROTTLE
+    )]
     ThrottleTooLong { throttle: TimeSpan },
 }
-
-impl fmt::Display for TimingLieError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::JitterExceedsDelay { jitter, delay } => {
-                write!(f, "a jitter of {jitter} is longer than the delay of {delay}")
-            }
-            Self::ThrottleTooLong { throttle } => write!(
-                f,
-                "a throttle of {throttle} is longer than {}, the longest that Kafka can tell a client",
-                TimingLie::MAX_THROTTLE
-            ),
-        }
-    }
-}
-
-impl std::error::Error for TimingLieError {}
 
 /// A hang-up: the connection closes.
 ///

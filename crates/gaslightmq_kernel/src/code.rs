@@ -62,20 +62,28 @@ macro_rules! code_error {
         $(, $(#[$extra_meta:meta])* $extra:ident { $field:ident: $type:ty } => $message:literal)?
     ) => {
         $(#[$meta])*
-        #[derive(Debug, Clone, PartialEq, Eq)]
+        #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
         #[non_exhaustive]
         pub enum $error {
             /// The text has no characters.
+            #[error("{} is empty", $what)]
             Empty,
             #[doc = concat!("The text is not a name that Kafka gives an ", $what, ", and not a number either.")]
+            #[error("unknown {}: {input:?}", $what)]
             UnknownName { input: String },
             #[doc = concat!("The number is below the lowest ", $what, ".")]
             /// `value` stops at [`i64::MIN`] for a text with more digits than that.
+            #[error("{} {value} is below the minimum of {min}", $what)]
             TooSmall { value: i64, min: i64 },
             #[doc = concat!("The number is above the highest ", $what, ".")]
             /// `value` stops at [`u64::MAX`] for a text with more digits than that.
+            #[error("{} {value} exceeds the maximum of {max}", $what)]
             TooLarge { value: u64, max: u64 },
-            $($(#[$extra_meta])* $extra { $field: $type },)?
+            $(
+                $(#[$extra_meta])*
+                #[error("{} {}", $what, format_args!($message, .$field))]
+                $extra { $field: $type },
+            )?
         }
 
         impl $error {
@@ -91,24 +99,6 @@ macro_rules! code_error {
                 }
             }
         }
-
-        impl std::fmt::Display for $error {
-            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-                match self {
-                    Self::Empty => f.write_str(concat!($what, " is empty")),
-                    Self::UnknownName { input } => write!(f, concat!("unknown ", $what, ": {:?}"), input),
-                    Self::TooSmall { value, min } => {
-                        write!(f, concat!($what, " {} is below the minimum of {}"), value, min)
-                    }
-                    Self::TooLarge { value, max } => {
-                        write!(f, concat!($what, " {} exceeds the maximum of {}"), value, max)
-                    }
-                    $(Self::$extra { $field } => write!(f, concat!($what, " ", $message), $field),)?
-                }
-            }
-        }
-
-        impl std::error::Error for $error {}
     };
 }
 

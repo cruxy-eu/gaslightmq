@@ -75,22 +75,13 @@ impl FromStr for CombinationClass {
 /// assert_eq!(error, CombinationClassError::Unknown { name: "rewrites".to_owned() });
 /// assert_eq!(error.to_string(), "no combination class is called \"rewrites\"");
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 #[non_exhaustive]
 pub enum CombinationClassError {
     /// No combination class has this name.
+    #[error("no combination class is called {name:?}")]
     Unknown { name: String },
 }
-
-impl fmt::Display for CombinationClassError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Unknown { name } => write!(f, "no combination class is called {name:?}"),
-        }
-    }
-}
-
-impl std::error::Error for CombinationClassError {}
 
 #[cfg(test)]
 mod tests {

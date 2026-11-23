@@ -39,24 +39,13 @@ macro_rules! count_value {
         }
 
         #[doc = concat!("Why a number is not a [`", stringify!($name), "`].")]
-        #[derive(Debug, Clone, PartialEq, Eq)]
+        #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
         #[non_exhaustive]
         pub enum $error {
             #[doc = concat!("The number is zero, or above the highest ", $what, ".")]
+            #[error("{} {value} is not between 1 and {max}", $what)]
             OutOfRange { value: u64, max: u64 },
         }
-
-        impl std::fmt::Display for $error {
-            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-                match self {
-                    Self::OutOfRange { value, max } => {
-                        write!(f, concat!($what, " {} is not between 1 and {}"), value, max)
-                    }
-                }
-            }
-        }
-
-        impl std::error::Error for $error {}
 
         /// One.
         impl Default for $name {

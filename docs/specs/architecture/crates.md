@@ -123,7 +123,7 @@ Rust edition 2024, native async traits and workspace dependency versions.
 | `wasm-boundary` | A crate that [compiles to WebAssembly](#what-compiles-to-webassembly) reaches `kafka-protocol`. |
 | `workspace-rules` | A crate builds with another edition than 2024, depends on `async-trait`, or names a dependency without `workspace = true`. |
 | `sans-io` | [Sans-IO code](#sans-io-code) is async, or it names a runtime, a socket, the file system, the system clock, the process or global randomness. |
-| `wrapped-errors` | An error type holds another error in a field that is not named `error`, or its `source()` returns something other than `None`. |
+| `wrapped-errors` | An error type holds another error in a field that is not named `error`, its `source()` returns something other than `None`, or it makes another error its source. |
 
 A check reads the names in the code, and not what the code does.
 The documentation of each check, in `xtask/src/`, says what it does not catch.

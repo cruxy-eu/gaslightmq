@@ -413,24 +413,41 @@ impl Environment {
 /// );
 /// # Ok::<(), ListenAddressError>(())
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 #[non_exhaustive]
 pub enum EnvironmentError {
     /// The environment has neither a proxy nor a broker.
+    #[error("environment {:?} has neither a proxy nor a broker", .name.as_str())]
     NoInstance { name: EnvironmentName },
     /// The proxy has no upstream, and the environment has no broker for it to stand in front of.
+    #[error(
+        "environment {:?} has a proxy without an upstream, and no broker for it to stand in front of",
+        .name.as_str()
+    )]
     ProxyWithoutBackend { name: EnvironmentName },
     /// The proxy has an upstream, and the environment has a broker too.
+    #[error(
+        "environment {:?} has a proxy with an upstream, and a broker too: a proxy stands in front of one of them",
+        .name.as_str()
+    )]
     TwoBackends { name: EnvironmentName },
     /// The environment has a broker and no proxy, and the broker has no listeners.
+    #[error("environment {:?} has a broker alone, and a broker alone needs listeners", .name.as_str())]
     BrokerWithoutListeners { name: EnvironmentName },
     /// The broker stands behind a proxy, and it has listeners of its own.
+    #[error("environment {:?} has a broker behind a proxy, so only the proxy has listeners", .name.as_str())]
     BrokerListensBehindProxy { name: EnvironmentName },
     /// The schema registry is the built-in one, and the environment has no broker.
+    #[error("environment {:?} has no broker, so its schema registry is the real one, with a URL", .name.as_str())]
     BuiltInRegistryWithoutBroker { name: EnvironmentName },
     /// The schema registry is a real one, and the environment has a broker.
+    #[error(
+        "environment {:?} has a broker, so its schema registry is the built-in one, with an address to listen on",
+        .name.as_str()
+    )]
     RealRegistryNextToBroker { name: EnvironmentName },
     /// The built-in schema registry would listen on a port of a Kafka listener.
+    #[error("environment {:?} has its schema registry and a Kafka listener both on {address}", .name.as_str())]
     RegistryAmongListeners {
         name: EnvironmentName,
         address: ListenAddress,
@@ -452,36 +469,6 @@ impl EnvironmentError {
         }
     }
 }
-
-impl fmt::Display for EnvironmentError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "environment {:?} has ", self.name().as_str())?;
-        match self {
-            Self::NoInstance { .. } => f.write_str("neither a proxy nor a broker"),
-            Self::ProxyWithoutBackend { .. } => {
-                f.write_str("a proxy without an upstream, and no broker for it to stand in front of")
-            }
-            Self::TwoBackends { .. } => {
-                f.write_str("a proxy with an upstream, and a broker too: a proxy stands in front of one of them")
-            }
-            Self::BrokerWithoutListeners { .. } => f.write_str("a broker alone, and a broker alone needs listeners"),
-            Self::BrokerListensBehindProxy { .. } => {
-                f.write_str("a broker behind a proxy, so only the proxy has listeners")
-            }
-            Self::BuiltInRegistryWithoutBroker { .. } => {
-                f.write_str("no broker, so its schema registry is the real one, with a URL")
-            }
-            Self::RealRegistryNextToBroker { .. } => {
-                f.write_str("a broker, so its schema registry is the built-in one, with an address to listen on")
-            }
-            Self::RegistryAmongListeners { address, .. } => {
-                write!(f, "its schema registry and a Kafka listener both on {address}")
-            }
-        }
-    }
-}
-
-impl std::error::Error for EnvironmentError {}
 
 #[cfg(test)]
 mod tests {

@@ -176,22 +176,13 @@ text_form!(Field, FieldError);
 /// assert_eq!(error, FieldError::Unknown { name: "client.name".to_owned() });
 /// assert_eq!(error.to_string(), "no field is named \"client.name\"");
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 #[non_exhaustive]
 pub enum FieldError {
     /// No field has this name.
+    #[error("no field is named {name:?}")]
     Unknown { name: String },
 }
-
-impl fmt::Display for FieldError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Unknown { name } => write!(f, "no field is named {name:?}"),
-        }
-    }
-}
-
-impl std::error::Error for FieldError {}
 
 /// Where the values of a field come from.
 ///
@@ -280,22 +271,13 @@ impl fmt::Display for FieldGroup {
 text_form!(FieldGroup, FieldGroupError);
 
 /// Why a text is not a [`FieldGroup`].
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 #[non_exhaustive]
 pub enum FieldGroupError {
     /// No group of fields has this name.
+    #[error("unknown field group: {name:?}")]
     Unknown { name: String },
 }
-
-impl fmt::Display for FieldGroupError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Unknown { name } => write!(f, "unknown field group: {name:?}"),
-        }
-    }
-}
-
-impl std::error::Error for FieldGroupError {}
 
 #[cfg(test)]
 mod tests {

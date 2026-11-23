@@ -89,31 +89,19 @@ text_form!(ServerAddress, ServerAddressError);
 ///     "server address \"kafka 1:9092\": host name \"kafka 1\" holds the character ' '"
 /// );
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 #[non_exhaustive]
 pub enum ServerAddressError {
     /// The text names a host and no port.
+    #[error("server address {input:?} has no port: write host:port")]
     MissingPort { input: String },
     /// The port is not a number between 1 and 65535.
+    #[error("server address {input:?} has a port that is no number between 1 and 65535")]
     InvalidPort { input: String },
     /// The part before the port is not a host.
+    #[error("server address {input:?}: {error}")]
     InvalidHost { input: String, error: HostNameError },
 }
-
-impl fmt::Display for ServerAddressError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::MissingPort { input } => write!(f, "server address {input:?} has no port: write host:port"),
-            Self::InvalidPort { input } => write!(
-                f,
-                "server address {input:?} has a port that is no number between 1 and 65535"
-            ),
-            Self::InvalidHost { input, error } => write!(f, "server address {input:?}: {error}"),
-        }
-    }
-}
-
-impl std::error::Error for ServerAddressError {}
 
 /// Where an instance listens: an IP address and a port, such as `0.0.0.0:9092`.
 ///
@@ -237,25 +225,13 @@ text_form!(ListenAddress, ListenAddressError);
 ///     "listen address \"localhost:9092\" is not an IP address and a port, such as 0.0.0.0:9092"
 /// );
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 #[non_exhaustive]
 pub enum ListenAddressError {
     /// The text is not an IP address, a colon and a port.
+    #[error("listen address {input:?} is not an IP address and a port, such as 0.0.0.0:9092")]
     NotAnAddress { input: String },
 }
-
-impl fmt::Display for ListenAddressError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::NotAnAddress { input } => write!(
-                f,
-                "listen address {input:?} is not an IP address and a port, such as 0.0.0.0:9092"
-            ),
-        }
-    }
-}
-
-impl std::error::Error for ListenAddressError {}
 
 /// Splits `host:port` into the host and the port, at the last colon outside the brackets of an IPv6 address.
 pub(crate) fn split_port(text: &str) -> (&str, Option<&str>) {
