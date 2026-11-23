@@ -19,11 +19,12 @@ use gaslightmq_wire::Frame;
 /// use gaslightmq_listener::prelude::*;
 ///
 /// // Port 0 asks for any free port. The listener says which one it got.
-/// let mut configuration = ListenerConfiguration::new("127.0.0.1:0".parse()?, Endpoint::Bootstrap);
+/// let any_port = "127.0.0.1:0".parse().expect("an address");
+/// let mut configuration = ListenerConfiguration::new(any_port, Endpoint::Bootstrap);
 /// assert_eq!(configuration.socket_request_max_bytes.bytes(), 100 * 1024 * 1024);
 ///
 /// configuration.socket_request_max_bytes = FrameSizeLimit::new(1024 * 1024)?;
-/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// # Ok::<(), FrameSizeLimitError>(())
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]

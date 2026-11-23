@@ -118,7 +118,7 @@ pub struct Ended {
     pub endpoint: Endpoint,
     /// How many frames the connection carried.
     pub frames: usize,
-    pub why: ReceiveError,
+    pub why: ListenerError,
 }
 
 /// The connections of an [`Echo`] that ended, in the order they did.

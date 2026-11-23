@@ -1,6 +1,5 @@
 //! One endpoint on a socket: it accepts connections, and runs each one in a task of its own.
 
-use std::fmt;
 use std::io;
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -11,7 +10,7 @@ use tokio::sync::watch;
 use tokio::task::{JoinError, JoinHandle, JoinSet};
 use tracing::{debug, error, warn};
 
-use crate::{ConnectionHandler, ConnectionNumbers, ListenerConfiguration, Transport};
+use crate::{ConnectionHandler, ConnectionNumbers, ListenerConfiguration, ListenerError, Transport};
 
 /// One endpoint, open on a socket.
 ///
@@ -29,9 +28,9 @@ use crate::{ConnectionHandler, ConnectionNumbers, ListenerConfiguration, Transpo
 ///
 /// - The address refuses new connections.
 /// - Every [`Transport`] that is still open tells its handler so:
-///   its [`receive`](Transport::receive) returns [`ReceiveError::ListenerClosed`](crate::ReceiveError::ListenerClosed),
+///   its [`receive`](Transport::receive) returns [`ListenerError::ListenerClosed`](crate::ListenerError::ListenerClosed),
 ///   and a [`send`](Transport::send) that waits for its client gives up with
-///   [`SendError::ListenerClosed`](crate::SendError::ListenerClosed).
+///   [`ListenerError::ListenerClosed`](crate::ListenerError::ListenerClosed).
 ///   The handler decides what happens to the connection, and it usually closes it.
 ///
 /// Once [`close`](Self::close) returns, a new listener can [bind](Self::bind) to the address.
@@ -59,7 +58,7 @@ impl Listener {
     ///
     /// # Errors
     ///
-    /// [`ListenerError::Bind`] when the address cannot take a listener:
+    /// [`ListenerError::CannotListen`] when the address cannot take a listener:
     /// another socket holds the port, or the address is not one of this machine.
     pub async fn bind<H: ConnectionHandler>(
         configuration: ListenerConfiguration,
@@ -67,9 +66,9 @@ impl Listener {
         handler: H,
     ) -> Result<Self, ListenerError> {
         let requested = configuration.address;
-        let failed = |error| ListenerError::Bind {
+        let failed = |error: io::Error| ListenerError::CannotListen {
             address: requested,
-            error,
+            reason: error.to_string(),
         };
         let socket = TcpListener::bind(requested).await.map_err(failed)?;
         let address = socket.local_addr().map_err(failed)?;
@@ -237,29 +236,8 @@ fn report(endpoint: Endpoint, ended: Result<(), JoinError>) {
     }
 }
 
-/// Why a [`Listener`] could not open its endpoint.
-#[derive(Debug)]
-#[non_exhaustive]
-pub enum ListenerError {
-    /// The address cannot take a listener: another socket holds the port, or the address is not one of this machine.
-    Bind { address: SocketAddr, error: io::Error },
-}
-
-impl fmt::Display for ListenerError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Bind { address, error } => write!(f, "cannot listen on {address}: {error}"),
-        }
-    }
-}
-
-/// The message is complete, so the error has no source.
-impl std::error::Error for ListenerError {}
-
 #[cfg(test)]
 mod tests {
-    use std::error::Error;
-
     use super::*;
 
     #[test]
@@ -301,16 +279,5 @@ mod tests {
         let error = io::Error::other("something new");
 
         assert_eq!(AcceptFailure::of(&error), AcceptFailure::OfTheListener);
-    }
-
-    #[test]
-    fn a_listener_error_names_the_address_and_the_cause_once() {
-        let error = ListenerError::Bind {
-            address: "127.0.0.1:9092".parse().unwrap(),
-            error: io::Error::new(io::ErrorKind::AddrInUse, "address in use"),
-        };
-
-        assert_eq!(error.to_string(), "cannot listen on 127.0.0.1:9092: address in use");
-        assert!(error.source().is_none());
     }
 }

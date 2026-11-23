@@ -1,16 +1,13 @@
 //! The connection of one client, as its handler holds it.
 
-use std::fmt;
-use std::io;
-
 use gaslightmq_clock::Duration;
 use gaslightmq_field::{ClientAddress, ConnectionNumber, Endpoint};
-use gaslightmq_wire::{Frame, FrameDecoder, WireError};
+use gaslightmq_wire::{Frame, FrameDecoder};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 
-use crate::ListenerConfiguration;
 use crate::listener::ListenerClosing;
+use crate::{ListenerConfiguration, ListenerError};
 
 /// The connection of one client: it reads the client's bytes, and writes the bytes the client receives.
 ///
@@ -33,10 +30,10 @@ use crate::listener::ListenerClosing;
 ///
 /// | Who ends it | How | The other side |
 /// |---|---|---|
-/// | The client | It closes its socket. | [`receive`](Self::receive) returns [`ReceiveError::ClientClosed`]. |
+/// | The client | It closes its socket. | [`receive`](Self::receive) returns [`ListenerError::ClientClosed`]. |
 /// | The handler | It calls [`close`](Self::close). | The client reads everything that was sent, and then the end of the connection. |
 /// | The handler | It lets go of the transport. | The connection is gone at once, and the client may lose bytes that were on their way. |
-/// | The listener | Someone [closes](crate::Listener::close) it. | [`receive`](Self::receive) returns [`ReceiveError::ListenerClosed`], and the handler closes the transport or lets go of it. |
+/// | The listener | Someone [closes](crate::Listener::close) it. | [`receive`](Self::receive) returns [`ListenerError::ListenerClosed`], and the handler closes the transport or lets go of it. |
 ///
 /// # After the listener closed
 ///
@@ -101,29 +98,40 @@ impl Transport {
     ///
     /// # Errors
     ///
-    /// A [`ReceiveError`] when no further frame comes. It says why.
+    /// A [`ListenerError`] when no further frame comes. It says why:
+    /// [`ClientClosed`](ListenerError::ClientClosed), [`FrameCutShort`](ListenerError::FrameCutShort),
+    /// [`NotAFrame`](ListenerError::NotAFrame), [`ConnectionLost`](ListenerError::ConnectionLost)
+    /// or [`ListenerClosed`](ListenerError::ListenerClosed).
     /// The transport has no frame after that, and every later call returns an error again.
-    pub async fn receive(&mut self) -> Result<Frame, ReceiveError> {
+    pub async fn receive(&mut self) -> Result<Frame, ListenerError> {
         loop {
             match self.frames.next_frame() {
                 Ok(Some(frame)) => return Ok(frame),
                 Ok(None) => {}
-                Err(error) => return Err(ReceiveError::NotAFrame { error }),
+                Err(error) => {
+                    return Err(ListenerError::NotAFrame {
+                        reason: error.to_string(),
+                    });
+                }
             }
             let read = tokio::select! {
                 biased;
-                () = self.listener.closed() => return Err(ReceiveError::ListenerClosed),
+                () = self.listener.closed() => return Err(ListenerError::ListenerClosed),
                 read = self.stream.read_buf(self.frames.buffer_mut()) => read,
             };
             match read {
                 Ok(0) => {
                     return Err(match self.frames.buffered() {
-                        0 => ReceiveError::ClientClosed,
-                        buffered => ReceiveError::FrameCutShort { buffered },
+                        0 => ListenerError::ClientClosed,
+                        buffered => ListenerError::FrameCutShort { buffered },
                     });
                 }
                 Ok(_) => {}
-                Err(error) => return Err(ReceiveError::ConnectionLost { error }),
+                Err(error) => {
+                    return Err(ListenerError::ConnectionLost {
+                        reason: error.to_string(),
+                    });
+                }
             }
         }
     }
@@ -139,14 +147,16 @@ impl Transport {
     ///
     /// # Errors
     ///
-    /// [`SendError::ConnectionLost`] when the connection does not take the bytes.
-    /// [`SendError::ListenerClosed`] when the listener closed before the client took them all.
+    /// [`ListenerError::ConnectionLost`] when the connection does not take the bytes.
+    /// [`ListenerError::ListenerClosed`] when the listener closed before the client took them all.
     /// After either, a part of the bytes may be written, and the connection is of no use for sending.
-    pub async fn send(&mut self, bytes: &[u8]) -> Result<(), SendError> {
+    pub async fn send(&mut self, bytes: &[u8]) -> Result<(), ListenerError> {
         tokio::select! {
             biased;
-            written = self.stream.write_all(bytes) => written.map_err(|error| SendError::ConnectionLost { error }),
-            () = self.listener.closed() => Err(SendError::ListenerClosed),
+            written = self.stream.write_all(bytes) => written.map_err(|error| ListenerError::ConnectionLost {
+                reason: error.to_string(),
+            }),
+            () = self.listener.closed() => Err(ListenerError::ListenerClosed),
         }
     }
 
@@ -175,118 +185,5 @@ impl Transport {
         };
         // A client that keeps its side open is cut off when the time is over.
         let _ = tokio::time::timeout(self.close_timeout, client_closed).await;
-    }
-}
-
-/// Why a [`Transport`] has no next frame.
-///
-/// A handler decides for every reason who ended the connection, so the list is complete:
-/// a new reason is a new decision for every handler.
-#[derive(Debug)]
-pub enum ReceiveError {
-    /// The client closed the connection after a whole frame, or before its first one.
-    ClientClosed,
-    /// The client closed the connection inside a frame. `buffered` bytes of that frame arrived.
-    FrameCutShort { buffered: usize },
-    /// The bytes of the client are no frame: they announce a frame of no bytes, or one over the limit of the listener.
-    /// Nothing says where the next frame starts, so the connection is of no use.
-    NotAFrame { error: WireError },
-    /// The connection broke while the transport read from it.
-    ConnectionLost { error: io::Error },
-    /// The listener that accepted the connection closed.
-    ListenerClosed,
-}
-
-impl fmt::Display for ReceiveError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::ClientClosed => f.write_str("the client closed the connection"),
-            Self::FrameCutShort { buffered } => {
-                write!(f, "the client closed the connection {buffered} bytes into a frame")
-            }
-            Self::NotAFrame { error } => write!(f, "the bytes of the client are no frame: {error}"),
-            Self::ConnectionLost { error } => write!(f, "the connection broke while reading from the client: {error}"),
-            Self::ListenerClosed => f.write_str("the listener of the connection closed"),
-        }
-    }
-}
-
-/// The message is complete, so the error has no source.
-impl std::error::Error for ReceiveError {}
-
-/// Why a [`Transport`] could not write to its client.
-#[derive(Debug)]
-#[non_exhaustive]
-pub enum SendError {
-    /// The connection broke, or the client closed it, so it takes no bytes.
-    ConnectionLost { error: io::Error },
-    /// The listener that accepted the connection closed while the client did not take the bytes.
-    ListenerClosed,
-}
-
-impl fmt::Display for SendError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::ConnectionLost { error } => write!(f, "the connection broke while writing to the client: {error}"),
-            Self::ListenerClosed => {
-                f.write_str("the listener of the connection closed before the client took the bytes")
-            }
-        }
-    }
-}
-
-/// The message is complete, so the error has no source.
-impl std::error::Error for SendError {}
-
-#[cfg(test)]
-mod tests {
-    use std::error::Error;
-
-    use super::*;
-
-    #[test]
-    fn a_receive_error_says_everything_in_one_message() {
-        let errors = [
-            (ReceiveError::ClientClosed, "the client closed the connection"),
-            (
-                ReceiveError::FrameCutShort { buffered: 6 },
-                "the client closed the connection 6 bytes into a frame",
-            ),
-            (
-                ReceiveError::NotAFrame {
-                    error: WireError::FrameTooLarge { len: 9, max: 8 },
-                },
-                "the bytes of the client are no frame: frame of 9 bytes exceeds the limit of 8",
-            ),
-            (
-                ReceiveError::ConnectionLost {
-                    error: io::Error::new(io::ErrorKind::ConnectionReset, "reset by peer"),
-                },
-                "the connection broke while reading from the client: reset by peer",
-            ),
-            (ReceiveError::ListenerClosed, "the listener of the connection closed"),
-        ];
-
-        for (error, message) in errors {
-            assert_eq!(error.to_string(), message);
-            assert!(error.source().is_none(), "{error}");
-        }
-    }
-
-    #[test]
-    fn a_send_error_says_everything_in_one_message() {
-        let error = SendError::ConnectionLost {
-            error: io::Error::new(io::ErrorKind::BrokenPipe, "broken pipe"),
-        };
-
-        assert_eq!(
-            error.to_string(),
-            "the connection broke while writing to the client: broken pipe"
-        );
-        assert!(error.source().is_none());
-        assert_eq!(
-            SendError::ListenerClosed.to_string(),
-            "the listener of the connection closed before the client took the bytes"
-        );
     }
 }
