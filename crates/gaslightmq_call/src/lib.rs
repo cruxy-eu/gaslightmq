@@ -113,7 +113,7 @@
 //! |---|---|---|
 //! | [`CallNumber`] | [`CallNumberError`] | The number is zero, or the text is no number. |
 //! | [`CallId`] | [`CallIdError`] | The text is not a connection and a call number. |
-//! | [`RecordedRuleName`] | [`RecordedRuleNameError`] | The text is empty. |
+//! | [`RecordedRuleName`] | [`RecordedRuleNameError`] | The text breaks a part of the [rule for names](RecordedRuleName#the-rule-for-names). |
 //! | [`TriggerDecision`] | [`TriggerDecisionError`] | No decision has that name. |
 //! | [`DieCheck`] | [`DieCheckError`] | The roll or the chance is more parts per million than it can be. |
 //! | [`WindowCheck`] | [`WindowCheckError`] | The window is never open. |

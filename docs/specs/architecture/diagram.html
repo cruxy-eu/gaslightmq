@@ -383,7 +383,7 @@ const CRATES = [
   ["hardware_push2","Control","sans",1,7,"The Push 2 mapping: controller messages to surface intents, and rule state back to pad colours.",["surface"]],
 
   ["workspace","Workspace","sans",0,5,"The whole set of definitions as one model: cross-reference validation, cascading renames and the YAML layout. A reading error names the path of the key that failed. Works on file contents, not on files.",["selector","lie","incident","rule","scenario","surface","world","environment"]],
-  ["environment","Workspace","sans",1,3,"Environments, secret references, and the order in which flags, variables and files set a value. It never reads a secret.",["kernel"]],
+  ["environment","Workspace","sans",1,3,"Environments, secret references, and the order in which flags, variables and files set a value. It never reads a secret.",["kernel","resource"]],
 
   ["scenario","Scenarios","sans",1,5,"The scenario definition, modes as priority orders, the step machine of a Sequence, the live set and capture. Consumes call records, journal entries and time; emits arm and disarm commands.",["rule","trigger","call","journal","incident","clock"]],
 
@@ -405,8 +405,8 @@ const CRATES = [
   ["pipeline","Session and pipeline","sans",0,2,"The request pipeline as a state machine: all stages, both evaluation passes and partial refusals. handle(input, now) -> outputs. Also the topics a proxy knows by ID, which its sessions share.",["wire","wire_edit","selector","rule","trigger","lie","lie_api","combine","session","call","incident","field","kernel","clock"]],
   ["session","Session and pipeline","sans",0,2,"The state of one session, which its pipeline owns: lifecycle, identity, session key, per-session counters, in-flight calls, response ordering and the stalled state. Also the client context that sessions share.",["field","kernel","call","wire","trigger","clock"]],
 
-  ["rule","Targeting and injection","sans",1,1,"The rule definition, the preset, the rule's state, and the immutable snapshot of armed rules in priority order. The snapshot evaluates a call: for each pass and each matching rule, the target, what the trigger rolled, and the lie or the incidents it fired.",["selector","lie","incident","trigger","field","kernel","clock"]],
-  ["selector","Targeting and injection","sans",1,1,"Conditions, selectors, includes and scope. The set of selectors, which resolves includes into effective selectors. Matching against a FieldSource, with the target a match yields and the evaluation pass that decides it. An index of selectors by API.",["field","kernel"]],
+  ["rule","Targeting and injection","sans",1,1,"The rule definition, the preset, the rule's state, and the immutable snapshot of armed rules in priority order. The snapshot evaluates a call: for each pass and each matching rule, the target, what the trigger rolled, and the lie or the incidents it fired.",["selector","lie","incident","trigger","field","kernel","resource","clock"]],
+  ["selector","Targeting and injection","sans",1,1,"Conditions, selectors, includes and scope. The set of selectors, which resolves includes into effective selectors. Matching against a FieldSource, with the target a match yields and the evaluation pass that decides it. An index of selectors by API.",["field","kernel","resource"]],
   ["trigger","Targeting and injection","sans",1,1,"Triggers, counters, dice, budgets and lifetimes.",["clock"]],
   ["combine","Targeting and injection","sans",0,1,"How lies combine: which conflict, which win by priority, which are shadowed or pre-empted, across both evaluation passes. Also what the lies that apply do to the call at each stage: the refusals and rewrites per target, the summed delay and the maximum throttle.",["lie","field","clock"]],
   ["wire_edit","Targeting and injection","sans",0,2,"Surgery on requests and responses: remove partitions, merge responses, synthesize an error response for any API, map topic IDs to names. Also reads what a response says about each part of its request, and the error code of the response itself.",["wire","field","kernel"]],
@@ -418,12 +418,13 @@ const CRATES = [
   ["lie_config","Targeting and injection","sans",0,7,"Rewrites of DescribeConfigs responses.",["lie","lie_api","wire_edit"]],
 
   ["kernel","Vocabulary","sans",1,1,"The value objects of Kafka: topic names and IDs, partition numbers, offsets, positions such as orders.eu/3, broker IDs, epochs, the IDs of clients, groups and producers, and API keys and error codes with the names Kafka gives them. Each type only holds valid values.",[]],
+  ["resource","Vocabulary","sans",1,1,"The resource vocabulary: the name of a resource, and the one rule that every name follows. Each kind of resource has a name of its own that wraps it, so the name of a selector never stands where the name of a rule belongs. Internal: no crate that uses it shows its types.",[]],
   ["field","Vocabulary","sans",1,1,"The field vocabulary: field names, their typed values, and the FieldSource trait that a live call and a recorded call both implement. Also the parts of a call, and the target that a match yields. Every district of the town plan shares this vocabulary.",["kernel","clock"]],
   ["clock","Vocabulary","sans",1,1,"A Clock trait, the virtual clock, and instants that do not come from the system.",[]],
   ["wire","Vocabulary","sans",0,1,"The Kafka codec: frames, headers, lazily decoded bodies and record batches.",[]],
   ["lie","Vocabulary","sans",1,1,"The lie vocabulary: kind, stage, combination class and aspect, the definition of every lie kind as data, and a lie with the target it applies to. No behaviour.",["field","kernel","clock"]],
   ["incident","Vocabulary","sans",1,1,"The incident vocabulary, the expansion into consequences, and the support a backend declares for each kind of incident.",["kernel"]],
-  ["call","Vocabulary","sans",1,2,"The call record: identity, request summary, truth, delivered response, verdict, explanation and timing.",["field","lie","incident","kernel","clock"]],
+  ["call","Vocabulary","sans",1,2,"The call record: identity, request summary, truth, delivered response, verdict, explanation and timing.",["field","lie","incident","kernel","resource","clock"]],
 ].map(([name,layer,kind,wasm,step,holds,deps]) => ({name,layer,kind,wasm:!!wasm,step,holds,deps}));
 
 const STEPS = ["Rules evaluate against hand-written calls in tests.","The pipeline runs in tests, with partial refusals and explanations.","A proxy that lies.","The UI with live traffic, rules, pads and ⌘K.","Scenarios in files, recordings, and tests in CI.","The broker, alone and behind a proxy.","The remaining lies, hardware and transactions."];

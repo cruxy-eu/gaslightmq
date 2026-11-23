@@ -29,6 +29,12 @@ The workspace's own checks are tooling, and not product code: they live in `xtas
   because it keeps a heavy dependency away from the rest,
   or because its types travel to the UI, so it must compile to WebAssembly without the Kafka codec.
   Code that always changes together stays in one crate.
+- **An internal crate stays inside the crates that use it.**
+  Some crates only hold what other crates share, such as the one rule that every name follows.
+  Such a crate is internal, and its types are a detail of the crates that use it.
+  A crate that uses one offers types of its own: a selector has a `SelectorName` with a `SelectorNameError`.
+  Nothing it offers and nothing it documents names the internal crate or one of its types.
+  See [internal crates](#internal-crates).
 - **Dependencies follow the town plan.**
   Vocabulary crates depend only on other vocabulary crates.
   Logic crates depend on vocabulary.
@@ -124,6 +130,7 @@ Rust edition 2024, native async traits and workspace dependency versions.
 | `workspace-rules` | A crate builds with another edition than 2024, depends on `async-trait`, or names a dependency without `workspace = true`. |
 | `sans-io` | [Sans-IO code](#sans-io-code) is async, or it names a runtime, a socket, the file system, the system clock, the process or global randomness. |
 | `wrapped-errors` | An error type holds another error in a field that is not named `error`, its `source()` returns something other than `None`, or it makes another error its source. |
+| `internal-crates` | A crate names an [internal crate](#internal-crates) it depends on, or one of its types, in something that other crates see or in a doc comment. |
 
 A check reads the names in the code, and not what the code does.
 The documentation of each check, in `xtask/src/`, says what it does not catch.
@@ -148,11 +155,28 @@ A module that holds the types it works on, such as a configuration or an error, 
 One sans-IO crate has an async signature: [`backend`](#the-backend-seam).
 The check lets its trait declare async functions, and no other async code.
 
+### Internal crates
+
+A crate declares itself internal in its `Cargo.toml`:
+
+```toml
+[package.metadata.gaslightmq]
+internal = true
+```
+
+Its row says "This crate is internal".
+The `internal-crates` check reads the name of the crate and of every type it exports,
+and then every crate that depends on it.
+In such a crate, only private code names them: a private `use`, a private field and the body of a function.
+A public function, field, type alias or trait does not name them,
+and neither does an implementation of a trait or a re-export.
+No doc comment names them either, and no example in one.
+
 ## Layers
 
 ```mermaid
 flowchart BT
-  V["Vocabulary<br/>kernel · field · clock · wire · lie · incident · call"]
+  V["Vocabulary<br/>kernel · resource · field · clock · wire · lie · incident · call"]
   T["Targeting and injection<br/>selector · trigger · rule · combine · wire_edit · lie_*"]
   P["Session and pipeline<br/>session · pipeline"]
   S["Scenarios<br/>scenario"]
@@ -202,20 +226,21 @@ Every other crate speaks in them.
 | Crate | Holds | Depends on |
 |---|---|---|
 | `kernel` | The value objects of Kafka: topic names and IDs, partition numbers, offsets, positions such as `orders.eu/3`, broker IDs, epochs, the IDs of clients, groups and producers, and API keys and error codes with the names Kafka gives them. Each type only holds valid values. | — |
+| `resource` | The [resource](control-plane.md#resources) vocabulary: the name of a resource, and the one rule that every name follows, which is the rule of the [name of a rule](../domains/rules.md#rule). Each kind of resource has a name of its own that wraps it, so the name of a selector never stands where the name of a rule belongs. This crate is [internal](#internal-crates). | — |
 | `field` | The [field vocabulary](../domains/targeting.md#fields): field names, their typed values, and the `FieldSource` trait that a live call and a recorded call both implement. Also the parts of a call, and the [target](../domains/lies-and-incidents.md#target) that a match yields. Every district of the town plan [shares this vocabulary](../townplan/README.md#targeting-is-a-shared-kernel). | `kernel`, `clock` |
 | `clock` | The [clock](README.md#clock): a `Clock` trait, the virtual clock, and instants that do not come from the system. | — |
 | `wire` | The Kafka codec: frames, headers, lazily decoded bodies and record batches. | — |
 | `lie` | The [lie](../domains/lies-and-incidents.md#lies) vocabulary: kind, stage, combination class, aspect and priority, the definition of every lie kind as data, and a lie with the [target](../domains/lies-and-incidents.md#target) it applies to. It holds no behaviour. See [lies as crates](#lies-as-crates). | `field`, `kernel`, `clock` |
 | `incident` | The [incident](../domains/lies-and-incidents.md#incidents) vocabulary, the expansion into consequences, and the support a backend declares for each kind of incident. | `kernel` |
-| `call` | The [call](../domains/observation.md#call) record: identity, request summary, truth, delivered response, verdict, explanation and timing. | `field`, `lie`, `incident`, `kernel`, `clock` |
+| `call` | The [call](../domains/observation.md#call) record: identity, request summary, truth, delivered response, verdict, explanation and timing. | `field`, `lie`, `incident`, `kernel`, `resource`, `clock` |
 
 ### Targeting and injection
 
 | Crate | Holds | Depends on |
 |---|---|---|
-| `selector` | Conditions, selectors, includes and scope. The set of selectors, which resolves includes into effective selectors. Matching against a `FieldSource`, with the [target](../domains/lies-and-incidents.md#target) a match yields and the evaluation pass that decides it. An index of selectors by API. | `field`, `kernel` |
+| `selector` | Conditions, selectors, includes and scope. The set of selectors, which resolves includes into effective selectors. Matching against a `FieldSource`, with the [target](../domains/lies-and-incidents.md#target) a match yields and the evaluation pass that decides it. An index of selectors by API. | `field`, `kernel`, `resource` |
 | `trigger` | [Triggers](../domains/rules.md#trigger), counters, dice, budgets and lifetimes. | `clock` |
-| `rule` | The rule definition, the [preset](../domains/lies-and-incidents.md#presets), the rule's state, and the immutable snapshot of armed rules in priority order. The snapshot [evaluates a call](../domains/rules.md#evaluating-one-call): for each pass and each matching rule, the target, what the trigger rolled, and the lie or the incidents it fired. | `selector`, `lie`, `incident`, `trigger`, `field`, `kernel`, `clock` |
+| `rule` | The rule definition, the [preset](../domains/lies-and-incidents.md#presets), the rule's state, and the immutable snapshot of armed rules in priority order. The snapshot [evaluates a call](../domains/rules.md#evaluating-one-call): for each pass and each matching rule, the target, what the trigger rolled, and the lie or the incidents it fired. | `selector`, `lie`, `incident`, `trigger`, `field`, `kernel`, `resource`, `clock` |
 | `combine` | [How lies combine](../domains/lies-and-incidents.md#how-lies-combine): which lies conflict, which win by priority, which are shadowed or pre-empted, across [both evaluation passes](request-pipeline.md#two-evaluation-passes). Also what the lies that apply do to the call at each stage: the refusals and rewrites per target, the summed delay and the maximum throttle. | `lie`, `field`, `clock` |
 | `wire_edit` | Surgery on requests and responses: remove partitions, merge responses, synthesize an error response for any API, map topic IDs to names. It also reads what a response says about each [part](../domains/lies-and-incidents.md#target) of its request, and the error code of the response itself. | `wire`, `field`, `kernel` |
 | `lie_api` | The contract between the pipeline and a lie kind: the `Lie` trait, and the effect that one lie asks the pipeline for. A lie gets the request decoded, with its parts named. Also the behaviour of timing, silence and hang-up. See [lies as crates](#lies-as-crates). | `lie`, `wire`, `wire_edit`, `field` |
@@ -269,7 +294,7 @@ Transactions arrive later as `sim_txn`, next to `sim_log` and `sim_group`.
 
 | Crate | Holds | Depends on |
 |---|---|---|
-| `environment` | [Environments](storage.md#environments), [secret references](storage.md#secrets), and the order in which flags, variables and files set a value. It never reads a secret. | `kernel` |
+| `environment` | [Environments](storage.md#environments), [secret references](storage.md#secrets), and the order in which flags, variables and files set a value. It never reads a secret. | `kernel`, `resource` |
 | `workspace` | The whole set of definitions as one model: cross-reference validation, renames that cascade, and the YAML layout of the [workspace](storage.md#workspace). A [reading error](storage.md#reading) names the path of the key that failed. It works on file contents, not on files. | `selector`, `lie`, `incident`, `rule`, `scenario`, `surface`, `world`, `environment` |
 | `workspace_fs` | Loading, watching and writing back, the scratch file, and reading the files that secret references name. This crate does IO. | `workspace` |
 
@@ -580,6 +605,7 @@ The UI therefore checks a value in a form with the engine's own types, and witho
 | Crate | The UI uses it to |
 |---|---|
 | `kernel` | Check and show topic names, partitions and offsets with the engine's own types. |
+| `resource` | Check a name while someone types it, through the name types of `selector`, `rule` and `environment`. The crate is internal, so the UI never names it. |
 | `field`, `selector` | Build and edit selector definitions. |
 | `lie`, `incident`, `trigger`, `rule`, `scenario` | Edit definitions with the engine's own types. |
 | `call`, `journal` | Render verdicts, explanations and the history of a rule. |
@@ -686,7 +712,7 @@ The crates arrive in the order the [first version](../README.md#first-version) n
 
 | Step | Crates | Result |
 |---|---|---|
-| 1 | `kernel`, `field`, `clock`, `wire`, `selector`, `lie`, `incident`, `trigger`, `rule`, `combine` | Rules evaluate against hand-written calls in tests. |
+| 1 | `kernel`, `resource`, `field`, `clock`, `wire`, `selector`, `lie`, `incident`, `trigger`, `rule`, `combine` | Rules evaluate against hand-written calls in tests. |
 | 2 | `wire_edit`, `lie_api`, `lie_refusal`, `session`, `call`, `pipeline` | The pipeline runs in tests, with partial refusals and explanations. |
 | 3 | `environment`, `backend`, `overlay`, `backend_upstream`, `listener`, `engine` | A proxy that lies. |
 | 4 | `host`, `control_api`, `control_server`, `control_client`, `traffic`, `index`, `surface`, `quick_inject`, `ui` | The UI with live traffic, rules, pads and ⌘K. |

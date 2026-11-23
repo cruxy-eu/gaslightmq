@@ -132,7 +132,7 @@
 //! | Type | Error | What is wrong |
 //! |---|---|---|
 //! | [`Glob`] | [`GlobError`] | The pattern is empty. |
-//! | [`SelectorName`] | [`SelectorNameError`] | The text breaks a part of the rule for names. |
+//! | [`SelectorName`] | [`SelectorNameError`] | The text breaks a part of the [rule for names](SelectorName#the-rule-for-names). |
 //! | [`Operator`] | [`OperatorError`] | No operator has this name. |
 //! | [`ValueSet`] | [`ValueSetError`] | There is no value, the values belong to different fields, or a list holds a pattern. |
 //! | [`Condition`] | [`ConditionError`] | The text is not a value of the field. |

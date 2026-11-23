@@ -1,45 +1,50 @@
 use std::borrow::Borrow;
 use std::fmt;
 use std::str::FromStr;
-use std::sync::Arc;
 
-use gaslightmq_selector::{SelectorName, SelectorNameError};
+use gaslightmq_resource::{ResourceName, ResourceNameError};
 use gaslightmq_trigger::DiceKey;
 
-/// Define a name: text that something else references a definition by.
+/// Define a name: text that something else references a definition by, and its error.
+///
+/// The error has a variant for every part of the rule for names, and `what` is how its messages call the name.
 macro_rules! name {
     (
         $(#[$meta:meta])*
         $name:ident, $error:ident, $what:literal
     ) => {
         $(#[$meta])*
-        #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-        pub struct $name(Arc<str>);
+        #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+        pub struct $name(ResourceName);
 
         impl $name {
-            /// Checks the rule for names, which is [the one of selector names](SelectorName#the-rule-for-names).
+            /// Checks the rule for names.
             ///
             /// # Errors
             ///
-            /// The error of the name, which says which part of the rule the text breaks: the text is empty, starts or ends with white space,
-            /// or holds a control character or a format character.
+            /// The error of the name, which says which part of the rule the text breaks: the text is empty,
+            /// starts or ends with white space, or holds a control character or a format character.
             pub fn new(name: impl AsRef<str>) -> Result<Self, $error> {
-                let name = name.as_ref();
-                // A selector name has the one rule for names, and its error has a variant for every part of it.
-                match SelectorName::check(name) {
-                    Ok(()) => Ok(Self(name.into())),
-                    Err(SelectorNameError::Empty) => Err($error::Empty),
-                    Err(SelectorNameError::SurroundingWhiteSpace { input }) => {
+                match ResourceName::new(name) {
+                    Ok(name) => Ok(Self(name)),
+                    Err(ResourceNameError::Empty) => Err($error::Empty),
+                    Err(ResourceNameError::SurroundingWhiteSpace { input }) => {
                         Err($error::SurroundingWhiteSpace { input })
                     }
-                    Err(SelectorNameError::ControlCharacter { input }) => Err($error::ControlCharacter { input }),
-                    Err(SelectorNameError::FormatCharacter { input }) => Err($error::FormatCharacter { input }),
+                    Err(ResourceNameError::ControlCharacter { input }) => Err($error::ControlCharacter { input }),
+                    Err(ResourceNameError::FormatCharacter { input }) => Err($error::FormatCharacter { input }),
                 }
             }
 
             /// The name as text.
             pub fn as_str(&self) -> &str {
-                &self.0
+                self.0.as_str()
+            }
+        }
+
+        impl fmt::Debug for $name {
+            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                f.debug_tuple(stringify!($name)).field(&self.as_str()).finish()
             }
         }
 
@@ -69,7 +74,7 @@ macro_rules! name {
 
         #[doc = concat!("Why a text is not a [`", stringify!($name), "`]: the part of the rule for names it breaks.")]
         ///
-        /// The variants are those of [`SelectorNameError`], because every name takes the same rule.
+        /// The rule has four parts, and the error has one variant for each.
         #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
         #[non_exhaustive]
         pub enum $error {
@@ -89,26 +94,26 @@ macro_rules! name {
 
         impl From<$name> for String {
             fn from(name: $name) -> Self {
-                name.as_str().to_owned()
+                name.0.into()
             }
         }
 
         impl fmt::Display for $name {
             fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-                f.pad(&self.0)
+                fmt::Display::fmt(&self.0, f)
             }
         }
 
         impl AsRef<str> for $name {
             fn as_ref(&self) -> &str {
-                &self.0
+                self.as_str()
             }
         }
 
         /// A map by name finds its entry with plain text.
         impl Borrow<str> for $name {
             fn borrow(&self) -> &str {
-                &self.0
+                self.as_str()
             }
         }
 
@@ -147,11 +152,13 @@ name! {
     /// A scenario, a step and a pad reference a rule by its name, and so does the explanation of a call.
     /// A name is unique among rules, and it is exact: `Stale metadata` and `stale metadata` are two names.
     ///
-    /// A name has at least one character.
+    /// # The rule for names
+    ///
+    /// A rule name has at least one character.
     /// It does not start or end with white space, and it holds no control character such as a line break.
     /// It holds no format character either, such as a zero-width space or a mark that turns the text direction:
     /// nobody sees those, so two names could look the same and still differ.
-    /// This is [the rule of selector names](SelectorName#the-rule-for-names), and one place checks it.
+    /// The names of presets and of selectors follow the same rule.
     ///
     /// ```
     /// use gaslightmq_rule::prelude::*;
@@ -175,9 +182,11 @@ name! {
     /// A rule references a preset by its name, and so do a pad grid column and a ⌘K suggestion.
     /// A name is unique among presets, and it is exact.
     ///
-    /// A name follows [the rule of selector names](SelectorName#the-rule-for-names), like the name of a rule.
-    /// It has at least one character, and it does not start or end with white space.
+    /// # The rule for names
+    ///
+    /// A preset name has at least one character, and it does not start or end with white space.
     /// It holds no control character such as a line break, and no format character such as a zero-width space.
+    /// The [name of a rule](RuleName#the-rule-for-names) follows the same rule.
     ///
     /// ```
     /// use gaslightmq_rule::prelude::*;
@@ -311,6 +320,15 @@ mod tests {
     #[test]
     fn a_name_pads_like_text() {
         assert_eq!(format!("{:>8}|", PresetName::new("Flap").unwrap()), "    Flap|");
+    }
+
+    #[test]
+    fn a_name_shows_as_its_text_when_debugging() {
+        assert_eq!(format!("{:?}", RuleName::new("Flap").unwrap()), "RuleName(\"Flap\")");
+        assert_eq!(
+            format!("{:?}", PresetName::new("Flap").unwrap()),
+            "PresetName(\"Flap\")"
+        );
     }
 
     #[test]

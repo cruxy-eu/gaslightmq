@@ -1,75 +1,18 @@
-use std::sync::Arc;
+use gaslightmq_resource::{ResourceName, ResourceNameError};
 
 use crate::text::kept_text;
 
-/// The part of the rule for names that a text breaks.
-enum Broken {
-    Empty,
-    SurroundingWhiteSpace,
-    ControlCharacter,
-    FormatCharacter,
-}
-
-/// Checks the rule for names, which every name of a workspace follows.
+/// Define a name: text that something else references a definition by, and its error.
 ///
-/// A name has at least one character.
-/// It does not start or end with white space, and it holds no control character and no format character.
-fn check(text: &str) -> Result<(), Broken> {
-    if text.is_empty() {
-        Err(Broken::Empty)
-    } else if text.trim() != text {
-        Err(Broken::SurroundingWhiteSpace)
-    } else if text.chars().any(char::is_control) {
-        Err(Broken::ControlCharacter)
-    } else if text.chars().any(is_format) {
-        Err(Broken::FormatCharacter)
-    } else {
-        Ok(())
-    }
-}
-
-/// Whether the character is a format character: one of the Unicode general category `Cf`, as of Unicode 16.0.
-///
-/// The standard library has no table of it, so the ranges stand here.
-/// The names of selectors, rules and presets take the same ranges, and a test holds the two tables together.
-const fn is_format(character: char) -> bool {
-    matches!(
-        character,
-        // The soft hyphen.
-        '\u{00AD}'
-        // The Arabic number signs, the Arabic letter mark and the end of ayah.
-        | '\u{0600}'..='\u{0605}' | '\u{061C}' | '\u{06DD}' | '\u{0890}'..='\u{0891}' | '\u{08E2}'
-        // The Syriac abbreviation mark and the Mongolian vowel separator.
-        | '\u{070F}' | '\u{180E}'
-        // The zero-width space, non-joiner and joiner, and the left-to-right and right-to-left marks.
-        | '\u{200B}'..='\u{200F}'
-        // The embeddings and overrides of the text direction.
-        | '\u{202A}'..='\u{202E}'
-        // The word joiner and the invisible operators.
-        | '\u{2060}'..='\u{2064}'
-        // The isolates of the text direction, and the deprecated format characters.
-        | '\u{2066}'..='\u{206F}'
-        // The byte order mark, which is also the zero-width no-break space.
-        | '\u{FEFF}'
-        // The interlinear annotation marks.
-        | '\u{FFF9}'..='\u{FFFB}'
-        // The Kaithi number signs, and the format controls of Egyptian hieroglyphs, of shorthand and of music.
-        | '\u{110BD}' | '\u{110CD}' | '\u{13430}'..='\u{1343F}' | '\u{1BCA0}'..='\u{1BCA3}'
-        | '\u{1D173}'..='\u{1D17A}'
-        // The language tag and the tag characters.
-        | '\u{E0001}' | '\u{E0020}'..='\u{E007F}'
-    )
-}
-
-/// Define a name: text that something else references a definition by.
+/// The error has a variant for every part of the rule for names, and `what` is how its messages call the name.
 macro_rules! name {
     (
         $(#[$meta:meta])*
         $name:ident, $error:ident, $what:literal
     ) => {
         $(#[$meta])*
-        #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-        pub struct $name(Arc<str>);
+        #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+        pub struct $name(ResourceName);
 
         impl $name {
             /// Checks the rule for names.
@@ -79,15 +22,21 @@ macro_rules! name {
             /// The error of the name, which says which part of the rule the text breaks:
             /// the text is empty, starts or ends with white space, or holds a control character or a format character.
             pub fn new(name: impl AsRef<str>) -> Result<Self, $error> {
-                let name = name.as_ref();
-                let input = || name.to_owned();
-                match check(name) {
-                    Ok(()) => Ok(Self(name.into())),
-                    Err(Broken::Empty) => Err($error::Empty),
-                    Err(Broken::SurroundingWhiteSpace) => Err($error::SurroundingWhiteSpace { input: input() }),
-                    Err(Broken::ControlCharacter) => Err($error::ControlCharacter { input: input() }),
-                    Err(Broken::FormatCharacter) => Err($error::FormatCharacter { input: input() }),
+                match ResourceName::new(name) {
+                    Ok(name) => Ok(Self(name)),
+                    Err(ResourceNameError::Empty) => Err($error::Empty),
+                    Err(ResourceNameError::SurroundingWhiteSpace { input }) => {
+                        Err($error::SurroundingWhiteSpace { input })
+                    }
+                    Err(ResourceNameError::ControlCharacter { input }) => Err($error::ControlCharacter { input }),
+                    Err(ResourceNameError::FormatCharacter { input }) => Err($error::FormatCharacter { input }),
                 }
+            }
+        }
+
+        impl std::fmt::Debug for $name {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                f.debug_tuple(stringify!($name)).field(&self.as_str()).finish()
             }
         }
 
@@ -239,6 +188,15 @@ mod tests {
             "world name \"orders\\u{2060}sim\" holds a format character"
         );
         assert_eq!(world(""), "world name \"\" is empty");
+    }
+
+    #[test]
+    fn a_name_shows_as_its_text_when_debugging() {
+        assert_eq!(
+            format!("{:?}", EnvironmentName::new("shop").unwrap()),
+            "EnvironmentName(\"shop\")"
+        );
+        assert_eq!(format!("{:?}", WorldName::new("shop").unwrap()), "WorldName(\"shop\")");
     }
 
     #[test]

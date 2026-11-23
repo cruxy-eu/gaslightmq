@@ -29,7 +29,7 @@
 //!
 //! | Type | Error | What is wrong |
 //! |---|---|---|
-//! | [`RuleName`], [`PresetName`] | [`RuleNameError`], [`PresetNameError`] | The text breaks a part of the rule for names. |
+//! | [`RuleName`], [`PresetName`] | [`RuleNameError`], [`PresetNameError`] | The text breaks a part of the [rule for names](RuleName#the-rule-for-names). |
 //! | [`RuleSet`] | [`RuleSetError`] | Two rules share a name, or no rule has that name. |
 //! | [`PresetSet`] | [`PresetSetError`] | Two presets share a name. |
 //! | [`RuleState`] | [`RuleStateError`] | No state has this name. |

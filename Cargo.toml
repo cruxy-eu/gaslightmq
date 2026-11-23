@@ -14,6 +14,7 @@ members = [
     "crates/gaslightmq_listener",
     "crates/gaslightmq_overlay",
     "crates/gaslightmq_pipeline",
+    "crates/gaslightmq_resource",
     "crates/gaslightmq_rule",
     "crates/gaslightmq_selector",
     "crates/gaslightmq_session",
@@ -44,6 +45,7 @@ gaslightmq_lie = { path = "crates/gaslightmq_lie" }
 gaslightmq_lie_api = { path = "crates/gaslightmq_lie_api" }
 gaslightmq_lie_refusal = { path = "crates/gaslightmq_lie_refusal" }
 gaslightmq_pipeline = { path = "crates/gaslightmq_pipeline" }
+gaslightmq_resource = { path = "crates/gaslightmq_resource" }
 gaslightmq_rule = { path = "crates/gaslightmq_rule" }
 gaslightmq_selector = { path = "crates/gaslightmq_selector" }
 gaslightmq_session = { path = "crates/gaslightmq_session" }

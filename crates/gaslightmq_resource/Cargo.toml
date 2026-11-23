@@ -1,0 +1,22 @@
+[package]
+name = "gaslightmq_resource"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lints]
+workspace = true
+
+# The types of this crate stay inside the crates that use it. The `internal-crates` check holds them to it.
+[package.metadata.gaslightmq]
+internal = true
+
+[features]
+serde = ["dep:serde"]
+
+[dependencies]
+serde = { workspace = true, optional = true }
+thiserror.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true
