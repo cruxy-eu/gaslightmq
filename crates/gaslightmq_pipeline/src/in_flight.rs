@@ -450,16 +450,16 @@ impl CallInFlight {
         }
     }
 
-    /// The backend answered at `now` with something that is no response, and `error` says why.
+    /// The backend answered at `now` with something that is no response, and `reason` says why.
     /// Stage 9 has nothing to run on: the call has no answer, and the client must not get what the backend sent.
     /// `None` when the call does not wait for the backend.
-    pub(crate) fn answered_unreadably(&mut self, error: String, now: Instant) -> Option<Settled> {
+    pub(crate) fn answered_unreadably(&mut self, reason: String, now: Instant) -> Option<Settled> {
         match std::mem::replace(&mut self.step, CallStep::Gone) {
             CallStep::AtBackend { withheld, .. } => {
                 self.at(self.timing.answered(now));
                 let forwarded_at = self.timing.forwarded_at().unwrap_or(now);
                 let latency = Latency::from(now.duration_since(forwarded_at));
-                self.failures.push(StageFailure::UnreadableAnswer { error });
+                self.failures.push(StageFailure::UnreadableAnswer { reason });
                 self.settled_fields = Some(self.fields.with_unread_truth(&withheld, latency));
                 self.rules.end_without_response_pass();
                 self.step = CallStep::AfterResponse(Delivery::Unanswerable);

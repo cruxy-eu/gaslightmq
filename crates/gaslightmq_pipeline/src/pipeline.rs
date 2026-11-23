@@ -105,10 +105,10 @@ impl Pipeline {
         match input {
             Input::ClientBytes(bytes) => self.receive(bytes, now, &mut outputs),
             Input::BackendAnswered { call, response } => self.backend_answered(call, response, now, &mut outputs),
-            Input::BackendAnswerUnreadable { call, error } => {
-                self.backend_answered_unreadably(call, error, now, &mut outputs);
+            Input::BackendAnswerUnreadable { call, reason } => {
+                self.backend_answered_unreadably(call, reason, now, &mut outputs);
             }
-            Input::BackendFailed { call, failure } => self.backend_failed(call, failure, now, &mut outputs),
+            Input::BackendFailed { call, reason } => self.backend_failed(call, reason, now, &mut outputs),
             Input::BackendClosed { reason } => {
                 let reason = StageFailure::BackendClosed { reason };
                 self.close(ClosedBy::Backend, None, Some(&reason), now, &mut outputs);
@@ -240,7 +240,7 @@ impl Pipeline {
 
     /// The backend answered a call with something that is no response.
     /// The call has no answer, and the proxy closes the connection once that would be at the head of the line.
-    fn backend_answered_unreadably(&mut self, call: CallId, error: String, now: Instant, outputs: &mut Outputs) {
+    fn backend_answered_unreadably(&mut self, call: CallId, reason: String, now: Instant, outputs: &mut Outputs) {
         if call.connection() != self.session.connection().number() {
             return;
         }
@@ -248,7 +248,7 @@ impl Pipeline {
         let Some(in_flight) = self.session.calls_mut().get_mut(number) else {
             return;
         };
-        let Some(settled) = in_flight.content_mut().answered_unreadably(error, now) else {
+        let Some(settled) = in_flight.content_mut().answered_unreadably(reason, now) else {
             return;
         };
         self.settled(number, settled, now, outputs);
@@ -258,12 +258,12 @@ impl Pipeline {
     /// The backend has no answer for a call of this connection, so the session ends.
     ///
     /// It ends whichever call the failure names: a Produce without a response has left by the time its failure arrives.
-    fn backend_failed(&mut self, call: CallId, failure: String, now: Instant, outputs: &mut Outputs) {
+    fn backend_failed(&mut self, call: CallId, reason: String, now: Instant, outputs: &mut Outputs) {
         if call.connection() != self.session.connection().number() {
             return;
         }
-        let reason = StageFailure::BackendFailed { call, failure };
-        self.close(ClosedBy::Backend, Some(call.number()), Some(&reason), now, outputs);
+        let failure = StageFailure::BackendFailed { call, reason };
+        self.close(ClosedBy::Backend, Some(call.number()), Some(&failure), now, outputs);
     }
 
     /// The wait of a call ended: its request or its answer joins the line.

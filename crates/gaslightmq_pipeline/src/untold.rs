@@ -104,11 +104,11 @@ pub(crate) enum StageFailure {
     #[error("the explanation is incomplete: {error}")]
     Unexplained { error: UnexplainedRule },
     /// The backend answered the call with something that it could not hand over as a response.
-    #[error("the backend answered with what is no response: {error}")]
-    UnreadableAnswer { error: String },
+    #[error("the backend answered with what is no response: {reason}")]
+    UnreadableAnswer { reason: String },
     /// The backend had no answer for `call`, so the session ended.
-    #[error("the backend has no answer for call {call}: {failure}")]
-    BackendFailed { call: CallId, failure: String },
+    #[error("the backend has no answer for call {call}: {reason}")]
+    BackendFailed { call: CallId, reason: String },
     /// The backend closed the session.
     #[error("the backend closed the session: {reason}")]
     BackendClosed { reason: String },
@@ -263,7 +263,7 @@ mod tests {
             ),
             (
                 StageFailure::UnreadableAnswer {
-                    error: "cannot decode response header: it is cut short at 3 bytes".to_owned(),
+                    reason: "cannot decode response header: it is cut short at 3 bytes".to_owned(),
                 },
                 "the backend answered with what is no response: \
                  cannot decode response header: it is cut short at 3 bytes",
@@ -271,7 +271,7 @@ mod tests {
             (
                 StageFailure::BackendFailed {
                     call: "#7.3".parse().unwrap(),
-                    failure: "the connection to the cluster ended before the answer arrived".to_owned(),
+                    reason: "the connection to the cluster ended before the answer arrived".to_owned(),
                 },
                 "the backend has no answer for call #7.3: the connection to the cluster ended before the answer arrived",
             ),
