@@ -92,6 +92,7 @@ The workspace's own checks are tooling, and not product code: they live in `xtas
   a connection is `ConnectionLost`, and the error is no `IoError`.
   What a library or the system said is text.
   The variant keeps it in a field, named `reason`.
+  Every field of an error has a name: a variant is `ConnectionLost { reason }`, and not `ConnectionLost(reason)`.
   A variant keeps the error of a crate of the workspace, in a field named `error`, in two cases.
   The error is the error of a part: a `TopicPartitionError` keeps the `PartitionNumberError` of its partition.
   Or the caller reads it: `Refused { error: ResponseError }` of `test_kafka` keeps the error that the broker answered,
@@ -153,6 +154,11 @@ Rust edition 2024, native async traits and workspace dependency versions.
 | `sans-io` | [Sans-IO code](#sans-io-code) is async, or it names a runtime, a socket, the file system, the system clock, the process or global randomness. |
 | `wrapped-errors` | An error type holds another error in a field that is not named `error`, its `source()` returns something other than `None`, or it makes another error its source. |
 | `internal-crates` | A crate names an [internal crate](#internal-crates) it depends on, or one of its types, in something that other crates see or in a doc comment. |
+| `dyn-errors` | Code, a test, a benchmark, an example or an example in a doc comment names `dyn Error`. |
+| `exhaustive-errors` | An error type, or a variant of one, is `#[non_exhaustive]`. |
+| `error-fields` | An error type has a field without a name, or its field `error` holds something else than an error of a crate of the workspace: an error of a library or of the system, or text. |
+| `error-messages` | The message that an error type derives leaves out its `error` or its `reason`, or writes it more than once. |
+| `error-conversions` | A `From` makes an error type from an error of a library or of the system. |
 
 A check reads the names in the code, and not what the code does.
 The documentation of each check, in `xtask/src/`, says what it does not catch.
