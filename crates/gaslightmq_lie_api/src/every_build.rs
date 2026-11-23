@@ -29,12 +29,12 @@ use crate::{Effect, Lie, LieError};
 ///
 /// // A late Heartbeat can expire the member, and cause a real rebalance.
 /// let late = TimingLie::new().with_delay(TimeSpan::from_secs(45)).at(Stage::BeforeForwarding);
-/// let heartbeat = Request::new(4, 7, Some("order-ingest"), &HeartbeatRequest::default())?;
-/// let request = EditableRequest::decode(&heartbeat, &TopicNames::new())?;
+/// let heartbeat = Request::new(4, 7, Some("order-ingest"), &HeartbeatRequest::default()).expect("a request");
+/// let request = EditableRequest::decode(&heartbeat, &TopicNames::new()).expect("a request that decodes");
 ///
 /// let effect = Timing.before_forwarding(&LieDefinition::from(late).on(Target::Call), &request)?;
 /// assert_eq!(effect.to_string(), "hold +45 s before forwarding");
-/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// # Ok::<(), LieError>(())
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub struct Timing;
@@ -86,12 +86,12 @@ impl Lie for Timing {
 /// use gaslightmq_wire::messages::HeartbeatRequest;
 /// use gaslightmq_wire_edit::prelude::*;
 ///
-/// let heartbeat = Request::new(4, 7, Some("order-ingest"), &HeartbeatRequest::default())?;
-/// let request = EditableRequest::decode(&heartbeat, &TopicNames::new())?;
+/// let heartbeat = Request::new(4, 7, Some("order-ingest"), &HeartbeatRequest::default()).expect("a request");
+/// let request = EditableRequest::decode(&heartbeat, &TopicNames::new()).expect("a request that decodes");
 ///
 /// let effect = Silence.before_forwarding(&LieDefinition::Silence.on(Target::Call), &request)?;
 /// assert_eq!(effect.instruction(), Instruction::Drop);
-/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// # Ok::<(), LieError>(())
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub struct Silence;
@@ -122,14 +122,14 @@ impl Lie for Silence {
 /// use gaslightmq_wire::messages::{HeartbeatRequest, HeartbeatResponse};
 /// use gaslightmq_wire_edit::prelude::*;
 ///
-/// let heartbeat = Request::new(4, 7, Some("order-ingest"), &HeartbeatRequest::default())?;
-/// let request = EditableRequest::decode(&heartbeat, &TopicNames::new())?;
-/// let truth = heartbeat.response(&HeartbeatResponse::default())?;
+/// let heartbeat = Request::new(4, 7, Some("order-ingest"), &HeartbeatRequest::default()).expect("a request");
+/// let request = EditableRequest::decode(&heartbeat, &TopicNames::new()).expect("a request that decodes");
+/// let truth = heartbeat.response(&HeartbeatResponse::default()).expect("a response");
 /// let late = LieDefinition::from(HangUpLie::new().at(Stage::AfterResponse)).on(Target::Call);
 ///
 /// let effect = HangUp.after_response(&late, &request, &truth)?;
 /// assert_eq!(effect.instruction(), Instruction::Close);
-/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// # Ok::<(), LieError>(())
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub struct HangUp;

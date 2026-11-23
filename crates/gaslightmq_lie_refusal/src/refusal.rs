@@ -1,9 +1,9 @@
 use gaslightmq_lie::prelude::*;
 use gaslightmq_lie_api::prelude::*;
-use gaslightmq_wire::{Api, Response};
+use gaslightmq_wire::Response;
 use gaslightmq_wire_edit::prelude::*;
 
-use crate::{RefusedRequest, RefusedRequestError};
+use crate::RefusedRequest;
 
 /// The behaviour of a refusal: the client is told that the request failed.
 ///
@@ -35,23 +35,23 @@ use crate::{RefusedRequest, RefusedRequestError};
 /// let lies = Lies::of_every_build().with(Refusal)?;
 ///
 /// // A rule refuses a Heartbeat, so the consumer believes that its group rebalances.
-/// let heartbeat = Request::new(4, 7, Some("analytics-etl"), &HeartbeatRequest::default())?;
-/// let request = EditableRequest::decode(&heartbeat, &TopicNames::new())?;
+/// let heartbeat = Request::new(4, 7, Some("analytics-etl"), &HeartbeatRequest::default()).expect("a request");
+/// let request = EditableRequest::decode(&heartbeat, &TopicNames::new()).expect("a request that decodes");
 /// let rebalance = LieDefinition::from(RefusalLie::new(ErrorCode::REBALANCE_IN_PROGRESS)).on(Target::Call);
 ///
 /// // The backend never sees the Heartbeat.
 /// let Effect::Answer(response) = lies.before_forwarding(&rebalance, &request)? else {
 ///     panic!("a refusal of the whole call answers it");
 /// };
-/// let body: HeartbeatResponse = response.body()?;
+/// let body: HeartbeatResponse = response.body().expect("a body that decodes");
 /// assert_eq!(ErrorCode::from_wire(body.error_code), Some(ErrorCode::REBALANCE_IN_PROGRESS));
-/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// # Ok::<(), LieError>(())
 /// ```
 ///
 /// # A refusal that cannot be told
 ///
 /// A refusal refuses exactly its target, or it fails and changes nothing.
-/// The behaviour returns the [`LieError`] of the contract, which keeps the reason of the [`RefusedRequestError`].
+/// The behaviour returns the [`LieError`] of the contract, as [`RefusedRequest`] does, and no other error.
 ///
 /// | What is wrong | The error |
 /// |---|---|
@@ -80,37 +80,6 @@ impl Refusal {
             });
         };
         RefusedRequest::new(request.clone(), lie.target(), refusal.error)
-            .map_err(|error| Self::untold(request.api(), error))
-    }
-
-    /// Why the refusal of a request of `api` could not be told, in the words of the contract.
-    fn untold(api: Api, error: RefusedRequestError) -> LieError {
-        let kind = LieKind::Refusal;
-        match error {
-            RefusedRequestError::PartsNotInRequest { api, parts } => LieError::PartsNotInRequest { kind, api, parts },
-            RefusedRequestError::NoPlaceForError { api } => LieError::NoPlaceForError { kind, api },
-            RefusedRequestError::SurgeryFailed { error } => match error {
-                EditableRequestError::UnreadableRequest { error, .. }
-                | EditableRequestError::UnreadableResponse { error, .. } => LieError::Unreadable { kind, error },
-                EditableRequestError::UnwritableRequest { error, .. }
-                | EditableRequestError::UnwritableResponse { error, .. } => LieError::Unwritable { kind, error },
-                EditableRequestError::ResponseOfAnotherCall {
-                    api,
-                    correlation_id,
-                    answered_api,
-                    answered_correlation_id,
-                } => LieError::ResponseOfAnotherCall {
-                    kind,
-                    api,
-                    correlation_id,
-                    answered_api,
-                    answered_correlation_id,
-                },
-                // A decoded request has messages, and a refused request rules out that nothing failed.
-                // Surgery has no other failure today.
-                _ => LieError::ApiNotSupported { kind, api },
-            },
-        }
     }
 }
 
@@ -123,9 +92,7 @@ impl Lie for Refusal {
     ///
     /// See [`RefusedRequest::before_forwarding`].
     fn before_forwarding(&self, lie: &TargetedLie, request: &EditableRequest) -> Result<Effect, LieError> {
-        Self::refused(lie, request)?
-            .before_forwarding()
-            .map_err(|error| Self::untold(request.api(), error))
+        Self::refused(lie, request)?.before_forwarding()
     }
 
     /// Asks to answer with the response in which everything the refusal targets failed.
@@ -142,6 +109,5 @@ impl Lie for Refusal {
         Self::refused(lie, request)?
             .after_response(response)
             .map(Effect::Answer)
-            .map_err(|error| Self::untold(request.api(), error))
     }
 }

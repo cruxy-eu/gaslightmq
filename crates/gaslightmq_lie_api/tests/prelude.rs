@@ -84,22 +84,20 @@ mod next_to_the_others {
     ///
     /// A message says everything, so no error has a source.
     pub fn every_error() -> Vec<String> {
-        let errors: Vec<Box<dyn std::error::Error>> = vec![
-            Box::new(LieError::NotRegistered { kind: LieKind::Refusal }),
-            Box::new(LieError::ApiNotSupported {
+        /// What an error says. A message says everything, so the error has no source.
+        fn message_of<E: std::error::Error>(error: E) -> String {
+            assert!(error.source().is_none(), "{error}");
+            error.to_string()
+        }
+
+        vec![
+            message_of(LieError::NotRegistered { kind: LieKind::Refusal }),
+            message_of(LieError::ApiNotSupported {
                 kind: LieKind::Topology,
                 api: Api::from_wire(0, 9),
             }),
-            Box::new(LiesError::KindTwice { kind: LieKind::Timing }),
-        ];
-
-        errors
-            .iter()
-            .map(|error| {
-                assert!(error.source().is_none(), "{error}");
-                error.to_string()
-            })
-            .collect()
+            message_of(LieError::KindTwice { kind: LieKind::Timing }),
+        ]
     }
 }
 

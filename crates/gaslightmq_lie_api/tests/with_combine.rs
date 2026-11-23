@@ -55,20 +55,25 @@ impl Refusal {
     }
 
     fn answer(request: &Request, body: &impl Encodable) -> Result<Effect, LieError> {
-        request.response(body).map(Effect::Answer).map_err(Self::unwritable)
+        request
+            .response(body)
+            .map(Effect::Answer)
+            .map_err(|error| Self::unwritable(&error))
     }
 
-    fn unreadable(error: gaslightmq_wire::WireError) -> LieError {
+    /// The reader of a message said `reason`.
+    fn unreadable(reason: &gaslightmq_wire::WireError) -> LieError {
         LieError::Unreadable {
             kind: LieKind::Refusal,
-            error,
+            reason: reason.to_string(),
         }
     }
 
-    fn unwritable(error: gaslightmq_wire::WireError) -> LieError {
+    /// The writer of a message said `reason`.
+    fn unwritable(reason: &gaslightmq_wire::WireError) -> LieError {
         LieError::Unwritable {
             kind: LieKind::Refusal,
-            error,
+            reason: reason.to_string(),
         }
     }
 
@@ -123,7 +128,7 @@ impl Lie for Refusal {
                 Self::answer(request, &HeartbeatResponse::default().with_error_code(error.value()))
             }
             Some(WireApiKey::Produce) => {
-                let asked: ProduceRequest = request.body().map_err(Self::unreadable)?;
+                let asked: ProduceRequest = request.body().map_err(|error| Self::unreadable(&error))?;
                 let mut left = asked.clone();
                 for topic in &mut left.topic_data {
                     let name = topic.name.clone();
@@ -144,7 +149,7 @@ impl Lie for Refusal {
                         &left,
                     )
                     .map(Effect::Forward)
-                    .map_err(Self::unwritable)
+                    .map_err(|error| Self::unwritable(&error))
                 }
             }
             _ => Err(LieError::ApiNotSupported {
@@ -167,8 +172,8 @@ impl Lie for Refusal {
                 Self::answer(request, &HeartbeatResponse::default().with_error_code(error.value()))
             }
             Some(WireApiKey::Produce) => {
-                let asked: ProduceRequest = request.body().map_err(Self::unreadable)?;
-                let answered: ProduceResponse = response.body().map_err(Self::unreadable)?;
+                let asked: ProduceRequest = request.body().map_err(|error| Self::unreadable(&error))?;
+                let answered: ProduceResponse = response.body().map_err(|error| Self::unreadable(&error))?;
                 Self::answer(request, &Self::refuse(&asked, answered, lie.target(), error))
             }
             _ => Err(LieError::ApiNotSupported {

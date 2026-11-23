@@ -65,29 +65,6 @@ mod next_to_the_others {
             after.error_code.to_string(),
         ]
     }
-
-    /// One error of every type of the prelude, each named without a path.
-    ///
-    /// A message says everything, so no error has a source.
-    pub fn every_error() -> Vec<String> {
-        let errors: Vec<Box<dyn std::error::Error>> = vec![
-            Box::new(RefusedRequestError::NoPlaceForError {
-                api: Api::from_wire(3, 9),
-            }),
-            Box::new(RefusedRequestError::PartsNotInRequest {
-                api: Api::from_wire(12, 4),
-                parts: PartSet::one("orders.eu/3".parse::<Part>().unwrap()),
-            }),
-        ];
-
-        errors
-            .iter()
-            .map(|error| {
-                assert!(error.source().is_none(), "{error}");
-                error.to_string()
-            })
-            .collect()
-    }
 }
 
 #[test]
@@ -95,17 +72,6 @@ fn the_prelude_names_every_item_next_to_the_other_preludes() {
     assert_eq!(
         next_to_the_others::every_item(),
         ["refusal", "call: REBALANCE_IN_PROGRESS", "answer Heartbeat v4", "27",]
-    );
-}
-
-#[test]
-fn the_prelude_names_the_error_of_every_type() {
-    assert_eq!(
-        next_to_the_others::every_error(),
-        [
-            "the response to this Metadata v9 request has no place for an error code",
-            "the Heartbeat v4 request does not name orders.eu/3",
-        ]
     );
 }
 
@@ -120,6 +86,6 @@ fn the_prelude_is_enough_to_register_the_refusal() {
     assert!(lies.tells(LieKind::Refusal));
     assert_eq!(
         lies.with(Refusal).unwrap_err(),
-        LiesError::KindTwice { kind: LieKind::Refusal }
+        LieError::KindTwice { kind: LieKind::Refusal }
     );
 }
