@@ -140,7 +140,10 @@ async fn an_unacknowledged_send_asks_for_no_response_and_the_next_response_answe
     assert_eq!(produce.acks, NO_ACKS);
     assert_eq!(produce.topic_data[0].name.as_str(), partition.topic().as_str());
     assert_eq!(written.index, i32::from(partition.partition()));
-    assert_eq!(batches[0].records, placed);
+    // The broker reads the values the client sent. A record that was decoded also has an offset and a timestamp.
+    let values_sent: Vec<_> = placed.iter().map(|record| &record.value).collect();
+    let values_read: Vec<_> = batches[0].records.iter().map(|record| &record.value).collect();
+    assert_eq!(values_read, values_sent);
     assert_eq!(beat, Ok(HeartbeatResponse::default()));
     Ok(())
 }
