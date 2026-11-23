@@ -6,7 +6,7 @@ use gaslightmq_call::{CallError, CallId, CallTimingError};
 use gaslightmq_lie_api::{Instruction, LieError};
 use gaslightmq_session::IdentityError;
 use gaslightmq_wire::{Api, WireError};
-use gaslightmq_wire_edit::{EditableRequestError, TopicNamesError};
+use gaslightmq_wire_edit::SurgeryError;
 
 use crate::explain::UnexplainedRule;
 
@@ -30,7 +30,7 @@ pub(crate) enum UntoldLie {
     /// The lie asked to forward a request that is not the request of this call.
     ForwardsAnotherCall { api: Api, correlation_id: i32 },
     /// What the lie left of the request does not decode.
-    UnreadableRemainder { error: EditableRequestError },
+    UnreadableRemainder { error: SurgeryError },
     /// The lie asked to send a response that does not answer the request of this call.
     AnswersAnotherCall { api: Api, correlation_id: i32 },
     /// The call has no response: a Produce with `acks=0`.
@@ -87,26 +87,26 @@ pub(crate) enum StageFailure {
     /// The header of the request names the client in a way the session cannot keep.
     Unidentified { error: IdentityError },
     /// The body of the request does not decode, so no rule saw the call.
-    UnreadableRequest { error: EditableRequestError },
+    UnreadableRequest { error: SurgeryError },
     /// The fields of the body do not decode.
     UnreadableRequestFields { api: Api, error: WireError },
     /// The response of the backend cannot carry the API and the correlation ID of the client's request.
     UnrestoredResponse { api: Api, error: WireError },
     /// The response of the backend cannot be read, so the rules saw no truth.
-    UnreadableTruth { error: EditableRequestError },
+    UnreadableTruth { error: SurgeryError },
     /// The topics that the response of the backend names with their ID cannot be read.
-    UnreadableTopicNames { error: TopicNamesError },
+    UnreadableTopicNames { error: SurgeryError },
     /// The member ID that the response of the backend gives the client cannot be read.
     UnreadableMemberId { api: Api, error: WireError },
     /// The response that the client received cannot be read, so the record shows no answer.
-    UnreadableDelivery { error: EditableRequestError },
+    UnreadableDelivery { error: SurgeryError },
     /// The answer should carry a throttle, and no surgery writes one yet.
     ThrottleUnwritten { millis: u64 },
     /// A lie changed the request that the backend got, and failed to make the response fit the client's request.
     /// The lie did act, so it stays told.
     UnmergedLie { rule: String, error: UntoldLie },
     /// A Produce whose body does not decode does not say its `acks`, so nothing says whether a response comes.
-    UnknownAcks { error: EditableRequestError },
+    UnknownAcks { error: SurgeryError },
     /// A moment of the call does not follow the one before it, so the timing of the record lacks it.
     Mistimed { error: CallTimingError },
     /// The fields of the call do not make a record, so the record only names its connection.
@@ -231,7 +231,7 @@ mod tests {
 
     #[test]
     fn a_stage_failure_names_what_failed_and_writes_the_cause_once() {
-        let unknown = EditableRequestError::UnknownApi {
+        let unknown = SurgeryError::UnknownApi {
             api: Api::from_wire(9999, 0),
         };
         let wrong_api = WireError::WrongApi {

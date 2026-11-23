@@ -332,7 +332,7 @@ pub enum OverlayError {
     /// The request without its fetch session does not encode.
     UnwritableRequest { api: Api, error: WireError },
     /// The overlay answers the request itself, and that answer cannot be written.
-    UnansweredRequest { api: Api, error: EditableRequestError },
+    UnansweredRequest { api: Api, error: SurgeryError },
     /// The body of the real cluster's response does not decode.
     UnreadableResponse { api: Api, error: WireError },
     /// The truth does not encode.

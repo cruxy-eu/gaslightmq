@@ -1,13 +1,12 @@
 use std::collections::BTreeSet;
-use std::fmt;
 use std::sync::Arc;
 
 use gaslightmq_field::prelude::*;
 use gaslightmq_kernel::prelude::*;
-use gaslightmq_wire::{Api, Request, Response, WireError};
+use gaslightmq_wire::{Api, Request, Response};
 
 use crate::body::{self, Body, Left, MergeFlaw, TopicKey, Verdict};
-use crate::{Failures, TopicNames};
+use crate::{Failures, SurgeryError, TopicNames};
 
 /// A request with its body decoded, ready for surgery.
 ///
@@ -38,10 +37,11 @@ use crate::{Failures, TopicNames};
 /// let orders = || StrBytes::from_static_str("orders.eu").into();
 /// let partition = |index| ListOffsetsPartition::default().with_partition_index(index);
 /// let topic = ListOffsetsTopic::default().with_name(orders()).with_partitions(vec![partition(3), partition(4)]);
-/// let request = Request::new(7, 42, Some("order-ingest"), &ListOffsetsRequest::default().with_topics(vec![topic]))?;
+/// let body = ListOffsetsRequest::default().with_topics(vec![topic]);
+/// let request = Request::new(7, 42, Some("order-ingest"), &body).expect("a request");
 ///
 /// let asked = EditableRequest::decode(&request, &TopicNames::new())?;
-/// let [three, four]: [Part; 2] = ["orders.eu/3".parse()?, "orders.eu/4".parse()?];
+/// let [three, four]: [Part; 2] = ["orders.eu/3".parse().expect("a part"), "orders.eu/4".parse().expect("a part")];
 /// assert_eq!(asked.parts(), [three.clone(), four.clone()]);
 ///
 /// // A lie refuses one of them, so the backend only sees the other.
@@ -53,7 +53,7 @@ use crate::{Failures, TopicNames};
 /// // The backend answers for that one.
 /// let end = ListOffsetsPartitionResponse::default().with_partition_index(4).with_offset(120);
 /// let answered = ListOffsetsTopicResponse::default().with_name(orders()).with_partitions(vec![end]);
-/// let truth = forwarded.response(&ListOffsetsResponse::default().with_topics(vec![answered]))?;
+/// let truth = forwarded.response(&ListOffsetsResponse::default().with_topics(vec![answered])).expect("a response");
 ///
 /// // The client gets one response for both partitions, in the order it asked for them.
 /// let failures = Failures::none().with_part(three.clone(), ErrorCode::NOT_LEADER_OR_FOLLOWER);
@@ -62,9 +62,9 @@ use crate::{Failures, TopicNames};
 ///     asked.parts_of(&delivered)?,
 ///     [PartFields::new(three).failed(ErrorCode::NOT_LEADER_OR_FOLLOWER), PartFields::new(four).succeeded()],
 /// );
-/// let body: ListOffsetsResponse = delivered.body()?;
+/// let body: ListOffsetsResponse = delivered.body().expect("a body that decodes");
 /// assert_eq!(body.topics[0].partitions[1].offset, 120);
-/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// # Ok::<(), SurgeryError>(())
 /// ```
 ///
 /// # Parts
@@ -93,13 +93,12 @@ impl EditableRequest {
     ///
     /// # Errors
     ///
-    /// [`EditableRequestError::UnknownApi`] when `gaslightmq_wire` has no messages for the API of the request,
-    /// and [`EditableRequestError::UnreadableRequest`] when the body does not decode.
-    pub fn decode(request: &Request, topics: &TopicNames) -> Result<Self, EditableRequestError> {
+    /// [`SurgeryError::UnknownApi`] when `gaslightmq_wire` has no messages for the API of the request,
+    /// and [`SurgeryError::UnreadableRequest`] when the body does not decode.
+    pub fn decode(request: &Request, topics: &TopicNames) -> Result<Self, SurgeryError> {
         let api = request.api();
-        let known = api.known().ok_or(EditableRequestError::UnknownApi { api })?;
-        let body =
-            body::decode(known, request).map_err(|error| EditableRequestError::UnreadableRequest { api, error })?;
+        let known = api.known().ok_or(SurgeryError::UnknownApi { api })?;
+        let body = body::decode(known, request).map_err(|error| SurgeryError::unreadable_request(api, &error))?;
 
         let mut by_id = TopicNames::new();
         let mut parts = Vec::new();
@@ -147,8 +146,8 @@ impl EditableRequest {
     ///
     /// # Errors
     ///
-    /// [`EditableRequestError::UnwritableRequest`] when what is left does not encode.
-    pub fn without<'a>(&self, parts: impl IntoIterator<Item = &'a Part>) -> Result<Remainder, EditableRequestError> {
+    /// [`SurgeryError::UnwritableRequest`] when what is left does not encode.
+    pub fn without<'a>(&self, parts: impl IntoIterator<Item = &'a Part>) -> Result<Remainder, SurgeryError> {
         let removed: BTreeSet<&Part> = parts.into_iter().collect();
         if !self.parts.iter().any(|part| removed.contains(part)) {
             return Ok(Remainder::Whole);
@@ -160,7 +159,7 @@ impl EditableRequest {
             Ok(Left::Everything) => Ok(Remainder::Whole),
             Ok(Left::Rest(rest)) => Ok(Remainder::Rest(rest)),
             Ok(Left::Nothing) => Ok(Remainder::Nothing),
-            Err(error) => Err(EditableRequestError::UnwritableRequest { api: self.api(), error }),
+            Err(error) => Err(SurgeryError::unwritable_request(self.api(), &error)),
         }
     }
 
@@ -181,17 +180,17 @@ impl EditableRequest {
     ///
     /// # Errors
     ///
-    /// [`EditableRequestError::NothingFailed`] when `failures` names nothing that the request asks,
-    /// and [`EditableRequestError::UnwritableResponse`] when the response does not encode.
-    pub fn error_response(&self, failures: &Failures) -> Result<Response, EditableRequestError> {
+    /// [`SurgeryError::NothingFailed`] when `failures` names nothing that the request asks,
+    /// and [`SurgeryError::UnwritableResponse`] when the response does not encode.
+    pub fn error_response(&self, failures: &Failures) -> Result<Response, SurgeryError> {
         if failures.of_call().is_none() && !self.fails_a_part(failures) {
-            return Err(EditableRequestError::NothingFailed { api: self.api() });
+            return Err(SurgeryError::NothingFailed { api: self.api() });
         }
         let part = |topic: TopicKey<'_>, partition: Option<i32>| self.error_code(failures, topic, partition);
         let call = ErrorCode::to_wire(failures.of_call());
         self.body
             .failed(&self.request, &Verdict::new(call, &part))
-            .map_err(|error| EditableRequestError::UnwritableResponse { api: self.api(), error })
+            .map_err(|error| SurgeryError::unwritable_response(self.api(), &error))
     }
 
     /// The response of the backend, with what `failures` names put into it.
@@ -207,10 +206,10 @@ impl EditableRequest {
     ///
     /// # Errors
     ///
-    /// [`EditableRequestError::ResponseOfAnotherCall`] when `truth` answers another request,
-    /// [`EditableRequestError::UnreadableResponse`] when its body does not decode,
-    /// and [`EditableRequestError::UnwritableResponse`] when the result does not encode.
-    pub fn merge(&self, truth: &Response, failures: &Failures) -> Result<Response, EditableRequestError> {
+    /// [`SurgeryError::ResponseOfAnotherCall`] when `truth` answers another request,
+    /// [`SurgeryError::UnreadableResponse`] when its body does not decode,
+    /// and [`SurgeryError::UnwritableResponse`] when the result does not encode.
+    pub fn merge(&self, truth: &Response, failures: &Failures) -> Result<Response, SurgeryError> {
         let api = self.api();
         self.check_answers(truth)?;
         if failures.of_call().is_some() {
@@ -223,8 +222,8 @@ impl EditableRequest {
         self.body
             .merged(&self.request, truth, &Verdict::new(0, &part))
             .map_err(|flaw| match flaw {
-                MergeFlaw::UnreadableResponse(error) => EditableRequestError::UnreadableResponse { api, error },
-                MergeFlaw::UnwritableResponse(error) => EditableRequestError::UnwritableResponse { api, error },
+                MergeFlaw::UnreadableResponse(error) => SurgeryError::unreadable_response(api, &error),
+                MergeFlaw::UnwritableResponse(error) => SurgeryError::unwritable_response(api, &error),
             })
     }
 
@@ -239,9 +238,9 @@ impl EditableRequest {
     ///
     /// # Errors
     ///
-    /// [`EditableRequestError::ResponseOfAnotherCall`] when `response` answers another request,
-    /// and [`EditableRequestError::UnreadableResponse`] when its body does not decode.
-    pub fn parts_of(&self, response: &Response) -> Result<Vec<PartFields>, EditableRequestError> {
+    /// [`SurgeryError::ResponseOfAnotherCall`] when `response` answers another request,
+    /// and [`SurgeryError::UnreadableResponse`] when its body does not decode.
+    pub fn parts_of(&self, response: &Response) -> Result<Vec<PartFields>, SurgeryError> {
         self.check_answers(response)?;
         let mut parts = Vec::new();
         self.body
@@ -254,7 +253,7 @@ impl EditableRequest {
                     });
                 }
             })
-            .map_err(|error| EditableRequestError::UnreadableResponse { api: self.api(), error })?;
+            .map_err(|error| SurgeryError::unreadable_response(self.api(), &error))?;
         Ok(parts)
     }
 
@@ -271,22 +270,22 @@ impl EditableRequest {
     ///
     /// # Errors
     ///
-    /// [`EditableRequestError::ResponseOfAnotherCall`] when `response` answers another request,
-    /// and [`EditableRequestError::UnreadableResponse`] when its body does not decode.
-    pub fn error_of(&self, response: &Response) -> Result<Option<ErrorCode>, EditableRequestError> {
+    /// [`SurgeryError::ResponseOfAnotherCall`] when `response` answers another request,
+    /// and [`SurgeryError::UnreadableResponse`] when its body does not decode.
+    pub fn error_of(&self, response: &Response) -> Result<Option<ErrorCode>, SurgeryError> {
         self.check_answers(response)?;
         self.body
             .error_of_response(response)
             .map(ErrorCode::from_wire)
-            .map_err(|error| EditableRequestError::UnreadableResponse { api: self.api(), error })
+            .map_err(|error| SurgeryError::unreadable_response(self.api(), &error))
     }
 
     /// Checks that `response` answers this request: same API, same correlation ID.
-    fn check_answers(&self, response: &Response) -> Result<(), EditableRequestError> {
+    fn check_answers(&self, response: &Response) -> Result<(), SurgeryError> {
         if response.api() == self.api() && response.correlation_id() == self.request.correlation_id() {
             Ok(())
         } else {
-            Err(EditableRequestError::ResponseOfAnotherCall {
+            Err(SurgeryError::ResponseOfAnotherCall {
                 api: self.api(),
                 correlation_id: self.request.correlation_id(),
                 answered_api: response.api(),
@@ -341,55 +340,3 @@ pub enum Remainder {
     /// Every part was removed. Nothing is left to forward.
     Nothing,
 }
-
-/// Why surgery on a request failed.
-#[derive(Debug, Clone, PartialEq, Eq)]
-#[non_exhaustive]
-pub enum EditableRequestError {
-    /// There are no messages for the API of the request, so its body has no known shape.
-    UnknownApi { api: Api },
-    /// The body of the request does not decode.
-    UnreadableRequest { api: Api, error: WireError },
-    /// What is left of the request does not encode.
-    UnwritableRequest { api: Api, error: WireError },
-    /// The body of the response to merge does not decode.
-    UnreadableResponse { api: Api, error: WireError },
-    /// The response does not encode.
-    UnwritableResponse { api: Api, error: WireError },
-    /// The response to merge belongs to another request: its API or its correlation ID differs.
-    ResponseOfAnotherCall {
-        api: Api,
-        correlation_id: i32,
-        answered_api: Api,
-        answered_correlation_id: i32,
-    },
-    /// The failures name nothing that the request asks, so there is no error to answer with.
-    NothingFailed { api: Api },
-}
-
-impl fmt::Display for EditableRequestError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::UnknownApi { api } => write!(f, "a request of {api} cannot be edited: its messages are unknown"),
-            Self::UnreadableRequest { api, error } => write!(f, "the {api} request cannot be read: {error}"),
-            Self::UnwritableRequest { api, error } => {
-                write!(f, "what is left of the {api} request cannot be written: {error}")
-            }
-            Self::UnreadableResponse { api, error } => write!(f, "the {api} response cannot be read: {error}"),
-            Self::UnwritableResponse { api, error } => write!(f, "the {api} response cannot be written: {error}"),
-            Self::ResponseOfAnotherCall {
-                api,
-                correlation_id,
-                answered_api,
-                answered_correlation_id,
-            } => write!(
-                f,
-                "the {answered_api} response {answered_correlation_id} does not answer the {api} request {correlation_id}"
-            ),
-            Self::NothingFailed { api } => write!(f, "nothing that the {api} request asks failed"),
-        }
-    }
-}
-
-/// The message is complete, so no variant has a source.
-impl std::error::Error for EditableRequestError {}

@@ -8,7 +8,7 @@ use gaslightmq_kernel::prelude::*;
 use gaslightmq_lie_api::Lies;
 use gaslightmq_session::ClientContexts;
 use gaslightmq_wire::Response;
-use gaslightmq_wire_edit::{TopicNames, TopicNamesError};
+use gaslightmq_wire_edit::{SurgeryError, TopicNames};
 
 /// The topics that a proxy knows by ID, shared by all of its sessions.
 ///
@@ -68,9 +68,9 @@ impl KnownTopics {
     ///
     /// # Errors
     ///
-    /// [`TopicNamesError::UnreadableResponse`] when the body of the response does not decode.
+    /// [`SurgeryError::UnreadableResponse`] when the body of the response does not decode.
     /// Nothing is learned then.
-    pub fn learn_from(&self, response: &Response) -> Result<usize, TopicNamesError> {
+    pub fn learn_from(&self, response: &Response) -> Result<usize, SurgeryError> {
         let mut named = TopicNames::new();
         let count = named.learn_from(response)?;
         let named: Vec<(TopicId, TopicName)> = named.iter().map(|(id, name)| (id, name.clone())).collect();

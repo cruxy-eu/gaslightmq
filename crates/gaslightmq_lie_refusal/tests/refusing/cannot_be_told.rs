@@ -235,13 +235,10 @@ fn a_request_that_does_not_decode_never_reaches_a_refusal() {
     // A lie is asked with a decoded request, so whoever decodes finds out first, and no lie is asked.
     assert_eq!(
         EditableRequest::decode(&unknown, &TopicNames::new()).unwrap_err(),
-        EditableRequestError::UnknownApi { api: unknown.api() }
+        SurgeryError::UnknownApi { api: unknown.api() }
     );
     let error = EditableRequest::decode(&cut, &TopicNames::new()).unwrap_err();
-    assert!(
-        matches!(error, EditableRequestError::UnreadableRequest { .. }),
-        "{error}"
-    );
+    assert!(matches!(error, SurgeryError::UnreadableRequest { .. }), "{error}");
 }
 
 #[test]

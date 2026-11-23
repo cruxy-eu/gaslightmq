@@ -263,20 +263,16 @@ impl RefusedRequest {
 /// Why the refusal of a request of `api` could not be told, in the words of the contract.
 ///
 /// The request to forward or the response could not be made, and `error` says what stood in the way.
-fn untold(api: Api, error: EditableRequestError) -> LieError {
+fn untold(api: Api, error: SurgeryError) -> LieError {
     let kind = LieKind::Refusal;
     match error {
-        EditableRequestError::UnreadableRequest { error, .. }
-        | EditableRequestError::UnreadableResponse { error, .. } => LieError::Unreadable {
-            kind,
-            reason: error.to_string(),
-        },
-        EditableRequestError::UnwritableRequest { error, .. }
-        | EditableRequestError::UnwritableResponse { error, .. } => LieError::Unwritable {
-            kind,
-            reason: error.to_string(),
-        },
-        EditableRequestError::ResponseOfAnotherCall {
+        SurgeryError::UnreadableRequest { reason, .. } | SurgeryError::UnreadableResponse { reason, .. } => {
+            LieError::Unreadable { kind, reason }
+        }
+        SurgeryError::UnwritableRequest { reason, .. } | SurgeryError::UnwritableResponse { reason, .. } => {
+            LieError::Unwritable { kind, reason }
+        }
+        SurgeryError::ResponseOfAnotherCall {
             api,
             correlation_id,
             answered_api,
@@ -296,8 +292,6 @@ fn untold(api: Api, error: EditableRequestError) -> LieError {
 
 #[cfg(test)]
 mod tests {
-    use gaslightmq_wire::WireError;
-
     use super::*;
 
     const KIND: LieKind = LieKind::Refusal;
@@ -305,7 +299,6 @@ mod tests {
     #[test]
     fn what_stood_in_the_way_becomes_an_error_of_the_contract_and_keeps_its_reason() {
         let api = Api::from_wire(0, 9);
-        let error = WireError::UnknownApi { api_key: 0 };
         let reason = || "unknown api key 0".to_owned();
         let unreadable = LieError::Unreadable {
             kind: KIND,
@@ -315,25 +308,12 @@ mod tests {
             kind: KIND,
             reason: reason(),
         };
-        let error = || error.clone();
 
         let cases = [
-            (
-                EditableRequestError::UnreadableRequest { api, error: error() },
-                &unreadable,
-            ),
-            (
-                EditableRequestError::UnreadableResponse { api, error: error() },
-                &unreadable,
-            ),
-            (
-                EditableRequestError::UnwritableRequest { api, error: error() },
-                &unwritable,
-            ),
-            (
-                EditableRequestError::UnwritableResponse { api, error: error() },
-                &unwritable,
-            ),
+            (SurgeryError::UnreadableRequest { api, reason: reason() }, &unreadable),
+            (SurgeryError::UnreadableResponse { api, reason: reason() }, &unreadable),
+            (SurgeryError::UnwritableRequest { api, reason: reason() }, &unwritable),
+            (SurgeryError::UnwritableResponse { api, reason: reason() }, &unwritable),
         ];
         for (failed, told) in cases {
             assert_eq!(&untold(api, failed), told);
@@ -348,7 +328,7 @@ mod tests {
     fn a_response_of_another_call_stays_one() {
         let api = Api::from_wire(0, 9);
         let answered_api = Api::from_wire(1, 11);
-        let another = EditableRequestError::ResponseOfAnotherCall {
+        let another = SurgeryError::ResponseOfAnotherCall {
             api,
             correlation_id: 7,
             answered_api,
@@ -371,10 +351,7 @@ mod tests {
     fn a_failure_that_a_refused_request_rules_out_says_that_the_api_is_not_supported() {
         let api = Api::from_wire(0, 9);
 
-        for ruled_out in [
-            EditableRequestError::NothingFailed { api },
-            EditableRequestError::UnknownApi { api },
-        ] {
+        for ruled_out in [SurgeryError::NothingFailed { api }, SurgeryError::UnknownApi { api }] {
             assert_eq!(untold(api, ruled_out), LieError::ApiNotSupported { kind: KIND, api });
         }
     }
