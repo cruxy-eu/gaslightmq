@@ -3,6 +3,7 @@
 //! A check reads every `.rs` file under the `src/` directory of a crate.
 //! It does not follow `mod` declarations, so it reads no file that a `#[path]` attribute moves out of `src/`,
 //! and it reads neither `build.rs` nor `tests/`, `benches/` and `examples/`.
+//! A check that holds the tests to its rule reads those too, as text: see [`texts_of`].
 //!
 //! The checks read what is written, and not what a macro expands to:
 //! a type or a function that a macro writes stays unseen.
@@ -41,7 +42,7 @@ impl SourceFile {
             Err(error) => Err(SourceError::NotRust {
                 path,
                 line: error.span().start().line,
-                error,
+                reason: error.to_string(),
             }),
         }
     }
@@ -92,34 +93,52 @@ fn module_of(in_src: &Path) -> Vec<String> {
 
 /// Every source file of a crate, in the order of their paths.
 pub fn of(root: &Path, member: &Member) -> Result<Vec<SourceFile>, SourceError> {
-    let mut in_src = Vec::new();
-    let src = root.join(&member.dir).join(SRC);
-    if src.is_dir() {
-        find(&src, Path::new(""), &mut in_src).map_err(|error| SourceError::Unreadable {
-            path: member.dir.join(SRC),
-            error,
-        })?;
-    }
-    in_src.sort();
-    in_src
+    texts_below(root, &member.dir.join(SRC))?
         .iter()
-        .map(|in_src| {
-            let text = std::fs::read_to_string(src.join(in_src)).map_err(|error| SourceError::Unreadable {
-                path: member.dir.join(SRC).join(in_src),
-                error,
-            })?;
-            SourceFile::parse(&member.dir, in_src, &text)
+        .map(|(path, text)| {
+            let in_src = path.strip_prefix(member.dir.join(SRC)).unwrap_or(path);
+            SourceFile::parse(&member.dir, in_src, text)
         })
         .collect()
 }
 
-/// Adds the `.rs` files below `src/at` to `found`, each as a path relative to `src`.
-fn find(src: &Path, at: &Path, found: &mut Vec<PathBuf>) -> io::Result<()> {
-    for entry in std::fs::read_dir(src.join(at))? {
+/// Every `.rs` file of a crate with its text, in the order of their paths:
+/// its source, and its `build.rs`, `tests/`, `benches/` and `examples/` too.
+/// Each path is relative to the workspace root.
+pub fn texts_of(root: &Path, member: &Member) -> Result<Vec<(PathBuf, String)>, SourceError> {
+    texts_below(root, &member.dir)
+}
+
+/// Every `.rs` file below a directory with its text, in the order of their paths.
+/// The directory and the paths are relative to the workspace root. A directory that does not exist holds no file.
+fn texts_below(root: &Path, dir: &Path) -> Result<Vec<(PathBuf, String)>, SourceError> {
+    let unreadable = |path: PathBuf| {
+        move |error: io::Error| SourceError::Unreadable {
+            path,
+            reason: error.to_string(),
+        }
+    };
+    let mut found = Vec::new();
+    if root.join(dir).is_dir() {
+        find(root, dir, &mut found).map_err(unreadable(dir.to_path_buf()))?;
+    }
+    found.sort();
+    found
+        .into_iter()
+        .map(|path| {
+            let text = std::fs::read_to_string(root.join(&path)).map_err(unreadable(path.clone()))?;
+            Ok((path, text))
+        })
+        .collect()
+}
+
+/// Adds the `.rs` files below `root/at` to `found`, each as a path relative to `root`.
+fn find(root: &Path, at: &Path, found: &mut Vec<PathBuf>) -> io::Result<()> {
+    for entry in std::fs::read_dir(root.join(at))? {
         let entry = entry?;
         let below = at.join(entry.file_name());
         if entry.file_type()?.is_dir() {
-            find(src, &below, found)?;
+            find(root, &below, found)?;
         } else if below.extension().is_some_and(|extension| extension == "rs") {
             found.push(below);
         }
@@ -165,15 +184,11 @@ pub fn attributes(item: &Item) -> &[Attribute] {
 /// Why the source of a crate could not be read.
 #[derive(Debug, thiserror::Error)]
 pub enum SourceError {
-    #[error("{} cannot be read: {error}", .path.display())]
-    Unreadable { path: PathBuf, error: io::Error },
+    #[error("{} cannot be read: {reason}", .path.display())]
+    Unreadable { path: PathBuf, reason: String },
     /// The file does not parse as Rust. `line` is where the parser stopped.
-    #[error("{}:{line}: the checks cannot read this as Rust: {error}", .path.display())]
-    NotRust {
-        path: PathBuf,
-        line: usize,
-        error: syn::Error,
-    },
+    #[error("{}:{line}: the checks cannot read this as Rust: {reason}", .path.display())]
+    NotRust { path: PathBuf, line: usize, reason: String },
 }
 
 #[cfg(test)]

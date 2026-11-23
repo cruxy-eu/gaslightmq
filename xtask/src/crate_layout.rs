@@ -13,7 +13,6 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
-use std::io;
 use std::path::Path;
 
 use crate::table::{self, Row};
@@ -51,7 +50,9 @@ enum Dependencies {
 
 impl CrateLayout {
     pub fn load(root: &Path) -> Result<Self, CrateLayoutError> {
-        let text = std::fs::read_to_string(root.join(PATH)).map_err(|error| CrateLayoutError::Unreadable { error })?;
+        let text = std::fs::read_to_string(root.join(PATH)).map_err(|error| CrateLayoutError::Unreadable {
+            reason: error.to_string(),
+        })?;
         Self::parse(&text)
     }
 
@@ -187,8 +188,8 @@ impl fmt::Display for LayoutViolation {
 /// Why the crate tables could not be read.
 #[derive(Debug, thiserror::Error)]
 pub enum CrateLayoutError {
-    #[error("{PATH} cannot be read: {error}")]
-    Unreadable { error: io::Error },
+    #[error("{PATH} cannot be read: {reason}")]
+    Unreadable { reason: String },
     #[error("{PATH} has no table that starts with `{HEADER}`")]
     NoTables,
     #[error(

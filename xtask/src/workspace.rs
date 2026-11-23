@@ -1,7 +1,6 @@
 //! The crates of the workspace, as `cargo metadata` describes them.
 
 use std::collections::BTreeSet;
-use std::io;
 use std::path::PathBuf;
 use std::process::Command;
 
@@ -59,7 +58,9 @@ impl Workspace {
         let output = Command::new(cargo)
             .args(["metadata", "--no-deps", "--format-version", "1"])
             .output()
-            .map_err(|error| WorkspaceError::CargoDidNotStart { error })?;
+            .map_err(|error| WorkspaceError::CargoDidNotStart {
+                reason: error.to_string(),
+            })?;
         if !output.status.success() {
             return Err(WorkspaceError::CargoFailed {
                 stderr: String::from_utf8_lossy(&output.stderr).trim().to_owned(),
@@ -70,7 +71,9 @@ impl Workspace {
 
     /// Reads the output of `cargo metadata --no-deps --format-version 1`.
     pub fn from_metadata(json: &str) -> Result<Self, WorkspaceError> {
-        let metadata: Metadata = serde_json::from_str(json).map_err(|error| WorkspaceError::Unreadable { error })?;
+        let metadata: Metadata = serde_json::from_str(json).map_err(|error| WorkspaceError::Unreadable {
+            reason: error.to_string(),
+        })?;
         let names: BTreeSet<&str> = metadata.packages.iter().map(|package| package.name.as_str()).collect();
         let members = metadata
             .packages
@@ -155,12 +158,12 @@ struct Dependency {
 /// Why the checks could not learn what the workspace holds.
 #[derive(Debug, thiserror::Error)]
 pub enum WorkspaceError {
-    #[error("`cargo metadata` did not start: {error}")]
-    CargoDidNotStart { error: io::Error },
+    #[error("`cargo metadata` did not start: {reason}")]
+    CargoDidNotStart { reason: String },
     #[error("`cargo metadata` failed: {stderr}")]
     CargoFailed { stderr: String },
-    #[error("`cargo metadata` printed what the checks cannot read: {error}")]
-    Unreadable { error: serde_json::Error },
+    #[error("`cargo metadata` printed what the checks cannot read: {reason}")]
+    Unreadable { reason: String },
 }
 
 #[cfg(test)]

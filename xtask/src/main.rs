@@ -8,6 +8,12 @@
 
 mod crate_layout;
 mod crate_names;
+mod dyn_errors;
+mod error_conversions;
+mod error_fields;
+mod error_messages;
+mod error_types;
+mod exhaustive_errors;
 mod internal_crates;
 mod manifest;
 mod sans_io;
@@ -44,10 +50,20 @@ enum Check {
     WrappedErrors,
     /// No crate shows a type of an internal crate, in what it offers or in what it documents.
     InternalCrates,
+    /// Nothing names `dyn Error`: no code, no test and no doc example.
+    DynErrors,
+    /// No error type is `#[non_exhaustive]`.
+    ExhaustiveErrors,
+    /// Every field of an error type has a name, and a field `error` holds an error type of the workspace.
+    ErrorFields,
+    /// The message of an error writes the `error` and the `reason` it holds, each once.
+    ErrorMessages,
+    /// No `From` makes an error type from the error of a library or of the system.
+    ErrorConversions,
 }
 
 impl Check {
-    const ALL: [Check; 7] = [
+    const ALL: [Check; 12] = [
         Check::Dependencies,
         Check::CrateNames,
         Check::WasmBoundary,
@@ -55,6 +71,11 @@ impl Check {
         Check::SansIo,
         Check::WrappedErrors,
         Check::InternalCrates,
+        Check::DynErrors,
+        Check::ExhaustiveErrors,
+        Check::ErrorFields,
+        Check::ErrorMessages,
+        Check::ErrorConversions,
     ];
 
     fn name(self) -> &'static str {
@@ -66,6 +87,11 @@ impl Check {
             Check::SansIo => "sans-io",
             Check::WrappedErrors => "wrapped-errors",
             Check::InternalCrates => "internal-crates",
+            Check::DynErrors => "dyn-errors",
+            Check::ExhaustiveErrors => "exhaustive-errors",
+            Check::ErrorFields => "error-fields",
+            Check::ErrorMessages => "error-messages",
+            Check::ErrorConversions => "error-conversions",
         }
     }
 
@@ -101,6 +127,26 @@ impl Check {
             }
             Check::InternalCrates => {
                 let violations = internal_crates::violations(workspace).map_err(|error| error.to_string())?;
+                Ok(lines(&violations))
+            }
+            Check::DynErrors => {
+                let violations = dyn_errors::violations(workspace).map_err(|error| error.to_string())?;
+                Ok(lines(&violations))
+            }
+            Check::ExhaustiveErrors => {
+                let violations = exhaustive_errors::violations(workspace).map_err(|error| error.to_string())?;
+                Ok(lines(&violations))
+            }
+            Check::ErrorFields => {
+                let violations = error_fields::violations(workspace).map_err(|error| error.to_string())?;
+                Ok(lines(&violations))
+            }
+            Check::ErrorMessages => {
+                let violations = error_messages::violations(workspace).map_err(|error| error.to_string())?;
+                Ok(lines(&violations))
+            }
+            Check::ErrorConversions => {
+                let violations = error_conversions::violations(workspace).map_err(|error| error.to_string())?;
                 Ok(lines(&violations))
             }
         }
