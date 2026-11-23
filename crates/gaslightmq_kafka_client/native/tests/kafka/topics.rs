@@ -3,7 +3,7 @@
 use std::collections::BTreeMap;
 use std::time::Duration;
 
-use futures::StreamExt;
+use futures::TryStreamExt;
 use gaslightmq_clock::TimeSpan;
 use gaslightmq_kafka_client_api::{Admin, Consumer, Producer, ProtocolConsumer, TopicMetadata};
 use gaslightmq_kafka_client_native::{ClientError, KafkaConsumer, KafkaProducer};
@@ -18,8 +18,8 @@ use crate::{
 
 /// The error of a call that kept hearing "unknown topic or partition" until its time was over.
 fn unknown_until_the_time_was_over() -> ClientError {
-    ClientError::CallTimedOut {
-        error: Box::new(ClientError::Broker {
+    ClientError::OutOfTime {
+        error: Box::new(ClientError::Refused {
             error: ResponseError::UnknownTopicOrPartition,
         }),
     }
@@ -108,7 +108,7 @@ async fn an_admin_hears_at_once_that_the_cluster_has_no_such_topic() -> anyhow::
 
     assert_eq!(
         configs,
-        Ok(Err(ClientError::Broker {
+        Ok(Err(ClientError::Refused {
             error: ResponseError::UnknownTopicOrPartition
         }))
     );
@@ -199,10 +199,10 @@ async fn a_partition_that_the_topic_does_not_have_has_no_leader() -> anyhow::Res
 
     assert_eq!(
         written,
-        Err(ClientError::CallTimedOut {
+        Err(ClientError::OutOfTime {
             error: Box::new(ClientError::NoLeader {
-                topic: orders.name().to_string(),
-                partition: 7
+                topic: orders.name().clone(),
+                partition: partition(7)
             })
         })
     );
@@ -218,7 +218,7 @@ async fn a_name_that_is_no_topic_name_is_refused_at_once() -> anyhow::Result<()>
 
     assert_eq!(
         written,
-        Err(ClientError::Broker {
+        Err(ClientError::Refused {
             error: ResponseError::InvalidTopicException
         })
     );
@@ -240,26 +240,30 @@ async fn assert_does_not_exist(cluster: &KafkaCluster, name: &str) {
 }
 
 /// A test written against the traits runs with any client that implements them.
-async fn write_and_read_back(topic: &str, producer: &impl Producer, consumer: &impl Consumer, admin: &impl Admin) {
-    let written = producer.send(topic, partition(0), &[Record::new("placed")]).await;
-    assert_eq!(written.error, None);
+async fn write_and_read_back(
+    topic: &str,
+    producer: &impl Producer,
+    consumer: &impl Consumer,
+    admin: &impl Admin,
+) -> Result<(), ClientError> {
+    let written = producer.send(topic, partition(0), &[Record::new("placed")]).await?;
     assert_eq!(written.offset, offset(0));
 
-    let read = consumer.fetch(topic, partition(0), written.offset).await;
+    let read = consumer.fetch(topic, partition(0), written.offset).await?;
     assert_eq!(values(&read), ["placed"]);
-    assert_eq!(consumer.metadata_for_topic(topic).await.partitions.len(), 1);
+    assert_eq!(consumer.metadata_for_topic(topic).await?.partitions.len(), 1);
     assert!(
         consumer
             .metadata_for_all_topics()
-            .await
+            .await?
             .iter()
             .any(|described| described.name == topic)
     );
-    assert_eq!(consumer.watermarks(topic, partition(0)).await.high, offset(1));
+    assert_eq!(consumer.watermarks(topic, partition(0)).await?.high, offset(1));
 
-    let configs = admin.describe_topic_configs(topic, &[]).await;
-    assert_eq!(configs.error, None);
+    let configs = admin.describe_topic_configs(topic, &[]).await?;
     assert!(configs.configs.contains_key("retention.ms"));
+    Ok(())
 }
 
 #[tokio::test]
@@ -271,19 +275,19 @@ async fn each_role_implements_its_trait() -> anyhow::Result<()> {
     configuration.fetch_max_wait = TimeSpan::from_millis(100);
     let (producer, consumer, admin) = (producer(cluster), KafkaConsumer::new(configuration), admin(cluster));
 
-    write_and_read_back(topic, &producer, &consumer, &admin).await;
+    write_and_read_back(topic, &producer, &consumer, &admin).await?;
 
-    let read = ProtocolConsumer::fetch(&consumer, topic, partition(0), offset(0)).await;
+    let read = ProtocolConsumer::fetch(&consumer, topic, partition(0), offset(0)).await?;
     assert_eq!(values(&read), ["placed"]);
     let streamed: Vec<Record> = ProtocolConsumer::stream(&consumer, topic, partition(0), offset(0))
-        .collect()
-        .await;
+        .try_collect()
+        .await?;
     assert_eq!(values(&streamed), ["placed"]);
     Ok(())
 }
 
 #[tokio::test]
-async fn a_trait_without_an_error_carries_what_the_cluster_answered() -> anyhow::Result<()> {
+async fn a_trait_returns_what_the_cluster_refused_as_the_failure_of_the_call() -> anyhow::Result<()> {
     let cluster = kafka().await?;
     let orders = cluster
         .topics()
@@ -299,7 +303,17 @@ async fn a_trait_without_an_error_carries_what_the_cluster_answered() -> anyhow:
     .await;
     let configs = Admin::describe_topic_configs(&admin(cluster), &unique_name("never-created"), &[]).await;
 
-    assert_eq!(written.error, Some(ResponseError::MessageTooLarge));
-    assert_eq!(configs.error, Some(ResponseError::UnknownTopicOrPartition));
+    assert_eq!(
+        written,
+        Err(ClientError::Refused {
+            error: ResponseError::MessageTooLarge
+        })
+    );
+    assert_eq!(
+        configs,
+        Err(ClientError::Refused {
+            error: ResponseError::UnknownTopicOrPartition
+        })
+    );
     Ok(())
 }

@@ -7,6 +7,7 @@
 use std::time::Duration;
 
 use bytes::Bytes;
+use gaslightmq_kafka_client_api::ClientError;
 use gaslightmq_wire::ResponseError;
 use gaslightmq_wire::messages::join_group_request::JoinGroupRequestProtocol;
 use gaslightmq_wire::messages::sync_group_request::SyncGroupRequestAssignment;
@@ -17,7 +18,6 @@ use gaslightmq_wire::messages::{
 use gaslightmq_wire::protocol::StrBytes;
 
 use crate::configuration::ConsumerConfiguration;
-use crate::error::ClientError;
 use crate::logic::attempts::Limits;
 use crate::logic::call::{Operation, Reading};
 use crate::logic::cluster::Route;
@@ -148,12 +148,12 @@ impl Membership {
     /// Every other failure leaves the membership as it is.
     pub fn refused(&mut self, error: &ClientError) {
         match error {
-            ClientError::Broker {
+            ClientError::Refused {
                 error: ResponseError::UnknownMemberId | ResponseError::FencedInstanceId,
             } => {
                 *self = Self::default();
             }
-            ClientError::Broker {
+            ClientError::Refused {
                 error: ResponseError::IllegalGeneration,
             } => {
                 *self = Self {
@@ -162,13 +162,15 @@ impl Membership {
                 };
             }
             // Every other failure leaves the membership as it is.
-            ClientError::Broker { .. }
-            | ClientError::RequestTimedOut
-            | ClientError::CallTimedOut { .. }
-            | ClientError::ConnectionFailed(_)
-            | ClientError::Protocol(_)
-            | ClientError::UnsupportedVersion { .. }
-            | ClientError::NoLeader { .. } => {}
+            ClientError::Refused { .. }
+            | ClientError::UnreadableAnswer { .. }
+            | ClientError::NoAnswer
+            | ClientError::ConnectionLost { .. }
+            | ClientError::Unreachable { .. }
+            | ClientError::UnwritableRequest { .. }
+            | ClientError::NoCommonVersion { .. }
+            | ClientError::NoLeader { .. }
+            | ClientError::OutOfTime { .. } => {}
         }
     }
 }
@@ -239,8 +241,8 @@ impl Operation for JoinGroup<'_> {
 
     /// A coordinator that wants a member ID first hands one out, and the consumer joins again under it.
     fn read(&mut self, response: JoinGroupResponse) -> Result<Reading<Joined>, ClientError> {
-        match ClientError::broker(response.error_code) {
-            Some(ClientError::Broker {
+        match ClientError::refusal(response.error_code) {
+            Some(ClientError::Refused {
                 error: ResponseError::MemberIdRequired,
             }) if self.member_id.is_empty() && !response.member_id.is_empty() => {
                 self.member_id = response.member_id;
@@ -294,7 +296,7 @@ impl Operation for SyncGroup {
     }
 
     fn read(&mut self, response: SyncGroupResponse) -> Result<Reading<Bytes>, ClientError> {
-        match ClientError::broker(response.error_code) {
+        match ClientError::refusal(response.error_code) {
             Some(error) => Err(error),
             None => Ok(Reading::Done(response.assignment)),
         }
@@ -327,7 +329,7 @@ impl Operation for Heartbeat {
     }
 
     fn read(&mut self, response: HeartbeatResponse) -> Result<Reading<()>, ClientError> {
-        match ClientError::broker(response.error_code) {
+        match ClientError::refusal(response.error_code) {
             Some(error) => Err(error),
             None => Ok(Reading::Done(())),
         }
@@ -376,7 +378,7 @@ mod tests {
     }
 
     fn refusal(error: ResponseError) -> ClientError {
-        ClientError::Broker { error }
+        ClientError::Refused { error }
     }
 
     /// A membership of generation 7 that leads a group of two.
@@ -491,7 +493,7 @@ mod tests {
             .with_member_id(id("consumer-1"));
         assert_eq!(join.read(wants_an_id), Ok(Reading::Again));
 
-        membership.join_failed(&join, &ClientError::RequestTimedOut);
+        membership.join_failed(&join, &ClientError::NoAnswer);
 
         assert_eq!(membership.member_id(), "consumer-1");
         assert_eq!(membership.generation(), -1);
@@ -698,8 +700,8 @@ mod tests {
         let mut membership = leading();
 
         membership.refused(&refusal(ResponseError::RebalanceInProgress));
-        membership.refused(&ClientError::ConnectionFailed("reset".into()));
-        membership.refused(&ClientError::CallTimedOut {
+        membership.refused(&ClientError::connection_lost("reset"));
+        membership.refused(&ClientError::OutOfTime {
             error: Box::new(refusal(ResponseError::UnknownMemberId)),
         });
 

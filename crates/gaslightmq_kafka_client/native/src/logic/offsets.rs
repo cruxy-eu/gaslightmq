@@ -2,11 +2,11 @@
 
 use std::time::Duration;
 
+use gaslightmq_kafka_client_api::ClientError;
 use gaslightmq_wire::messages::list_offsets_request::{ListOffsetsPartition, ListOffsetsTopic};
 use gaslightmq_wire::messages::{BrokerId, ListOffsetsRequest, ListOffsetsResponse};
 
 use crate::configuration::ConsumerConfiguration;
-use crate::error::ClientError;
 use crate::logic::call::{Operation, Reading};
 use crate::logic::cluster::{Route, TopicPartition};
 use crate::logic::versions::Versions;
@@ -77,8 +77,8 @@ impl Operation for ListOffset<'_> {
             .filter(|topic| topic.name == self.partition.topic)
             .flat_map(|topic| &topic.partitions)
             .find(|listed| listed.partition_index == self.partition.partition)
-            .ok_or_else(|| ClientError::Protocol(format!("no offset for {}", self.partition)))?;
-        match ClientError::broker(listed.error_code) {
+            .ok_or_else(|| ClientError::unreadable_answer(format_args!("no offset for {}", self.partition)))?;
+        match ClientError::refusal(listed.error_code) {
             Some(error) => Err(error),
             None => Ok(Reading::Done(listed.offset)),
         }
@@ -154,7 +154,7 @@ mod tests {
 
         assert_eq!(
             list(&configuration(), LogEnd::Latest).read(response(refused)),
-            Err(ClientError::Broker {
+            Err(ClientError::Refused {
                 error: ResponseError::NotLeaderOrFollower
             })
         );
@@ -164,7 +164,7 @@ mod tests {
     fn a_response_without_the_partition_makes_no_sense() {
         assert_eq!(
             list(&configuration(), LogEnd::Latest).read(ListOffsetsResponse::default()),
-            Err(ClientError::Protocol("no offset for orders-3".into()))
+            Err(ClientError::unreadable_answer("no offset for orders-3"))
         );
     }
 }

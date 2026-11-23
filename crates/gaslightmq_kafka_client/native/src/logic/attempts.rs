@@ -3,8 +3,29 @@
 use std::time::Duration;
 
 use gaslightmq_clock::{Instant, TimeSpan};
+use gaslightmq_kafka_client_api::ClientError;
 
 use crate::configuration::ClientConfiguration;
+
+/// Whether the call that failed with `error` can succeed when it is tried again.
+///
+/// A refusal may pass when Kafka says so of its error code.
+/// A broker that did not answer, a connection that did not open or was lost, and a partition without a leader may pass.
+/// An answer that cannot be read and a request that cannot be sent stay as they are,
+/// and a call that ran out of time is over.
+pub(crate) fn is_retriable(error: &ClientError) -> bool {
+    match error {
+        ClientError::Refused { error } => error.is_retriable(),
+        ClientError::NoAnswer
+        | ClientError::ConnectionLost { .. }
+        | ClientError::Unreachable { .. }
+        | ClientError::NoLeader { .. } => true,
+        ClientError::UnreadableAnswer { .. }
+        | ClientError::UnwritableRequest { .. }
+        | ClientError::NoCommonVersion { .. }
+        | ClientError::OutOfTime { .. } => false,
+    }
+}
 
 /// The times and counts that bound one call.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -116,7 +137,50 @@ impl Attempts {
 
 #[cfg(test)]
 mod tests {
+    use gaslightmq_kernel::{ApiKey, TopicName};
+    use gaslightmq_wire::{Partition, ResponseError};
+
     use super::*;
+
+    #[test]
+    fn a_refusal_may_pass_when_kafka_says_so_of_its_error_code() {
+        let passing = ClientError::Refused {
+            error: ResponseError::NotLeaderOrFollower,
+        };
+        let lasting = ClientError::Refused {
+            error: ResponseError::TopicAuthorizationFailed,
+        };
+
+        assert!(is_retriable(&passing));
+        assert!(!is_retriable(&lasting));
+    }
+
+    #[test]
+    fn a_broker_that_is_not_there_yet_may_come() {
+        let no_leader = ClientError::NoLeader {
+            topic: TopicName::new("orders").unwrap(),
+            partition: Partition::new(0),
+        };
+
+        assert!(is_retriable(&ClientError::NoAnswer));
+        assert!(is_retriable(&ClientError::connection_lost("reset")));
+        assert!(is_retriable(&ClientError::unreachable("refused")));
+        assert!(is_retriable(&no_leader));
+    }
+
+    #[test]
+    fn what_the_client_cannot_read_or_send_stays_as_it_is() {
+        let out_of_time = ClientError::OutOfTime {
+            error: Box::new(ClientError::NoAnswer),
+        };
+
+        assert!(!is_retriable(&ClientError::unreadable_answer("no response")));
+        assert!(!is_retriable(&ClientError::unwritable_request("no version")));
+        assert!(!is_retriable(&ClientError::NoCommonVersion {
+            api_key: ApiKey::METADATA
+        }));
+        assert!(!is_retriable(&out_of_time));
+    }
 
     fn limits(retries: Option<u32>) -> Limits {
         Limits {

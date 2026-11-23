@@ -1,11 +1,11 @@
 //! What one connection and its broker say to each other.
 
+use gaslightmq_kafka_client_api::ClientError;
 use gaslightmq_kernel::ClientId;
 use gaslightmq_wire::messages::ApiVersionsRequest;
 use gaslightmq_wire::protocol::Request as KafkaRequest;
 use gaslightmq_wire::{Frame, Request, Response};
 
-use crate::error::ClientError;
 use crate::logic::versions::{BrokerVersions, Versions};
 
 /// The version of `ApiVersions` a greeting is written in.
@@ -26,14 +26,15 @@ pub(crate) struct Greeting {
 impl Greeting {
     /// # Errors
     ///
-    /// [`ClientError::Protocol`] when the request does not encode.
+    /// [`ClientError::UnwritableRequest`] when the request does not encode.
     pub fn new(client_id: ClientId) -> Result<Self, ClientError> {
         let request = Request::new(
             GREETING_VERSION,
             FIRST_CORRELATION_ID,
             Some(client_id.as_str()),
             &ApiVersionsRequest::default(),
-        )?;
+        )
+        .map_err(ClientError::unwritable_request)?;
         Ok(Self { client_id, request })
     }
 
@@ -46,13 +47,13 @@ impl Greeting {
     ///
     /// # Errors
     ///
-    /// [`ClientError::Protocol`] when the frame is not the answer to the greeting,
-    /// and [`ClientError::Broker`] when the answer carries an error code.
+    /// [`ClientError::UnreadableAnswer`] when the frame is not the answer to the greeting,
+    /// and [`ClientError::Refused`] when the answer carries an error code.
     pub fn answered(self, frame: Frame) -> Result<Conversation, ClientError> {
         let response = answer(&self.request, frame)?;
         Ok(Conversation {
             client_id: self.client_id,
-            broker: BrokerVersions::read(&response.body()?)?,
+            broker: BrokerVersions::read(&response.body().map_err(ClientError::unreadable_answer)?)?,
             next_correlation_id: FIRST_CORRELATION_ID.wrapping_add(1),
         })
     }
@@ -71,11 +72,12 @@ impl Conversation {
     ///
     /// # Errors
     ///
-    /// [`ClientError::UnsupportedVersion`] when the two sides share no version,
-    /// and [`ClientError::Protocol`] when `body` does not encode.
+    /// [`ClientError::NoCommonVersion`] when the two sides share no version,
+    /// and [`ClientError::UnwritableRequest`] when `body` does not encode.
     pub fn request<R: KafkaRequest>(&mut self, ours: Versions, body: &R) -> Result<Request, ClientError> {
         let version = self.broker.newest_common(R::KEY, ours)?;
-        let request = Request::new(version, self.next_correlation_id, Some(self.client_id.as_str()), body)?;
+        let request = Request::new(version, self.next_correlation_id, Some(self.client_id.as_str()), body)
+            .map_err(ClientError::unwritable_request)?;
         self.next_correlation_id = self.next_correlation_id.wrapping_add(1);
         Ok(request)
     }
@@ -85,11 +87,11 @@ impl Conversation {
 ///
 /// # Errors
 ///
-/// [`ClientError::Protocol`] when the frame is not a response, or carries another correlation ID.
+/// [`ClientError::UnreadableAnswer`] when the frame is not a response, or carries another correlation ID.
 pub(crate) fn answer(request: &Request, frame: Frame) -> Result<Response, ClientError> {
-    let response = Response::decode(request.api(), frame)?;
+    let response = Response::decode(request.api(), frame).map_err(ClientError::unreadable_answer)?;
     if response.correlation_id() != request.correlation_id() {
-        return Err(ClientError::Protocol(format!(
+        return Err(ClientError::unreadable_answer(format_args!(
             "correlation id {}, expected {}",
             response.correlation_id(),
             request.correlation_id()
@@ -177,8 +179,8 @@ mod tests {
 
         assert_eq!(
             refused.unwrap_err(),
-            ClientError::UnsupportedVersion {
-                api_key: ApiKey::Metadata as i16
+            ClientError::NoCommonVersion {
+                api_key: gaslightmq_kernel::ApiKey::METADATA
             }
         );
     }
@@ -199,7 +201,7 @@ mod tests {
         assert!(answer(&first, answer_to_first.clone()).is_ok());
         assert_eq!(
             answer(&second, answer_to_first).unwrap_err(),
-            ClientError::Protocol("correlation id 2, expected 3".into())
+            ClientError::unreadable_answer("correlation id 2, expected 3")
         );
     }
 
@@ -209,6 +211,9 @@ mod tests {
         let other = Request::new(0, 99, None, &ApiVersionsRequest::default()).unwrap();
         let frame = other.response(&ApiVersionsResponse::default()).unwrap().into_frame();
 
-        assert!(matches!(greeting.answered(frame), Err(ClientError::Protocol(_))));
+        assert!(matches!(
+            greeting.answered(frame),
+            Err(ClientError::UnreadableAnswer { .. })
+        ));
     }
 }

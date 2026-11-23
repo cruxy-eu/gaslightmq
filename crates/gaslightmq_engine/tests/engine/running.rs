@@ -7,7 +7,7 @@ use gaslightmq_clock::{Duration, TimeSpan};
 use gaslightmq_engine::prelude::*;
 use gaslightmq_environment::prelude::*;
 use gaslightmq_field::prelude::*;
-use gaslightmq_kafka_client_api::{HeartbeatResult, ProtocolConsumer, RawKafkaClient};
+use gaslightmq_kafka_client_api::{ProtocolConsumer, RawKafkaClient};
 use gaslightmq_kernel::prelude::*;
 use gaslightmq_lie::prelude::*;
 use gaslightmq_lie_api::prelude::*;
@@ -142,7 +142,7 @@ async fn an_engine_stops_also_when_its_backend_never_lets_go_of_a_connection() -
     let proxy = EngineUnderTest::start_with(configuration, ScriptedBackend::with_three_brokers()).await?;
     let member = proxy.client_on(Endpoint::Bootstrap)?;
     let group: GroupId = "analytics-etl".parse()?;
-    assert_eq!(member.heartbeat(group.as_str()).await, HeartbeatResult { error: None });
+    assert_eq!(member.heartbeat(group.as_str()).await, Ok(()));
     // The client leaves, and the backend hears that its connection ended, and never lets go of it:
     // the session of that connection does not end.
     proxy.backend().hold_connections();
@@ -182,7 +182,7 @@ async fn the_sessions_of_one_client_share_what_they_learned_until_the_context_li
     let contexts = proxy.engine().shared_by_sessions().contexts().clone();
     let member = proxy.client_on(Endpoint::Bootstrap)?;
     let group: GroupId = "analytics-etl".parse()?;
-    assert_eq!(member.heartbeat(group.as_str()).await, HeartbeatResult { error: None });
+    assert_eq!(member.heartbeat(group.as_str()).await, Ok(()));
     assert_eq!(contexts.len(), 1);
 
     // The session closes, and its context stays for a client that reconnects.
@@ -217,7 +217,7 @@ async fn an_engine_runs_on_the_wall_clock_too() -> anyhow::Result<()> {
     let member = RawKafkaClient::new(bootstrap.context("the bootstrap endpoint is open")?);
     let group: GroupId = "analytics-etl".parse()?;
 
-    assert_eq!(member.heartbeat(group.as_str()).await, HeartbeatResult { error: None });
+    assert_eq!(member.heartbeat(group.as_str()).await, Ok(()));
 
     let EngineEvent::CallRecorded(record) = events.next().await? else {
         anyhow::bail!("the call has a record");

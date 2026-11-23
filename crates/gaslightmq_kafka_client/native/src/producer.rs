@@ -2,11 +2,10 @@
 
 use std::net::SocketAddr;
 
-use gaslightmq_kafka_client_api::{ProduceResult, Producer};
+use gaslightmq_kafka_client_api::{ClientError, ProduceResult, Producer};
 use gaslightmq_wire::{Offset, Partition, Record, RecordBatch};
 
 use crate::configuration::{ProducerConfiguration, RoleNames};
-use crate::error::ClientError;
 use crate::io::access::ClusterAccess;
 use crate::io::clock::milliseconds_since_1970;
 use crate::logic::cluster::TopicPartition;
@@ -20,8 +19,7 @@ static NAMES: RoleNames = RoleNames::new("producer");
 /// It has its own connections, its own view of the cluster and its own `client.id`.
 /// Two producers share nothing, and neither does a producer with a consumer or an admin.
 ///
-/// [`send`](Self::send) returns a failure as a [`ClientError`].
-/// The [`Producer`] trait has no error, so its result carries the closest Kafka error instead.
+/// A send that fails returns a [`ClientError`], through [`send`](Self::send) and through the [`Producer`] trait alike.
 pub struct KafkaProducer {
     configuration: ProducerConfiguration,
     cluster: ClusterAccess,
@@ -51,13 +49,16 @@ impl KafkaProducer {
     ///
     /// # Errors
     ///
-    /// [`ClientError::Protocol`] when the records do not encode.
-    /// Otherwise the error the broker or the connection gave,
-    /// or [`ClientError::CallTimedOut`] when retriable errors lasted until the delivery timeout.
+    /// [`ClientError::UnwritableRequest`] when the records do not encode.
+    /// [`ClientError::Refused`] when the broker answers with an error code that does not pass.
+    /// Otherwise the failure of the client or of its connection,
+    /// or [`ClientError::OutOfTime`] when retriable failures lasted until the delivery timeout.
     pub async fn send(&self, topic: &str, partition: Partition, records: &[Record]) -> Result<Offset, ClientError> {
         let produce = ProduceRecords {
             partition: TopicPartition::new(topic, partition),
-            batch: RecordBatch::new(stamped(records, milliseconds_since_1970())).encode()?,
+            batch: RecordBatch::new(stamped(records, milliseconds_since_1970()))
+                .encode()
+                .map_err(ClientError::unwritable_request)?,
             acks: self.configuration.acks,
         };
         self.cluster
@@ -78,18 +79,11 @@ impl From<SocketAddr> for KafkaProducer {
 }
 
 impl Producer for KafkaProducer {
-    async fn send(&self, topic: &str, partition: Partition, records: &[Record]) -> ProduceResult {
-        match KafkaProducer::send(self, topic, partition, records).await {
-            Ok(offset) => ProduceResult {
-                error: None,
-                partition,
-                offset,
-            },
-            Err(error) => ProduceResult {
-                error: Some(error.to_response_error()),
-                partition,
-                offset: Offset::from(-1i64),
-            },
-        }
+    /// # Errors
+    ///
+    /// As [`KafkaProducer::send`].
+    async fn send(&self, topic: &str, partition: Partition, records: &[Record]) -> Result<ProduceResult, ClientError> {
+        let offset = KafkaProducer::send(self, topic, partition, records).await?;
+        Ok(ProduceResult { partition, offset })
     }
 }

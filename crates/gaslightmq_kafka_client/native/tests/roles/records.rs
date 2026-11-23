@@ -1,15 +1,15 @@
-//! What a request carries, and what a trait makes of a failure.
+//! What a request carries, and what a trait returns for a failure.
 //!
 //! Writing and reading against real brokers is in `tests/kafka`.
 
 use gaslightmq_clock::TimeSpan;
 use gaslightmq_kafka_client_api::{Admin, Producer};
 use gaslightmq_kafka_client_native::{
-    Acks, AdminConfiguration, ConsumerConfiguration, IsolationLevel, KafkaAdmin, KafkaConsumer, KafkaProducer,
-    ProducerConfiguration,
+    Acks, AdminConfiguration, ClientError, ConsumerConfiguration, IsolationLevel, KafkaAdmin, KafkaConsumer,
+    KafkaProducer, ProducerConfiguration,
 };
 use gaslightmq_wire::messages::{FetchRequest, MetadataRequest, ProduceRequest};
-use gaslightmq_wire::{ApiKey, Offset, Partition, Record, ResponseError};
+use gaslightmq_wire::{ApiKey, Offset, Partition, Record};
 use tokio::net::TcpListener;
 
 use crate::support::{Cluster, TOPIC};
@@ -67,7 +67,7 @@ async fn a_request_carries_what_its_role_is_configured_with() {
 }
 
 #[tokio::test]
-async fn a_trait_without_an_error_carries_a_failure_as_the_closest_kafka_error() {
+async fn a_trait_returns_a_failure_of_the_client_and_no_error_code_of_a_broker() {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let address = listener.local_addr().unwrap();
     tokio::spawn(async move {
@@ -89,6 +89,13 @@ async fn a_trait_without_an_error_carries_a_failure_as_the_closest_kafka_error()
     .await;
     let configs = Admin::describe_topic_configs(&KafkaAdmin::new(administering), TOPIC, &[]).await;
 
-    assert_eq!(written.error, Some(ResponseError::RequestTimedOut));
-    assert_eq!(configs.error, Some(ResponseError::RequestTimedOut));
+    // Each call kept losing its connection until its time was over.
+    assert!(
+        matches!(written, Err(ClientError::OutOfTime { error: ref last }) if matches!(**last, ClientError::ConnectionLost { .. })),
+        "{written:?}"
+    );
+    assert!(
+        matches!(configs, Err(ClientError::OutOfTime { error: ref last }) if matches!(**last, ClientError::ConnectionLost { .. })),
+        "{configs:?}"
+    );
 }

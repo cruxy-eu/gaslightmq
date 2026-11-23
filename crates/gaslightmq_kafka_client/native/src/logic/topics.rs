@@ -3,12 +3,11 @@
 use std::time::Duration;
 
 use gaslightmq_clock::Instant;
-use gaslightmq_kafka_client_api::{PartitionMetadata, TopicMetadata};
+use gaslightmq_kafka_client_api::{ClientError, PartitionMetadata, TopicMetadata};
 use gaslightmq_wire::Partition;
 use gaslightmq_wire::messages::metadata_request::MetadataRequestTopic;
 use gaslightmq_wire::messages::{MetadataRequest, MetadataResponse, TopicName};
 
-use crate::error::ClientError;
 use crate::logic::call::{Operation, Reading};
 use crate::logic::cluster::{ClusterView, Route};
 use crate::logic::versions::Versions;
@@ -31,7 +30,7 @@ pub(crate) fn error_of(metadata: &MetadataResponse, topic: &TopicName) -> Option
         .topics
         .iter()
         .find(|described| described.name.as_ref() == Some(topic))
-        .and_then(|described| ClientError::broker(described.error_code))
+        .and_then(|described| ClientError::refusal(described.error_code))
 }
 
 /// Ask for the partitions of one topic, or of every topic.
@@ -68,7 +67,7 @@ impl Operation for DescribeTopics {
             .topics
             .iter()
             .map(|topic| {
-                if let Some(error) = ClientError::broker(topic.error_code) {
+                if let Some(error) = ClientError::refusal(topic.error_code) {
                     return Err(error);
                 }
                 let mut partitions: Vec<PartitionMetadata> = topic
@@ -147,14 +146,14 @@ mod tests {
 
         assert_eq!(
             error_of(&response, &topic_name("orders")),
-            Some(ClientError::Broker {
+            Some(ClientError::Refused {
                 error: ResponseError::UnknownTopicOrPartition
             })
         );
         assert_eq!(error_of(&response, &topic_name("payments")), None);
         assert_eq!(
             describe_all().read(response).unwrap_err(),
-            ClientError::Broker {
+            ClientError::Refused {
                 error: ResponseError::UnknownTopicOrPartition
             }
         );

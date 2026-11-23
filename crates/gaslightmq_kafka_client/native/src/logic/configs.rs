@@ -3,11 +3,11 @@
 use std::collections::BTreeMap;
 use std::time::Duration;
 
+use gaslightmq_kafka_client_api::ClientError;
 use gaslightmq_wire::messages::describe_configs_request::DescribeConfigsResource;
 use gaslightmq_wire::messages::{DescribeConfigsRequest, DescribeConfigsResponse};
 use gaslightmq_wire::protocol::StrBytes;
 
-use crate::error::ClientError;
 use crate::logic::call::{Operation, Reading};
 use crate::logic::cluster::Route;
 use crate::logic::versions::Versions;
@@ -57,8 +57,8 @@ impl Operation for DescribeTopicConfigs {
             .results
             .iter()
             .find(|result| result.resource_type == TOPIC && result.resource_name.as_str() == self.topic)
-            .ok_or_else(|| ClientError::Protocol(format!("no configs for topic {}", self.topic)))?;
-        if let Some(error) = ClientError::broker(described.error_code) {
+            .ok_or_else(|| ClientError::unreadable_answer(format_args!("no configs for topic {}", self.topic)))?;
+        if let Some(error) = ClientError::refusal(described.error_code) {
             return Err(error);
         }
         Ok(Reading::Done(
@@ -77,6 +77,7 @@ mod tests {
     use gaslightmq_wire::messages::describe_configs_response::{DescribeConfigsResourceResult, DescribeConfigsResult};
 
     use super::*;
+    use crate::logic::attempts::is_retriable;
 
     fn describe(keys: &[&str]) -> DescribeTopicConfigs {
         DescribeTopicConfigs {
@@ -139,7 +140,7 @@ mod tests {
 
         assert_eq!(
             describe(&[]).read(response),
-            Err(ClientError::Broker {
+            Err(ClientError::Refused {
                 error: ResponseError::UnknownTopicOrPartition
             })
         );
@@ -147,11 +148,11 @@ mod tests {
 
     #[test]
     fn an_error_of_the_topic_is_final_also_when_it_may_pass() {
-        let unknown = ClientError::Broker {
+        let unknown = ClientError::Refused {
             error: ResponseError::UnknownTopicOrPartition,
         };
 
-        assert!(unknown.is_retriable());
+        assert!(is_retriable(&unknown));
         assert!(!describe(&[]).tries_again_after(&unknown));
     }
 
@@ -161,7 +162,7 @@ mod tests {
 
         assert_eq!(
             describe(&[]).read(response),
-            Err(ClientError::Protocol("no configs for topic orders".into()))
+            Err(ClientError::unreadable_answer("no configs for topic orders"))
         );
     }
 }

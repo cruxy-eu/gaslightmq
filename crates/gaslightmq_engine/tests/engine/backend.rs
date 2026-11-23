@@ -3,7 +3,7 @@
 use gaslightmq_backend::prelude::*;
 use gaslightmq_call::prelude::*;
 use gaslightmq_field::prelude::*;
-use gaslightmq_kafka_client_api::{HeartbeatResult, ProtocolConsumer};
+use gaslightmq_kafka_client_api::ProtocolConsumer;
 use gaslightmq_kernel::prelude::*;
 
 use crate::support::{EngineUnderTest, ScriptedBackend};
@@ -40,7 +40,7 @@ async fn a_failure_ends_every_call_of_the_session_and_no_other_session() -> anyh
     let mut proxy = EngineUnderTest::start(ScriptedBackend::with_three_brokers()).await?;
     let group: GroupId = "analytics-etl".parse()?;
     let other = proxy.client_on(Endpoint::Bootstrap)?;
-    assert_eq!(other.heartbeat(group.as_str()).await, HeartbeatResult { error: None });
+    assert_eq!(other.heartbeat(group.as_str()).await, Ok(()));
     proxy.next_record().await?;
     let mut failing = proxy.socket_on(Endpoint::Bootstrap).await?;
     proxy.backend().hold_answers();
@@ -63,7 +63,7 @@ async fn a_failure_ends_every_call_of_the_session_and_no_other_session() -> anyh
     }
     // The session next to it goes on, once the backend reaches its cluster again.
     proxy.backend().answer_truthfully();
-    assert_eq!(other.heartbeat(group.as_str()).await, HeartbeatResult { error: None });
+    assert_eq!(other.heartbeat(group.as_str()).await, Ok(()));
     Ok(())
 }
 

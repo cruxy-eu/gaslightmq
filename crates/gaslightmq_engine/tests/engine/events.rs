@@ -24,7 +24,7 @@ async fn an_incident_that_a_rule_fires_leaves_the_engine_before_the_record_of_it
     ))?;
     let member = proxy.client_on(Endpoint::Bootstrap)?;
 
-    member.heartbeat(payments.as_str()).await;
+    member.heartbeat(payments.as_str()).await?;
 
     let EngineEvent::IncidentFired(incident) = proxy.next_event().await? else {
         anyhow::bail!("the rule fired an incident before anything else left the session");
@@ -50,7 +50,7 @@ async fn every_listener_receives_the_records_of_every_session() -> anyhow::Resul
     let group: GroupId = "analytics-etl".parse()?;
 
     for endpoint in [Endpoint::Bootstrap, "broker 1".parse()?] {
-        proxy.client_on(endpoint)?.heartbeat(group.as_str()).await;
+        proxy.client_on(endpoint)?.heartbeat(group.as_str()).await?;
     }
 
     // Whoever watches and whoever keeps see the same records, in the same order.
@@ -84,7 +84,7 @@ async fn a_slow_recorder_gets_every_event_while_a_live_listener_misses_the_oldes
     // Neither listener takes an event while the session records five calls, which no listener holds up.
     let five_calls_of_one_connection = ["#1.1", "#1.2", "#1.3", "#1.4", "#1.5"];
     for _ in five_calls_of_one_connection {
-        member.heartbeat(group.as_str()).await;
+        member.heartbeat(group.as_str()).await?;
     }
 
     // The live listener is three events behind its backlog of two: it learns that, and goes on with the newest.

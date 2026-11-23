@@ -2,12 +2,12 @@
 
 use std::time::Duration;
 
+use gaslightmq_kafka_client_api::ClientError;
 use gaslightmq_wire::messages::fetch_request::{FetchPartition, FetchTopic};
 use gaslightmq_wire::messages::{FetchRequest, FetchResponse};
 use gaslightmq_wire::{Record, RecordBatch};
 
 use crate::configuration::ConsumerConfiguration;
-use crate::error::ClientError;
 use crate::logic::call::{Operation, Reading};
 use crate::logic::cluster::{Route, TopicPartition};
 use crate::logic::versions::Versions;
@@ -67,7 +67,7 @@ impl Operation for FetchRecords<'_> {
     }
 
     fn read(&mut self, response: FetchResponse) -> Result<Reading<Vec<Record>>, ClientError> {
-        if let Some(error) = ClientError::broker(response.error_code) {
+        if let Some(error) = ClientError::refusal(response.error_code) {
             return Err(error);
         }
         let mut records = Vec::new();
@@ -77,12 +77,13 @@ impl Operation for FetchRecords<'_> {
             .flat_map(|topic| &topic.partitions)
             .filter(|fetched| fetched.partition_index == self.partition.partition)
         {
-            if let Some(error) = ClientError::broker(fetched.error_code) {
+            if let Some(error) = ClientError::refusal(fetched.error_code) {
                 return Err(error);
             }
             if let Some(batches) = &fetched.records {
                 records.extend(
-                    RecordBatch::decode_all(batches)?
+                    RecordBatch::decode_all(batches)
+                        .map_err(ClientError::unreadable_answer)?
                         .into_iter()
                         .flat_map(|batch| batch.records)
                         .filter(|record| record.offset.is_none_or(|offset| i64::from(offset) >= self.offset)),
@@ -239,13 +240,13 @@ mod tests {
 
         assert_eq!(
             fetch(&configuration).read(response(refused)),
-            Err(ClientError::Broker {
+            Err(ClientError::Refused {
                 error: ResponseError::OffsetOutOfRange
             })
         );
         assert_eq!(
             fetch(&configuration).read(unavailable),
-            Err(ClientError::Broker {
+            Err(ClientError::Refused {
                 error: ResponseError::NotLeaderOrFollower
             })
         );

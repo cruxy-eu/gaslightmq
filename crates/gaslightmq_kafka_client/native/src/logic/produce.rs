@@ -3,12 +3,12 @@
 use std::time::Duration;
 
 use bytes::Bytes;
+use gaslightmq_kafka_client_api::ClientError;
 use gaslightmq_wire::messages::produce_request::{PartitionProduceData, TopicProduceData};
 use gaslightmq_wire::messages::{ProduceRequest, ProduceResponse};
 use gaslightmq_wire::{Offset, Record};
 
 use crate::configuration::Acks;
-use crate::error::ClientError;
 use crate::logic::call::{Operation, Reading};
 use crate::logic::cluster::{Route, TopicPartition};
 use crate::logic::versions::Versions;
@@ -70,8 +70,8 @@ impl Operation for ProduceRecords {
             .filter(|topic| topic.name == self.partition.topic)
             .flat_map(|topic| &topic.partition_responses)
             .find(|partition| partition.index == self.partition.partition)
-            .ok_or_else(|| ClientError::Protocol(format!("no produce result for {}", self.partition)))?;
-        match ClientError::broker(written.error_code) {
+            .ok_or_else(|| ClientError::unreadable_answer(format_args!("no produce result for {}", self.partition)))?;
+        match ClientError::refusal(written.error_code) {
             Some(error) => Err(error),
             None => Ok(Reading::Done(Offset::from(written.base_offset))),
         }
@@ -142,7 +142,7 @@ mod tests {
 
         assert_eq!(
             produce().read(response("orders", 3, refused)),
-            Err(ClientError::Broker {
+            Err(ClientError::Refused {
                 error: ResponseError::NotLeaderOrFollower
             })
         );
@@ -154,7 +154,7 @@ mod tests {
 
         assert_eq!(
             produce().read(response("orders", 4, other)),
-            Err(ClientError::Protocol("no produce result for orders-3".into()))
+            Err(ClientError::unreadable_answer("no produce result for orders-3"))
         );
     }
 }

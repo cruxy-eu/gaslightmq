@@ -4,7 +4,7 @@ use gaslightmq_call::prelude::*;
 use gaslightmq_clock::TimeSpan;
 use gaslightmq_engine::prelude::*;
 use gaslightmq_field::prelude::*;
-use gaslightmq_kafka_client_api::{HeartbeatResult, ProtocolConsumer};
+use gaslightmq_kafka_client_api::ProtocolConsumer;
 use gaslightmq_kernel::prelude::*;
 use gaslightmq_lie_api::prelude::*;
 use tokio::net::TcpStream;
@@ -38,7 +38,7 @@ async fn a_request_names_the_endpoint_it_arrived_on() -> anyhow::Result<()> {
     let member = proxy.client_on(broker_2)?;
     let group: GroupId = "analytics-etl".parse()?;
 
-    member.heartbeat(group.as_str()).await;
+    member.heartbeat(group.as_str()).await?;
 
     let record = proxy.next_record().await?;
     let arrived_on = record.fields().read(Field::Endpoint).present();
@@ -55,10 +55,7 @@ async fn an_endpoint_that_closes_ends_its_sessions_and_refuses_connections() -> 
     let [broker_1, broker_2, broker_3] = ScriptedBackend::brokers();
     let group: GroupId = "analytics-etl".parse()?;
     let on_broker_3 = proxy.client_on(Endpoint::Broker(broker_3))?;
-    assert_eq!(
-        on_broker_3.heartbeat(group.as_str()).await,
-        HeartbeatResult { error: None }
-    );
+    assert_eq!(on_broker_3.heartbeat(group.as_str()).await, Ok(()));
     proxy.next_record().await?;
     let mut on_broker_2 = proxy.socket_on(Endpoint::Broker(broker_2)).await?;
     let address = proxy.address_of(Endpoint::Broker(broker_2))?;
@@ -89,10 +86,7 @@ async fn an_endpoint_that_closes_ends_its_sessions_and_refuses_connections() -> 
     assert!(TcpStream::connect(address).await.is_err());
     // The sessions on the other endpoints go on.
     proxy.backend().release_answers();
-    assert_eq!(
-        on_broker_3.heartbeat(group.as_str()).await,
-        HeartbeatResult { error: None }
-    );
+    assert_eq!(on_broker_3.heartbeat(group.as_str()).await, Ok(()));
     Ok(())
 }
 
@@ -123,7 +117,7 @@ async fn an_endpoint_that_opens_gets_a_listener() -> anyhow::Result<()> {
     );
     let member = proxy.client_on(Endpoint::Broker(broker_2))?;
     let group: GroupId = "analytics-etl".parse()?;
-    assert_eq!(member.heartbeat(group.as_str()).await, HeartbeatResult { error: None });
+    assert_eq!(member.heartbeat(group.as_str()).await, Ok(()));
     Ok(())
 }
 
@@ -141,7 +135,7 @@ async fn an_endpoint_that_closed_and_opened_again_ended_its_sessions_in_between(
     proxy.backend().listeners_of(Endpoint::Broker(broker_2), 2).await?;
     let member = proxy.client_on(Endpoint::Broker(broker_2))?;
     let group: GroupId = "analytics-etl".parse()?;
-    assert_eq!(member.heartbeat(group.as_str()).await, HeartbeatResult { error: None });
+    assert_eq!(member.heartbeat(group.as_str()).await, Ok(()));
     Ok(())
 }
 
@@ -210,7 +204,7 @@ async fn an_endpoint_that_did_not_open_opens_when_the_backend_reports_again() ->
     assert_eq!(proxy.engine().address_of(Endpoint::Broker(broker_2)), Some(third_try));
     let member = proxy.client_on(Endpoint::Broker(broker_2))?;
     let group: GroupId = "analytics-etl".parse()?;
-    assert_eq!(member.heartbeat(group.as_str()).await, HeartbeatResult { error: None });
+    assert_eq!(member.heartbeat(group.as_str()).await, Ok(()));
     Ok(())
 }
 
@@ -231,10 +225,7 @@ async fn an_endpoint_that_did_not_open_is_tried_again_after_the_retry_backoff() 
     // One second before the backoff is over, the engine did not try again: the proxy serves its other endpoints.
     proxy.advance(TimeSpan::from_secs(29));
     let elsewhere = proxy.client_on(Endpoint::Bootstrap)?;
-    assert_eq!(
-        elsewhere.heartbeat(group.as_str()).await,
-        HeartbeatResult { error: None }
-    );
+    assert_eq!(elsewhere.heartbeat(group.as_str()).await, Ok(()));
     let tries = proxy.backend().listeners_of(Endpoint::Broker(broker_2), 2).await?;
     assert_eq!(tries.len(), 2);
     assert_eq!(proxy.engine().address_of(Endpoint::Broker(broker_2)), None);
@@ -244,7 +235,7 @@ async fn an_endpoint_that_did_not_open_is_tried_again_after_the_retry_backoff() 
     let third_try = proxy.backend().listeners_of(Endpoint::Broker(broker_2), 3).await?[2];
     assert_eq!(proxy.engine().address_of(Endpoint::Broker(broker_2)), Some(third_try));
     let member = proxy.client_on(Endpoint::Broker(broker_2))?;
-    assert_eq!(member.heartbeat(group.as_str()).await, HeartbeatResult { error: None });
+    assert_eq!(member.heartbeat(group.as_str()).await, Ok(()));
     Ok(())
 }
 
@@ -290,7 +281,7 @@ async fn a_broker_that_gets_another_port_moves_its_listener() -> anyhow::Result<
     proxy.backend().release_answers();
     let member = proxy.client_on(broker_2)?;
     let group: GroupId = "analytics-etl".parse()?;
-    assert_eq!(member.heartbeat(group.as_str()).await, HeartbeatResult { error: None });
+    assert_eq!(member.heartbeat(group.as_str()).await, Ok(()));
     Ok(())
 }
 

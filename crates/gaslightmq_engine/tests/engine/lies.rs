@@ -3,7 +3,7 @@
 use gaslightmq_call::prelude::*;
 use gaslightmq_clock::{Duration, TimeSpan};
 use gaslightmq_field::prelude::*;
-use gaslightmq_kafka_client_api::{HeartbeatResult, Producer, ProtocolConsumer};
+use gaslightmq_kafka_client_api::{ClientError, Producer, ProtocolConsumer};
 use gaslightmq_kernel::prelude::*;
 use gaslightmq_lie::prelude::*;
 use gaslightmq_rule::prelude::*;
@@ -35,7 +35,7 @@ async fn a_delayed_answer_leaves_when_the_clock_reaches_its_instant() -> anyhow:
 
     // The clock reaches the instant, and the answer leaves. It is the truth: a delay changes when, and not what.
     proxy.advance(TimeSpan::from_millis(1));
-    assert_eq!(written.await?.error, None);
+    written.await??;
     let record = proxy.next_record().await?;
     assert_eq!(record.verdict().to_string(), "+1 s");
     assert_eq!(record.timing().client_waited(), Some(Duration::from_secs(1)));
@@ -63,7 +63,7 @@ async fn a_delayed_request_reaches_the_backend_when_the_clock_reaches_its_instan
 
     // The delay counts from the moment the request arrived.
     proxy.advance(TimeSpan::from_secs(45));
-    assert_eq!(beat.await?, HeartbeatResult { error: None });
+    assert_eq!(beat.await?, Ok(()));
     let the_heartbeat: CallId = "#1.1".parse()?;
     assert_eq!(proxy.backend().calls_taken_so_far(), [the_heartbeat]);
     Ok(())
@@ -96,11 +96,11 @@ async fn two_delays_end_in_the_order_of_their_instants() -> anyhow::Result<()> {
 
     // Every session waits for its own timer on the one clock of the engine.
     proxy.advance(TimeSpan::from_secs(1));
-    assert_eq!(beat.await?, HeartbeatResult { error: None });
+    assert_eq!(beat.await?, Ok(()));
     assert!(proxy.leaves_unanswered(&mut written).await);
 
     proxy.advance(TimeSpan::from_secs(2));
-    assert_eq!(written.await?.error, None);
+    written.await??;
     Ok(())
 }
 
@@ -120,7 +120,12 @@ async fn a_refused_request_never_reaches_the_backend() -> anyhow::Result<()> {
         .send(orders.as_str(), partition, &[Record::new("placed")])
         .await;
 
-    assert_eq!(written.error, Some(ResponseError::NotLeaderOrFollower));
+    assert_eq!(
+        written,
+        Err(ClientError::Refused {
+            error: ResponseError::NotLeaderOrFollower
+        })
+    );
     assert_eq!(proxy.backend().calls_taken_so_far(), Vec::<CallId>::new());
     let record = proxy.next_record().await?;
     assert_eq!(record.verdict().to_string(), "NOT_LEADER_OR_FOLLOWER on orders.eu/3");
@@ -157,7 +162,7 @@ async fn a_hang_up_closes_the_connection_and_the_client_connects_again() -> anyh
     // The client connects again, and gets a new session. Without the rule, its heartbeat goes through.
     proxy.engine().rules().disarm(disconnect.name())?;
     let again = proxy.client_on(Endpoint::Bootstrap)?;
-    assert_eq!(again.heartbeat(group.as_str()).await, HeartbeatResult { error: None });
+    assert_eq!(again.heartbeat(group.as_str()).await, Ok(()));
     let the_heartbeat_of_the_new_session: CallId = "#2.1".parse()?;
     assert_eq!(
         proxy.backend().calls_taken_so_far(),

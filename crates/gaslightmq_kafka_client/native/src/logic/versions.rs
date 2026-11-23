@@ -2,9 +2,9 @@
 
 use std::collections::HashMap;
 
+use gaslightmq_kafka_client_api::ClientError;
+use gaslightmq_kernel::ApiKey;
 use gaslightmq_wire::messages::ApiVersionsResponse;
-
-use crate::error::ClientError;
 
 /// The versions of one API that one side speaks, from the oldest to the newest.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -28,9 +28,9 @@ impl BrokerVersions {
     ///
     /// # Errors
     ///
-    /// [`ClientError::Broker`] when the response carries an error code.
+    /// [`ClientError::Refused`] when the response carries an error code.
     pub fn read(response: &ApiVersionsResponse) -> Result<Self, ClientError> {
-        if let Some(error) = ClientError::broker(response.error_code) {
+        if let Some(error) = ClientError::refusal(response.error_code) {
             return Err(error);
         }
         Ok(Self(
@@ -46,10 +46,12 @@ impl BrokerVersions {
     ///
     /// # Errors
     ///
-    /// [`ClientError::UnsupportedVersion`] when the broker does not know the API,
+    /// [`ClientError::NoCommonVersion`] when the broker does not know the API,
     /// or when no version of `ours` is one of the broker's.
     pub fn newest_common(&self, api_key: i16, ours: Versions) -> Result<i16, ClientError> {
-        let unsupported = ClientError::UnsupportedVersion { api_key };
+        let unsupported = ClientError::NoCommonVersion {
+            api_key: ApiKey::new(api_key),
+        };
         let theirs = self.0.get(&api_key).ok_or_else(|| unsupported.clone())?;
         let newest = ours.newest.min(theirs.newest);
         if newest >= ours.oldest.max(theirs.oldest) {
@@ -102,11 +104,13 @@ mod tests {
 
         assert_eq!(
             broker.newest_common(1, Versions::new(4, 12)),
-            Err(ClientError::UnsupportedVersion { api_key: 1 })
+            Err(ClientError::NoCommonVersion { api_key: ApiKey::FETCH })
         );
         assert_eq!(
             broker.newest_common(0, Versions::new(3, 9)),
-            Err(ClientError::UnsupportedVersion { api_key: 0 })
+            Err(ClientError::NoCommonVersion {
+                api_key: ApiKey::PRODUCE
+            })
         );
     }
 
@@ -114,7 +118,9 @@ mod tests {
     fn an_api_the_broker_does_not_know_has_no_version() {
         assert_eq!(
             broker(&[]).newest_common(32, Versions::new(1, 4)),
-            Err(ClientError::UnsupportedVersion { api_key: 32 })
+            Err(ClientError::NoCommonVersion {
+                api_key: ApiKey::DESCRIBE_CONFIGS
+            })
         );
     }
 
@@ -124,7 +130,7 @@ mod tests {
 
         assert_eq!(
             BrokerVersions::read(&response),
-            Err(ClientError::Broker {
+            Err(ClientError::Refused {
                 error: ResponseError::UnsupportedVersion
             })
         );

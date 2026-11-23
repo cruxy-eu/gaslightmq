@@ -100,7 +100,7 @@
 //! let member = RawKafkaClient::new(bootstrap);
 //! let group: GroupId = "analytics-etl".parse().expect("a group ID");
 //! let answer = member.heartbeat(group.as_str()).await;
-//! assert_eq!(answer.error, None);
+//! assert_eq!(answer, Ok(()));
 //!
 //! // The record of the call says what the client was told, and how long it waited for it.
 //! let event = events.next().await.expect("the engine runs, and the listener kept up");

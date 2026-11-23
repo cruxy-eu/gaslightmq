@@ -15,7 +15,7 @@ use crate::{SHORTEST_SESSION_MS, consumer, consuming, kafka};
 const PATIENCE: Duration = Duration::from_secs(30);
 
 fn refused_with(error: ResponseError) -> ClientError {
-    ClientError::Broker { error }
+    ClientError::Refused { error }
 }
 
 /// Send heartbeats until the coordinator answers one with an error, and return that error.
@@ -181,21 +181,19 @@ async fn a_consumer_that_offers_no_assignor_of_the_group_is_not_let_in() -> anyh
 }
 
 #[tokio::test]
-async fn the_group_methods_of_the_trait_carry_what_the_coordinator_answered() -> anyhow::Result<()> {
+async fn the_group_methods_of_the_trait_return_what_the_coordinator_answered() -> anyhow::Result<()> {
     let cluster = kafka().await?;
     let group = unique_name("analytics");
     let (consumer, stranger) = (consumer(cluster), consumer(cluster));
 
-    let joined = ProtocolConsumer::join_group(&consumer, &group).await;
+    let joined = ProtocolConsumer::join_group(&consumer, &group).await?;
     let synced = ProtocolConsumer::sync_group(&consumer, &group).await;
     let alive = ProtocolConsumer::heartbeat(&consumer, &group).await;
     let not_alive = ProtocolConsumer::heartbeat(&stranger, &group).await;
 
-    assert_eq!(joined.error, None);
-    assert_ne!(joined.member_id, "");
     assert_eq!(joined.leader, joined.member_id);
-    assert_eq!(synced.error, None);
-    assert_eq!(alive.error, None);
-    assert_eq!(not_alive.error, Some(ResponseError::UnknownMemberId));
+    assert_eq!(synced, Ok(()));
+    assert_eq!(alive, Ok(()));
+    assert_eq!(not_alive, Err(refused_with(ResponseError::UnknownMemberId)));
     Ok(())
 }
