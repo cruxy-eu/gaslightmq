@@ -55,33 +55,31 @@ mod next_to_std_the_kernel_and_the_fields {
     ///
     /// A message says everything, so no error has a source.
     pub fn every_error() -> Vec<String> {
+        /// What an error says. A message says everything, so the error has no source.
+        fn message_of<E: std::error::Error>(error: E) -> String {
+            assert!(error.source().is_none(), "{error}");
+            error.to_string()
+        }
+
         let name = || "x".to_owned();
-        let errors: Vec<Box<dyn std::error::Error>> = vec![
-            Box::new(LieKindError::Unknown { name: name() }),
-            Box::new(StageError::Unknown { name: name() }),
-            Box::new(StageError::NotAllowed {
+        vec![
+            message_of(LieKindError::Unknown { name: name() }),
+            message_of(StageError::Unknown { name: name() }),
+            message_of(StageError::NotAllowed {
                 kind: LieKind::Silence,
                 stage: Stage::AfterResponse,
             }),
-            Box::new(CombinationClassError::Unknown { name: name() }),
-            Box::new(AspectError::Unknown { name: name() }),
-            Box::new(TimingLieError::JitterExceedsDelay {
+            message_of(CombinationClassError::Unknown { name: name() }),
+            message_of(AspectError::Unknown { name: name() }),
+            message_of(TimingLieError::JitterExceedsDelay {
                 jitter: TimeSpan::from_millis(200),
                 delay: TimeSpan::ZERO,
             }),
-            Box::new(TimingLieError::ThrottleTooLong {
+            message_of(TimingLieError::ThrottleTooLong {
                 throttle: TimeSpan::from_secs(3_000_000),
             }),
-            Box::new(TargetedLieError::PartsNotAllowed { kind: LieKind::Timing }),
-        ];
-
-        errors
-            .iter()
-            .map(|error| {
-                assert!(error.source().is_none(), "{error}");
-                error.to_string()
-            })
-            .collect()
+            message_of(TargetedLieError::PartsNotAllowed { kind: LieKind::Timing }),
+        ]
     }
 }
 

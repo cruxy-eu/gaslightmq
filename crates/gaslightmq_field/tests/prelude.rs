@@ -93,48 +93,46 @@ mod next_to_the_others {
     ///
     /// A message says everything, so no error has a source.
     pub fn every_error() -> Vec<String> {
+        /// What an error says. A message says everything, so the error has no source.
+        fn message_of<E: std::error::Error>(error: E) -> String {
+            assert!(error.source().is_none(), "{error}");
+            error.to_string()
+        }
+
         let input = || "x".to_owned();
-        let errors: Vec<Box<dyn std::error::Error>> = vec![
-            Box::new(FieldError::Unknown { name: input() }),
-            Box::new(FieldGroupError::Unknown { name: input() }),
-            Box::new(ConnectionNumberError::Malformed { input: input() }),
-            Box::new(ClientAddressError::Malformed { input: input() }),
-            Box::new(ClientHostError::Malformed { input: input() }),
-            Box::new(EndpointError::Malformed { input: input() }),
-            Box::new(EndpointError::InvalidBroker {
+        vec![
+            message_of(FieldError::Unknown { name: input() }),
+            message_of(FieldGroupError::Unknown { name: input() }),
+            message_of(ConnectionNumberError::Malformed { input: input() }),
+            message_of(ClientAddressError::Malformed { input: input() }),
+            message_of(ClientHostError::Malformed { input: input() }),
+            message_of(EndpointError::Malformed { input: input() }),
+            message_of(EndpointError::InvalidBroker {
                 input: "broker -1".to_owned(),
                 error: BrokerIdError::Negative { value: -1 },
             }),
-            Box::new(ClientSoftwareError::Malformed { input: input() }),
-            Box::new(ApiVersionError::Malformed { input: input() }),
-            Box::new(ApiVersionError::OutOfRange {
+            message_of(ClientSoftwareError::Malformed { input: input() }),
+            message_of(ApiVersionError::Malformed { input: input() }),
+            message_of(ApiVersionError::OutOfRange {
                 input: "40000".to_owned(),
             }),
-            Box::new(AcksError::Malformed { input: input() }),
-            Box::new(AcksError::OutOfRange {
+            message_of(AcksError::Malformed { input: input() }),
+            message_of(AcksError::OutOfRange {
                 input: "40000".to_owned(),
             }),
-            Box::new(OutcomeError::Unknown { name: input() }),
-            Box::new(LatencyError::Malformed { input: input() }),
-            Box::new(PartError::InvalidTopic {
+            message_of(OutcomeError::Unknown { name: input() }),
+            message_of(LatencyError::Malformed { input: input() }),
+            message_of(PartError::InvalidTopic {
                 error: TopicNameError::Empty,
             }),
-            Box::new(PartError::InvalidPartition {
+            message_of(PartError::InvalidPartition {
                 error: TopicPartitionError::Malformed { input: input() },
             }),
-            Box::new(FieldValueError::Topic {
+            message_of(FieldValueError::Topic {
                 error: TopicNameError::Empty,
             }),
-            Box::new(PartSet::new([]).unwrap_err()),
-        ];
-
-        errors
-            .iter()
-            .map(|error| {
-                assert!(error.source().is_none(), "{error}");
-                error.to_string()
-            })
-            .collect()
+            message_of(PartSet::new([]).unwrap_err()),
+        ]
     }
 }
 

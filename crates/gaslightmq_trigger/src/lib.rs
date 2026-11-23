@@ -27,9 +27,9 @@
 //! use gaslightmq_trigger::prelude::*;
 //!
 //! // `trigger: { first: 2, per: session }` and `lifetime: 3 firings`, in a scenario with `seed: 42`.
-//! let trigger = Trigger::from(TriggerParts::new().with_first(Count::new(2)?).with_per(Per::Session));
-//! let lifetime: Lifetime = "3 firings".parse()?;
-//! let die = Die::new(Seed::new(42), &DiceKey::new("Stale metadata")?);
+//! let trigger = Trigger::from(TriggerParts::new().with_first(Count::new(2).expect("a count")).with_per(Per::Session));
+//! let lifetime: Lifetime = "3 firings".parse().expect("a lifetime");
+//! let die = Die::new(Seed::new(42), &DiceKey::new("Stale metadata").expect("a dice key"));
 //!
 //! // The engine arms the rule, and shares the arming with every session.
 //! let armed_at = Instant::ZERO + Duration::from_secs(1);
@@ -54,7 +54,7 @@
 //!
 //! // The budget is shared, so its second call finds the lifetime over.
 //! assert_eq!(arming.evaluate(now, &mut second).rolled().outcome(), TriggerOutcome::LifetimeOver);
-//! # Ok::<(), Box<dyn std::error::Error>>(())
+//! # Ok::<(), CounterKeyError>(())
 //! ```
 //!
 //! # Definitions and live state

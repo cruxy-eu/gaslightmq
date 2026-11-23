@@ -228,17 +228,17 @@ text_key! {
 /// ```
 /// use gaslightmq_trigger::prelude::*;
 ///
-/// let die = Die::new(Seed::new(42), &DiceKey::new("Slow down order producers")?);
+/// let die = Die::new(Seed::new(42), &DiceKey::new("Slow down order producers").expect("a dice key"));
 ///
 /// // The same seed, key and match number roll the same, in every run and on every machine.
-/// let third = MatchNumber::new(3)?;
+/// let third = MatchNumber::new(3).expect("a match number");
 /// assert_eq!(die.roll(third), die.roll(third));
 /// assert_eq!(die.roll(third).to_string(), "73.8645%");
 ///
 /// // With `per: session`, every session rolls a die of its own.
 /// let session = die.for_counter(&CounterKey::new("10.0.4.27 broker 2 #1")?);
 /// assert_ne!(session.roll(third), die.roll(third));
-/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// # Ok::<(), CounterKeyError>(())
 /// ```
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct Die(u64);

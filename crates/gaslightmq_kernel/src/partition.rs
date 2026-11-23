@@ -18,7 +18,7 @@ number_value! {
     /// assert_eq!(partition, PartitionNumber::from(3));
     /// assert_eq!(i32::from(partition), 3);
     /// assert!(PartitionNumber::try_from(-1_i32).is_err());
-    /// # Ok::<(), Box<dyn std::error::Error>>(())
+    /// # Ok::<(), PartitionNumberError>(())
     /// ```
     PartitionNumber, PartitionNumberError, "partition number", value: u32, wire: i32, small: u16
 }
@@ -44,7 +44,7 @@ impl PartitionNumber {
 /// assert_eq!(partition.topic(), "orders.eu");
 /// assert_eq!(partition.partition(), PartitionNumber::from(3));
 /// assert_eq!(partition.to_string(), "orders.eu/3");
-/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// # Ok::<(), TopicPartitionError>(())
 /// ```
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct TopicPartition {
@@ -170,8 +170,9 @@ impl std::error::Error for TopicPartitionError {}
 ///
 /// let position: PartitionOffset = "3@42".parse()?;
 /// assert_eq!(position.offset(), Offset::from(42));
-/// assert_eq!(position.in_topic(&TopicName::new("orders.eu")?).to_string(), "orders.eu/3@42");
-/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// let orders = TopicName::new("orders.eu").expect("a topic name");
+/// assert_eq!(position.in_topic(&orders).to_string(), "orders.eu/3@42");
+/// # Ok::<(), PartitionOffsetError>(())
 /// ```
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct PartitionOffset {
@@ -294,11 +295,11 @@ impl std::error::Error for PartitionOffsetError {}
 /// ```
 /// use gaslightmq_kernel::prelude::*;
 ///
-/// let orders = TopicName::new("orders.eu")?;
+/// let orders = TopicName::new("orders.eu").expect("a topic name");
 /// let position = orders.partition(PartitionNumber::from(3)).at(Offset::from(42));
 /// assert_eq!(position.to_string(), "orders.eu/3@42");
 /// assert_eq!("orders.eu/3@42".parse::<TopicPartitionOffset>()?, position);
-/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// # Ok::<(), TopicPartitionOffsetError>(())
 /// ```
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct TopicPartitionOffset {
@@ -847,36 +848,41 @@ mod tests {
     fn the_error_of_a_position_names_the_text_and_says_which_part_is_wrong_once() {
         use std::error::Error;
 
-        let cases: [(Box<dyn Error>, &str); 6] = [
+        /// What an error says, which is everything: it has no source.
+        fn said<E: Error>(error: E) -> String {
+            assert!(error.source().is_none(), "the message is complete: {error}");
+            error.to_string()
+        }
+
+        let cases: [(String, &str); 6] = [
             (
-                Box::new("orders".parse::<TopicPartition>().unwrap_err()),
+                said("orders".parse::<TopicPartition>().unwrap_err()),
                 "topic partition \"orders\" does not have the form topic/partition",
             ),
             (
-                Box::new("orders eu/3".parse::<TopicPartition>().unwrap_err()),
+                said("orders eu/3".parse::<TopicPartition>().unwrap_err()),
                 "topic partition \"orders eu/3\": topic name \"orders eu\" has the invalid character ' ' at position 6",
             ),
             (
-                Box::new("3".parse::<PartitionOffset>().unwrap_err()),
+                said("3".parse::<PartitionOffset>().unwrap_err()),
                 "partition offset \"3\" does not have the form partition@offset",
             ),
             (
-                Box::new("3@-1".parse::<PartitionOffset>().unwrap_err()),
+                said("3@-1".parse::<PartitionOffset>().unwrap_err()),
                 "partition offset \"3@-1\": offset cannot be negative: -1",
             ),
             (
-                Box::new("orders.eu@42".parse::<TopicPartitionOffset>().unwrap_err()),
+                said("orders.eu@42".parse::<TopicPartitionOffset>().unwrap_err()),
                 "topic partition offset \"orders.eu@42\" does not have the form topic/partition@offset",
             ),
             (
-                Box::new("orders.eu/x@42".parse::<TopicPartitionOffset>().unwrap_err()),
+                said("orders.eu/x@42".parse::<TopicPartitionOffset>().unwrap_err()),
                 "topic partition offset \"orders.eu/x@42\": partition number is not a number: \"x\"",
             ),
         ];
 
-        for (error, message) in cases {
-            assert_eq!(error.to_string(), message);
-            assert!(error.source().is_none(), "the message is complete: {error}");
+        for (said, message) in cases {
+            assert_eq!(said, message);
         }
     }
 }

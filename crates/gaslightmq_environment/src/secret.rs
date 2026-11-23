@@ -21,12 +21,12 @@ use crate::text::kept_text;
 /// ```
 /// use gaslightmq_environment::prelude::*;
 ///
-/// let password = SecretRef::File("/run/secrets/kafka-password".parse()?);
+/// let password = SecretRef::File("/run/secrets/kafka-password".parse().expect("a file path"));
 /// assert_eq!(password.to_string(), "the file /run/secrets/kafka-password");
 ///
 /// let password = SecretRef::Variable("KAFKA_PASSWORD".parse()?);
 /// assert_eq!(password.to_string(), "the environment variable KAFKA_PASSWORD");
-/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// # Ok::<(), VariableNameError>(())
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum SecretRef {
@@ -119,7 +119,7 @@ impl std::error::Error for SecretRefError {}
 /// let ca: FilePath = "/run/secrets/kafka-ca.pem".parse()?;
 /// assert_eq!(ca, "/run/secrets/kafka-ca.pem");
 /// assert_eq!(FilePath::new(""), Err(FilePathError::Empty));
-/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// # Ok::<(), gaslightmq_environment::FilePathError>(())
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct FilePath(Arc<str>);
@@ -181,7 +181,7 @@ impl std::error::Error for FilePathError {}
 /// let variable: VariableName = "KAFKA_PASSWORD".parse()?;
 /// assert_eq!(variable, "KAFKA_PASSWORD");
 /// assert!(VariableName::new("KAFKA_PASSWORD=hunter2").is_err());
-/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// # Ok::<(), VariableNameError>(())
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct VariableName(Arc<str>);

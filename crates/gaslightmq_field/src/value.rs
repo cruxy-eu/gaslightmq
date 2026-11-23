@@ -26,14 +26,14 @@ macro_rules! field_values {
         /// use gaslightmq_field::prelude::*;
         /// use gaslightmq_kernel::prelude::*;
         ///
-        /// let value = FieldValue::from(TopicName::new("orders.eu")?);
+        /// let value = FieldValue::from(TopicName::new("orders.eu").expect("a topic name"));
         /// assert_eq!(value.field(), Field::Topic);
         /// assert_eq!(value.to_string(), "orders.eu");
         ///
         /// // A selector that says `api: Produce` reads the value through its field.
         /// assert_eq!(Field::Api.parse_value("Produce")?, FieldValue::Api(ApiKey::PRODUCE));
         /// assert!(Field::Api.parse_value("Prodcue").is_err());
-        /// # Ok::<(), Box<dyn std::error::Error>>(())
+        /// # Ok::<(), FieldValueError>(())
         /// ```
         #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
         pub enum FieldValue {
@@ -284,7 +284,7 @@ pub enum Origin {
 /// assert_eq!(learned.to_string(), "analytics-etl, payments");
 ///
 /// assert_eq!(FieldValues::of(Vec::<GroupId>::new()), None);
-/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// # Ok::<(), GroupIdError>(())
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct FieldValues {

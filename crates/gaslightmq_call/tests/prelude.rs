@@ -101,39 +101,37 @@ mod next_to_std_and_every_neighbour {
     ///
     /// A message says everything, so no error has a source.
     pub fn every_error() -> Vec<String> {
+        /// What an error says. A message says everything, so the error has no source.
+        fn message_of<E: std::error::Error>(error: E) -> String {
+            assert!(error.source().is_none(), "{error}");
+            error.to_string()
+        }
+
         let name = || RecordedRuleName::new("x").expect("a name");
-        let errors: Vec<Box<dyn std::error::Error>> = vec![
-            Box::new(CallNumberError::Zero),
-            Box::new(CallIdError::InvalidNumber {
+        vec![
+            message_of(CallNumberError::Zero),
+            message_of(CallIdError::InvalidNumber {
                 input: "#7.0".to_owned(),
                 error: CallNumberError::Zero,
             }),
-            Box::new(RecordedRuleNameError::Empty),
-            Box::new(TriggerDecisionError::Unknown { name: "x".to_owned() }),
-            Box::new(DieCheckError::RollOutOfRange { ppm: 1_000_000 }),
-            Box::new(WindowCheckError::Empty {
+            message_of(RecordedRuleNameError::Empty),
+            message_of(TriggerDecisionError::Unknown { name: "x".to_owned() }),
+            message_of(DieCheckError::RollOutOfRange { ppm: 1_000_000 }),
+            message_of(WindowCheckError::Empty {
                 opens_after: gaslightmq_clock::TimeSpan::from_secs(2),
                 closes_after: gaslightmq_clock::TimeSpan::from_secs(1),
             }),
-            Box::new(BudgetCheckError::LeftAboveLimit {
+            message_of(BudgetCheckError::LeftAboveLimit {
                 left: 2,
                 limit: NonZeroU64::MIN,
             }),
-            Box::new(TriggerExplanationError::FiredAgainstCheck),
-            Box::new(LieFateError::Nowhere),
-            Box::new(RuleExplanationError::NoIncident { rule: name() }),
-            Box::new(ExplanationError::RuleTwice { rule: name() }),
-            Box::new(CallTimingError::AnsweredWithoutForwarding),
-            Box::new(CallError::NoConnection),
-        ];
-
-        errors
-            .iter()
-            .map(|error| {
-                assert!(error.source().is_none(), "{error}");
-                error.to_string()
-            })
-            .collect()
+            message_of(TriggerExplanationError::FiredAgainstCheck),
+            message_of(LieFateError::Nowhere),
+            message_of(RuleExplanationError::NoIncident { rule: name() }),
+            message_of(ExplanationError::RuleTwice { rule: name() }),
+            message_of(CallTimingError::AnsweredWithoutForwarding),
+            message_of(CallError::NoConnection),
+        ]
     }
 }
 

@@ -24,11 +24,11 @@
 //!
 //! // A Produce for two topics, as a test writes it down.
 //! let produce = Fields::new()
-//!     .with(ClientId::new("order-ingest")?)
+//!     .with(ClientId::new("order-ingest").expect("a client ID"))
 //!     .with(ApiKey::PRODUCE)
 //!     .with(Acks::ALL)
-//!     .with_part("orders.eu/3".parse::<TopicPartition>()?)
-//!     .with_part("payments.settled/3".parse::<TopicPartition>()?);
+//!     .with_part("orders.eu/3".parse::<TopicPartition>().expect("a topic partition"))
+//!     .with_part("payments.settled/3".parse::<TopicPartition>().expect("a topic partition"));
 //!
 //! // A selector reads the text of its conditions as typed values: `api: Produce` and `topic: orders.eu`.
 //! let api = Field::Api.parse_value("Produce")?;
@@ -48,7 +48,7 @@
 //!     .map(|part| part.part().clone());
 //! let target = Target::of_parts(matched).expect("the request names orders.eu");
 //! assert_eq!(target.to_string(), "orders.eu/3");
-//! # Ok::<(), Box<dyn std::error::Error>>(())
+//! # Ok::<(), FieldValueError>(())
 //! ```
 //!
 //! # Values
@@ -152,8 +152,9 @@ pub use value::{CallValue, FieldValue, FieldValueError, FieldValues, LearnedValu
 /// use gaslightmq_kernel::prelude::*;
 ///
 /// let value: Result<FieldValue, FieldValueError> = Field::Topic.parse_value("orders.eu");
-/// assert_eq!(value?, FieldValue::Topic(TopicName::new("orders.eu")?));
-/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// let orders = TopicName::new("orders.eu").expect("a topic name");
+/// assert_eq!(value?, FieldValue::Topic(orders));
+/// # Ok::<(), FieldValueError>(())
 /// ```
 pub mod prelude {
     #[doc(no_inline)]

@@ -15,7 +15,7 @@ text_value! {
     /// let client = ClientId::new("order-ingest")?;
     /// assert_eq!(client, "order-ingest");
     /// assert_eq!(ClientId::new("")?.as_str(), "");
-    /// # Ok::<(), Box<dyn std::error::Error>>(())
+    /// # Ok::<(), ClientIdError>(())
     /// ```
     ClientId, ClientIdError, "client ID", max: text::MAX_STRING_LEN, rule: any
 }

@@ -25,24 +25,24 @@ use crate::{EffectiveSelector, Selector, SelectorName, SelectorRef};
 /// use gaslightmq_selector::prelude::*;
 ///
 /// let order_producers = Selector::new(
-///     "Order producers".parse()?,
+///     "Order producers".parse().expect("a selector name"),
 ///     Conditions::new()
 ///         .with(Condition::is(ApiKey::PRODUCE))
-///         .with(Condition::parse(Field::Topic, "orders.*")?),
+///         .with(Condition::parse(Field::Topic, "orders.*").expect("a condition")),
 /// );
 /// let from_ingest = Selector::new(
-///     "Order producers from ingest".parse()?,
+///     "Order producers from ingest".parse().expect("a selector name"),
 ///     Condition::is(ClientId::new("order-ingest").expect("a client ID")).into(),
 /// )
-/// .including("Order producers".parse()?);
+/// .including("Order producers".parse().expect("a selector name"));
 ///
 /// let set = SelectorSet::new([order_producers, from_ingest])?;
-/// let effective = set.effective(&"Order producers from ingest".parse()?)?;
+/// let effective = set.effective(&"Order producers from ingest".parse().expect("a selector name"))?;
 /// assert_eq!(
 ///     effective.to_string(),
 ///     "api is Produce and topic matches orders.* and client.id is order-ingest"
 /// );
-/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// # Ok::<(), SelectorSetError>(())
 /// ```
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct SelectorSet {

@@ -127,7 +127,7 @@ impl std::error::Error for SettingSourceError {}
 /// let effective = advertise.effective().expect("the file sets it");
 /// assert_eq!(*effective.value(), "localhost");
 /// assert_eq!(effective.source(), SettingSource::Flag);
-/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// # Ok::<(), HostNameError>(())
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Setting<T> {

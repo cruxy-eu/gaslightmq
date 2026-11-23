@@ -17,7 +17,7 @@ text_value! {
     /// let orders = TopicName::new("orders.eu")?;
     /// assert_eq!(orders, "orders.eu");
     /// assert!(TopicName::new("orders/eu").is_err());
-    /// # Ok::<(), Box<dyn std::error::Error>>(())
+    /// # Ok::<(), TopicNameError>(())
     /// ```
     TopicName, TopicNameError, "topic name", max: text::MAX_NAME_LEN, rule: name
 }
@@ -44,7 +44,7 @@ impl TopicName {
 /// assert_eq!(id.as_bytes(), b"foobarbazqux1234");
 /// assert_eq!(id.to_string(), "Zm9vYmFyYmF6cXV4MTIzNA");
 /// assert_eq!(TopicId::from_wire([0; 16]), None);
-/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// # Ok::<(), TopicIdError>(())
 /// ```
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct TopicId([u8; 16]);

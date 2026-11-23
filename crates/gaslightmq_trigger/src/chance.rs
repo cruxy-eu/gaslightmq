@@ -151,12 +151,12 @@ impl std::error::Error for ChanceError {}
 /// ```
 /// use gaslightmq_trigger::prelude::*;
 ///
-/// let chance: Chance = "40%".parse()?;
+/// let chance: Chance = "40%".parse().expect("a chance");
 /// let roll = Roll::from_ppm(399_999)?;
 /// assert!(roll.is_under(chance));
 /// assert!(!Roll::from_ppm(400_000)?.is_under(chance));
 /// assert_eq!(roll.to_string(), "39.9999%");
-/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// # Ok::<(), RollError>(())
 /// ```
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Roll(u32);

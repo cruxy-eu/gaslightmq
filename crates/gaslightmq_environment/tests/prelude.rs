@@ -116,55 +116,53 @@ mod next_to_the_others {
     ///
     /// A message says everything, so no error has a source.
     pub fn every_error() -> Vec<String> {
+        /// What an error says. A message says everything, so the error has no source.
+        fn message_of<E: std::error::Error>(error: E) -> String {
+            assert!(error.source().is_none(), "{error}");
+            error.to_string()
+        }
+
         let name: EnvironmentName = "shop".parse().unwrap();
-        let errors: Vec<Box<dyn std::error::Error>> = vec![
-            Box::new(EnvironmentNameError::Empty),
-            Box::new(WorldNameError::Empty),
-            Box::new(HostNameError::Empty),
-            Box::new(ServerAddressError::InvalidHost {
+        vec![
+            message_of(EnvironmentNameError::Empty),
+            message_of(WorldNameError::Empty),
+            message_of(HostNameError::Empty),
+            message_of(ServerAddressError::InvalidHost {
                 input: ":9092".to_owned(),
                 error: HostNameError::Empty,
             }),
-            Box::new(ListenAddressError::NotAnAddress {
+            message_of(ListenAddressError::NotAnAddress {
                 input: "localhost".to_owned(),
             }),
-            Box::new(PortRangeError::Backwards { first: 2, last: 1 }),
-            Box::new(BrokerListenersError::InvalidPorts {
+            message_of(PortRangeError::Backwards { first: 2, last: 1 }),
+            message_of(BrokerListenersError::InvalidPorts {
                 input: "0.0.0.0:2-1".to_owned(),
                 error: PortRangeError::Backwards { first: 2, last: 1 },
             }),
-            Box::new(ListenersError::BootstrapAmongBrokers {
+            message_of(ListenersError::BootstrapAmongBrokers {
                 address: "0.0.0.0:9092".parse().unwrap(),
             }),
-            Box::new(SchemaRegistryUrlError::InvalidHost {
+            message_of(SchemaRegistryUrlError::InvalidHost {
                 input: "http://".to_owned(),
                 error: HostNameError::Empty,
             }),
-            Box::new(FilePathError::Empty),
-            Box::new(VariableNameError::Empty),
-            Box::new(SecretRefError::Literal),
-            Box::new(SaslMechanismError::Unknown {
+            message_of(FilePathError::Empty),
+            message_of(VariableNameError::Empty),
+            message_of(SecretRefError::Literal),
+            message_of(SaslMechanismError::Unknown {
                 name: "GSSAPI".to_owned(),
             }),
-            Box::new(SaslUsernameError::Empty),
-            Box::new(RecordingModeError::Unknown {
+            message_of(SaslUsernameError::Empty),
+            message_of(RecordingModeError::Unknown {
                 name: "some".to_owned(),
             }),
-            Box::new(SchemaRegistryError::NoPlace),
-            Box::new(EnvironmentError::NoInstance { name: name.clone() }),
-            Box::new(EnvironmentSetError::UnknownEnvironment { name }),
-            Box::new(SettingSourceError::Unknown {
+            message_of(SchemaRegistryError::NoPlace),
+            message_of(EnvironmentError::NoInstance { name: name.clone() }),
+            message_of(EnvironmentSetError::UnknownEnvironment { name }),
+            message_of(SettingSourceError::Unknown {
                 name: "file".to_owned(),
             }),
-        ];
-
-        errors
-            .iter()
-            .map(|error| {
-                assert!(error.source().is_none(), "{error}");
-                error.to_string()
-            })
-            .collect()
+        ]
     }
 }
 

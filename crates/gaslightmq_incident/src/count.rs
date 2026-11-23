@@ -184,28 +184,33 @@ mod tests {
     fn the_error_of_a_count_names_the_count_the_number_and_the_range() {
         use std::error::Error;
 
-        let cases: [(Box<dyn Error>, &str); 4] = [
+        /// What an error says, which is everything: it has no source.
+        fn said<E: Error>(error: E) -> String {
+            assert!(error.source().is_none(), "the message is complete: {error}");
+            error.to_string()
+        }
+
+        let cases: [(String, &str); 4] = [
             (
-                Box::new(PartitionCount::new(0).unwrap_err()),
+                said(PartitionCount::new(0).unwrap_err()),
                 "partition count 0 is not between 1 and 2147483647",
             ),
             (
-                Box::new(PartitionCount::new(u32::MAX).unwrap_err()),
+                said(PartitionCount::new(u32::MAX).unwrap_err()),
                 "partition count 4294967295 is not between 1 and 2147483647",
             ),
             (
-                Box::new(RecordCount::new(0).unwrap_err()),
+                said(RecordCount::new(0).unwrap_err()),
                 "record count 0 is not between 1 and 9223372036854775807",
             ),
             (
-                Box::new(RecordCount::new(u64::MAX).unwrap_err()),
+                said(RecordCount::new(u64::MAX).unwrap_err()),
                 "record count 18446744073709551615 is not between 1 and 9223372036854775807",
             ),
         ];
 
-        for (error, message) in cases {
-            assert_eq!(error.to_string(), message);
-            assert!(error.source().is_none(), "the message is complete: {error}");
+        for (said, message) in cases {
+            assert_eq!(said, message);
         }
     }
 

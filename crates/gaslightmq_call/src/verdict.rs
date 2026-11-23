@@ -32,7 +32,7 @@ use gaslightmq_lie::TargetedLie;
 ///
 /// assert_eq!(Verdict::pass().to_string(), "pass");
 /// assert_eq!(Verdict::lied([]), Verdict::pass());
-/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// # Ok::<(), PartError>(())
 /// ```
 ///
 /// With the `serde` feature, a verdict serializes as the list of its lies, and a pass as the empty list.

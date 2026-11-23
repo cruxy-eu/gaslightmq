@@ -29,7 +29,7 @@ use crate::Condition;
 /// assert_eq!(order_producers.to_string(), "api is Produce and topic matches orders.*");
 /// assert_eq!(order_producers.get(Field::Api), Some(&Condition::is(ApiKey::PRODUCE)));
 /// assert!(!order_producers.is_scope());
-/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// # Ok::<(), ConditionError>(())
 /// ```
 #[derive(Debug, Clone, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Conditions(BTreeMap<Field, Condition>);

@@ -16,17 +16,21 @@ use crate::name::{EnvironmentName, WorldName};
 /// ```
 /// use gaslightmq_environment::prelude::*;
 ///
-/// let broker = |name: &str, bootstrap: &str, brokers: &str| {
-///     let listen = Listeners::new(bootstrap.parse()?, brokers.parse()?, "localhost".parse()?)?;
-///     let broker = BrokerDefinition::new("shop".parse()?);
-///     Ok::<_, Box<dyn std::error::Error>>(Environment::new(name.parse()?, Instances::BrokerAlone { broker, listen }))
+/// let name = |name: &str| name.parse::<EnvironmentName>().expect("an environment name");
+/// let broker = |environment: &str, bootstrap: &str, brokers: &str| {
+///     let bootstrap = bootstrap.parse().expect("a listen address");
+///     let brokers = brokers.parse().expect("broker listeners");
+///     let listen = Listeners::new(bootstrap, brokers, "localhost".parse().expect("a host name"))
+///         .expect("a bootstrap port outside the ports of the brokers");
+///     let broker = BrokerDefinition::new("shop".parse().expect("a world name"));
+///     Environment::new(name(environment), Instances::BrokerAlone { broker, listen })
 /// };
 /// let set = EnvironmentSet::new([
-///     broker("shop", "0.0.0.0:9092", "0.0.0.0:19092-19094")?,
-///     broker("tests", "0.0.0.0:29092", "0.0.0.0:29093-29095")?,
-///     broker("demo", "0.0.0.0:9092", "0.0.0.0:39093-39095")?,
+///     broker("shop", "0.0.0.0:9092", "0.0.0.0:19092-19094"),
+///     broker("tests", "0.0.0.0:29092", "0.0.0.0:29093-29095"),
+///     broker("demo", "0.0.0.0:9092", "0.0.0.0:39093-39095"),
 /// ])?;
-/// let [shop, tests, demo]: [EnvironmentName; 3] = ["shop".parse()?, "tests".parse()?, "demo".parse()?];
+/// let [shop, tests, demo] = ["shop", "tests", "demo"].map(name);
 ///
 /// // `shop` and `tests` listen on different ports, so one process starts both.
 /// assert_eq!(set.to_start([&shop, &tests])?.len(), 2);
@@ -34,7 +38,7 @@ use crate::name::{EnvironmentName, WorldName};
 /// // `shop` and `demo` both listen on port 9092.
 /// let error = set.to_start([&shop, &demo]).unwrap_err();
 /// assert_eq!(error.to_string(), "environments \"shop\" and \"demo\" both listen on 0.0.0.0:9092");
-/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// # Ok::<(), EnvironmentSetError>(())
 /// ```
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct EnvironmentSet {

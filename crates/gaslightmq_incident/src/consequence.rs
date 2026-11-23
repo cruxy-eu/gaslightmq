@@ -92,11 +92,11 @@ impl Incident {
     /// assert_eq!(
     ///     down.expand(&Cluster).consequences(),
     ///     [
-    ///         Consequence::Leaderless { partition: "orders.eu/3".parse()? },
+    ///         Consequence::Leaderless { partition: "orders.eu/3".parse().expect("a topic partition") },
     ///         Consequence::CoordinatorUnavailable { coordinator: GroupId::new("payments")?.into() },
     ///     ]
     /// );
-    /// # Ok::<(), Box<dyn std::error::Error>>(())
+    /// # Ok::<(), GroupIdError>(())
     /// ```
     pub fn expand<T: Topology + ?Sized>(self, topology: &T) -> ExpandedIncident {
         let consequences = match &self {

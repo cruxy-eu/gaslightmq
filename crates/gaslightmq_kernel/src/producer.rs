@@ -15,7 +15,7 @@ number_value! {
     /// let producer = ProducerId::from_wire(4000)?;
     /// assert_eq!(producer, Some(ProducerId::from(4000)));
     /// assert_eq!(ProducerId::from_wire(-1)?, None);
-    /// # Ok::<(), Box<dyn std::error::Error>>(())
+    /// # Ok::<(), ProducerIdError>(())
     /// ```
     ProducerId, ProducerIdError, "producer ID", value: u64, wire: i64, small: u32
 }
@@ -37,7 +37,7 @@ number_value! {
     /// let epoch = ProducerEpoch::from(0);
     /// assert_eq!(epoch.checked_next(), Some(ProducerEpoch::from(1)));
     /// assert_eq!(ProducerEpoch::from_wire(-1)?, None);
-    /// # Ok::<(), Box<dyn std::error::Error>>(())
+    /// # Ok::<(), ProducerEpochError>(())
     /// ```
     ProducerEpoch, ProducerEpochError, "producer epoch", value: u16, wire: i16, small: u8
 }
@@ -66,7 +66,7 @@ text_value! {
     /// let transactional = TransactionalId::new("payments-tx-1")?;
     /// assert_eq!(transactional, "payments-tx-1");
     /// assert!(TransactionalId::new("").is_err());
-    /// # Ok::<(), Box<dyn std::error::Error>>(())
+    /// # Ok::<(), TransactionalIdError>(())
     /// ```
     TransactionalId, TransactionalIdError, "transactional ID", max: text::MAX_STRING_LEN, rule: non_empty
 }

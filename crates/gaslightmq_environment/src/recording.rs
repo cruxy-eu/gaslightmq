@@ -19,7 +19,7 @@ use crate::text::text_form;
 /// assert_eq!(mode, RecordingMode::MetadataOnly);
 /// assert!(!mode.keeps_records());
 /// assert_eq!(RecordingMode::Full.to_string(), "full");
-/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// # Ok::<(), RecordingModeError>(())
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum RecordingMode {

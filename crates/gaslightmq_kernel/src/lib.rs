@@ -40,12 +40,12 @@
 //! use gaslightmq_kernel::prelude::*;
 //!
 //! // Build a position from its parts.
-//! let orders = TopicName::new("orders.eu")?;
+//! let orders = TopicName::new("orders.eu").expect("a topic name");
 //! let position = orders.partition(PartitionNumber::from(3)).at(Offset::from(42));
 //! assert_eq!(position.to_string(), "orders.eu/3@42");
 //!
 //! // Or read it from its text form.
-//! let parsed: TopicPartitionOffset = "orders.eu/3@42".parse()?;
+//! let parsed: TopicPartitionOffset = "orders.eu/3@42".parse().expect("a position");
 //! assert_eq!(parsed, position);
 //! assert_eq!(parsed.topic_partition(), &"orders.eu/3".parse::<TopicPartition>()?);
 //!
@@ -55,7 +55,7 @@
 //! let error = "orders.eu/-1".parse::<TopicPartition>().unwrap_err();
 //! assert!(matches!(error, TopicPartitionError::InvalidPartition { .. }));
 //! assert_eq!(error.to_string(), "topic partition \"orders.eu/-1\": partition number cannot be negative: -1");
-//! # Ok::<(), Box<dyn std::error::Error>>(())
+//! # Ok::<(), TopicPartitionError>(())
 //! ```
 //!
 //! # Conversions

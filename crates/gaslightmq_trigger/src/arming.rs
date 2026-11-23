@@ -34,12 +34,12 @@ use crate::{
 ///
 /// // `trigger: { nth: 2 }` with `lifetime: 1 firing`.
 /// let trigger = Trigger::from(TriggerParts::new().with_nth(MatchNumber::new(2)?));
-/// let die = Die::new(Seed::new(42), &DiceKey::new("Refuse the 2nd Produce")?);
+/// let die = Die::new(Seed::new(42), &DiceKey::new("Refuse the 2nd Produce").expect("a dice key"));
 /// let armed_at = Instant::ZERO;
 /// let arming = Arming::new(trigger, Lifetime::Firings(Count::ONE), die, armed_at);
 ///
 /// // A session evaluates each call the rule's selector matches.
-/// let mut session = SessionCounters::new(CounterKey::new("10.0.4.27 broker 2 #1")?);
+/// let mut session = SessionCounters::new(CounterKey::new("10.0.4.27 broker 2 #1").expect("a counter key"));
 /// let now = armed_at + Duration::from_millis(5);
 /// assert_eq!(arming.evaluate(now, &mut session).rolled().outcome(), TriggerOutcome::Held);
 ///
@@ -52,7 +52,7 @@ use crate::{
 /// // The action applied, which spends the one firing and ends the lifetime.
 /// assert!(firing.confirm().ends_lifetime());
 /// assert!(arming.has_ended(now));
-/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// # Ok::<(), MatchNumberError>(())
 /// ```
 #[derive(Clone, Debug)]
 pub struct Arming {

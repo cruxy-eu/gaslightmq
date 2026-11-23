@@ -34,7 +34,7 @@ use crate::text::text_form;
 /// assert!(SelectorName::new("Order producers ").is_err());
 /// // A zero-width space hides between the two words.
 /// assert!(SelectorName::new("Order\u{200b}producers").is_err());
-/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// # Ok::<(), SelectorNameError>(())
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct SelectorName(Arc<str>);

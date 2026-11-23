@@ -17,7 +17,7 @@ number_value! {
     /// assert_eq!(Offset::from_wire(-1)?, None);
     /// assert_eq!(Offset::to_wire(None), -1);
     /// assert!(Offset::try_from(-1_i64).is_err());
-    /// # Ok::<(), Box<dyn std::error::Error>>(())
+    /// # Ok::<(), OffsetError>(())
     /// ```
     Offset, OffsetError, "offset", value: u64, wire: i64, small: u32
 }

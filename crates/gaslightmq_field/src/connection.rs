@@ -24,7 +24,7 @@ use crate::text::{number_form, text_form};
 /// assert_eq!(connection.to_string(), "#7");
 /// assert_eq!("#7".parse::<ConnectionNumber>()?, connection);
 /// assert_eq!("7".parse::<ConnectionNumber>()?, connection);
-/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// # Ok::<(), ConnectionNumberError>(())
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ConnectionNumber(u64);
@@ -121,7 +121,7 @@ impl std::error::Error for ConnectionNumberError {}
 ///
 /// let mapped: ClientAddress = "[::ffff:10.0.4.27]:51459".parse()?;
 /// assert_eq!(mapped, address);
-/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// # Ok::<(), ClientAddressError>(())
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ClientAddress(SocketAddr);
@@ -217,7 +217,7 @@ impl std::error::Error for ClientAddressError {}
 /// let host: ClientHost = "10.0.4.27".parse()?;
 /// assert_eq!(host.ip(), IpAddr::V4(Ipv4Addr::new(10, 0, 4, 27)));
 /// assert_eq!("::ffff:10.0.4.27".parse::<ClientHost>()?, host);
-/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// # Ok::<(), ClientHostError>(())
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ClientHost(IpAddr);
@@ -301,7 +301,7 @@ impl std::error::Error for ClientHostError {}
 /// assert_eq!(endpoint, Endpoint::Broker(BrokerId::from(2)));
 /// assert_eq!(endpoint.broker(), Some(BrokerId::from(2)));
 /// assert_eq!(Endpoint::Bootstrap.to_string(), "bootstrap");
-/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// # Ok::<(), EndpointError>(())
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Endpoint {
@@ -401,7 +401,7 @@ impl std::error::Error for EndpointError {}
 /// let software: ClientSoftware = "librdkafka 2.6.1".parse()?;
 /// assert_eq!(software.name(), "librdkafka");
 /// assert_eq!(software.version(), "2.6.1");
-/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// # Ok::<(), ClientSoftwareError>(())
 /// ```
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ClientSoftware {

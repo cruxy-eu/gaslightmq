@@ -82,28 +82,26 @@ mod next_to_the_others {
     ///
     /// A message says everything, so no error has a source.
     pub fn every_error() -> Vec<String> {
+        /// What an error says. A message says everything, so the error has no source.
+        fn message_of<E: std::error::Error>(error: E) -> String {
+            assert!(error.source().is_none(), "{error}");
+            error.to_string()
+        }
+
         let name: SelectorName = "Order producers".parse().unwrap();
-        let errors: Vec<Box<dyn std::error::Error>> = vec![
-            Box::new(GlobError::Empty),
-            Box::new(SelectorNameError::Empty),
-            Box::new(OperatorError::Unknown {
+        vec![
+            message_of(GlobError::Empty),
+            message_of(SelectorNameError::Empty),
+            message_of(OperatorError::Unknown {
                 name: "isnt".to_owned(),
             }),
-            Box::new(ValueSetError::Empty),
-            Box::new(ConditionError::InvalidValue {
+            message_of(ValueSetError::Empty),
+            message_of(ConditionError::InvalidValue {
                 error: Field::Topic.parse_value("").unwrap_err(),
             }),
-            Box::new(ScopeError::NotAConnectionField { field: Field::Topic }),
-            Box::new(SelectorSetError::UnknownSelector { name }),
-        ];
-
-        errors
-            .iter()
-            .map(|error| {
-                assert!(error.source().is_none(), "{error}");
-                error.to_string()
-            })
-            .collect()
+            message_of(ScopeError::NotAConnectionField { field: Field::Topic }),
+            message_of(SelectorSetError::UnknownSelector { name }),
+        ]
     }
 }
 

@@ -14,7 +14,7 @@ number_value! {
     /// let leader = BrokerId::from_wire(2)?;
     /// assert_eq!(leader, Some(BrokerId::from(2)));
     /// assert_eq!(BrokerId::from_wire(-1)?, None);
-    /// # Ok::<(), Box<dyn std::error::Error>>(())
+    /// # Ok::<(), BrokerIdError>(())
     /// ```
     BrokerId, BrokerIdError, "broker ID", value: u32, wire: i32, small: u16
 }
@@ -36,7 +36,7 @@ number_value! {
     /// let epoch = LeaderEpoch::from(7);
     /// assert_eq!(epoch.checked_next(), Some(LeaderEpoch::from(8)));
     /// assert_eq!(LeaderEpoch::from_wire(-1)?, None);
-    /// # Ok::<(), Box<dyn std::error::Error>>(())
+    /// # Ok::<(), LeaderEpochError>(())
     /// ```
     LeaderEpoch, LeaderEpochError, "leader epoch", value: u32, wire: i32, small: u16
 }

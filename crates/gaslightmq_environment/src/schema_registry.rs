@@ -16,11 +16,12 @@ use crate::text::text_form;
 /// use gaslightmq_environment::prelude::*;
 ///
 /// let built_in = SchemaRegistry::BuiltIn { listen: "0.0.0.0:8081".parse()? };
-/// let real = SchemaRegistry::Real { url: "https://schema-registry.staging.internal:8081".parse()? };
+/// let url = "https://schema-registry.staging.internal:8081".parse().expect("a schema registry URL");
+/// let real = SchemaRegistry::Real { url };
 ///
 /// assert_eq!(built_in.listen(), Some("0.0.0.0:8081".parse()?));
 /// assert_eq!(real.listen(), None);
-/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// # Ok::<(), ListenAddressError>(())
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(
@@ -101,14 +102,14 @@ impl std::error::Error for SchemaRegistryError {}
 ///
 /// let url: SchemaRegistryUrl = "https://schema-registry.staging.internal:8081".parse()?;
 /// assert!(url.uses_tls());
-/// assert_eq!(url.host(), &HostName::new("schema-registry.staging.internal")?);
+/// assert_eq!(url.host(), &HostName::new("schema-registry.staging.internal").expect("a host name"));
 /// assert_eq!(url.port(), 8081);
 ///
 /// // Without a port, the service answers on the usual one.
 /// assert_eq!("http://registry/schemas".parse::<SchemaRegistryUrl>()?.port(), 80);
 ///
 /// assert_eq!("https://admin:hunter2@registry".parse::<SchemaRegistryUrl>(), Err(SchemaRegistryUrlError::Credentials));
-/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// # Ok::<(), gaslightmq_environment::SchemaRegistryUrlError>(())
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct SchemaRegistryUrl {

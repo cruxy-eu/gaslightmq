@@ -22,7 +22,7 @@ use crate::{Coordinator, Incident, IncidentError, IncidentKind, PartitionCount, 
 ///
 /// // That Produce targets two partitions, so two leaders move.
 /// let produce = Subjects::new().with_partition("orders.eu/3".parse()?).with_partition("orders.eu/4".parse()?);
-/// let incidents = preset.resolve(&produce)?;
+/// let incidents = preset.resolve(&produce).expect("the call names its partitions");
 /// assert_eq!(
 ///     incidents,
 ///     [
@@ -30,7 +30,7 @@ use crate::{Coordinator, Incident, IncidentError, IncidentKind, PartitionCount, 
 ///         Incident::LeaderMoves { partition: "orders.eu/4".parse()?, to: None },
 ///     ]
 /// );
-/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// # Ok::<(), TopicPartitionError>(())
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum IncidentDefinition {
@@ -291,7 +291,8 @@ impl TryFrom<IncidentDefinition> for Incident {
 /// let heartbeat = Subjects::new().with_broker(BrokerId::from(2)).with_group(GroupId::new("analytics-etl")?);
 ///
 /// let rebalance = IncidentDefinition::Rebalance { group: None };
-/// assert_eq!(rebalance.resolve(&heartbeat)?, [Incident::Rebalance { group: GroupId::new("analytics-etl")? }]);
+/// let rebalanced = rebalance.resolve(&heartbeat).expect("the call names its group");
+/// assert_eq!(rebalanced, [Incident::Rebalance { group: GroupId::new("analytics-etl")? }]);
 ///
 /// // A Heartbeat names no partition.
 /// let leader_moves = IncidentDefinition::LeaderMoves { partition: None, to: None };
@@ -299,7 +300,7 @@ impl TryFrom<IncidentDefinition> for Incident {
 ///     leader_moves.resolve(&heartbeat),
 ///     Err(IncidentError::MissingSubject { incident: IncidentKind::LeaderMoves, subject: "partition" }),
 /// );
-/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// # Ok::<(), GroupIdError>(())
 /// ```
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Subjects {

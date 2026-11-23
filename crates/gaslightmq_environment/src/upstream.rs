@@ -17,17 +17,17 @@ use crate::text::{kept_text, text_form};
 /// ```
 /// use gaslightmq_environment::prelude::*;
 ///
-/// let upstream = Upstream::new("kafka-1.staging:9092".parse()?)
+/// let upstream = Upstream::new("kafka-1.staging:9092".parse().expect("a server address"))
 ///     .with_tls(Tls::new().with_ca("/run/secrets/kafka-ca.pem".parse()?))
 ///     .with_sasl(Sasl::new(
 ///         SaslMechanism::ScramSha512,
-///         "gaslight".parse()?,
+///         "gaslight".parse().expect("a SASL username"),
 ///         SecretRef::File("/run/secrets/kafka-password".parse()?),
 ///     ));
 ///
 /// assert_eq!(upstream.bootstrap().to_string(), "kafka-1.staging:9092");
 /// assert!(upstream.tls().is_some());
-/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// # Ok::<(), FilePathError>(())
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(
@@ -94,7 +94,7 @@ impl Upstream {
 /// let tls = Tls::new().with_ca("/run/secrets/kafka-ca.pem".parse()?);
 /// assert_eq!(tls.ca(), Some(&FilePath::new("/run/secrets/kafka-ca.pem")?));
 /// assert_eq!(Tls::new().ca(), None);
-/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// # Ok::<(), FilePathError>(())
 /// ```
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 #[cfg_attr(
@@ -136,11 +136,11 @@ impl Tls {
 /// let sasl = Sasl::new(
 ///     SaslMechanism::ScramSha512,
 ///     "gaslight".parse()?,
-///     SecretRef::Variable("KAFKA_PASSWORD".parse()?),
+///     SecretRef::Variable("KAFKA_PASSWORD".parse().expect("a variable name")),
 /// );
 /// assert_eq!(sasl.username(), &SaslUsername::new("gaslight")?);
 /// assert_eq!(sasl.password().to_string(), "the environment variable KAFKA_PASSWORD");
-/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// # Ok::<(), SaslUsernameError>(())
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(
@@ -190,7 +190,7 @@ impl Sasl {
 /// let mechanism: SaslMechanism = "SCRAM-SHA-512".parse()?;
 /// assert_eq!(mechanism, SaslMechanism::ScramSha512);
 /// assert_eq!(SaslMechanism::Plain.to_string(), "PLAIN");
-/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// # Ok::<(), SaslMechanismError>(())
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum SaslMechanism {
@@ -267,7 +267,7 @@ impl std::error::Error for SaslMechanismError {}
 /// let username: SaslUsername = "gaslight".parse()?;
 /// assert_eq!(username, "gaslight");
 /// assert_eq!(SaslUsername::new(""), Err(SaslUsernameError::Empty));
-/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// # Ok::<(), gaslightmq_environment::SaslUsernameError>(())
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct SaslUsername(Arc<str>);

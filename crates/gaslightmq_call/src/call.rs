@@ -43,24 +43,21 @@ use crate::{CallId, CallNumber, CallTiming, Delivered, Explanation, ResponseSumm
 /// use gaslightmq_lie::prelude::*;
 ///
 /// // A Produce for one partition, which the backend never saw: a rule refused it before forwarding.
-/// let partition: TopicPartition = "orders.eu/3".parse()?;
+/// let partition: TopicPartition = "orders.eu/3".parse().expect("a topic partition");
 /// let fields = Fields::new()
 ///     .with(ConnectionNumber::new(7))
-///     .with(ClientId::new("order-ingest")?)
+///     .with(ClientId::new("order-ingest").expect("a client ID"))
 ///     .with(ApiKey::PRODUCE)
 ///     .with_part(PartFields::new(partition.clone()).without_truth())
 ///     .without_truth();
 ///
 /// let target = Target::of_parts([partition.clone().into()]).expect("one part");
 /// let refusal = LieDefinition::from(RefusalLie::new(ErrorCode::NOT_LEADER_OR_FOLLOWER)).on(target.clone());
-/// let fired = TriggerExplanation::new(TriggerDecision::Fired, Some(NonZeroU64::MIN), TriggerChecks::new())?;
-/// let explanation = Explanation::new([RuleExplanation::lied(
-///     "Leader flap".parse()?,
-///     Priority::HIGHEST,
-///     target,
-///     fired,
-///     LieFate::all_applied(refusal),
-/// )?])?;
+/// let fired = TriggerExplanation::new(TriggerDecision::Fired, Some(NonZeroU64::MIN), TriggerChecks::new())
+///     .expect("a match that fired");
+/// let rule = "Leader flap".parse().expect("a rule name");
+/// let flapped = RuleExplanation::lied(rule, Priority::HIGHEST, target, fired, LieFate::all_applied(refusal));
+/// let explanation = Explanation::new([flapped.expect("a rule that fired tells its lie")]).expect("one line per rule");
 ///
 /// let arrived = Instant::ZERO + Duration::from_millis(250);
 /// let call = Call::new(
@@ -68,7 +65,7 @@ use crate::{CallId, CallNumber, CallTiming, Delivered, Explanation, ResponseSumm
 ///     fields,
 ///     ResponseSummary::new(Answer::Ok).with_part(partition, ErrorCode::NOT_LEADER_OR_FOLLOWER).into(),
 ///     explanation,
-///     CallTiming::arrived(arrived).delivered(arrived)?,
+///     CallTiming::arrived(arrived).delivered(arrived).expect("delivered no earlier than it arrived"),
 /// )?;
 ///
 /// assert_eq!(call.id().to_string(), "#7.1");
@@ -78,7 +75,7 @@ use crate::{CallId, CallNumber, CallTiming, Delivered, Explanation, ResponseSumm
 /// // The record answers like the live call did.
 /// assert_eq!(call.read(Field::Api), Reading::Present(FieldValues::one(ApiKey::PRODUCE)));
 /// assert_eq!(call.read(Field::Outcome), Reading::Absent);
-/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// # Ok::<(), CallError>(())
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Call {

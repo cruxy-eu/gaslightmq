@@ -28,7 +28,7 @@ use crate::text::text_form;
 /// // A text with a wildcard is a pattern, and any other text is a value.
 /// assert!(Glob::is_pattern("orders.*"));
 /// assert!(!Glob::is_pattern("orders.eu"));
-/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// # Ok::<(), GlobError>(())
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Glob(String);

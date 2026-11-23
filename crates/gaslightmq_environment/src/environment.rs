@@ -17,11 +17,15 @@ use crate::upstream::Upstream;
 /// ```
 /// use gaslightmq_environment::prelude::*;
 ///
-/// let listen = Listeners::new("0.0.0.0:9092".parse()?, "0.0.0.0:19092-19191".parse()?, "localhost".parse()?)?;
+/// let listen = Listeners::new(
+///     "0.0.0.0:9092".parse().expect("a listen address"),
+///     "0.0.0.0:19092-19191".parse().expect("broker listeners"),
+///     "localhost".parse().expect("a host name"),
+/// )?;
 /// let proxy = ProxyDefinition::new(listen).with_recording(RecordingMode::MetadataOnly);
 ///
 /// assert_eq!(proxy.recording(), Some(RecordingMode::MetadataOnly));
-/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// # Ok::<(), ListenersError>(())
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProxyDefinition {
@@ -66,7 +70,7 @@ impl ProxyDefinition {
 ///
 /// let broker = BrokerDefinition::new("orders-sim".parse()?);
 /// assert_eq!(broker.world(), &WorldName::new("orders-sim")?);
-/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// # Ok::<(), WorldNameError>(())
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BrokerDefinition {
@@ -98,7 +102,12 @@ impl BrokerDefinition {
 /// ```
 /// use gaslightmq_environment::prelude::*;
 ///
-/// let listen = Listeners::new("0.0.0.0:39092".parse()?, "0.0.0.0:39093-39192".parse()?, "localhost".parse()?)?;
+/// let listen = Listeners::new(
+///     "0.0.0.0:39092".parse().expect("a listen address"),
+///     "0.0.0.0:39093-39192".parse().expect("broker listeners"),
+///     "localhost".parse().expect("a host name"),
+/// )
+/// .expect("a bootstrap port outside the ports of the brokers");
 /// let instances = Instances::BrokerAlone {
 ///     broker: BrokerDefinition::new("orders-sim".parse()?),
 ///     listen: listen.clone(),
@@ -107,7 +116,7 @@ impl BrokerDefinition {
 /// assert_eq!(instances.listeners(), &listen);
 /// assert!(instances.proxy().is_none());
 /// assert_eq!(instances.to_string(), "a broker alone");
-/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// # Ok::<(), WorldNameError>(())
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Instances {
@@ -218,12 +227,17 @@ impl fmt::Display for Instances {
 /// ```
 /// use gaslightmq_environment::prelude::*;
 ///
-/// let listen = Listeners::new("0.0.0.0:9092".parse()?, "0.0.0.0:19092-19191".parse()?, "gaslight.staging".parse()?)?;
+/// let listen = Listeners::new(
+///     "0.0.0.0:9092".parse().expect("a listen address"),
+///     "0.0.0.0:19092-19191".parse().expect("broker listeners"),
+///     "gaslight.staging".parse()?,
+/// )
+/// .expect("a bootstrap port outside the ports of the brokers");
 /// let staging = Environment::new(
-///     "staging-proxy".parse()?,
+///     "staging-proxy".parse().expect("an environment name"),
 ///     Instances::ProxyInFrontOfCluster {
 ///         proxy: ProxyDefinition::new(listen),
-///         upstream: Upstream::new("kafka-1.staging:9092".parse()?),
+///         upstream: Upstream::new("kafka-1.staging:9092".parse().expect("a server address")),
 ///     },
 /// );
 ///
@@ -234,7 +248,7 @@ impl fmt::Display for Instances {
 /// // A flag starts the environment with another advertised host than its file names.
 /// let local = staging.with_advertised_host("localhost".parse()?);
 /// assert_eq!(local.listeners().advertised_host(), "localhost");
-/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// # Ok::<(), HostNameError>(())
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Environment {
@@ -329,15 +343,18 @@ impl Environment {
     /// use gaslightmq_environment::prelude::*;
     ///
     /// let broker = |name: &str, bootstrap: &str, brokers: &str| {
-    ///     let listen = Listeners::new(bootstrap.parse()?, brokers.parse()?, "localhost".parse()?)?;
-    ///     let broker = BrokerDefinition::new("shop".parse()?);
-    ///     Ok::<_, Box<dyn std::error::Error>>(Environment::new(name.parse()?, Instances::BrokerAlone { broker, listen }))
+    ///     let bootstrap = bootstrap.parse().expect("a listen address");
+    ///     let brokers = brokers.parse().expect("broker listeners");
+    ///     let listen = Listeners::new(bootstrap, brokers, "localhost".parse().expect("a host name"))
+    ///         .expect("a bootstrap port outside the ports of the brokers");
+    ///     let broker = BrokerDefinition::new("shop".parse().expect("a world name"));
+    ///     Environment::new(name.parse().expect("an environment name"), Instances::BrokerAlone { broker, listen })
     /// };
-    /// let shop = broker("shop", "0.0.0.0:9092", "0.0.0.0:19092-19094")?;
-    /// let tests = broker("tests", "127.0.0.1:29092", "127.0.0.1:19094-19096")?;
+    /// let shop = broker("shop", "0.0.0.0:9092", "0.0.0.0:19092-19094");
+    /// let tests = broker("tests", "127.0.0.1:29092", "127.0.0.1:19094-19096");
     ///
     /// assert_eq!(shop.shared_listener(&tests), Some("127.0.0.1:19094".parse()?));
-    /// # Ok::<(), Box<dyn std::error::Error>>(())
+    /// # Ok::<(), ListenAddressError>(())
     /// ```
     pub fn shared_listener(&self, other: &Environment) -> Option<ListenAddress> {
         Taken::first_shared(&self.taken(), &other.taken())
@@ -373,12 +390,17 @@ impl Environment {
 /// ```
 /// use gaslightmq_environment::prelude::*;
 ///
-/// let listen = Listeners::new("0.0.0.0:9092".parse()?, "0.0.0.0:19092-19191".parse()?, "localhost".parse()?)?;
+/// let listen = Listeners::new(
+///     "0.0.0.0:9092".parse()?,
+///     "0.0.0.0:19092-19191".parse().expect("broker listeners"),
+///     "localhost".parse().expect("a host name"),
+/// )
+/// .expect("a bootstrap port outside the ports of the brokers");
 /// let staging = Environment::new(
-///     "staging".parse()?,
+///     "staging".parse().expect("an environment name"),
 ///     Instances::ProxyInFrontOfCluster {
 ///         proxy: ProxyDefinition::new(listen),
-///         upstream: Upstream::new("kafka-1.staging:9092".parse()?),
+///         upstream: Upstream::new("kafka-1.staging:9092".parse().expect("a server address")),
 ///     },
 /// );
 ///
@@ -389,7 +411,7 @@ impl Environment {
 ///     error.to_string(),
 ///     "environment \"staging\" has no broker, so its schema registry is the real one, with a URL"
 /// );
-/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// # Ok::<(), ListenAddressError>(())
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]

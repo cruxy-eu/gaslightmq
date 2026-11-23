@@ -28,7 +28,7 @@ use crate::{Claim, Delay, Fate, FiredLie, Loss, StageEffect};
 /// use gaslightmq_kernel::prelude::*;
 /// use gaslightmq_lie::prelude::*;
 ///
-/// let three = Target::of_parts(["orders.eu/3".parse()?]).expect("one part");
+/// let three = Target::of_parts(["orders.eu/3".parse().expect("a part")]).expect("one part");
 ///
 /// // A chain of "Delay 1 s" above "Refuse the 3rd Produce": the rule's position is its priority.
 /// let delay = LieDefinition::from(TimingLie::new().with_delay(TimeSpan::from_secs(1))).on(three.clone());
@@ -48,7 +48,7 @@ use crate::{Claim, Delay, Fate, FiredLie, Loss, StageEffect};
 /// let call = request.without_response_pass();
 /// assert!(call.fates().iter().all(Fate::counts));
 /// assert_eq!(call.after_response().delay().length(), TimeSpan::from_secs(1));
-/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// # Ok::<(), ClaimError>(())
 /// ```
 #[derive(Debug, Clone)]
 pub struct RequestPass<Id> {
