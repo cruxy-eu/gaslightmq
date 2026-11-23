@@ -6,6 +6,8 @@ use std::fmt;
 use gaslightmq_call::CallNumber;
 use gaslightmq_clock::Instant;
 
+use crate::SessionError;
+
 /// How far a call in flight is.
 ///
 /// ```text
@@ -163,7 +165,7 @@ impl Stalled {
 /// assert_eq!(calls.next_response().map(InFlightCall::into_content), Some("Produce"));
 /// assert_eq!(calls.next_response().map(InFlightCall::into_content), Some("Fetch"));
 /// assert!(calls.is_empty());
-/// # Ok::<(), InFlightCallsError>(())
+/// # Ok::<(), SessionError>(())
 /// ```
 ///
 /// # Silence
@@ -191,7 +193,7 @@ impl Stalled {
 /// // The Metadata before the silence still goes on, and the Fetch behind it never does.
 /// assert_eq!(calls.next_request().map(|(number, _)| number), Some(metadata));
 /// assert!(calls.next_request().is_none());
-/// # Ok::<(), InFlightCallsError>(())
+/// # Ok::<(), SessionError>(())
 /// ```
 #[derive(Debug, Clone)]
 pub struct InFlightCalls<C> {
@@ -236,12 +238,12 @@ impl<C> InFlightCalls<C> {
     ///
     /// # Errors
     ///
-    /// [`InFlightCallsError::NotInFlight`] when the call is not in flight,
-    /// and [`InFlightCallsError::RequestNotHeld`] when its request was let go before, or a silence took the call.
-    pub fn release_request(&mut self, call: CallNumber) -> Result<(), InFlightCallsError> {
+    /// [`SessionError::CallNotInFlight`] when the call is not in flight,
+    /// and [`SessionError::RequestNotHeld`] when its request was let go before, or a silence took the call.
+    pub fn release_request(&mut self, call: CallNumber) -> Result<(), SessionError> {
         let in_flight = self.in_flight_mut(call)?;
         if in_flight.phase != CallPhase::RequestHeld {
-            return Err(InFlightCallsError::RequestNotHeld {
+            return Err(SessionError::RequestNotHeld {
                 call,
                 phase: in_flight.phase,
             });
@@ -278,13 +280,13 @@ impl<C> InFlightCalls<C> {
     ///
     /// # Errors
     ///
-    /// [`InFlightCallsError::NotInFlight`] when the call is not in flight,
-    /// and [`InFlightCallsError::ResponseNotAwaited`] when its request did not pass the request gate yet,
+    /// [`SessionError::CallNotInFlight`] when the call is not in flight,
+    /// and [`SessionError::ResponseNotAwaited`] when its request did not pass the request gate yet,
     /// its response was let go before, or a silence took the call.
-    pub fn release_response(&mut self, call: CallNumber) -> Result<(), InFlightCallsError> {
+    pub fn release_response(&mut self, call: CallNumber) -> Result<(), SessionError> {
         let in_flight = self.in_flight_mut(call)?;
         if in_flight.phase != CallPhase::AwaitingResponse {
-            return Err(InFlightCallsError::ResponseNotAwaited {
+            return Err(SessionError::ResponseNotAwaited {
                 call,
                 phase: in_flight.phase,
             });
@@ -314,8 +316,8 @@ impl<C> InFlightCalls<C> {
     ///
     /// # Errors
     ///
-    /// [`InFlightCallsError::NotInFlight`] when the call is not in flight.
-    pub fn silence(&mut self, call: CallNumber, now: Instant) -> Result<Stalled, InFlightCallsError> {
+    /// [`SessionError::CallNotInFlight`] when the call is not in flight.
+    pub fn silence(&mut self, call: CallNumber, now: Instant) -> Result<Stalled, SessionError> {
         self.in_flight_mut(call)?.phase = CallPhase::Silenced;
         let stalled = match self.stalled {
             Some(earlier) if earlier.by <= call => earlier,
@@ -377,8 +379,8 @@ impl<C> InFlightCalls<C> {
         (index < self.calls.len()).then_some(index)
     }
 
-    fn in_flight_mut(&mut self, call: CallNumber) -> Result<&mut InFlightCall<C>, InFlightCallsError> {
-        self.get_mut(call).ok_or(InFlightCallsError::NotInFlight { call })
+    fn in_flight_mut(&mut self, call: CallNumber) -> Result<&mut InFlightCall<C>, SessionError> {
+        self.get_mut(call).ok_or(SessionError::CallNotInFlight { call })
     }
 }
 
@@ -392,52 +394,6 @@ impl<C> Default for InFlightCalls<C> {
         Self::new()
     }
 }
-
-/// Why [`InFlightCalls`] cannot do what the pipeline asked for one call.
-///
-/// Each variant names the call.
-/// None of them is a failure of a client: they say that the pipeline lost track of a call.
-#[derive(Debug, Clone, PartialEq, Eq)]
-#[non_exhaustive]
-pub enum InFlightCallsError {
-    /// No call with that number is in flight: it never arrived, it left, or it ended with its session.
-    NotInFlight { call: CallNumber },
-    /// The request of the call cannot be let go, because the pipeline does not hold it any more.
-    RequestNotHeld { call: CallNumber, phase: CallPhase },
-    /// The response of the call cannot be let go, because the call does not await one.
-    ResponseNotAwaited { call: CallNumber, phase: CallPhase },
-}
-
-impl InFlightCallsError {
-    /// The call that the pipeline asked about.
-    pub const fn call(&self) -> CallNumber {
-        match self {
-            Self::NotInFlight { call } | Self::RequestNotHeld { call, .. } | Self::ResponseNotAwaited { call, .. } => {
-                *call
-            }
-        }
-    }
-}
-
-impl fmt::Display for InFlightCallsError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::NotInFlight { call } => write!(f, "call {call} is not in flight"),
-            Self::RequestNotHeld { call, phase } => {
-                write!(
-                    f,
-                    "the request of call {call} is not held: the call is in the phase {phase}"
-                )
-            }
-            Self::ResponseNotAwaited { call, phase } => write!(
-                f,
-                "call {call} does not await its response: the call is in the phase {phase}"
-            ),
-        }
-    }
-}
-
-impl std::error::Error for InFlightCallsError {}
 
 #[cfg(test)]
 mod tests {
@@ -677,13 +633,13 @@ mod tests {
     fn a_call_that_is_not_in_flight_is_an_error() {
         let (mut calls, [produce]) = arrived(["Produce"]);
         let never = number(2);
-        let not_in_flight = |call| Err(InFlightCallsError::NotInFlight { call });
+        let not_in_flight = |call| Err(SessionError::CallNotInFlight { call });
 
         assert_eq!(calls.release_request(never), not_in_flight(never));
         assert_eq!(calls.release_response(never), not_in_flight(never));
         assert_eq!(
             calls.silence(never, NOW),
-            Err(InFlightCallsError::NotInFlight { call: never })
+            Err(SessionError::CallNotInFlight { call: never })
         );
         assert_eq!(calls.get(never), None);
 
@@ -701,7 +657,7 @@ mod tests {
         calls.release_request(produce).unwrap();
         assert_eq!(
             calls.release_request(produce),
-            Err(InFlightCallsError::RequestNotHeld {
+            Err(SessionError::RequestNotHeld {
                 call: produce,
                 phase: CallPhase::RequestQueued
             })
@@ -710,7 +666,7 @@ mod tests {
         calls.silence(fetch, NOW).unwrap();
         assert_eq!(
             calls.release_request(fetch),
-            Err(InFlightCallsError::RequestNotHeld {
+            Err(SessionError::RequestNotHeld {
                 call: fetch,
                 phase: CallPhase::Silenced
             })
@@ -720,7 +676,7 @@ mod tests {
     #[test]
     fn a_response_is_let_go_after_the_request_went_on_and_once() {
         let (mut calls, [produce]) = arrived(["Produce"]);
-        let not_awaited = |phase| Err(InFlightCallsError::ResponseNotAwaited { call: produce, phase });
+        let not_awaited = |phase| Err(SessionError::ResponseNotAwaited { call: produce, phase });
 
         assert_eq!(calls.release_response(produce), not_awaited(CallPhase::RequestHeld));
         calls.release_request(produce).unwrap();
@@ -728,33 +684,6 @@ mod tests {
         calls.next_request().unwrap();
         calls.release_response(produce).unwrap();
         assert_eq!(calls.release_response(produce), not_awaited(CallPhase::ResponseQueued));
-    }
-
-    #[test]
-    fn each_error_names_the_call_and_says_what_is_wrong() {
-        let call = number(7);
-        let cases = [
-            (InFlightCallsError::NotInFlight { call }, "call 7 is not in flight"),
-            (
-                InFlightCallsError::RequestNotHeld {
-                    call,
-                    phase: CallPhase::AwaitingResponse,
-                },
-                "the request of call 7 is not held: the call is in the phase awaiting response",
-            ),
-            (
-                InFlightCallsError::ResponseNotAwaited {
-                    call,
-                    phase: CallPhase::RequestHeld,
-                },
-                "call 7 does not await its response: the call is in the phase request held",
-            ),
-        ];
-
-        for (error, message) in cases {
-            assert_eq!(error.call(), call);
-            assert_eq!(error.to_string(), message);
-        }
     }
 
     #[test]

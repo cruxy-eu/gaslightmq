@@ -49,7 +49,7 @@ use crate::{
 /// // A client connects, and its session opens.
 /// let connection = Connection::new(
 ///     ConnectionNumber::new(7),
-///     "10.0.4.27:51459".parse()?,
+///     "10.0.4.27:51459".parse().expect("a client address"),
 ///     Endpoint::Broker(BrokerId::from(2)),
 /// );
 /// let ordinal = ordinals.assign(connection.host(), connection.endpoint());
@@ -58,7 +58,7 @@ use crate::{
 /// assert_eq!(session.key().to_string(), "10.0.4.27 broker 2 #1");
 ///
 /// // The first request identifies it.
-/// let request = Request::new(12, 1, Some("order-ingest"), &MetadataRequest::default())?;
+/// let request = Request::new(12, 1, Some("order-ingest"), &MetadataRequest::default()).expect("a request");
 /// let identification = session.identify(&request);
 /// assert_eq!(session.lifecycle(), Lifecycle::Identified);
 /// assert_eq!(identification.changes().len(), 1);
@@ -74,7 +74,7 @@ use crate::{
 /// // The client hangs up, and the session ends.
 /// session.close(ClosedBy::Client, now + Duration::from_secs(1));
 /// assert_eq!(session.lifecycle(), Lifecycle::Closed);
-/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// # Ok::<(), SessionError>(())
 /// ```
 #[derive(Debug)]
 pub struct Session<C> {
@@ -273,7 +273,7 @@ mod tests {
     use gaslightmq_wire::protocol::StrBytes;
 
     use super::*;
-    use crate::{CallPhase, IdentityError};
+    use crate::{CallPhase, SessionError};
 
     const OPENED_AT: Instant = Instant::from_nanos(2_000_000_000);
 
@@ -441,7 +441,7 @@ mod tests {
         );
         assert!(matches!(
             identification.errors(),
-            [IdentityError::InvalidClientSoftware { .. }]
+            [SessionError::InvalidClientSoftware { .. }]
         ));
         assert_eq!(session.lifecycle(), Lifecycle::Identified);
         assert_eq!(session.identity().client_software(), None);

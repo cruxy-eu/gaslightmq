@@ -24,9 +24,10 @@ use gaslightmq_kernel::prelude::*;
 /// use gaslightmq_kernel::prelude::*;
 /// use gaslightmq_session::prelude::*;
 ///
-/// let client = ClientInstance::new(Some(ClientId::new("order-ingest")?), "10.0.4.27".parse()?);
+/// let host = "10.0.4.27".parse().expect("a client host");
+/// let client = ClientInstance::new(Some(ClientId::new("order-ingest")?), host);
 /// assert_eq!(client.to_string(), "order-ingest from 10.0.4.27");
-/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// # Ok::<(), ClientIdError>(())
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ClientInstance {
@@ -126,7 +127,7 @@ impl<V: LearnedValue + Clone + Ord> Learned<V> {
 /// assert_eq!(groups.to_string(), "analytics-etl, payments");
 /// assert_eq!(groups.origin(), Origin::ClientContext);
 /// assert_eq!(learned.read(Field::TransactionalId), Reading::Absent);
-/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// # Ok::<(), GroupIdError>(())
 /// ```
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct LearnedFields {
@@ -320,7 +321,8 @@ impl Shared {
 /// use gaslightmq_session::prelude::*;
 ///
 /// let contexts = ClientContexts::new(Duration::from_secs(60));
-/// let client = ClientInstance::new(Some(ClientId::new("analytics")?), "10.0.4.27".parse()?);
+/// let host = "10.0.4.27".parse().expect("a client host");
+/// let client = ClientInstance::new(Some(ClientId::new("analytics").expect("a client ID")), host);
 ///
 /// // The consumer names its group on the connection to its coordinator.
 /// let coordinator = contexts.join(&client);
@@ -337,7 +339,7 @@ impl Shared {
 /// assert!(contexts.expire(closed_at + Duration::from_secs(59)).is_empty());
 /// assert_eq!(contexts.expire(closed_at + Duration::from_secs(60)), [client]);
 /// assert!(contexts.is_empty());
-/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// # Ok::<(), GroupIdError>(())
 /// ```
 #[derive(Debug, Clone)]
 pub struct ClientContexts(Arc<Registry>);

@@ -102,26 +102,24 @@ mod next_to_the_others {
     ///
     /// A message says everything, so no error has a source.
     pub fn every_error() -> Vec<String> {
-        let errors: Vec<Box<dyn std::error::Error>> = vec![
-            Box::new(ConnectionOrdinalError::Zero),
-            Box::new(SessionKeyError::Malformed {
+        /// What an error says. A message says everything, so the error has no source.
+        fn message_of<E: std::error::Error>(error: E) -> String {
+            assert!(error.source().is_none(), "{error}");
+            error.to_string()
+        }
+
+        vec![
+            message_of(ConnectionOrdinalError::Zero),
+            message_of(SessionKeyError::Malformed {
                 input: "10.0.4.27".to_owned(),
             }),
-            Box::new(IdentityError::InvalidClientSoftware {
+            message_of(SessionError::InvalidClientSoftware {
                 error: "librdkafka".parse::<ClientSoftware>().unwrap_err(),
             }),
-            Box::new(InFlightCallsError::NotInFlight {
+            message_of(SessionError::CallNotInFlight {
                 call: CallNumber::FIRST,
             }),
-        ];
-
-        errors
-            .iter()
-            .map(|error| {
-                assert!(error.source().is_none(), "{error}");
-                error.to_string()
-            })
-            .collect()
+        ]
     }
 }
 

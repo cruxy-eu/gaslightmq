@@ -23,14 +23,14 @@ use crate::{Connection, ConnectionOrdinal, ConnectionOrdinalError};
 /// use gaslightmq_session::prelude::*;
 ///
 /// let key = SessionKey::new(
-///     "10.0.4.27".parse()?,
+///     "10.0.4.27".parse().expect("a client host"),
 ///     Endpoint::Broker(BrokerId::from(2)),
 ///     ConnectionOrdinal::FIRST,
 /// );
 /// assert_eq!(key.to_string(), "10.0.4.27 broker 2 #1");
 /// assert_eq!("10.0.4.27 broker 2 #1".parse::<SessionKey>()?, key);
 /// assert_eq!(key.counter_key().as_str(), "10.0.4.27 broker 2 #1");
-/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// # Ok::<(), SessionKeyError>(())
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct SessionKey {

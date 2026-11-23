@@ -4,7 +4,7 @@ use std::fmt;
 
 use gaslightmq_call::{CallError, CallId, CallTimingError};
 use gaslightmq_lie_api::{Instruction, LieError};
-use gaslightmq_session::IdentityError;
+use gaslightmq_session::SessionError;
 use gaslightmq_wire::{Api, WireError};
 use gaslightmq_wire_edit::SurgeryError;
 
@@ -85,7 +85,7 @@ impl From<LieError> for UntoldLie {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum StageFailure {
     /// The header of the request names the client in a way the session cannot keep.
-    Unidentified { error: IdentityError },
+    Unidentified { error: SessionError },
     /// The body of the request does not decode, so no rule saw the call.
     UnreadableRequest { error: SurgeryError },
     /// The fields of the body do not decode.
