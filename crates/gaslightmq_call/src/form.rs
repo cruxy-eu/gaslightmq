@@ -60,7 +60,7 @@ macro_rules! as_text {
     };
 }
 
-as_text!(CallId, RecordedRuleName, TriggerDecision,);
+as_text!(CallId, TriggerDecision,);
 
 through_form!(
     DieCheck => DieForm,

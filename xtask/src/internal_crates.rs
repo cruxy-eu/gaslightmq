@@ -29,6 +29,11 @@
 //! A private `use`, a private field, a `pub(crate)` item and the body of a function are private code, and pass.
 //! So does a comment that is no doc comment.
 //!
+//! An internal crate may hand the crates that use it a macro that writes their own types:
+//! `gaslightmq_resource::name!` writes the name of one kind of resource, and its error.
+//! A call of such a macro names the internal crate, and passes.
+//! The doc comments that a call hands over are held to the rule like any other.
+//!
 //! What the check does not catch:
 //!
 //! - A type behind another name. The check reads names, and not types:
@@ -36,7 +41,10 @@
 //! - An internal type under a new name: `use gaslightmq_resource::ResourceName as Name`.
 //! - An item that a macro writes, or one inside a function body. See [`source`].
 //!   Only the doc comments in a macro are read.
-//! - A function, a constant or a macro of an internal crate. Its names are its types.
+//!   What the macro of an internal crate writes into another crate stays unseen too,
+//!   so that macro itself keeps the types of its crate in a private field and in private code.
+//! - A function or a constant of an internal crate, and the name of its macro in a doc comment.
+//!   Its names are its types.
 //!
 //! What the check refuses although it is private:
 //!
@@ -484,7 +492,7 @@ fn holds_word(text: &str, name: &str) -> bool {
 /// What shows a type of an internal crate.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Shown {
-    /// The signature of a `pub` function, or of a `pub` method as `SelectorName::resource_name`.
+    /// The signature of a `pub` function, or of a `pub` method as `SelectorName::inner`.
     Function(String),
     /// A `pub` field of this struct, or a field of this variant of a `pub` enum.
     Field(String),
@@ -639,7 +647,7 @@ pub fn check(name: &str) -> Result<(), ResourceNameError> { Ok(()) }
 pub fn named(name: impl Into<ResourceName>) {}
 pub fn every<T>(names: &[T]) where T: AsRef<gaslightmq_resource::ResourceName> {}
 impl SelectorName {
-    pub fn resource_name(&self) -> &ResourceName { &self.0 }
+    pub fn inner(&self) -> &ResourceName { &self.0 }
 }
 ";
 
@@ -651,7 +659,7 @@ impl SelectorName {
                 "crates/gaslightmq_selector/src/name.rs:3: the public function `every` names \
                  the internal crate `gaslightmq_resource`; only private code names an internal crate"
                     .to_owned(),
-                line(5, "the public function `SelectorName::resource_name`", "ResourceName"),
+                line(5, "the public function `SelectorName::inner`", "ResourceName"),
             ]
         );
     }
@@ -910,6 +918,21 @@ name! {
                 line(10, "a doc comment", "ResourceName"),
             ]
         );
+    }
+
+    #[test]
+    fn a_call_of_a_macro_of_an_internal_crate_passes() {
+        let text = "\
+gaslightmq_resource::name!(SelectorName, SelectorNameError, \"selector name\");
+gaslightmq_resource::name! {
+    /// A rule references a preset by its name.
+    PresetName, PresetNameError, \"preset name\"
+}
+use gaslightmq_resource::name;
+name!(RuleName, RuleNameError, \"rule name\");
+";
+
+        assert_eq!(lines(text), [""; 0]);
     }
 
     #[test]

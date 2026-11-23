@@ -163,7 +163,7 @@ fn the_prelude_names_the_error_of_every_type() {
         [
             "a call number is at least one",
             "call ID `#7.0`: a call number is at least one",
-            "the recorded name of a rule is empty",
+            "recorded rule name \"\" is empty",
             "no trigger decision is called \"x\"",
             "a roll of 1000000 parts per million is not below one million",
             "a time window from 2s to 1s after arming is never open",

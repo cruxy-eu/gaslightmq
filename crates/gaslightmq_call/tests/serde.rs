@@ -92,7 +92,7 @@ fn a_call_id_is_its_text() {
 #[test]
 fn a_recorded_rule_name_is_its_text() {
     writes(&name("Leader flap"), r#""Leader flap""#);
-    rejects::<RecordedRuleName>(r#""""#, "the recorded name of a rule is empty");
+    rejects::<RecordedRuleName>(r#""""#, "recorded rule name \"\" is empty");
 }
 
 #[test]
