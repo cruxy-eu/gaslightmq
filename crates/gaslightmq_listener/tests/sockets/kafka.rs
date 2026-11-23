@@ -47,8 +47,8 @@ async fn a_kafka_client_gets_its_answer() {
     let client = RawKafkaClient::new(listener.address());
 
     // Two requests on one connection: the client keeps its socket open.
-    let first = soon(client.api_versions(ApiVersionsRequest::default())).await;
-    let second = soon(client.api_versions(ApiVersionsRequest::default())).await;
+    let first = soon(client.api_versions(ApiVersionsRequest::default())).await.unwrap();
+    let second = soon(client.api_versions(ApiVersionsRequest::default())).await.unwrap();
 
     assert_eq!(first.api_keys, vec![OneApiBroker::offered()]);
     assert_eq!(second, first);

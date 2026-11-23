@@ -3,10 +3,10 @@
 use std::sync::{Mutex, MutexGuard, PoisonError};
 
 use gaslightmq_clock::{Clock, TimeSpan};
+use gaslightmq_kafka_client_api::ClientError;
 use tracing::debug;
 
 use crate::configuration::ClientConfiguration;
-use crate::error::ClientError;
 use crate::io::clock::MonotonicClock;
 use crate::io::connection::Connections;
 use crate::logic::attempts::Limits;
@@ -75,7 +75,7 @@ impl ClusterAccess {
                         connection.exchange(&exchange, |conversation| call.request(&exchange, conversation)),
                     )
                     .await
-                    .unwrap_or(Err(ClientError::RequestTimedOut));
+                    .unwrap_or(Err(ClientError::NoAnswer));
                     match answer {
                         Ok(response) => Input::Answered(exchange, response),
                         Err(error) => {

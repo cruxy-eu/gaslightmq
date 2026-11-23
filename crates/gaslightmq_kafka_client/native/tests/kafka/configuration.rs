@@ -2,7 +2,7 @@
 
 use std::time::{Duration, Instant};
 
-use futures::StreamExt;
+use futures::TryStreamExt;
 use gaslightmq_clock::TimeSpan;
 use gaslightmq_kafka_client_native::{
     BootstrapServers, ClientError, ConsumerConfiguration, IsolationLevel, KafkaConsumer, KafkaProducer,
@@ -150,7 +150,10 @@ async fn max_partition_fetch_bytes_cuts_a_fetch_off_after_the_batches_that_fit()
     let two = limited_to(2_500).fetch(topic, partition(0), offset(0)).await?;
     // The broker always gives the first batch, however small the limit is.
     let one = limited_to(10).fetch(topic, partition(0), offset(0)).await?;
-    let streamed: Vec<Record> = limited_to(10).stream(topic, partition(0), offset(0)).collect().await;
+    let streamed: Vec<Record> = limited_to(10)
+        .stream(topic, partition(0), offset(0))
+        .try_collect()
+        .await?;
 
     assert_eq!(values(&all), ["placed", "paid", "shipped"]);
     assert_eq!(values(&two), ["placed", "paid"]);
@@ -217,7 +220,7 @@ async fn bootstrap_servers_that_nobody_listens_on_fail_the_call_when_its_time_ru
     assert!(
         matches!(
             written,
-            Err(ClientError::CallTimedOut { error: ref last }) if matches!(**last, ClientError::ConnectionFailed(_))
+            Err(ClientError::OutOfTime { error: ref last }) if matches!(**last, ClientError::Unreachable { .. })
         ),
         "{written:?}"
     );

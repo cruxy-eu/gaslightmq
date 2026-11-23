@@ -65,7 +65,7 @@ async fn a_member_id_that_was_handed_out_is_used_again_after_a_join_that_failed(
 
     assert_eq!(
         refused,
-        Err(ClientError::Broker {
+        Err(ClientError::Refused {
             error: ResponseError::GroupAuthorizationFailed
         })
     );

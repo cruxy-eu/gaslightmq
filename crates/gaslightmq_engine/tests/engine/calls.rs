@@ -2,7 +2,7 @@
 
 use gaslightmq_call::prelude::*;
 use gaslightmq_field::prelude::*;
-use gaslightmq_kafka_client_api::{HeartbeatResult, ProduceResult, Producer, ProtocolConsumer};
+use gaslightmq_kafka_client_api::{ProduceResult, Producer, ProtocolConsumer};
 use gaslightmq_kernel::prelude::*;
 use gaslightmq_listener::prelude::*;
 use gaslightmq_wire::{Partition, Record};
@@ -21,11 +21,10 @@ async fn a_request_goes_to_the_backend_and_the_truth_comes_back() -> anyhow::Res
         .await;
 
     let truth = ProduceResult {
-        error: None,
         partition,
         offset: ScriptedBackend::written_at(),
     };
-    assert_eq!(written, truth);
+    assert_eq!(written, Ok(truth));
     // The backend took the request under the call of the pipeline: the first call of the first connection.
     let first_call_of_the_first_connection: CallId = "#1.1".parse()?;
     assert_eq!(
@@ -90,9 +89,9 @@ async fn every_connection_is_a_session_of_its_own() -> anyhow::Result<()> {
     let second = proxy.client_on("broker 2".parse()?)?;
     let group: GroupId = "analytics-etl".parse()?;
 
-    first.heartbeat(group.as_str()).await;
-    second.heartbeat(group.as_str()).await;
-    first.heartbeat(group.as_str()).await;
+    first.heartbeat(group.as_str()).await?;
+    second.heartbeat(group.as_str()).await?;
+    first.heartbeat(group.as_str()).await?;
 
     // The endpoints of one proxy number their connections together, and every connection numbers its own calls.
     let first_call_of_the_first: CallId = "#1.1".parse()?;
@@ -117,11 +116,11 @@ async fn the_backend_hears_of_every_connection_that_it_got_a_request_of() -> any
     let silent = proxy.socket_on(Endpoint::Bootstrap).await?;
     let second = proxy.client_on(Endpoint::Bootstrap)?;
     let third = proxy.client_on(Endpoint::Bootstrap)?;
-    assert_eq!(second.heartbeat(group.as_str()).await, HeartbeatResult { error: None });
+    assert_eq!(second.heartbeat(group.as_str()).await, Ok(()));
 
     drop(silent);
     drop(second);
-    assert_eq!(third.heartbeat(group.as_str()).await, HeartbeatResult { error: None });
+    assert_eq!(third.heartbeat(group.as_str()).await, Ok(()));
     drop(third);
 
     // The backend never held anything for the connection that sent nothing, so it hears of the other two alone.

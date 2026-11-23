@@ -9,7 +9,7 @@ workspace = true
 
 # The modules that decide and never wait: `cargo xtask sans-io` holds them to that.
 [package.metadata.gaslightmq]
-sans_io_modules = ["logic", "error", "configuration", "address"]
+sans_io_modules = ["logic", "configuration", "address"]
 
 [dependencies]
 gaslightmq_clock.workspace = true

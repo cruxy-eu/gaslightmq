@@ -5,7 +5,7 @@ use std::sync::Arc;
 use gaslightmq_clock::TimeSpan;
 use gaslightmq_engine::prelude::*;
 use gaslightmq_field::prelude::*;
-use gaslightmq_kafka_client_api::Producer;
+use gaslightmq_kafka_client_api::{ClientError, Producer};
 use gaslightmq_kernel::prelude::*;
 use gaslightmq_lie::prelude::*;
 use gaslightmq_rule::prelude::*;
@@ -40,9 +40,14 @@ async fn a_snapshot_published_while_a_call_is_in_flight_only_affects_the_next_ca
     proxy.backend().release_answers();
 
     // The first call finishes on the snapshot it started with, and the second one is evaluated against the new one.
-    assert_eq!(first.await?.error, None);
+    first.await??;
     let second = producer.send(orders.as_str(), partition, &[Record::new("paid")]).await;
-    assert_eq!(second.error, Some(ResponseError::NotLeaderOrFollower));
+    assert_eq!(
+        second,
+        Err(ClientError::Refused {
+            error: ResponseError::NotLeaderOrFollower
+        })
+    );
     Ok(())
 }
 
@@ -53,8 +58,7 @@ async fn a_rule_that_is_armed_reaches_the_sessions_that_are_open() -> anyhow::Re
     let partition = Partition::new(3);
     let placed = [Record::new("placed")];
     let early = proxy.client_on(Endpoint::Bootstrap)?;
-    let written = early.send(orders.as_str(), partition, &placed).await;
-    assert_eq!(written.error, None);
+    early.send(orders.as_str(), partition, &placed).await?;
 
     let flap = proxy.arm(&Rule::new(
         "Leader flap".parse()?,
@@ -66,14 +70,18 @@ async fn a_rule_that_is_armed_reaches_the_sessions_that_are_open() -> anyhow::Re
     let late = proxy.client_on(Endpoint::Bootstrap)?;
     for client in [&early, &late] {
         let written = client.send(orders.as_str(), partition, &placed).await;
-        assert_eq!(written.error, Some(ResponseError::NotLeaderOrFollower));
+        assert_eq!(
+            written,
+            Err(ClientError::Refused {
+                error: ResponseError::NotLeaderOrFollower
+            })
+        );
     }
 
     // Disarming reaches them the same way.
     proxy.engine().rules().disarm(flap.name())?;
     for client in [&early, &late] {
-        let written = client.send(orders.as_str(), partition, &placed).await;
-        assert_eq!(written.error, None);
+        client.send(orders.as_str(), partition, &placed).await?;
     }
     Ok(())
 }
@@ -101,7 +109,13 @@ async fn the_rule_that_was_armed_last_wins_a_conflict() -> anyhow::Result<()> {
 
     let armed = proxy.armed_rules();
     assert_eq!(armed, ["Time out".parse::<RuleName>()?, "Leader flap".parse()?]);
-    assert_eq!(written.error, Some(ResponseError::RequestTimedOut));
+    // The broker's `REQUEST_TIMED_OUT` is the lie of the rule, and no client that waited in vain.
+    assert_eq!(
+        written,
+        Err(ClientError::Refused {
+            error: ResponseError::RequestTimedOut
+        })
+    );
     Ok(())
 }
 
@@ -123,8 +137,13 @@ async fn a_rule_is_disarmed_after_the_call_that_spent_its_last_firing() -> anyho
     // The first Produce is refused. A client that tries again gets through.
     let refused = producer.send(orders.as_str(), partition, &placed).await;
     let written = producer.send(orders.as_str(), partition, &placed).await;
-    assert_eq!(refused.error, Some(ResponseError::NotLeaderOrFollower));
-    assert_eq!(written.error, None);
+    assert_eq!(
+        refused,
+        Err(ClientError::Refused {
+            error: ResponseError::NotLeaderOrFollower
+        })
+    );
+    assert!(written.is_ok(), "{written:?}");
 
     // The engine disarmed the rule with the record of the call that spent the firing.
     proxy.next_record().await?;
@@ -155,12 +174,16 @@ async fn a_rule_is_disarmed_when_the_clock_reaches_the_end_of_its_lifetime() -> 
     // One second before the end, the rule still fires.
     proxy.advance(TimeSpan::from_secs(29));
     let refused = producer.send(orders.as_str(), partition, &placed).await;
-    assert_eq!(refused.error, Some(ResponseError::NotLeaderOrFollower));
+    assert_eq!(
+        refused,
+        Err(ClientError::Refused {
+            error: ResponseError::NotLeaderOrFollower
+        })
+    );
 
     // At the end it fires no more, and the engine disarms it: no call has to come by for that.
     proxy.advance(TimeSpan::from_secs(1));
-    let written = producer.send(orders.as_str(), partition, &placed).await;
-    assert_eq!(written.error, None);
+    producer.send(orders.as_str(), partition, &placed).await?;
     assert_eq!(proxy.armed_rules(), Vec::<RuleName>::new());
     Ok(())
 }

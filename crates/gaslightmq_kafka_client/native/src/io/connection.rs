@@ -5,13 +5,13 @@ use std::future::Future;
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
+use gaslightmq_kafka_client_api::ClientError;
 use gaslightmq_kernel::ClientId;
 use gaslightmq_wire::{Frame, FrameDecoder, Request, Response};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 
 use crate::address::BrokerAddress;
-use crate::error::ClientError;
 use crate::logic::call::Exchange;
 use crate::logic::cluster::{ConnectionId, Destination};
 use crate::logic::conversation::{self, Conversation, Greeting};
@@ -24,7 +24,9 @@ struct Socket {
 
 impl Socket {
     async fn connect(address: &BrokerAddress) -> Result<Self, ClientError> {
-        let stream = TcpStream::connect((address.host(), address.port())).await?;
+        let stream = TcpStream::connect((address.host(), address.port()))
+            .await
+            .map_err(|error| ClientError::unreachable(format_args!("{address}: {error}")))?;
         // A request is small and waits for its response, so it leaves at once, as with Kafka's own clients.
         // A socket that refuses the option still works.
         let _ = stream.set_nodelay(true);
@@ -36,13 +38,21 @@ impl Socket {
 
     /// Send `request`, and read the frame that comes back.
     async fn exchange(&mut self, request: &Request) -> Result<Frame, ClientError> {
-        self.stream.write_all(&request.frame().to_bytes()).await?;
+        self.stream
+            .write_all(&request.frame().to_bytes())
+            .await
+            .map_err(ClientError::connection_lost)?;
         loop {
-            if let Some(frame) = self.frames.next_frame()? {
+            if let Some(frame) = self.frames.next_frame().map_err(ClientError::unreadable_answer)? {
                 return Ok(frame);
             }
-            if self.stream.read_buf(self.frames.buffer_mut()).await? == 0 {
-                return Err(ClientError::ConnectionFailed("connection closed by broker".into()));
+            let read = self
+                .stream
+                .read_buf(self.frames.buffer_mut())
+                .await
+                .map_err(ClientError::connection_lost)?;
+            if read == 0 {
+                return Err(ClientError::connection_lost("closed by the broker"));
             }
         }
     }
@@ -100,7 +110,7 @@ impl Connection {
         };
         let frame = within(exchange.answer_within, open.socket.exchange(&request))
             .await
-            .unwrap_or(Err(ClientError::RequestTimedOut))?;
+            .unwrap_or(Err(ClientError::NoAnswer))?;
         let response = conversation::answer(&request, frame)?;
         *slot = Some(open);
         Ok(response)
@@ -111,15 +121,15 @@ impl Connection {
         let mut socket = within(exchange.connect_within, Socket::connect(&self.address))
             .await
             .unwrap_or_else(|| {
-                Err(ClientError::ConnectionFailed(format!(
-                    "no connection to {} within {:?}",
+                Err(ClientError::unreachable(format_args!(
+                    "{} did not accept a connection within {:?}",
                     self.address, exchange.connect_within
                 )))
             })?;
         let greeting = Greeting::new(self.client_id.clone())?;
         let frame = within(exchange.greet_within, socket.exchange(greeting.request()))
             .await
-            .unwrap_or(Err(ClientError::RequestTimedOut))?;
+            .unwrap_or(Err(ClientError::NoAnswer))?;
         Ok(Open {
             socket,
             conversation: greeting.answered(frame)?,

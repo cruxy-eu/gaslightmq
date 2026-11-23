@@ -195,8 +195,8 @@ async fn a_request_that_waits_for_its_turn_on_a_connection_ends_with_its_call() 
 
     assert_eq!(
         heartbeat,
-        Ok(Err(ClientError::CallTimedOut {
-            error: Box::new(ClientError::RequestTimedOut)
+        Ok(Err(ClientError::OutOfTime {
+            error: Box::new(ClientError::NoAnswer)
         }))
     );
     assert!(broker.arrivals_of(ApiKey::Heartbeat).is_empty());

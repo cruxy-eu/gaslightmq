@@ -13,12 +13,13 @@ use std::collections::VecDeque;
 use std::time::Duration;
 
 use gaslightmq_clock::Instant;
+use gaslightmq_kafka_client_api::ClientError;
+use gaslightmq_kernel::TopicName;
 use gaslightmq_wire::messages::{FindCoordinatorRequest, FindCoordinatorResponse, GroupId, MetadataResponse};
 use gaslightmq_wire::protocol::Request as KafkaRequest;
-use gaslightmq_wire::{Request, Response};
+use gaslightmq_wire::{Partition, Request, Response};
 
-use crate::error::ClientError;
-use crate::logic::attempts::{AfterFailure, Attempts, Failed, Limits};
+use crate::logic::attempts::{AfterFailure, Attempts, Failed, Limits, is_retriable};
 use crate::logic::cluster::{Candidates, ClusterView, Destination, Route, TopicPartition, Traffic};
 use crate::logic::conversation::Conversation;
 use crate::logic::topics;
@@ -38,6 +39,22 @@ pub(crate) enum Reading<T> {
     /// The response asks for the request once more, changed by what the operation just learned.
     /// It goes out at once and uses no retry, so an operation never answers this twice in a row.
     Again,
+}
+
+/// The failure of a call to a partition that the cluster names neither a leader nor an error for.
+///
+/// A broker answers with an error for a name that is no topic name.
+/// An answer without that error is one the client cannot read.
+fn no_leader(partition: &TopicPartition) -> ClientError {
+    match TopicName::new(partition.topic.as_str()) {
+        Ok(topic) => ClientError::NoLeader {
+            topic,
+            partition: Partition::from(partition.partition),
+        },
+        Err(error) => {
+            ClientError::unreadable_answer(format_args!("neither a leader nor an error for {partition}: {error}"))
+        }
+    }
 }
 
 /// One kind of call: the request it sends, where the request goes, and what the response means.
@@ -75,7 +92,7 @@ pub(crate) trait Operation {
     /// Whether the call tries again after `error`, which the response to the request of the operation reported.
     /// It does when the error may pass. An operation whose answer is final says so here.
     fn tries_again_after(&self, error: &ClientError) -> bool {
-        error.is_retriable()
+        is_retriable(error)
     }
 
     /// What the cluster view takes over from the response, whatever the call makes of it.
@@ -190,7 +207,7 @@ impl<O: Operation> Call<O> {
                 }
             }
             Input::Failed(mut exchange, error) => {
-                if error.is_retriable() {
+                if is_retriable(&error) {
                     cluster.failed(exchange.destination.connection);
                     if let Some(next) = exchange.fallbacks.pop_front() {
                         exchange.destination = next;
@@ -206,8 +223,8 @@ impl<O: Operation> Call<O> {
     ///
     /// # Errors
     ///
-    /// [`ClientError::UnsupportedVersion`] when the broker speaks no version of the API that the client speaks,
-    /// and [`ClientError::Protocol`] when the request does not encode.
+    /// [`ClientError::NoCommonVersion`] when the broker speaks no version of the API that the client speaks,
+    /// and [`ClientError::UnwritableRequest`] when the request does not encode.
     pub fn request(&self, exchange: &Exchange, conversation: &mut Conversation) -> Result<Request, ClientError> {
         match &exchange.purpose {
             Purpose::Operation => conversation.request(O::VERSIONS, &self.operation.request(exchange.answer_within)),
@@ -281,7 +298,7 @@ impl<O: Operation> Call<O> {
     ) -> Result<Option<O::Output>, ClientError> {
         match &exchange.purpose {
             Purpose::Operation => {
-                let body = response.body()?;
+                let body = response.body().map_err(ClientError::unreadable_answer)?;
                 self.operation.learn(&body, cluster, now);
                 Ok(match self.operation.read(body)? {
                     Reading::Done(output) => Some(output),
@@ -289,27 +306,22 @@ impl<O: Operation> Call<O> {
                 })
             }
             Purpose::LocateLeader(partition) => {
-                let metadata: MetadataResponse = response.body()?;
+                let metadata: MetadataResponse = response.body().map_err(ClientError::unreadable_answer)?;
                 cluster.learn(&metadata, now);
                 if cluster.leader(partition, now).is_some() {
                     return Ok(None);
                 }
-                Err(
-                    topics::error_of(&metadata, &partition.topic).unwrap_or_else(|| ClientError::NoLeader {
-                        topic: partition.topic.to_string(),
-                        partition: partition.partition,
-                    }),
-                )
+                Err(topics::error_of(&metadata, &partition.topic).unwrap_or_else(|| no_leader(partition)))
             }
             Purpose::LocateCoordinator(group) => {
-                let found: FindCoordinatorResponse = response.body()?;
-                if let Some(error) = ClientError::broker(found.error_code) {
+                let found: FindCoordinatorResponse = response.body().map_err(ClientError::unreadable_answer)?;
+                if let Some(error) = ClientError::refusal(found.error_code) {
                     return Err(error);
                 }
                 if cluster.learn_coordinator(group, found.node_id, &found.host, found.port) {
                     Ok(None)
                 } else {
-                    Err(ClientError::Protocol(format!(
+                    Err(ClientError::unreadable_answer(format_args!(
                         "the coordinator of group {} has no address: {}:{}",
                         group.as_str(),
                         found.host,
@@ -332,7 +344,7 @@ impl<O: Operation> Call<O> {
         cluster: &mut ClusterView,
         now: Instant,
     ) -> Step<O::Output> {
-        if !error.is_retriable() {
+        if !is_retriable(&error) {
             return Step::Done(Err(error));
         }
         let failed = if exchange.purpose == Purpose::Operation {
@@ -351,7 +363,7 @@ impl<O: Operation> Call<O> {
                 Step::Wait { until }
             }
             AfterFailure::OutOfRetries => Step::Done(Err(error)),
-            AfterFailure::OutOfTime => Step::Done(Err(ClientError::CallTimedOut { error: Box::new(error) })),
+            AfterFailure::OutOfTime => Step::Done(Err(ClientError::OutOfTime { error: Box::new(error) })),
         }
     }
 }
@@ -404,7 +416,7 @@ pub(crate) mod tests {
         }
 
         fn read(&mut self, response: HeartbeatResponse) -> Result<Reading<&'static str>, ClientError> {
-            if let Some(error) = ClientError::broker(response.error_code) {
+            if let Some(error) = ClientError::refusal(response.error_code) {
                 return Err(error);
             }
             if std::mem::take(&mut self.asks_again) {
@@ -569,8 +581,8 @@ pub(crate) mod tests {
 
         assert_eq!(
             step,
-            Step::Done(Err(ClientError::CallTimedOut {
-                error: Box::new(ClientError::Broker {
+            Step::Done(Err(ClientError::OutOfTime {
+                error: Box::new(ClientError::Refused {
                     error: ResponseError::UnknownTopicOrPartition
                 })
             }))
@@ -588,12 +600,28 @@ pub(crate) mod tests {
 
         assert_eq!(
             step,
-            Step::Done(Err(ClientError::CallTimedOut {
+            Step::Done(Err(ClientError::OutOfTime {
                 error: Box::new(ClientError::NoLeader {
-                    topic: "orders".into(),
-                    partition: 0
+                    topic: TopicName::new("orders").unwrap(),
+                    partition: Partition::new(0)
                 })
             }))
+        );
+    }
+
+    #[test]
+    fn a_name_that_is_no_topic_name_and_gets_neither_a_leader_nor_an_error_ends_the_call() {
+        let mut cluster = view();
+        let no_topic_name = Ping::to(Route::Leader(partition("orders/eu", 0)));
+        let mut call = Call::new(no_topic_name, limits(), at(0));
+        let asking = exchange_of(call.handle(Input::Started, &mut cluster, at(0)));
+
+        let input = answered(&call, asking, &metadata(&[1], vec![topic("orders/eu", &[-1])]));
+        let step = call.handle(input, &mut cluster, at(20));
+
+        assert!(
+            matches!(step, Step::Done(Err(ClientError::UnreadableAnswer { .. }))),
+            "{step:?}"
         );
     }
 
@@ -623,7 +651,7 @@ pub(crate) mod tests {
         let input = answered(&call, sending, &refusal(ResponseError::NotLeaderOrFollower));
         assert_eq!(
             call.handle(input, &mut cluster, at(200)),
-            Step::Done(Err(ClientError::Broker {
+            Step::Done(Err(ClientError::Refused {
                 error: ResponseError::NotLeaderOrFollower
             }))
         );
@@ -658,7 +686,7 @@ pub(crate) mod tests {
         let sending = exchange_of(call.handle(Input::Started, &mut cluster, at(0)));
 
         let step = call.handle(
-            Input::Failed(sending, ClientError::ConnectionFailed("reset".into())),
+            Input::Failed(sending, ClientError::connection_lost("reset")),
             &mut cluster,
             at(10),
         );
@@ -679,7 +707,7 @@ pub(crate) mod tests {
 
         assert_eq!(
             step,
-            Step::Done(Err(ClientError::Broker {
+            Step::Done(Err(ClientError::Refused {
                 error: ResponseError::TopicAuthorizationFailed
             }))
         );
@@ -702,7 +730,7 @@ pub(crate) mod tests {
 
         assert_eq!(
             call.handle(input, &mut cluster, at(100)),
-            Step::Done(Err(ClientError::Broker {
+            Step::Done(Err(ClientError::Refused {
                 error: ResponseError::RequestTimedOut
             }))
         );
@@ -719,8 +747,8 @@ pub(crate) mod tests {
 
         assert_eq!(
             step,
-            Step::Done(Err(ClientError::CallTimedOut {
-                error: Box::new(ClientError::Broker {
+            Step::Done(Err(ClientError::OutOfTime {
+                error: Box::new(ClientError::Refused {
                     error: ResponseError::RequestTimedOut
                 })
             }))
@@ -732,7 +760,7 @@ pub(crate) mod tests {
         let mut cluster = view();
         cluster.learn(&metadata(&[1], vec![]), at(0));
         let mut call = Call::new(Ping::to(Route::AnyBroker), limits(), at(0));
-        let failed = || ClientError::ConnectionFailed("refused".into());
+        let failed = || ClientError::unreachable("refused");
 
         let first = exchange_of(call.handle(Input::Started, &mut cluster, at(0)));
         assert_eq!(first.destination, to_broker(1));
@@ -753,7 +781,7 @@ pub(crate) mod tests {
         let first = exchange_of(call.handle(Input::Started, &mut cluster, at(0)));
         assert_eq!(first.destination, to_broker(1));
 
-        let second = exchange_of(call.handle(Input::Failed(first, ClientError::RequestTimedOut), &mut cluster, at(1)));
+        let second = exchange_of(call.handle(Input::Failed(first, ClientError::NoAnswer), &mut cluster, at(1)));
         assert_eq!(second.destination, to_broker(2));
         let input = answered(&call, second, &refusal(ResponseError::RequestTimedOut));
         assert_eq!(call.handle(input, &mut cluster, at(1)), Step::Wait { until: at(101) });
@@ -839,7 +867,7 @@ pub(crate) mod tests {
 
         assert_eq!(
             call.handle(input, &mut cluster, at(0)),
-            Step::Done(Err(ClientError::Broker {
+            Step::Done(Err(ClientError::Refused {
                 error: ResponseError::GroupAuthorizationFailed
             }))
         );
@@ -856,11 +884,7 @@ pub(crate) mod tests {
         assert_eq!(early.answer_within, Duration::from_secs(5));
         assert_eq!(early.not_after, at(10_000));
 
-        let step = call.handle(
-            Input::Failed(early, ClientError::RequestTimedOut),
-            &mut cluster,
-            at(9_500),
-        );
+        let step = call.handle(Input::Failed(early, ClientError::NoAnswer), &mut cluster, at(9_500));
         let late = exchange_of(step);
         assert_eq!(late.connect_within, Duration::from_millis(500));
         assert_eq!(late.greet_within, Duration::from_millis(500));
@@ -919,8 +943,8 @@ pub(crate) mod tests {
 
         assert_eq!(
             step,
-            Step::Done(Err(ClientError::UnsupportedVersion {
-                api_key: ApiKey::Heartbeat as i16
+            Step::Done(Err(ClientError::NoCommonVersion {
+                api_key: gaslightmq_kernel::ApiKey::HEARTBEAT
             }))
         );
     }

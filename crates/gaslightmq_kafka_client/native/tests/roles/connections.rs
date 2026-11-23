@@ -78,7 +78,7 @@ async fn a_peer_that_hangs_up_fails_the_call_when_its_time_runs_out() {
     let error = consumer.metadata_for_all_topics().await.unwrap_err();
 
     assert!(
-        matches!(error, ClientError::CallTimedOut { error: ref last } if matches!(**last, ClientError::ConnectionFailed(_))),
+        matches!(error, ClientError::OutOfTime { error: ref last } if matches!(**last, ClientError::ConnectionLost { .. })),
         "{error}"
     );
 }
@@ -100,7 +100,7 @@ async fn a_greeting_without_an_answer_times_out_as_a_request_does() {
 
     let configs = admin.describe_topic_configs(TOPIC, &[]).await;
 
-    assert_eq!(configs, Err(ClientError::RequestTimedOut));
+    assert_eq!(configs, Err(ClientError::NoAnswer));
 }
 
 #[tokio::test]
@@ -125,7 +125,7 @@ async fn a_request_without_an_answer_times_out_and_the_next_one_opens_a_new_conn
 
     assert_eq!(
         admin.describe_topic_configs(TOPIC, &[]).await,
-        Err(ClientError::RequestTimedOut)
+        Err(ClientError::NoAnswer)
     );
     assert!(admin.describe_topic_configs(TOPIC, &[]).await.is_ok());
 
@@ -224,7 +224,7 @@ async fn a_producer_without_retries_returns_the_first_error() {
 
     assert_eq!(
         offset,
-        Err(ClientError::Broker {
+        Err(ClientError::Refused {
             error: ResponseError::NotLeaderOrFollower
         })
     );

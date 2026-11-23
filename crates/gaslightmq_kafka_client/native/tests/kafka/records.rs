@@ -2,7 +2,7 @@
 
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use futures::StreamExt;
+use futures::{StreamExt, TryStreamExt};
 use gaslightmq_clock::TimeSpan;
 use gaslightmq_kafka_client_api::Watermarks;
 use gaslightmq_kafka_client_native::{BootstrapServers, ClientError, KafkaConsumer, KafkaProducer};
@@ -139,7 +139,7 @@ async fn a_fetch_behind_the_end_of_the_log_is_out_of_range() -> anyhow::Result<(
 
     assert_eq!(
         read,
-        Err(ClientError::Broker {
+        Err(ClientError::Refused {
             error: ResponseError::OffsetOutOfRange
         })
     );
@@ -197,9 +197,28 @@ async fn a_stream_reads_from_its_offset_until_a_fetch_brings_nothing() -> anyhow
     configuration.fetch_max_wait = TimeSpan::from_millis(100);
     let consumer = KafkaConsumer::new(configuration);
 
-    let read: Vec<Record> = consumer.stream(topic, partition(0), offset(1)).collect().await;
+    let read: Vec<Record> = consumer.stream(topic, partition(0), offset(1)).try_collect().await?;
 
     assert_eq!(values(&read), ["paid", "shipped"]);
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_stream_ends_with_the_failure_of_the_fetch_that_failed() -> anyhow::Result<()> {
+    let cluster = kafka().await?;
+    let orders = cluster.topics().create(NewTopic::unique("orders")).await?;
+
+    let read: Vec<Result<Record, ClientError>> = consumer(cluster)
+        .stream(orders.name().as_str(), partition(0), offset(5))
+        .collect()
+        .await;
+
+    assert_eq!(
+        read,
+        [Err(ClientError::Refused {
+            error: ResponseError::OffsetOutOfRange
+        })]
+    );
     Ok(())
 }
 
@@ -252,7 +271,7 @@ async fn a_record_that_the_topic_does_not_take_is_refused_at_once() -> anyhow::R
 
     assert_eq!(
         written,
-        Err(ClientError::Broker {
+        Err(ClientError::Refused {
             error: ResponseError::MessageTooLarge
         })
     );

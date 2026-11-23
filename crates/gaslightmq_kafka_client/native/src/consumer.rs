@@ -7,14 +7,13 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use bytes::Bytes;
 use futures::StreamExt;
 use gaslightmq_kafka_client_api::{
-    Consumer, HeartbeatResult, JoinGroupResult, ProtocolConsumer, RecordStream, SyncGroupResult, TopicMetadata,
-    Watermarks,
+    ClientError, Consumer, JoinGroupResult, ProtocolConsumer, RecordStream, TopicMetadata, Watermarks,
 };
+use gaslightmq_kernel::MemberId;
 use gaslightmq_wire::messages::GroupId;
 use gaslightmq_wire::{Offset, Partition, Record};
 
 use crate::configuration::{ConsumerConfiguration, RoleNames};
-use crate::error::ClientError;
 use crate::io::access::ClusterAccess;
 use crate::logic::call::Operation;
 use crate::logic::cluster::{TopicPartition, group_id, topic_name};
@@ -44,9 +43,9 @@ static NAMES: RoleNames = RoleNames::new("consumer");
 ///
 /// # Failures
 ///
-/// The methods of the consumer itself return a failure as a [`ClientError`].
-/// The methods of [`Consumer`] return a value and no error, so they panic on a failure.
-/// The group methods of [`ProtocolConsumer`] carry the closest Kafka error in their result.
+/// A call that fails returns a [`ClientError`],
+/// through the methods of the consumer itself and through [`Consumer`] and [`ProtocolConsumer`] alike.
+/// No method panics.
 pub struct KafkaConsumer {
     inner: Arc<Inner>,
 }
@@ -97,29 +96,33 @@ impl KafkaConsumer {
     ///
     /// # Errors
     ///
-    /// The error the broker or the connection gave,
-    /// or [`ClientError::CallTimedOut`] when retriable errors lasted until the default API timeout.
+    /// [`ClientError::Refused`] when the broker answers with an error code that does not pass.
+    /// Otherwise the failure of the client or of its connection,
+    /// or [`ClientError::OutOfTime`] when retriable failures lasted until the default API timeout.
     pub async fn fetch(&self, topic: &str, partition: Partition, offset: Offset) -> Result<Vec<Record>, ClientError> {
         self.inner.fetch(topic, partition, offset).await
     }
 
     /// The records of a partition from `offset` on, one Fetch after the other.
     /// Each Fetch starts after the last record of the one before it.
-    /// The stream ends at the first Fetch that brings no records or fails.
+    /// The stream ends after the first Fetch that brings no records.
+    /// A Fetch that fails is the last item of the stream, as the [`ClientError`] of [`fetch`](Self::fetch).
     pub fn stream(&self, topic: &str, partition: Partition, offset: Offset) -> RecordStream {
         let consumer = Arc::clone(&self.inner);
         let topic = topic.to_owned();
         Box::pin(
-            futures::stream::unfold(u64::from(offset), move |next_offset| {
+            futures::stream::unfold(Some(u64::from(offset)), move |next_offset| {
                 let consumer = Arc::clone(&consumer);
                 let topic = topic.clone();
                 async move {
-                    let records = consumer
-                        .fetch(&topic, partition, Offset::from(next_offset))
-                        .await
-                        .ok()?;
-                    let last = records.last()?.offset?;
-                    Some((records, u64::from(last).saturating_add(1)))
+                    match consumer.fetch(&topic, partition, Offset::from(next_offset?)).await {
+                        Ok(records) => {
+                            let last = records.last()?.offset?;
+                            let records: Vec<_> = records.into_iter().map(Ok).collect();
+                            Some((records, Some(u64::from(last).saturating_add(1))))
+                        }
+                        Err(error) => Some((vec![Err(error)], None)),
+                    }
                 }
             })
             .flat_map(futures::stream::iter),
@@ -130,24 +133,26 @@ impl KafkaConsumer {
     ///
     /// # Errors
     ///
-    /// [`ClientError::Protocol`] when the response does not describe the topic.
-    /// Otherwise the error the broker or the connection gave,
-    /// or [`ClientError::CallTimedOut`] when retriable errors lasted until the default API timeout.
+    /// [`ClientError::UnreadableAnswer`] when the response does not describe the topic.
+    /// [`ClientError::Refused`] when the broker answers with an error code that does not pass.
+    /// Otherwise the failure of the client or of its connection,
+    /// or [`ClientError::OutOfTime`] when retriable failures lasted until the default API timeout.
     pub async fn metadata_for_topic(&self, topic: &str) -> Result<TopicMetadata, ClientError> {
         self.inner
             .describe_topics(Some(topic))
             .await?
             .into_iter()
             .find(|described| described.name == topic)
-            .ok_or_else(|| ClientError::Protocol(format!("no metadata for topic {topic}")))
+            .ok_or_else(|| ClientError::unreadable_answer(format_args!("no metadata for topic {topic}")))
     }
 
     /// The partitions of every topic.
     ///
     /// # Errors
     ///
-    /// The error the broker or the connection gave,
-    /// or [`ClientError::CallTimedOut`] when retriable errors lasted until the default API timeout.
+    /// [`ClientError::Refused`] when the broker answers with an error code that does not pass.
+    /// Otherwise the failure of the client or of its connection,
+    /// or [`ClientError::OutOfTime`] when retriable failures lasted until the default API timeout.
     pub async fn metadata_for_all_topics(&self) -> Result<Vec<TopicMetadata>, ClientError> {
         self.inner.describe_topics(None).await
     }
@@ -156,8 +161,9 @@ impl KafkaConsumer {
     ///
     /// # Errors
     ///
-    /// The error the broker or the connection gave,
-    /// or [`ClientError::CallTimedOut`] when retriable errors lasted until the default API timeout.
+    /// [`ClientError::Refused`] when the broker answers with an error code that does not pass.
+    /// Otherwise the failure of the client or of its connection,
+    /// or [`ClientError::OutOfTime`] when retriable failures lasted until the default API timeout.
     pub async fn watermarks(&self, topic: &str, partition: Partition) -> Result<Watermarks, ClientError> {
         let low = self.inner.list_offset(topic, partition, LogEnd::Earliest).await?;
         let high = self.inner.list_offset(topic, partition, LogEnd::Latest).await?;
@@ -176,8 +182,9 @@ impl KafkaConsumer {
     ///
     /// # Errors
     ///
-    /// The error the coordinator or the connection gave,
-    /// or [`ClientError::CallTimedOut`] when retriable errors lasted until the time of the join was over.
+    /// [`ClientError::Refused`] when the coordinator answers with an error code that does not pass.
+    /// Otherwise the failure of the client or of its connection,
+    /// or [`ClientError::OutOfTime`] when retriable failures lasted until the time of the join was over.
     pub async fn join_group(&self, group: &str) -> Result<JoinedGroup, ClientError> {
         let inner = &self.inner;
         let group = group_id(group);
@@ -209,8 +216,9 @@ impl KafkaConsumer {
     ///
     /// # Errors
     ///
-    /// The error the coordinator or the connection gave,
-    /// or [`ClientError::CallTimedOut`] when retriable errors lasted until the default API timeout.
+    /// [`ClientError::Refused`] when the coordinator answers with an error code that does not pass.
+    /// Otherwise the failure of the client or of its connection,
+    /// or [`ClientError::OutOfTime`] when retriable failures lasted until the default API timeout.
     pub async fn sync_group(&self, group: &str) -> Result<Bytes, ClientError> {
         let inner = &self.inner;
         let group = group_id(group);
@@ -226,8 +234,9 @@ impl KafkaConsumer {
     ///
     /// # Errors
     ///
-    /// The error the coordinator or the connection gave,
-    /// or [`ClientError::CallTimedOut`] when retriable errors lasted until the default API timeout.
+    /// [`ClientError::Refused`] when the coordinator answers with an error code that does not pass.
+    /// Otherwise the failure of the client or of its connection,
+    /// or [`ClientError::OutOfTime`] when retriable failures lasted until the default API timeout.
     pub async fn heartbeat(&self, group: &str) -> Result<(), ClientError> {
         let inner = &self.inner;
         let group = group_id(group);
@@ -307,91 +316,49 @@ impl From<SocketAddr> for KafkaConsumer {
     }
 }
 
-/// The methods of [`Consumer`] return a value and no error.
-/// A test that wants the error calls the method of the same name on [`KafkaConsumer`] itself.
-#[expect(
-    clippy::panic,
-    reason = "the methods of `Consumer` return a value and no error, so a failure panics, as each method documents"
-)]
+/// Every method is the method of the same name on [`KafkaConsumer`] itself, and fails as that one does.
 impl Consumer for KafkaConsumer {
-    /// # Panics
-    ///
-    /// When [`KafkaConsumer::fetch`] fails.
-    async fn fetch(&self, topic: &str, partition: Partition, offset: Offset) -> Vec<Record> {
-        KafkaConsumer::fetch(self, topic, partition, offset)
-            .await
-            .unwrap_or_else(|error| panic!("fetch {topic}-{partition} failed: {error}"))
+    async fn fetch(&self, topic: &str, partition: Partition, offset: Offset) -> Result<Vec<Record>, ClientError> {
+        KafkaConsumer::fetch(self, topic, partition, offset).await
     }
 
-    /// # Panics
-    ///
-    /// When [`KafkaConsumer::metadata_for_topic`] fails.
-    async fn metadata_for_topic(&self, topic: &str) -> TopicMetadata {
-        KafkaConsumer::metadata_for_topic(self, topic)
-            .await
-            .unwrap_or_else(|error| panic!("metadata for {topic} failed: {error}"))
+    async fn metadata_for_topic(&self, topic: &str) -> Result<TopicMetadata, ClientError> {
+        KafkaConsumer::metadata_for_topic(self, topic).await
     }
 
-    /// # Panics
-    ///
-    /// When [`KafkaConsumer::metadata_for_all_topics`] fails.
-    async fn metadata_for_all_topics(&self) -> Vec<TopicMetadata> {
-        KafkaConsumer::metadata_for_all_topics(self)
-            .await
-            .unwrap_or_else(|error| panic!("metadata failed: {error}"))
+    async fn metadata_for_all_topics(&self) -> Result<Vec<TopicMetadata>, ClientError> {
+        KafkaConsumer::metadata_for_all_topics(self).await
     }
 
-    /// # Panics
-    ///
-    /// When [`KafkaConsumer::watermarks`] fails.
-    async fn watermarks(&self, topic: &str, partition: Partition) -> Watermarks {
-        KafkaConsumer::watermarks(self, topic, partition)
-            .await
-            .unwrap_or_else(|error| panic!("watermarks of {topic}-{partition} failed: {error}"))
+    async fn watermarks(&self, topic: &str, partition: Partition) -> Result<Watermarks, ClientError> {
+        KafkaConsumer::watermarks(self, topic, partition).await
     }
 }
 
+/// Every method is the method of the same name on [`KafkaConsumer`] itself, and fails as that one does.
+/// The trait leaves out what only this consumer knows: the generation of a join, and the assignment of a sync.
 impl ProtocolConsumer for KafkaConsumer {
-    /// # Panics
-    ///
-    /// When [`KafkaConsumer::fetch`] fails.
-    async fn fetch(&self, topic: &str, partition: Partition, offset: Offset) -> Vec<Record> {
-        Consumer::fetch(self, topic, partition, offset).await
+    async fn fetch(&self, topic: &str, partition: Partition, offset: Offset) -> Result<Vec<Record>, ClientError> {
+        KafkaConsumer::fetch(self, topic, partition, offset).await
     }
 
     fn stream(&self, topic: &str, partition: Partition, offset: Offset) -> RecordStream {
         KafkaConsumer::stream(self, topic, partition, offset)
     }
 
-    async fn join_group(&self, group_id: &str) -> JoinGroupResult {
-        match KafkaConsumer::join_group(self, group_id).await {
-            Ok(joined) => JoinGroupResult {
-                error: None,
-                member_id: joined.member_id,
-                leader: joined.leader,
-            },
-            Err(error) => JoinGroupResult {
-                error: Some(error.to_response_error()),
-                member_id: String::new(),
-                leader: String::new(),
-            },
-        }
+    async fn join_group(&self, group_id: &str) -> Result<JoinGroupResult, ClientError> {
+        let joined = KafkaConsumer::join_group(self, group_id).await?;
+        Ok(JoinGroupResult {
+            member_id: MemberId::new(joined.member_id).map_err(ClientError::unreadable_answer)?,
+            leader: MemberId::new(joined.leader).map_err(ClientError::unreadable_answer)?,
+        })
     }
 
-    async fn sync_group(&self, group_id: &str) -> SyncGroupResult {
-        SyncGroupResult {
-            error: failure_of(KafkaConsumer::sync_group(self, group_id).await.map(drop)),
-        }
+    async fn sync_group(&self, group_id: &str) -> Result<(), ClientError> {
+        KafkaConsumer::sync_group(self, group_id).await.map(drop)
     }
 
-    async fn heartbeat(&self, group_id: &str) -> HeartbeatResult {
-        HeartbeatResult {
-            error: failure_of(KafkaConsumer::heartbeat(self, group_id).await),
-        }
+    async fn heartbeat(&self, group_id: &str) -> Result<(), ClientError> {
+        KafkaConsumer::heartbeat(self, group_id).await
     }
-}
-
-/// The closest Kafka error of a call that failed.
-fn failure_of(result: Result<(), ClientError>) -> Option<gaslightmq_wire::ResponseError> {
-    result.err().map(|error| error.to_response_error())
 }

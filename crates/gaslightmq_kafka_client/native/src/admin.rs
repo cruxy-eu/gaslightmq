@@ -3,10 +3,9 @@
 use std::collections::BTreeMap;
 use std::net::SocketAddr;
 
-use gaslightmq_kafka_client_api::{Admin, TopicConfigs};
+use gaslightmq_kafka_client_api::{Admin, ClientError, TopicConfigs};
 
 use crate::configuration::{AdminConfiguration, RoleNames};
-use crate::error::ClientError;
 use crate::io::access::ClusterAccess;
 use crate::logic::configs::DescribeTopicConfigs;
 
@@ -18,8 +17,8 @@ static NAMES: RoleNames = RoleNames::new("adminclient");
 /// It has its own connections, its own view of the cluster and its own `client.id`.
 /// Two admins share nothing, and neither does an admin with a producer or a consumer.
 ///
-/// [`describe_topic_configs`](Self::describe_topic_configs) returns a failure as a [`ClientError`].
-/// The [`Admin`] trait has no error, so its result carries the closest Kafka error instead.
+/// A call that fails returns a [`ClientError`],
+/// through [`describe_topic_configs`](Self::describe_topic_configs) and through the [`Admin`] trait alike.
 pub struct KafkaAdmin {
     configuration: AdminConfiguration,
     cluster: ClusterAccess,
@@ -47,10 +46,10 @@ impl KafkaAdmin {
     ///
     /// # Errors
     ///
-    /// The error the cluster reports for the topic, at once:
+    /// [`ClientError::Refused`] with the error code the cluster answers with for the topic, at once:
     /// a topic that the cluster does not have is `UNKNOWN_TOPIC_OR_PARTITION`, as with Kafka's admin client.
-    /// Otherwise the error the connection gave,
-    /// or [`ClientError::CallTimedOut`] when requests stayed without an answer until the default API timeout.
+    /// Otherwise the failure of the client or of its connection,
+    /// or [`ClientError::OutOfTime`] when requests stayed without an answer until the default API timeout.
     pub async fn describe_topic_configs(
         &self,
         topic: &str,
@@ -78,13 +77,11 @@ impl From<SocketAddr> for KafkaAdmin {
 }
 
 impl Admin for KafkaAdmin {
-    async fn describe_topic_configs(&self, topic: &str, keys: &[&str]) -> TopicConfigs {
-        match KafkaAdmin::describe_topic_configs(self, topic, keys).await {
-            Ok(configs) => TopicConfigs { error: None, configs },
-            Err(error) => TopicConfigs {
-                error: Some(error.to_response_error()),
-                configs: BTreeMap::new(),
-            },
-        }
+    /// # Errors
+    ///
+    /// As [`KafkaAdmin::describe_topic_configs`].
+    async fn describe_topic_configs(&self, topic: &str, keys: &[&str]) -> Result<TopicConfigs, ClientError> {
+        let configs = KafkaAdmin::describe_topic_configs(self, topic, keys).await?;
+        Ok(TopicConfigs { configs })
     }
 }

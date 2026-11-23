@@ -364,8 +364,11 @@ dependencies = [
 name = "gaslightmq_kafka_client_api"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "futures",
+ "gaslightmq_kernel",
  "gaslightmq_wire",
+ "thiserror",
  "tokio",
 ]
 
