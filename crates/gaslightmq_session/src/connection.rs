@@ -24,7 +24,7 @@ use gaslightmq_field::prelude::*;
 /// );
 /// assert_eq!(connection.host().to_string(), "10.0.4.27");
 /// assert_eq!(connection.to_string(), "#7 from 10.0.4.27:51459 to broker 2");
-/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// # Ok::<(), ClientAddressError>(())
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Connection {
@@ -193,7 +193,7 @@ impl std::error::Error for ConnectionOrdinalError {}
 /// assert_eq!(ordinals.assign(host, Endpoint::Bootstrap).value(), 1);
 /// assert_eq!(ordinals.assign(host, broker).value(), 1);
 /// assert_eq!(ordinals.assign(host, broker).value(), 2);
-/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// # Ok::<(), ClientHostError>(())
 /// ```
 #[derive(Debug, Clone, Default)]
 pub struct ConnectionOrdinals {

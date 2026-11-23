@@ -111,15 +111,11 @@ async fn a_frame_over_the_limit_is_no_frame_before_its_payload_arrives() {
 
     let ended = endings.next().await;
     assert_eq!(ended.frames, 1);
-    assert!(
-        matches!(
-            ended.why,
-            ReceiveError::NotAFrame {
-                error: WireError::FrameTooLarge { len: 9, max: 8 }
-            }
-        ),
-        "{:?}",
-        ended.why
+    assert_eq!(
+        ended.why,
+        ListenerError::NotAFrame {
+            reason: WireError::FrameTooLarge { len: 9, max: 8 }.to_string()
+        }
     );
     assert_eq!(client.receive().await, None, "the handler let go of the connection");
 }
@@ -133,14 +129,10 @@ async fn a_frame_of_no_bytes_is_no_frame() {
     client.write(&0u32.to_be_bytes()).await;
 
     let ended = endings.next().await;
-    assert!(
-        matches!(
-            ended.why,
-            ReceiveError::NotAFrame {
-                error: WireError::EmptyFrame
-            }
-        ),
-        "{:?}",
-        ended.why
+    assert_eq!(
+        ended.why,
+        ListenerError::NotAFrame {
+            reason: WireError::EmptyFrame.to_string()
+        }
     );
 }

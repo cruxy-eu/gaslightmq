@@ -115,28 +115,32 @@ mod next_to_std_the_clock_and_the_kernel {
 mod alone {
     use gaslightmq_trigger::prelude::*;
 
-    /// Each constructor returns the error of its own type, and `?` turns every one into a standard error.
-    pub fn every_error_is_a_standard_error() -> Vec<Box<dyn std::error::Error>> {
-        fn boxed<T, E: std::error::Error + 'static>(result: Result<T, E>) -> Box<dyn std::error::Error> {
+    /// Each constructor returns the error of its own type, and every one is a standard error.
+    /// Its message says everything, so it has no source.
+    pub fn every_error_is_a_standard_error() -> Vec<String> {
+        fn said<T, E: std::error::Error + 'static>(result: Result<T, E>) -> String {
             match result {
                 Ok(_) => panic!("the value should not be valid"),
-                Err(error) => Box::new(error),
+                Err(error) => {
+                    assert!(error.source().is_none(), "{error} has a source");
+                    error.to_string()
+                }
             }
         }
 
         let span = gaslightmq_clock::TimeSpan::from_secs;
         vec![
-            boxed::<Chance, ChanceError>("40".parse()),
-            boxed::<Chance, ChanceError>(Chance::from_ppm(1_400_000)),
-            boxed::<Roll, RollError>(Roll::from_ppm(1_000_000)),
-            boxed::<Count, CountError>(Count::try_from(0)),
-            boxed::<MatchNumber, MatchNumberError>(MatchNumber::try_from(0)),
-            boxed::<TimeWindow, TimeWindowError>(TimeWindow::between(span(40), span(10))),
-            boxed::<Per, PerError>("connection".parse()),
-            boxed::<Lifetime, LifetimeError>("forever".parse()),
-            boxed::<Lifetime, LifetimeError>("0 firings".parse()),
-            boxed::<DiceKey, DiceKeyError>(String::new().try_into()),
-            boxed::<CounterKey, CounterKeyError>("".parse()),
+            said::<Chance, ChanceError>("40".parse()),
+            said::<Chance, ChanceError>(Chance::from_ppm(1_400_000)),
+            said::<Roll, RollError>(Roll::from_ppm(1_000_000)),
+            said::<Count, CountError>(Count::try_from(0)),
+            said::<MatchNumber, MatchNumberError>(MatchNumber::try_from(0)),
+            said::<TimeWindow, TimeWindowError>(TimeWindow::between(span(40), span(10))),
+            said::<Per, PerError>("connection".parse()),
+            said::<Lifetime, LifetimeError>("forever".parse()),
+            said::<Lifetime, LifetimeError>("0 firings".parse()),
+            said::<DiceKey, DiceKeyError>(String::new().try_into()),
+            said::<CounterKey, CounterKeyError>("".parse()),
         ]
     }
 }
@@ -171,15 +175,8 @@ fn the_prelude_holds_the_error_of_every_type() {
 
 #[test]
 fn every_error_is_a_standard_error_with_a_complete_message() {
-    let messages: Vec<String> = alone::every_error_is_a_standard_error()
-        .iter()
-        .map(|error| {
-            assert!(error.source().is_none(), "{error} has a source");
-            error.to_string()
-        })
-        .collect();
     assert_eq!(
-        messages,
+        alone::every_error_is_a_standard_error(),
         [
             "`40` is not a percentage such as `40%`",
             "chance `140%` is not between 0% and 100%",

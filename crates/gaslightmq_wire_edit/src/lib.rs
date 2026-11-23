@@ -33,10 +33,11 @@
 //! let orders = || StrBytes::from_static_str("orders.eu").into();
 //! let partition = |index| PartitionProduceData::default().with_index(index);
 //! let topic = TopicProduceData::default().with_name(orders()).with_partition_data(vec![partition(3), partition(4)]);
-//! let request = Request::new(9, 42, Some("order-ingest"), &ProduceRequest::default().with_topic_data(vec![topic]))?;
+//! let body = ProduceRequest::default().with_topic_data(vec![topic]);
+//! let request = Request::new(9, 42, Some("order-ingest"), &body).expect("a request");
 //!
 //! let asked = EditableRequest::decode(&request, &TopicNames::new())?;
-//! let [three, four]: [Part; 2] = ["orders.eu/3".parse()?, "orders.eu/4".parse()?];
+//! let [three, four]: [Part; 2] = ["orders.eu/3".parse().expect("a part"), "orders.eu/4".parse().expect("a part")];
 //! assert_eq!(asked.parts(), [three.clone(), four.clone()]);
 //!
 //! // Before forwarding, a refusal removes `orders.eu/3`. The backend gets what is left.
@@ -48,7 +49,7 @@
 //! // The backend appends the records of `orders.eu/4`, and says where.
 //! let appended = PartitionProduceResponse::default().with_index(4).with_base_offset(120);
 //! let answered = TopicProduceResponse::default().with_name(orders()).with_partition_responses(vec![appended]);
-//! let truth = forwarded.response(&ProduceResponse::default().with_responses(vec![answered]))?;
+//! let truth = forwarded.response(&ProduceResponse::default().with_responses(vec![answered])).expect("a response");
 //!
 //! // After the response, the refusal joins the truth. The client gets one response for both partitions.
 //! let delivered = asked.merge(&truth, &refused)?;
@@ -61,7 +62,7 @@
 //! assert!(matches!(asked.without(asked.parts())?, Remainder::Nothing));
 //! let everything = Failures::whole_call(ErrorCode::REQUEST_TIMED_OUT);
 //! assert_eq!(asked.error_response(&everything)?.correlation_id(), 42);
-//! # Ok::<(), Box<dyn std::error::Error>>(())
+//! # Ok::<(), SurgeryError>(())
 //! ```
 //!
 //! # Every API fails as a whole
@@ -136,15 +137,16 @@
 //!
 //! # Errors
 //!
-//! Every type that can fail has an error of its own, named after it.
+//! The crate has one error, [`SurgeryError`]. Every operation that can fail returns it.
 //!
-//! | Type | Error | What is wrong |
-//! |---|---|---|
-//! | [`EditableRequest`] | [`EditableRequestError`] | The API has no messages, a body does not decode or encode, a response belongs to another request, or nothing failed. |
-//! | [`TopicNames`] | [`TopicNamesError`] | The response to learn from does not decode. |
+//! | What failed | What is wrong |
+//! |---|---|
+//! | An operation of [`EditableRequest`] | The API has no messages, a body does not decode or encode, a response belongs to another request, or nothing failed. |
+//! | [`TopicNames::learn_from`] | The response to learn from does not decode. |
 //!
-//! The message of every error is complete, so no error has a [`source`](std::error::Error::source).
-//! A variant that holds the [`WireError`](gaslightmq_wire::WireError) of the codec writes it once, after what it was doing.
+//! The message of the error is complete, so it has no [`source`](std::error::Error::source).
+//! A variant about a body that does not decode or encode keeps what the codec said as text, in a field `reason`,
+//! and writes it once, after what it was doing.
 //!
 //! [`Failures`] and [`Remainder`] hold any value, so they have no error.
 //!
@@ -158,13 +160,15 @@
 mod api;
 mod body;
 mod entry;
+mod error;
 mod failures;
 mod request;
 mod topic_names;
 
+pub use error::SurgeryError;
 pub use failures::Failures;
-pub use request::{EditableRequest, EditableRequestError, Remainder};
-pub use topic_names::{TopicNames, TopicNamesError};
+pub use request::{EditableRequest, Remainder};
+pub use topic_names::TopicNames;
 
 /// Every item of this crate.
 ///
@@ -181,5 +185,5 @@ pub use topic_names::{TopicNames, TopicNamesError};
 /// ```
 pub mod prelude {
     #[doc(no_inline)]
-    pub use crate::{EditableRequest, EditableRequestError, Failures, Remainder, TopicNames, TopicNamesError};
+    pub use crate::{EditableRequest, Failures, Remainder, SurgeryError, TopicNames};
 }

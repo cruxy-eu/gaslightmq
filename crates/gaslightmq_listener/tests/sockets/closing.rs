@@ -34,7 +34,7 @@ impl ConnectionHandler for Leave {
 
 /// Waits until the client left, and then sends until the connection takes no more. It reports why.
 struct SendToNobody {
-    failed: mpsc::UnboundedSender<SendError>,
+    failed: mpsc::UnboundedSender<ListenerError>,
 }
 
 impl ConnectionHandler for SendToNobody {
@@ -68,7 +68,7 @@ impl ConnectionHandler for PanicOnDemand {
 /// Reads one frame, waits for the word of the test, and then reads on. It reports everything it receives.
 struct ReadLate {
     go: Notify,
-    seen: mpsc::UnboundedSender<Result<Vec<u8>, ReceiveError>>,
+    seen: mpsc::UnboundedSender<Result<Vec<u8>, ListenerError>>,
 }
 
 impl ConnectionHandler for ReadLate {
@@ -91,7 +91,7 @@ impl ConnectionHandler for ReadLate {
 
 /// Sends without end, and reports why it stopped.
 struct SendWithoutEnd {
-    stopped: mpsc::UnboundedSender<SendError>,
+    stopped: mpsc::UnboundedSender<ListenerError>,
 }
 
 impl ConnectionHandler for SendWithoutEnd {
@@ -142,7 +142,7 @@ impl ConnectionHandler for EchoAndGoodbye {
                         return;
                     }
                 }
-                Err(ReceiveError::ListenerClosed) => {
+                Err(ListenerError::ListenerClosed) => {
                     if transport.send(&frame(b"goodbye").to_bytes()).await.is_ok() {
                         transport.close().await;
                     }
@@ -166,7 +166,7 @@ async fn a_client_that_closes_after_a_frame_closed_the_connection() {
     drop(client);
 
     let ended = endings.next().await;
-    assert!(matches!(ended.why, ReceiveError::ClientClosed), "{:?}", ended.why);
+    assert!(matches!(ended.why, ListenerError::ClientClosed), "{:?}", ended.why);
     assert_eq!(ended.frames, 1);
     assert_eq!(ended.number, ConnectionNumber::new(1));
     assert_eq!(ended.address, address);
@@ -181,7 +181,7 @@ async fn a_client_that_closes_before_its_first_frame_closed_the_connection() {
     drop(Client::connect(listener.address()).await);
 
     let ended = endings.next().await;
-    assert!(matches!(ended.why, ReceiveError::ClientClosed), "{:?}", ended.why);
+    assert!(matches!(ended.why, ListenerError::ClientClosed), "{:?}", ended.why);
     assert_eq!(ended.frames, 0);
 }
 
@@ -197,7 +197,7 @@ async fn a_client_that_closes_inside_a_frame_cut_the_frame_short() {
 
     let ended = endings.next().await;
     assert!(
-        matches!(ended.why, ReceiveError::FrameCutShort { buffered: 10 }),
+        matches!(ended.why, ListenerError::FrameCutShort { buffered: 10 }),
         "{:?}",
         ended.why
     );
@@ -231,7 +231,7 @@ async fn sending_to_a_client_that_left_fails() {
     drop(Client::connect(listener.address()).await);
 
     let error = soon(failures.recv()).await.unwrap();
-    assert!(matches!(error, SendError::ConnectionLost { .. }), "{error:?}");
+    assert!(matches!(error, ListenerError::ConnectionLost { .. }), "{error:?}");
 }
 
 #[tokio::test]
@@ -264,7 +264,7 @@ async fn closing_the_listener_ends_its_connections() {
 
     for _ in 0..2 {
         let ended = endings.next().await;
-        assert!(matches!(ended.why, ReceiveError::ListenerClosed), "{:?}", ended.why);
+        assert!(matches!(ended.why, ListenerError::ListenerClosed), "{:?}", ended.why);
         assert_eq!(ended.frames, 1);
     }
     assert_eq!(first.receive().await, None);
@@ -318,7 +318,7 @@ async fn letting_go_of_a_listener_closes_it() {
     drop(listener);
 
     let ended = endings.next().await;
-    assert!(matches!(ended.why, ReceiveError::ListenerClosed), "{:?}", ended.why);
+    assert!(matches!(ended.why, ListenerError::ListenerClosed), "{:?}", ended.why);
     assert_eq!(client.receive().await, None);
 }
 
@@ -343,7 +343,7 @@ async fn frames_that_arrived_before_the_listener_closed_still_come_out() {
 
     assert_eq!(soon(sights.recv()).await.unwrap().unwrap(), b"second");
     let last = soon(sights.recv()).await.unwrap();
-    assert!(matches!(last, Err(ReceiveError::ListenerClosed)), "{last:?}");
+    assert!(matches!(last, Err(ListenerError::ListenerClosed)), "{last:?}");
 }
 
 #[tokio::test]
@@ -357,7 +357,7 @@ async fn closing_the_listener_does_not_wait_for_a_client_that_stopped_reading() 
     soon(listener.close()).await;
 
     let error = soon(stops.recv()).await.unwrap();
-    assert!(matches!(error, SendError::ListenerClosed), "{error:?}");
+    assert!(matches!(error, ListenerError::ListenerClosed), "{error:?}");
 }
 
 #[tokio::test]

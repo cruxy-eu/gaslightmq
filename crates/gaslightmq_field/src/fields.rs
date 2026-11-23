@@ -25,10 +25,10 @@ use crate::{
 /// use gaslightmq_field::prelude::*;
 /// use gaslightmq_kernel::prelude::*;
 ///
-/// let orders = TopicName::new("orders.eu")?;
+/// let orders = TopicName::new("orders.eu").expect("a topic name");
 /// let fetch = Fields::new()
 ///     .with(ConnectionNumber::new(7))
-///     .with(ClientId::new("analytics")?)
+///     .with(ClientId::new("analytics").expect("a client ID"))
 ///     .with(ApiKey::FETCH)
 ///     .with(ApiVersion::from(17))
 ///     .with_learned(GroupId::new("analytics-etl")?)
@@ -47,7 +47,7 @@ use crate::{
 /// let answered = fetch.with(Outcome::Ok).with(Latency::from_millis(14));
 /// assert_eq!(answered.read(Field::Outcome), Reading::Present(FieldValues::one(Outcome::Ok)));
 /// assert_eq!(answered.read(Field::ErrorCode), Reading::Absent);
-/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// # Ok::<(), GroupIdError>(())
 /// ```
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Fields {

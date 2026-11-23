@@ -30,10 +30,10 @@ use crate::{Aspect, CombinationClass, Stage, StageError};
 /// assert!(kind.targets_whole_call());
 ///
 /// // A hang-up names its stage, and a silence has only one.
-/// assert_eq!(kind.stage_for(None)?, Stage::BeforeForwarding);
-/// assert_eq!(kind.stage_for(Some(Stage::AfterResponse))?, Stage::AfterResponse);
+/// assert_eq!(kind.stage_for(None).expect("a stage"), Stage::BeforeForwarding);
+/// assert_eq!(kind.stage_for(Some(Stage::AfterResponse)).expect("a stage"), Stage::AfterResponse);
 /// assert!(LieKind::Silence.stage_for(Some(Stage::AfterResponse)).is_err());
-/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// # Ok::<(), LieKindError>(())
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum LieKind {

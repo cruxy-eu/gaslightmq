@@ -59,33 +59,32 @@ mod next_to_the_others {
     ///
     /// A message says everything, so no error has a source.
     pub fn every_error() -> Vec<String> {
+        /// What an error says. A message says everything, so the error has no source.
+        fn message_of<E: std::error::Error>(error: E) -> String {
+            assert!(error.source().is_none(), "{error}");
+            error.to_string()
+        }
+
         let api = Api::from_wire(12, 4);
-        let errors: Vec<Box<dyn std::error::Error>> = vec![
-            Box::new(EditableRequestError::NothingFailed { api }),
-            Box::new(EditableRequestError::UnwritableRequest {
+        vec![
+            message_of(SurgeryError::NothingFailed { api }),
+            message_of(SurgeryError::UnwritableRequest {
                 api,
-                error: WireError::UnknownApi { api_key: 12 },
+                reason: WireError::UnknownApi { api_key: 12 }.to_string(),
             }),
-            Box::new(EditableRequestError::UnwritableResponse {
+            message_of(SurgeryError::UnwritableResponse {
                 api,
-                error: WireError::UnknownApi { api_key: 12 },
+                reason: WireError::UnknownApi { api_key: 12 }.to_string(),
             }),
-            Box::new(TopicNamesError::UnreadableResponse {
+            message_of(SurgeryError::UnreadableResponse {
                 api,
-                error: WireError::Truncated {
+                reason: WireError::Truncated {
                     what: "response header",
                     len: 3,
-                },
+                }
+                .to_string(),
             }),
-        ];
-
-        errors
-            .iter()
-            .map(|error| {
-                assert!(error.source().is_none(), "{error}");
-                error.to_string()
-            })
-            .collect()
+        ]
     }
 }
 
@@ -105,7 +104,7 @@ fn the_prelude_names_the_error_of_every_type() {
             "nothing that the Heartbeat v4 request asks failed",
             "what is left of the Heartbeat v4 request cannot be written: unknown api key 12",
             "the Heartbeat v4 response cannot be written: unknown api key 12",
-            "the topic names of a Heartbeat v4 response cannot be read: response header is cut short at 3 bytes",
+            "the Heartbeat v4 response cannot be read: response header is cut short at 3 bytes",
         ]
     );
 }

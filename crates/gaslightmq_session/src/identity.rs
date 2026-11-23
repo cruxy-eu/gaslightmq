@@ -4,10 +4,10 @@ use std::fmt;
 
 use gaslightmq_field::prelude::*;
 use gaslightmq_kernel::prelude::*;
+use gaslightmq_wire::Request;
 use gaslightmq_wire::messages::ApiVersionsRequest;
-use gaslightmq_wire::{Request, WireError};
 
-use crate::{ClientInstance, Connection};
+use crate::{ClientInstance, Connection, SessionError};
 
 /// The first version of `ApiVersions` in which the request names the client software.
 const FIRST_VERSION_WITH_SOFTWARE: i16 = 3;
@@ -32,7 +32,7 @@ const FIRST_VERSION_WITH_SOFTWARE: i16 = 3;
 /// assert_eq!(identity.connection().number().to_string(), "#7");
 /// assert_eq!(identity.client_id(), None);
 /// assert_eq!(identity.fields().read(Field::Host).present().map(|host| host.to_string()), Some("10.0.4.27".to_owned()));
-/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// # Ok::<(), ClientAddressError>(())
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Identity {
@@ -91,29 +91,29 @@ impl Identity {
 }
 
 /// The `client.id` in the header of `request`.
-pub(crate) fn client_id_of(request: &Request) -> Result<Option<ClientId>, IdentityError> {
+pub(crate) fn client_id_of(request: &Request) -> Result<Option<ClientId>, SessionError> {
     request
         .client_id()
         .map(ClientId::new)
         .transpose()
-        .map_err(|error| IdentityError::InvalidClientId { error })
+        .map_err(|error| SessionError::InvalidClientId { error })
 }
 
 /// The client software that `request` names, or `None` when it is no `ApiVersions` request that names one.
-pub(crate) fn client_software_of(request: &Request) -> Result<Option<ClientSoftware>, IdentityError> {
+pub(crate) fn client_software_of(request: &Request) -> Result<Option<ClientSoftware>, SessionError> {
     let api = request.api();
     if api.key != ApiKey::API_VERSIONS.value() || api.version < FIRST_VERSION_WITH_SOFTWARE {
         return Ok(None);
     }
-    let body: ApiVersionsRequest = request
-        .body()
-        .map_err(|error| IdentityError::UnreadableClientSoftware { error })?;
+    let body: ApiVersionsRequest = request.body().map_err(|error| SessionError::UnreadableClientSoftware {
+        reason: error.to_string(),
+    })?;
     ClientSoftware::new(
         body.client_software_name.as_str(),
         body.client_software_version.as_str(),
     )
     .map(Some)
-    .map_err(|error| IdentityError::InvalidClientSoftware { error })
+    .map_err(|error| SessionError::InvalidClientSoftware { error })
 }
 
 /// One thing that a request changed about the identity of its session.
@@ -147,7 +147,7 @@ impl fmt::Display for IdentityChange {
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Identification {
     changes: Vec<IdentityChange>,
-    errors: Vec<IdentityError>,
+    errors: Vec<SessionError>,
 }
 
 impl Identification {
@@ -157,7 +157,7 @@ impl Identification {
     }
 
     /// What the header said and the session could not keep.
-    pub fn errors(&self) -> &[IdentityError] {
+    pub fn errors(&self) -> &[SessionError] {
         &self.errors
     }
 
@@ -170,48 +170,10 @@ impl Identification {
         self.changes.push(change);
     }
 
-    pub(crate) fn failed(&mut self, error: IdentityError) {
+    pub(crate) fn failed(&mut self, error: SessionError) {
         self.errors.push(error);
     }
 }
-
-/// Why a session cannot keep what a request says about its client.
-///
-/// Each variant keeps the error of the value that is wrong, and writes it after the name of the field.
-#[derive(Debug, Clone, PartialEq, Eq)]
-#[non_exhaustive]
-pub enum IdentityError {
-    /// The `client.id` in the header is not a client ID. The session stays unidentified.
-    InvalidClientId { error: ClientIdError },
-    /// The body of the `ApiVersions` request, which names the client software, does not decode.
-    UnreadableClientSoftware { error: WireError },
-    /// The name and the version in the `ApiVersions` request are not client software.
-    InvalidClientSoftware { error: ClientSoftwareError },
-}
-
-impl IdentityError {
-    /// The identity field that the session could not keep.
-    pub const fn field(&self) -> Field {
-        match self {
-            Self::InvalidClientId { .. } => Field::ClientId,
-            Self::UnreadableClientSoftware { .. } | Self::InvalidClientSoftware { .. } => Field::ClientSoftware,
-        }
-    }
-}
-
-impl fmt::Display for IdentityError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let field = self.field();
-        match self {
-            Self::InvalidClientId { error } => write!(f, "{field}: {error}"),
-            Self::UnreadableClientSoftware { error } => write!(f, "{field}: {error}"),
-            Self::InvalidClientSoftware { error } => write!(f, "{field}: {error}"),
-        }
-    }
-}
-
-/// The message is complete, so no variant has a source.
-impl std::error::Error for IdentityError {}
 
 /// Where a session is in its life.
 ///
@@ -398,11 +360,10 @@ mod tests {
 
         assert_eq!(
             error,
-            IdentityError::InvalidClientSoftware {
+            SessionError::InvalidClientSoftware {
                 error: ClientSoftwareError::Malformed { input: " ".to_owned() }
             }
         );
-        assert_eq!(error.field(), Field::ClientSoftware);
         assert_eq!(
             error.to_string(),
             "client.software: client software \" \" does not have the form a name and a version, such as librdkafka 2.6.1"
@@ -418,25 +379,13 @@ mod tests {
 
         let error = client_software_of(&cut_short).unwrap_err();
 
-        assert!(matches!(error, IdentityError::UnreadableClientSoftware { .. }));
-        assert_eq!(error.field(), Field::ClientSoftware);
+        assert!(matches!(error, SessionError::UnreadableClientSoftware { .. }));
         assert!(
             error
                 .to_string()
                 .starts_with("client.software: cannot decode request body: "),
             "{error}"
         );
-        assert!(error.source().is_none());
-    }
-
-    #[test]
-    fn an_invalid_client_id_names_its_field() {
-        let error = IdentityError::InvalidClientId {
-            error: ClientId::new("a".repeat(40_000)).unwrap_err(),
-        };
-
-        assert_eq!(error.field(), Field::ClientId);
-        assert!(error.to_string().starts_with("client.id: "), "{error}");
         assert!(error.source().is_none());
     }
 

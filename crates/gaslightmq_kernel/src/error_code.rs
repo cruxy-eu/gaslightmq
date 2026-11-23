@@ -35,7 +35,7 @@ use crate::text::text_conversions;
 ///
 /// let unknown = ErrorCode::try_from(999)?;
 /// assert_eq!(unknown.to_string(), "999");
-/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// # Ok::<(), ErrorCodeError>(())
 /// ```
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ErrorCode(NonZeroI16);

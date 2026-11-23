@@ -15,12 +15,12 @@ use crate::text::text_form;
 /// use gaslightmq_environment::prelude::*;
 ///
 /// let bootstrap: ServerAddress = "kafka-1.staging:9092".parse()?;
-/// assert_eq!(bootstrap.host(), &HostName::new("kafka-1.staging")?);
+/// assert_eq!(bootstrap.host(), &HostName::new("kafka-1.staging").expect("a host name"));
 /// assert_eq!(bootstrap.port(), 9092);
 /// assert_eq!(bootstrap.to_string(), "kafka-1.staging:9092");
 ///
 /// assert!("kafka-1.staging".parse::<ServerAddress>().is_err());
-/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// # Ok::<(), ServerAddressError>(())
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ServerAddress {
@@ -133,7 +133,7 @@ impl std::error::Error for ServerAddressError {}
 ///
 /// // A name is not an address to listen on.
 /// assert!("localhost:9092".parse::<ListenAddress>().is_err());
-/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// # Ok::<(), ListenAddressError>(())
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ListenAddress(SocketAddr);
@@ -175,7 +175,7 @@ impl ListenAddress {
     ///
     /// assert!(every.shares(&local));
     /// assert!(!local.shares(&other));
-    /// # Ok::<(), Box<dyn std::error::Error>>(())
+    /// # Ok::<(), ListenAddressError>(())
     /// ```
     pub fn shares(&self, other: &ListenAddress) -> bool {
         !self.takes_any_port() && self.port() == other.port() && same_ip(self.ip(), other.ip())

@@ -94,7 +94,7 @@ fn check_removing_nothing(asked: &EditableRequest) {
     assert_eq!(asked.merge(&truth, &elsewhere).unwrap().frame(), truth.frame(), "{api}");
     assert_eq!(
         asked.error_response(&elsewhere).unwrap_err(),
-        EditableRequestError::NothingFailed { api },
+        SurgeryError::NothingFailed { api },
         "{api}"
     );
 }

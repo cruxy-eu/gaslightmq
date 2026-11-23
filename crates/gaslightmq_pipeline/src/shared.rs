@@ -8,15 +8,16 @@ use gaslightmq_kernel::prelude::*;
 use gaslightmq_lie_api::Lies;
 use gaslightmq_session::ClientContexts;
 use gaslightmq_wire::Response;
-use gaslightmq_wire_edit::{TopicNames, TopicNamesError};
+use gaslightmq_wire_edit::{SurgeryError, TopicNames};
 
 /// The topics that a proxy knows by ID, shared by all of its sessions.
 ///
 /// Newer versions of Fetch and Produce name a topic by its ID alone.
 /// A selector and a lie speak in topic names, so the pipeline needs the name behind an ID.
 /// A cluster tells both in its Metadata, `CreateTopics` and `DescribeTopicPartitions` responses.
-/// Every pipeline [learns](Self::learn_from) from the truth of those calls, before any lie changes it,
+/// Every pipeline learns from the truth of those calls, before any lie changes it,
 /// and every pipeline decodes its requests with what all of them learned.
+/// Whoever else knows a topic by its ID [teaches](Self::learn) it the same way.
 ///
 /// The names belong to the cluster, and not to a client:
 /// a client asks for Metadata on one connection and fetches on another, and every client sees the same IDs.
@@ -29,7 +30,7 @@ use gaslightmq_wire_edit::{TopicNames, TopicNamesError};
 /// use gaslightmq_kernel::prelude::*;
 /// use gaslightmq_pipeline::prelude::*;
 ///
-/// let orders = TopicName::new("orders.eu")?;
+/// let orders = TopicName::new("orders.eu").expect("a topic name");
 /// let id: TopicId = "Zm9vYmFyYmF6cXV4MTIzNA".parse()?;
 ///
 /// let topics = KnownTopics::new();
@@ -37,7 +38,7 @@ use gaslightmq_wire_edit::{TopicNames, TopicNamesError};
 /// topics.learn(id, orders.clone());
 ///
 /// assert_eq!(of_another_session.names().name_of(id), Some(&orders));
-/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// # Ok::<(), TopicIdError>(())
 /// ```
 #[derive(Debug, Clone, Default)]
 pub struct KnownTopics(Arc<ArcSwap<TopicNames>>);
@@ -66,11 +67,13 @@ impl KnownTopics {
     /// A response of another API, or of a version without topic IDs, teaches nothing.
     /// It returns how many topics the response named with an ID.
     ///
+    /// Only a pipeline calls it, with the truth of a call, and it writes a failure into the record of that call.
+    ///
     /// # Errors
     ///
-    /// [`TopicNamesError::UnreadableResponse`] when the body of the response does not decode.
+    /// [`SurgeryError::UnreadableResponse`] when the body of the response does not decode.
     /// Nothing is learned then.
-    pub fn learn_from(&self, response: &Response) -> Result<usize, TopicNamesError> {
+    pub(crate) fn learn_from(&self, response: &Response) -> Result<usize, SurgeryError> {
         let mut named = TopicNames::new();
         let count = named.learn_from(response)?;
         let named: Vec<(TopicId, TopicName)> = named.iter().map(|(id, name)| (id, name.clone())).collect();

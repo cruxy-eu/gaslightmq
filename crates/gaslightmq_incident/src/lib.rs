@@ -43,11 +43,11 @@
 //!
 //! // The scenario loads only on a backend that can do the incident and its consequences.
 //! let backend = IncidentSupport::none().applies(IncidentKind::ALL);
-//! backend.check(&Requirements::from(&action))?;
+//! backend.check(&Requirements::from(&action)).expect("the backend applies every incident");
 //!
 //! // The rule fires on a call to broker 2.
 //! let call = Subjects::new().with_broker(BrokerId::from(2));
-//! let incidents = action.resolve(&call)?;
+//! let incidents = action.resolve(&call).expect("the call names its broker");
 //! assert_eq!(incidents, [Incident::BrokerGoesDown { broker: BrokerId::from(2), failover: true }]);
 //!
 //! // The cluster says what broker 2 leads and hosts, and the incident gets its consequences.
@@ -70,7 +70,7 @@
 //!         [Consequence::Incident(Incident::LeaderMoves { partition: "orders.eu/3".parse()?, to: None })]
 //!     );
 //! }
-//! # Ok::<(), Box<dyn std::error::Error>>(())
+//! # Ok::<(), TopicPartitionError>(())
 //! ```
 //!
 //! # The `serde` feature

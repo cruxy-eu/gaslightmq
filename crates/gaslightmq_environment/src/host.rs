@@ -30,7 +30,7 @@ use crate::text::kept_text;
 ///
 /// assert!(HostName::new("kafka 1").is_err());
 /// assert!(HostName::new("kafka-1.staging:9092").is_err());
-/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// # Ok::<(), HostNameError>(())
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct HostName(Arc<str>);

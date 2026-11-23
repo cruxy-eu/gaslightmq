@@ -25,10 +25,10 @@ use crate::{Field, FieldValue, Outcome, Reading};
 /// assert_eq!(part.topic(), "orders.eu");
 /// assert_eq!(part.partition(), Some(PartitionNumber::from(3)));
 ///
-/// let topic = Part::from(TopicName::new("orders.eu")?);
+/// let topic = Part::from(TopicName::new("orders.eu").expect("a topic name"));
 /// assert_eq!(topic.partition(), None);
 /// assert_eq!(topic.to_string(), "orders.eu");
-/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// # Ok::<(), PartError>(())
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Part {
@@ -163,7 +163,7 @@ impl From<TopicPartitionError> for PartError {
 /// // After the answer, it has a truth of its own.
 /// let answered = asked.failed(ErrorCode::NOT_LEADER_OR_FOLLOWER);
 /// assert_eq!(answered.own(Field::Outcome), Some(Reading::Present(Outcome::Error.into())));
-/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// # Ok::<(), TopicPartitionError>(())
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct PartFields {
@@ -291,7 +291,7 @@ impl From<TopicPartition> for PartFields {
 ///
 /// assert!(Target::Call.covers(&settled));
 /// assert_eq!(Target::of_parts([]), None);
-/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// # Ok::<(), PartError>(())
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize), serde(rename_all = "lowercase"))]
@@ -395,7 +395,7 @@ impl From<PartSet> for Target {
 /// assert!(parts.contains(&settled));
 ///
 /// assert_eq!(PartSet::new([]), Err(PartSetError::Empty));
-/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// # Ok::<(), PartError>(())
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize), serde(transparent))]

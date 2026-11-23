@@ -29,10 +29,10 @@ use crate::ports::{PortRange, PortRangeError, Taken};
 ///
 /// // The cluster has the brokers 1, 2 and 5. Each one takes the next port, in the order of the IDs.
 /// let addresses = listeners.assign([5, 1, 2].map(BrokerId::from))?;
-/// assert_eq!(addresses[&BrokerId::from(1)], "0.0.0.0:19092".parse()?);
-/// assert_eq!(addresses[&BrokerId::from(2)], "0.0.0.0:19093".parse()?);
-/// assert_eq!(addresses[&BrokerId::from(5)], "0.0.0.0:19094".parse()?);
-/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// assert_eq!(addresses[&BrokerId::from(1)], "0.0.0.0:19092".parse().expect("a listen address"));
+/// assert_eq!(addresses[&BrokerId::from(2)], "0.0.0.0:19093".parse().expect("a listen address"));
+/// assert_eq!(addresses[&BrokerId::from(5)], "0.0.0.0:19094".parse().expect("a listen address"));
+/// # Ok::<(), BrokerListenersError>(())
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BrokerListeners(Way);
@@ -202,7 +202,7 @@ impl fmt::Display for BrokerListeners {
 /// let listeners: BrokerListeners = "0.0.0.0:19092-19093".parse()?;
 /// let error = listeners.assign([1, 2, 3].map(BrokerId::from)).unwrap_err();
 /// assert_eq!(error.to_string(), "3 brokers need a port each, and the range 19092-19093 has 2");
-/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// # Ok::<(), BrokerListenersError>(())
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
@@ -266,19 +266,23 @@ impl std::error::Error for BrokerListenersError {}
 /// use gaslightmq_environment::prelude::*;
 ///
 /// let listeners = Listeners::new(
-///     "0.0.0.0:9092".parse()?,
-///     "0.0.0.0:19092-19191".parse()?,
-///     "gaslight.staging".parse()?,
+///     "0.0.0.0:9092".parse().expect("a listen address"),
+///     "0.0.0.0:19092-19191".parse().expect("broker listeners"),
+///     "gaslight.staging".parse().expect("a host name"),
 /// )?;
-/// assert_eq!(listeners.advertised_host(), &HostName::new("gaslight.staging")?);
+/// assert_eq!(listeners.advertised_host(), &HostName::new("gaslight.staging").expect("a host name"));
 ///
 /// // The bootstrap listener cannot take a port of the brokers.
-/// let error = Listeners::new("0.0.0.0:19092".parse()?, "0.0.0.0:19092-19191".parse()?, "localhost".parse()?);
+/// let error = Listeners::new(
+///     "0.0.0.0:19092".parse().expect("a listen address"),
+///     "0.0.0.0:19092-19191".parse().expect("broker listeners"),
+///     "localhost".parse().expect("a host name"),
+/// );
 /// assert_eq!(
 ///     error.unwrap_err().to_string(),
 ///     "the bootstrap listener and a broker listener both listen on 0.0.0.0:19092"
 /// );
-/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// # Ok::<(), ListenersError>(())
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(

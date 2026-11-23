@@ -24,20 +24,20 @@
 //!
 //! // Two selectors of a workspace. The second includes the first.
 //! let order_producers = Selector::new(
-//!     "Order producers".parse()?,
+//!     "Order producers".parse().expect("a selector name"),
 //!     Conditions::new()
 //!         .with(Condition::is(ApiKey::PRODUCE))
-//!         .with(Condition::parse(Field::Topic, "orders.*")?),
+//!         .with(Condition::parse(Field::Topic, "orders.*").expect("a condition")),
 //! );
 //! let from_ingest = Selector::new(
-//!     "Order producers from ingest".parse()?,
+//!     "Order producers from ingest".parse().expect("a selector name"),
 //!     Condition::is(ClientId::new("order-ingest").expect("a client ID")).into(),
 //! )
-//! .including("Order producers".parse()?);
+//! .including("Order producers".parse().expect("a selector name"));
 //! let selectors = SelectorSet::new([order_producers, from_ingest])?;
 //!
 //! // A rule names a selector and a scope. Its effective selector is the selector and the scope.
-//! let selector = SelectorRef::Named("Order producers from ingest".parse()?);
+//! let selector = SelectorRef::Named("Order producers from ingest".parse().expect("a selector name"));
 //! let scope = Scope::endpoint(Endpoint::Broker(BrokerId::from(2)));
 //! let effective = selectors.resolve(&selector)?.and(scope);
 //! assert_eq!(effective.pass(), Pass::Request);
@@ -55,7 +55,7 @@
 //!     panic!("the Produce names an orders topic");
 //! };
 //! assert_eq!(target.to_string(), "orders.eu/3");
-//! # Ok::<(), Box<dyn std::error::Error>>(())
+//! # Ok::<(), SelectorSetError>(())
 //! ```
 //!
 //! # A definition and what matches
@@ -181,7 +181,7 @@ pub use set::{SelectorSet, SelectorSetError};
 ///
 /// let condition: Result<Condition, ConditionError> = Condition::parse(Field::Api, "Produce");
 /// assert_eq!(condition?, Condition::is(ApiKey::PRODUCE));
-/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// # Ok::<(), gaslightmq_selector::ConditionError>(())
 /// ```
 pub mod prelude {
     #[doc(no_inline)]

@@ -113,13 +113,13 @@ async fn an_address_that_another_listener_holds_takes_no_listener() {
         .await
         .unwrap_err();
 
-    let ListenerError::Bind { address, error: cause } = &error else {
+    let ListenerError::CannotListen { address, reason } = &error else {
         unreachable!("a listener error that this test does not know: {error}");
     };
     assert_eq!(*address, listener.address());
-    assert_eq!(cause.kind(), std::io::ErrorKind::AddrInUse);
+    assert!(reason.to_lowercase().contains("in use"), "{reason}");
     assert_eq!(
         error.to_string(),
-        format!("cannot listen on {}: {cause}", listener.address())
+        format!("cannot listen on {}: {reason}", listener.address())
     );
 }

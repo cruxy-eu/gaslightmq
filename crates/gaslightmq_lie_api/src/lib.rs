@@ -35,8 +35,8 @@
 //! let lies = Lies::of_every_build();
 //!
 //! // A Heartbeat arrives, and two rules fire on it.
-//! let heartbeat = Request::new(4, 7, Some("order-ingest"), &HeartbeatRequest::default())?;
-//! let request = EditableRequest::decode(&heartbeat, &TopicNames::new())?;
+//! let heartbeat = Request::new(4, 7, Some("order-ingest"), &HeartbeatRequest::default()).expect("a request");
+//! let request = EditableRequest::decode(&heartbeat, &TopicNames::new()).expect("a request that decodes");
 //! let slow = LieDefinition::from(TimingLie::new().with_delay(TimeSpan::from_secs(45)).at(Stage::BeforeForwarding));
 //! let late_hang_up = LieDefinition::from(HangUpLie::new().at(Stage::AfterResponse));
 //!
@@ -45,11 +45,11 @@
 //! assert_eq!(effect.to_string(), "hold +45 s before forwarding");
 //!
 //! // The backend answers, and the hang-up asks to close the connection instead of sending the answer.
-//! let truth = heartbeat.response(&HeartbeatResponse::default())?;
+//! let truth = heartbeat.response(&HeartbeatResponse::default()).expect("a response");
 //! let effect = lies.after_response(&late_hang_up.on(Target::Call), &request, &truth)?;
 //! assert_eq!(effect.instruction(), Instruction::Close);
 //! assert!(effect.ends_call());
-//! # Ok::<(), Box<dyn std::error::Error>>(())
+//! # Ok::<(), LieError>(())
 //! ```
 //!
 //! [`Lie`] says when the pipeline asks, and [`Effect`] says what each effect means at each stage.
@@ -91,14 +91,18 @@
 //!
 //! # Errors
 //!
-//! | Type | Error | What is wrong |
-//! |---|---|---|
-//! | [`Lie`] | [`LieError`] | A lie could not be told: no behaviour is registered for its kind, the kind has no behaviour at the stage, the effect is not allowed, the request or the response could not be read or written, the request does not name a part the lie targets, the response has no place for an error code, or the response answers another request. |
-//! | [`Lies`] | [`LiesError`] | Two behaviours tell the same kind of lie. |
+//! The crate has one error, [`LieError`], and it is the error of the contract:
+//! a behaviour returns it and no other, whatever it reads and writes to tell its lie.
+//!
+//! | What failed | What is wrong |
+//! |---|---|
+//! | [`Lies::with`] | Two behaviours tell the same kind of lie. |
+//! | A lie that is asked | The lie could not be told: no behaviour is registered for its kind, the kind has no behaviour at the stage, the effect is not allowed, the request or the response could not be read or written, the request does not name a part the lie targets, the response has no place for an error code, or the response answers another request. |
 //!
 //! [`Effect`] and [`Instruction`] take every value, so they have no error.
-//! [`LieError::Unreadable`] and [`LieError::Unwritable`] write the message of the error they hold, once.
-//! The message of every error is complete, so no error has a [`source`](std::error::Error::source).
+//! [`LieError::Unreadable`] and [`LieError::Unwritable`] keep what the reader or the writer said as text,
+//! in a field `reason`, and write it once.
+//! The message of the error is complete, so it has no [`source`](std::error::Error::source).
 //!
 //! A lie that fails changes nothing.
 //! The pipeline passes the call on untouched and writes the error into the explanation of the call,
@@ -128,7 +132,7 @@ pub use effect::Effect;
 pub use every_build::{HangUp, Silence, Timing};
 pub use instruction::Instruction;
 pub use lie::{Lie, LieError};
-pub use lies::{Lies, LiesError};
+pub use lies::Lies;
 
 /// Every item of this crate, with its error.
 ///
@@ -139,11 +143,11 @@ pub use lies::{Lies, LiesError};
 /// use gaslightmq_lie::prelude::*;
 /// use gaslightmq_lie_api::prelude::*;
 ///
-/// let lies: Result<Lies, LiesError> = Lies::new().with(Timing);
+/// let lies: Result<Lies, LieError> = Lies::new().with(Timing);
 /// assert!(lies?.tells(LieKind::Timing));
-/// # Ok::<(), LiesError>(())
+/// # Ok::<(), LieError>(())
 /// ```
 pub mod prelude {
     #[doc(no_inline)]
-    pub use crate::{Effect, HangUp, Instruction, Lie, LieError, Lies, LiesError, Silence, Timing};
+    pub use crate::{Effect, HangUp, Instruction, Lie, LieError, Lies, Silence, Timing};
 }

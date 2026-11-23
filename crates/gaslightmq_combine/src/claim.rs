@@ -24,7 +24,7 @@ use gaslightmq_lie::prelude::*;
 /// use gaslightmq_kernel::prelude::*;
 /// use gaslightmq_lie::prelude::*;
 ///
-/// let partition = Target::of_parts(["orders.eu/3".parse()?]).expect("one part");
+/// let partition = Target::of_parts(["orders.eu/3".parse().expect("a part")]).expect("one part");
 ///
 /// let refusal = TargetedLie::new(RefusalLie::new(ErrorCode::NOT_LEADER_OR_FOLLOWER), partition.clone());
 /// let claim = Claim::try_from(&refusal)?;
@@ -36,7 +36,7 @@ use gaslightmq_lie::prelude::*;
 /// let stale = Claim::Rewrite { aspect: Aspect::HighWatermark, target: partition };
 /// assert_eq!(stale.stage(), Stage::AfterResponse);
 /// assert_eq!(stale.aspect(), Some(Aspect::HighWatermark));
-/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// # Ok::<(), ClaimError>(())
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Claim {
@@ -193,7 +193,7 @@ impl std::error::Error for ClaimError {}
 ///
 /// assert_eq!(blackhole.id(), &"Blackhole");
 /// assert_eq!(blackhole.claim().class(), CombinationClass::Terminal);
-/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// # Ok::<(), ClaimError>(())
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct FiredLie<Id> {

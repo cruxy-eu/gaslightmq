@@ -18,7 +18,7 @@ use crate::text::{self, Flaw, number_form};
 /// assert_eq!(ApiVersion::try_from(11_i16)?, version);
 /// assert!(ApiVersion::try_from(-1_i16).is_err());
 /// assert!(ApiVersion::from(9) < version);
-/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// # Ok::<(), ApiVersionError>(())
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ApiVersion(u16);
@@ -145,7 +145,7 @@ impl std::error::Error for ApiVersionError {}
 /// assert_eq!("-1".parse::<Acks>()?, Acks::ALL);
 /// assert_eq!("all".parse::<Acks>()?, Acks::ALL);
 /// assert_eq!(Acks::from(1), Acks::LEADER);
-/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// # Ok::<(), AcksError>(())
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Acks(i16);

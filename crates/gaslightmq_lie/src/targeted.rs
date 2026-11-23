@@ -33,7 +33,7 @@ use crate::{LieDefinition, LieKind};
 /// let delay = TargetedLie::new(TimingLie::new().with_delay(TimeSpan::from_millis(750)), matched);
 /// assert_eq!(delay.target(), &Target::Call);
 /// assert_eq!(delay.to_string(), "+750 ms");
-/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// # Ok::<(), PartError>(())
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct TargetedLie {

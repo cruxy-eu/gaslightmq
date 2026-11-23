@@ -31,32 +31,33 @@
 //! let orders = || StrBytes::from_static_str("orders.eu").into();
 //! let partition = |index| PartitionProduceData::default().with_index(index);
 //! let topic = TopicProduceData::default().with_name(orders()).with_partition_data(vec![partition(3), partition(4)]);
-//! let request = Request::new(9, 42, Some("order-ingest"), &ProduceRequest::default().with_topic_data(vec![topic]))?;
+//! let body = ProduceRequest::default().with_topic_data(vec![topic]);
+//! let request = Request::new(9, 42, Some("order-ingest"), &body).expect("a request");
 //! // The pipeline decodes the request once, with the topics it knows by ID.
-//! let asked = EditableRequest::decode(&request, &TopicNames::new())?;
-//! let three = Target::of_parts(["orders.eu/3".parse()?]).expect("one part");
+//! let asked = EditableRequest::decode(&request, &TopicNames::new()).expect("a request that decodes");
+//! let three = Target::of_parts(["orders.eu/3".parse().expect("a part")]).expect("one part");
 //! let flap = LieDefinition::from(RefusalLie::new(ErrorCode::NOT_LEADER_OR_FOLLOWER)).on(three);
 //!
 //! // Before forwarding, the refusal asks to forward the request without `orders.eu/3`.
 //! let Effect::Forward(forwarded) = lies.before_forwarding(&flap, &asked)? else {
 //!     panic!("one partition is left to forward");
 //! };
-//! let left: ProduceRequest = forwarded.body()?;
+//! let left: ProduceRequest = forwarded.body().expect("a body that decodes");
 //! assert_eq!(left.topic_data[0].partition_data.len(), 1);
 //!
 //! // The backend appends the records of `orders.eu/4`, and says where.
 //! let appended = PartitionProduceResponse::default().with_index(4).with_base_offset(120);
 //! let answered = TopicProduceResponse::default().with_name(orders()).with_partition_responses(vec![appended]);
-//! let truth = forwarded.response(&ProduceResponse::default().with_responses(vec![answered]))?;
+//! let truth = forwarded.response(&ProduceResponse::default().with_responses(vec![answered])).expect("a response");
 //!
 //! // The pipeline asks the refusal again, and the client gets one response for both partitions.
 //! let Effect::Answer(delivered) = lies.after_response(&flap, &asked, &truth)? else {
 //!     panic!("the refusal puts its error into the response");
 //! };
-//! let body: ProduceResponse = delivered.body()?;
+//! let body: ProduceResponse = delivered.body().expect("a body that decodes");
 //! let told: Vec<(i32, i16)> = body.responses[0].partition_responses.iter().map(|p| (p.index, p.error_code)).collect();
 //! assert_eq!(told, [(3, ErrorCode::NOT_LEADER_OR_FOLLOWER.value()), (4, 0)]);
-//! # Ok::<(), Box<dyn std::error::Error>>(())
+//! # Ok::<(), LieError>(())
 //! ```
 //!
 //! # A refusal refuses exactly its target
@@ -130,22 +131,21 @@
 //! when its API and version have none in the response itself.
 //! A Metadata request for every topic is one, up to version 12.
 //! The response would tell the client that the cluster has no topics, which is another lie than the rule asked for.
-//! Such a refusal [fails](RefusedRequestError::NoPlaceForError), at both stages.
+//! Such a refusal [fails](gaslightmq_lie_api::LieError::NoPlaceForError), at both stages.
 //!
-//! A refusal of parts fails when the request [does not name](RefusedRequestError::PartsNotInRequest) one of them.
+//! A refusal of parts fails when the request [does not name](gaslightmq_lie_api::LieError::PartsNotInRequest) one of them.
 //!
 //! A lie that fails changes nothing.
 //! The pipeline passes the call on untouched, and writes the error into the explanation of the call.
 //!
 //! # Errors
 //!
-//! | Type | Error | What is wrong |
-//! |---|---|---|
-//! | [`RefusedRequest`] | [`RefusedRequestError`] | The request does not name a refused part, the response has no place for an error code, or surgery on the request or the response failed. |
-//!
-//! [`Refusal`] returns the [`LieError`](gaslightmq_lie_api::LieError) of the contract, which keeps the reason.
-//! Its [table](Refusal#a-refusal-that-cannot-be-told) says which error stands for what.
-//! The message of every error is complete, so no error has a [`source`](std::error::Error::source).
+//! The crate has no error type of its own.
+//! It tells a lie, so [`Refusal`] and [`RefusedRequest`] return the [`LieError`](gaslightmq_lie_api::LieError) of the contract,
+//! and no other error.
+//! The [table](Refusal#a-refusal-that-cannot-be-told) of the behaviour says which error stands for what.
+//! What the reader or the writer of a message said is the `reason` of the error, as text.
+//! The message of the error is complete, so it has no [`source`](std::error::Error::source).
 //!
 //! # No `serde` feature
 //!
@@ -165,9 +165,9 @@ mod refusal;
 mod refused_request;
 
 pub use refusal::Refusal;
-pub use refused_request::{RefusedRequest, RefusedRequestError};
+pub use refused_request::RefusedRequest;
 
-/// Every item of this crate, with its error.
+/// Every item of this crate.
 ///
 /// Import it whole wherever code tells refusals, next to the preludes of the crates it builds on.
 /// No name in it is a name of those preludes or of the standard one, so the import shadows nothing.
@@ -177,11 +177,11 @@ pub use refused_request::{RefusedRequest, RefusedRequestError};
 /// use gaslightmq_lie_api::prelude::*;
 /// use gaslightmq_lie_refusal::prelude::*;
 ///
-/// let lies: Result<Lies, LiesError> = Lies::of_every_build().with(Refusal);
+/// let lies: Result<Lies, LieError> = Lies::of_every_build().with(Refusal);
 /// assert!(lies?.tells(LieKind::Refusal));
-/// # Ok::<(), LiesError>(())
+/// # Ok::<(), LieError>(())
 /// ```
 pub mod prelude {
     #[doc(no_inline)]
-    pub use crate::{Refusal, RefusedRequest, RefusedRequestError};
+    pub use crate::{Refusal, RefusedRequest};
 }

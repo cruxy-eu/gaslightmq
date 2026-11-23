@@ -275,16 +275,17 @@ impl RuleEvaluation {
 /// use gaslightmq_selector::prelude::*;
 /// use gaslightmq_trigger::prelude::*;
 ///
-/// let orders = Conditions::from(Condition::parse(Field::Topic, "orders.*")?);
-/// let flap = Rule::new("Leader flap".parse()?, orders, RefusalLie::new(ErrorCode::NOT_LEADER_OR_FOLLOWER));
+/// let orders = Conditions::from(Condition::parse(Field::Topic, "orders.*").expect("a condition"));
+/// let name = "Leader flap".parse().expect("a rule name");
+/// let flap = Rule::new(name, orders, RefusalLie::new(ErrorCode::NOT_LEADER_OR_FOLLOWER));
 /// let armed = flap.resolve(&SelectorSet::default(), &PresetSet::default())?.arm(Seed::new(42), Instant::ZERO);
-/// let snapshot = Snapshot::new([armed])?;
+/// let snapshot = Snapshot::new([armed]).expect("a snapshot");
 ///
 /// let produce = Fields::new()
 ///     .with(ApiKey::PRODUCE)
-///     .with_part("orders.eu/3".parse::<TopicPartition>()?)
-///     .with_part("payments.settled/0".parse::<TopicPartition>()?);
-/// let mut session = SessionCounters::new(CounterKey::new("10.0.4.27 broker 2 #1")?);
+///     .with_part("orders.eu/3".parse::<TopicPartition>().expect("a topic partition"))
+///     .with_part("payments.settled/0".parse::<TopicPartition>().expect("a topic partition"));
+/// let mut session = SessionCounters::new(CounterKey::new("10.0.4.27 broker 2 #1").expect("a counter key"));
 ///
 /// let mut pass = snapshot.evaluate(Pass::Request, &produce, Instant::ZERO, &mut session);
 ///
@@ -296,7 +297,7 @@ impl RuleEvaluation {
 /// for rule in pass.rules_mut() {
 ///     rule.confirm();
 /// }
-/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// # Ok::<(), RuleError>(())
 /// ```
 #[derive(Debug)]
 pub struct PassEvaluation {

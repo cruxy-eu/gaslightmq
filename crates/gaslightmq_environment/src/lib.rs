@@ -20,20 +20,21 @@
 //! use gaslightmq_kernel::prelude::*;
 //!
 //! // A proxy in front of a real cluster, as `environments/staging-proxy.yaml` describes it.
-//! let upstream = Upstream::new("kafka-1.staging:9092".parse()?)
-//!     .with_tls(Tls::new().with_ca("/run/secrets/kafka-ca.pem".parse()?))
+//! let upstream = Upstream::new("kafka-1.staging:9092".parse().expect("a server address"))
+//!     .with_tls(Tls::new().with_ca("/run/secrets/kafka-ca.pem".parse().expect("a file path")))
 //!     .with_sasl(Sasl::new(
 //!         SaslMechanism::ScramSha512,
-//!         "gaslight".parse()?,
-//!         SecretRef::File("/run/secrets/kafka-password".parse()?),
+//!         "gaslight".parse().expect("a SASL username"),
+//!         SecretRef::File("/run/secrets/kafka-password".parse().expect("a file path")),
 //!     ));
 //! let listen = Listeners::new(
 //!     "0.0.0.0:9092".parse()?,
-//!     "0.0.0.0:19092-19191".parse()?,
-//!     "gaslight.staging".parse()?,
-//! )?;
+//!     "0.0.0.0:19092-19191".parse().expect("broker listeners"),
+//!     "gaslight.staging".parse().expect("a host name"),
+//! )
+//! .expect("a bootstrap port outside the ports of the brokers");
 //! let staging = Environment::new(
-//!     "staging-proxy".parse()?,
+//!     "staging-proxy".parse().expect("an environment name"),
 //!     Instances::ProxyInFrontOfCluster {
 //!         proxy: ProxyDefinition::new(listen),
 //!         upstream,
@@ -41,7 +42,7 @@
 //! );
 //!
 //! // The proxy discovers the brokers 1, 2 and 3, and each one gets a listener of its own.
-//! let listeners = staging.listeners().brokers().assign([1, 2, 3].map(BrokerId::from))?;
+//! let listeners = staging.listeners().brokers().assign([1, 2, 3].map(BrokerId::from)).expect("a port for every broker");
 //! assert_eq!(listeners[&BrokerId::from(2)], "0.0.0.0:19093".parse()?);
 //!
 //! // Nothing names a recording mode, so the default for a real cluster holds.
@@ -50,7 +51,7 @@
 //!     .into_effective()
 //!     .expect("the default sets it");
 //! assert_eq!(recording.into_value(), RecordingMode::MetadataOnly);
-//! # Ok::<(), Box<dyn std::error::Error>>(())
+//! # Ok::<(), ListenAddressError>(())
 //! ```
 //!
 //! # Three shapes
@@ -200,7 +201,7 @@ pub use upstream::{Sasl, SaslMechanism, SaslMechanismError, SaslUsername, SaslUs
 /// let listeners: Result<BrokerListeners, BrokerListenersError> = "0.0.0.0:19092-19191".parse();
 /// let addresses = listeners?.assign([BrokerId::from(1)])?;
 /// assert_eq!(addresses[&BrokerId::from(1)].port(), 19092);
-/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// # Ok::<(), gaslightmq_environment::BrokerListenersError>(())
 /// ```
 pub mod prelude {
     #[doc(no_inline)]

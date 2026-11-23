@@ -35,12 +35,12 @@ use crate::{Effect, HangUp, Lie, LieError, Silence, Timing};
 /// assert!(!lies.tells(LieKind::Refusal));
 ///
 /// // The pipeline asks without naming the kind.
-/// let heartbeat = Request::new(4, 7, Some("order-ingest"), &HeartbeatRequest::default())?;
-/// let request = EditableRequest::decode(&heartbeat, &TopicNames::new())?;
+/// let heartbeat = Request::new(4, 7, Some("order-ingest"), &HeartbeatRequest::default()).expect("a request");
+/// let request = EditableRequest::decode(&heartbeat, &TopicNames::new()).expect("a request that decodes");
 /// let hang_up = LieDefinition::from(HangUpLie::new()).on(Target::Call);
 /// let effect = lies.before_forwarding(&hang_up, &request)?;
 /// assert_eq!(effect.instruction(), Instruction::Close);
-/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// # Ok::<(), LieError>(())
 /// ```
 #[derive(Default)]
 pub struct Lies {
@@ -72,11 +72,20 @@ impl Lies {
     ///
     /// # Errors
     ///
-    /// [`LiesError::KindTwice`] when the set already tells the kind of `lie`.
-    pub fn with(mut self, lie: impl Lie + 'static) -> Result<Self, LiesError> {
+    /// [`LieError::KindTwice`] when the set already tells the kind of `lie`.
+    ///
+    /// ```
+    /// use gaslightmq_lie::prelude::*;
+    /// use gaslightmq_lie_api::prelude::*;
+    ///
+    /// let error = Lies::of_every_build().with(Silence).unwrap_err();
+    /// assert_eq!(error, LieError::KindTwice { kind: LieKind::Silence });
+    /// assert_eq!(error.to_string(), "silence is registered twice");
+    /// ```
+    pub fn with(mut self, lie: impl Lie + 'static) -> Result<Self, LieError> {
         let kind = lie.kind();
         if self.tells(kind) {
-            return Err(LiesError::KindTwice { kind });
+            return Err(LieError::KindTwice { kind });
         }
         self.insert(Box::new(lie));
         Ok(self)
@@ -163,33 +172,6 @@ impl fmt::Debug for Lies {
     }
 }
 
-/// Why behaviours are not a set of [`Lies`].
-///
-/// ```
-/// use gaslightmq_lie::prelude::*;
-/// use gaslightmq_lie_api::prelude::*;
-///
-/// let error = Lies::of_every_build().with(Silence).unwrap_err();
-/// assert_eq!(error, LiesError::KindTwice { kind: LieKind::Silence });
-/// assert_eq!(error.to_string(), "silence is registered twice");
-/// ```
-#[derive(Debug, Clone, PartialEq, Eq)]
-#[non_exhaustive]
-pub enum LiesError {
-    /// Two behaviours tell the same kind of lie, so nothing says which one the pipeline asks.
-    KindTwice { kind: LieKind },
-}
-
-impl fmt::Display for LiesError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::KindTwice { kind } => write!(f, "{kind} is registered twice"),
-        }
-    }
-}
-
-impl std::error::Error for LiesError {}
-
 #[cfg(test)]
 mod tests {
     use std::error::Error;
@@ -269,7 +251,7 @@ mod tests {
         assert_eq!(lies.kinds().collect::<Vec<_>>(), [LieKind::Timing, LieKind::HangUp]);
 
         let error = lies.with(Timing).unwrap_err();
-        assert_eq!(error, LiesError::KindTwice { kind: LieKind::Timing });
+        assert_eq!(error, LieError::KindTwice { kind: LieKind::Timing });
         assert_eq!(error.to_string(), "timing is registered twice");
         assert!(error.source().is_none());
     }

@@ -21,7 +21,7 @@ use crate::text::text_form;
 /// let one: PortRange = "19092".parse()?;
 /// assert_eq!(one, PortRange::new(19092, 19092)?);
 /// assert_eq!(one.to_string(), "19092");
-/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// # Ok::<(), PortRangeError>(())
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct PortRange {

@@ -19,10 +19,10 @@ use crate::{RecordedRuleName, TriggerDecision, TriggerExplanation, Verdict};
 /// use gaslightmq_call::prelude::*;
 /// use gaslightmq_field::prelude::*;
 ///
-/// let partition = Target::of_parts(["orders.eu/3".parse()?]).expect("one part");
+/// let partition = Target::of_parts(["orders.eu/3".parse().expect("a part")]).expect("one part");
 /// let loss = LostTarget::new(partition, "Leader flap".parse()?);
 /// assert_eq!(loss.to_string(), "on orders.eu/3 by Leader flap");
-/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// # Ok::<(), RecordedRuleNameError>(())
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct LostTarget {
@@ -89,7 +89,7 @@ impl fmt::Display for LostTarget {
 /// let refusal = LieDefinition::from(RefusalLie::new(ErrorCode::NOT_LEADER_OR_FOLLOWER));
 ///
 /// // The rule refused two partitions, and a rule with a higher priority refused one of them first.
-/// let lost = LostTarget::new(on(&["orders.eu/3"]), "Leader flap".parse()?);
+/// let lost = LostTarget::new(on(&["orders.eu/3"]), "Leader flap".parse().expect("a recorded rule name"));
 /// let fate = LieFate::new(
 ///     refusal.clone().on(on(&["orders.eu/3", "orders.eu/4"])),
 ///     Some(on(&["orders.eu/4"])),
@@ -110,7 +110,7 @@ impl fmt::Display for LostTarget {
 ///     untold.to_string(),
 ///     "NOT_LEADER_OR_FOLLOWER not told: the Produce v9 request does not name orders.eu/9"
 /// );
-/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// # Ok::<(), LieFateError>(())
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct LieFate {
@@ -397,13 +397,14 @@ pub(crate) enum Course {
 /// use gaslightmq_kernel::prelude::*;
 /// use gaslightmq_lie::prelude::*;
 ///
-/// let partition = Target::of_parts(["orders.eu/3".parse()?]).expect("one part");
+/// let partition = Target::of_parts(["orders.eu/3".parse().expect("a part")]).expect("one part");
 /// let third = NonZeroU64::new(3).expect("three is not zero");
-/// let rolled = TriggerExplanation::new(TriggerDecision::Fired, Some(third), TriggerChecks::new().with_count(true))?;
+/// let rolled = TriggerExplanation::new(TriggerDecision::Fired, Some(third), TriggerChecks::new().with_count(true))
+///     .expect("the decision fits its checks");
 /// let refusal = LieDefinition::from(RefusalLie::new(ErrorCode::NOT_LEADER_OR_FOLLOWER)).on(partition.clone());
 ///
 /// let line = RuleExplanation::lied(
-///     "Refuse the 3rd order".parse()?,
+///     "Refuse the 3rd order".parse().expect("a recorded rule name"),
 ///     Priority::HIGHEST,
 ///     partition,
 ///     rolled,
@@ -417,7 +418,7 @@ pub(crate) enum Course {
 ///     "Refuse the 3rd order: matched orders.eu/3; match 3, count agreed: fired; \
 ///      NOT_LEADER_OR_FOLLOWER applied on orders.eu/3"
 /// );
-/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// # Ok::<(), RuleExplanationError>(())
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RuleExplanation {
@@ -767,21 +768,27 @@ impl fmt::Display for Failure {
 /// use gaslightmq_lie::prelude::*;
 ///
 /// let first = NonZeroU64::MIN;
-/// let fired = || TriggerExplanation::new(TriggerDecision::Fired, Some(first), TriggerChecks::new());
+/// let fired = || {
+///     TriggerExplanation::new(TriggerDecision::Fired, Some(first), TriggerChecks::new()).expect("a match that fired")
+/// };
+/// let rule = |name: &str| name.parse::<RecordedRuleName>().expect("a rule name");
 /// let silence = LieDefinition::Silence.on(Target::Call);
 /// let hang_up = LieDefinition::from(HangUpLie::new()).on(Target::Call);
-/// let lost = LostTarget::new(Target::Call, "Blackhole".parse()?);
+/// let lost = LostTarget::new(Target::Call, rule("Blackhole"));
+/// let shadowed = LieFate::new(hang_up, None, vec![lost], vec![]).expect("a lie that lost its whole target");
 ///
 /// // Two rules fired a terminal lie, and the rule with the higher priority won.
+/// let blackhole = RuleExplanation::lied(
+///     rule("Blackhole"),
+///     Priority::new(0),
+///     Target::Call,
+///     fired(),
+///     LieFate::all_applied(silence.clone()),
+/// );
+/// let hang_up = RuleExplanation::lied(rule("Hang up"), Priority::new(1), Target::Call, fired(), shadowed);
 /// let explanation = Explanation::new([
-///     RuleExplanation::lied("Blackhole".parse()?, Priority::new(0), Target::Call, fired()?, LieFate::all_applied(silence.clone()))?,
-///     RuleExplanation::lied(
-///         "Hang up".parse()?,
-///         Priority::new(1),
-///         Target::Call,
-///         fired()?,
-///         LieFate::new(hang_up, None, vec![lost], vec![])?,
-///     )?,
+///     blackhole.expect("a rule that fired tells its lie"),
+///     hang_up.expect("a rule that fired tells its lie"),
 /// ])?;
 ///
 /// assert_eq!(explanation.verdict(), Verdict::lied([silence]));
@@ -790,7 +797,7 @@ impl fmt::Display for Failure {
 ///
 /// let shadowed: Vec<_> = explanation.with(ExplanationStatus::Shadowed).map(|line| line.rule().as_str()).collect();
 /// assert_eq!(shadowed, ["Hang up"]);
-/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// # Ok::<(), ExplanationError>(())
 /// ```
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Explanation {

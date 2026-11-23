@@ -42,8 +42,8 @@ mod next_to_the_others {
                 transport.address(),
                 transport.endpoint()
             );
-            let received: std::result::Result<gaslightmq_wire::Frame, ReceiveError> = transport.receive().await;
-            let sent: std::result::Result<(), SendError> = transport.send(&[0, 0, 0, 1, 0]).await;
+            let received: std::result::Result<gaslightmq_wire::Frame, ListenerError> = transport.receive().await;
+            let sent: std::result::Result<(), ListenerError> = transport.send(&[0, 0, 0, 1, 0]).await;
             let _reported = self.0.send(format!("{facts}: {received:?}, {sent:?}"));
         }
     }
@@ -84,25 +84,23 @@ mod next_to_the_others {
     ///
     /// A message says everything, so no error has a source.
     pub fn every_error() -> Vec<String> {
-        let reset = || std::io::Error::new(ErrorKind::ConnectionReset, "reset by peer");
-        let errors: Vec<Box<dyn std::error::Error>> = vec![
-            Box::new(FrameSizeLimitError::Zero),
-            Box::new(ListenerError::Bind {
-                address: "127.0.0.1:9092".parse().expect("an address"),
-                error: std::io::Error::new(ErrorKind::AddrInUse, "address in use"),
-            }),
-            Box::new(ReceiveError::FrameCutShort { buffered: 6 }),
-            Box::new(ReceiveError::ConnectionLost { error: reset() }),
-            Box::new(SendError::ConnectionLost { error: reset() }),
-        ];
+        /// What an error says. A message says everything, so the error has no source.
+        fn message_of<E: std::error::Error>(error: E) -> String {
+            assert!(error.source().is_none(), "{error}");
+            error.to_string()
+        }
 
-        errors
-            .iter()
-            .map(|error| {
-                assert!(error.source().is_none(), "{error}");
-                error.to_string()
-            })
-            .collect()
+        vec![
+            message_of(FrameSizeLimitError::Zero),
+            message_of(ListenerError::CannotListen {
+                address: "127.0.0.1:9092".parse().expect("an address"),
+                reason: "address in use".to_owned(),
+            }),
+            message_of(ListenerError::FrameCutShort { buffered: 6 }),
+            message_of(ListenerError::ConnectionLost {
+                reason: "reset by peer".to_owned(),
+            }),
+        ]
     }
 }
 
@@ -124,8 +122,7 @@ fn the_prelude_names_the_error_of_every_type() {
             "a frame size limit is at least one byte",
             "cannot listen on 127.0.0.1:9092: address in use",
             "the client closed the connection 6 bytes into a frame",
-            "the connection broke while reading from the client: reset by peer",
-            "the connection broke while writing to the client: reset by peer",
+            "the connection to the client broke: reset by peer",
         ]
     );
 }

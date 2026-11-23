@@ -90,7 +90,7 @@ impl fmt::Display for Answer {
 /// assert_eq!(response.part(&four), Some(Answer::Ok));
 /// assert!(!response.is_ok());
 /// assert_eq!(response.to_string(), "ok; NOT_LEADER_OR_FOLLOWER on orders.eu/3");
-/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// # Ok::<(), PartError>(())
 /// ```
 ///
 /// With the `serde` feature, a response serializes as a map with `answer`, and with `parts` when it has any.

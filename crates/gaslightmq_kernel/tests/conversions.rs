@@ -220,7 +220,9 @@ fn a_literal_needs_no_suffix() {
 
 #[test]
 fn an_error_is_a_std_error() {
-    let error: Box<dyn std::error::Error + Send + Sync> = Box::new(TopicName::new("").unwrap_err());
+    fn message_of<E: std::error::Error + Send + Sync + 'static>(error: E) -> String {
+        error.to_string()
+    }
 
-    assert_eq!(error.to_string(), "topic name is empty");
+    assert_eq!(message_of(TopicName::new("").unwrap_err()), "topic name is empty");
 }

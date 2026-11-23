@@ -46,23 +46,24 @@ use crate::{ArmedRule, PassEvaluation, RuleEvaluation, RuleName};
 ///
 /// // "Refuse the 2nd Produce", above a delay on everything.
 /// let refuse = Rule::new(
-///     "Refuse the 2nd Produce".parse()?,
+///     "Refuse the 2nd Produce".parse().expect("a rule name"),
 ///     Conditions::from(Condition::is(ApiKey::PRODUCE)),
 ///     RefusalLie::new(ErrorCode::NOT_LEADER_OR_FOLLOWER),
 /// )
-/// .with_trigger(TriggerParts::new().with_nth(MatchNumber::new(2)?));
+/// .with_trigger(TriggerParts::new().with_nth(MatchNumber::new(2).expect("a match number")));
 /// let delay = Rule::new(
-///     "Delay 1 s".parse()?,
+///     "Delay 1 s".parse().expect("a rule name"),
 ///     Conditions::new(),
 ///     TimingLie::new().with_delay(TimeSpan::from_secs(1)),
 /// );
 /// let snapshot = Snapshot::new([
-///     refuse.resolve(&none.0, &none.1)?.arm(Seed::new(42), now),
-///     delay.resolve(&none.0, &none.1)?.arm(Seed::new(42), now),
+///     refuse.resolve(&none.0, &none.1).expect("a rule that resolves").arm(Seed::new(42), now),
+///     delay.resolve(&none.0, &none.1).expect("a rule that resolves").arm(Seed::new(42), now),
 /// ])?;
 ///
-/// let produce = Fields::new().with(ApiKey::PRODUCE).with_part("orders.eu/3".parse::<TopicPartition>()?);
-/// let mut session = SessionCounters::new(CounterKey::new("10.0.4.27 broker 2 #1")?);
+/// let partition: TopicPartition = "orders.eu/3".parse().expect("a topic partition");
+/// let produce = Fields::new().with(ApiKey::PRODUCE).with_part(partition);
+/// let mut session = SessionCounters::new(CounterKey::new("10.0.4.27 broker 2 #1").expect("a counter key"));
 ///
 /// // Both rules match the 1st Produce, and only the delay fires.
 /// let first = snapshot.evaluate(Pass::Request, &produce, now, &mut session);
@@ -75,7 +76,7 @@ use crate::{ArmedRule, PassEvaluation, RuleEvaluation, RuleName};
 ///     second.lies().map(|(_, lie)| lie.to_string()).collect::<Vec<_>>(),
 ///     ["NOT_LEADER_OR_FOLLOWER on orders.eu/3", "+1 s"]
 /// );
-/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// # Ok::<(), SnapshotError>(())
 /// ```
 #[derive(Debug, Clone, Default)]
 pub struct Snapshot {

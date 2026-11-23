@@ -115,11 +115,11 @@ impl std::error::Error for CallNumberError {}
 /// use gaslightmq_call::prelude::*;
 /// use gaslightmq_field::prelude::*;
 ///
-/// let id = CallId::new(ConnectionNumber::new(7), CallNumber::new(3)?);
+/// let id = CallId::new(ConnectionNumber::new(7), CallNumber::new(3).expect("a call number"));
 /// assert_eq!(id.to_string(), "#7.3");
 /// assert_eq!("#7.3".parse::<CallId>()?, id);
 /// assert_eq!(id.connection(), ConnectionNumber::new(7));
-/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// # Ok::<(), CallIdError>(())
 /// ```
 ///
 /// With the `serde` feature, a call ID serializes as its text.

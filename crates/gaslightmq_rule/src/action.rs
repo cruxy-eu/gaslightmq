@@ -96,7 +96,7 @@ impl fmt::Display for Action {
 ///
 /// assert_eq!(named.preset().map(PresetName::as_str), Some("Delay 1 s"));
 /// assert_eq!(inline.preset(), None);
-/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// # Ok::<(), PresetNameError>(())
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum ActionRef {

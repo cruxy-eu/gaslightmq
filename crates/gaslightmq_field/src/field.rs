@@ -30,7 +30,7 @@ use crate::text::text_form;
 /// // A rule that tests a response field can only match after the backend answered.
 /// let selector = [Field::Api, Field::Topic, Field::Outcome];
 /// assert!(selector.iter().any(|field| field.group() == FieldGroup::Response));
-/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// # Ok::<(), FieldError>(())
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Field {

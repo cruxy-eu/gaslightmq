@@ -367,7 +367,7 @@ impl fmt::Display for HangUpLie {
 /// // The rule matched one partition of a Produce.
 /// let matched = Target::of_parts(["orders.eu/3".parse()?]).expect("one part");
 /// assert_eq!(lie.on(matched).to_string(), "NOT_LEADER_OR_FOLLOWER on orders.eu/3");
-/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// # Ok::<(), PartError>(())
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 #[non_exhaustive]

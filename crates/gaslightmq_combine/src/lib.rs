@@ -56,7 +56,7 @@
 //! use gaslightmq_kernel::prelude::*;
 //! use gaslightmq_lie::prelude::*;
 //!
-//! let [three, four]: [Part; 2] = ["orders.eu/3".parse()?, "orders.eu/4".parse()?];
+//! let [three, four]: [Part; 2] = ["orders.eu/3".parse().expect("a part"), "orders.eu/4".parse().expect("a part")];
 //! let on = |part: &Part| Target::of_parts([part.clone()]).expect("one part");
 //!
 //! // Three rules fired on one Fetch. The pipeline hands over each lie with its rule's place in the priority order.
@@ -85,7 +85,7 @@
 //!
 //! // None of the three conflict, so all of them apply, and every firing counts.
 //! assert!(call.fates().iter().all(Fate::counts));
-//! # Ok::<(), Box<dyn std::error::Error>>(())
+//! # Ok::<(), ClaimError>(())
 //! ```
 //!
 //! # Two passes

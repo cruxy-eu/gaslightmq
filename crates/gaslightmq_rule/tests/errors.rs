@@ -29,47 +29,60 @@ fn missing_partition() -> IncidentError {
     }
 }
 
-fn every_error() -> Vec<(Box<dyn Error>, &'static str)> {
+/// What an error says: its message, and what a reporter prints that walks the chain of sources.
+struct Said {
+    message: String,
+    chain: String,
+}
+
+fn said<E: Error>(error: E) -> Said {
+    Said {
+        message: error.to_string(),
+        chain: chain(&error),
+    }
+}
+
+fn every_error() -> Vec<(Said, &'static str)> {
     vec![
-        (Box::new(RuleNameError::Empty), "rule name \"\" is empty"),
+        (said(RuleNameError::Empty), "rule name \"\" is empty"),
         (
-            Box::new(PresetNameError::SurroundingWhiteSpace { input: " x".into() }),
+            said(PresetNameError::SurroundingWhiteSpace { input: " x".into() }),
             "preset name \" x\" starts or ends with white space",
         ),
         (
-            Box::new(RuleSetError::DuplicateName { name: rule("Flap") }),
+            said(RuleSetError::DuplicateName { name: rule("Flap") }),
             "two rules are named \"Flap\"",
         ),
         (
-            Box::new(RuleSetError::UnknownRule { name: rule("Flap") }),
+            said(RuleSetError::UnknownRule { name: rule("Flap") }),
             "no rule is named \"Flap\"",
         ),
         (
-            Box::new(PresetSetError::DuplicateName {
+            said(PresetSetError::DuplicateName {
                 name: "Delay 1 s".parse().unwrap(),
             }),
             "two presets are named \"Delay 1 s\"",
         ),
         (
-            Box::new(SnapshotError::DuplicateName { name: rule("Flap") }),
+            said(SnapshotError::DuplicateName { name: rule("Flap") }),
             "two rules are named \"Flap\"",
         ),
         (
-            Box::new(ResolvedRuleError::UnknownSelector {
+            said(RuleError::UnknownSelector {
                 rule: rule("Flap"),
                 error: unknown_selector(),
             }),
             "rule \"Flap\": no selector is named \"Order producers\"",
         ),
         (
-            Box::new(ResolvedRuleError::UnknownPreset {
+            said(RuleError::UnknownPreset {
                 rule: rule("Flap"),
                 preset: "Leader flap".parse().unwrap(),
             }),
             "rule \"Flap\": no preset is named \"Leader flap\"",
         ),
         (
-            Box::new(ResolvedRuleError::LieBeforeTruth {
+            said(RuleError::LieBeforeTruth {
                 rule: rule("Flap"),
                 lie: LieKind::Refusal,
             }),
@@ -77,7 +90,7 @@ fn every_error() -> Vec<(Box<dyn Error>, &'static str)> {
              when the truth is not known yet. Give the lie `stage: after`",
         ),
         (
-            Box::new(ResolvedRuleError::ManualWithoutSubject {
+            said(RuleError::ManualWithoutSubject {
                 rule: rule("Election"),
                 error: missing_partition(),
             }),
@@ -85,7 +98,7 @@ fn every_error() -> Vec<(Box<dyn Error>, &'static str)> {
              leader-moves needs a partition, and none is named",
         ),
         (
-            Box::new(HandFiringError::NoCallForIncident {
+            said(RuleError::NoCallForIncident {
                 rule: rule("Election"),
                 error: missing_partition(),
             }),
@@ -93,21 +106,21 @@ fn every_error() -> Vec<(Box<dyn Error>, &'static str)> {
              leader-moves needs a partition, and none is named",
         ),
         (
-            Box::new(RuleStateError::InvalidChange {
+            said(RuleError::InvalidChange {
                 from: RuleState::Armed,
                 change: "arm",
             }),
             "a rule that is armed cannot arm",
         ),
         (
-            Box::new(RuleStateError::Unknown { name: "Armed".into() }),
+            said(RuleStateError::Unknown { name: "Armed".into() }),
             "no state is called \"Armed\"",
         ),
     ]
 }
 
 /// Writes an error the way a reporter does that walks the chain: every message, and then its source.
-fn chain(error: &dyn Error) -> String {
+fn chain<E: Error>(error: &E) -> String {
     let mut messages = vec![error.to_string()];
     let mut source = error.source();
     while let Some(inner) = source {
@@ -119,16 +132,15 @@ fn chain(error: &dyn Error) -> String {
 
 #[test]
 fn every_error_says_what_is_wrong() {
-    for (error, message) in every_error() {
-        assert_eq!(error.to_string(), message);
+    for (said, message) in every_error() {
+        assert_eq!(said.message, message);
     }
 }
 
 #[test]
 fn no_error_has_a_source_so_a_chain_prints_every_message_once() {
-    for (error, message) in every_error() {
-        assert!(error.source().is_none(), "{error}");
-        assert_eq!(chain(error.as_ref()), message);
+    for (said, message) in every_error() {
+        assert_eq!(said.chain, message);
     }
 }
 
@@ -136,23 +148,23 @@ fn no_error_has_a_source_so_a_chain_prints_every_message_once() {
 fn the_message_holds_the_error_of_another_crate_once() {
     let selector = unknown_selector().to_string();
     let incident = missing_partition().to_string();
-    let cases: [(Box<dyn Error>, &String); 3] = [
+    let cases: [(Said, &String); 3] = [
         (
-            Box::new(ResolvedRuleError::UnknownSelector {
+            said(RuleError::UnknownSelector {
                 rule: rule("Flap"),
                 error: unknown_selector(),
             }),
             &selector,
         ),
         (
-            Box::new(ResolvedRuleError::ManualWithoutSubject {
+            said(RuleError::ManualWithoutSubject {
                 rule: rule("Election"),
                 error: missing_partition(),
             }),
             &incident,
         ),
         (
-            Box::new(HandFiringError::NoCallForIncident {
+            said(RuleError::NoCallForIncident {
                 rule: rule("Election"),
                 error: missing_partition(),
             }),
@@ -160,7 +172,7 @@ fn the_message_holds_the_error_of_another_crate_once() {
         ),
     ];
 
-    for (error, inner) in cases {
-        assert_eq!(chain(error.as_ref()).matches(inner.as_str()).count(), 1, "{error}");
+    for (said, inner) in cases {
+        assert_eq!(said.chain.matches(inner.as_str()).count(), 1, "{}", said.message);
     }
 }

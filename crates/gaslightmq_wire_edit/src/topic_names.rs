@@ -1,11 +1,12 @@
 use std::collections::HashMap;
-use std::fmt;
 
 use gaslightmq_kernel::prelude::*;
+use gaslightmq_wire::Response;
 use gaslightmq_wire::messages::{
     ApiKey as KnownApi, CreateTopicsResponse, DescribeTopicPartitionsResponse, MetadataResponse,
 };
-use gaslightmq_wire::{Api, Response, WireError};
+
+use crate::SurgeryError;
 
 /// The topics that are known by ID: which name each topic ID stands for.
 ///
@@ -21,7 +22,7 @@ use gaslightmq_wire::{Api, Response, WireError};
 /// use gaslightmq_kernel::prelude::*;
 /// use gaslightmq_wire_edit::prelude::*;
 ///
-/// let orders = TopicName::new("orders.eu")?;
+/// let orders = TopicName::new("orders.eu").expect("a topic name");
 /// let id: TopicId = "Zm9vYmFyYmF6cXV4MTIzNA".parse()?;
 ///
 /// let mut topics = TopicNames::new();
@@ -29,7 +30,7 @@ use gaslightmq_wire::{Api, Response, WireError};
 ///
 /// assert_eq!(topics.name_of(id), Some(&orders));
 /// assert_eq!(topics.id_of(&orders), Some(id));
-/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// # Ok::<(), TopicIdError>(())
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct TopicNames {
@@ -67,13 +68,10 @@ impl TopicNames {
     ///
     /// # Errors
     ///
-    /// [`TopicNamesError::UnreadableResponse`] when the body of the response does not decode.
+    /// [`SurgeryError::UnreadableResponse`] when the body of the response does not decode.
     /// Nothing is learned then.
-    pub fn learn_from(&mut self, response: &Response) -> Result<usize, TopicNamesError> {
-        let unreadable = |error| TopicNamesError::UnreadableResponse {
-            api: response.api(),
-            error,
-        };
+    pub fn learn_from(&mut self, response: &Response) -> Result<usize, SurgeryError> {
+        let unreadable = |error| SurgeryError::unreadable_response(response.api(), &error);
         let named: Vec<(TopicId, TopicName)> = match response.api().known() {
             Some(KnownApi::Metadata) => response
                 .body::<MetadataResponse>()
@@ -155,35 +153,14 @@ fn identity(name: &str, id: [u8; 16]) -> Option<(TopicId, TopicName)> {
     Some((TopicId::from_wire(id)?, TopicName::new(name).ok()?))
 }
 
-/// Why [`TopicNames`] learned nothing from a response.
-#[derive(Debug, Clone, PartialEq, Eq)]
-#[non_exhaustive]
-pub enum TopicNamesError {
-    /// The body of the response does not decode as a response of its API.
-    UnreadableResponse { api: Api, error: WireError },
-}
-
-impl fmt::Display for TopicNamesError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::UnreadableResponse { api, error } => {
-                write!(f, "the topic names of a {api} response cannot be read: {error}")
-            }
-        }
-    }
-}
-
-/// The message is complete, so no variant has a source.
-impl std::error::Error for TopicNamesError {}
-
 #[cfg(test)]
 mod tests {
-    use gaslightmq_wire::Frame;
     use gaslightmq_wire::messages::create_topics_response::CreatableTopicResult;
     use gaslightmq_wire::messages::describe_topic_partitions_response::DescribeTopicPartitionsResponseTopic;
     use gaslightmq_wire::messages::metadata_response::MetadataResponseTopic;
     use gaslightmq_wire::messages::{HeartbeatResponse, MetadataRequest};
     use gaslightmq_wire::protocol::StrBytes;
+    use gaslightmq_wire::{Api, Frame};
 
     use super::*;
 
@@ -333,11 +310,11 @@ mod tests {
         let mut topics: TopicNames = [(id(1), name("orders.eu"))].into_iter().collect();
         let error = topics.learn_from(&response).unwrap_err();
 
-        assert!(matches!(error, TopicNamesError::UnreadableResponse { .. }));
+        assert!(matches!(error, SurgeryError::UnreadableResponse { .. }));
         assert!(
-            error.to_string().starts_with(
-                "the topic names of a Metadata v12 response cannot be read: cannot decode response body: "
-            ),
+            error
+                .to_string()
+                .starts_with("the Metadata v12 response cannot be read: cannot decode response body: "),
             "{error}"
         );
         assert_eq!(topics.len(), 1);

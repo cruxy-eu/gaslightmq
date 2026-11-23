@@ -33,23 +33,24 @@
 //! }
 //!
 //! # #[tokio::main(flavor = "current_thread")]
-//! # async fn main() -> Result<(), Box<dyn std::error::Error>> {
+//! # async fn main() -> Result<(), ListenerError> {
 //! // Port 0 asks for any free port, and the listener names the one it got.
-//! let configuration = ListenerConfiguration::new("127.0.0.1:0".parse()?, Endpoint::Bootstrap);
+//! let any_port = "127.0.0.1:0".parse().expect("an address");
+//! let configuration = ListenerConfiguration::new(any_port, Endpoint::Bootstrap);
 //! let listener = Listener::bind(configuration, ConnectionNumbers::new(), Echo).await?;
 //!
 //! // A client sends one frame in two pieces, and reads it back whole.
-//! let mut client = TcpStream::connect(listener.address()).await?;
+//! let mut client = TcpStream::connect(listener.address()).await.expect("a listener that accepts");
 //! let sent = Frame::new(&b"hello"[..]).to_bytes();
-//! client.write_all(&sent[..3]).await?;
-//! client.write_all(&sent[3..]).await?;
+//! client.write_all(&sent[..3]).await.expect("a connection that takes bytes");
+//! client.write_all(&sent[3..]).await.expect("a connection that takes bytes");
 //!
 //! let mut frames = FrameDecoder::new();
 //! let echoed = loop {
-//!     if let Some(frame) = frames.next_frame()? {
+//!     if let Some(frame) = frames.next_frame().expect("a frame") {
 //!         break frame;
 //!     }
-//!     client.read_buf(frames.buffer_mut()).await?;
+//!     client.read_buf(frames.buffer_mut()).await.expect("the echo of the listener");
 //! };
 //! assert_eq!(echoed.payload().as_ref(), b"hello");
 //!
@@ -85,12 +86,12 @@
 //!
 //! | Who ends it | The handler sees |
 //! |---|---|
-//! | The client closes its socket. | [`ReceiveError::ClientClosed`], or [`ReceiveError::FrameCutShort`] inside a frame. |
-//! | The connection breaks. | [`ReceiveError::ConnectionLost`], or [`SendError::ConnectionLost`]. |
-//! | The client sends bytes that are no frame. | [`ReceiveError::NotAFrame`]. The handler closes the connection. |
+//! | The client closes its socket. | [`ListenerError::ClientClosed`], or [`ListenerError::FrameCutShort`] inside a frame. |
+//! | The connection breaks. | [`ListenerError::ConnectionLost`], from a receive or from a send. |
+//! | The client sends bytes that are no frame. | [`ListenerError::NotAFrame`]. The handler closes the connection. |
 //! | The handler [closes](Transport::close) the transport. | Nothing more. The client reads everything that was sent, and then the end. |
 //! | The handler lets go of the transport, or returns. | Nothing more. The connection is gone at once, and the client may lose bytes that were on their way. |
-//! | Someone [closes](Listener::close) the listener. | [`ReceiveError::ListenerClosed`], or [`SendError::ListenerClosed`] from a send that waits for its client. The handler closes the connection. |
+//! | Someone [closes](Listener::close) the listener. | [`ListenerError::ListenerClosed`], from a receive or from a send that waits for its client. The handler closes the connection. |
 //!
 //! Closing a transport waits until the client has closed its side,
 //! for at most the [`close_timeout`](ListenerConfiguration::close_timeout) of the listener.
@@ -101,16 +102,19 @@
 //!
 //! # Errors
 //!
-//! Every type that can fail has an error of its own.
+//! What the crate does has one error, [`ListenerError`].
 //!
-//! | Type | Error | What is wrong |
-//! |---|---|---|
-//! | [`Listener`] | [`ListenerError`] | The address cannot take a listener. |
-//! | [`Transport`] | [`ReceiveError`] | No further frame comes from the client. |
-//! | [`Transport`] | [`SendError`] | The connection takes no bytes, or the listener closed before the client took them. |
-//! | [`FrameSizeLimit`] | [`FrameSizeLimitError`] | The number of bytes is zero, or more than a frame can hold. |
+//! | What failed | What is wrong |
+//! |---|---|
+//! | [`Listener::bind`] | The address cannot take a listener. |
+//! | [`Transport::receive`] | No further frame comes from the client. |
+//! | [`Transport::send`] | The connection takes no bytes, or the listener closed before the client took them. |
 //!
-//! An error that holds another error names what failed first, and then says what the other error says.
+//! [`FrameSizeLimit`] checks its value, so it has an error of its own, [`FrameSizeLimitError`]:
+//! the number of bytes is zero, or more than a frame can hold.
+//!
+//! An error names what failed first, and then says what the system or the reader of frames said about it.
+//! It keeps that as text, in a field `reason`, and never as an error of the system.
 //! The message of every error is complete, so no error has a [`source`](std::error::Error::source).
 //!
 //! # IO
@@ -128,16 +132,18 @@
 //! The configuration and the connection numbers are plain values, and need none.
 
 mod configuration;
+mod error;
 mod handler;
 mod listener;
 mod numbers;
 mod transport;
 
 pub use configuration::{FrameSizeLimit, FrameSizeLimitError, ListenerConfiguration};
+pub use error::ListenerError;
 pub use handler::ConnectionHandler;
-pub use listener::{Listener, ListenerError};
+pub use listener::Listener;
 pub use numbers::ConnectionNumbers;
-pub use transport::{ReceiveError, SendError, Transport};
+pub use transport::Transport;
 
 /// Every item of this crate.
 ///
@@ -148,14 +154,14 @@ pub use transport::{ReceiveError, SendError, Transport};
 /// use gaslightmq_field::prelude::*;
 /// use gaslightmq_listener::prelude::*;
 ///
-/// let configuration = ListenerConfiguration::new("127.0.0.1:9092".parse()?, Endpoint::Bootstrap);
+/// let address = "127.0.0.1:9092".parse().expect("an address");
+/// let configuration = ListenerConfiguration::new(address, Endpoint::Bootstrap);
 /// assert_eq!(configuration.socket_request_max_bytes, FrameSizeLimit::default());
-/// # Ok::<(), Box<dyn std::error::Error>>(())
 /// ```
 pub mod prelude {
     #[doc(no_inline)]
     pub use crate::{
         ConnectionHandler, ConnectionNumbers, FrameSizeLimit, FrameSizeLimitError, Listener, ListenerConfiguration,
-        ListenerError, ReceiveError, SendError, Transport,
+        ListenerError, Transport,
     };
 }

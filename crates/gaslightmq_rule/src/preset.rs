@@ -32,7 +32,7 @@ use crate::{Action, ActionRef, PresetName};
 ///
 /// assert_eq!(preset.name(), "Delay 1 s");
 /// assert_eq!(preset.action().to_string(), "+1 s ±200 ms");
-/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// # Ok::<(), PresetNameError>(())
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -91,17 +91,18 @@ impl Preset {
 /// use gaslightmq_lie::prelude::*;
 /// use gaslightmq_rule::prelude::*;
 ///
-/// let flap = Preset::new("Leader flap".parse()?, RefusalLie::new(ErrorCode::NOT_LEADER_OR_FOLLOWER));
+/// let name = "Leader flap".parse().expect("a preset name");
+/// let flap = Preset::new(name, RefusalLie::new(ErrorCode::NOT_LEADER_OR_FOLLOWER));
 /// let presets = PresetSet::new([flap])?;
 ///
 /// // A rule writes `action: Leader flap`, or an action of its own.
-/// let named = ActionRef::from("Leader flap".parse::<PresetName>()?);
+/// let named = ActionRef::from("Leader flap".parse::<PresetName>().expect("a preset name"));
 /// let inline = ActionRef::from(LieDefinition::Silence);
 ///
 /// assert_eq!(presets.resolve(&named).map(ToString::to_string), Some("NOT_LEADER_OR_FOLLOWER".into()));
 /// assert_eq!(presets.resolve(&inline).map(ToString::to_string), Some("silence".into()));
-/// assert_eq!(presets.resolve(&"Blackhole".parse::<PresetName>()?.into()), None);
-/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// assert_eq!(presets.resolve(&"Blackhole".parse::<PresetName>().expect("a preset name").into()), None);
+/// # Ok::<(), PresetSetError>(())
 /// ```
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct PresetSet {

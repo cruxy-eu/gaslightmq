@@ -158,7 +158,7 @@ name! {
     /// assert!(EnvironmentName::new("staging-proxy ").is_err());
     /// // A zero-width space hides between the two words.
     /// assert!(EnvironmentName::new("staging\u{200b}proxy").is_err());
-    /// # Ok::<(), Box<dyn std::error::Error>>(())
+    /// # Ok::<(), EnvironmentNameError>(())
     /// ```
     EnvironmentName, EnvironmentNameError, "environment name"
 }
@@ -178,7 +178,7 @@ name! {
     /// let world: WorldName = "orders-sim".parse()?;
     /// assert_eq!(world, "orders-sim");
     /// assert_eq!(WorldName::new(""), Err(WorldNameError::Empty));
-    /// # Ok::<(), Box<dyn std::error::Error>>(())
+    /// # Ok::<(), gaslightmq_environment::WorldNameError>(())
     /// ```
     WorldName, WorldNameError, "world name"
 }

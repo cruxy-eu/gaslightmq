@@ -116,7 +116,7 @@ impl std::error::Error for OperatorError {}
 /// assert!(group_apis.contains(&ApiKey::JOIN_GROUP.into()));
 ///
 /// assert_eq!(ValueSet::new(Vec::<ApiKey>::new()), Err(ValueSetError::Empty));
-/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// # Ok::<(), gaslightmq_selector::ValueSetError>(())
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ValueSet(Vec<FieldValue>);
@@ -262,7 +262,7 @@ impl std::error::Error for ValueSetError {}
 /// assert_eq!(produce.operator(), Operator::Is);
 /// assert_eq!(produce.to_string(), "api is Produce");
 ///
-/// let group_apis = Condition::is_any_of([ApiKey::JOIN_GROUP, ApiKey::SYNC_GROUP])?;
+/// let group_apis = Condition::is_any_of([ApiKey::JOIN_GROUP, ApiKey::SYNC_GROUP]).expect("a value set");
 /// assert_eq!(group_apis.to_string(), "api is any of JoinGroup, SyncGroup");
 ///
 /// let orders = Condition::matches(Field::Topic, "orders.*".parse()?);
@@ -270,7 +270,7 @@ impl std::error::Error for ValueSetError {}
 ///
 /// let not_the_ui = Condition::is_not(ClientId::new("kafka-ui").expect("a client ID"));
 /// assert_eq!(not_the_ui.to_string(), "client.id is not kafka-ui");
-/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// # Ok::<(), GlobError>(())
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Condition {
@@ -325,7 +325,7 @@ impl Condition {
     ///
     /// // `Prodcue` is an error, and not a selector that never matches.
     /// assert!(Condition::parse(Field::Api, "Prodcue").is_err());
-    /// # Ok::<(), Box<dyn std::error::Error>>(())
+    /// # Ok::<(), ConditionError>(())
     /// ```
     ///
     /// # Errors

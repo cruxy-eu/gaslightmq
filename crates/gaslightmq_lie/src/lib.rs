@@ -44,7 +44,7 @@
 //! // The refusal changes that partition, and the delay holds the whole call back.
 //! assert_eq!(verdict[0].to_string(), "+750 ms");
 //! assert_eq!(verdict[1].to_string(), "NOT_LEADER_OR_FOLLOWER on orders.eu/3");
-//! # Ok::<(), Box<dyn std::error::Error>>(())
+//! # Ok::<(), PartError>(())
 //! ```
 //!
 //! # Kinds without a definition

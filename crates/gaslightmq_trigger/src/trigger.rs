@@ -93,19 +93,19 @@ impl std::error::Error for PerError {}
 ///
 /// // `trigger: { chance: 50%, nth: 3 }` fires on the 3rd matching call, half of the time.
 /// let parts = TriggerParts::new()
-///     .with_chance("50%".parse()?)
+///     .with_chance("50%".parse().expect("a chance"))
 ///     .with_nth(MatchNumber::new(3)?);
 /// assert!(parts.counts(MatchNumber::new(3)?));
 /// assert!(!parts.counts(MatchNumber::new(4)?));
 ///
 /// // `trigger: { skip: 100, first: 5 }` passes over 100 matches, and then takes five.
 /// let parts = TriggerParts::new()
-///     .with_skip(Count::new(100)?)
-///     .with_first(Count::new(5)?);
+///     .with_skip(Count::new(100).expect("a count"))
+///     .with_first(Count::new(5).expect("a count"));
 /// assert!(!parts.counts(MatchNumber::new(100)?));
 /// assert!(parts.counts(MatchNumber::new(105)?));
 /// assert!(!parts.counts(MatchNumber::new(106)?));
-/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// # Ok::<(), MatchNumberError>(())
 /// ```
 ///
 /// With the `serde` feature, the parts serialize as a map that only holds the parts they have.

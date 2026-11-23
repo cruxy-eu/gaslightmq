@@ -60,16 +60,10 @@ fn a_refused_request_says_which_parts_the_request_does_not_name() {
 
     let error = RefusedRequest::new(asked, &parts(&["orders.eu/4", "orders.eu/3"]), NOT_LEADER).unwrap_err();
 
-    assert_eq!(
-        error,
-        RefusedRequestError::PartsNotInRequest {
-            api: heartbeat().api(),
-            parts: PartSet::new([part("orders.eu/3"), part("orders.eu/4")]).unwrap(),
-        }
-    );
+    assert_eq!(error, not_in_request(&heartbeat(), &["orders.eu/3", "orders.eu/4"]));
     assert_eq!(
         error.to_string(),
-        "the Heartbeat v4 request does not name orders.eu/3, orders.eu/4"
+        "refusal targets parts that the Heartbeat v4 request does not name: orders.eu/3, orders.eu/4"
     );
 }
 
@@ -85,15 +79,9 @@ fn a_refusal_is_told_on_all_of_its_parts_or_on_none() {
         let target = Target::of_parts([first, missing.clone()]).unwrap();
 
         let error = RefusedRequest::new(decoded(&request), &target, NOT_LEADER).unwrap_err();
-        assert_eq!(
-            error,
-            RefusedRequestError::PartsNotInRequest {
-                api: request.api(),
-                parts: PartSet::one(missing.clone()),
-            }
-        );
+        assert_eq!(error, not_in_request(&request, &[&missing.to_string()]));
 
-        // The contract keeps the reason, and names the part.
+        // The behaviour says the same, and names the part.
         let error = every_lie()
             .before_forwarding(&refusal(NOT_LEADER, target), &decoded(&request))
             .unwrap_err();
@@ -106,11 +94,17 @@ fn a_part_of_another_kind_than_the_request_names_is_not_in_the_request() {
     // A Produce names partitions, and a Metadata request names topics.
     let produce = produce(&["orders.eu/3"]);
     let error = RefusedRequest::new(decoded(&produce), &parts(&["orders.eu"]), NOT_LEADER).unwrap_err();
-    assert_eq!(error.to_string(), "the Produce v9 request does not name orders.eu");
+    assert_eq!(
+        error.to_string(),
+        "refusal targets parts that the Produce v9 request does not name: orders.eu"
+    );
 
     let metadata = metadata(&["orders.eu"]);
     let error = RefusedRequest::new(decoded(&metadata), &parts(&["orders.eu/3"]), NOT_LEADER).unwrap_err();
-    assert_eq!(error.to_string(), "the Metadata v9 request does not name orders.eu/3");
+    assert_eq!(
+        error.to_string(),
+        "refusal targets parts that the Metadata v9 request does not name: orders.eu/3"
+    );
 }
 
 #[test]
@@ -170,11 +164,7 @@ fn a_refusal_cannot_be_told_where_the_response_has_no_place_for_the_error() {
 
     let error =
         RefusedRequest::new(decoded(&request), &Target::Call, ErrorCode::UNKNOWN_TOPIC_OR_PARTITION).unwrap_err();
-    assert_eq!(error, RefusedRequestError::NoPlaceForError { api: request.api() });
-    assert_eq!(
-        error.to_string(),
-        "the response to this Metadata v9 request has no place for an error code"
-    );
+    assert_eq!(error, no_place_for_error(&request));
 }
 
 #[test]
@@ -245,13 +235,10 @@ fn a_request_that_does_not_decode_never_reaches_a_refusal() {
     // A lie is asked with a decoded request, so whoever decodes finds out first, and no lie is asked.
     assert_eq!(
         EditableRequest::decode(&unknown, &TopicNames::new()).unwrap_err(),
-        EditableRequestError::UnknownApi { api: unknown.api() }
+        SurgeryError::UnknownApi { api: unknown.api() }
     );
     let error = EditableRequest::decode(&cut, &TopicNames::new()).unwrap_err();
-    assert!(
-        matches!(error, EditableRequestError::UnreadableRequest { .. }),
-        "{error}"
-    );
+    assert!(matches!(error, SurgeryError::UnreadableRequest { .. }), "{error}");
 }
 
 #[test]
@@ -288,18 +275,17 @@ fn a_response_to_another_request_cannot_take_a_refusal() {
     let error = refused.after_response(&answer_to_other).unwrap_err();
     assert_eq!(
         error,
-        RefusedRequestError::SurgeryFailed {
-            error: EditableRequestError::ResponseOfAnotherCall {
-                api: request.api(),
-                correlation_id: CORRELATION_ID,
-                answered_api: other.api(),
-                answered_correlation_id: CORRELATION_ID,
-            }
+        LieError::ResponseOfAnotherCall {
+            kind: LieKind::Refusal,
+            api: request.api(),
+            correlation_id: CORRELATION_ID,
+            answered_api: other.api(),
+            answered_correlation_id: CORRELATION_ID,
         }
     );
     assert_eq!(
         error.to_string(),
-        "the refusal cannot be told: the Fetch v11 response 7 does not answer the Produce v9 request 7"
+        "refusal was given the Fetch v11 response 7, which does not answer the Produce v9 request 7"
     );
 
     let error = every_lie()

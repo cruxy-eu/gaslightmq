@@ -38,11 +38,11 @@ use crate::{ActionRef, RuleName};
 ///
 /// let rule = Rule::new(
 ///     "Slow down order producers".parse()?,
-///     "Order producers".parse::<SelectorName>()?,
-///     "Delay 1 s".parse::<PresetName>()?,
+///     "Order producers".parse::<SelectorName>().expect("a selector name"),
+///     "Delay 1 s".parse::<PresetName>().expect("a preset name"),
 /// )
-/// .scoped(Scope::client(ClientId::new("order-ingest")?))
-/// .with_trigger(TriggerParts::new().with_chance("40%".parse()?));
+/// .scoped(Scope::client(ClientId::new("order-ingest").expect("a client ID")))
+/// .with_trigger(TriggerParts::new().with_chance("40%".parse().expect("a chance")));
 ///
 /// assert_eq!(rule.name(), "Slow down order producers");
 /// assert_eq!(rule.lifetime(), Lifetime::UntilDisarmed);
@@ -51,7 +51,7 @@ use crate::{ActionRef, RuleName};
 /// // A rename does not change which calls the rule hits: the old name stays as the dice key.
 /// let renamed = rule.renamed("Slow ingest".parse()?);
 /// assert_eq!(renamed.dice_key().as_str(), "Slow down order producers");
-/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// # Ok::<(), RuleNameError>(())
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 #[cfg_attr(

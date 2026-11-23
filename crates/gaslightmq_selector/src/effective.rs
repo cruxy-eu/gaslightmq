@@ -52,7 +52,7 @@ use crate::{Condition, Conditions, Scope};
 /// // The lie of a rule with this selector applies to the `orders.eu` partition only.
 /// let target = orders.evaluate(&produce).into_target().expect("the Produce names orders.eu");
 /// assert_eq!(target.to_string(), "orders.eu/3");
-/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// # Ok::<(), ConditionError>(())
 /// ```
 #[derive(Debug, Clone, Default, PartialEq, Eq, Hash)]
 pub struct EffectiveSelector {
@@ -330,7 +330,7 @@ impl fmt::Display for Pass {
 /// assert!(group_apis.apis().contains(ApiKey::JOIN_GROUP));
 /// assert!(!group_apis.apis().contains(ApiKey::PRODUCE));
 /// assert_eq!(EffectiveSelector::new().apis(), Apis::Any);
-/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// # Ok::<(), ValueSetError>(())
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Apis {

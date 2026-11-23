@@ -27,7 +27,7 @@ use gaslightmq_wire::messages::{
     ProduceResponse,
 };
 use gaslightmq_wire::protocol::StrBytes;
-use gaslightmq_wire::{Api, ApiKey as KnownApi, Frame, Record, RecordBatch, Request, Response, WireError};
+use gaslightmq_wire::{Api, ApiKey as KnownApi, Frame, Record, RecordBatch, Request, Response};
 use gaslightmq_wire_edit::prelude::*;
 
 const NOT_LEADER: ErrorCode = ErrorCode::NOT_LEADER_OR_FOLLOWER;
@@ -623,7 +623,7 @@ fn a_request_without_parts_only_fails_as_a_whole() {
     let of_a_part = Failures::none().with_part(part("orders.eu/3"), NOT_LEADER);
     assert_eq!(
         asked.error_response(&of_a_part).unwrap_err(),
-        EditableRequestError::NothingFailed { api: request.api() }
+        SurgeryError::NothingFailed { api: request.api() }
     );
     assert_eq!(
         asked.error_response(&Failures::none()).unwrap_err().to_string(),
@@ -692,7 +692,7 @@ fn a_request_of_an_unknown_api_cannot_be_edited() {
 
     assert_eq!(
         error,
-        EditableRequestError::UnknownApi {
+        SurgeryError::UnknownApi {
             api: Api::from_wire(9999, 3)
         }
     );
@@ -712,10 +712,7 @@ fn a_request_whose_body_does_not_decode_cannot_be_edited() {
 
     assert!(matches!(
         &error,
-        EditableRequestError::UnreadableRequest {
-            api,
-            error: WireError::Decode { .. }
-        } if *api == Api::new(KnownApi::Produce, 9)
+        SurgeryError::UnreadableRequest { api, .. } if *api == Api::new(KnownApi::Produce, 9)
     ));
     assert!(
         error
@@ -741,7 +738,7 @@ fn a_response_to_another_request_does_not_merge() {
     let other_api = Response::new(Api::new(KnownApi::Fetch, 9), 42, &FetchResponse::default()).unwrap();
     assert_eq!(
         asked.merge(&other_api, &failures).unwrap_err(),
-        EditableRequestError::ResponseOfAnotherCall {
+        SurgeryError::ResponseOfAnotherCall {
             api: asked.api(),
             correlation_id: 42,
             answered_api: Api::new(KnownApi::Fetch, 9),
@@ -760,7 +757,7 @@ fn a_response_whose_body_does_not_decode_does_not_merge() {
         .merge(&truth, &Failures::none().with_part(part("orders.eu/3"), NOT_LEADER))
         .unwrap_err();
 
-    assert!(matches!(error, EditableRequestError::UnreadableResponse { .. }));
+    assert!(matches!(error, SurgeryError::UnreadableResponse { .. }));
     assert!(
         error
             .to_string()
@@ -769,6 +766,6 @@ fn a_response_whose_body_does_not_decode_does_not_merge() {
     );
     assert!(matches!(
         asked.parts_of(&truth),
-        Err(EditableRequestError::UnreadableResponse { .. })
+        Err(SurgeryError::UnreadableResponse { .. })
     ));
 }

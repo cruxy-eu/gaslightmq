@@ -436,11 +436,15 @@ mod tests {
 
     #[test]
     fn the_error_is_a_standard_error() {
-        fn boxed(text: &str) -> Result<TimeSpan, Box<dyn std::error::Error>> {
-            Ok(text.parse::<TimeSpan>()?)
+        fn message_of<E: core::error::Error + Send + Sync + 'static>(error: E) -> String {
+            assert!(error.source().is_none(), "the message is complete: {error}");
+            error.to_string()
         }
-        assert!(boxed("10s").is_ok());
-        assert!(boxed("ten").is_err());
+        assert!("10s".parse::<TimeSpan>().is_ok());
+        assert_eq!(
+            message_of("ten".parse::<TimeSpan>().unwrap_err()),
+            "invalid time span `ten`: expected a whole number and a unit, such as `10s`"
+        );
     }
 
     #[cfg(feature = "serde")]

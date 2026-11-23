@@ -27,7 +27,7 @@ use crate::{Conditions, SelectorName};
 /// assert_eq!(from_ingest.name(), "Order producers from ingest");
 /// assert_eq!(from_ingest.include().map(SelectorName::as_str), Some("Order producers"));
 /// assert_eq!(from_ingest.conditions().to_string(), "client.id is order-ingest");
-/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// # Ok::<(), SelectorNameError>(())
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 #[cfg_attr(
@@ -134,7 +134,7 @@ impl Selector {
 ///
 /// assert_eq!(named.name().map(SelectorName::as_str), Some("Order producers"));
 /// assert_eq!(inline.name(), None);
-/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// # Ok::<(), SelectorNameError>(())
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum SelectorRef {

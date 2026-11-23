@@ -70,25 +70,30 @@
 //!
 //! let on = |part: &str| Target::of_parts([part.parse().expect("a part")]).expect("one part");
 //! let number = |value| NonZeroU64::new(value).expect("at least one");
+//! let rule = |name: &str| name.parse::<RecordedRuleName>().expect("a rule name");
+//! let trigger = |decision, number, checks| {
+//!     TriggerExplanation::new(decision, Some(number), checks).expect("the decision fits its checks")
+//! };
 //!
 //! // Three rules matched one Fetch. `Leader flap` has `chance: 40%` and `lifetime: 3 firings`.
-//! let flap = TriggerExplanation::new(
-//!     TriggerDecision::Fired,
-//!     Some(number(7)),
-//!     TriggerChecks::new().with_die(DieCheck::new(374_213, 400_000)?),
-//! )?
-//! .with_budget(BudgetCheck::new(2, number(3))?);
+//! let die = DieCheck::new(374_213, 400_000).expect("a roll under the chance");
+//! let budget = BudgetCheck::new(2, number(3)).expect("two of three firings left");
+//! let flap = trigger(TriggerDecision::Fired, number(7), TriggerChecks::new().with_die(die)).with_budget(budget);
 //! // `Slow fetch` has no trigger, and `Refuse every 2nd` has `every: 2`.
-//! let slow = TriggerExplanation::new(TriggerDecision::Fired, Some(number(12)), TriggerChecks::new())?;
-//! let every = TriggerExplanation::new(TriggerDecision::Held, Some(number(5)), TriggerChecks::new().with_count(false))?;
+//! let slow = trigger(TriggerDecision::Fired, number(12), TriggerChecks::new());
+//! let every = trigger(TriggerDecision::Held, number(5), TriggerChecks::new().with_count(false));
 //!
 //! let refusal = LieDefinition::from(RefusalLie::new(ErrorCode::NOT_LEADER_OR_FOLLOWER)).on(on("orders.eu/3"));
 //! let delay = LieDefinition::from(TimingLie::new().with_delay(TimeSpan::from_millis(750))).on(Target::Call);
 //!
+//! let matched = on("orders.eu/3");
+//! let flapped = RuleExplanation::lied(rule("Leader flap"), Priority::new(0), matched.clone(), flap, LieFate::all_applied(refusal));
+//! let slowed = RuleExplanation::lied(rule("Slow fetch"), Priority::new(1), matched.clone(), slow, LieFate::all_applied(delay));
+//! let held = RuleExplanation::held(rule("Refuse every 2nd"), Priority::new(2), matched, every);
 //! let explanation = Explanation::new([
-//!     RuleExplanation::lied("Leader flap".parse()?, Priority::new(0), on("orders.eu/3"), flap, LieFate::all_applied(refusal))?,
-//!     RuleExplanation::lied("Slow fetch".parse()?, Priority::new(1), on("orders.eu/3"), slow, LieFate::all_applied(delay))?,
-//!     RuleExplanation::held("Refuse every 2nd".parse()?, Priority::new(2), on("orders.eu/3"), every)?,
+//!     flapped.expect("a rule that fired tells its lie"),
+//!     slowed.expect("a rule that fired tells its lie"),
+//!     held.expect("a rule that held tells no lie"),
 //! ])?;
 //!
 //! // Why did this call fail?
@@ -97,7 +102,7 @@
 //! // Why did my rule not fire?
 //! let line = explanation.rule("Refuse every 2nd").expect("the rule matched");
 //! assert_eq!(line.to_string(), "Refuse every 2nd: matched orders.eu/3; match 5, count did not agree: held");
-//! # Ok::<(), Box<dyn std::error::Error>>(())
+//! # Ok::<(), ExplanationError>(())
 //! ```
 //!
 //! # Errors

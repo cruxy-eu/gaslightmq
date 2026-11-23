@@ -31,7 +31,7 @@ use crate::text::text_conversions;
 /// assert_eq!("4711".parse::<ApiKey>()?, unknown);
 ///
 /// assert!("Prodcue".parse::<ApiKey>().is_err());
-/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// # Ok::<(), ApiKeyError>(())
 /// ```
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ApiKey(i16);

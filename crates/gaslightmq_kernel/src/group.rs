@@ -12,7 +12,7 @@ text_value! {
     /// let group = GroupId::new("analytics-etl")?;
     /// assert_eq!(group, "analytics-etl");
     /// assert!(GroupId::new("").is_err());
-    /// # Ok::<(), Box<dyn std::error::Error>>(())
+    /// # Ok::<(), GroupIdError>(())
     /// ```
     GroupId, GroupIdError, "group ID", max: text::MAX_STRING_LEN, rule: non_empty
 }
@@ -32,7 +32,7 @@ text_value! {
     /// assert_eq!(member, Some(MemberId::new("consumer-1-4f2a")?));
     /// assert_eq!(MemberId::from_wire("")?, None);
     /// assert_eq!(MemberId::to_wire(None), "");
-    /// # Ok::<(), Box<dyn std::error::Error>>(())
+    /// # Ok::<(), MemberIdError>(())
     /// ```
     MemberId, MemberIdError, "member ID", max: text::MAX_STRING_LEN, rule: non_empty
 }
@@ -72,7 +72,7 @@ text_value! {
     /// let instance = GroupInstanceId::new("etl-0")?;
     /// assert_eq!(instance, "etl-0");
     /// assert!(GroupInstanceId::new("etl 0").is_err());
-    /// # Ok::<(), Box<dyn std::error::Error>>(())
+    /// # Ok::<(), GroupInstanceIdError>(())
     /// ```
     GroupInstanceId, GroupInstanceIdError, "group instance ID", max: text::MAX_NAME_LEN, rule: name
 }

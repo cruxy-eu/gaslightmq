@@ -2,7 +2,7 @@ use std::fmt;
 
 use gaslightmq_field::PartSet;
 use gaslightmq_lie::prelude::*;
-use gaslightmq_wire::{Api, Response, WireError};
+use gaslightmq_wire::{Api, Response};
 use gaslightmq_wire_edit::EditableRequest;
 
 use crate::{Effect, Instruction};
@@ -58,26 +58,27 @@ use crate::{Effect, Instruction};
 ///             return Err(LieError::OtherKind { tells: self.kind(), lie: lie.lie().kind() });
 ///         };
 ///         let body = HeartbeatResponse::default().with_error_code(refusal.error.value());
-///         let response = request.request().response(&body);
-///         Ok(Effect::Answer(response.map_err(|error| LieError::Unwritable { kind: self.kind(), error })?))
+///         let unwritable = |reason: String| LieError::Unwritable { kind: self.kind(), reason };
+///         let response = request.request().response(&body).map_err(|error| unwritable(error.to_string()))?;
+///         Ok(Effect::Answer(response))
 ///     }
 /// }
 ///
 /// // The pipeline decodes a request once, with the topics it knows by ID, and every lie reads that.
-/// let heartbeat = Request::new(4, 7, Some("order-ingest"), &HeartbeatRequest::default())?;
-/// let request = EditableRequest::decode(&heartbeat, &TopicNames::new())?;
+/// let heartbeat = Request::new(4, 7, Some("order-ingest"), &HeartbeatRequest::default()).expect("a request");
+/// let request = EditableRequest::decode(&heartbeat, &TopicNames::new()).expect("a request that decodes");
 /// let lie = LieDefinition::from(RefusalLie::new(ErrorCode::REBALANCE_IN_PROGRESS)).on(Target::Call);
 ///
 /// // Before forwarding, the backend never sees the Heartbeat.
 /// let Effect::Answer(response) = Refusal.before_forwarding(&lie, &request)? else {
 ///     panic!("the refusal answers the call itself");
 /// };
-/// assert_eq!(response.body::<HeartbeatResponse>()?.error_code, 27);
+/// assert_eq!(response.body::<HeartbeatResponse>().expect("a body that decodes").error_code, 27);
 ///
 /// // This kind has no behaviour after the response.
 /// let error = Refusal.after_response(&lie, &request, &response).unwrap_err();
 /// assert_eq!(error.to_string(), "refusal has no behaviour after the response");
-/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// # Ok::<(), LieError>(())
 /// ```
 ///
 /// # Shared between sessions
@@ -156,6 +157,9 @@ pub trait Lie: Send + Sync {
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum LieError {
+    /// Two behaviours tell the same kind of lie, so nothing says which one the pipeline asks.
+    /// [`Lies::with`](crate::Lies::with) returns it, and the set stays without the second behaviour.
+    KindTwice { kind: LieKind },
     /// No behaviour is registered for the kind of the lie.
     /// The build left the kind out, or nobody registered it.
     NotRegistered { kind: LieKind },
@@ -172,10 +176,10 @@ pub enum LieError {
     },
     /// The kind has no way to tell its lie on calls of this API.
     ApiNotSupported { kind: LieKind, api: Api },
-    /// The lie could not read the request or the response.
-    Unreadable { kind: LieKind, error: WireError },
-    /// The lie could not write the request or the response it asks for.
-    Unwritable { kind: LieKind, error: WireError },
+    /// The lie could not read the request or the response. `reason` says what is wrong with it.
+    Unreadable { kind: LieKind, reason: String },
+    /// The lie could not write the request or the response it asks for. `reason` says what stood in the way.
+    Unwritable { kind: LieKind, reason: String },
     /// The lie targets parts that the request does not name.
     ///
     /// A request of an API without parts names none.
@@ -201,6 +205,7 @@ pub enum LieError {
 impl fmt::Display for LieError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::KindTwice { kind } => write!(f, "{kind} is registered twice"),
             Self::NotRegistered { kind } => write!(f, "no behaviour is registered for {kind}"),
             Self::OtherKind { tells, lie } => write!(f, "the behaviour of {tells} cannot tell a {lie} lie"),
             Self::NoBehaviourAtStage { kind, stage } => write!(f, "{kind} has no behaviour {}", stage.phrase()),
@@ -215,8 +220,8 @@ impl fmt::Display for LieError {
                 stage.phrase()
             ),
             Self::ApiNotSupported { kind, api } => write!(f, "{kind} cannot be told on {api}"),
-            Self::Unreadable { kind, error } => write!(f, "{kind} cannot read the call: {error}"),
-            Self::Unwritable { kind, error } => write!(f, "{kind} cannot rewrite the call: {error}"),
+            Self::Unreadable { kind, reason } => write!(f, "{kind} cannot read the call: {reason}"),
+            Self::Unwritable { kind, reason } => write!(f, "{kind} cannot rewrite the call: {reason}"),
             Self::PartsNotInRequest { kind, api, parts } => {
                 let parts: Vec<String> = parts.iter().map(ToString::to_string).collect();
                 write!(
@@ -244,7 +249,7 @@ impl fmt::Display for LieError {
     }
 }
 
-/// The message says everything, also the error it holds, so the error has no source.
+/// The message says everything, also the reason it holds, so the error has no source.
 impl std::error::Error for LieError {}
 
 /// The definition of `lie`, when `lie` is of the kind that a behaviour tells.
@@ -328,11 +333,12 @@ mod tests {
 
     #[test]
     fn a_lie_error_says_everything_in_one_message() {
-        let wire = WireError::WrongApi {
-            expected: 0,
-            actual: 12,
-        };
+        let reason = || "body of api key 12 read as api key 0".to_owned();
         let cases = [
+            (
+                LieError::KindTwice { kind: LieKind::Timing },
+                "timing is registered twice",
+            ),
             (
                 LieError::NotRegistered { kind: LieKind::HangUp },
                 "no behaviour is registered for hang-up",
@@ -377,14 +383,14 @@ mod tests {
             (
                 LieError::Unreadable {
                     kind: LieKind::Refusal,
-                    error: wire.clone(),
+                    reason: reason(),
                 },
                 "refusal cannot read the call: body of api key 12 read as api key 0",
             ),
             (
                 LieError::Unwritable {
                     kind: LieKind::Data,
-                    error: wire,
+                    reason: reason(),
                 },
                 "data cannot rewrite the call: body of api key 12 read as api key 0",
             ),

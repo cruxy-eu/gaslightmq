@@ -5,7 +5,7 @@ use std::collections::BTreeSet;
 use gaslightmq_call::{Answer, ResponseSummary};
 use gaslightmq_field::prelude::*;
 use gaslightmq_wire::Response;
-use gaslightmq_wire_edit::{EditableRequest, EditableRequestError};
+use gaslightmq_wire_edit::{EditableRequest, SurgeryError};
 
 /// What a response says: about the call as a whole, and about each part it answers.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -22,8 +22,8 @@ impl Answers {
     ///
     /// # Errors
     ///
-    /// The [`EditableRequestError`] of a response that answers another request, or that does not decode.
-    pub(crate) fn read(asked: &EditableRequest, response: &Response) -> Result<Self, EditableRequestError> {
+    /// The [`SurgeryError`] of a response that answers another request, or that does not decode.
+    pub(crate) fn read(asked: &EditableRequest, response: &Response) -> Result<Self, SurgeryError> {
         let call = Answer::from(asked.error_of(response)?);
         let parts = asked.parts_of(response)?;
         let parts = parts.iter().map(|part| {

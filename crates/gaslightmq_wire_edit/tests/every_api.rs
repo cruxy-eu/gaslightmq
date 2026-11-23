@@ -364,7 +364,7 @@ fn the_error_code_of_a_response_itself_reads_back() {
     let asked = EditableRequest::decode(&produce(9), &topic_names()).unwrap();
     assert!(matches!(
         asked.error_of(&other),
-        Err(EditableRequestError::ResponseOfAnotherCall { .. })
+        Err(SurgeryError::ResponseOfAnotherCall { .. })
     ));
 }
 

@@ -490,20 +490,20 @@ impl TriggerChecks {
 ///
 /// // `trigger: { chance: 40%, nth: 3 }` with `lifetime: 3 firings`, on the 3rd match.
 /// let third = NonZeroU64::new(3).expect("three is not zero");
-/// let checks = TriggerChecks::new().with_count(true).with_die(DieCheck::new(374_213, 400_000)?);
+/// let checks = TriggerChecks::new().with_count(true).with_die(DieCheck::new(374_213, 400_000).expect("a die check"));
 /// let rolled = TriggerExplanation::new(TriggerDecision::Fired, Some(third), checks)?
-///     .with_budget(BudgetCheck::new(2, third)?);
+///     .with_budget(BudgetCheck::new(2, third).expect("a budget check"));
 ///
 /// assert!(rolled.fired());
 /// assert_eq!(rolled.to_string(), "match 3, count agreed, rolled 37.4213% under 40%, 2 of 3 left: fired");
 ///
 /// // A record that says "fired" against its own die is no record.
-/// let against = TriggerChecks::new().with_die(DieCheck::new(620_000, 400_000)?);
+/// let against = TriggerChecks::new().with_die(DieCheck::new(620_000, 400_000).expect("a die check"));
 /// assert_eq!(
 ///     TriggerExplanation::new(TriggerDecision::Fired, Some(third), against),
 ///     Err(TriggerExplanationError::FiredAgainstCheck)
 /// );
-/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// # Ok::<(), gaslightmq_call::TriggerExplanationError>(())
 /// ```
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct TriggerExplanation {

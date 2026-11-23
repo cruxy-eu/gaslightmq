@@ -19,7 +19,7 @@ use crate::text::text_form;
 /// let outcome: Outcome = "timeout".parse()?;
 /// assert_eq!(outcome, Outcome::Timeout);
 /// assert_eq!(Outcome::Ok.to_string(), "ok");
-/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// # Ok::<(), OutcomeError>(())
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Outcome {
@@ -98,7 +98,7 @@ impl std::error::Error for OutcomeError {}
 /// assert_eq!(measured.to_string(), "14ms");
 /// assert_eq!("14 ms".parse::<Latency>()?, measured);
 /// assert!(measured < Latency::from_millis(15));
-/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// # Ok::<(), LatencyError>(())
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Latency(TimeSpan);

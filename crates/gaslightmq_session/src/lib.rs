@@ -44,14 +44,14 @@
 //!
 //! // A consumer joins its group on the connection to its coordinator.
 //! let mut coordinator = open(7, 1);
-//! let join = Request::new(5, 1, Some("analytics"), &JoinGroupRequest::default())?;
+//! let join = Request::new(5, 1, Some("analytics"), &JoinGroupRequest::default()).expect("a request");
 //! coordinator.identify(&join);
 //! // The pipeline decodes the request, and tells the session what it learned.
 //! coordinator.learn(GroupId::new("analytics-etl")?);
 //!
 //! // The consumer fetches on another connection. A Fetch never names a group.
 //! let mut fetcher = open(8, 2);
-//! let fetch = Request::new(12, 1, Some("analytics"), &FetchRequest::default())?;
+//! let fetch = Request::new(12, 1, Some("analytics"), &FetchRequest::default()).expect("a request");
 //! fetcher.identify(&fetch);
 //!
 //! // The client context provides the group, so a selector on `group` matches the Fetch.
@@ -59,7 +59,7 @@
 //! let group = fields.read(Field::Group).present().expect("the client named its group");
 //! assert_eq!(group.to_string(), "analytics-etl");
 //! assert_eq!(group.origin(), Origin::ClientContext);
-//! # Ok::<(), Box<dyn std::error::Error>>(())
+//! # Ok::<(), GroupIdError>(())
 //! ```
 //!
 //! # Lifecycle and identity
@@ -103,10 +103,16 @@
 //! |---|---|---|
 //! | [`ConnectionOrdinal`] | [`ConnectionOrdinalError`] | The number is zero, or the text is not `#` and digits. |
 //! | [`SessionKey`] | [`SessionKeyError`] | The text is not a host, an endpoint and an ordinal. |
-//! | [`Identity`] | [`IdentityError`] | A header names a `client.id` or client software that is not one. |
-//! | [`InFlightCalls`] | [`InFlightCallsError`] | A call is not in flight, or it is in another phase than the pipeline thinks. |
+//!
+//! What a session does has one error, [`SessionError`].
+//!
+//! | What failed | What is wrong |
+//! |---|---|
+//! | An [identification](Identification::errors) | A header names a `client.id` or client software that is not one, or the request that names the client software does not decode. |
+//! | An operation of [`InFlightCalls`] | A call is not in flight, or it is in another phase than the pipeline thinks. |
 //!
 //! An error that holds another error names its own value first, and then says what the other error says.
+//! [`SessionError::UnreadableClientSoftware`] keeps what the codec said as text, in a field `reason`.
 //! The message of every error is complete, so no error has a [`source`](std::error::Error::source).
 //!
 //! # No IO
@@ -124,14 +130,16 @@
 mod calls;
 mod client;
 mod connection;
+mod error;
 mod identity;
 mod key;
 mod session;
 
-pub use calls::{CallPhase, InFlightCall, InFlightCalls, InFlightCallsError, Stalled};
+pub use calls::{CallPhase, InFlightCall, InFlightCalls, Stalled};
 pub use client::{ClientContext, ClientContexts, ClientInstance, LearnedFields};
 pub use connection::{Connection, ConnectionOrdinal, ConnectionOrdinalError, ConnectionOrdinals};
-pub use identity::{Closed, ClosedBy, Identification, Identity, IdentityChange, IdentityError, Lifecycle};
+pub use error::SessionError;
+pub use identity::{Closed, ClosedBy, Identification, Identity, IdentityChange, Lifecycle};
 pub use key::{SessionKey, SessionKeyError};
 pub use session::Session;
 
@@ -152,8 +160,7 @@ pub mod prelude {
     #[doc(no_inline)]
     pub use crate::{
         CallPhase, ClientContext, ClientContexts, ClientInstance, Closed, ClosedBy, Connection, ConnectionOrdinal,
-        ConnectionOrdinalError, ConnectionOrdinals, Identification, Identity, IdentityChange, IdentityError,
-        InFlightCall, InFlightCalls, InFlightCallsError, LearnedFields, Lifecycle, Session, SessionKey,
-        SessionKeyError, Stalled,
+        ConnectionOrdinalError, ConnectionOrdinals, Identification, Identity, IdentityChange, InFlightCall,
+        InFlightCalls, LearnedFields, Lifecycle, Session, SessionError, SessionKey, SessionKeyError, Stalled,
     };
 }
