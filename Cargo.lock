@@ -215,6 +215,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "gaslightmq_backend_upstream"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "bytes",
+ "gaslightmq_backend",
+ "gaslightmq_call",
+ "gaslightmq_clock",
+ "gaslightmq_environment",
+ "gaslightmq_field",
+ "gaslightmq_incident",
+ "gaslightmq_kernel",
+ "gaslightmq_overlay",
+ "gaslightmq_test_kafka",
+ "gaslightmq_wire",
+ "thiserror",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "gaslightmq_call"
 version = "0.1.0"
 dependencies = [

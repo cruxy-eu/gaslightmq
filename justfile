@@ -55,6 +55,7 @@ test *args:
 test-kafka *args:
     cargo test -p gaslightmq_test_kafka --test cluster {{args}}
     cargo test -p gaslightmq_kafka_client_native --test kafka {{args}}
+    cargo test -p gaslightmq_backend_upstream --test real_cluster {{args}}
 
 # The API docs, warnings and broken links denied.
 doc:

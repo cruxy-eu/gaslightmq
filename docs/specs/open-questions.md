@@ -74,11 +74,6 @@ The second part lists the decisions that were settled, with the reason and the s
 - **When do transactions come to the fake broker?**
   They bring "producer fenced" to the Simulated backend,
   and incidents for a transaction that hangs or times out.
-- **Does a session get its own connections to the real cluster?**
-  The Upstream backend connects with the proxy's own credentials.
-  One upstream connection per session keeps a client's requests in order without extra work.
-  Shared connections need fewer sockets,
-  and one slow call on them holds back other clients.
 
 ## Settled
 
@@ -111,6 +106,8 @@ The second part lists the decisions that were settled, with the reason and the s
 | Question | Decision | Reason |
 |---|---|---|
 | How far does incident emulation go on Upstream? | As far as the overlay can hold all the state: broker down, unresponsive and back, rebalance as a forced rejoin, records expired, committed offset reset, producer fenced. See [capabilities](architecture/backends.md#capabilities). | Anything more needs split routing or epoch translation. |
+| Does a session get its own connection to the real cluster? | Yes. The Upstream backend opens one for every connection of a client. See [connections to the cluster](architecture/backends.md#connections-to-the-cluster). | A broker handles the requests of one connection one at a time, so on a shared connection one Fetch that waits holds back every other client. |
+| Does the Upstream backend give up on a broker that does not answer? | No. The call stays in flight until the client gives up. The backend only limits how long it waits for a connection to open. | A Fetch and a `JoinGroup` wait for as long as the client asked, and the client has a timeout of its own. |
 | Can a proxy front a fake broker? | Yes. That is how a fake cluster lies: a proxy in front of a [broker](architecture/backends.md#a-broker-never-lies), in one process, without a socket. | A broker never lies, so lies still happen in one place. |
 
 ### Runtime

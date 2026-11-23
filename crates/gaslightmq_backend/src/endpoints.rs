@@ -28,7 +28,8 @@ use gaslightmq_field::Endpoint;
 /// | Which endpoints opened, also the ones that were open before. | [`opened_since`](Self::opened_since) | Opens a listener for each. |
 ///
 /// The endpoints name no address.
-/// Where each endpoint listens is a matter of the environment.
+/// Where each endpoint listens is a matter of the environment, and of the port a listener got.
+/// The engine opens the listeners, and tells the backend where each one [listens](crate::Backend::listens).
 ///
 /// ```
 /// use gaslightmq_backend::prelude::*;

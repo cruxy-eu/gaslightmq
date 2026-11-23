@@ -5,12 +5,13 @@
 //!
 //! | Type | Is |
 //! |---|---|
-//! | [`Backend`] | The trait: answer a request, let go of a connection, report the endpoints, declare and apply incidents. |
+//! | [`Backend`] | The trait: answer a request, let go of a connection, report the endpoints, take the address of each listener, declare and apply incidents. |
 //! | [`BackendRequest`] | The request message: a request under the ID of its call, with the endpoint its connection is on. |
 //! | [`BackendAnswer`] | The answer message: the truth, no response, an answer that is no response, or a failure. |
 //! | [`Truth`] | What the backend answered, and what the real cluster answered when an overlay changed it. |
 //! | [`BackendFailure`] | Why a backend has no answer for a call. |
 //! | [`Endpoints`] | The endpoints that accept connections now, and how often each one opened. |
+//! | [`ListenerRejection`] | Why a backend does not send clients to the listener of an endpoint. |
 //! | [`IncidentRejection`] | Why a backend did not apply or emulate an incident. |
 //!
 //! The [`prelude`] holds every type of the table.
@@ -27,6 +28,8 @@
 //! The future is the call: it ends with the [`BackendAnswer`], and the engine drops it when nobody waits any more.
 //!
 //! ```
+//! use std::net::SocketAddr;
+//!
 //! use futures::executor::block_on;
 //! use gaslightmq_backend::prelude::*;
 //! use gaslightmq_field::prelude::*;
@@ -55,6 +58,11 @@
 //!             std::future::pending::<()>().await;
 //!         }
 //!         bootstrap
+//!     }
+//!
+//!     async fn listens(&self, _endpoint: Endpoint, _address: SocketAddr) -> Result<(), ListenerRejection> {
+//!         // No answer of this cluster names a broker, so no client is sent anywhere.
+//!         Ok(())
 //!     }
 //!
 //!     fn incident_support(&self) -> IncidentSupport {
@@ -108,6 +116,8 @@
 //! | Answers [`BackendAnswer::Failed`]. | Reports the failure to the pipeline, as `Input::BackendFailed`. The session ends at once as closed by the backend, and the record of every call in flight says why. |
 //! | Never answers. | Keeps the call in flight until the session ends, and then drops it. |
 //! | Reports [`Endpoints`] in which an endpoint [closed](Endpoints::closed_since). | Closes the listener of that endpoint, and reports `Input::BackendClosed` to the pipeline of every session on it. |
+//! | Reports [`Endpoints`] in which an endpoint [opened](Endpoints::opened_since). | Opens a listener for that endpoint, and tells the backend where it [listens](Backend::listens). |
+//! | Rejects a listener with a [`ListenerRejection`]. | Closes that listener: no client is told its address. |
 //!
 //! The pipeline takes the failure as text, because it knows no backend.
 //! The message of a [`BackendFailure`] is complete, so the engine passes it on as it is.
@@ -124,7 +134,7 @@
 //! # Errors
 //!
 //! No type of this crate checks a value, so none has an error of its own.
-//! [`BackendFailure`] and [`IncidentRejection`] say why a backend did not do what it was asked.
+//! [`BackendFailure`], [`ListenerRejection`] and [`IncidentRejection`] say why a backend did not do what it was asked.
 //! Each says everything in one message, and has no [`source`](std::error::Error::source).
 //!
 //! # No runtime
@@ -140,6 +150,7 @@ mod answer;
 mod backend;
 mod endpoints;
 mod failure;
+mod listener;
 mod rejection;
 mod request;
 
@@ -147,6 +158,7 @@ pub use answer::{BackendAnswer, Truth};
 pub use backend::Backend;
 pub use endpoints::Endpoints;
 pub use failure::BackendFailure;
+pub use listener::ListenerRejection;
 pub use rejection::IncidentRejection;
 pub use request::BackendRequest;
 
@@ -168,5 +180,7 @@ pub use request::BackendRequest;
 /// ```
 pub mod prelude {
     #[doc(no_inline)]
-    pub use crate::{Backend, BackendAnswer, BackendFailure, BackendRequest, Endpoints, IncidentRejection, Truth};
+    pub use crate::{
+        Backend, BackendAnswer, BackendFailure, BackendRequest, Endpoints, IncidentRejection, ListenerRejection, Truth,
+    };
 }

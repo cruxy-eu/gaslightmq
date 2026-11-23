@@ -261,7 +261,7 @@ Every other crate speaks in them.
 | `sim_group` | Group coordination against the World, for the classic and the consumer protocol. | `world`, `wire`, `clock` |
 | `overlay` | The Upstream [overlay](backends.md#overlay): address translation, emulated incidents and sessionless Fetch. It rewrites requests and responses, and it opens no connection. | `backend`, `wire`, `wire_edit`, `incident`, `field`, `kernel` |
 | `broker` | The broker instance as a [state machine](#the-broker-is-a-state-machine-too): it routes each request to a `sim_*` crate, applies incidents to the World and owns the virtual clock. It speaks the messages of the backend contract, so a proxy reaches it without a socket. | `backend`, `world`, `sim_log`, `sim_group`, `clock` |
-| `backend_upstream` | The Upstream backend: connections to the real cluster, with the overlay around them. This crate does IO. | `backend`, `overlay` |
+| `backend_upstream` | The Upstream backend: the discovery of the brokers, and one connection to the real cluster for each connection of a client, with the overlay around them. This crate does IO. | `backend`, `overlay`, `environment`, `wire`, `field`, `kernel`, `incident`, `clock` |
 
 Transactions arrive later as `sim_txn`, next to `sim_log` and `sim_group`.
 
@@ -502,6 +502,9 @@ The listener knows nothing about what a handler does with the client's bytes.
 The engine reaches its backend through one async trait in the `backend` crate.
 The engine hands over a request under a call ID,
 and the answer arrives later under the same ID.
+The backend names the [endpoints](backends.md#endpoints), and the engine opens a listener for each.
+A listener says which address it got, and the engine passes that address on to the backend,
+so the backend knows where to send clients.
 
 The trait is a signature without logic.
 `backend` needs no runtime, so it stays outside the IO edge.
@@ -650,7 +653,7 @@ it activates a scenario, runs its clients and [asserts on the recording](control
 
 It stands with the applications, because nothing of the product depends on it.
 A crate that speaks to a real cluster takes it as a dev-dependency:
-`kafka_client_native` today, and `backend_upstream`, `test` and `testcontainers` once they exist.
+`kafka_client_native` and `backend_upstream` today, and `test` and `testcontainers` once they exist.
 It depends on vocabulary alone, so every crate above `wire` can use it without a cycle.
 
 - **One cluster, several brokers.**
