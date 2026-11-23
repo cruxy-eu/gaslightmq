@@ -4,7 +4,7 @@ use gaslightmq_call::prelude::*;
 use gaslightmq_engine::prelude::*;
 use gaslightmq_field::prelude::*;
 use gaslightmq_incident::prelude::*;
-use gaslightmq_kafka_client_api::ProtocolConsumer;
+use gaslightmq_kafka_client_api::{ProtocolConsumer, RawKafkaClient};
 use gaslightmq_kernel::prelude::*;
 use gaslightmq_rule::prelude::*;
 use gaslightmq_selector::prelude::*;
@@ -22,7 +22,7 @@ async fn an_incident_that_a_rule_fires_leaves_the_engine_before_the_record_of_it
             group: Some(payments.clone()),
         },
     ))?;
-    let member = proxy.client_on(Endpoint::Bootstrap)?;
+    let member = RawKafkaClient::new(proxy.address_of(Endpoint::Bootstrap)?);
 
     member.heartbeat(payments.as_str()).await?;
 
@@ -50,7 +50,9 @@ async fn every_listener_receives_the_records_of_every_session() -> anyhow::Resul
     let group: GroupId = "analytics-etl".parse()?;
 
     for endpoint in [Endpoint::Bootstrap, "broker 1".parse()?] {
-        proxy.client_on(endpoint)?.heartbeat(group.as_str()).await?;
+        RawKafkaClient::new(proxy.address_of(endpoint)?)
+            .heartbeat(group.as_str())
+            .await?;
     }
 
     // Whoever watches and whoever keeps see the same records, in the same order.
@@ -78,7 +80,7 @@ async fn a_slow_recorder_gets_every_event_while_a_live_listener_misses_the_oldes
     let proxy = EngineUnderTest::start_with(configuration, ScriptedBackend::with_three_brokers()).await?;
     let mut watching = proxy.engine().live_events();
     let mut recording = proxy.engine().every_event();
-    let member = proxy.client_on(Endpoint::Bootstrap)?;
+    let member = RawKafkaClient::new(proxy.address_of(Endpoint::Bootstrap)?);
     let group: GroupId = "analytics-etl".parse()?;
 
     // Neither listener takes an event while the session records five calls, which no listener holds up.

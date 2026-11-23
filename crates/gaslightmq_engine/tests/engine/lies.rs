@@ -3,7 +3,7 @@
 use gaslightmq_call::prelude::*;
 use gaslightmq_clock::{Duration, TimeSpan};
 use gaslightmq_field::prelude::*;
-use gaslightmq_kafka_client_api::{ClientError, Producer, ProtocolConsumer};
+use gaslightmq_kafka_client_api::{ClientError, Producer, ProtocolConsumer, RawKafkaClient};
 use gaslightmq_kernel::prelude::*;
 use gaslightmq_lie::prelude::*;
 use gaslightmq_rule::prelude::*;
@@ -20,7 +20,7 @@ async fn a_delayed_answer_leaves_when_the_clock_reaches_its_instant() -> anyhow:
         Conditions::from(Condition::is(ApiKey::PRODUCE)),
         TimingLie::new().with_delay(TimeSpan::from_secs(1)),
     ))?;
-    let producer = proxy.client_on(Endpoint::Bootstrap)?;
+    let producer = RawKafkaClient::new(proxy.address_of(Endpoint::Bootstrap)?);
     let orders: TopicName = "orders.eu".parse()?;
     let partition = Partition::new(3);
     let mut written = tokio::spawn(async move {
@@ -53,7 +53,7 @@ async fn a_delayed_request_reaches_the_backend_when_the_clock_reaches_its_instan
         Conditions::from(Condition::is(ApiKey::HEARTBEAT)),
         late,
     ))?;
-    let member = proxy.client_on(Endpoint::Bootstrap)?;
+    let member = RawKafkaClient::new(proxy.address_of(Endpoint::Bootstrap)?);
     let group: GroupId = "analytics-etl".parse()?;
     let mut beat = tokio::spawn(async move { member.heartbeat(group.as_str()).await });
 
@@ -82,8 +82,8 @@ async fn two_delays_end_in_the_order_of_their_instants() -> anyhow::Result<()> {
         Conditions::from(Condition::is(ApiKey::HEARTBEAT)),
         TimingLie::new().with_delay(TimeSpan::from_secs(1)),
     ))?;
-    let producer = proxy.client_on(Endpoint::Bootstrap)?;
-    let member = proxy.client_on(Endpoint::Bootstrap)?;
+    let producer = RawKafkaClient::new(proxy.address_of(Endpoint::Bootstrap)?);
+    let member = RawKafkaClient::new(proxy.address_of(Endpoint::Bootstrap)?);
     let orders: TopicName = "orders.eu".parse()?;
     let partition = Partition::new(3);
     let group: GroupId = "analytics-etl".parse()?;
@@ -112,7 +112,7 @@ async fn a_refused_request_never_reaches_the_backend() -> anyhow::Result<()> {
         Conditions::from(Condition::is(ApiKey::PRODUCE)),
         RefusalLie::new(ErrorCode::NOT_LEADER_OR_FOLLOWER),
     ))?;
-    let producer = proxy.client_on(Endpoint::Bootstrap)?;
+    let producer = RawKafkaClient::new(proxy.address_of(Endpoint::Bootstrap)?);
     let orders: TopicName = "orders.eu".parse()?;
     let partition = Partition::new(3);
 
@@ -140,14 +140,14 @@ async fn a_hang_up_closes_the_connection_and_the_client_connects_again() -> anyh
         Conditions::from(Condition::is(ApiKey::HEARTBEAT)),
         HangUpLie::new(),
     ))?;
-    let mut client = proxy.socket_on(Endpoint::Bootstrap).await?;
+    let client = RawKafkaClient::new(proxy.address_of(Endpoint::Bootstrap)?);
     let group: GroupId = "analytics-etl".parse()?;
 
     // The answer before the hang-up still arrives, and then the connection is gone.
     let metadata = client.send_metadata().await?;
     client.send_heartbeat(&group).await?;
-    client.receive_answer_to(&metadata).await?;
-    client.wait_until_closed().await?;
+    EngineUnderTest::soon(client.receive_response(&metadata)).await??;
+    assert_eq!(EngineUnderTest::soon(client.closed()).await?, Ok(()));
 
     // The backend never saw the heartbeat, and it hears that the connection ended.
     let the_metadata_call: CallId = "#1.1".parse()?;
@@ -161,7 +161,7 @@ async fn a_hang_up_closes_the_connection_and_the_client_connects_again() -> anyh
 
     // The client connects again, and gets a new session. Without the rule, its heartbeat goes through.
     proxy.engine().rules().disarm(disconnect.name())?;
-    let again = proxy.client_on(Endpoint::Bootstrap)?;
+    let again = RawKafkaClient::new(proxy.address_of(Endpoint::Bootstrap)?);
     assert_eq!(again.heartbeat(group.as_str()).await, Ok(()));
     let the_heartbeat_of_the_new_session: CallId = "#2.1".parse()?;
     assert_eq!(
@@ -179,10 +179,10 @@ async fn a_silence_never_answers_and_the_connection_stays_open() -> anyhow::Resu
         Conditions::from(Condition::is(ApiKey::HEARTBEAT)),
         LieDefinition::Silence,
     ))?;
-    let mut client = proxy.socket_on(Endpoint::Bootstrap).await?;
+    let client = RawKafkaClient::new(proxy.address_of(Endpoint::Bootstrap)?);
     let group: GroupId = "analytics-etl".parse()?;
 
-    client.send_heartbeat(&group).await?;
+    let heartbeat = client.send_heartbeat(&group).await?;
     client.send_metadata().await?;
 
     // The record of the silenced call leaves at once, and so does the one of the request behind it.
@@ -190,7 +190,7 @@ async fn a_silence_never_answers_and_the_connection_stays_open() -> anyhow::Resu
     assert_eq!(proxy.next_record().await?.delivered(), &Delivered::Nothing);
     // However long the client waits, nothing comes: the session is stalled.
     proxy.advance(TimeSpan::from_secs(3600));
-    client.receive_nothing().await?;
+    assert!(proxy.leaves_unanswered(client.receive_response(&heartbeat)).await);
     assert_eq!(proxy.backend().calls_taken_so_far(), Vec::<CallId>::new());
     Ok(())
 }

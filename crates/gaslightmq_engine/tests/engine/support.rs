@@ -1,13 +1,15 @@
-//! What the tests share, as three types.
+//! What the tests share, as two types.
 //!
 //! | Type | Is |
 //! |---|---|
 //! | [`ScriptedBackend`] | The backend of an engine under test: a cluster of three brokers in memory, which does what a test tells it. |
 //! | [`EngineUnderTest`] | An engine in front of such a backend, with the clock that the test steps and the events it handed over. |
-//! | [`ClientSocket`] | The connection of a client that does what no Kafka client does: it sends without waiting, sends bytes that are no request, and watches the proxy close the connection. |
 //!
-//! A test that sends a request and looks at its answer uses a real client:
-//! the [`RawKafkaClient`], which sends one request at a fixed version.
+//! The client of every test is a real one, which the test starts itself:
+//! the `RawKafkaClient` of `gaslightmq_kafka_client_api`, which sends one request at a fixed version.
+//! It also does what no Kafka client does: it sends a request and goes on without its answer,
+//! sends bytes that are no request, and watches the proxy close the connection.
+//! It waits as long as the proxy takes, so a test bounds such a wait with [`EngineUnderTest::soon`].
 
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -21,23 +23,15 @@ use gaslightmq_engine::prelude::*;
 use gaslightmq_environment::prelude::*;
 use gaslightmq_field::prelude::*;
 use gaslightmq_incident::prelude::*;
-use gaslightmq_kafka_client_api::RawKafkaClient;
 use gaslightmq_kernel::prelude::*;
 use gaslightmq_lie_api::prelude::*;
 use gaslightmq_lie_refusal::prelude::*;
 use gaslightmq_rule::prelude::*;
 use gaslightmq_selector::prelude::*;
-use gaslightmq_wire::messages::produce_request::{PartitionProduceData, TopicProduceData};
 use gaslightmq_wire::messages::produce_response::{PartitionProduceResponse, TopicProduceResponse};
-use gaslightmq_wire::messages::{
-    HeartbeatRequest, HeartbeatResponse, MetadataRequest, MetadataResponse, ProduceRequest, ProduceResponse,
-};
-use gaslightmq_wire::protocol::{Request as KafkaRequest, StrBytes};
-use gaslightmq_wire::{ApiKey as KnownApi, FrameDecoder, Record, RecordBatch, Request, Response};
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::net::TcpStream;
+use gaslightmq_wire::messages::{HeartbeatResponse, MetadataResponse, ProduceRequest, ProduceResponse};
+use gaslightmq_wire::{ApiKey as KnownApi, Request};
 use tokio::sync::watch;
-use tokio::task::JoinHandle;
 
 /// How long a test waits for something that has to happen. It happens at once, unless the test fails.
 const PATIENCE: Duration = Duration::from_secs(10);
@@ -432,18 +426,18 @@ impl EngineUnderTest {
         address.with_context(|| format!("endpoint `{endpoint}` is not open"))
     }
 
-    /// A Kafka client that sends one request at a time to `endpoint`. It connects when it first sends.
-    pub fn client_on(&self, endpoint: Endpoint) -> anyhow::Result<RawKafkaClient> {
-        Ok(RawKafkaClient::new(self.address_of(endpoint)?))
-    }
-
-    /// The connection of a client to `endpoint`, for what no Kafka client does.
-    pub async fn socket_on(&self, endpoint: Endpoint) -> anyhow::Result<ClientSocket> {
-        ClientSocket::connect(self.address_of(endpoint)?).await
+    /// The output of `call`, which a client waits for and the engine has to bring about by itself.
+    /// A test that would hang fails instead.
+    ///
+    /// It asks for no engine, because a client also waits for what an engine does when it stops:
+    /// the engine is gone by then.
+    pub async fn soon<T>(call: impl Future<Output = T>) -> anyhow::Result<T> {
+        let output = tokio::time::timeout(PATIENCE, call).await;
+        output.context("what the client waits for happens within ten seconds")
     }
 
     /// Watches a call of a client for a moment, and says whether it is still without an answer.
-    pub async fn leaves_unanswered<T>(&self, call: &mut JoinHandle<T>) -> bool {
+    pub async fn leaves_unanswered<T>(&self, call: impl Future<Output = T>) -> bool {
         tokio::time::timeout(A_MOMENT, call).await.is_err()
     }
 
@@ -467,149 +461,5 @@ impl EngineUnderTest {
     /// Stops the engine, and waits until every session has ended.
     pub async fn stop(self) {
         self.engine.stop().await;
-    }
-}
-
-/// The connection of a client that does what no Kafka client does.
-///
-/// | It | Where a Kafka client |
-/// |---|---|
-/// | Sends a request, and goes on without its answer. | Waits for the answer. |
-/// | Sends bytes that are no request. | Only sends requests. |
-/// | Watches the proxy close the connection. | Opens a new one. |
-///
-/// It builds the requests it sends itself, each at one fixed version, and counts their correlation IDs.
-pub struct ClientSocket {
-    stream: TcpStream,
-    /// The bytes of the proxy that no frame has taken yet.
-    frames: FrameDecoder,
-    /// How many requests the client sent, which is the correlation ID of the last one.
-    sent: i32,
-}
-
-/// A request that a [`ClientSocket`] sent, which its answer is read by.
-pub struct Sent(Request);
-
-impl ClientSocket {
-    /// The version of every Heartbeat: the first one of the API.
-    const HEARTBEAT_VERSION: i16 = 0;
-    /// The version of every Metadata request: the first one that names the controller.
-    const METADATA_VERSION: i16 = 1;
-    /// The version of every Produce: the first one with record batches.
-    const PRODUCE_VERSION: i16 = 3;
-    /// The name under which the client sends its requests.
-    const CLIENT_ID: &'static str = "order-ingest";
-
-    /// Connects to `address`.
-    pub async fn connect(address: SocketAddr) -> anyhow::Result<Self> {
-        Ok(Self {
-            stream: TcpStream::connect(address).await?,
-            frames: FrameDecoder::new(),
-            sent: 0,
-        })
-    }
-
-    /// Sends a Heartbeat of a member of `group`.
-    pub async fn send_heartbeat(&mut self, group: &GroupId) -> anyhow::Result<Sent> {
-        let group = StrBytes::from_string(group.as_str().to_owned());
-        let body = HeartbeatRequest::default().with_group_id(group.into());
-        self.send(Self::HEARTBEAT_VERSION, &body).await
-    }
-
-    /// Sends a Metadata request for every topic.
-    pub async fn send_metadata(&mut self) -> anyhow::Result<Sent> {
-        self.send(Self::METADATA_VERSION, &MetadataRequest::default()).await
-    }
-
-    /// Sends a Produce of `record` to `partition`, which asks for `acks`.
-    pub async fn send_produce(
-        &mut self,
-        partition: &TopicPartition,
-        record: Record,
-        acks: Acks,
-    ) -> anyhow::Result<Sent> {
-        let records = RecordBatch::new([record]).encode()?;
-        let data = PartitionProduceData::default()
-            .with_index(i32::from(partition.partition()))
-            .with_records(Some(records));
-        let topic = TopicProduceData::default()
-            .with_name(StrBytes::from_string(partition.topic().as_str().to_owned()).into())
-            .with_partition_data(vec![data]);
-        let body = ProduceRequest::default()
-            .with_acks(acks.value())
-            .with_topic_data(vec![topic]);
-        self.send(Self::PRODUCE_VERSION, &body).await
-    }
-
-    /// Sends the start of a frame that holds no bytes, which is no request.
-    pub async fn send_frame_of_no_bytes(&mut self) -> anyhow::Result<()> {
-        self.announce_frame_of(0).await
-    }
-
-    /// Sends the start of a frame that announces `bytes` bytes, and none of them.
-    pub async fn announce_frame_of(&mut self, bytes: u32) -> anyhow::Result<()> {
-        Ok(self.stream.write_all(&bytes.to_be_bytes()).await?)
-    }
-
-    /// Waits for the next response of the proxy, which answers `sent`.
-    ///
-    /// # Errors
-    ///
-    /// When the proxy closes the connection or sends nothing in time, and when the response answers another request.
-    pub async fn receive_answer_to(&mut self, sent: &Sent) -> anyhow::Result<()> {
-        let receiving = async {
-            loop {
-                if let Some(frame) = self.frames.next_frame()? {
-                    return anyhow::Ok(frame);
-                }
-                let read = self.stream.read_buf(self.frames.buffer_mut()).await?;
-                anyhow::ensure!(read > 0, "the proxy closed the connection before it answered");
-            }
-        };
-        let frame = tokio::time::timeout(PATIENCE, receiving).await;
-        let response = Response::decode(sent.0.api(), frame.context("the proxy answers")??)?;
-        anyhow::ensure!(
-            response.correlation_id() == sent.0.correlation_id(),
-            "the proxy answered request {} where the answer to request {} is next",
-            response.correlation_id(),
-            sent.0.correlation_id()
-        );
-        Ok(())
-    }
-
-    /// Watches the connection for a moment, in which nothing arrives and it stays open.
-    ///
-    /// # Errors
-    ///
-    /// When the proxy sends a byte or closes the connection in that moment.
-    pub async fn receive_nothing(&mut self) -> anyhow::Result<()> {
-        let read = tokio::time::timeout(A_MOMENT, self.stream.read_buf(self.frames.buffer_mut())).await;
-        anyhow::ensure!(read.is_err(), "the proxy did not stay silent: {read:?}");
-        Ok(())
-    }
-
-    /// Waits until the proxy closed the connection.
-    ///
-    /// # Errors
-    ///
-    /// When the proxy sends a byte first, and when it leaves the connection open.
-    pub async fn wait_until_closed(&mut self) -> anyhow::Result<()> {
-        let read = tokio::time::timeout(PATIENCE, self.stream.read_buf(self.frames.buffer_mut())).await;
-        let read = read.context("the proxy closes the connection")?;
-        // A connection that was reset is as closed as one that ended.
-        anyhow::ensure!(matches!(read, Ok(0) | Err(_)), "the proxy sent {read:?} bytes");
-        anyhow::ensure!(
-            self.frames.buffered() == 0,
-            "the proxy sent bytes before it closed the connection"
-        );
-        Ok(())
-    }
-
-    /// Sends `body` as the next request of the client, at `version`.
-    async fn send<B: KafkaRequest>(&mut self, version: i16, body: &B) -> anyhow::Result<Sent> {
-        self.sent += 1;
-        let request = Request::new(version, self.sent, Some(Self::CLIENT_ID), body)?;
-        self.stream.write_all(&request.frame().to_bytes()).await?;
-        Ok(Sent(request))
     }
 }

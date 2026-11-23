@@ -3,7 +3,7 @@
 use gaslightmq_backend::prelude::*;
 use gaslightmq_call::prelude::*;
 use gaslightmq_field::prelude::*;
-use gaslightmq_kafka_client_api::ProtocolConsumer;
+use gaslightmq_kafka_client_api::{ProtocolConsumer, RawKafkaClient};
 use gaslightmq_kernel::prelude::*;
 
 use crate::support::{EngineUnderTest, ScriptedBackend};
@@ -11,7 +11,7 @@ use crate::support::{EngineUnderTest, ScriptedBackend};
 #[tokio::test]
 async fn a_failure_of_the_backend_ends_the_session() -> anyhow::Result<()> {
     let mut proxy = EngineUnderTest::start(ScriptedBackend::with_three_brokers()).await?;
-    let mut client = proxy.socket_on("broker 2".parse()?).await?;
+    let client = RawKafkaClient::new(proxy.address_of("broker 2".parse()?)?);
     proxy.backend().fail_calls_with(BackendFailure::ConnectionLost {
         reason: "the broker closed it".to_owned(),
     });
@@ -19,7 +19,7 @@ async fn a_failure_of_the_backend_ends_the_session() -> anyhow::Result<()> {
     client.send_metadata().await?;
 
     // The client gets no response that the cluster did not send: it finds its connection closed.
-    client.wait_until_closed().await?;
+    assert_eq!(EngineUnderTest::soon(client.closed()).await?, Ok(()));
     let record = proxy.next_record().await?;
     assert_eq!(record.delivered(), &Delivered::ConnectionClosed);
     assert_eq!(
@@ -39,10 +39,10 @@ async fn a_failure_of_the_backend_ends_the_session() -> anyhow::Result<()> {
 async fn a_failure_ends_every_call_of_the_session_and_no_other_session() -> anyhow::Result<()> {
     let mut proxy = EngineUnderTest::start(ScriptedBackend::with_three_brokers()).await?;
     let group: GroupId = "analytics-etl".parse()?;
-    let other = proxy.client_on(Endpoint::Bootstrap)?;
+    let other = RawKafkaClient::new(proxy.address_of(Endpoint::Bootstrap)?);
     assert_eq!(other.heartbeat(group.as_str()).await, Ok(()));
     proxy.next_record().await?;
-    let mut failing = proxy.socket_on(Endpoint::Bootstrap).await?;
+    let failing = RawKafkaClient::new(proxy.address_of(Endpoint::Bootstrap)?);
     proxy.backend().hold_answers();
     failing.send_metadata().await?;
     failing.send_heartbeat(&group).await?;
@@ -54,7 +54,7 @@ async fn a_failure_ends_every_call_of_the_session_and_no_other_session() -> anyh
     proxy.backend().release_answers();
 
     // Both calls of the session end with it, and the record of each says why.
-    failing.wait_until_closed().await?;
+    assert_eq!(EngineUnderTest::soon(failing.closed()).await?, Ok(()));
     let failing_connection: ConnectionNumber = "#2".parse()?;
     for _ in 0..2 {
         let record = proxy.next_record().await?;
@@ -70,14 +70,14 @@ async fn a_failure_ends_every_call_of_the_session_and_no_other_session() -> anyh
 #[tokio::test]
 async fn an_answer_that_is_no_response_closes_the_connection() -> anyhow::Result<()> {
     let mut proxy = EngineUnderTest::start(ScriptedBackend::with_three_brokers()).await?;
-    let mut client = proxy.socket_on(Endpoint::Bootstrap).await?;
+    let client = RawKafkaClient::new(proxy.address_of(Endpoint::Bootstrap)?);
     let group: GroupId = "analytics-etl".parse()?;
     proxy.backend().answer_with_what_is_no_response();
 
     client.send_heartbeat(&group).await?;
 
     // The backend did not go away. The proxy has no answer to send, so it closes the connection itself.
-    client.wait_until_closed().await?;
+    assert_eq!(EngineUnderTest::soon(client.closed()).await?, Ok(()));
     let record = proxy.next_record().await?;
     assert_eq!(record.delivered(), &Delivered::ConnectionClosed);
     assert_eq!(
@@ -92,12 +92,12 @@ async fn an_answer_that_is_no_response_closes_the_connection() -> anyhow::Result
 #[tokio::test]
 async fn a_backend_that_never_answers_keeps_the_call_in_flight_until_the_client_gives_up() -> anyhow::Result<()> {
     let mut proxy = EngineUnderTest::start(ScriptedBackend::with_three_brokers()).await?;
-    let mut client = proxy.socket_on(Endpoint::Bootstrap).await?;
+    let client = RawKafkaClient::new(proxy.address_of(Endpoint::Bootstrap)?);
     proxy.backend().hold_answers();
 
-    client.send_metadata().await?;
+    let metadata = client.send_metadata().await?;
     proxy.backend().calls_taken(1).await?;
-    client.receive_nothing().await?;
+    assert!(proxy.leaves_unanswered(client.receive_response(&metadata)).await);
     drop(client);
 
     // The engine drops the call, and tells the backend that the connection ended.

@@ -2,17 +2,17 @@
 
 use gaslightmq_call::prelude::*;
 use gaslightmq_field::prelude::*;
-use gaslightmq_kafka_client_api::{ProduceResult, Producer, ProtocolConsumer};
+use gaslightmq_kafka_client_api::{ProduceResult, Producer, ProtocolConsumer, RawKafkaClient};
 use gaslightmq_kernel::prelude::*;
 use gaslightmq_listener::prelude::*;
-use gaslightmq_wire::{Partition, Record};
+use gaslightmq_wire::{Frame, Partition, Record};
 
 use crate::support::{EngineUnderTest, ScriptedBackend};
 
 #[tokio::test]
 async fn a_request_goes_to_the_backend_and_the_truth_comes_back() -> anyhow::Result<()> {
     let mut proxy = EngineUnderTest::start(ScriptedBackend::with_three_brokers()).await?;
-    let producer = proxy.client_on(Endpoint::Bootstrap)?;
+    let producer = RawKafkaClient::new(proxy.address_of(Endpoint::Bootstrap)?);
     let orders: TopicName = "orders.eu".parse()?;
     let partition = Partition::new(3);
 
@@ -41,7 +41,7 @@ async fn a_request_goes_to_the_backend_and_the_truth_comes_back() -> anyhow::Res
 #[tokio::test]
 async fn the_requests_of_a_connection_reach_the_backend_in_order_before_any_answer() -> anyhow::Result<()> {
     let proxy = EngineUnderTest::start(ScriptedBackend::with_three_brokers()).await?;
-    let mut client = proxy.socket_on(Endpoint::Bootstrap).await?;
+    let client = RawKafkaClient::new(proxy.address_of(Endpoint::Bootstrap)?);
     let group: GroupId = "analytics-etl".parse()?;
     proxy.backend().hold_answers();
 
@@ -52,30 +52,29 @@ async fn the_requests_of_a_connection_reach_the_backend_in_order_before_any_answ
     // The engine does not wait for one answer before it starts the next call.
     let calls_of_the_connection: [CallId; 3] = ["#1.1".parse()?, "#1.2".parse()?, "#1.3".parse()?];
     assert_eq!(proxy.backend().calls_taken(3).await?, calls_of_the_connection);
-    client.receive_nothing().await?;
+    assert!(proxy.leaves_unanswered(client.receive_response(&first)).await);
 
     // The answers leave in the order of the requests.
     proxy.backend().release_answers();
-    for sent in [&first, &second, &third] {
-        client.receive_answer_to(sent).await?;
-    }
+    EngineUnderTest::soon(client.receive_response(&first)).await??;
+    EngineUnderTest::soon(client.receive_response(&second)).await??;
+    EngineUnderTest::soon(client.receive_response(&third)).await??;
     Ok(())
 }
 
 #[tokio::test]
 async fn a_request_without_a_response_goes_to_the_backend_and_nothing_comes_back() -> anyhow::Result<()> {
     let mut proxy = EngineUnderTest::start(ScriptedBackend::with_three_brokers()).await?;
-    let mut client = proxy.socket_on(Endpoint::Bootstrap).await?;
+    let client = RawKafkaClient::new(proxy.address_of(Endpoint::Bootstrap)?);
     let partition: TopicPartition = "orders.eu/3".parse()?;
     let group: GroupId = "analytics-etl".parse()?;
 
-    client
-        .send_produce(&partition, Record::new("placed"), Acks::NONE)
-        .await?;
+    // The client asks for no acknowledgement of its records, so the cluster sends no response.
+    client.send_unacknowledged(&partition, &[Record::new("placed")]).await?;
     let heartbeat = client.send_heartbeat(&group).await?;
 
     // The first response on the connection answers the second request.
-    client.receive_answer_to(&heartbeat).await?;
+    EngineUnderTest::soon(client.receive_response(&heartbeat)).await??;
     let produce_and_heartbeat: [CallId; 2] = ["#1.1".parse()?, "#1.2".parse()?];
     assert_eq!(proxy.backend().calls_taken_so_far(), produce_and_heartbeat);
     assert_eq!(proxy.next_record().await?.delivered(), &Delivered::Nothing);
@@ -85,8 +84,8 @@ async fn a_request_without_a_response_goes_to_the_backend_and_nothing_comes_back
 #[tokio::test]
 async fn every_connection_is_a_session_of_its_own() -> anyhow::Result<()> {
     let proxy = EngineUnderTest::start(ScriptedBackend::with_three_brokers()).await?;
-    let first = proxy.client_on(Endpoint::Bootstrap)?;
-    let second = proxy.client_on("broker 2".parse()?)?;
+    let first = RawKafkaClient::new(proxy.address_of(Endpoint::Bootstrap)?);
+    let second = RawKafkaClient::new(proxy.address_of("broker 2".parse()?)?);
     let group: GroupId = "analytics-etl".parse()?;
 
     first.heartbeat(group.as_str()).await?;
@@ -113,9 +112,9 @@ async fn the_backend_hears_of_every_connection_that_it_got_a_request_of() -> any
     let proxy = EngineUnderTest::start(ScriptedBackend::with_three_brokers()).await?;
     let group: GroupId = "analytics-etl".parse()?;
     // The first connection never sends a request, and the two after it send one each.
-    let silent = proxy.socket_on(Endpoint::Bootstrap).await?;
-    let second = proxy.client_on(Endpoint::Bootstrap)?;
-    let third = proxy.client_on(Endpoint::Bootstrap)?;
+    let silent = RawKafkaClient::connect(proxy.address_of(Endpoint::Bootstrap)?).await?;
+    let second = RawKafkaClient::new(proxy.address_of(Endpoint::Bootstrap)?);
+    let third = RawKafkaClient::new(proxy.address_of(Endpoint::Bootstrap)?);
     assert_eq!(second.heartbeat(group.as_str()).await, Ok(()));
 
     drop(silent);
@@ -132,7 +131,7 @@ async fn the_backend_hears_of_every_connection_that_it_got_a_request_of() -> any
 #[tokio::test]
 async fn a_client_that_leaves_ends_its_calls_in_flight_without_an_answer() -> anyhow::Result<()> {
     let mut proxy = EngineUnderTest::start(ScriptedBackend::with_three_brokers()).await?;
-    let mut client = proxy.socket_on(Endpoint::Bootstrap).await?;
+    let client = RawKafkaClient::new(proxy.address_of(Endpoint::Bootstrap)?);
     proxy.backend().hold_answers();
     client.send_metadata().await?;
     proxy.backend().calls_taken(1).await?;
@@ -151,14 +150,17 @@ async fn a_client_that_leaves_ends_its_calls_in_flight_without_an_answer() -> an
 #[tokio::test]
 async fn bytes_that_are_no_request_close_the_connection() -> anyhow::Result<()> {
     let mut proxy = EngineUnderTest::start(ScriptedBackend::with_three_brokers()).await?;
-    let mut client = proxy.socket_on(Endpoint::Bootstrap).await?;
+    let client = RawKafkaClient::new(proxy.address_of(Endpoint::Bootstrap)?);
     proxy.backend().hold_answers();
     client.send_metadata().await?;
     proxy.backend().calls_taken(1).await?;
 
-    client.send_frame_of_no_bytes().await?;
+    // The start of a frame that holds no bytes, which is no request.
+    let frame_of_no_bytes = Frame::length_prefix(0);
+    client.send_bytes(&frame_of_no_bytes).await?;
 
-    client.wait_until_closed().await?;
+    // The proxy sends nothing back, and closes the connection.
+    assert_eq!(EngineUnderTest::soon(client.closed()).await?, Ok(()));
     // The call in flight ends with the session, and has its record.
     assert_eq!(proxy.next_record().await?.delivered(), &Delivered::Nothing);
     let its_connection: ConnectionNumber = "#1".parse()?;
@@ -172,11 +174,15 @@ async fn a_frame_over_the_limit_of_the_engine_closes_the_connection() -> anyhow:
     let mut configuration = EngineUnderTest::configuration()?;
     configuration.socket_request_max_bytes = limit;
     let proxy = EngineUnderTest::start_with(configuration, ScriptedBackend::with_three_brokers()).await?;
-    let mut client = proxy.socket_on(Endpoint::Bootstrap).await?;
+    let client = RawKafkaClient::new(proxy.address_of(Endpoint::Bootstrap)?);
+    let one_byte_over_the_limit = u32::try_from(limit.bytes())? + 1;
 
-    client.announce_frame_of(u32::try_from(limit.bytes())? + 1).await?;
+    // The start of a frame that announces that many bytes, and none of them.
+    client
+        .send_bytes(&Frame::length_prefix(one_byte_over_the_limit))
+        .await?;
 
-    client.wait_until_closed().await?;
+    assert_eq!(EngineUnderTest::soon(client.closed()).await?, Ok(()));
     assert_eq!(proxy.backend().calls_taken_so_far(), Vec::<CallId>::new());
     Ok(())
 }

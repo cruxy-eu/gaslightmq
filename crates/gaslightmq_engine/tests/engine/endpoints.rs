@@ -4,7 +4,7 @@ use gaslightmq_call::prelude::*;
 use gaslightmq_clock::TimeSpan;
 use gaslightmq_engine::prelude::*;
 use gaslightmq_field::prelude::*;
-use gaslightmq_kafka_client_api::ProtocolConsumer;
+use gaslightmq_kafka_client_api::{ProtocolConsumer, RawKafkaClient};
 use gaslightmq_kernel::prelude::*;
 use gaslightmq_lie_api::prelude::*;
 use tokio::net::TcpStream;
@@ -35,7 +35,7 @@ async fn every_endpoint_of_the_backend_listens_on_an_address_of_its_own() -> any
 async fn a_request_names_the_endpoint_it_arrived_on() -> anyhow::Result<()> {
     let mut proxy = EngineUnderTest::start(ScriptedBackend::with_three_brokers()).await?;
     let broker_2: Endpoint = "broker 2".parse()?;
-    let member = proxy.client_on(broker_2)?;
+    let member = RawKafkaClient::new(proxy.address_of(broker_2)?);
     let group: GroupId = "analytics-etl".parse()?;
 
     member.heartbeat(group.as_str()).await?;
@@ -54,10 +54,10 @@ async fn an_endpoint_that_closes_ends_its_sessions_and_refuses_connections() -> 
     let mut proxy = EngineUnderTest::start(ScriptedBackend::with_three_brokers()).await?;
     let [broker_1, broker_2, broker_3] = ScriptedBackend::brokers();
     let group: GroupId = "analytics-etl".parse()?;
-    let on_broker_3 = proxy.client_on(Endpoint::Broker(broker_3))?;
+    let on_broker_3 = RawKafkaClient::new(proxy.address_of(Endpoint::Broker(broker_3))?);
     assert_eq!(on_broker_3.heartbeat(group.as_str()).await, Ok(()));
     proxy.next_record().await?;
-    let mut on_broker_2 = proxy.socket_on(Endpoint::Broker(broker_2)).await?;
+    let on_broker_2 = RawKafkaClient::new(proxy.address_of(Endpoint::Broker(broker_2))?);
     let address = proxy.address_of(Endpoint::Broker(broker_2))?;
     proxy.backend().hold_answers();
     on_broker_2.send_metadata().await?;
@@ -66,7 +66,7 @@ async fn an_endpoint_that_closes_ends_its_sessions_and_refuses_connections() -> 
     proxy.backend().take_down(broker_2);
 
     // The session on the endpoint ends, and the record of its call says why.
-    on_broker_2.wait_until_closed().await?;
+    assert_eq!(EngineUnderTest::soon(on_broker_2.closed()).await?, Ok(()));
     let record = proxy.next_record().await?;
     assert_eq!(
         record.explanation().failure().map(Failure::message),
@@ -94,9 +94,9 @@ async fn an_endpoint_that_closes_ends_its_sessions_and_refuses_connections() -> 
 async fn an_endpoint_that_opens_gets_a_listener() -> anyhow::Result<()> {
     let proxy = EngineUnderTest::start(ScriptedBackend::with_three_brokers()).await?;
     let [broker_1, broker_2, broker_3] = ScriptedBackend::brokers();
-    let mut watching = proxy.socket_on(Endpoint::Broker(broker_2)).await?;
+    let watching = RawKafkaClient::connect(proxy.address_of(Endpoint::Broker(broker_2))?).await?;
     proxy.backend().take_down(broker_2);
-    watching.wait_until_closed().await?;
+    assert_eq!(EngineUnderTest::soon(watching.closed()).await?, Ok(()));
     drop(watching);
     assert_eq!(
         proxy.engine().endpoints(),
@@ -115,7 +115,7 @@ async fn an_endpoint_that_opens_gets_a_listener() -> anyhow::Result<()> {
         proxy.engine().address_of(Endpoint::Broker(broker_2)),
         Some(listeners[1])
     );
-    let member = proxy.client_on(Endpoint::Broker(broker_2))?;
+    let member = RawKafkaClient::new(proxy.address_of(Endpoint::Broker(broker_2))?);
     let group: GroupId = "analytics-etl".parse()?;
     assert_eq!(member.heartbeat(group.as_str()).await, Ok(()));
     Ok(())
@@ -125,15 +125,15 @@ async fn an_endpoint_that_opens_gets_a_listener() -> anyhow::Result<()> {
 async fn an_endpoint_that_closed_and_opened_again_ended_its_sessions_in_between() -> anyhow::Result<()> {
     let proxy = EngineUnderTest::start(ScriptedBackend::with_three_brokers()).await?;
     let broker_2 = ScriptedBackend::brokers()[1];
-    let mut client = proxy.socket_on(Endpoint::Broker(broker_2)).await?;
+    let client = RawKafkaClient::connect(proxy.address_of(Endpoint::Broker(broker_2))?).await?;
 
     // The broker goes down and comes back before the engine looks.
     proxy.backend().bounce(broker_2);
 
-    client.wait_until_closed().await?;
+    assert_eq!(EngineUnderTest::soon(client.closed()).await?, Ok(()));
     drop(client);
     proxy.backend().listeners_of(Endpoint::Broker(broker_2), 2).await?;
-    let member = proxy.client_on(Endpoint::Broker(broker_2))?;
+    let member = RawKafkaClient::new(proxy.address_of(Endpoint::Broker(broker_2))?);
     let group: GroupId = "analytics-etl".parse()?;
     assert_eq!(member.heartbeat(group.as_str()).await, Ok(()));
     Ok(())
@@ -160,7 +160,7 @@ async fn the_backend_hears_the_address_that_every_listener_got() -> anyhow::Resu
 async fn a_listener_that_the_backend_rejects_closes_again() -> anyhow::Result<()> {
     let proxy = EngineUnderTest::start(ScriptedBackend::with_three_brokers()).await?;
     let [broker_1, broker_2, broker_3] = ScriptedBackend::brokers();
-    let mut on_broker_3 = proxy.socket_on(Endpoint::Broker(broker_3)).await?;
+    let on_broker_3 = RawKafkaClient::connect(proxy.address_of(Endpoint::Broker(broker_3))?).await?;
     proxy.backend().reject_listeners_of(broker_2);
 
     // The endpoint closes and opens again, and the backend does not take its new listener.
@@ -168,7 +168,7 @@ async fn a_listener_that_the_backend_rejects_closes_again() -> anyhow::Result<()
     let rejected = proxy.backend().listeners_of(Endpoint::Broker(broker_2), 2).await?[1];
     // The engine is done with that listener once it follows the next change of the backend.
     proxy.backend().take_down(broker_3);
-    on_broker_3.wait_until_closed().await?;
+    assert_eq!(EngineUnderTest::soon(on_broker_3.closed()).await?, Ok(()));
 
     // No client is sent to the broker: its endpoint has no address.
     assert_eq!(
@@ -202,7 +202,7 @@ async fn an_endpoint_that_did_not_open_opens_when_the_backend_reports_again() ->
     proxy.backend().listeners_of(Endpoint::Broker(broker_3), 2).await?;
     let third_try = proxy.backend().listeners_of(Endpoint::Broker(broker_2), 3).await?[2];
     assert_eq!(proxy.engine().address_of(Endpoint::Broker(broker_2)), Some(third_try));
-    let member = proxy.client_on(Endpoint::Broker(broker_2))?;
+    let member = RawKafkaClient::new(proxy.address_of(Endpoint::Broker(broker_2))?);
     let group: GroupId = "analytics-etl".parse()?;
     assert_eq!(member.heartbeat(group.as_str()).await, Ok(()));
     Ok(())
@@ -224,7 +224,7 @@ async fn an_endpoint_that_did_not_open_is_tried_again_after_the_retry_backoff() 
 
     // One second before the backoff is over, the engine did not try again: the proxy serves its other endpoints.
     proxy.advance(TimeSpan::from_secs(29));
-    let elsewhere = proxy.client_on(Endpoint::Bootstrap)?;
+    let elsewhere = RawKafkaClient::new(proxy.address_of(Endpoint::Bootstrap)?);
     assert_eq!(elsewhere.heartbeat(group.as_str()).await, Ok(()));
     let tries = proxy.backend().listeners_of(Endpoint::Broker(broker_2), 2).await?;
     assert_eq!(tries.len(), 2);
@@ -234,7 +234,7 @@ async fn an_endpoint_that_did_not_open_is_tried_again_after_the_retry_backoff() 
     proxy.advance(TimeSpan::from_secs(1));
     let third_try = proxy.backend().listeners_of(Endpoint::Broker(broker_2), 3).await?[2];
     assert_eq!(proxy.engine().address_of(Endpoint::Broker(broker_2)), Some(third_try));
-    let member = proxy.client_on(Endpoint::Broker(broker_2))?;
+    let member = RawKafkaClient::new(proxy.address_of(Endpoint::Broker(broker_2))?);
     assert_eq!(member.heartbeat(group.as_str()).await, Ok(()));
     Ok(())
 }
@@ -247,7 +247,7 @@ async fn a_broker_that_gets_another_port_moves_its_listener() -> anyhow::Result<
     assert_eq!(proxy.address_of(broker_1)?.port(), first_port);
     assert_eq!(proxy.address_of(broker_2)?.port(), first_port + 1);
     assert_eq!(proxy.address_of(broker_3)?.port(), first_port + 2);
-    let mut on_broker_2 = proxy.socket_on(broker_2).await?;
+    let on_broker_2 = RawKafkaClient::new(proxy.address_of(broker_2)?);
     proxy.backend().hold_answers();
     on_broker_2.send_metadata().await?;
     proxy.backend().calls_taken(1).await?;
@@ -256,7 +256,7 @@ async fn a_broker_that_gets_another_port_moves_its_listener() -> anyhow::Result<
     proxy.backend().take_down(ScriptedBackend::brokers()[0]);
 
     // The session on the listener that moves ends, and the record of its call says why.
-    on_broker_2.wait_until_closed().await?;
+    assert_eq!(EngineUnderTest::soon(on_broker_2.closed()).await?, Ok(()));
     let record = proxy.next_record().await?;
     assert_eq!(
         record.explanation().failure().map(Failure::message),
@@ -279,7 +279,7 @@ async fn a_broker_that_gets_another_port_moves_its_listener() -> anyhow::Result<
         proxy.engine().address_of(broker_3)
     );
     proxy.backend().release_answers();
-    let member = proxy.client_on(broker_2)?;
+    let member = RawKafkaClient::new(proxy.address_of(broker_2)?);
     let group: GroupId = "analytics-etl".parse()?;
     assert_eq!(member.heartbeat(group.as_str()).await, Ok(()));
     Ok(())
@@ -317,10 +317,10 @@ async fn an_engine_that_stops_while_a_listener_moves_still_frees_every_address()
     let (proxy, first_port) = EngineUnderTest::start_on_a_range_of_ports().await?;
     let [broker_1, broker_2, _] = ScriptedBackend::brokers();
     // A client that keeps its side of the connection open, so the session on the listener takes a moment to end.
-    let mut on_broker_2 = proxy.socket_on(Endpoint::Broker(broker_2)).await?;
+    let on_broker_2 = RawKafkaClient::connect(proxy.address_of(Endpoint::Broker(broker_2))?).await?;
     // Broker 1 leaves the cluster, so the listeners of the brokers behind it move to the port before theirs.
     proxy.backend().take_down(broker_1);
-    on_broker_2.wait_until_closed().await?;
+    assert_eq!(EngineUnderTest::soon(on_broker_2.closed()).await?, Ok(()));
 
     // The listeners are on their way when the engine stops.
     proxy.stop().await;
