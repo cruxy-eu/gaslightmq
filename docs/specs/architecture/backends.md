@@ -93,6 +93,17 @@ to its port, on the host under which clients see the proxy.
 A backend rejects a listener that it cannot send clients to,
 such as a listener that clients cannot tell from the one of another broker.
 A rejected listener changes nothing, and the engine closes it.
+A proxy does not start with a listener that its backend rejects.
+
+An endpoint that accepts connections and has no listener gets another try:
+its address was taken, or the backend rejected its listener.
+The engine tries again after a time that its configuration sets, and whenever the backend reports its endpoints.
+
+An engine that stops lets its listeners finish the change they follow, closes every endpoint,
+and waits until every session has ended, so every address is free afterwards.
+A stop takes no longer than a time that the configuration sets.
+A backend that never says whether it takes a listener, or never lets go of a connection, does not keep a proxy from stopping:
+the engine lets go of what is left when that time is over.
 
 ### Incidents
 
@@ -192,6 +203,8 @@ The engine opens a listener for each endpoint, and gives each broker its port as
 [listeners of the environment](storage.md#brokers) say.
 A proxy does not start when those listeners do not hold the brokers of its cluster.
 When a broker gets another port, the engine moves its listener, and tells the backend the new address.
+The sessions on a listener that moves end, and the engine records that the backend closed them:
+the cluster changed, and the clients find the broker at its new address.
 
 ### Overlay
 

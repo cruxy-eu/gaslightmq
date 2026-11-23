@@ -121,6 +121,7 @@ so it ends the session like any other close.
 |---|---|
 | A [hang-up](lies-and-incidents.md#lies) fires. | Closes, and records that a lie closed it. |
 | A broker goes down. | Closes, together with every other session on that broker's endpoint. The endpoint refuses new connections until the broker is back. |
+| The listener of a broker moves to another port, because a broker joined or left the cluster. | Closes, together with every other session on that listener, and records that the backend closed it. See [discovering the brokers](../architecture/backends.md#discovering-the-brokers). |
 | A silence fires, or the broker is unresponsive. | Stays open and never answers. It closes when the client gives up. |
 | The backend has no answer for a call, because it cannot reach the cluster or lost its connection to it. | Closes, and records that the backend closed it. See [answers](../architecture/backends.md#answers). |
 | The proxy cannot keep the answers of the connection in order: the client sends bytes that are no request, or the backend sends something that is no response. | Closes, and records that the proxy closed it. See [failure inside the pipeline](../architecture/request-pipeline.md#failure-inside-the-pipeline). |

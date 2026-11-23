@@ -5,6 +5,7 @@ members = [
     "crates/gaslightmq_call",
     "crates/gaslightmq_clock",
     "crates/gaslightmq_combine",
+    "crates/gaslightmq_engine",
     "crates/gaslightmq_environment",
     "crates/gaslightmq_field",
     "crates/gaslightmq_incident",
@@ -35,6 +36,7 @@ license = "MIT OR Apache-2.0"
 
 [workspace.dependencies]
 gaslightmq_backend = { path = "crates/gaslightmq_backend" }
+gaslightmq_backend_upstream = { path = "crates/gaslightmq_backend_upstream" }
 gaslightmq_call = { path = "crates/gaslightmq_call" }
 gaslightmq_clock = { path = "crates/gaslightmq_clock" }
 gaslightmq_combine = { path = "crates/gaslightmq_combine" }
@@ -42,10 +44,12 @@ gaslightmq_environment = { path = "crates/gaslightmq_environment" }
 gaslightmq_field = { path = "crates/gaslightmq_field" }
 gaslightmq_incident = { path = "crates/gaslightmq_incident" }
 gaslightmq_kafka_client_api = { path = "crates/gaslightmq_kafka_client/api" }
+gaslightmq_kafka_client_native = { path = "crates/gaslightmq_kafka_client/native" }
 gaslightmq_kernel = { path = "crates/gaslightmq_kernel" }
 gaslightmq_lie = { path = "crates/gaslightmq_lie" }
 gaslightmq_lie_api = { path = "crates/gaslightmq_lie_api" }
 gaslightmq_lie_refusal = { path = "crates/gaslightmq_lie_refusal" }
+gaslightmq_listener = { path = "crates/gaslightmq_listener" }
 gaslightmq_overlay = { path = "crates/gaslightmq_overlay" }
 gaslightmq_pipeline = { path = "crates/gaslightmq_pipeline" }
 gaslightmq_resource = { path = "crates/gaslightmq_resource" }
