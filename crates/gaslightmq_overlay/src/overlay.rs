@@ -64,7 +64,8 @@ use crate::{AdvertisedAddresses, AdvertisedAddressesError, BrokerAddress, Destin
 ///
 /// // A client asks the listener of broker 2 for metadata. The request goes to the real broker 2.
 /// let request = Request::new(12, 7, Some("order-ingest"), &MetadataRequest::default()).expect("a request");
-/// let Forwarding::Forward { to, request: forwarded } = overlay.forward(Endpoint::Broker(BrokerId::from(2)), &request)? else {
+/// let to_broker_2 = overlay.forward(Endpoint::Broker(BrokerId::from(2)), &request);
+/// let Forwarding::Forward { to, request: forwarded } = to_broker_2.expect("a broker that the cluster named") else {
 ///     panic!("the cluster answers a Metadata request");
 /// };
 /// assert_eq!(to.to_string(), "broker 2 at kafka-2.internal:9092");
@@ -74,7 +75,7 @@ use crate::{AdvertisedAddresses, AdvertisedAddressesError, BrokerAddress, Destin
 /// let told: MetadataResponse = truth.response().body().expect("a body that decodes");
 /// let addresses: Vec<(&str, i32)> = told.brokers.iter().map(|broker| (broker.host.as_str(), broker.port)).collect();
 /// assert_eq!(addresses, [("gaslight.staging", 19092), ("gaslight.staging", 19093)]);
-/// # Ok::<(), OverlayError>(())
+/// # Ok::<(), AnswerError>(())
 /// ```
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Overlay {
@@ -145,8 +146,9 @@ impl Overlay {
     ///
     /// # Errors
     ///
-    /// [`OverlayError::UnreadableResponse`] when the body of the response does not decode.
-    pub fn learn_from(&mut self, response: &Response) -> Result<(), OverlayError> {
+    /// [`AnswerError::NotAnAnswer`] when the body of the response does not decode,
+    /// and [`AnswerError::UnwritableTruth`] when the response with the advertised addresses does not encode.
+    pub fn learn_from(&mut self, response: &Response) -> Result<(), AnswerError> {
         self.overlaid(response).map(drop)
     }
 
@@ -165,12 +167,12 @@ impl Overlay {
     ///
     /// # Errors
     ///
-    /// - [`OverlayError::UnknownBroker`] when the endpoint stands for a broker that the cluster never named.
-    /// - [`OverlayError::UnreadableRequest`] when the body of a Fetch does not decode.
-    ///   Nothing says then whether the request asks for a fetch session.
-    /// - [`OverlayError::UnwritableRequest`] when a Fetch without its session does not encode.
-    /// - [`OverlayError::UnansweredRequest`] when the answer to a Fetch that continues a session cannot be written.
-    pub fn forward(&self, endpoint: Endpoint, request: &Request) -> Result<Forwarding, OverlayError> {
+    /// - [`ForwardError::UnknownBroker`] when the endpoint stands for a broker that the cluster never named.
+    /// - [`ForwardError::Undecided`] when the body of a Fetch does not decode,
+    ///   so nothing says whether the request asks for a fetch session,
+    ///   when a Fetch without its session does not encode,
+    ///   and when the answer to a Fetch that continues a session cannot be written.
+    pub fn forward(&self, endpoint: Endpoint, request: &Request) -> Result<Forwarding, ForwardError> {
         let api = request.api();
         let to = self.destination(endpoint)?;
         if api.known() != Some(KnownApi::Fetch) {
@@ -179,14 +181,14 @@ impl Overlay {
                 request: request.clone(),
             });
         }
-        let sessionless = SessionlessFetch::of(request).map_err(|flaw| match flaw {
-            SessionlessFetchFlaw::UnreadableRequest(error) => OverlayError::UnreadableRequest {
-                api,
-                reason: error.to_string(),
-            },
-            SessionlessFetchFlaw::UnwritableRequest(error) => OverlayError::UnwritableRequest {
-                api,
-                reason: error.to_string(),
+        let sessionless = SessionlessFetch::of(request).map_err(|flaw| ForwardError::Undecided {
+            reason: match flaw {
+                SessionlessFetchFlaw::UnreadableRequest(error) => {
+                    format!("the {api} request cannot be read: {error}")
+                }
+                SessionlessFetchFlaw::UnwritableRequest(error) => {
+                    format!("the {api} request cannot be written without its fetch session: {error}")
+                }
             },
         })?;
         match sessionless {
@@ -196,9 +198,8 @@ impl Overlay {
             }),
             SessionlessFetch::Rewritten(request) => Ok(Forwarding::Forward { to, request }),
             SessionlessFetch::ContinuesSession => {
-                let unanswered = |error: SurgeryError| OverlayError::UnansweredRequest {
-                    api,
-                    reason: error.to_string(),
+                let unanswered = |error: SurgeryError| ForwardError::Undecided {
+                    reason: format!("the {api} request cannot be answered without the cluster: {error}"),
                 };
                 let no_session = Failures::whole_call(ErrorCode::FETCH_SESSION_ID_NOT_FOUND);
                 EditableRequest::decode(request, &TopicNames::new())
@@ -228,17 +229,20 @@ impl Overlay {
     ///
     /// # Errors
     ///
-    /// - [`OverlayError::ResponseOfAnotherCall`] when `upstream` answers another request.
-    /// - [`OverlayError::UnreadableResponse`] when the body of a response that the overlay reads does not decode.
+    /// - [`AnswerError::NotAnAnswer`] when `upstream` answers another request,
+    ///   and when the body of a response that the overlay reads does not decode.
     ///   Such a response may tell a real address, so it must not reach the client.
-    /// - [`OverlayError::UnwritableResponse`] when the truth does not encode.
-    pub fn answer(&mut self, request: &Request, upstream: Response) -> Result<Truth, OverlayError> {
+    /// - [`AnswerError::UnwritableTruth`] when the truth does not encode.
+    pub fn answer(&mut self, request: &Request, upstream: Response) -> Result<Truth, AnswerError> {
         if upstream.api() != request.api() || upstream.correlation_id() != request.correlation_id() {
-            return Err(OverlayError::ResponseOfAnotherCall {
-                api: request.api(),
-                correlation_id: request.correlation_id(),
-                answered_api: upstream.api(),
-                answered_correlation_id: upstream.correlation_id(),
+            return Err(AnswerError::NotAnAnswer {
+                reason: format!(
+                    "the {} response {} does not answer the {} request {}",
+                    upstream.api(),
+                    upstream.correlation_id(),
+                    request.api(),
+                    request.correlation_id()
+                ),
             });
         }
         Ok(match self.overlaid(&upstream)? {
@@ -248,7 +252,7 @@ impl Overlay {
     }
 
     /// Where a request of a client that connected to `endpoint` goes.
-    fn destination(&self, endpoint: Endpoint) -> Result<Destination, OverlayError> {
+    fn destination(&self, endpoint: Endpoint) -> Result<Destination, ForwardError> {
         match endpoint {
             Endpoint::Bootstrap => Ok(Destination::AnyBroker),
             Endpoint::Broker(broker) => match self.real.address_of(broker) {
@@ -256,14 +260,14 @@ impl Overlay {
                     broker,
                     address: address.clone(),
                 }),
-                None => Err(OverlayError::UnknownBroker { broker }),
+                None => Err(ForwardError::UnknownBroker { broker }),
             },
         }
     }
 
     /// Read `upstream`, a response of the real cluster, and return what the overlay makes of it.
     /// `None` means that the overlay changes nothing.
-    fn overlaid(&mut self, upstream: &Response) -> Result<Option<Response>, OverlayError> {
+    fn overlaid(&mut self, upstream: &Response) -> Result<Option<Response>, AnswerError> {
         let api = upstream.api();
         let mut translation = AddressTranslation::new(&self.advertised, &mut self.real);
         match api.known() {
@@ -310,62 +314,83 @@ impl Overlay {
 const FIRST_PRODUCE_VERSION_WITH_LEADERS: i16 = 10;
 
 /// Decode the body of `upstream`, let `rewrite` change it, and encode it again when `rewrite` says it changed.
-fn rewritten<B>(upstream: &Response, rewrite: impl FnOnce(&mut B) -> bool) -> Result<Option<Response>, OverlayError>
+fn rewritten<B>(upstream: &Response, rewrite: impl FnOnce(&mut B) -> bool) -> Result<Option<Response>, AnswerError>
 where
     B: Decodable + Encodable,
 {
     let api = upstream.api();
-    let mut body: B = upstream.body().map_err(|error| OverlayError::UnreadableResponse {
-        api,
-        reason: error.to_string(),
+    let mut body: B = upstream.body().map_err(|error| AnswerError::NotAnAnswer {
+        reason: format!("the {api} response of the cluster cannot be read: {error}"),
     })?;
     if !rewrite(&mut body) {
         return Ok(None);
     }
     Response::new(api, upstream.correlation_id(), &body)
         .map(Some)
-        .map_err(|error| OverlayError::UnwritableResponse {
+        .map_err(|error| AnswerError::UnwritableTruth {
             api,
             reason: error.to_string(),
         })
 }
 
-/// Why the overlay could not say what happens to a request or to a response.
+/// Why the overlay could not say what happens to a request.
 ///
-/// An error changes nothing in the overlay, except for what it had already [learned](Overlay::real_address).
+/// [`Overlay::forward`] returns it. An error changes nothing in the overlay.
 ///
-/// The list is complete, so a backend decides for every variant what becomes of the call:
-/// a new variant is a new decision for every backend.
+/// A backend does something else for each variant:
+/// a request for a broker that the cluster never named arrived on an endpoint that leads nowhere,
+/// and a request that the overlay could not decide on fails the call. The cluster gets nothing of either.
 ///
-/// A variant about a body that does not decode or encode keeps what the reader or the writer said as text, in `reason`,
-/// and its message writes that text once.
+/// ```
+/// use gaslightmq_kernel::prelude::*;
+/// use gaslightmq_overlay::prelude::*;
+///
+/// let error = ForwardError::UnknownBroker { broker: BrokerId::from(9) };
+/// assert_eq!(error.to_string(), "a request for broker 9 has nowhere to go: the cluster named no such broker");
+/// ```
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-pub enum OverlayError {
+pub enum ForwardError {
     /// The client connected to the endpoint of this broker, and the real cluster never named such a broker.
     /// Nothing says where the request goes.
     #[error("a request for broker {broker} has nowhere to go: the cluster named no such broker")]
     UnknownBroker { broker: BrokerId },
-    /// The body of the request does not decode.
-    #[error("the {api} request cannot be read: {reason}")]
-    UnreadableRequest { api: Api, reason: String },
-    /// The request without its fetch session does not encode.
-    #[error("the {api} request cannot be written without its fetch session: {reason}")]
-    UnwritableRequest { api: Api, reason: String },
-    /// The overlay answers the request itself, and that answer cannot be written.
-    #[error("the {api} request cannot be answered without the cluster: {reason}")]
-    UnansweredRequest { api: Api, reason: String },
-    /// The body of the real cluster's response does not decode.
-    #[error("the {api} response of the cluster cannot be read: {reason}")]
-    UnreadableResponse { api: Api, reason: String },
-    /// The truth does not encode.
+    /// The overlay has to read the request, and could not decide what happens to it.
+    /// `reason` names the request and says why: its body does not decode, the request without its fetch session
+    /// does not encode, or the answer that the overlay gives itself cannot be written.
+    #[error("{reason}")]
+    Undecided { reason: String },
+}
+
+/// Why the overlay made no truth of a response of the cluster.
+///
+/// [`Overlay::answer`] and [`Overlay::learn_from`] return it.
+/// An error changes nothing in the overlay, except for what it had already [learned](Overlay::real_address).
+///
+/// A backend does something else for each variant:
+/// what is no answer never reaches the client, and a truth that is not written fails the call.
+///
+/// ```
+/// use gaslightmq_overlay::prelude::*;
+/// use gaslightmq_wire::Api;
+///
+/// let error = AnswerError::UnwritableTruth {
+///     api: Api::from_wire(3, 12),
+///     reason: "response header is cut short at 3 bytes".to_owned(),
+/// };
+/// assert_eq!(
+///     error.to_string(),
+///     "the truth of the Metadata v12 response cannot be written: response header is cut short at 3 bytes"
+/// );
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum AnswerError {
+    /// What the cluster sent is no answer that the overlay can make a truth of.
+    /// `reason` names the response and says why: its body does not decode, or it answers another request.
+    ///
+    /// Such a response may tell a real address, so it must not reach the client.
+    #[error("{reason}")]
+    NotAnAnswer { reason: String },
+    /// The truth does not encode. The cluster sent nothing that is wrong. `reason` says what the writer said.
     #[error("the truth of the {api} response cannot be written: {reason}")]
-    UnwritableResponse { api: Api, reason: String },
-    /// The response belongs to another request: its API or its correlation ID differs.
-    #[error("the {answered_api} response {answered_correlation_id} does not answer the {api} request {correlation_id}")]
-    ResponseOfAnotherCall {
-        api: Api,
-        correlation_id: i32,
-        answered_api: Api,
-        answered_correlation_id: i32,
-    },
+    UnwritableTruth { api: Api, reason: String },
 }

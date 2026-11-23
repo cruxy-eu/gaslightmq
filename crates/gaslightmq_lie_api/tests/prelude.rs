@@ -96,7 +96,7 @@ mod next_to_the_others {
                 kind: LieKind::Topology,
                 api: Api::from_wire(0, 9),
             }),
-            message_of(LieError::KindTwice { kind: LieKind::Timing }),
+            message_of(LiesError::KindTwice { kind: LieKind::Timing }),
         ]
     }
 }

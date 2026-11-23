@@ -58,20 +58,12 @@ impl Refusal {
         request
             .response(body)
             .map(Effect::Answer)
-            .map_err(|error| Self::unwritable(&error))
+            .map_err(|error| Self::not_rewritten(&error))
     }
 
-    /// The reader of a message said `reason`.
-    fn unreadable(reason: &gaslightmq_wire::WireError) -> LieError {
-        LieError::Unreadable {
-            kind: LieKind::Refusal,
-            reason: reason.to_string(),
-        }
-    }
-
-    /// The writer of a message said `reason`.
-    fn unwritable(reason: &gaslightmq_wire::WireError) -> LieError {
-        LieError::Unwritable {
+    /// The reader or the writer of a message said `reason`.
+    fn not_rewritten(reason: &gaslightmq_wire::WireError) -> LieError {
+        LieError::CallNotRewritten {
             kind: LieKind::Refusal,
             reason: reason.to_string(),
         }
@@ -128,7 +120,7 @@ impl Lie for Refusal {
                 Self::answer(request, &HeartbeatResponse::default().with_error_code(error.value()))
             }
             Some(WireApiKey::Produce) => {
-                let asked: ProduceRequest = request.body().map_err(|error| Self::unreadable(&error))?;
+                let asked: ProduceRequest = request.body().map_err(|error| Self::not_rewritten(&error))?;
                 let mut left = asked.clone();
                 for topic in &mut left.topic_data {
                     let name = topic.name.clone();
@@ -149,7 +141,7 @@ impl Lie for Refusal {
                         &left,
                     )
                     .map(Effect::Forward)
-                    .map_err(|error| Self::unwritable(&error))
+                    .map_err(|error| Self::not_rewritten(&error))
                 }
             }
             _ => Err(LieError::ApiNotSupported {
@@ -172,8 +164,8 @@ impl Lie for Refusal {
                 Self::answer(request, &HeartbeatResponse::default().with_error_code(error.value()))
             }
             Some(WireApiKey::Produce) => {
-                let asked: ProduceRequest = request.body().map_err(|error| Self::unreadable(&error))?;
-                let answered: ProduceResponse = response.body().map_err(|error| Self::unreadable(&error))?;
+                let asked: ProduceRequest = request.body().map_err(|error| Self::not_rewritten(&error))?;
+                let answered: ProduceResponse = response.body().map_err(|error| Self::not_rewritten(&error))?;
                 Self::answer(request, &Self::refuse(&asked, answered, lie.target(), error))
             }
             _ => Err(LieError::ApiNotSupported {
@@ -674,7 +666,7 @@ fn a_kind_that_cannot_read_the_call_says_so() {
     assert!(
         matches!(
             error,
-            LieError::Unreadable {
+            LieError::CallNotRewritten {
                 kind: LieKind::Refusal,
                 ..
             }
@@ -684,6 +676,6 @@ fn a_kind_that_cannot_read_the_call_says_so() {
     assert!(
         error
             .to_string()
-            .starts_with("refusal cannot read the call: cannot decode response body: ")
+            .starts_with("refusal cannot rewrite the call: cannot decode response body: ")
     );
 }

@@ -72,20 +72,21 @@ impl Lies {
     ///
     /// # Errors
     ///
-    /// [`LieError::KindTwice`] when the set already tells the kind of `lie`.
+    /// [`LiesError::KindTwice`] when the set already tells the kind of `lie`.
+    /// The set stays without the second behaviour.
     ///
     /// ```
     /// use gaslightmq_lie::prelude::*;
     /// use gaslightmq_lie_api::prelude::*;
     ///
     /// let error = Lies::of_every_build().with(Silence).unwrap_err();
-    /// assert_eq!(error, LieError::KindTwice { kind: LieKind::Silence });
+    /// assert_eq!(error, LiesError::KindTwice { kind: LieKind::Silence });
     /// assert_eq!(error.to_string(), "silence is registered twice");
     /// ```
-    pub fn with(mut self, lie: impl Lie + 'static) -> Result<Self, LieError> {
+    pub fn with(mut self, lie: impl Lie + 'static) -> Result<Self, LiesError> {
         let kind = lie.kind();
         if self.tells(kind) {
-            return Err(LieError::KindTwice { kind });
+            return Err(LiesError::KindTwice { kind });
         }
         self.insert(Box::new(lie));
         Ok(self)
@@ -172,6 +173,17 @@ impl fmt::Debug for Lies {
     }
 }
 
+/// Why a behaviour does not join a set of [`Lies`].
+///
+/// [`Lies::with`] returns it. Registering a behaviour and telling a lie fail in different ways,
+/// so whoever builds the set never meets the errors of a lie.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum LiesError {
+    /// Two behaviours tell the same kind of lie, so nothing says which one the pipeline asks.
+    #[error("{kind} is registered twice")]
+    KindTwice { kind: LieKind },
+}
+
 #[cfg(test)]
 mod tests {
     use std::error::Error;
@@ -251,7 +263,7 @@ mod tests {
         assert_eq!(lies.kinds().collect::<Vec<_>>(), [LieKind::Timing, LieKind::HangUp]);
 
         let error = lies.with(Timing).unwrap_err();
-        assert_eq!(error, LieError::KindTwice { kind: LieKind::Timing });
+        assert_eq!(error, LiesError::KindTwice { kind: LieKind::Timing });
         assert_eq!(error.to_string(), "timing is registered twice");
         assert!(error.source().is_none());
     }

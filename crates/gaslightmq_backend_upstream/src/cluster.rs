@@ -8,7 +8,9 @@ use gaslightmq_backend::{BackendAnswer, BackendFailure, Endpoints, ListenerRejec
 use gaslightmq_environment::{HostName, ServerAddress};
 use gaslightmq_field::Endpoint;
 use gaslightmq_kernel::BrokerId;
-use gaslightmq_overlay::{AdvertisedAddresses, BrokerAddress, Destination, Forwarding, Overlay, OverlayError};
+use gaslightmq_overlay::{
+    AdvertisedAddresses, AnswerError, BrokerAddress, Destination, ForwardError, Forwarding, Overlay,
+};
 use gaslightmq_wire::{Request, Response};
 
 use crate::error::UpstreamBackendError;
@@ -235,17 +237,9 @@ impl Cluster {
             return Err(BackendFailure::NoSuchEndpoint { endpoint });
         }
         let forwarding = self.overlay.forward(endpoint, request).map_err(|error| match error {
-            OverlayError::UnknownBroker { .. } => BackendFailure::NoSuchEndpoint { endpoint },
+            ForwardError::UnknownBroker { .. } => BackendFailure::NoSuchEndpoint { endpoint },
             // The overlay could not make the request to forward, or the answer it gives itself.
-            // The variants about a response never come from `forward`, and they build no response either.
-            OverlayError::UnreadableRequest { .. }
-            | OverlayError::UnwritableRequest { .. }
-            | OverlayError::UnansweredRequest { .. }
-            | OverlayError::UnreadableResponse { .. }
-            | OverlayError::UnwritableResponse { .. }
-            | OverlayError::ResponseOfAnotherCall { .. } => BackendFailure::ResponseNotBuilt {
-                reason: error.to_string(),
-            },
+            ForwardError::Undecided { reason } => BackendFailure::ResponseNotBuilt { reason },
         })?;
         match forwarding {
             Forwarding::Answer(response) => Ok(Route::Answer(response)),
@@ -270,28 +264,13 @@ impl Cluster {
     /// | Cannot read the response, or finds that it answers another request. | [`BackendAnswer::NotAResponse`]. The response may tell a real address, so it goes nowhere. |
     /// | Cannot write the truth. | [`BackendFailure::ResponseNotBuilt`] |
     pub(crate) fn truth(&mut self, request: &Request, upstream: Response) -> BackendAnswer {
-        let error = match self.overlay.answer(request, upstream) {
-            Ok(truth) => return truth.into(),
-            Err(error) => error,
-        };
-        match error {
-            OverlayError::UnwritableResponse { .. } => BackendFailure::ResponseNotBuilt {
-                reason: error.to_string(),
+        match self.overlay.answer(request, upstream) {
+            Ok(truth) => truth.into(),
+            Err(AnswerError::NotAnAnswer { reason }) => BackendAnswer::NotAResponse { reason },
+            Err(unwritable @ AnswerError::UnwritableTruth { .. }) => BackendFailure::ResponseNotBuilt {
+                reason: unwritable.to_string(),
             }
             .into(),
-            OverlayError::UnreadableResponse { .. } | OverlayError::ResponseOfAnotherCall { .. } => {
-                BackendAnswer::NotAResponse {
-                    reason: error.to_string(),
-                }
-            }
-            // The overlay reads no request to make the truth, so these never come.
-            // A response that it made no truth of goes nowhere all the same.
-            OverlayError::UnknownBroker { .. }
-            | OverlayError::UnreadableRequest { .. }
-            | OverlayError::UnwritableRequest { .. }
-            | OverlayError::UnansweredRequest { .. } => BackendAnswer::NotAResponse {
-                reason: error.to_string(),
-            },
         }
     }
 }

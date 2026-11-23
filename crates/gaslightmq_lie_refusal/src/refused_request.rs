@@ -97,7 +97,7 @@ impl RefusedRequest {
     ///   and the response to `asked` has no place for an error code.
     ///   A Metadata request for every topic is one, up to version 12.
     ///   A response without an error would tell the client that the call succeeded with nothing in it.
-    /// - [`LieError::Unwritable`] when the response to `asked` does not encode.
+    /// - [`LieError::CallNotRewritten`] when the response to `asked` does not encode.
     ///
     /// ```
     /// use gaslightmq_field::prelude::*;
@@ -165,13 +165,13 @@ impl RefusedRequest {
     ///
     /// # Errors
     ///
-    /// [`LieError::Unwritable`] when the request to forward or the response does not encode.
+    /// [`LieError::CallNotRewritten`] when the request to forward or the response does not encode.
     pub fn before_forwarding(&self) -> Result<Effect, LieError> {
         if self.refuses_whole_call() {
             return self.answer();
         }
         let left = self.asked.without(self.failures.parts().map(|(part, _)| part));
-        match left.map_err(|error| untold(self.api(), error))? {
+        match left.map_err(|error| not_rewritten(&error))? {
             Remainder::Rest(rest) => Ok(Effect::Forward(rest)),
             Remainder::Nothing => self.answer(),
             // The request names every refused part, so one of them always leaves it.
@@ -201,13 +201,12 @@ impl RefusedRequest {
     ///
     /// # Errors
     ///
-    /// [`LieError::ResponseOfAnotherCall`] when `response` answers another request,
-    /// [`LieError::Unreadable`] when its body does not decode,
-    /// and [`LieError::Unwritable`] when the result does not encode.
+    /// [`LieError::CallNotRewritten`] when `response` answers another request, when its body does not decode,
+    /// and when the result does not encode.
     pub fn after_response(&self, response: &Response) -> Result<Response, LieError> {
         self.asked
             .merge(response, &self.failures)
-            .map_err(|error| untold(self.api(), error))
+            .map_err(|error| not_rewritten(&error))
     }
 
     /// Asks to answer with the response that nobody asks a backend for.
@@ -219,7 +218,7 @@ impl RefusedRequest {
     fn failed_with(&self, failures: &Failures) -> Result<Response, LieError> {
         self.asked
             .error_response(failures)
-            .map_err(|error| untold(self.api(), error))
+            .map_err(|error| not_rewritten(&error))
     }
 
     /// Checks that the request names every part of `parts`.
@@ -260,33 +259,14 @@ impl RefusedRequest {
     }
 }
 
-/// Why the refusal of a request of `api` could not be told, in the words of the contract.
+/// Why the refusal could not be told, in the words of the contract:
+/// the request to forward or the response could not be made, and `error` says what stood in the way.
 ///
-/// The request to forward or the response could not be made, and `error` says what stood in the way.
-fn untold(api: Api, error: SurgeryError) -> LieError {
-    let kind = LieKind::Refusal;
-    match error {
-        SurgeryError::UnreadableRequest { reason, .. } | SurgeryError::UnreadableResponse { reason, .. } => {
-            LieError::Unreadable { kind, reason }
-        }
-        SurgeryError::UnwritableRequest { reason, .. } | SurgeryError::UnwritableResponse { reason, .. } => {
-            LieError::Unwritable { kind, reason }
-        }
-        SurgeryError::ResponseOfAnotherCall {
-            api,
-            correlation_id,
-            answered_api,
-            answered_correlation_id,
-        } => LieError::ResponseOfAnotherCall {
-            kind,
-            api,
-            correlation_id,
-            answered_api,
-            answered_correlation_id,
-        },
-        // Neither can come from a refused request:
-        // a decoded request has messages, and a refused request rules out that nothing failed.
-        SurgeryError::UnknownApi { .. } | SurgeryError::NothingFailed { .. } => LieError::ApiNotSupported { kind, api },
+/// Whoever asked the lie does the same for every such failure, so the contract takes what `error` says as text.
+fn not_rewritten(error: &SurgeryError) -> LieError {
+    LieError::CallNotRewritten {
+        kind: LieKind::Refusal,
+        reason: error.to_string(),
     }
 }
 
@@ -294,65 +274,34 @@ fn untold(api: Api, error: SurgeryError) -> LieError {
 mod tests {
     use super::*;
 
-    const KIND: LieKind = LieKind::Refusal;
-
     #[test]
-    fn what_stood_in_the_way_becomes_an_error_of_the_contract_and_keeps_its_reason() {
+    fn what_stood_in_the_way_is_the_reason_that_the_call_is_not_rewritten() {
         let api = Api::from_wire(0, 9);
-        let reason = || "unknown api key 0".to_owned();
-        let unreadable = LieError::Unreadable {
-            kind: KIND,
-            reason: reason(),
+        let unwritable = SurgeryError::UnwritableResponse {
+            api,
+            reason: "unknown api key 0".to_owned(),
         };
-        let unwritable = LieError::Unwritable {
-            kind: KIND,
-            reason: reason(),
-        };
-
-        let cases = [
-            (SurgeryError::UnreadableRequest { api, reason: reason() }, &unreadable),
-            (SurgeryError::UnreadableResponse { api, reason: reason() }, &unreadable),
-            (SurgeryError::UnwritableRequest { api, reason: reason() }, &unwritable),
-            (SurgeryError::UnwritableResponse { api, reason: reason() }, &unwritable),
-        ];
-        for (failed, told) in cases {
-            assert_eq!(&untold(api, failed), told);
-        }
-        assert_eq!(
-            unwritable.to_string(),
-            "refusal cannot rewrite the call: unknown api key 0"
-        );
-    }
-
-    #[test]
-    fn a_response_of_another_call_stays_one() {
-        let api = Api::from_wire(0, 9);
-        let answered_api = Api::from_wire(1, 11);
-        let another = SurgeryError::ResponseOfAnotherCall {
+        let of_another_call = SurgeryError::ResponseOfAnotherCall {
             api,
             correlation_id: 7,
-            answered_api,
+            answered_api: Api::from_wire(1, 11),
             answered_correlation_id: 8,
         };
 
         assert_eq!(
-            untold(api, another),
-            LieError::ResponseOfAnotherCall {
-                kind: KIND,
-                api,
-                correlation_id: 7,
-                answered_api,
-                answered_correlation_id: 8,
+            not_rewritten(&unwritable),
+            LieError::CallNotRewritten {
+                kind: LieKind::Refusal,
+                reason: unwritable.to_string(),
             }
         );
-    }
-
-    #[test]
-    fn a_failure_that_a_refused_request_rules_out_says_that_the_api_is_not_supported() {
-        let api = Api::from_wire(0, 9);
-
-        for ruled_out in [SurgeryError::NothingFailed { api }, SurgeryError::UnknownApi { api }] {
-            assert_eq!(untold(api, ruled_out), LieError::ApiNotSupported { kind: KIND, api });
-        }
+        assert_eq!(
+            not_rewritten(&unwritable).to_string(),
+            "refusal cannot rewrite the call: the Produce v9 response cannot be written: unknown api key 0"
+        );
+        assert_eq!(
+            not_rewritten(&of_another_call).to_string(),
+            "refusal cannot rewrite the call: the Fetch v11 response 8 does not answer the Produce v9 request 7"
+        );
     }
 }

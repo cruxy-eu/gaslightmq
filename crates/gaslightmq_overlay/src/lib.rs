@@ -46,7 +46,7 @@
 //! let upstream = forwarded.response(&found).expect("a response");
 //!
 //! // The truth sends the client to the listener, and the overlay knows where the real broker is.
-//! let truth = overlay.answer(&request, upstream)?;
+//! let truth = overlay.answer(&request, upstream).expect("an answer to the request");
 //! let told: FindCoordinatorResponse = truth.response().body().expect("a body that decodes");
 //! assert_eq!((told.coordinators[0].host.as_str(), told.coordinators[0].port), ("gaslight.staging", 19093));
 //! assert!(truth.upstream().is_some());
@@ -61,7 +61,7 @@
 //! };
 //! assert_eq!(to.to_string(), "broker 2 at kafka-2.internal:9092");
 //! assert_eq!(sessionless.body::<FetchRequest>().expect("a body that decodes").session_epoch, -1);
-//! # Ok::<(), OverlayError>(())
+//! # Ok::<(), ForwardError>(())
 //! ```
 //!
 //! # The overlay is part of the truth
@@ -152,15 +152,18 @@
 //! | [`BrokerAddress`] | [`BrokerAddressError`] | The host is empty, too long or has whitespace, the port is zero, or a text is not a host and a port. |
 //! | [`AdvertisedAddresses`] | [`AdvertisedAddressesError`] | Two brokers would share one address. |
 //!
-//! What the overlay does has one error, [`OverlayError`]:
-//! a request names a broker the cluster never named, a body does not decode or encode,
-//! or a response answers another request.
+//! The two things the overlay does fail in different ways, so each has an error of its own.
+//! A variant is what the backend decides on, and the rest is text in its `reason`.
+//!
+//! | What failed | Error | What is wrong |
+//! |---|---|---|
+//! | [`Overlay::forward`] | [`ForwardError`] | The request names a broker the cluster never named, or the overlay could not decide what happens to a request that it has to read. |
+//! | [`Overlay::answer`], [`Overlay::learn_from`] | [`AnswerError`] | What the cluster sent is no answer, or the truth cannot be written. |
 //!
 //! The message of every error is complete, so no error has a [`source`](std::error::Error::source).
-//! A variant about a body that does not decode or encode keeps what the reader or the writer said as text,
-//! in a field `reason`, and writes it once, after what the overlay was doing.
+//! What the reader or the writer of a message said is part of the `reason`, once, after what the overlay was doing.
 //!
-//! An [`OverlayError`] never hides a real address.
+//! An [`AnswerError`] never hides a real address.
 //! When the overlay cannot read a response that tells addresses, it returns the error and no truth,
 //! and the backend must not pass that response on.
 //!
@@ -186,7 +189,7 @@ mod translation;
 pub use address::{BrokerAddress, BrokerAddressError};
 pub use advertised::{AdvertisedAddresses, AdvertisedAddressesError};
 pub use forwarding::{Destination, Forwarding};
-pub use overlay::{Overlay, OverlayError};
+pub use overlay::{AnswerError, ForwardError, Overlay};
 
 /// Every item of this crate, with its error.
 ///
@@ -205,7 +208,7 @@ pub use overlay::{Overlay, OverlayError};
 pub mod prelude {
     #[doc(no_inline)]
     pub use crate::{
-        AdvertisedAddresses, AdvertisedAddressesError, BrokerAddress, BrokerAddressError, Destination, Forwarding,
-        Overlay, OverlayError,
+        AdvertisedAddresses, AdvertisedAddressesError, AnswerError, BrokerAddress, BrokerAddressError, Destination,
+        ForwardError, Forwarding, Overlay,
     };
 }

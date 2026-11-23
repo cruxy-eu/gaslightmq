@@ -42,8 +42,8 @@ mod next_to_the_others {
                 transport.address(),
                 transport.endpoint()
             );
-            let received: std::result::Result<gaslightmq_wire::Frame, ListenerError> = transport.receive().await;
-            let sent: std::result::Result<(), ListenerError> = transport.send(&[0, 0, 0, 1, 0]).await;
+            let received: std::result::Result<gaslightmq_wire::Frame, ReceiveError> = transport.receive().await;
+            let sent: std::result::Result<(), SendError> = transport.send(&[0, 0, 0, 1, 0]).await;
             let _reported = self.0.send(format!("{facts}: {received:?}, {sent:?}"));
         }
     }
@@ -96,10 +96,11 @@ mod next_to_the_others {
                 address: "127.0.0.1:9092".parse().expect("an address"),
                 reason: "address in use".to_owned(),
             }),
-            message_of(ListenerError::FrameCutShort { buffered: 6 }),
-            message_of(ListenerError::ConnectionLost {
+            message_of(ReceiveError::FrameCutShort { buffered: 6 }),
+            message_of(ReceiveError::ConnectionLost {
                 reason: "reset by peer".to_owned(),
             }),
+            message_of(SendError::ListenerClosed),
         ]
     }
 }
@@ -123,6 +124,7 @@ fn the_prelude_names_the_error_of_every_type() {
             "cannot listen on 127.0.0.1:9092: address in use",
             "the client closed the connection 6 bytes into a frame",
             "the connection to the client broke: reset by peer",
+            "the listener of the connection closed",
         ]
     );
 }

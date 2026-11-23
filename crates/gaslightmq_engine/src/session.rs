@@ -10,7 +10,7 @@ use futures::stream::FuturesUnordered;
 use gaslightmq_backend::{Backend, BackendAnswer, BackendRequest};
 use gaslightmq_call::CallId;
 use gaslightmq_clock::Instant;
-use gaslightmq_listener::{ConnectionHandler, ListenerError, Transport};
+use gaslightmq_listener::{ConnectionHandler, ReceiveError, SendError, Transport};
 use gaslightmq_pipeline::{Input, Output, Outputs, Pipeline, SharedBySessions};
 use gaslightmq_rule::Snapshot;
 use gaslightmq_session::{Connection, ConnectionOrdinal, ConnectionOrdinals};
@@ -149,7 +149,7 @@ enum Happened {
     Published(Arc<Snapshot>),
     Answered(CallId, BackendAnswer),
     TimersDue,
-    Received(Result<Frame, ListenerError>),
+    Received(Result<Frame, ReceiveError>),
 }
 
 /// How a session ends.
@@ -235,22 +235,18 @@ impl<'a, B: Backend, C: WaitableClock> Session<'a, B, C> {
                 None
             }
             Happened::Received(Ok(frame)) => self.report(Input::ClientBytes(&frame.to_bytes())).await,
-            Happened::Received(Err(ListenerError::NotAFrame { .. })) => {
+            Happened::Received(Err(ReceiveError::NotAFrame { .. })) => {
                 let ending = self.report(Input::ClientBytes(&NO_REQUEST)).await;
                 // The connection is of no use, whatever the pipeline made of it.
                 ending.or(Some(Ending::Closed))
             }
-            Happened::Received(Err(ListenerError::ListenerClosed)) => match self.endpoint_ended() {
+            Happened::Received(Err(ReceiveError::ListenerClosed)) => match self.endpoint_ended() {
                 Some(input) => self.report(input).await.or(Some(Ending::Closed)),
                 None => Some(Ending::EngineStopped),
             },
             Happened::Received(Err(
                 // The client closed the connection, or the connection broke: no further frame comes.
-                ListenerError::ClientClosed
-                | ListenerError::FrameCutShort { .. }
-                | ListenerError::ConnectionLost { .. }
-                // cannot come from receiving a frame: only a listener that opens says so.
-                | ListenerError::CannotListen { .. },
+                ReceiveError::ClientClosed | ReceiveError::FrameCutShort { .. } | ReceiveError::ConnectionLost { .. },
             )) => {
                 self.report(Input::ClientClosed).await;
                 Some(Ending::ClientLeft)
@@ -279,23 +275,15 @@ impl<'a, B: Backend, C: WaitableClock> Session<'a, B, C> {
                     Ok(()) => {}
                     // The send may have left a part of its bytes behind, so the connection takes no further response:
                     // the session ends here, and what the pipeline still asks to send stays unsent.
-                    Err(ListenerError::ListenerClosed) => match self.endpoint_ended() {
+                    Err(SendError::ListenerClosed) => match self.endpoint_ended() {
                         Some(input) => {
                             outputs.extend(self.handle(input));
                             ending = Some(Ending::Closed);
                         }
                         None => ending = Some(Ending::EngineStopped),
                     },
-                    Err(
-                        // The connection takes no bytes, so the client is gone.
-                        ListenerError::ConnectionLost { .. }
-                        // cannot come from sending bytes: a transport says these of the frames it receives,
-                        // and a listener of the address it opens on.
-                        | ListenerError::ClientClosed
-                        | ListenerError::FrameCutShort { .. }
-                        | ListenerError::NotAFrame { .. }
-                        | ListenerError::CannotListen { .. },
-                    ) => {
+                    // The connection takes no bytes, so the client is gone.
+                    Err(SendError::ConnectionLost { .. }) => {
                         outputs.extend(self.handle(Input::ClientClosed));
                         ending = Some(Ending::ClientLeft);
                     }
