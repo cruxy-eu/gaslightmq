@@ -256,7 +256,7 @@ h3.sub{color:var(--t2);font-size:13px;font-weight:600;margin:22px 0 10px}
           <div class="card io">
             <h4>Upstream <span class="tag io">backend_upstream · async</span></h4>
             <p>Connections to the real cluster.</p>
-            <div class="inner"><b>overlay</b> <span class="tag sans">sans-IO</span><p>Address translation and emulated incidents.</p></div>
+            <div class="inner"><b>overlay</b> <span class="tag sans">sans-IO</span><p>Address translation, emulated incidents and sessionless Fetch.</p></div>
             <div class="out">→ TCP → real Kafka cluster</div>
           </div>
           <div class="card io">
@@ -393,7 +393,7 @@ const CRATES = [
   ["world","World and backends","sans",0,6,"The World: its state, world definitions, how each incident changes it, and where each topic's records come from.",["wire","incident","clock","virtual_log"]],
   ["world_seed","World and backends","sans",0,6,"Seeding a world definition from a recording.",["world","index","recording"]],
   ["virtual_log","World and backends","sans",0,6,"Virtual records: the record at a partition and offset as a pure function of the definition.",["wire","clock","schema"]],
-  ["overlay","World and backends","sans",0,3,"The Upstream overlay: address translation, emulated incidents and sessionless Fetch. Rewrites requests and responses, opens no connection.",["wire","wire_edit","incident"]],
+  ["overlay","World and backends","sans",0,3,"The Upstream overlay: address translation, emulated incidents and sessionless Fetch. Rewrites requests and responses, opens no connection.",["backend","wire","wire_edit","incident","field","kernel"]],
   ["schema","World and backends","sans",0,6,"Record formats and schemas: encode and decode JSON, Avro and Protobuf, one feature per format.",[]],
 
   ["traffic","Observation","sans",0,4,"The live window of recent calls, subscriptions by selector, and statistics per rule and per API.",["call","selector"]],

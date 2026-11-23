@@ -141,10 +141,11 @@ The overlay is what the Upstream backend lays over the real cluster's answers.
 It holds two things:
 
 - **Address translation.**
-  The overlay rewrites broker addresses in Metadata and `FindCoordinator` responses,
+  The overlay rewrites the broker addresses in every response that tells one,
   so clients connect to the proxy's listeners.
   It is always on.
   Without it, clients would bypass GaslightMQ after bootstrap.
+  See [address translation](#address-translation).
 - **Emulated incidents.**
   An incident stays in the overlay for as long as it is in force.
 
@@ -154,6 +155,31 @@ It takes no part in conflicts between lies,
 and rules cannot tell an emulated incident from a real one.
 A call keeps the real cluster's answer next to the truth when the overlay changed it,
 so the UI can show both.
+
+### Address translation
+
+A client learns the address of a broker from the cluster's answers.
+The overlay writes the address of the broker's listener wherever an answer tells the address of a broker.
+
+| Response | Tells the address of |
+|---|---|
+| Metadata, `DescribeCluster` | Every broker. |
+| `FindCoordinator` | The coordinator of each key. |
+| Produce, Fetch, `ShareFetch`, `ShareAcknowledge` | The new leader of a partition that moved. |
+
+The overlay changes the host and the port.
+Broker IDs, racks, leaders and replicas stay as the cluster tells them.
+A `DescribeCluster` answer that lists controllers passes unchanged, because a controller is no broker and has no listener.
+
+The translation works both ways.
+A request that arrives on the listener of a broker goes to that broker.
+A request that arrives on the bootstrap listener goes to any broker.
+The overlay learns the real address of each broker from the same answers, before it rewrites them.
+
+A cluster can name a broker that has no listener yet, such as a broker that just joined.
+A client never learns the real address of that broker.
+Metadata and `DescribeCluster` leave the broker out, and a coordinator on it reads as `COORDINATOR_NOT_AVAILABLE`.
+The backend opens a listener for the broker, and the next answer names it.
 
 ### Emulating incidents
 
@@ -200,7 +226,12 @@ so most Fetch requests would not carry the fields selectors test.
 The Upstream backend makes every Fetch sessionless before it forwards it.
 The real broker never creates a fetch session,
 and the client keeps sending full Fetch requests.
+A Fetch response always says that it is part of no session.
 The Simulated backend never grants a fetch session.
+
+A Fetch that continues a session only names what changed in it, so the backend cannot forward it.
+The backend answers it with `FETCH_SESSION_ID_NOT_FOUND`, as a broker does that dropped the session.
+The client then sends a full Fetch.
 
 The cost is bandwidth: a client that reads many partitions sends larger Fetch requests.
 

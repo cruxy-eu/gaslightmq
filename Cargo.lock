@@ -378,6 +378,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "gaslightmq_overlay"
+version = "0.1.0"
+dependencies = [
+ "bytes",
+ "gaslightmq_backend",
+ "gaslightmq_field",
+ "gaslightmq_incident",
+ "gaslightmq_kernel",
+ "gaslightmq_wire",
+ "gaslightmq_wire_edit",
+]
+
+[[package]]
 name = "gaslightmq_pipeline"
 version = "0.1.0"
 dependencies = [

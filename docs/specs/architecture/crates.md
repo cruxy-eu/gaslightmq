@@ -145,6 +145,7 @@ flowchart BT
   O --> V
   O --> T
   W --> V
+  W --> T
   W --> O
   F --> T
   F --> S
@@ -233,7 +234,7 @@ Every other crate speaks in them.
 | `world_seed` | Seeding a world definition from a recording. | `world`, `index`, `recording` |
 | `sim_log` | Produce, Fetch, offsets and idempotent producers against the World. | `world`, `wire` |
 | `sim_group` | Group coordination against the World, for the classic and the consumer protocol. | `world`, `wire`, `clock` |
-| `overlay` | The Upstream [overlay](backends.md#overlay): address translation, emulated incidents and sessionless Fetch. It rewrites requests and responses, and it opens no connection. | `wire`, `wire_edit`, `incident` |
+| `overlay` | The Upstream [overlay](backends.md#overlay): address translation, emulated incidents and sessionless Fetch. It rewrites requests and responses, and it opens no connection. | `backend`, `wire`, `wire_edit`, `incident`, `field`, `kernel` |
 | `broker` | The broker instance as a [state machine](#the-broker-is-a-state-machine-too): it routes each request to a `sim_*` crate, applies incidents to the World and owns the virtual clock. It speaks the messages of the backend contract, so a proxy reaches it without a socket. | `backend`, `world`, `sim_log`, `sim_group`, `clock` |
 | `backend_upstream` | The Upstream backend: connections to the real cluster, with the overlay around them. This crate does IO. | `backend`, `overlay` |
 
