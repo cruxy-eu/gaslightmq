@@ -92,13 +92,10 @@ async fn an_answer_with_the_id_of_another_request_ends_the_connection_as_no_resp
 
     let answer = soon(backend.call(on(7, 1, broker(1), heartbeat(1)))).await;
 
-    let BackendAnswer::NotAResponse { error } = answer else {
+    let BackendAnswer::NotAResponse { reason } = answer else {
         panic!("the broker answered another request: {answer:?}");
     };
-    assert_eq!(
-        error.to_string(),
-        "cannot decode response header: correlation ID 999 does not answer the Heartbeat v4 request 1"
-    );
+    assert_eq!(reason, "correlation ID 999 does not answer the Heartbeat v4 request 1");
     // Nothing says any more which response answers which request.
     let later = soon(backend.call(on(7, 2, broker(1), heartbeat(2)))).await;
     assert!(matches!(later, BackendAnswer::NotAResponse { .. }), "{later:?}");
@@ -144,15 +141,10 @@ async fn a_response_over_the_limit_is_no_response() {
 
     let answer = soon(backend.call(on(7, 1, broker(1), heartbeat(1)))).await;
 
-    assert!(
-        matches!(
-            answer,
-            BackendAnswer::NotAResponse {
-                error: WireError::FrameTooLarge { len: 256, max: 64 }
-            }
-        ),
-        "{answer:?}"
-    );
+    let BackendAnswer::NotAResponse { reason } = answer else {
+        panic!("the broker announced more than the backend takes: {answer:?}");
+    };
+    assert_eq!(reason, WireError::FrameTooLarge { len: 256, max: 64 }.to_string());
 }
 
 #[tokio::test]

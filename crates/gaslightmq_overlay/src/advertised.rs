@@ -18,21 +18,22 @@ use crate::BrokerAddress;
 /// use gaslightmq_kernel::prelude::*;
 /// use gaslightmq_overlay::prelude::*;
 ///
+/// let at = |address: &str| address.parse::<BrokerAddress>().expect("an address");
 /// let advertised = AdvertisedAddresses::new()
-///     .with(BrokerId::from(1), "gaslight.staging:19092".parse()?)?
-///     .with(BrokerId::from(2), "gaslight.staging:19093".parse()?)?;
+///     .with(BrokerId::from(1), at("gaslight.staging:19092"))?
+///     .with(BrokerId::from(2), at("gaslight.staging:19093"))?;
 ///
-/// assert_eq!(advertised.address_of(BrokerId::from(2)), Some(&"gaslight.staging:19093".parse()?));
-/// assert_eq!(advertised.broker_at(&"gaslight.staging:19092".parse()?), Some(BrokerId::from(1)));
+/// assert_eq!(advertised.address_of(BrokerId::from(2)), Some(&at("gaslight.staging:19093")));
+/// assert_eq!(advertised.broker_at(&at("gaslight.staging:19092")), Some(BrokerId::from(1)));
 /// assert_eq!(advertised.address_of(BrokerId::from(3)), None);
 ///
 /// // Broker 3 cannot stand at the address of broker 2.
-/// let shared = advertised.with(BrokerId::from(3), "gaslight.staging:19093".parse()?);
+/// let shared = advertised.with(BrokerId::from(3), at("gaslight.staging:19093"));
 /// assert_eq!(
 ///     shared.unwrap_err().to_string(),
 ///     "broker 3 cannot be advertised at gaslight.staging:19093: broker 2 is advertised there",
 /// );
-/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// # Ok::<(), AdvertisedAddressesError>(())
 /// ```
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct AdvertisedAddresses {
@@ -123,7 +124,6 @@ impl AdvertisedAddresses {
 
 /// Why [`AdvertisedAddresses`] cannot hold an address.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-#[non_exhaustive]
 pub enum AdvertisedAddressesError {
     /// Another broker is advertised at the address already.
     #[error("broker {broker} cannot be advertised at {address}: broker {advertised_there} is advertised there")]

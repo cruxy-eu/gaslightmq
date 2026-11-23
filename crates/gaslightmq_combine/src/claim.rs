@@ -152,7 +152,6 @@ impl TryFrom<&TargetedLie> for Claim {
 /// assert_eq!(error.to_string(), "a progress lie rewrites, and its definition names no aspect");
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-#[non_exhaustive]
 pub enum ClaimError {
     /// The lie is a rewrite, and its definition names no aspect.
     /// Rewrites conflict per aspect, so nothing says what this one conflicts with.

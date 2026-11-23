@@ -189,7 +189,6 @@ text_form!(TopicId, TopicIdError);
 
 /// Why bytes or a text are not a [`TopicId`].
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-#[non_exhaustive]
 pub enum TopicIdError {
     /// The text has no characters.
     #[error("topic ID is empty")]

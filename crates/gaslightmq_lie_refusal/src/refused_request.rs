@@ -233,7 +233,7 @@ impl RefusedRequest {
                 api: self.api(),
                 parts,
             }),
-            Err(_) => Ok(()),
+            Err(PartSetError::Empty) => Ok(()),
         }
     }
 
@@ -284,9 +284,9 @@ fn untold(api: Api, error: SurgeryError) -> LieError {
             answered_api,
             answered_correlation_id,
         },
-        // A decoded request has messages, and a refused request rules out that nothing failed.
-        // The request has no other failure today.
-        _ => LieError::ApiNotSupported { kind, api },
+        // Neither can come from a refused request:
+        // a decoded request has messages, and a refused request rules out that nothing failed.
+        SurgeryError::UnknownApi { .. } | SurgeryError::NothingFailed { .. } => LieError::ApiNotSupported { kind, api },
     }
 }
 

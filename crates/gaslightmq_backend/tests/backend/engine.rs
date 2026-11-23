@@ -81,10 +81,9 @@ impl<'a, B: Backend> Session<'a, B> {
                             response: truth.into_response(),
                         },
                         BackendAnswer::NoResponse => continue,
-                        BackendAnswer::NotAResponse { error } => Input::BackendAnswerUnreadable {
-                            call,
-                            error: error.to_string(),
-                        },
+                        BackendAnswer::NotAResponse { reason } => {
+                            Input::BackendAnswerUnreadable { call, error: reason }
+                        }
                         BackendAnswer::Failed(failure) => Input::BackendFailed {
                             call,
                             failure: failure.to_string(),

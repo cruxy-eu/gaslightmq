@@ -94,7 +94,6 @@ impl fmt::Display for TargetedLie {
 /// Only reading returns it, with the `serde` feature.
 /// [`TargetedLie::new`] takes every lie and every target.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-#[non_exhaustive]
 pub enum TargetedLieError {
     /// The target is a set of parts, and a lie of this kind always targets the whole call.
     /// [`TargetedLie::new`] gives such a lie the whole call instead.

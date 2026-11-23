@@ -65,7 +65,6 @@ impl SchemaRegistry {
 
 /// Why what a file holds is not a [`SchemaRegistry`].
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-#[non_exhaustive]
 pub enum SchemaRegistryError {
     /// The registry has neither an address to listen on nor a URL.
     #[error("a schema registry has `listen` for the built-in one, or `url` for the real one")]
@@ -140,9 +139,12 @@ impl FromStr for SchemaRegistryUrl {
         }
         // A password with a `/` in it ends what reads as the host and the port, and the `@` then stands in what
         // reads as the path. Such a text is no URL, and the error that says why would repeat the password.
-        Self::without_query(text).map_err(|error| match error {
-            _ if text.contains('@') => SchemaRegistryUrlError::Credentials,
-            error => error,
+        Self::without_query(text).map_err(|error| {
+            if text.contains('@') {
+                SchemaRegistryUrlError::Credentials
+            } else {
+                error
+            }
         })
     }
 }
@@ -207,7 +209,6 @@ text_form!(SchemaRegistryUrl, SchemaRegistryUrlError);
 /// [`Credentials`](Self::Credentials) and [`QueryOrFragment`](Self::QueryOrFragment) do not repeat the text,
 /// because it can hold a password or a token.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-#[non_exhaustive]
 pub enum SchemaRegistryUrlError {
     /// The text holds an `@` before its path, so it names a user, and maybe a password.
     /// Or it holds an `@` and is no URL, as when a password holds a `/`.

@@ -161,7 +161,14 @@ impl Membership {
                     ..Self::default()
                 };
             }
-            _ => {}
+            // Every other failure leaves the membership as it is.
+            ClientError::Broker { .. }
+            | ClientError::RequestTimedOut
+            | ClientError::CallTimedOut { .. }
+            | ClientError::ConnectionFailed(_)
+            | ClientError::Protocol(_)
+            | ClientError::UnsupportedVersion { .. }
+            | ClientError::NoLeader { .. } => {}
         }
     }
 }

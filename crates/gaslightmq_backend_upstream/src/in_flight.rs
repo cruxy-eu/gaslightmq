@@ -107,27 +107,26 @@ impl<W> InFlight<W> {
     pub(crate) fn answered(&mut self, frame: Frame) -> Answered<W> {
         let Some((request, waiter)) = self.unanswered.pop_front() else {
             return Answered::OutOfStep {
-                error: WireError::Decode {
-                    what: "response",
-                    reason: "no request waits for it".to_owned(),
-                },
+                reason: "no request waits for a response".to_owned(),
                 waiter: None,
             };
         };
         let correlation_id = match Response::peek_correlation_id(&frame) {
             Ok(correlation_id) => correlation_id,
-            Err(error) => return Answered::Unreadable { error, waiter },
+            Err(error) => {
+                return Answered::Unreadable {
+                    reason: error.to_string(),
+                    waiter,
+                };
+            }
         };
         if correlation_id != request.correlation_id() {
             return Answered::OutOfStep {
-                error: WireError::Decode {
-                    what: "response header",
-                    reason: format!(
-                        "correlation ID {correlation_id} does not answer the {} request {}",
-                        request.api(),
-                        request.correlation_id()
-                    ),
-                },
+                reason: format!(
+                    "correlation ID {correlation_id} does not answer the {} request {}",
+                    request.api(),
+                    request.correlation_id()
+                ),
                 waiter: Some(waiter),
             };
         }
@@ -137,7 +136,10 @@ impl<W> InFlight<W> {
                 response,
                 waiter,
             },
-            Err(error) => Answered::Unreadable { error, waiter },
+            Err(error) => Answered::Unreadable {
+                reason: error.to_string(),
+                waiter,
+            },
         }
     }
 
@@ -162,13 +164,13 @@ pub(crate) enum Answered<W> {
         response: Response,
         waiter: W,
     },
-    /// The frame answers the request of `waiter`, and it does not read as a response.
+    /// The frame answers the request of `waiter`, and it does not read as a response. `reason` says what does not read.
     /// The frames behind it still answer the requests behind that one.
-    Unreadable { error: WireError, waiter: W },
+    Unreadable { reason: String, waiter: W },
     /// The frame answers no request in flight, or another one than the oldest.
     /// From here on, nothing says which frame answers which request.
-    /// `waiter` waits for the oldest request, if there is one.
-    OutOfStep { error: WireError, waiter: Option<W> },
+    /// `reason` says which request the frame does not answer, and `waiter` waits for the oldest request, if there is one.
+    OutOfStep { reason: String, waiter: Option<W> },
 }
 
 #[cfg(test)]
@@ -269,15 +271,12 @@ mod tests {
         in_flight.sent(heartbeat(2), "second");
         let of_the_second = heartbeat(2).response(&HeartbeatResponse::default()).unwrap();
 
-        let Answered::OutOfStep { error, waiter } = in_flight.answered(of_the_second.into_frame()) else {
+        let Answered::OutOfStep { reason, waiter } = in_flight.answered(of_the_second.into_frame()) else {
             panic!("the frame answers the second request first");
         };
 
         assert_eq!(waiter, Some("first"));
-        assert_eq!(
-            error.to_string(),
-            "cannot decode response header: correlation ID 2 does not answer the Heartbeat v4 request 1"
-        );
+        assert_eq!(reason, "correlation ID 2 does not answer the Heartbeat v4 request 1");
         assert_eq!(in_flight.give_up().collect::<Vec<_>>(), ["second"]);
         assert_eq!(in_flight.len(), 0);
     }
@@ -287,12 +286,12 @@ mod tests {
         let mut in_flight: InFlight<&str> = InFlight::new();
         let unasked = heartbeat(1).response(&HeartbeatResponse::default()).unwrap();
 
-        let Answered::OutOfStep { error, waiter } = in_flight.answered(unasked.into_frame()) else {
+        let Answered::OutOfStep { reason, waiter } = in_flight.answered(unasked.into_frame()) else {
             panic!("no request is in flight");
         };
 
         assert_eq!(waiter, None);
-        assert_eq!(error.to_string(), "cannot decode response: no request waits for it");
+        assert_eq!(reason, "no request waits for a response");
     }
 
     #[test]

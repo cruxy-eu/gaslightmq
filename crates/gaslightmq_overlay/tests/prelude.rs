@@ -77,6 +77,12 @@ mod next_to_the_others {
     ///
     /// A message says everything, so no error has a source.
     pub fn every_error() -> Vec<String> {
+        /// What an error says. A message says everything, so the error has no source.
+        fn message_of<E: std::error::Error>(error: E) -> String {
+            assert!(error.source().is_none(), "{error}");
+            error.to_string()
+        }
+
         let address: BrokerAddress = "gaslight.staging:19093".parse().unwrap();
         let fetch = Request::new(12, 7, None, &FetchRequest::default()).unwrap();
         let unanswered = EditableRequest::decode(&fetch, &TopicNames::new())
@@ -88,37 +94,29 @@ mod next_to_the_others {
             len: 3,
         };
 
-        let errors: Vec<Box<dyn std::error::Error>> = vec![
-            Box::new(BrokerAddressError::PortZero),
-            Box::new(AdvertisedAddressesError::SharedAddress {
+        vec![
+            message_of(BrokerAddressError::PortZero),
+            message_of(AdvertisedAddressesError::SharedAddress {
                 address,
                 broker: BrokerId::from(3),
                 advertised_there: BrokerId::from(2),
             }),
-            Box::new(OverlayError::UnknownBroker {
+            message_of(OverlayError::UnknownBroker {
                 broker: BrokerId::from(9),
             }),
-            Box::new(OverlayError::UnwritableRequest {
+            message_of(OverlayError::UnwritableRequest {
                 api: Api::from_wire(1, 12),
-                error: cut_short.clone(),
+                reason: cut_short.to_string(),
             }),
-            Box::new(OverlayError::UnansweredRequest {
+            message_of(OverlayError::UnansweredRequest {
                 api: Api::from_wire(1, 12),
-                error: unanswered,
+                reason: unanswered.to_string(),
             }),
-            Box::new(OverlayError::UnwritableResponse {
+            message_of(OverlayError::UnwritableResponse {
                 api: Api::from_wire(3, 12),
-                error: cut_short,
+                reason: cut_short.to_string(),
             }),
-        ];
-
-        errors
-            .iter()
-            .map(|error| {
-                assert!(error.source().is_none(), "{error}");
-                error.to_string()
-            })
-            .collect()
+        ]
     }
 }
 

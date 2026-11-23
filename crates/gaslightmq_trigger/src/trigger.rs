@@ -52,7 +52,6 @@ impl fmt::Display for Per {
 
 /// Why a text is not a [`Per`].
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-#[non_exhaustive]
 pub enum PerError {
     /// The text is not `rule` and not `session`.
     #[error("counters are per `rule` or per `session`, not per `{name}`")]

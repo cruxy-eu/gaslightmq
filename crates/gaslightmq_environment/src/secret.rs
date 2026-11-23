@@ -78,7 +78,6 @@ impl fmt::Display for SecretRef {
 /// );
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-#[non_exhaustive]
 pub enum SecretRefError {
     /// The field holds a value, and not a reference to where the value lives.
     #[error("a secret is a reference and never the value: write {{ file: … }} or {{ env: … }}")]
@@ -140,7 +139,6 @@ kept_text!(FilePath, FilePathError);
 /// The error does not repeat the text.
 /// A secret reference holds a path, and someone who writes the secret where the path belongs wrote a secret.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-#[non_exhaustive]
 pub enum FilePathError {
     /// The text has no character.
     #[error("file path \"\" is empty")]
@@ -195,7 +193,6 @@ kept_text!(VariableName, VariableNameError);
 /// The error does not repeat the text.
 /// Someone who writes `KAFKA_PASSWORD=hunter2` where a name belongs wrote a secret.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-#[non_exhaustive]
 pub enum VariableNameError {
     /// The text has no character.
     #[error("the name of an environment variable is empty")]

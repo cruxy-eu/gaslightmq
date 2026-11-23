@@ -154,7 +154,11 @@ impl<'a> Carrier<'a> {
                     None => continue,
                 },
                 Ok(None) => {}
-                Err(error) => break BackendAnswer::NotAResponse { error },
+                Err(error) => {
+                    break BackendAnswer::NotAResponse {
+                        reason: error.to_string(),
+                    };
+                }
             }
             let rest = self.writing.as_ref().map_or(&[][..], Writing::rest);
             tokio::select! {
@@ -213,12 +217,12 @@ impl<'a> Carrier<'a> {
                 let _ = waiter.send(self.cluster.truth(&request, response));
                 None
             }
-            Answered::Unreadable { error, waiter } => {
-                let _ = waiter.send(BackendAnswer::NotAResponse { error });
+            Answered::Unreadable { reason, waiter } => {
+                let _ = waiter.send(BackendAnswer::NotAResponse { reason });
                 None
             }
-            Answered::OutOfStep { error, waiter } => {
-                let end = BackendAnswer::NotAResponse { error };
+            Answered::OutOfStep { reason, waiter } => {
+                let end = BackendAnswer::NotAResponse { reason };
                 if let Some(waiter) = waiter {
                     let _ = waiter.send(end.clone());
                 }

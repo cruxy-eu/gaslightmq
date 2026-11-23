@@ -205,7 +205,6 @@ impl fmt::Display for BrokerListeners {
 /// # Ok::<(), BrokerListenersError>(())
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-#[non_exhaustive]
 pub enum BrokerListenersError {
     /// The text does not start with an IP address and a colon.
     #[error("broker listeners {input:?} are not an IP address and a range of ports, such as 0.0.0.0:19092-19191")]
@@ -332,7 +331,6 @@ impl Listeners {
 
 /// Why addresses are not [`Listeners`].
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-#[non_exhaustive]
 pub enum ListenersError {
     /// The bootstrap listener and a broker listener would listen on the same port of the same address.
     #[error("the bootstrap listener and a broker listener both listen on {address}")]

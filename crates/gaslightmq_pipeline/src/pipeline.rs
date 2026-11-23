@@ -7,7 +7,7 @@ use gaslightmq_clock::{Duration, Instant};
 use gaslightmq_lie::Stage;
 use gaslightmq_rule::Snapshot;
 use gaslightmq_session::prelude::*;
-use gaslightmq_wire::{FrameDecoder, Request, Response};
+use gaslightmq_wire::{FrameDecoder, Request, Response, WireError};
 
 use crate::in_flight::{AtRequestGate, CallInFlight, Leaving, Settled};
 use crate::untold::StageFailure;
@@ -177,7 +177,16 @@ impl Pipeline {
                 Ok(request) => self.arrive(request, now, outputs),
                 // Without a request header, nothing says where the next request starts or how to answer this one.
                 // A broker closes such a connection, and so does the proxy: no lie and no backend did it.
-                Err(_) => self.close(ClosedBy::Proxy, None, None, now, outputs),
+                Err(
+                    WireError::EmptyFrame
+                    | WireError::FrameTooLarge { .. }
+                    | WireError::Truncated { .. }
+                    | WireError::Decode { .. }
+                    // cannot come from a frame or from the header of a request
+                    | WireError::UnknownApi { .. }
+                    | WireError::WrongApi { .. }
+                    | WireError::Encode { .. },
+                ) => self.close(ClosedBy::Proxy, None, None, now, outputs),
             }
         }
     }

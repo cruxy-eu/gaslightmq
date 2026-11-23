@@ -197,7 +197,6 @@ impl IntoIterator for SelectorSet {
 
 /// Why selectors are not a [`SelectorSet`], or why the set does not have what it is asked for.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-#[non_exhaustive]
 pub enum SelectorSetError {
     /// Two selectors have the same name.
     #[error("two selectors are named {:?}", .name.as_str())]

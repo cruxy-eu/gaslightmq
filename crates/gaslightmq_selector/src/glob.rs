@@ -134,7 +134,6 @@ text_form!(Glob, GlobError);
 /// assert_eq!(error.to_string(), "a pattern is empty");
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-#[non_exhaustive]
 pub enum GlobError {
     /// The pattern has no character, so it matches no value.
     #[error("a pattern is empty")]

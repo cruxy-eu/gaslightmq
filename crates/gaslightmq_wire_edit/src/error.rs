@@ -18,7 +18,6 @@ use gaslightmq_wire::Api;
 /// assert_eq!(error.to_string(), "nothing that the Produce v9 request asks failed");
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-#[non_exhaustive]
 pub enum SurgeryError {
     /// There are no messages for the API of the request, so its body has no known shape.
     #[error("a request of {api} cannot be edited: its messages are unknown")]

@@ -25,7 +25,6 @@ use crate::CallPhase;
 /// assert_eq!(error.to_string(), "call 1 is not in flight");
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-#[non_exhaustive]
 pub enum SessionError {
     /// The `client.id` in the header is not a client ID. The session stays unidentified.
     #[error("{}: {error}", Field::ClientId)]

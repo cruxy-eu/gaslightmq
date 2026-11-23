@@ -76,7 +76,6 @@ impl FromStr for CombinationClass {
 /// assert_eq!(error.to_string(), "no combination class is called \"rewrites\"");
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-#[non_exhaustive]
 pub enum CombinationClassError {
     /// No combination class has this name.
     #[error("no combination class is called {name:?}")]

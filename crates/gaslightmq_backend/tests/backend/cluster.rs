@@ -16,7 +16,7 @@ use gaslightmq_wire::messages::{
     FetchRequest, FetchResponse, MetadataRequest, MetadataResponse, ProduceRequest, ProduceResponse,
 };
 use gaslightmq_wire::protocol::{Encodable, StrBytes};
-use gaslightmq_wire::{ApiKey as KnownApi, Request, WireError};
+use gaslightmq_wire::{ApiKey as KnownApi, Request};
 
 /// The client of every request of these tests.
 pub const CLIENT: &str = "order-ingest";
@@ -162,10 +162,7 @@ impl Backend for Cluster {
         match request.request().api().known() {
             // The cluster answers every Heartbeat with three bytes, which is no response header.
             Some(KnownApi::Heartbeat) => BackendAnswer::NotAResponse {
-                error: WireError::Truncated {
-                    what: "response header",
-                    len: 3,
-                },
+                reason: "response header is cut short at 3 bytes".to_owned(),
             },
             Some(KnownApi::Fetch) => {
                 self.wait_for(|state| (state.records > 0).then_some(())).await;
@@ -302,7 +299,10 @@ fn advertised((broker, port): (&BrokerId, &u16)) -> MetadataResponseBroker {
 fn truth<B: Encodable>(request: &Request, body: &B) -> BackendAnswer {
     match request.response(body) {
         Ok(response) => Truth::new(response).into(),
-        Err(error) => BackendFailure::ResponseNotBuilt { error }.into(),
+        Err(error) => BackendFailure::ResponseNotBuilt {
+            reason: error.to_string(),
+        }
+        .into(),
     }
 }
 

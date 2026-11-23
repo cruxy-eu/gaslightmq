@@ -3,7 +3,6 @@
 use std::time::Duration;
 
 use gaslightmq_field::Endpoint;
-use gaslightmq_wire::WireError;
 
 /// Why a backend has no answer for a call.
 ///
@@ -12,6 +11,7 @@ use gaslightmq_wire::WireError;
 /// Its call stays open until the client gives up, and the engine drops it.
 ///
 /// The message says everything in one line, so the engine can put it into the record of the call as it is.
+/// A variant keeps what the cluster, the system or the writer of a response said as text, in `reason`.
 ///
 /// ```
 /// use std::time::Duration;
@@ -22,7 +22,6 @@ use gaslightmq_wire::WireError;
 /// assert_eq!(failure.to_string(), "the cluster did not answer within 30s");
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-#[non_exhaustive]
 pub enum BackendFailure {
     /// The backend has no connection to the cluster, and cannot make one.
     /// `reason` says what stood in the way, such as a refused connection.
@@ -36,9 +35,9 @@ pub enum BackendFailure {
     #[error("the cluster did not answer within {after:?}")]
     TimedOut { after: Duration },
     /// The backend answers the request itself, and could not build its response.
-    /// The cluster sent nothing that is wrong.
-    #[error("the backend could not build its response: {error}")]
-    ResponseNotBuilt { error: WireError },
+    /// The cluster sent nothing that is wrong. `reason` says what does not read or write.
+    #[error("the backend could not build its response: {reason}")]
+    ResponseNotBuilt { reason: String },
     /// The request arrived on an endpoint that the cluster does not have, or whose broker is down.
     #[error("the cluster takes no requests on endpoint `{endpoint}`")]
     NoSuchEndpoint { endpoint: Endpoint },
@@ -73,7 +72,7 @@ mod tests {
             ),
             (
                 BackendFailure::ResponseNotBuilt {
-                    error: WireError::UnknownApi { api_key: 9999 },
+                    reason: "unknown api key 9999".to_owned(),
                 },
                 "the backend could not build its response: unknown api key 9999",
             ),

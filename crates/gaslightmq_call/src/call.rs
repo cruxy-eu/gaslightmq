@@ -198,7 +198,6 @@ impl FieldSource for Call {
 
 /// Why the parts of a record are not a [`Call`].
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-#[non_exhaustive]
 pub enum CallError {
     /// The fields do not have exactly one `connection`, so nothing says which session the call ran on.
     #[error("a call record needs the one `connection` its call ran on")]

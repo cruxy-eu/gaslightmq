@@ -261,7 +261,6 @@ impl fmt::Display for AssignorName {
 
 /// Why a text is not an [`AssignorName`].
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-#[non_exhaustive]
 pub enum AssignorNameError {
     /// The name has no characters.
     #[error("assignor name cannot be empty")]
@@ -362,7 +361,6 @@ impl fmt::Display for PartitionAssignmentStrategy {
 
 /// Why a list is not a [`PartitionAssignmentStrategy`].
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-#[non_exhaustive]
 pub enum PartitionAssignmentStrategyError {
     /// The list holds no assignor.
     #[error("partition assignment strategy needs at least one assignor")]

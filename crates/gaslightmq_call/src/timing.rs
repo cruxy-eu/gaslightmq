@@ -126,7 +126,6 @@ impl CallTiming {
 
 /// Why a moment does not fit the [`CallTiming`] of a call.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-#[non_exhaustive]
 pub enum CallTimingError {
     /// The request left for the backend before it arrived.
     #[error("a request does not leave for the backend before it arrives")]

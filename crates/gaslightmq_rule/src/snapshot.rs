@@ -234,7 +234,6 @@ impl<'a> IntoIterator for &'a Snapshot {
 
 /// Why armed rules are not a [`Snapshot`].
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-#[non_exhaustive]
 pub enum SnapshotError {
     /// Two of the rules have the same name.
     #[error("two rules are named {:?}", .name.as_str())]

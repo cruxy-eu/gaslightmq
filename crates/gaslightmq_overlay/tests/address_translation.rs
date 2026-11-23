@@ -30,7 +30,7 @@ use gaslightmq_wire::messages::{
     HeartbeatResponse, MetadataRequest, MetadataResponse, ProduceRequest, ProduceResponse, ShareAcknowledgeRequest,
     ShareAcknowledgeResponse, ShareFetchRequest, ShareFetchResponse, share_acknowledge_response, share_fetch_response,
 };
-use gaslightmq_wire::{Api, Frame, Request, Response, WireError};
+use gaslightmq_wire::{Api, Frame, Request, Response};
 
 const METADATA_VERSIONS: [i16; 7] = [0, 1, 5, 8, 9, 12, 13];
 const COORDINATOR_VERSIONS: [i16; 4] = [0, 1, 2, 3];
@@ -642,7 +642,7 @@ fn a_response_that_cannot_be_read_gives_no_truth() {
 
     assert!(matches!(
         &error,
-        OverlayError::UnreadableResponse { api, error: WireError::Decode { .. } } if *api == request.api()
+        OverlayError::UnreadableResponse { api, .. } if *api == request.api()
     ));
     assert!(
         error

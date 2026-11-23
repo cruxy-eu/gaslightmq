@@ -86,7 +86,6 @@ impl FromStr for Stage {
 /// assert_eq!(error.to_string(), "silence cannot act after the response");
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-#[non_exhaustive]
 pub enum StageError {
     /// No stage has this name.
     #[error("no stage is called {name:?}")]

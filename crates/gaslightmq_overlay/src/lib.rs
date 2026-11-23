@@ -28,35 +28,40 @@
 //! use gaslightmq_wire::protocol::StrBytes;
 //!
 //! // The backend runs a listener for broker 2, and clients find it at `gaslight.staging:19093`.
-//! let advertised = AdvertisedAddresses::new().with(BrokerId::from(2), "gaslight.staging:19093".parse()?)?;
+//! let listener = "gaslight.staging:19093".parse().expect("an address");
+//! let advertised = AdvertisedAddresses::new().with(BrokerId::from(2), listener).expect("the first address");
 //! let mut overlay = Overlay::new(advertised);
 //!
 //! // A client asks where the coordinator of its group is, and the real cluster says: on broker 2.
 //! let payments = || StrBytes::from_static_str("payments");
-//! let request = Request::new(4, 7, Some("payments-api"), &FindCoordinatorRequest::default().with_coordinator_keys(vec![payments()]))?;
+//! let asked = FindCoordinatorRequest::default().with_coordinator_keys(vec![payments()]);
+//! let request = Request::new(4, 7, Some("payments-api"), &asked).expect("a request");
 //! let Forwarding::Forward { to, request: forwarded } = overlay.forward(Endpoint::Bootstrap, &request)? else {
 //!     panic!("the cluster answers a FindCoordinator request");
 //! };
 //! assert_eq!(to, Destination::AnyBroker);
 //! let kafka_2 = StrBytes::from_static_str("kafka-2.internal");
 //! let coordinator = Coordinator::default().with_key(payments()).with_node_id(2.into()).with_host(kafka_2).with_port(9092);
-//! let upstream = forwarded.response(&FindCoordinatorResponse::default().with_coordinators(vec![coordinator]))?;
+//! let found = FindCoordinatorResponse::default().with_coordinators(vec![coordinator]);
+//! let upstream = forwarded.response(&found).expect("a response");
 //!
 //! // The truth sends the client to the listener, and the overlay knows where the real broker is.
 //! let truth = overlay.answer(&request, upstream)?;
-//! let told: FindCoordinatorResponse = truth.response().body()?;
+//! let told: FindCoordinatorResponse = truth.response().body().expect("a body that decodes");
 //! assert_eq!((told.coordinators[0].host.as_str(), told.coordinators[0].port), ("gaslight.staging", 19093));
 //! assert!(truth.upstream().is_some());
-//! assert_eq!(overlay.real_address(BrokerId::from(2)), Some(&"kafka-2.internal:9092".parse()?));
+//! let kafka_2: BrokerAddress = "kafka-2.internal:9092".parse().expect("an address");
+//! assert_eq!(overlay.real_address(BrokerId::from(2)), Some(&kafka_2));
 //!
 //! // The client then fetches from the listener of broker 2, and asks for a fetch session.
-//! let fetch = Request::new(12, 8, Some("payments-api"), &FetchRequest::default().with_session_epoch(0))?;
+//! let with_session = FetchRequest::default().with_session_epoch(0);
+//! let fetch = Request::new(12, 8, Some("payments-api"), &with_session).expect("a request");
 //! let Forwarding::Forward { to, request: sessionless } = overlay.forward(Endpoint::Broker(BrokerId::from(2)), &fetch)? else {
 //!     panic!("the cluster answers a full Fetch request");
 //! };
 //! assert_eq!(to.to_string(), "broker 2 at kafka-2.internal:9092");
-//! assert_eq!(sessionless.body::<FetchRequest>()?.session_epoch, -1);
-//! # Ok::<(), Box<dyn std::error::Error>>(())
+//! assert_eq!(sessionless.body::<FetchRequest>().expect("a body that decodes").session_epoch, -1);
+//! # Ok::<(), OverlayError>(())
 //! ```
 //!
 //! # The overlay is part of the truth
@@ -140,16 +145,20 @@
 //!
 //! # Errors
 //!
-//! Every type that can fail has an error of its own, named after it.
+//! Every type that checks its value has an error of its own, named after it.
 //!
 //! | Type | Error | What is wrong |
 //! |---|---|---|
 //! | [`BrokerAddress`] | [`BrokerAddressError`] | The host is empty, too long or has whitespace, the port is zero, or a text is not a host and a port. |
 //! | [`AdvertisedAddresses`] | [`AdvertisedAddressesError`] | Two brokers would share one address. |
-//! | [`Overlay`] | [`OverlayError`] | A request names a broker the cluster never named, a body does not decode or encode, or a response answers another request. |
+//!
+//! What the overlay does has one error, [`OverlayError`]:
+//! a request names a broker the cluster never named, a body does not decode or encode,
+//! or a response answers another request.
 //!
 //! The message of every error is complete, so no error has a [`source`](std::error::Error::source).
-//! A variant that holds another error writes it once, after what the overlay was doing.
+//! A variant about a body that does not decode or encode keeps what the reader or the writer said as text,
+//! in a field `reason`, and writes it once, after what the overlay was doing.
 //!
 //! An [`OverlayError`] never hides a real address.
 //! When the overlay cannot read a response that tells addresses, it returns the error and no truth,
@@ -189,9 +198,9 @@ pub use overlay::{Overlay, OverlayError};
 /// use gaslightmq_overlay::prelude::*;
 ///
 /// let address: Result<BrokerAddress, BrokerAddressError> = "gaslight.staging:19092".parse();
-/// let overlay = Overlay::new(AdvertisedAddresses::new().with(BrokerId::from(1), address?)?);
-/// assert_eq!(overlay.advertised().len(), 1);
-/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// let advertised = AdvertisedAddresses::new().with(BrokerId::from(1), address?).expect("the first address");
+/// assert_eq!(Overlay::new(advertised).advertised().len(), 1);
+/// # Ok::<(), BrokerAddressError>(())
 /// ```
 pub mod prelude {
     #[doc(no_inline)]

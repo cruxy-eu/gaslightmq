@@ -27,7 +27,6 @@ use gaslightmq_wire::{ApiKey, ResponseError};
 /// );
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-#[non_exhaustive]
 pub enum KafkaClusterError {
     /// The cluster did not start.
     /// `reason` says why, and `log` holds the last lines the brokers wrote, when they wrote any.
@@ -91,7 +90,12 @@ impl KafkaClusterError {
                 about,
                 detail: said.map(|said| said.to_string()),
             },
-            other => other,
+            // Only an answer of a broker has something on top of it.
+            other @ (Self::NotStarted { .. }
+            | Self::InvalidTopicName { .. }
+            | Self::InvalidRecords { .. }
+            | Self::Unanswered { .. }
+            | Self::NotSettledInTime { .. }) => other,
         }
     }
 

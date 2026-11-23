@@ -148,7 +148,14 @@ impl ConnectionHandler for EchoAndGoodbye {
                     }
                     return;
                 }
-                Err(_) => return,
+                Err(
+                    ListenerError::ClientClosed
+                    | ListenerError::FrameCutShort { .. }
+                    | ListenerError::NotAFrame { .. }
+                    | ListenerError::ConnectionLost { .. }
+                    // cannot come from a receive
+                    | ListenerError::CannotListen { .. },
+                ) => return,
             }
         }
     }
@@ -293,7 +300,15 @@ async fn a_closed_endpoint_opens_again_on_the_address_it_had() {
         loop {
             match Listener::bind(same_address.clone(), numbers.clone(), Arc::clone(&echo)).await {
                 Ok(listener) => break listener,
-                Err(_) => tokio::time::sleep(Duration::from_millis(10)).await,
+                Err(
+                    ListenerError::CannotListen { .. }
+                    // cannot come from a bind
+                    | ListenerError::ClientClosed
+                    | ListenerError::FrameCutShort { .. }
+                    | ListenerError::NotAFrame { .. }
+                    | ListenerError::ConnectionLost { .. }
+                    | ListenerError::ListenerClosed,
+                ) => tokio::time::sleep(Duration::from_millis(10)).await,
             }
         }
     })

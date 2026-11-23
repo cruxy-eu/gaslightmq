@@ -26,7 +26,6 @@ use crate::{PresetName, RuleName, RuleState};
 /// assert_eq!(error.to_string(), "a rule that is armed cannot arm");
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-#[non_exhaustive]
 pub enum RuleError {
     /// The rule names a selector that does not exist.
     #[error("rule {:?}: {error}", .rule.as_str())]

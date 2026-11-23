@@ -182,7 +182,6 @@ impl IntoIterator for PresetSet {
 
 /// Why presets are not a [`PresetSet`].
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-#[non_exhaustive]
 pub enum PresetSetError {
     /// Two presets have the same name.
     #[error("two presets are named {:?}", .name.as_str())]

@@ -122,7 +122,6 @@ impl IntoIterator for RuleSet {
 
 /// Why rules are not a [`RuleSet`], or why the set does not have what it is asked for.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-#[non_exhaustive]
 pub enum RuleSetError {
     /// Two rules have the same name.
     #[error("two rules are named {:?}", .name.as_str())]

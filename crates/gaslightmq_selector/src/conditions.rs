@@ -267,7 +267,6 @@ impl fmt::Display for Scope {
 
 /// Why conditions are not a [`Scope`].
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-#[non_exhaustive]
 pub enum ScopeError {
     /// A condition tests a field that does not describe the connection.
     /// `field` is the first such field.

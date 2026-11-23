@@ -40,7 +40,6 @@ macro_rules! count_value {
 
         #[doc = concat!("Why a number is not a [`", stringify!($name), "`].")]
         #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-        #[non_exhaustive]
         pub enum $error {
             #[doc = concat!("The number is zero, or above the highest ", $what, ".")]
             #[error("{} {value} is not between 1 and {max}", $what)]

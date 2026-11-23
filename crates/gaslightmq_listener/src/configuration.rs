@@ -147,7 +147,6 @@ impl fmt::Display for FrameSizeLimit {
 
 /// Why a number of bytes is not a [`FrameSizeLimit`].
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-#[non_exhaustive]
 pub enum FrameSizeLimitError {
     /// The limit is zero, and a frame holds at least one byte.
     #[error("a frame size limit is at least one byte")]

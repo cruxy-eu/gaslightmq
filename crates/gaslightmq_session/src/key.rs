@@ -4,7 +4,7 @@ use std::fmt;
 use std::str::FromStr;
 
 use gaslightmq_field::prelude::*;
-use gaslightmq_trigger::CounterKey;
+use gaslightmq_trigger::{CounterKey, CounterKeyError};
 
 use crate::{Connection, ConnectionOrdinal, ConnectionOrdinalError};
 
@@ -75,7 +75,9 @@ impl SessionKey {
     pub fn counter_key(&self) -> CounterKey {
         match CounterKey::new(self.to_string()) {
             Ok(key) => key,
-            Err(_) => unreachable!("the text of a session key has a host, an endpoint and an ordinal"),
+            Err(CounterKeyError::Empty) => {
+                unreachable!("the text of a session key has a host, an endpoint and an ordinal")
+            }
         }
     }
 }
@@ -115,7 +117,6 @@ impl FromStr for SessionKey {
 /// A variant that names a part keeps the error of that part.
 /// Its message names the whole text first, and then says what is wrong with the part.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-#[non_exhaustive]
 pub enum SessionKeyError {
     /// The text is not three parts with a space between them.
     #[error(

@@ -237,7 +237,6 @@ text_form!(SaslMechanism, SaslMechanismError);
 
 /// Why a text is not a [`SaslMechanism`].
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-#[non_exhaustive]
 pub enum SaslMechanismError {
     /// No mechanism that logs in with a password has this name.
     #[error("no SASL mechanism is named {name:?}: there are PLAIN, SCRAM-SHA-256 and SCRAM-SHA-512")]
@@ -279,7 +278,6 @@ kept_text!(SaslUsername, SaslUsernameError);
 
 /// Why a text is not a [`SaslUsername`].
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-#[non_exhaustive]
 pub enum SaslUsernameError {
     /// The text has no character.
     #[error("SASL user name \"\" is empty")]

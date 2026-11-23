@@ -109,7 +109,6 @@ number_form!(ApiVersion, ApiVersionError, u16, "an API version such as 11");
 
 /// Why a number or a text is not an [`ApiVersion`].
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-#[non_exhaustive]
 pub enum ApiVersionError {
     /// The text is not a whole number.
     #[error("API version {input:?} does not have the form a whole number")]
@@ -206,7 +205,6 @@ number_form!(
 ///
 /// Every `i16` is a value of `acks`, so only a text can fail.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-#[non_exhaustive]
 pub enum AcksError {
     /// The text is not `all`, and not a whole number.
     #[error("acks {input:?} does not have the form a whole number")]

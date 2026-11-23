@@ -28,7 +28,6 @@ use gaslightmq_environment::SaslMechanism;
 ///
 /// The message is complete, so no variant has a source.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-#[non_exhaustive]
 pub enum UpstreamBackendError {
     /// The environment asks for encrypted connections to the cluster, and the backend cannot make them yet.
     #[error("the environment asks for TLS to its cluster, and a proxy cannot connect to a cluster over TLS yet")]

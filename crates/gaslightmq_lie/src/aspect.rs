@@ -109,7 +109,6 @@ impl FromStr for Aspect {
 /// assert_eq!(error.to_string(), "no aspect is called \"watermark\"");
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-#[non_exhaustive]
 pub enum AspectError {
     /// No aspect has this name.
     #[error("no aspect is called {name:?}")]

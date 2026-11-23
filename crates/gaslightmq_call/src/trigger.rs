@@ -87,7 +87,6 @@ impl fmt::Display for TriggerDecision {
 
 /// Why a text is not a [`TriggerDecision`].
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-#[non_exhaustive]
 pub enum TriggerDecisionError {
     /// No decision has this name.
     #[error("no trigger decision is called {name:?}")]
@@ -162,7 +161,6 @@ impl fmt::Display for DieCheck {
 
 /// Why two numbers are not a [`DieCheck`].
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-#[non_exhaustive]
 pub enum DieCheckError {
     /// The roll is one million or more, and a die never rolls a whole million.
     #[error("a roll of {ppm} parts per million is not below one million")]
@@ -269,7 +267,6 @@ impl fmt::Display for WindowCheck {
 
 /// Why three time spans are not a [`WindowCheck`].
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-#[non_exhaustive]
 pub enum WindowCheckError {
     /// The window closes before it opens, or at the moment it opens, so it is never open.
     #[error("a time window from {opens_after} to {closes_after} after arming is never open")]
@@ -334,7 +331,6 @@ impl fmt::Display for BudgetCheck {
 
 /// Why two numbers are not a [`BudgetCheck`].
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-#[non_exhaustive]
 pub enum BudgetCheckError {
     /// More is left than the budget allows.
     #[error("a budget of {limit} does not have {left} left")]
@@ -592,7 +588,6 @@ impl fmt::Display for TriggerExplanation {
 
 /// Why a decision, a match number and checks are not a [`TriggerExplanation`]: they contradict each other.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-#[non_exhaustive]
 pub enum TriggerExplanationError {
     /// There is no match number, and only a rule whose lifetime had ended does not count the call.
     #[error("a trigger that decided `{decision}` counted the call, and the match number is missing")]

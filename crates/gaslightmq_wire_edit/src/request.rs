@@ -319,7 +319,13 @@ impl EditableRequest {
 fn part_of(topics: &TopicNames, topic: TopicKey<'_>, partition: Option<i32>) -> Option<Part> {
     let name = match TopicName::new(topic.name) {
         Ok(name) => name,
-        Err(_) => topics.name_of(TopicId::from_wire(topic.id)?)?.clone(),
+        // A request that names a topic by its ID carries no name, or one that is no topic name.
+        Err(
+            TopicNameError::Empty
+            | TopicNameError::TooLong { .. }
+            | TopicNameError::InvalidCharacter { .. }
+            | TopicNameError::Reserved { .. },
+        ) => topics.name_of(TopicId::from_wire(topic.id)?)?.clone(),
     };
     match partition {
         None => Some(Part::Topic(name)),
