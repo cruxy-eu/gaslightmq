@@ -1,11 +1,10 @@
 use gaslightmq_clock::Instant;
-use gaslightmq_incident::{IncidentError, Subjects};
-use gaslightmq_lie::{LieKind, Stage};
-use gaslightmq_selector::{EffectiveSelector, Pass, SelectorSet, SelectorSetError};
+use gaslightmq_incident::Subjects;
+use gaslightmq_lie::Stage;
+use gaslightmq_selector::{EffectiveSelector, Pass, SelectorSet};
 use gaslightmq_trigger::{Arming, DiceKey, Die, Lifetime, Seed, Trigger};
-use std::fmt;
 
-use crate::{Action, ActionRef, ArmedRule, Preset, PresetName, PresetSet, Rule, RuleName};
+use crate::{Action, ActionRef, ArmedRule, Preset, PresetSet, Rule, RuleError, RuleName};
 
 /// A rule without names to look up: what [`Rule::resolve`] gives, and what can be armed.
 ///
@@ -29,23 +28,23 @@ use crate::{Action, ActionRef, ArmedRule, Preset, PresetName, PresetSet, Rule, R
 /// use gaslightmq_trigger::prelude::*;
 ///
 /// let order_producers = Selector::new(
-///     "Order producers".parse()?,
+///     "Order producers".parse().expect("a selector name"),
 ///     Conditions::new()
 ///         .with(Condition::is(ApiKey::PRODUCE))
-///         .with(Condition::parse(Field::Topic, "orders.*")?),
+///         .with(Condition::parse(Field::Topic, "orders.*").expect("a condition")),
 /// );
-/// let selectors = SelectorSet::new([order_producers])?;
+/// let selectors = SelectorSet::new([order_producers]).expect("a selector set");
 /// let presets = PresetSet::new([Preset::new(
-///     "Leader flap".parse()?,
+///     "Leader flap".parse().expect("a preset name"),
 ///     RefusalLie::new(ErrorCode::NOT_LEADER_OR_FOLLOWER),
-/// )])?;
+/// )]).expect("a preset set");
 ///
 /// let rule = Rule::new(
-///     "Refuse order producers".parse()?,
-///     "Order producers".parse::<SelectorName>()?,
-///     "Leader flap".parse::<PresetName>()?,
+///     "Refuse order producers".parse().expect("a rule name"),
+///     "Order producers".parse::<SelectorName>().expect("a selector name"),
+///     "Leader flap".parse::<PresetName>().expect("a preset name"),
 /// )
-/// .scoped(Scope::client(ClientId::new("order-ingest")?));
+/// .scoped(Scope::client(ClientId::new("order-ingest").expect("a client ID")));
 ///
 /// let resolved = rule.resolve(&selectors, &presets)?;
 /// assert_eq!(
@@ -58,7 +57,7 @@ use crate::{Action, ActionRef, ArmedRule, Preset, PresetName, PresetSet, Rule, R
 /// // Arming gives the rule its live state: counters at zero, and a die of the seed.
 /// let armed = resolved.arm(Seed::new(42), Instant::ZERO);
 /// assert_eq!(armed.arming().counter().matches(), 0);
-/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// # Ok::<(), RuleError>(())
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct ResolvedRule {
@@ -80,26 +79,26 @@ impl Rule {
     ///
     /// # Errors
     ///
-    /// - [`ResolvedRuleError::UnknownSelector`] when the rule names a selector that `selectors` does not have.
-    /// - [`ResolvedRuleError::UnknownPreset`] when the rule names a preset that `presets` does not have.
-    /// - [`ResolvedRuleError::LieBeforeTruth`] when the rule tests a response field and its lie acts before forwarding.
+    /// - [`RuleError::UnknownSelector`] when the rule names a selector that `selectors` does not have.
+    /// - [`RuleError::UnknownPreset`] when the rule names a preset that `presets` does not have.
+    /// - [`RuleError::LieBeforeTruth`] when the rule tests a response field and its lie acts before forwarding.
     ///   The truth is not known yet at that stage, so the rule could never fire.
     ///   A rule with an incident can test a response field: the incident takes effect after the call.
-    /// - [`ResolvedRuleError::ManualWithoutSubject`] when the trigger is manual and the incident takes a subject from the call.
+    /// - [`RuleError::ManualWithoutSubject`] when the trigger is manual and the incident takes a subject from the call.
     ///   Such a rule only fires by hand, and a hand firing has no call, so the rule could never fire.
     ///   A manual rule with an incident names every subject in its action.
-    pub fn resolve(&self, selectors: &SelectorSet, presets: &PresetSet) -> Result<ResolvedRule, ResolvedRuleError> {
+    pub fn resolve(&self, selectors: &SelectorSet, presets: &PresetSet) -> Result<ResolvedRule, RuleError> {
         let rule = || self.name().clone();
 
         let selector = selectors
             .resolve(self.selector())
-            .map_err(|error| ResolvedRuleError::UnknownSelector { rule: rule(), error })?
+            .map_err(|error| RuleError::UnknownSelector { rule: rule(), error })?
             .and(self.scope().clone());
         let action = match self.action() {
             ActionRef::Inline(action) => action,
             ActionRef::Preset(preset) => {
                 let found = presets.get(preset).map(Preset::action);
-                found.ok_or_else(|| ResolvedRuleError::UnknownPreset {
+                found.ok_or_else(|| RuleError::UnknownPreset {
                     rule: rule(),
                     preset: preset.clone(),
                 })?
@@ -111,7 +110,7 @@ impl Rule {
             && pass == Pass::Response
             && lie.stage() == Stage::BeforeForwarding
         {
-            return Err(ResolvedRuleError::LieBeforeTruth {
+            return Err(RuleError::LieBeforeTruth {
                 rule: rule(),
                 lie: lie.kind(),
             });
@@ -121,7 +120,7 @@ impl Rule {
             && self.trigger().is_manual()
             && let Err(error) = incident.resolve(&Subjects::new())
         {
-            return Err(ResolvedRuleError::ManualWithoutSubject { rule: rule(), error });
+            return Err(RuleError::ManualWithoutSubject { rule: rule(), error });
         }
 
         Ok(ResolvedRule {
@@ -184,50 +183,6 @@ impl ResolvedRule {
         &self.dice
     }
 }
-
-/// Why a rule does not resolve into a [`ResolvedRule`].
-///
-/// Every variant names the rule.
-/// A variant that holds the error of another crate writes that error into its own message, once,
-/// so no variant has a [`source`](std::error::Error::source).
-#[derive(Debug, Clone, PartialEq, Eq)]
-#[non_exhaustive]
-pub enum ResolvedRuleError {
-    /// The rule names a selector that does not exist.
-    UnknownSelector { rule: RuleName, error: SelectorSetError },
-    /// The rule names a preset that does not exist.
-    UnknownPreset { rule: RuleName, preset: PresetName },
-    /// The rule tests a response field, and its lie acts before forwarding, when the truth is not known yet.
-    LieBeforeTruth { rule: RuleName, lie: LieKind },
-    /// The rule only fires by hand, and its incident takes a subject from the call.
-    /// A hand firing has no call, so the rule could never fire.
-    ManualWithoutSubject { rule: RuleName, error: IncidentError },
-}
-
-impl fmt::Display for ResolvedRuleError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::UnknownSelector { rule, error } => write!(f, "rule {:?}: {error}", rule.as_str()),
-            Self::UnknownPreset { rule, preset } => {
-                write!(f, "rule {:?}: no preset is named {:?}", rule.as_str(), preset.as_str())
-            }
-            Self::LieBeforeTruth { rule, lie } => write!(
-                f,
-                "rule {:?} tests a response field, and its {lie} acts before forwarding, \
-                 when the truth is not known yet. Give the lie `stage: after`",
-                rule.as_str()
-            ),
-            Self::ManualWithoutSubject { rule, error } => write!(
-                f,
-                "rule {:?} can never fire, because its trigger is manual and a hand firing has no call: {error}",
-                rule.as_str()
-            ),
-        }
-    }
-}
-
-/// The message is complete, so no variant has a source.
-impl std::error::Error for ResolvedRuleError {}
 
 #[cfg(test)]
 mod tests {
@@ -343,7 +298,7 @@ mod tests {
 
         assert_eq!(
             rule.resolve(&selectors(), &presets()),
-            Err(ResolvedRuleError::UnknownSelector {
+            Err(RuleError::UnknownSelector {
                 rule: name("Slow down order producers"),
                 error: SelectorSetError::UnknownSelector {
                     name: selector_name("Order consumers")
@@ -358,7 +313,7 @@ mod tests {
 
         assert_eq!(
             rule.resolve(&selectors(), &presets()),
-            Err(ResolvedRuleError::UnknownPreset {
+            Err(RuleError::UnknownPreset {
                 rule: name("Slow down order producers"),
                 preset: preset_name("Blackhole"),
             })
@@ -388,7 +343,7 @@ mod tests {
             let rule = Rule::new(name("Too early"), succeeded(), lie);
             assert_eq!(
                 rule.resolve(&SelectorSet::default(), &PresetSet::default()),
-                Err(ResolvedRuleError::LieBeforeTruth {
+                Err(RuleError::LieBeforeTruth {
                     rule: name("Too early"),
                     lie: kind,
                 })
@@ -430,7 +385,7 @@ mod tests {
 
         assert_eq!(
             resolve(rule(election(None)).with_trigger(Trigger::Manual)),
-            Err(ResolvedRuleError::ManualWithoutSubject {
+            Err(RuleError::ManualWithoutSubject {
                 rule: name("Leader election"),
                 error: IncidentError::MissingSubject {
                     incident: IncidentKind::LeaderMoves,
@@ -458,7 +413,7 @@ mod tests {
 
         assert!(matches!(
             rule.resolve(&SelectorSet::default(), &presets),
-            Err(ResolvedRuleError::ManualWithoutSubject { .. })
+            Err(RuleError::ManualWithoutSubject { .. })
         ));
     }
 

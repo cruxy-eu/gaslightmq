@@ -7,6 +7,11 @@
 //! The test stands where the pipeline will stand.
 //! It resolves no conflict between lies, so it confirms every firing, as a call does when nothing shadows a rule.
 
+#![expect(
+    clippy::unwrap_used,
+    reason = "a panic is how a test fails, also in a helper outside a `#[test]` function"
+)]
+
 use gaslightmq_clock::{Clock, Duration, Instant, TimeSpan, VirtualClock};
 use gaslightmq_field::prelude::*;
 use gaslightmq_incident::prelude::*;
@@ -16,22 +21,20 @@ use gaslightmq_rule::prelude::*;
 use gaslightmq_selector::prelude::*;
 use gaslightmq_trigger::prelude::*;
 
-type Failure = Box<dyn std::error::Error>;
-
 /// The seed of the scenario, which every die derives from.
 const SEED: Seed = Seed::new(42);
 
-fn selectors() -> Result<SelectorSet, Failure> {
+fn selectors() -> SelectorSet {
     let order_producers = Selector::new(
-        "Order producers".parse()?,
+        "Order producers".parse().unwrap(),
         Conditions::new()
             .with(Condition::is(ApiKey::PRODUCE))
-            .with(Condition::parse(Field::Topic, "orders.*")?),
+            .with(Condition::parse(Field::Topic, "orders.*").unwrap()),
     );
-    Ok(SelectorSet::new([order_producers])?)
+    SelectorSet::new([order_producers]).unwrap()
 }
 
-fn presets() -> Result<PresetSet, Failure> {
+fn presets() -> PresetSet {
     let delay_1s = TimingLie::new()
         .with_delay(TimeSpan::from_secs(1))
         .with_jitter(TimeSpan::from_millis(200));
@@ -40,58 +43,59 @@ fn presets() -> Result<PresetSet, Failure> {
         partition: None,
         to: None,
     };
-    Ok(PresetSet::new([
-        Preset::new("Delay 1 s".parse()?, delay_1s),
-        Preset::new("Leader flap".parse()?, leader_flap),
-        Preset::new("Leader election".parse()?, leader_election),
-    ])?)
+    PresetSet::new([
+        Preset::new("Delay 1 s".parse().unwrap(), delay_1s),
+        Preset::new("Leader flap".parse().unwrap(), leader_flap),
+        Preset::new("Leader election".parse().unwrap(), leader_election),
+    ])
+    .unwrap()
 }
 
 /// The rules in the order in which they win a conflict, as a Chain scenario lists them.
-fn rules() -> Result<Vec<Rule>, Failure> {
+fn rules() -> Vec<Rule> {
     let order_producers = || "Order producers".parse::<SelectorName>();
     let preset = |name: &str| name.parse::<PresetName>();
 
     // The rule of rules.md: `chance: 40%`, for one client.
     let slow_down = Rule::new(
-        "Slow down order producers".parse()?,
-        order_producers()?,
-        preset("Delay 1 s")?,
+        "Slow down order producers".parse().unwrap(),
+        order_producers().unwrap(),
+        preset("Delay 1 s").unwrap(),
     )
-    .scoped(Scope::client(ClientId::new("order-ingest")?))
-    .with_trigger(TriggerParts::new().with_chance("40%".parse()?));
+    .scoped(Scope::client(ClientId::new("order-ingest").unwrap()))
+    .with_trigger(TriggerParts::new().with_chance("40%".parse().unwrap()));
 
     // A refusal on `orders.*`, on the 3rd matching call of each connection.
     let refuse_orders = Rule::new(
-        "Refuse the 3rd call on orders".parse()?,
-        Conditions::from(Condition::parse(Field::Topic, "orders.*")?),
-        preset("Leader flap")?,
+        "Refuse the 3rd call on orders".parse().unwrap(),
+        Conditions::from(Condition::parse(Field::Topic, "orders.*").unwrap()),
+        preset("Leader flap").unwrap(),
     )
     .with_trigger(
         TriggerParts::new()
-            .with_nth(MatchNumber::new(3)?)
+            .with_nth(MatchNumber::new(3).unwrap())
             .with_per(Per::Session),
     );
 
     // The first rule of the "Leader election" scenario, with the preset that takes its partition from the call.
     let leader_moves_away = Rule::new(
-        "Leader moves away".parse()?,
-        order_producers()?,
-        preset("Leader election")?,
+        "Leader moves away".parse().unwrap(),
+        order_producers().unwrap(),
+        preset("Leader election").unwrap(),
     )
-    .with_trigger(TriggerParts::new().with_nth(MatchNumber::new(1)?));
+    .with_trigger(TriggerParts::new().with_nth(MatchNumber::new(1).unwrap()));
 
     // A rule that waits for the truth: it only delays a Fetch that succeeded, twice.
     let slow_fetches = Rule::new(
-        "Slow down two successful fetches".parse()?,
+        "Slow down two successful fetches".parse().unwrap(),
         Conditions::new()
             .with(Condition::is(ApiKey::FETCH))
             .with(Condition::is(Outcome::Ok)),
-        preset("Delay 1 s")?,
+        preset("Delay 1 s").unwrap(),
     )
-    .with_lifetime("2 firings".parse()?);
+    .with_lifetime("2 firings".parse().unwrap());
 
-    Ok(vec![slow_down, refuse_orders, leader_moves_away, slow_fetches])
+    vec![slow_down, refuse_orders, leader_moves_away, slow_fetches]
 }
 
 /// One connection: its fields, and the counters its pipeline keeps.
@@ -101,24 +105,24 @@ struct Session {
 }
 
 impl Session {
-    fn open(client: &str, number: u64) -> Result<Session, Failure> {
+    fn open(client: &str, number: u64) -> Session {
         let endpoint = Endpoint::Broker(BrokerId::from(2));
-        Ok(Session {
+        Session {
             connection: Fields::new()
                 .with(ConnectionNumber::new(number))
                 .with(endpoint)
-                .with(ClientId::new(client)?),
+                .with(ClientId::new(client).unwrap()),
             // The text of the session key: the host, the endpoint and the ordinal of the connection.
-            counters: SessionCounters::new(CounterKey::new(format!("10.0.4.27 {endpoint} #{number}"))?),
-        })
+            counters: SessionCounters::new(CounterKey::new(format!("10.0.4.27 {endpoint} #{number}")).unwrap()),
+        }
     }
 
-    fn call(&self, api: ApiKey, partitions: &[&str]) -> Result<Fields, Failure> {
+    fn call(&self, api: ApiKey, partitions: &[&str]) -> Fields {
         let mut call = self.connection.clone().with(api);
         for partition in partitions {
-            call = call.with_part(partition.parse::<TopicPartition>()?);
+            call = call.with_part(partition.parse::<TopicPartition>().unwrap());
         }
-        Ok(call)
+        call
     }
 }
 
@@ -130,17 +134,17 @@ struct Run {
 
 impl Run {
     /// Someone activates the scenario, which arms its rules, and the engine publishes the snapshot.
-    fn start() -> Result<Run, Failure> {
-        let (selectors, presets) = (selectors()?, presets()?);
+    fn start() -> Run {
+        let (selectors, presets) = (selectors(), presets());
         let clock = VirtualClock::new();
         let mut armed = Vec::new();
-        for rule in rules()? {
-            armed.push(rule.resolve(&selectors, &presets)?.arm(SEED, clock.now()));
+        for rule in rules() {
+            armed.push(rule.resolve(&selectors, &presets).unwrap().arm(SEED, clock.now()));
         }
-        Ok(Run {
-            snapshot: Snapshot::new(armed)?,
+        Run {
+            snapshot: Snapshot::new(armed).unwrap(),
             clock,
-        })
+        }
     }
 
     /// Time passes between two calls.
@@ -191,22 +195,21 @@ impl Run {
         waiting.into_iter().map(|rule| rule.name().to_string()).collect()
     }
 
-    fn rule(&self, name: &str) -> Result<&ArmedRule, Failure> {
-        let rule = self.snapshot.get(&name.parse()?);
-        rule.ok_or_else(|| format!("{name} is not armed").into())
+    fn rule(&self, name: &str) -> &ArmedRule {
+        self.snapshot.get(&name.parse().unwrap()).expect("a rule that is armed")
     }
 
     /// How many calls a rule matched, across all connections.
-    fn matches(&self, name: &str) -> Result<u64, Failure> {
-        Ok(self.rule(name)?.arming().counter().matches())
+    fn matches(&self, name: &str) -> u64 {
+        self.rule(name).arming().counter().matches()
     }
 }
 
 #[test]
-fn the_rules_of_the_request_pass_evaluate_against_hand_written_produce_calls() -> Result<(), Failure> {
-    let mut run = Run::start()?;
-    let mut ingest = Session::open("order-ingest", 1)?;
-    let produce = ingest.call(ApiKey::PRODUCE, &["orders.eu/3", "payments.settled/0"])?;
+fn the_rules_of_the_request_pass_evaluate_against_hand_written_produce_calls() {
+    let mut run = Run::start();
+    let mut ingest = Session::open("order-ingest", 1);
+    let produce = ingest.call(ApiKey::PRODUCE, &["orders.eu/3", "payments.settled/0"]);
 
     // 1st Produce of the ingest connection. The delay rolls over 40%, and the leader of the orders partition moves.
     let now = run.later();
@@ -217,7 +220,7 @@ fn the_rules_of_the_request_pass_evaluate_against_hand_written_produce_calls() -
     assert_eq!(
         first.incidents().cloned().collect::<Vec<_>>(),
         [Incident::LeaderMoves {
-            partition: "orders.eu/3".parse()?,
+            partition: "orders.eu/3".parse().unwrap(),
             to: None
         }]
     );
@@ -250,8 +253,8 @@ fn the_rules_of_the_request_pass_evaluate_against_hand_written_produce_calls() -
     );
 
     // A Produce of another client. The scope keeps the delay away from it, and its connection counts from one.
-    let mut payments = Session::open("payments-svc", 3)?;
-    let other = payments.call(ApiKey::PRODUCE, &["orders.us/0"])?;
+    let mut payments = Session::open("payments-svc", 3);
+    let other = payments.call(ApiKey::PRODUCE, &["orders.us/0"]);
     assert_eq!(
         run.pass(Pass::Request, &other, &mut payments),
         [
@@ -272,25 +275,24 @@ fn the_rules_of_the_request_pass_evaluate_against_hand_written_produce_calls() -
     );
 
     // The shared counters say how many calls each rule matched, across all connections.
-    assert_eq!(run.matches("Slow down order producers")?, 3);
-    assert_eq!(run.matches("Leader moves away")?, 4);
-    assert_eq!(run.matches("Slow down two successful fetches")?, 0);
+    assert_eq!(run.matches("Slow down order producers"), 3);
+    assert_eq!(run.matches("Leader moves away"), 4);
+    assert_eq!(run.matches("Slow down two successful fetches"), 0);
     // The refusal counts `per: session`, so each connection keeps its own count of it.
-    let refusal = run.rule("Refuse the 3rd call on orders")?.arming().counter();
+    let refusal = run.rule("Refuse the 3rd call on orders").arming().counter();
     assert_eq!(ingest.counters.matches(refusal), 3);
     assert_eq!(payments.counters.matches(refusal), 1);
     assert_eq!(refusal.matches(), 0);
-    Ok(())
 }
 
 #[test]
-fn a_rule_that_waits_for_the_truth_evaluates_against_hand_written_fetch_calls() -> Result<(), Failure> {
-    let mut run = Run::start()?;
-    let mut analytics = Session::open("analytics", 2)?;
-    let fetch = analytics.call(ApiKey::FETCH, &["orders.eu/3", "orders.us/0"])?;
+fn a_rule_that_waits_for_the_truth_evaluates_against_hand_written_fetch_calls() {
+    let mut run = Run::start();
+    let mut analytics = Session::open("analytics", 2);
+    let fetch = analytics.call(ApiKey::FETCH, &["orders.eu/3", "orders.us/0"]);
     let answered = fetch.clone().with(Outcome::Ok).with(Latency::from_millis(14));
     assert_eq!(
-        run.rule("Slow down two successful fetches")?.rule().pass(),
+        run.rule("Slow down two successful fetches").rule().pass(),
         Pass::Response
     );
 
@@ -325,7 +327,7 @@ fn a_rule_that_waits_for_the_truth_evaluates_against_hand_written_fetch_calls() 
         ]
     );
     assert!(
-        run.rule("Slow down two successful fetches")?
+        run.rule("Slow down two successful fetches")
             .arming()
             .has_ended(run.clock.now())
     );
@@ -349,46 +351,44 @@ fn a_rule_that_waits_for_the_truth_evaluates_against_hand_written_fetch_calls() 
         run.pass(Pass::Response, &answered, &mut analytics),
         ["Slow down two successful fetches | matched orders.eu/3, orders.us/0 | 0 of 2 left | LifetimeOver"]
     );
-    assert_eq!(run.matches("Slow down two successful fetches")?, 2);
+    assert_eq!(run.matches("Slow down two successful fetches"), 2);
     // A rule that cannot fire anymore does not wait for the truth of a Fetch either.
     assert_eq!(run.waiting(&fetch), [""; 0]);
-    Ok(())
 }
 
 #[test]
-fn the_same_seed_gives_the_same_firings_in_every_run() -> Result<(), Failure> {
-    let (selectors, presets) = (selectors()?, presets()?);
-    let slow_down = rules()?.swap_remove(0);
+fn the_same_seed_gives_the_same_firings_in_every_run() {
+    let (selectors, presets) = (selectors(), presets());
+    let slow_down = rules().swap_remove(0);
 
     // Which of eight Produce calls of one connection the rule fires on.
-    let firings = |rule: &Rule, seed: Seed| -> Result<Vec<bool>, Failure> {
-        let snapshot = Snapshot::new([rule.resolve(&selectors, &presets)?.arm(seed, Instant::ZERO)])?;
-        let mut ingest = Session::open("order-ingest", 1)?;
-        let produce = ingest.call(ApiKey::PRODUCE, &["orders.eu/3"])?;
+    let firings = |rule: &Rule, seed: Seed| -> Vec<bool> {
+        let snapshot = Snapshot::new([rule.resolve(&selectors, &presets).unwrap().arm(seed, Instant::ZERO)]).unwrap();
+        let mut ingest = Session::open("order-ingest", 1);
+        let produce = ingest.call(ApiKey::PRODUCE, &["orders.eu/3"]);
         let mut fired = Vec::new();
         for _ in 0..8 {
             let pass = snapshot.evaluate(Pass::Request, &produce, Instant::ZERO, &mut ingest.counters);
             fired.extend(pass.iter().map(RuleEvaluation::fired));
         }
-        Ok(fired)
+        fired
     };
 
-    let first = firings(&slow_down, SEED)?;
+    let first = firings(&slow_down, SEED);
     // The die rolls 44.461%, 11.6519%, 73.8645%, 48.5064%, 62.5689%, 34.6021%, 79.717% and 12.0951%, for `chance: 40%`.
     assert_eq!(first, [false, true, false, false, false, true, false, true]);
-    assert_eq!(first, firings(&slow_down, SEED)?);
-    assert_ne!(first, firings(&slow_down, Seed::new(7))?);
+    assert_eq!(first, firings(&slow_down, SEED));
+    assert_ne!(first, firings(&slow_down, Seed::new(7)));
 
     // A rename keeps the die, so the renamed rule hits the same calls.
-    let renamed = slow_down.clone().renamed("Slow ingest".parse()?);
-    assert_eq!(first, firings(&renamed, SEED)?);
+    let renamed = slow_down.clone().renamed("Slow ingest".parse().unwrap());
+    assert_eq!(first, firings(&renamed, SEED));
     // A rule of another name rolls a die of its own.
     let other = Rule::new(
-        "Slow ingest".parse()?,
+        "Slow ingest".parse().unwrap(),
         slow_down.selector().clone(),
         slow_down.action().clone(),
     )
     .with_trigger(slow_down.trigger());
-    assert_ne!(first, firings(&other, SEED)?);
-    Ok(())
+    assert_ne!(first, firings(&other, SEED));
 }

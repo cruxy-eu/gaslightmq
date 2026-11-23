@@ -1,6 +1,8 @@
 use std::fmt;
 use std::str::FromStr;
 
+use crate::RuleError;
+
 /// The state of a rule: whether it is being written, evaluated, or kept.
 ///
 /// | State | Means |
@@ -32,7 +34,7 @@ use std::str::FromStr;
 ///
 /// // Arming resets a rule, so arming an armed rule is not a change: disarm it first.
 /// assert!(RuleState::Armed.arm().is_err());
-/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// # Ok::<(), RuleError>(())
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum RuleState {
@@ -66,8 +68,8 @@ impl RuleState {
     ///
     /// # Errors
     ///
-    /// [`RuleStateError::InvalidChange`] when the rule is armed already.
-    pub fn arm(self) -> Result<RuleState, RuleStateError> {
+    /// [`RuleError::InvalidChange`] when the rule is armed already.
+    pub fn arm(self) -> Result<RuleState, RuleError> {
         match self {
             RuleState::Draft | RuleState::Disarmed => Ok(RuleState::Armed),
             RuleState::Armed => Err(self.cannot("arm")),
@@ -78,8 +80,8 @@ impl RuleState {
     ///
     /// # Errors
     ///
-    /// [`RuleStateError::InvalidChange`] when the rule is not armed.
-    pub fn disarm(self) -> Result<RuleState, RuleStateError> {
+    /// [`RuleError::InvalidChange`] when the rule is not armed.
+    pub fn disarm(self) -> Result<RuleState, RuleError> {
         match self {
             RuleState::Armed => Ok(RuleState::Disarmed),
             RuleState::Draft | RuleState::Disarmed => Err(self.cannot("disarm")),
@@ -90,16 +92,16 @@ impl RuleState {
     ///
     /// # Errors
     ///
-    /// [`RuleStateError::InvalidChange`] when the rule is not a draft.
-    pub fn save(self) -> Result<RuleState, RuleStateError> {
+    /// [`RuleError::InvalidChange`] when the rule is not a draft.
+    pub fn save(self) -> Result<RuleState, RuleError> {
         match self {
             RuleState::Draft => Ok(RuleState::Disarmed),
             RuleState::Armed | RuleState::Disarmed => Err(self.cannot("save")),
         }
     }
 
-    fn cannot(self, change: &'static str) -> RuleStateError {
-        RuleStateError::InvalidChange { from: self, change }
+    fn cannot(self, change: &'static str) -> RuleError {
+        RuleError::InvalidChange { from: self, change }
     }
 }
 
@@ -119,21 +121,18 @@ impl FromStr for RuleState {
     }
 }
 
-/// Why a text is not a [`RuleState`], or why a rule cannot leave the state it is in.
+/// Why a text is not a [`RuleState`].
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum RuleStateError {
     /// No state has this name.
     Unknown { name: String },
-    /// A rule in this state cannot take this change, where `change` is `arm`, `disarm` or `save`.
-    InvalidChange { from: RuleState, change: &'static str },
 }
 
 impl fmt::Display for RuleStateError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Unknown { name } => write!(f, "no state is called {name:?}"),
-            Self::InvalidChange { from, change } => write!(f, "a rule that is {from} cannot {change}"),
         }
     }
 }
@@ -144,8 +143,8 @@ impl std::error::Error for RuleStateError {}
 mod tests {
     use super::*;
 
-    fn cannot(from: RuleState, change: &'static str) -> Result<RuleState, RuleStateError> {
-        Err(RuleStateError::InvalidChange { from, change })
+    fn cannot(from: RuleState, change: &'static str) -> Result<RuleState, RuleError> {
+        Err(RuleError::InvalidChange { from, change })
     }
 
     #[test]

@@ -179,7 +179,7 @@ name! {
     /// assert!(RuleName::new(" Slow down").is_err());
     /// // A zero-width space hides between the two words.
     /// assert!(RuleName::new("Slow\u{200b}down").is_err());
-    /// # Ok::<(), Box<dyn std::error::Error>>(())
+    /// # Ok::<(), RuleNameError>(())
     /// ```
     RuleName, RuleNameError, "rule name"
 }
@@ -200,7 +200,7 @@ name! {
     /// let name: PresetName = "Delay 1 s".parse()?;
     /// assert_eq!(name, "Delay 1 s");
     /// assert!(PresetName::new("Delay 1 s\n").is_err());
-    /// # Ok::<(), Box<dyn std::error::Error>>(())
+    /// # Ok::<(), PresetNameError>(())
     /// ```
     PresetName, PresetNameError, "preset name"
 }

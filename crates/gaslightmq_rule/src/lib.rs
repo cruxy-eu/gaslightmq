@@ -32,13 +32,19 @@
 //! | [`RuleName`], [`PresetName`] | [`RuleNameError`], [`PresetNameError`] | The text breaks a part of the rule for names. |
 //! | [`RuleSet`] | [`RuleSetError`] | Two rules share a name, or no rule has that name. |
 //! | [`PresetSet`] | [`PresetSetError`] | Two presets share a name. |
-//! | [`RuleState`] | [`RuleStateError`] | No state has this name, or a rule cannot leave its state this way. |
-//! | [`ResolvedRule`] | [`ResolvedRuleError`] | The rule names a selector or a preset that does not exist, or it could never work. |
-//! | [`HandFiring`] | [`HandFiringError`] | The rule cannot fire by hand, because its incident needs a call. |
+//! | [`RuleState`] | [`RuleStateError`] | No state has this name. |
 //! | [`Snapshot`] | [`SnapshotError`] | Two armed rules share a name. |
 //!
+//! What a rule does has one error, [`RuleError`].
+//!
+//! | What failed | What is wrong |
+//! |---|---|
+//! | [`Rule::resolve`] | The rule names a selector or a preset that does not exist, or it could never work. |
+//! | [`ArmedRule::fire_by_hand`] | The rule cannot fire by hand, because its incident needs a call. |
+//! | [`RuleState::arm`], [`RuleState::disarm`], [`RuleState::save`] | A rule cannot leave its state this way. |
+//!
 //! The message of an error is complete.
-//! A variant that holds the error of another crate writes that error into its own message,
+//! A variant that holds the error of a selector set or of an incident writes that error into its own message,
 //! because a file reader and the UI show one line, and not a chain.
 //! No error therefore has a [`source`](std::error::Error::source):
 //! a reporter that walks the chain would print the inner message twice.
@@ -63,34 +69,34 @@
 //!
 //! // A workspace has selectors and presets, and rules that name them.
 //! let selectors = SelectorSet::new([Selector::new(
-//!     "Order producers".parse()?,
+//!     "Order producers".parse().expect("a selector name"),
 //!     Conditions::new()
 //!         .with(Condition::is(ApiKey::PRODUCE))
-//!         .with(Condition::parse(Field::Topic, "orders.*")?),
-//! )])?;
+//!         .with(Condition::parse(Field::Topic, "orders.*").expect("a condition")),
+//! )]).expect("a selector set");
 //! let presets = PresetSet::new([Preset::new(
-//!     "Leader flap".parse()?,
+//!     "Leader flap".parse().expect("a preset name"),
 //!     RefusalLie::new(ErrorCode::NOT_LEADER_OR_FOLLOWER),
-//! )])?;
+//! )]).expect("a preset set");
 //! let rule = Rule::new(
-//!     "Refuse the 3rd order".parse()?,
-//!     "Order producers".parse::<SelectorName>()?,
-//!     "Leader flap".parse::<PresetName>()?,
+//!     "Refuse the 3rd order".parse().expect("a rule name"),
+//!     "Order producers".parse::<SelectorName>().expect("a selector name"),
+//!     "Leader flap".parse::<PresetName>().expect("a preset name"),
 //! )
-//! .with_trigger(TriggerParts::new().with_nth(MatchNumber::new(3)?))
+//! .with_trigger(TriggerParts::new().with_nth(MatchNumber::new(3).expect("a match number")))
 //! .with_lifetime(Lifetime::Firings(Count::ONE));
 //!
 //! // Someone arms the rule, and the engine publishes a snapshot of the armed rules.
 //! let mut clock = VirtualClock::new();
 //! let armed = rule.resolve(&selectors, &presets)?.arm(Seed::new(42), clock.now());
-//! let snapshot = Snapshot::new([armed])?;
+//! let snapshot = Snapshot::new([armed]).expect("a snapshot");
 //!
 //! // A session evaluates each of its calls. This Produce names an orders topic and another one.
 //! let produce = Fields::new()
 //!     .with(ApiKey::PRODUCE)
-//!     .with_part("orders.eu/3".parse::<TopicPartition>()?)
-//!     .with_part("payments.settled/0".parse::<TopicPartition>()?);
-//! let mut session = SessionCounters::new(CounterKey::new("10.0.4.27 broker 2 #1")?);
+//!     .with_part("orders.eu/3".parse::<TopicPartition>().expect("a topic partition"))
+//!     .with_part("payments.settled/0".parse::<TopicPartition>().expect("a topic partition"));
+//! let mut session = SessionCounters::new(CounterKey::new("10.0.4.27 broker 2 #1").expect("a counter key"));
 //!
 //! for _ in 0..2 {
 //!     clock.advance(Duration::from_millis(5));
@@ -102,13 +108,13 @@
 //! let mut pass = snapshot.evaluate(Pass::Request, &produce, clock.now(), &mut session);
 //! let third = &mut pass.rules_mut()[0];
 //! assert_eq!(third.target().to_string(), "orders.eu/3");
-//! assert_eq!(third.rolled().match_number(), Some(MatchNumber::new(3)?));
+//! assert_eq!(third.rolled().match_number(), Some(MatchNumber::new(3).expect("a match number")));
 //! assert_eq!(third.lie().map(ToString::to_string), Some("NOT_LEADER_OR_FOLLOWER on orders.eu/3".into()));
 //!
 //! // No other lie shadowed it, so the call confirms the firing, which was the one the lifetime allows.
 //! let confirmed = third.confirm().expect("the rule fired");
 //! assert!(confirmed.ends_lifetime());
-//! # Ok::<(), Box<dyn std::error::Error>>(())
+//! # Ok::<(), RuleError>(())
 //! ```
 //!
 //! # Who checks what
@@ -180,6 +186,7 @@
 
 mod action;
 mod armed;
+mod error;
 mod evaluation;
 mod name;
 mod preset;
@@ -192,11 +199,12 @@ mod snapshot;
 mod state;
 
 pub use action::{Action, ActionRef};
-pub use armed::{ArmedRule, HandFiring, HandFiringError};
+pub use armed::{ArmedRule, HandFiring};
+pub use error::RuleError;
 pub use evaluation::{FiredAction, PassEvaluation, RuleEvaluation};
 pub use name::{PresetName, PresetNameError, RuleName, RuleNameError};
 pub use preset::{Preset, PresetSet, PresetSetError};
-pub use resolved::{ResolvedRule, ResolvedRuleError};
+pub use resolved::ResolvedRule;
 pub use rule::Rule;
 pub use set::{RuleSet, RuleSetError};
 pub use snapshot::{Snapshot, SnapshotError};
@@ -214,13 +222,13 @@ pub use state::{RuleState, RuleStateError};
 ///
 /// let rule: Result<Rule, RuleNameError> = "Blackhole".parse().map(|name| Rule::new(name, Conditions::new(), LieDefinition::Silence));
 /// assert_eq!(rule?.name(), "Blackhole");
-/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// # Ok::<(), RuleNameError>(())
 /// ```
 pub mod prelude {
     #[doc(no_inline)]
     pub use crate::{
-        Action, ActionRef, ArmedRule, FiredAction, HandFiring, HandFiringError, PassEvaluation, Preset, PresetName,
-        PresetNameError, PresetSet, PresetSetError, ResolvedRule, ResolvedRuleError, Rule, RuleEvaluation, RuleName,
-        RuleNameError, RuleSet, RuleSetError, RuleState, RuleStateError, Snapshot, SnapshotError,
+        Action, ActionRef, ArmedRule, FiredAction, HandFiring, PassEvaluation, Preset, PresetName, PresetNameError,
+        PresetSet, PresetSetError, ResolvedRule, Rule, RuleError, RuleEvaluation, RuleName, RuleNameError, RuleSet,
+        RuleSetError, RuleState, RuleStateError, Snapshot, SnapshotError,
     };
 }

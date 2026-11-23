@@ -22,13 +22,13 @@ use crate::{Rule, RuleName};
 /// use gaslightmq_selector::prelude::*;
 ///
 /// let metadata = Conditions::from(Condition::is(ApiKey::METADATA));
-/// let blackhole = Rule::new("Blackhole metadata".parse()?, metadata, LieDefinition::Silence);
+/// let blackhole = Rule::new("Blackhole metadata".parse().expect("a rule name"), metadata, LieDefinition::Silence);
 /// let mut rules = RuleSet::new([blackhole])?;
 ///
-/// rules.rename(&"Blackhole metadata".parse()?, "Silent metadata".parse()?)?;
-/// let rule = rules.get(&"Silent metadata".parse()?).expect("the rule has its new name");
+/// rules.rename(&"Blackhole metadata".parse().expect("a rule name"), "Silent metadata".parse().expect("a rule name"))?;
+/// let rule = rules.get(&"Silent metadata".parse().expect("a rule name")).expect("the rule has its new name");
 /// assert_eq!(rule.dice_key().as_str(), "Blackhole metadata");
-/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// # Ok::<(), RuleSetError>(())
 /// ```
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct RuleSet {
