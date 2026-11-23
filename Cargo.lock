@@ -308,6 +308,7 @@ dependencies = [
 name = "gaslightmq_kafka_client_native"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "bytes",
  "futures",
  "gaslightmq_clock",
@@ -457,6 +458,7 @@ dependencies = [
 name = "gaslightmq_test_kafka"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "bytes",
  "gaslightmq_clock",
  "gaslightmq_kernel",

@@ -7,7 +7,6 @@
 
 #![expect(
     clippy::unwrap_used,
-    clippy::panic,
     reason = "a panic is how a test fails, also in a helper outside a `#[test]` function"
 )]
 
@@ -21,7 +20,7 @@ use gaslightmq_kafka_client_native::{
     AdminConfiguration, BootstrapServers, ConsumerConfiguration, KafkaAdmin, KafkaConsumer, KafkaProducer,
     ProducerConfiguration,
 };
-use gaslightmq_test_kafka::KafkaCluster;
+use gaslightmq_test_kafka::{KafkaCluster, KafkaClusterError};
 use gaslightmq_wire::{Offset, Partition, Record};
 use tokio::sync::OnceCell;
 
@@ -38,16 +37,14 @@ const HOPELESS_BACKOFF: TimeSpan = TimeSpan::from_millis(600);
 
 /// The cluster of three brokers that the tests of this binary share.
 /// The first test that asks for it starts it, and it ends with the process.
-async fn kafka() -> &'static KafkaCluster {
+async fn kafka() -> Result<&'static KafkaCluster, KafkaClusterError> {
     static CLUSTER: OnceCell<KafkaCluster> = OnceCell::const_new();
     CLUSTER
-        .get_or_init(|| async {
+        .get_or_try_init(|| {
             KafkaCluster::plaintext()
                 .with_brokers(3)
                 .with_broker_property("group.min.session.timeout.ms", SHORTEST_SESSION_MS.to_string())
                 .start()
-                .await
-                .unwrap_or_else(|error| panic!("{error}"))
         })
         .await
 }

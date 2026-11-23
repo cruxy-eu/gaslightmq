@@ -30,33 +30,32 @@ fn partitions_of(topic: &TopicMetadata) -> Vec<u32> {
 }
 
 #[tokio::test]
-async fn a_consumer_asks_for_the_partitions_of_a_topic() {
-    let cluster = kafka().await;
+async fn a_consumer_asks_for_the_partitions_of_a_topic() -> anyhow::Result<()> {
+    let cluster = kafka().await?;
     let orders = cluster
         .topics()
         .create(NewTopic::unique("orders").with_partitions(3))
-        .await
-        .unwrap();
+        .await?;
     let consumer = consumer(cluster);
 
-    let described = consumer.metadata_for_topic(orders.name().as_str()).await.unwrap();
+    let described = consumer.metadata_for_topic(orders.name().as_str()).await?;
 
     assert_eq!(described.name, orders.name().as_str());
     assert_eq!(partitions_of(&described), [0, 1, 2]);
+    Ok(())
 }
 
 #[tokio::test]
-async fn a_consumer_asks_for_every_topic_of_the_cluster() {
-    let cluster = kafka().await;
+async fn a_consumer_asks_for_every_topic_of_the_cluster() -> anyhow::Result<()> {
+    let cluster = kafka().await?;
     let orders = cluster
         .topics()
         .create(NewTopic::unique("orders").with_partitions(2))
-        .await
-        .unwrap();
-    let payments = cluster.topics().create(NewTopic::unique("payments")).await.unwrap();
+        .await?;
+    let payments = cluster.topics().create(NewTopic::unique("payments")).await?;
     let consumer = consumer(cluster);
 
-    let described = consumer.metadata_for_all_topics().await.unwrap();
+    let described = consumer.metadata_for_all_topics().await?;
 
     // Other tests have topics on the same cluster, so there are more than these two.
     let partitions: BTreeMap<&str, Vec<u32>> = described
@@ -65,16 +64,16 @@ async fn a_consumer_asks_for_every_topic_of_the_cluster() {
         .collect();
     assert_eq!(partitions.get(orders.name().as_str()), Some(&vec![0, 1]));
     assert_eq!(partitions.get(payments.name().as_str()), Some(&vec![0]));
+    Ok(())
 }
 
 #[tokio::test]
-async fn an_admin_reads_the_configs_of_a_topic() {
-    let cluster = kafka().await;
+async fn an_admin_reads_the_configs_of_a_topic() -> anyhow::Result<()> {
+    let cluster = kafka().await?;
     let orders = cluster
         .topics()
         .create(NewTopic::unique("orders").with_config("retention.ms", "60000"))
-        .await
-        .unwrap();
+        .await?;
     let admin = admin(cluster);
 
     let asked_for = admin
@@ -91,12 +90,13 @@ async fn an_admin_reads_the_configs_of_a_topic() {
         ]))
     );
     // Without names it gets every config, as the cluster itself lists them.
-    assert_eq!(all, Ok(orders.configs().await.unwrap()));
+    assert_eq!(all, Ok(orders.configs().await?));
+    Ok(())
 }
 
 #[tokio::test]
-async fn an_admin_hears_at_once_that_the_cluster_has_no_such_topic() {
-    let cluster = kafka().await;
+async fn an_admin_hears_at_once_that_the_cluster_has_no_such_topic() -> anyhow::Result<()> {
+    let cluster = kafka().await?;
     let admin = admin(cluster);
 
     // The admin has a minute for the call, and the answer of the cluster ends it long before.
@@ -112,11 +112,12 @@ async fn an_admin_hears_at_once_that_the_cluster_has_no_such_topic() {
             error: ResponseError::UnknownTopicOrPartition
         }))
     );
+    Ok(())
 }
 
 #[tokio::test]
-async fn a_consumer_that_may_not_create_topics_never_finds_a_topic_the_cluster_does_not_have() {
-    let cluster = kafka().await;
+async fn a_consumer_that_may_not_create_topics_never_finds_a_topic_the_cluster_does_not_have() -> anyhow::Result<()> {
+    let cluster = kafka().await?;
     let name = unique_name("never-created");
     let mut configuration = consuming(cluster);
     configuration.allow_auto_create_topics = false;
@@ -132,33 +133,36 @@ async fn a_consumer_that_may_not_create_topics_never_finds_a_topic_the_cluster_d
     assert_eq!(read, Err(unknown_until_the_time_was_over()));
     assert_eq!(watermarks, Err(unknown_until_the_time_was_over()));
     assert_does_not_exist(cluster, &name).await;
+    Ok(())
 }
 
 #[tokio::test]
-async fn a_consumer_that_may_create_topics_gets_the_topic_it_asks_about() {
-    let cluster = kafka().await;
+async fn a_consumer_that_may_create_topics_gets_the_topic_it_asks_about() -> anyhow::Result<()> {
+    let cluster = kafka().await?;
     let name = unique_name("created-by-the-question");
     let consumer = consumer(cluster);
 
-    let described = consumer.metadata_for_topic(&name).await.unwrap();
+    let described = consumer.metadata_for_topic(&name).await?;
 
     assert_eq!(described.name, name);
     assert_eq!(partitions_of(&described), [0]);
-    let created = cluster.topics().get(&TopicName::new(&name).unwrap()).await.unwrap();
+    let created = cluster.topics().get(&TopicName::new(&name)?).await?;
     assert_eq!(created.partitions(), 1);
+    Ok(())
 }
 
 #[tokio::test]
-async fn a_producer_gets_the_topic_it_writes_to() {
-    let cluster = kafka().await;
+async fn a_producer_gets_the_topic_it_writes_to() -> anyhow::Result<()> {
+    let cluster = kafka().await?;
     let name = unique_name("created-by-the-first-record");
     let producer = producer(cluster);
 
     let written = producer.send(&name, partition(0), &[Record::new("placed")]).await;
 
     assert_eq!(written, Ok(offset(0)));
-    let created = cluster.topics().get(&TopicName::new(&name).unwrap()).await.unwrap();
-    assert_eq!(values(&created.partition(0).records().await.unwrap()), ["placed"]);
+    let created = cluster.topics().get(&TopicName::new(&name)?).await?;
+    assert_eq!(values(&created.partition(0).records().await?), ["placed"]);
+    Ok(())
 }
 
 #[tokio::test]
@@ -181,9 +185,9 @@ async fn a_producer_gets_no_topic_from_a_cluster_that_creates_none() {
 }
 
 #[tokio::test]
-async fn a_partition_that_the_topic_does_not_have_has_no_leader() {
-    let cluster = kafka().await;
-    let orders = cluster.topics().create(NewTopic::unique("orders")).await.unwrap();
+async fn a_partition_that_the_topic_does_not_have_has_no_leader() -> anyhow::Result<()> {
+    let cluster = kafka().await?;
+    let orders = cluster.topics().create(NewTopic::unique("orders")).await?;
     let mut configuration = producing(cluster);
     configuration.delivery_timeout = HOPELESS_CALL;
     configuration.client.retry_backoff = HOPELESS_BACKOFF;
@@ -202,11 +206,12 @@ async fn a_partition_that_the_topic_does_not_have_has_no_leader() {
             })
         })
     );
+    Ok(())
 }
 
 #[tokio::test]
-async fn a_name_that_is_no_topic_name_is_refused_at_once() {
-    let cluster = kafka().await;
+async fn a_name_that_is_no_topic_name_is_refused_at_once() -> anyhow::Result<()> {
+    let cluster = kafka().await?;
     let producer = producer(cluster);
 
     let written = producer.send("orders/eu", partition(0), &[Record::new("placed")]).await;
@@ -217,6 +222,7 @@ async fn a_name_that_is_no_topic_name_is_refused_at_once() {
             error: ResponseError::InvalidTopicException
         })
     );
+    Ok(())
 }
 
 async fn assert_does_not_exist(cluster: &KafkaCluster, name: &str) {
@@ -257,9 +263,9 @@ async fn write_and_read_back(topic: &str, producer: &impl Producer, consumer: &i
 }
 
 #[tokio::test]
-async fn each_role_implements_its_trait() {
-    let cluster = kafka().await;
-    let orders = cluster.topics().create(NewTopic::unique("orders")).await.unwrap();
+async fn each_role_implements_its_trait() -> anyhow::Result<()> {
+    let cluster = kafka().await?;
+    let orders = cluster.topics().create(NewTopic::unique("orders")).await?;
     let topic = orders.name().as_str();
     let mut configuration = consuming(cluster);
     configuration.fetch_max_wait = TimeSpan::from_millis(100);
@@ -273,16 +279,16 @@ async fn each_role_implements_its_trait() {
         .collect()
         .await;
     assert_eq!(values(&streamed), ["placed"]);
+    Ok(())
 }
 
 #[tokio::test]
-async fn a_trait_without_an_error_carries_what_the_cluster_answered() {
-    let cluster = kafka().await;
+async fn a_trait_without_an_error_carries_what_the_cluster_answered() -> anyhow::Result<()> {
+    let cluster = kafka().await?;
     let orders = cluster
         .topics()
         .create(NewTopic::unique("orders").with_config("max.message.bytes", "100"))
-        .await
-        .unwrap();
+        .await?;
 
     let written = Producer::send(
         &producer(cluster),
@@ -295,4 +301,5 @@ async fn a_trait_without_an_error_carries_what_the_cluster_answered() {
 
     assert_eq!(written.error, Some(ResponseError::MessageTooLarge));
     assert_eq!(configs.error, Some(ResponseError::UnknownTopicOrPartition));
+    Ok(())
 }

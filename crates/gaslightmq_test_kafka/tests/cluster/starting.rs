@@ -8,19 +8,20 @@ use gaslightmq_test_kafka::{Broker, KafkaCluster, KafkaClusterError, KafkaImage}
 use crate::kafka;
 
 #[tokio::test]
-async fn a_cluster_runs_the_tested_version_of_kafka_unless_it_is_told_otherwise() {
-    let cluster = kafka().await;
+async fn a_cluster_runs_the_tested_version_of_kafka_unless_it_is_told_otherwise() -> anyhow::Result<()> {
+    let cluster = kafka().await?;
 
     let expected = match std::env::var(KafkaImage::VARIABLE) {
-        Ok(image) => image.parse().unwrap(),
+        Ok(image) => image.parse()?,
         Err(_) => KafkaImage::default(),
     };
     assert_eq!(cluster.image(), &expected);
+    Ok(())
 }
 
 #[tokio::test]
-async fn every_broker_has_an_id_and_an_address_of_its_own() {
-    let cluster = kafka().await;
+async fn every_broker_has_an_id_and_an_address_of_its_own() -> anyhow::Result<()> {
+    let cluster = kafka().await?;
 
     let ids: Vec<BrokerId> = cluster.brokers().iter().map(Broker::id).collect();
     let addresses: BTreeSet<_> = cluster.brokers().iter().map(Broker::address).collect();
@@ -36,20 +37,21 @@ async fn every_broker_has_an_id_and_an_address_of_its_own() {
     assert_eq!(cluster.bootstrap_servers(), bootstrap.join(","));
     assert_eq!(cluster.broker(BrokerId::from(2)), Some(&cluster.brokers()[1]));
     assert_eq!(cluster.broker(BrokerId::from(4)), None);
+    Ok(())
 }
 
 #[tokio::test]
-async fn a_cluster_of_one_broker_takes_the_properties_of_the_test() {
+async fn a_cluster_of_one_broker_takes_the_properties_of_the_test() -> anyhow::Result<()> {
     let cluster = KafkaCluster::plaintext()
         .with_broker_property("num.partitions", "4")
         .start()
-        .await
-        .unwrap_or_else(|error| panic!("{error}"));
+        .await?;
 
-    let orders = cluster.topics().create("orders").await.unwrap();
+    let orders = cluster.topics().create("orders").await?;
 
     assert_eq!(cluster.brokers().len(), 1);
     assert_eq!(orders.partitions(), 4);
+    Ok(())
 }
 
 #[tokio::test]
@@ -96,8 +98,8 @@ async fn brokers_that_cannot_start_say_why_in_their_log() {
 }
 
 #[tokio::test]
-async fn an_image_that_does_not_exist_starts_no_cluster() {
-    let image = KafkaImage::version("0.0.0-no-such-version").unwrap();
+async fn an_image_that_does_not_exist_starts_no_cluster() -> anyhow::Result<()> {
+    let image = KafkaImage::version("0.0.0-no-such-version")?;
 
     let error = KafkaCluster::plaintext().with_image(image).start().await.unwrap_err();
 
@@ -108,4 +110,5 @@ async fn an_image_that_does_not_exist_starts_no_cluster() {
         ),
         "{error}"
     );
+    Ok(())
 }

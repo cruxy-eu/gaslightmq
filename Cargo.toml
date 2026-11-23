@@ -51,6 +51,8 @@ gaslightmq_test_kafka = { path = "crates/gaslightmq_test_kafka" }
 gaslightmq_trigger = { path = "crates/gaslightmq_trigger" }
 gaslightmq_wire = { path = "crates/gaslightmq_wire" }
 gaslightmq_wire_edit = { path = "crates/gaslightmq_wire_edit" }
+# Only tests use it: a test returns `anyhow::Result<()>`. No crate names it in its API or outside its tests.
+anyhow = "1"
 arc-swap = "1"
 bytes = "1"
 futures = "0.3"
