@@ -362,10 +362,10 @@ fn the_error_code_of_a_response_itself_reads_back() {
         .response(&gaslightmq_wire::messages::HeartbeatResponse::default())
         .unwrap();
     let asked = EditableRequest::decode(&produce(9), &topic_names()).unwrap();
-    assert_eq!(
-        asked.error_of(&other).unwrap_err().to_string(),
-        "the Heartbeat v4 response 7 does not answer the Produce v9 request 7"
-    );
+    assert!(matches!(
+        asked.error_of(&other),
+        Err(SurgeryError::ResponseOfAnotherCall { .. })
+    ));
 }
 
 #[test]

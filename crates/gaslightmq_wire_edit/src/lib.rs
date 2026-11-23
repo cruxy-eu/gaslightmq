@@ -144,9 +144,9 @@
 //! | An operation of [`EditableRequest`] | The API has no messages, a body does not decode or encode, a response belongs to another request, or nothing failed. |
 //! | [`TopicNames::learn_from`] | The response to learn from does not decode. |
 //!
-//! Whoever asks for surgery does the same whatever stood in the way, so the error has no variants.
-//! What is wrong is its message, and that message is complete, so the error has no [`source`](std::error::Error::source).
-//! When a body does not decode or encode, the message writes what the codec said once, after what the surgery was doing.
+//! The message of the error is complete, so it has no [`source`](std::error::Error::source).
+//! A variant about a body that does not decode or encode keeps what the codec said as text, in a field `reason`,
+//! and writes it once, after what it was doing.
 //!
 //! [`Failures`] and [`Remainder`] hold any value, so they have no error.
 //!

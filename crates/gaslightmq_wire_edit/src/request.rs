@@ -93,11 +93,11 @@ impl EditableRequest {
     ///
     /// # Errors
     ///
-    /// A [`SurgeryError`] when `gaslightmq_wire` has no messages for the API of the request,
-    /// or the body does not decode.
+    /// [`SurgeryError::UnknownApi`] when `gaslightmq_wire` has no messages for the API of the request,
+    /// and [`SurgeryError::UnreadableRequest`] when the body does not decode.
     pub fn decode(request: &Request, topics: &TopicNames) -> Result<Self, SurgeryError> {
         let api = request.api();
-        let known = api.known().ok_or_else(|| SurgeryError::unknown_api(api))?;
+        let known = api.known().ok_or(SurgeryError::UnknownApi { api })?;
         let body = body::decode(known, request).map_err(|error| SurgeryError::unreadable_request(api, &error))?;
 
         let mut by_id = TopicNames::new();
@@ -146,7 +146,7 @@ impl EditableRequest {
     ///
     /// # Errors
     ///
-    /// A [`SurgeryError`] when what is left does not encode.
+    /// [`SurgeryError::UnwritableRequest`] when what is left does not encode.
     pub fn without<'a>(&self, parts: impl IntoIterator<Item = &'a Part>) -> Result<Remainder, SurgeryError> {
         let removed: BTreeSet<&Part> = parts.into_iter().collect();
         if !self.parts.iter().any(|part| removed.contains(part)) {
@@ -180,11 +180,11 @@ impl EditableRequest {
     ///
     /// # Errors
     ///
-    /// A [`SurgeryError`] when `failures` names nothing that the request asks,
-    /// or the response does not encode.
+    /// [`SurgeryError::NothingFailed`] when `failures` names nothing that the request asks,
+    /// and [`SurgeryError::UnwritableResponse`] when the response does not encode.
     pub fn error_response(&self, failures: &Failures) -> Result<Response, SurgeryError> {
         if failures.of_call().is_none() && !self.fails_a_part(failures) {
-            return Err(SurgeryError::nothing_failed(self.api()));
+            return Err(SurgeryError::NothingFailed { api: self.api() });
         }
         let part = |topic: TopicKey<'_>, partition: Option<i32>| self.error_code(failures, topic, partition);
         let call = ErrorCode::to_wire(failures.of_call());
@@ -206,8 +206,9 @@ impl EditableRequest {
     ///
     /// # Errors
     ///
-    /// A [`SurgeryError`] when `truth` answers another request, its body does not decode,
-    /// or the result does not encode.
+    /// [`SurgeryError::ResponseOfAnotherCall`] when `truth` answers another request,
+    /// [`SurgeryError::UnreadableResponse`] when its body does not decode,
+    /// and [`SurgeryError::UnwritableResponse`] when the result does not encode.
     pub fn merge(&self, truth: &Response, failures: &Failures) -> Result<Response, SurgeryError> {
         let api = self.api();
         self.check_answers(truth)?;
@@ -237,7 +238,8 @@ impl EditableRequest {
     ///
     /// # Errors
     ///
-    /// A [`SurgeryError`] when `response` answers another request, or its body does not decode.
+    /// [`SurgeryError::ResponseOfAnotherCall`] when `response` answers another request,
+    /// and [`SurgeryError::UnreadableResponse`] when its body does not decode.
     pub fn parts_of(&self, response: &Response) -> Result<Vec<PartFields>, SurgeryError> {
         self.check_answers(response)?;
         let mut parts = Vec::new();
@@ -268,7 +270,8 @@ impl EditableRequest {
     ///
     /// # Errors
     ///
-    /// A [`SurgeryError`] when `response` answers another request, or its body does not decode.
+    /// [`SurgeryError::ResponseOfAnotherCall`] when `response` answers another request,
+    /// and [`SurgeryError::UnreadableResponse`] when its body does not decode.
     pub fn error_of(&self, response: &Response) -> Result<Option<ErrorCode>, SurgeryError> {
         self.check_answers(response)?;
         self.body
@@ -282,10 +285,12 @@ impl EditableRequest {
         if response.api() == self.api() && response.correlation_id() == self.request.correlation_id() {
             Ok(())
         } else {
-            Err(SurgeryError::response_of_another_call(
-                (self.api(), self.request.correlation_id()),
-                (response.api(), response.correlation_id()),
-            ))
+            Err(SurgeryError::ResponseOfAnotherCall {
+                api: self.api(),
+                correlation_id: self.request.correlation_id(),
+                answered_api: response.api(),
+                answered_correlation_id: response.correlation_id(),
+            })
         }
     }
 

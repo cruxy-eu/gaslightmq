@@ -121,7 +121,6 @@ mod tests {
     use gaslightmq_lie::LieKind;
     use gaslightmq_wire::Request;
     use gaslightmq_wire::messages::{HeartbeatRequest, ProduceRequest};
-    use gaslightmq_wire_edit::{EditableRequest, Failures, TopicNames};
 
     use super::*;
 
@@ -179,17 +178,16 @@ mod tests {
 
     #[test]
     fn a_stage_failure_writes_what_the_surgery_or_the_codec_said_once() {
-        // A Heartbeat in which nothing failed, and which is no Produce.
+        let unknown = SurgeryError::UnknownApi {
+            api: Api::from_wire(9999, 0),
+        };
+        // A Heartbeat is no Produce.
         let heartbeat = Request::new(4, 7, None, &HeartbeatRequest::default()).unwrap();
-        let asked = EditableRequest::decode(&heartbeat, &TopicNames::new()).unwrap();
-        let nothing_failed = asked.error_response(&Failures::none()).unwrap_err();
         let of_another_api = heartbeat.body::<ProduceRequest>().unwrap_err();
         let cases = [
             (
-                StageFailure::UnreadableRequest {
-                    error: nothing_failed.clone(),
-                },
-                "no rule saw the call: nothing that the Heartbeat v4 request asks failed",
+                StageFailure::UnreadableRequest { error: unknown.clone() },
+                "no rule saw the call: a request of api 9999 v0 cannot be edited: its messages are unknown",
             ),
             (
                 StageFailure::UnreadableRequestFields {
@@ -208,14 +206,12 @@ mod tests {
                  cannot decode request body: it is of api key 12, and it was read as api key 0",
             ),
             (
-                StageFailure::UnreadableTruth {
-                    error: nothing_failed.clone(),
-                },
-                "the rules saw no truth: nothing that the Heartbeat v4 request asks failed",
+                StageFailure::UnreadableTruth { error: unknown.clone() },
+                "the rules saw no truth: a request of api 9999 v0 cannot be edited: its messages are unknown",
             ),
             (
-                StageFailure::UnreadableDelivery { error: nothing_failed },
-                "the record shows no answer: nothing that the Heartbeat v4 request asks failed",
+                StageFailure::UnreadableDelivery { error: unknown },
+                "the record shows no answer: a request of api 9999 v0 cannot be edited: its messages are unknown",
             ),
             (
                 StageFailure::UnreadableMemberId {

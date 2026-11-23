@@ -272,28 +272,36 @@ fn not_rewritten(error: &SurgeryError) -> LieError {
 
 #[cfg(test)]
 mod tests {
-    use gaslightmq_wire::Request;
-    use gaslightmq_wire::messages::HeartbeatRequest;
-
     use super::*;
 
     #[test]
     fn what_stood_in_the_way_is_the_reason_that_the_call_is_not_rewritten() {
-        // A Heartbeat in which nothing failed has no error response.
-        let heartbeat = Request::new(4, 7, None, &HeartbeatRequest::default()).unwrap();
-        let asked = EditableRequest::decode(&heartbeat, &TopicNames::new()).unwrap();
-        let nothing_failed = asked.error_response(&Failures::none()).unwrap_err();
+        let api = Api::from_wire(0, 9);
+        let unwritable = SurgeryError::UnwritableResponse {
+            api,
+            reason: "unknown api key 0".to_owned(),
+        };
+        let of_another_call = SurgeryError::ResponseOfAnotherCall {
+            api,
+            correlation_id: 7,
+            answered_api: Api::from_wire(1, 11),
+            answered_correlation_id: 8,
+        };
 
         assert_eq!(
-            not_rewritten(&nothing_failed),
+            not_rewritten(&unwritable),
             LieError::CallNotRewritten {
                 kind: LieKind::Refusal,
-                reason: nothing_failed.to_string(),
+                reason: unwritable.to_string(),
             }
         );
         assert_eq!(
-            not_rewritten(&nothing_failed).to_string(),
-            "refusal cannot rewrite the call: nothing that the Heartbeat v4 request asks failed"
+            not_rewritten(&unwritable).to_string(),
+            "refusal cannot rewrite the call: the Produce v9 response cannot be written: unknown api key 0"
+        );
+        assert_eq!(
+            not_rewritten(&of_another_call).to_string(),
+            "refusal cannot rewrite the call: the Fetch v11 response 8 does not answer the Produce v9 request 7"
         );
     }
 }

@@ -33,8 +33,8 @@ mod next_to_the_others {
 
     use gaslightmq_field::prelude::*;
     use gaslightmq_kernel::prelude::*;
-    use gaslightmq_wire::messages::{HeartbeatRequest, HeartbeatResponse};
-    use gaslightmq_wire::{Frame, Response};
+    use gaslightmq_wire::messages::{HeartbeatRequest, HeartbeatResponse, MetadataRequest};
+    use gaslightmq_wire::{Api, Response};
     use gaslightmq_wire_edit::prelude::*;
 
     /// One value of every type of the prelude, each named without a path.
@@ -65,14 +65,28 @@ mod next_to_the_others {
             error.to_string()
         }
 
-        let request = gaslightmq_wire::Request::new(4, 7, None, &HeartbeatRequest::default()).unwrap();
-        let asked = EditableRequest::decode(&request, &TopicNames::new()).unwrap();
-        let nothing_failed: SurgeryError = asked.error_response(&Failures::none()).unwrap_err();
-        // A correlation ID, the tagged fields of the header, and a body that stops short.
-        let cut_short = Response::decode(request.api(), Frame::new(vec![0, 0, 0, 7, 0, 0xFF])).unwrap();
-        let unreadable: SurgeryError = asked.error_of(&cut_short).unwrap_err();
+        // What the codec says: a Heartbeat is no Metadata request, and it has no version 5.
+        let heartbeat = gaslightmq_wire::Request::new(4, 7, None, &HeartbeatRequest::default()).unwrap();
+        let api = heartbeat.api();
+        let of_another_api = heartbeat.body::<MetadataRequest>().unwrap_err();
+        let no_such_request = gaslightmq_wire::Request::new(5, 7, None, &HeartbeatRequest::default()).unwrap_err();
+        let no_such_response = Response::new(Api::from_wire(api.key, 5), 7, &HeartbeatResponse::default()).unwrap_err();
 
-        vec![message_of(nothing_failed), message_of(unreadable)]
+        vec![
+            message_of(SurgeryError::NothingFailed { api }),
+            message_of(SurgeryError::UnreadableRequest {
+                api,
+                reason: of_another_api.to_string(),
+            }),
+            message_of(SurgeryError::UnwritableRequest {
+                api,
+                reason: no_such_request.to_string(),
+            }),
+            message_of(SurgeryError::UnwritableResponse {
+                api,
+                reason: no_such_response.to_string(),
+            }),
+        ]
     }
 }
 
@@ -86,14 +100,27 @@ fn the_prelude_names_every_item_next_to_the_other_preludes() {
 
 #[test]
 fn the_prelude_names_the_error_of_every_type() {
-    let [nothing_failed, unreadable] = &next_to_the_others::every_error()[..] else {
-        panic!("the prelude has one error, and two of its messages are checked");
+    let [nothing_failed, unreadable, unwritable_request, unwritable_response] = &next_to_the_others::every_error()[..]
+    else {
+        panic!("four messages of the one error of the prelude are checked");
     };
 
     assert_eq!(nothing_failed, "nothing that the Heartbeat v4 request asks failed");
+    assert_eq!(
+        unreadable,
+        "the Heartbeat v4 request cannot be read: \
+         cannot decode request body: it is of api key 12, and it was read as api key 3"
+    );
+    // What stands in the way of a body that does not encode is the text of the codec.
+    let request_unwritable = "what is left of the Heartbeat v4 request cannot be written: cannot encode request body: ";
     assert!(
-        unreadable.starts_with("the Heartbeat v4 response cannot be read: cannot decode response body: "),
-        "{unreadable}"
+        unwritable_request.starts_with(request_unwritable),
+        "{unwritable_request}"
+    );
+    let response_unwritable = "the Heartbeat v4 response cannot be written: cannot encode response body: ";
+    assert!(
+        unwritable_response.starts_with(response_unwritable),
+        "{unwritable_response}"
     );
 }
 
