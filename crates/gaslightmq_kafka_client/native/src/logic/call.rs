@@ -72,6 +72,12 @@ pub(crate) trait Operation {
         true
     }
 
+    /// Whether the call tries again after `error`, which the response to the request of the operation reported.
+    /// It does when the error may pass. An operation whose answer is final says so here.
+    fn tries_again_after(&self, error: &ClientError) -> bool {
+        error.is_retriable()
+    }
+
     /// What the cluster view takes over from the response, whatever the call makes of it.
     fn learn(&self, _response: &<Self::Request as KafkaRequest>::Response, _cluster: &mut ClusterView, _now: Instant) {}
 
@@ -175,6 +181,11 @@ impl<O: Operation> Call<O> {
                 match self.read(&exchange, &response, cluster, now) {
                     Ok(Some(output)) => Step::Done(Ok(output)),
                     Ok(None) => self.send(cluster, now),
+                    Err(error)
+                        if exchange.purpose == Purpose::Operation && !self.operation.tries_again_after(&error) =>
+                    {
+                        Step::Done(Err(error))
+                    }
                     Err(error) => self.fail(&exchange, error, cluster, now),
                 }
             }

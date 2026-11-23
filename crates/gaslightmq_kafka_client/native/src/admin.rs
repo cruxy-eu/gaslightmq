@@ -47,8 +47,10 @@ impl KafkaAdmin {
     ///
     /// # Errors
     ///
-    /// The error the broker or the connection gave,
-    /// or [`ClientError::CallTimedOut`] when retriable errors lasted until the default API timeout.
+    /// The error the cluster reports for the topic, at once:
+    /// a topic that the cluster does not have is `UNKNOWN_TOPIC_OR_PARTITION`, as with Kafka's admin client.
+    /// Otherwise the error the connection gave,
+    /// or [`ClientError::CallTimedOut`] when requests stayed without an answer until the default API timeout.
     pub async fn describe_topic_configs(
         &self,
         topic: &str,

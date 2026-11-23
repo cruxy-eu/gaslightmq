@@ -1,0 +1,23 @@
+[package]
+name = "gaslightmq_test_kafka"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lints]
+workspace = true
+
+# The modules that hold values and never wait: `cargo xtask sans-io` holds them to that.
+[package.metadata.gaslightmq]
+sans_io_modules = ["configuration", "image", "properties"]
+
+[dependencies]
+gaslightmq_clock.workspace = true
+gaslightmq_kernel.workspace = true
+gaslightmq_wire.workspace = true
+bytes.workspace = true
+tokio = { workspace = true, features = ["net", "io-util", "time", "sync"] }
+
+[dev-dependencies]
+anyhow.workspace = true
+tokio = { workspace = true, features = ["rt", "macros"] }

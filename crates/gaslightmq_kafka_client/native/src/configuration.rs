@@ -494,6 +494,7 @@ pub struct AdminConfiguration {
     /// How often a call tries its request again after a retriable failure.
     /// A call that runs out of retries fails with its last error.
     /// The default API timeout ends a call that has retries left.
+    /// What the cluster answers about the topic itself is never tried again, also when it is an error.
     pub retries: u32,
 }
 

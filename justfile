@@ -47,9 +47,14 @@ clippy:
     cargo clippy --workspace --all-targets -- -D warnings
     cargo clippy --workspace --all-targets --all-features -- -D warnings
 
-# Every test, with every feature.
+# Every test, with every feature. The tests against real Kafka brokers need Docker, and say so when it is missing.
 test *args:
     cargo test --workspace --all-features {{args}}
+
+# Only the tests against real Kafka brokers, which `just test` runs too. They need Docker.
+test-kafka *args:
+    cargo test -p gaslightmq_test_kafka --test cluster {{args}}
+    cargo test -p gaslightmq_kafka_client_native --test kafka {{args}}
 
 # The API docs, warnings and broken links denied.
 doc:

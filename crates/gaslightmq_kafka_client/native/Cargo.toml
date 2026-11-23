@@ -22,4 +22,7 @@ tokio = { workspace = true, features = ["net", "io-util", "time", "sync"] }
 tracing.workspace = true
 
 [dev-dependencies]
+anyhow.workspace = true
+# A real Kafka cluster for the tests in `tests/kafka`.
+gaslightmq_test_kafka.workspace = true
 tokio = { workspace = true, features = ["rt", "macros"] }

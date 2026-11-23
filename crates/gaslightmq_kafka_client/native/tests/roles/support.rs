@@ -256,11 +256,6 @@ impl Cluster {
         (cluster, broker)
     }
 
-    /// The records the partition holds.
-    pub fn log(&self) -> Vec<Record> {
-        self.log.lock().unwrap().clone()
-    }
-
     fn first_broker(&self) -> (i32, SocketAddr) {
         self.brokers[0]
     }

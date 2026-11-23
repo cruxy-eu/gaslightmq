@@ -43,6 +43,12 @@ impl Operation for DescribeTopicConfigs {
         ])
     }
 
+    /// What the cluster says about the topic is the answer, also when it says that it knows no such topic.
+    /// Kafka's admin client does not ask again either: only a request without an answer is tried again.
+    fn tries_again_after(&self, _error: &ClientError) -> bool {
+        false
+    }
+
     fn read(
         &mut self,
         response: DescribeConfigsResponse,
@@ -137,6 +143,16 @@ mod tests {
                 error: ResponseError::UnknownTopicOrPartition
             })
         );
+    }
+
+    #[test]
+    fn an_error_of_the_topic_is_final_also_when_it_may_pass() {
+        let unknown = ClientError::Broker {
+            error: ResponseError::UnknownTopicOrPartition,
+        };
+
+        assert!(unknown.is_retriable());
+        assert!(!describe(&[]).tries_again_after(&unknown));
     }
 
     #[test]
