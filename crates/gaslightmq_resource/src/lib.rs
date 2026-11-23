@@ -7,6 +7,7 @@
 //! |---|---|
 //! | [`ResourceName`] | The name of a resource: text that follows [the rule for names](ResourceName#the-rule-for-names). |
 //! | [`ResourceNameError`] | Why a text is no name: the part of the rule it breaks. |
+//! | [`name!`] | The name of one kind of resource and its error, written into the crate of that kind. |
 //!
 //! ```
 //! use gaslightmq_resource::{ResourceName, ResourceNameError};
@@ -28,12 +29,17 @@
 //! and the rule for names is written here alone.
 //!
 //! Each of those types has an error of its own too, named after it, with a variant for every part of the rule.
-//! Its constructor turns the [`ResourceNameError`] into that error.
 //! Whoever names a rule reads `rule name "" is empty`, and never meets the error of this crate.
 //!
+//! [`name!`] writes both types.
+//! The crate of a kind calls it once for each name, with the two types and the words that a message calls the name by:
+//! `gaslightmq_resource::name!(SelectorName, SelectorNameError, "selector name");`
+//!
 //! The crate is internal, and says so in its manifest.
-//! A crate that uses it names its types in private code only: not in what it offers, and not in what it documents.
+//! A crate that uses it shows none of its types: not in what it offers, and not in what it documents.
 //! `cargo xtask internal-crates` holds every such crate to that.
+//! A call of the macro passes that check, because it names no type of this crate,
+//! and what the macro writes keeps the [`ResourceName`] in a private field.
 //!
 //! # No IO
 //!
@@ -42,6 +48,7 @@
 //!
 //! The `serde` feature maps a [`ResourceName`] to its text.
 
+mod kind;
 mod name;
 
 pub use name::{ResourceName, ResourceNameError};
