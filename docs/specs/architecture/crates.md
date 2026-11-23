@@ -56,15 +56,40 @@ The workspace's own checks are tooling, and not product code: they live in `xtas
   A type made of parts says which part failed, and it keeps the error of that part:
   `TopicPartitionError::InvalidPartition` holds a `PartitionNumberError`.
   A whole that checks its members does the same: `SelectorSet` has `SelectorSetError`.
-  No crate has one error type for everything in it.
+  A type that checks nothing has no error type.
   Types may share their checks as private helpers.
+- **A crate has its own error for its API.**
+  What a crate does can fail too: it decodes a frame, tells a lie or opens a listener.
+  The crate has an error type of its own for that: its API error.
+  It is named after what the crate is about: `WireError`, `LieError`, `ListenerError`.
+  One API error is enough for most crates.
+  Each variant says what went wrong for the caller.
+  A handle, a step or a noun of the crate has no error type of its own.
+  A crate that only holds value objects has no API error.
+  A crate that holds a contract holds the error of that contract.
+  Every implementation returns that error and no other:
+  a lie returns a `LieError`, whatever it reads or writes to tell its lie.
+- **A crate turns the errors it meets into its own.**
+  A crate handles an error where it calls what failed: another crate, a library or the system.
+  It returns a variant of its own error, in the words of its own subject.
+  No variant, field or type names the tool, the library or the mechanism behind a failure:
+  a connection is `ConnectionLost`, and the error is no `IoError`.
+  What the other side said is text.
+  The variant keeps it in a field, named `reason`.
+  No field holds an error type of a library or of the standard library.
+  No field holds the API error of another crate either.
+  A field may hold the error of a value object when the variant is about that value,
+  also a value object of another crate of the workspace.
+  Nothing names `dyn Error`: no signature, no field, no doc example and no test.
+  A doc example returns one error type, by its name.
 - **An error says everything in one message.**
   A file reader, the control plane and the UI show one line, and not a chain of causes.
   A variant that holds another error names its own value first, and then writes that error, once.
   It names the text it read too, when the other error read only a part of it:
   ``lifetime `0 firings`: a count is at least one``.
-  Its `source()` returns `None`, because a reporter that walks the chain would print the cause twice.
+  A variant that holds a `reason` writes it the same way, once.
   The variant keeps the other error in a field, named `error`, for code that wants to look at it.
+  No error type writes `source()`, because a reporter that walks the chain would print the cause twice.
   The path of a value in a file comes from the [reader](storage.md#reading), and not from the error of the value:
   `trigger.every: a count is at least one`.
 - **Nothing tunable is hardcoded.**
