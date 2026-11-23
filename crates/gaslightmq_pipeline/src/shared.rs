@@ -71,7 +71,7 @@ impl KnownTopics {
     ///
     /// # Errors
     ///
-    /// [`SurgeryError::UnreadableResponse`] when the body of the response does not decode.
+    /// A [`SurgeryError`] when the body of the response does not decode.
     /// Nothing is learned then.
     pub(crate) fn learn_from(&self, response: &Response) -> Result<usize, SurgeryError> {
         let mut named = TopicNames::new();

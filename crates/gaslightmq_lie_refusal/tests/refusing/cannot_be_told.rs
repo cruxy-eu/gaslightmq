@@ -234,11 +234,14 @@ fn a_request_that_does_not_decode_never_reaches_a_refusal() {
 
     // A lie is asked with a decoded request, so whoever decodes finds out first, and no lie is asked.
     assert_eq!(
-        EditableRequest::decode(&unknown, &TopicNames::new()).unwrap_err(),
-        SurgeryError::UnknownApi { api: unknown.api() }
+        EditableRequest::decode(&unknown, &TopicNames::new())
+            .unwrap_err()
+            .to_string(),
+        "a request of api 9999 v0 cannot be edited: its messages are unknown"
     );
     let error = EditableRequest::decode(&cut, &TopicNames::new()).unwrap_err();
-    assert!(matches!(error, SurgeryError::UnreadableRequest { .. }), "{error}");
+    let unreadable = format!("the {} request cannot be read: ", cut.api());
+    assert!(error.to_string().starts_with(&unreadable), "{error}");
 }
 
 #[test]

@@ -119,6 +119,9 @@ mod tests {
     use std::error::Error;
 
     use gaslightmq_lie::LieKind;
+    use gaslightmq_wire::Request;
+    use gaslightmq_wire::messages::{HeartbeatRequest, ProduceRequest};
+    use gaslightmq_wire_edit::{EditableRequest, Failures, TopicNames};
 
     use super::*;
 
@@ -175,41 +178,64 @@ mod tests {
     }
 
     #[test]
-    fn a_stage_failure_names_what_failed_and_writes_the_cause_once() {
-        let unknown = SurgeryError::UnknownApi {
-            api: Api::from_wire(9999, 0),
-        };
-        let wrong_api = WireError::WrongApi {
-            expected: 0,
-            actual: 12,
-        };
+    fn a_stage_failure_writes_what_the_surgery_or_the_codec_said_once() {
+        // A Heartbeat in which nothing failed, and which is no Produce.
+        let heartbeat = Request::new(4, 7, None, &HeartbeatRequest::default()).unwrap();
+        let asked = EditableRequest::decode(&heartbeat, &TopicNames::new()).unwrap();
+        let nothing_failed = asked.error_response(&Failures::none()).unwrap_err();
+        let of_another_api = heartbeat.body::<ProduceRequest>().unwrap_err();
         let cases = [
             (
-                StageFailure::UnreadableRequest { error: unknown.clone() },
-                "no rule saw the call: a request of api 9999 v0 cannot be edited: its messages are unknown",
+                StageFailure::UnreadableRequest {
+                    error: nothing_failed.clone(),
+                },
+                "no rule saw the call: nothing that the Heartbeat v4 request asks failed",
             ),
             (
                 StageFailure::UnreadableRequestFields {
                     api: Api::from_wire(0, 9),
-                    error: wrong_api.clone(),
+                    error: of_another_api.clone(),
                 },
-                "the fields of the Produce v9 request cannot be read: body of api key 12 read as api key 0",
+                "the fields of the Produce v9 request cannot be read: \
+                 body of api key 12 read as api key 0",
             ),
             (
                 StageFailure::UnrestoredResponse {
                     api: Api::from_wire(0, 9),
-                    error: wrong_api,
+                    error: of_another_api.clone(),
                 },
-                "the response of the backend does not read as a Produce v9 response: body of api key 12 read as api key 0",
+                "the response of the backend does not read as a Produce v9 response: \
+                 body of api key 12 read as api key 0",
             ),
             (
-                StageFailure::UnreadableTruth { error: unknown.clone() },
-                "the rules saw no truth: a request of api 9999 v0 cannot be edited: its messages are unknown",
+                StageFailure::UnreadableTruth {
+                    error: nothing_failed.clone(),
+                },
+                "the rules saw no truth: nothing that the Heartbeat v4 request asks failed",
             ),
             (
-                StageFailure::UnreadableDelivery { error: unknown },
-                "the record shows no answer: a request of api 9999 v0 cannot be edited: its messages are unknown",
+                StageFailure::UnreadableDelivery { error: nothing_failed },
+                "the record shows no answer: nothing that the Heartbeat v4 request asks failed",
             ),
+            (
+                StageFailure::UnreadableMemberId {
+                    api: Api::from_wire(11, 9),
+                    error: of_another_api,
+                },
+                "no member ID was learned from the JoinGroup v9 response: \
+                 body of api key 12 read as api key 0",
+            ),
+        ];
+
+        for (failure, message) in cases {
+            assert_eq!(failure.to_string(), message);
+            assert!(failure.source().is_none(), "{failure}");
+        }
+    }
+
+    #[test]
+    fn a_stage_failure_names_what_failed_and_writes_the_cause_once() {
+        let cases = [
             (
                 StageFailure::ThrottleUnwritten { millis: 500 },
                 "the answer carries no throttle of 500 ms: the throttle of an answer cannot be written yet",
@@ -236,20 +262,11 @@ mod tests {
                  and its response fields still wait for the backend",
             ),
             (
-                StageFailure::UnreadableMemberId {
-                    api: Api::from_wire(11, 9),
-                    error: WireError::WrongApi {
-                        expected: 11,
-                        actual: 12,
-                    },
-                },
-                "no member ID was learned from the JoinGroup v9 response: body of api key 12 read as api key 11",
-            ),
-            (
                 StageFailure::UnreadableAnswer {
                     error: "response header is cut short at 3 bytes".to_owned(),
                 },
-                "the backend answered with what is no response: response header is cut short at 3 bytes",
+                "the backend answered with what is no response: \
+                 response header is cut short at 3 bytes",
             ),
             (
                 StageFailure::BackendFailed {

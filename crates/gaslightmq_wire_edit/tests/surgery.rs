@@ -621,14 +621,12 @@ fn a_request_without_parts_only_fails_as_a_whole() {
     assert!(matches!(asked.without([&part("orders.eu/3")]), Ok(Remainder::Whole)));
 
     let of_a_part = Failures::none().with_part(part("orders.eu/3"), NOT_LEADER);
-    assert_eq!(
-        asked.error_response(&of_a_part).unwrap_err(),
-        SurgeryError::NothingFailed { api: request.api() }
-    );
-    assert_eq!(
-        asked.error_response(&Failures::none()).unwrap_err().to_string(),
-        "nothing that the Heartbeat v4 request asks failed"
-    );
+    for nothing_asked in [&of_a_part, &Failures::none()] {
+        assert_eq!(
+            asked.error_response(nothing_asked).unwrap_err().to_string(),
+            "nothing that the Heartbeat v4 request asks failed"
+        );
+    }
 
     let failed = asked.error_response(&Failures::whole_call(TIMED_OUT)).unwrap();
     let body: HeartbeatResponse = failed.body().unwrap();
@@ -691,12 +689,6 @@ fn a_request_of_an_unknown_api_cannot_be_edited() {
     let error = EditableRequest::decode(&request, &TopicNames::new()).unwrap_err();
 
     assert_eq!(
-        error,
-        SurgeryError::UnknownApi {
-            api: Api::from_wire(9999, 3)
-        }
-    );
-    assert_eq!(
         error.to_string(),
         "a request of api 9999 v3 cannot be edited: its messages are unknown"
     );
@@ -710,10 +702,6 @@ fn a_request_whose_body_does_not_decode_cannot_be_edited() {
 
     let error = EditableRequest::decode(&cut_short, &TopicNames::new()).unwrap_err();
 
-    assert!(matches!(
-        &error,
-        SurgeryError::UnreadableRequest { api, .. } if *api == Api::new(KnownApi::Produce, 9)
-    ));
     assert!(
         error
             .to_string()
@@ -737,13 +725,8 @@ fn a_response_to_another_request_does_not_merge() {
 
     let other_api = Response::new(Api::new(KnownApi::Fetch, 9), 42, &FetchResponse::default()).unwrap();
     assert_eq!(
-        asked.merge(&other_api, &failures).unwrap_err(),
-        SurgeryError::ResponseOfAnotherCall {
-            api: asked.api(),
-            correlation_id: 42,
-            answered_api: Api::new(KnownApi::Fetch, 9),
-            answered_correlation_id: 42,
-        }
+        asked.merge(&other_api, &failures).unwrap_err().to_string(),
+        "the Fetch v9 response 42 does not answer the Produce v9 request 42"
     );
 }
 
@@ -757,15 +740,11 @@ fn a_response_whose_body_does_not_decode_does_not_merge() {
         .merge(&truth, &Failures::none().with_part(part("orders.eu/3"), NOT_LEADER))
         .unwrap_err();
 
-    assert!(matches!(error, SurgeryError::UnreadableResponse { .. }));
     assert!(
         error
             .to_string()
             .starts_with("the Produce v9 response cannot be read: cannot decode response body: "),
         "{error}"
     );
-    assert!(matches!(
-        asked.parts_of(&truth),
-        Err(SurgeryError::UnreadableResponse { .. })
-    ));
+    assert_eq!(asked.parts_of(&truth).unwrap_err(), error);
 }

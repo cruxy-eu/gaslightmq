@@ -34,7 +34,7 @@ mod next_to_the_others {
     use gaslightmq_field::prelude::*;
     use gaslightmq_kernel::prelude::*;
     use gaslightmq_wire::messages::{HeartbeatRequest, HeartbeatResponse};
-    use gaslightmq_wire::{Api, WireError};
+    use gaslightmq_wire::{Frame, Response};
     use gaslightmq_wire_edit::prelude::*;
 
     /// One value of every type of the prelude, each named without a path.
@@ -65,26 +65,14 @@ mod next_to_the_others {
             error.to_string()
         }
 
-        let api = Api::from_wire(12, 4);
-        vec![
-            message_of(SurgeryError::NothingFailed { api }),
-            message_of(SurgeryError::UnwritableRequest {
-                api,
-                reason: WireError::UnknownApi { api_key: 12 }.to_string(),
-            }),
-            message_of(SurgeryError::UnwritableResponse {
-                api,
-                reason: WireError::UnknownApi { api_key: 12 }.to_string(),
-            }),
-            message_of(SurgeryError::UnreadableResponse {
-                api,
-                reason: WireError::Truncated {
-                    what: "response header",
-                    len: 3,
-                }
-                .to_string(),
-            }),
-        ]
+        let request = gaslightmq_wire::Request::new(4, 7, None, &HeartbeatRequest::default()).unwrap();
+        let asked = EditableRequest::decode(&request, &TopicNames::new()).unwrap();
+        let nothing_failed: SurgeryError = asked.error_response(&Failures::none()).unwrap_err();
+        // A correlation ID, the tagged fields of the header, and a body that stops short.
+        let cut_short = Response::decode(request.api(), Frame::new(vec![0, 0, 0, 7, 0, 0xFF])).unwrap();
+        let unreadable: SurgeryError = asked.error_of(&cut_short).unwrap_err();
+
+        vec![message_of(nothing_failed), message_of(unreadable)]
     }
 }
 
@@ -98,14 +86,14 @@ fn the_prelude_names_every_item_next_to_the_other_preludes() {
 
 #[test]
 fn the_prelude_names_the_error_of_every_type() {
-    assert_eq!(
-        next_to_the_others::every_error(),
-        [
-            "nothing that the Heartbeat v4 request asks failed",
-            "what is left of the Heartbeat v4 request cannot be written: unknown api key 12",
-            "the Heartbeat v4 response cannot be written: unknown api key 12",
-            "the Heartbeat v4 response cannot be read: response header is cut short at 3 bytes",
-        ]
+    let [nothing_failed, unreadable] = &next_to_the_others::every_error()[..] else {
+        panic!("the prelude has one error, and two of its messages are checked");
+    };
+
+    assert_eq!(nothing_failed, "nothing that the Heartbeat v4 request asks failed");
+    assert!(
+        unreadable.starts_with("the Heartbeat v4 response cannot be read: cannot decode response body: "),
+        "{unreadable}"
     );
 }
 

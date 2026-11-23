@@ -93,8 +93,8 @@ fn check_removing_nothing(asked: &EditableRequest) {
     let elsewhere = Failures::none().with_part(elsewhere, REFUSED);
     assert_eq!(asked.merge(&truth, &elsewhere).unwrap().frame(), truth.frame(), "{api}");
     assert_eq!(
-        asked.error_response(&elsewhere).unwrap_err(),
-        SurgeryError::NothingFailed { api },
+        asked.error_response(&elsewhere).unwrap_err().to_string(),
+        format!("nothing that the {api} request asks failed"),
         "{api}"
     );
 }
