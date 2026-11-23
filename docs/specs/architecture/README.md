@@ -67,8 +67,8 @@ flowchart LR
 | **Rule store** | Hold every rule and its state, workspace rules and live rules alike. Publish an immutable snapshot of armed rules in priority order on every change. Hold each armed rule's shared counter and budget as atomics. |
 | **Scenario runner** | Run the active scenario and the live set: turn the mode into a priority order, advance steps, and hand incidents to the backend. |
 | **Clock** | Tell the time for triggers, lifetimes, steps, arriving records and timeouts. |
-| **Event bus** | Carry call events, rule changes and world changes to everyone who listens. |
-| **Recorder** | Write call events and journal entries to a recording while recording is on. |
+| **Event bus** | Carry call events, rule changes and world changes to everyone who listens. Keep every event for the recorder, and the newest ones for a listener that only watches. |
+| **Recorder** | Write call events and journal entries to a recording while recording is on. It misses no event, however slow it writes. |
 | **Journal** | Keep what changed and who changed it: arms, disarms, parameter changes, steps and incidents. |
 | **Indexer** | Maintain the facets of the current recording. |
 | **Workspace store** | Load definitions from files, watch them for changes and write edits back. Keep live rules in the scratch file. |
@@ -81,6 +81,17 @@ flowchart LR
   A rule change publishes a new snapshot,
   and sessions pick it up at the next call.
   The snapshot carries the priority order, so a session resolves conflicts on its own.
+  A session does not wait for whoever listens on the event bus either.
+  It hands an event over and goes on, so a slow listener never changes when a client gets its answer.
+  What the bus does for a listener that falls behind depends on what the listener is for:
+
+  | The listener | When it falls behind | The price |
+  |---|---|---|
+  | Shows what happens now: the traffic view, the UI. | It misses the oldest events, and learns how many. | Events. The bus keeps a number of them that the configuration sets, and no more memory than that. |
+  | Keeps what happened: the recorder. | It misses nothing. The bus keeps every event until the recorder took it. | Memory, without a limit. A recorder that writes slower than the sessions record makes the engine hold what is not written yet, and one that stops writing ends with a process that has no memory left. |
+
+  The recorder pays in memory and not in time, because time is what a lie is made of:
+  a session that waited for a slow disk would delay answers that no rule delays.
 - **Budgets are exact.**
   Shared counters and budgets are atomics next to the snapshot.
   A session takes from a budget at the moment a rule fires.

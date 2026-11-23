@@ -1,0 +1,49 @@
+[package]
+name = "gaslightmq_engine"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lints]
+workspace = true
+
+# The modules that hold values and never wait: `cargo xtask sans-io` holds them to that.
+[package.metadata.gaslightmq]
+sans_io_modules = ["configuration", "error", "timers"]
+
+[dependencies]
+gaslightmq_backend.workspace = true
+gaslightmq_call.workspace = true
+gaslightmq_clock.workspace = true
+gaslightmq_environment.workspace = true
+gaslightmq_field.workspace = true
+gaslightmq_incident.workspace = true
+gaslightmq_lie_api.workspace = true
+gaslightmq_listener.workspace = true
+gaslightmq_pipeline.workspace = true
+gaslightmq_rule.workspace = true
+gaslightmq_session.workspace = true
+gaslightmq_trigger.workspace = true
+gaslightmq_wire.workspace = true
+futures.workspace = true
+thiserror.workspace = true
+tokio = { workspace = true, features = ["rt", "sync", "macros", "time"] }
+tracing.workspace = true
+
+[dev-dependencies]
+anyhow.workspace = true
+# The proxy of `tests/real_cluster`: a real client, the backend in front of a real cluster, and real Kafka brokers.
+gaslightmq_backend_upstream.workspace = true
+gaslightmq_kafka_client_native.workspace = true
+gaslightmq_test_kafka.workspace = true
+# The client of `tests/engine`: it sends one request at a fixed version, and returns its response.
+gaslightmq_kafka_client_api.workspace = true
+# What a test arms: selectors, the definitions of lies, and the refusal that the build of a test registers.
+gaslightmq_kernel.workspace = true
+gaslightmq_lie.workspace = true
+gaslightmq_lie_refusal.workspace = true
+gaslightmq_selector.workspace = true
+# The preludes that code imports next to this one. `tests/prelude.rs` checks that no name clashes.
+gaslightmq_combine.workspace = true
+gaslightmq_wire_edit.workspace = true
+tokio = { workspace = true, features = ["rt-multi-thread", "net", "io-util"] }

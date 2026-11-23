@@ -4,6 +4,8 @@
 //! The check compares a crate's dependencies on other workspace crates with its row, both ways:
 //! a dependency the row does not list fails, and so does a listed dependency the crate does not have.
 //! A row for a crate that does not exist yet is a plan, and passes.
+//! So does a dependency that a row lists on such a crate: a crate cannot depend on what is not there yet.
+//! The planned crate has a row of its own, so a name that no row and no crate carries still fails.
 //! The tooling in `xtask/` is not product code, and needs no row.
 //!
 //! The middle cell of a row says "This crate does IO" for a crate of the IO edge.
@@ -92,6 +94,7 @@ impl CrateLayout {
 
     /// Everything in which the workspace differs from the tables.
     pub fn violations(&self, workspace: &Workspace) -> Vec<LayoutViolation> {
+        let exists = |name: &str| workspace.members.iter().any(|member| member.name == name);
         let mut violations = Vec::new();
         for member in workspace.members.iter().filter(|member| !member.is_tooling()) {
             let name = &member.name;
@@ -111,6 +114,10 @@ impl CrateLayout {
                         });
                     }
                     for dependency in listed.difference(&member.dependencies) {
+                        // A crate that the tables plan, and the workspace does not hold yet, is a dependency to come.
+                        if self.has_row(dependency) && !exists(dependency) {
+                            continue;
+                        }
                         violations.push(LayoutViolation::Missing {
                             name: name.clone(),
                             dependency: dependency.clone(),
@@ -277,6 +284,45 @@ Some prose in between.
             [LayoutViolation::Missing {
                 name: "gaslightmq_field".to_owned(),
                 dependency: "gaslightmq_clock".to_owned()
+            }]
+        );
+    }
+
+    #[test]
+    fn a_listed_dependency_on_a_crate_that_does_not_exist_yet_passes() {
+        let layout = CrateLayout::parse(
+            "| Crate | Holds | Depends on |\n|---|---|---|\n\
+             | `clock` | The clock. | — |\n\
+             | `journal` | A crate that does not exist yet. | `clock` |\n\
+             | `engine` | The runtime of one proxy. | `clock`, `journal` |\n",
+        )
+        .unwrap();
+        let members = vec![
+            member("gaslightmq_clock", &[]),
+            member("gaslightmq_engine", &["gaslightmq_clock"]),
+        ];
+
+        assert_eq!(layout.violations(&workspace(members)), []);
+    }
+
+    #[test]
+    fn a_listed_dependency_that_no_row_and_no_crate_carries_fails() {
+        let layout = CrateLayout::parse(
+            "| Crate | Holds | Depends on |\n|---|---|---|\n\
+             | `clock` | The clock. | — |\n\
+             | `engine` | The runtime of one proxy. | `clock`, `jurnal` |\n",
+        )
+        .unwrap();
+        let members = vec![
+            member("gaslightmq_clock", &[]),
+            member("gaslightmq_engine", &["gaslightmq_clock"]),
+        ];
+
+        assert_eq!(
+            layout.violations(&workspace(members)),
+            [LayoutViolation::Missing {
+                name: "gaslightmq_engine".to_owned(),
+                dependency: "gaslightmq_jurnal".to_owned()
             }]
         );
     }

@@ -286,6 +286,40 @@ dependencies = [
 ]
 
 [[package]]
+name = "gaslightmq_engine"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "futures",
+ "gaslightmq_backend",
+ "gaslightmq_backend_upstream",
+ "gaslightmq_call",
+ "gaslightmq_clock",
+ "gaslightmq_combine",
+ "gaslightmq_environment",
+ "gaslightmq_field",
+ "gaslightmq_incident",
+ "gaslightmq_kafka_client_api",
+ "gaslightmq_kafka_client_native",
+ "gaslightmq_kernel",
+ "gaslightmq_lie",
+ "gaslightmq_lie_api",
+ "gaslightmq_lie_refusal",
+ "gaslightmq_listener",
+ "gaslightmq_pipeline",
+ "gaslightmq_rule",
+ "gaslightmq_selector",
+ "gaslightmq_session",
+ "gaslightmq_test_kafka",
+ "gaslightmq_trigger",
+ "gaslightmq_wire",
+ "gaslightmq_wire_edit",
+ "thiserror",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "gaslightmq_environment"
 version = "0.1.0"
 dependencies = [
