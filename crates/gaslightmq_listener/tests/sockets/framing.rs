@@ -113,7 +113,7 @@ async fn a_frame_over_the_limit_is_no_frame_before_its_payload_arrives() {
     assert_eq!(ended.frames, 1);
     assert_eq!(
         ended.why,
-        ListenerError::NotAFrame {
+        ReceiveError::NotAFrame {
             reason: WireError::FrameTooLarge { len: 9, max: 8 }.to_string()
         }
     );
@@ -131,7 +131,7 @@ async fn a_frame_of_no_bytes_is_no_frame() {
     let ended = endings.next().await;
     assert_eq!(
         ended.why,
-        ListenerError::NotAFrame {
+        ReceiveError::NotAFrame {
             reason: WireError::EmptyFrame.to_string()
         }
     );

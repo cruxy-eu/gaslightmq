@@ -101,18 +101,16 @@ mod next_to_the_others {
                 broker: BrokerId::from(3),
                 advertised_there: BrokerId::from(2),
             }),
-            message_of(OverlayError::UnknownBroker {
+            message_of(ForwardError::UnknownBroker {
                 broker: BrokerId::from(9),
             }),
-            message_of(OverlayError::UnwritableRequest {
-                api: Api::from_wire(1, 12),
-                reason: cut_short.to_string(),
+            message_of(ForwardError::Undecided {
+                reason: format!("the Fetch v12 request cannot be answered without the cluster: {unanswered}"),
             }),
-            message_of(OverlayError::UnansweredRequest {
-                api: Api::from_wire(1, 12),
-                reason: unanswered.to_string(),
+            message_of(AnswerError::NotAnAnswer {
+                reason: "the Heartbeat v4 response 7 does not answer the Metadata v12 request 7".to_owned(),
             }),
-            message_of(OverlayError::UnwritableResponse {
+            message_of(AnswerError::UnwritableTruth {
                 api: Api::from_wire(3, 12),
                 reason: cut_short.to_string(),
             }),
@@ -143,8 +141,8 @@ fn the_prelude_names_the_error_of_every_type() {
             "the port of a broker address cannot be zero",
             "broker 3 cannot be advertised at gaslight.staging:19093: broker 2 is advertised there",
             "a request for broker 9 has nowhere to go: the cluster named no such broker",
-            "the Fetch v12 request cannot be written without its fetch session: request header is cut short at 3 bytes",
             "the Fetch v12 request cannot be answered without the cluster: nothing that the Fetch v12 request asks failed",
+            "the Heartbeat v4 response 7 does not answer the Metadata v12 request 7",
             "the truth of the Metadata v12 response cannot be written: request header is cut short at 3 bytes",
         ]
     );

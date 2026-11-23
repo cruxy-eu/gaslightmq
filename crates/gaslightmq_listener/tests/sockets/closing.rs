@@ -34,7 +34,7 @@ impl ConnectionHandler for Leave {
 
 /// Waits until the client left, and then sends until the connection takes no more. It reports why.
 struct SendToNobody {
-    failed: mpsc::UnboundedSender<ListenerError>,
+    failed: mpsc::UnboundedSender<SendError>,
 }
 
 impl ConnectionHandler for SendToNobody {
@@ -68,7 +68,7 @@ impl ConnectionHandler for PanicOnDemand {
 /// Reads one frame, waits for the word of the test, and then reads on. It reports everything it receives.
 struct ReadLate {
     go: Notify,
-    seen: mpsc::UnboundedSender<Result<Vec<u8>, ListenerError>>,
+    seen: mpsc::UnboundedSender<Result<Vec<u8>, ReceiveError>>,
 }
 
 impl ConnectionHandler for ReadLate {
@@ -91,7 +91,7 @@ impl ConnectionHandler for ReadLate {
 
 /// Sends without end, and reports why it stopped.
 struct SendWithoutEnd {
-    stopped: mpsc::UnboundedSender<ListenerError>,
+    stopped: mpsc::UnboundedSender<SendError>,
 }
 
 impl ConnectionHandler for SendWithoutEnd {
@@ -142,19 +142,17 @@ impl ConnectionHandler for EchoAndGoodbye {
                         return;
                     }
                 }
-                Err(ListenerError::ListenerClosed) => {
+                Err(ReceiveError::ListenerClosed) => {
                     if transport.send(&frame(b"goodbye").to_bytes()).await.is_ok() {
                         transport.close().await;
                     }
                     return;
                 }
                 Err(
-                    ListenerError::ClientClosed
-                    | ListenerError::FrameCutShort { .. }
-                    | ListenerError::NotAFrame { .. }
-                    | ListenerError::ConnectionLost { .. }
-                    // cannot come from a receive
-                    | ListenerError::CannotListen { .. },
+                    ReceiveError::ClientClosed
+                    | ReceiveError::FrameCutShort { .. }
+                    | ReceiveError::NotAFrame { .. }
+                    | ReceiveError::ConnectionLost { .. },
                 ) => return,
             }
         }
@@ -173,7 +171,7 @@ async fn a_client_that_closes_after_a_frame_closed_the_connection() {
     drop(client);
 
     let ended = endings.next().await;
-    assert!(matches!(ended.why, ListenerError::ClientClosed), "{:?}", ended.why);
+    assert!(matches!(ended.why, ReceiveError::ClientClosed), "{:?}", ended.why);
     assert_eq!(ended.frames, 1);
     assert_eq!(ended.number, ConnectionNumber::new(1));
     assert_eq!(ended.address, address);
@@ -188,7 +186,7 @@ async fn a_client_that_closes_before_its_first_frame_closed_the_connection() {
     drop(Client::connect(listener.address()).await);
 
     let ended = endings.next().await;
-    assert!(matches!(ended.why, ListenerError::ClientClosed), "{:?}", ended.why);
+    assert!(matches!(ended.why, ReceiveError::ClientClosed), "{:?}", ended.why);
     assert_eq!(ended.frames, 0);
 }
 
@@ -204,7 +202,7 @@ async fn a_client_that_closes_inside_a_frame_cut_the_frame_short() {
 
     let ended = endings.next().await;
     assert!(
-        matches!(ended.why, ListenerError::FrameCutShort { buffered: 10 }),
+        matches!(ended.why, ReceiveError::FrameCutShort { buffered: 10 }),
         "{:?}",
         ended.why
     );
@@ -238,7 +236,7 @@ async fn sending_to_a_client_that_left_fails() {
     drop(Client::connect(listener.address()).await);
 
     let error = soon(failures.recv()).await.unwrap();
-    assert!(matches!(error, ListenerError::ConnectionLost { .. }), "{error:?}");
+    assert!(matches!(error, SendError::ConnectionLost { .. }), "{error:?}");
 }
 
 #[tokio::test]
@@ -271,7 +269,7 @@ async fn closing_the_listener_ends_its_connections() {
 
     for _ in 0..2 {
         let ended = endings.next().await;
-        assert!(matches!(ended.why, ListenerError::ListenerClosed), "{:?}", ended.why);
+        assert!(matches!(ended.why, ReceiveError::ListenerClosed), "{:?}", ended.why);
         assert_eq!(ended.frames, 1);
     }
     assert_eq!(first.receive().await, None);
@@ -300,15 +298,7 @@ async fn a_closed_endpoint_opens_again_on_the_address_it_had() {
         loop {
             match Listener::bind(same_address.clone(), numbers.clone(), Arc::clone(&echo)).await {
                 Ok(listener) => break listener,
-                Err(
-                    ListenerError::CannotListen { .. }
-                    // cannot come from a bind
-                    | ListenerError::ClientClosed
-                    | ListenerError::FrameCutShort { .. }
-                    | ListenerError::NotAFrame { .. }
-                    | ListenerError::ConnectionLost { .. }
-                    | ListenerError::ListenerClosed,
-                ) => tokio::time::sleep(Duration::from_millis(10)).await,
+                Err(ListenerError::CannotListen { .. }) => tokio::time::sleep(Duration::from_millis(10)).await,
             }
         }
     })
@@ -333,7 +323,7 @@ async fn letting_go_of_a_listener_closes_it() {
     drop(listener);
 
     let ended = endings.next().await;
-    assert!(matches!(ended.why, ListenerError::ListenerClosed), "{:?}", ended.why);
+    assert!(matches!(ended.why, ReceiveError::ListenerClosed), "{:?}", ended.why);
     assert_eq!(client.receive().await, None);
 }
 
@@ -358,7 +348,7 @@ async fn frames_that_arrived_before_the_listener_closed_still_come_out() {
 
     assert_eq!(soon(sights.recv()).await.unwrap().unwrap(), b"second");
     let last = soon(sights.recv()).await.unwrap();
-    assert!(matches!(last, Err(ListenerError::ListenerClosed)), "{last:?}");
+    assert!(matches!(last, Err(ReceiveError::ListenerClosed)), "{last:?}");
 }
 
 #[tokio::test]
@@ -372,7 +362,7 @@ async fn closing_the_listener_does_not_wait_for_a_client_that_stopped_reading() 
     soon(listener.close()).await;
 
     let error = soon(stops.recv()).await.unwrap();
-    assert!(matches!(error, ListenerError::ListenerClosed), "{error:?}");
+    assert!(matches!(error, SendError::ListenerClosed), "{error:?}");
 }
 
 #[tokio::test]

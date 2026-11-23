@@ -21,7 +21,7 @@ use crate::BrokerAddress;
 ///
 /// let forwarding = overlay.forward(Endpoint::Bootstrap, &request)?;
 /// assert_eq!(forwarding.to_string(), "forward ApiVersions v3 to any broker");
-/// # Ok::<(), OverlayError>(())
+/// # Ok::<(), ForwardError>(())
 /// ```
 #[derive(Debug, Clone)]
 pub enum Forwarding {

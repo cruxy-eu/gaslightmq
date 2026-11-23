@@ -86,12 +86,12 @@
 //!
 //! | Who ends it | The handler sees |
 //! |---|---|
-//! | The client closes its socket. | [`ListenerError::ClientClosed`], or [`ListenerError::FrameCutShort`] inside a frame. |
-//! | The connection breaks. | [`ListenerError::ConnectionLost`], from a receive or from a send. |
-//! | The client sends bytes that are no frame. | [`ListenerError::NotAFrame`]. The handler closes the connection. |
+//! | The client closes its socket. | [`ReceiveError::ClientClosed`], or [`ReceiveError::FrameCutShort`] inside a frame. |
+//! | The connection breaks. | [`ReceiveError::ConnectionLost`], or [`SendError::ConnectionLost`]. |
+//! | The client sends bytes that are no frame. | [`ReceiveError::NotAFrame`]. The handler closes the connection. |
 //! | The handler [closes](Transport::close) the transport. | Nothing more. The client reads everything that was sent, and then the end. |
 //! | The handler lets go of the transport, or returns. | Nothing more. The connection is gone at once, and the client may lose bytes that were on their way. |
-//! | Someone [closes](Listener::close) the listener. | [`ListenerError::ListenerClosed`], from a receive or from a send that waits for its client. The handler closes the connection. |
+//! | Someone [closes](Listener::close) the listener. | [`ReceiveError::ListenerClosed`], or [`SendError::ListenerClosed`] from a send that waits for its client. The handler closes the connection. |
 //!
 //! Closing a transport waits until the client has closed its side,
 //! for at most the [`close_timeout`](ListenerConfiguration::close_timeout) of the listener.
@@ -102,13 +102,14 @@
 //!
 //! # Errors
 //!
-//! What the crate does has one error, [`ListenerError`].
+//! The three things the crate does fail in different ways, so each has an error of its own.
+//! No caller meets a reason that cannot come from what it called.
 //!
-//! | What failed | What is wrong |
-//! |---|---|
-//! | [`Listener::bind`] | The address cannot take a listener. |
-//! | [`Transport::receive`] | No further frame comes from the client. |
-//! | [`Transport::send`] | The connection takes no bytes, or the listener closed before the client took them. |
+//! | What failed | Error | What is wrong |
+//! |---|---|---|
+//! | [`Listener::bind`] | [`ListenerError`] | The address cannot take a listener. |
+//! | [`Transport::receive`] | [`ReceiveError`] | No further frame comes from the client. |
+//! | [`Transport::send`] | [`SendError`] | The connection takes no bytes, or the listener closed before the client took them. |
 //!
 //! [`FrameSizeLimit`] checks its value, so it has an error of its own, [`FrameSizeLimitError`]:
 //! the number of bytes is zero, or more than a frame can hold.
@@ -139,7 +140,7 @@ mod numbers;
 mod transport;
 
 pub use configuration::{FrameSizeLimit, FrameSizeLimitError, ListenerConfiguration};
-pub use error::ListenerError;
+pub use error::{ListenerError, ReceiveError, SendError};
 pub use handler::ConnectionHandler;
 pub use listener::Listener;
 pub use numbers::ConnectionNumbers;
@@ -162,6 +163,6 @@ pub mod prelude {
     #[doc(no_inline)]
     pub use crate::{
         ConnectionHandler, ConnectionNumbers, FrameSizeLimit, FrameSizeLimitError, Listener, ListenerConfiguration,
-        ListenerError, Transport,
+        ListenerError, ReceiveError, SendError, Transport,
     };
 }

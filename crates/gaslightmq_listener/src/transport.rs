@@ -7,7 +7,7 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 
 use crate::listener::ListenerClosing;
-use crate::{ListenerConfiguration, ListenerError};
+use crate::{ListenerConfiguration, ReceiveError, SendError};
 
 /// The connection of one client: it reads the client's bytes, and writes the bytes the client receives.
 ///
@@ -30,10 +30,10 @@ use crate::{ListenerConfiguration, ListenerError};
 ///
 /// | Who ends it | How | The other side |
 /// |---|---|---|
-/// | The client | It closes its socket. | [`receive`](Self::receive) returns [`ListenerError::ClientClosed`]. |
+/// | The client | It closes its socket. | [`receive`](Self::receive) returns [`ReceiveError::ClientClosed`]. |
 /// | The handler | It calls [`close`](Self::close). | The client reads everything that was sent, and then the end of the connection. |
 /// | The handler | It lets go of the transport. | The connection is gone at once, and the client may lose bytes that were on their way. |
-/// | The listener | Someone [closes](crate::Listener::close) it. | [`receive`](Self::receive) returns [`ListenerError::ListenerClosed`], and the handler closes the transport or lets go of it. |
+/// | The listener | Someone [closes](crate::Listener::close) it. | [`receive`](Self::receive) returns [`ReceiveError::ListenerClosed`], and the handler closes the transport or lets go of it. |
 ///
 /// # After the listener closed
 ///
@@ -98,37 +98,34 @@ impl Transport {
     ///
     /// # Errors
     ///
-    /// A [`ListenerError`] when no further frame comes. It says why:
-    /// [`ClientClosed`](ListenerError::ClientClosed), [`FrameCutShort`](ListenerError::FrameCutShort),
-    /// [`NotAFrame`](ListenerError::NotAFrame), [`ConnectionLost`](ListenerError::ConnectionLost)
-    /// or [`ListenerClosed`](ListenerError::ListenerClosed).
+    /// A [`ReceiveError`] when no further frame comes. It says why.
     /// The transport has no frame after that, and every later call returns an error again.
-    pub async fn receive(&mut self) -> Result<Frame, ListenerError> {
+    pub async fn receive(&mut self) -> Result<Frame, ReceiveError> {
         loop {
             match self.frames.next_frame() {
                 Ok(Some(frame)) => return Ok(frame),
                 Ok(None) => {}
                 Err(error) => {
-                    return Err(ListenerError::NotAFrame {
+                    return Err(ReceiveError::NotAFrame {
                         reason: error.to_string(),
                     });
                 }
             }
             let read = tokio::select! {
                 biased;
-                () = self.listener.closed() => return Err(ListenerError::ListenerClosed),
+                () = self.listener.closed() => return Err(ReceiveError::ListenerClosed),
                 read = self.stream.read_buf(self.frames.buffer_mut()) => read,
             };
             match read {
                 Ok(0) => {
                     return Err(match self.frames.buffered() {
-                        0 => ListenerError::ClientClosed,
-                        buffered => ListenerError::FrameCutShort { buffered },
+                        0 => ReceiveError::ClientClosed,
+                        buffered => ReceiveError::FrameCutShort { buffered },
                     });
                 }
                 Ok(_) => {}
                 Err(error) => {
-                    return Err(ListenerError::ConnectionLost {
+                    return Err(ReceiveError::ConnectionLost {
                         reason: error.to_string(),
                     });
                 }
@@ -147,16 +144,16 @@ impl Transport {
     ///
     /// # Errors
     ///
-    /// [`ListenerError::ConnectionLost`] when the connection does not take the bytes.
-    /// [`ListenerError::ListenerClosed`] when the listener closed before the client took them all.
+    /// [`SendError::ConnectionLost`] when the connection does not take the bytes.
+    /// [`SendError::ListenerClosed`] when the listener closed before the client took them all.
     /// After either, a part of the bytes may be written, and the connection is of no use for sending.
-    pub async fn send(&mut self, bytes: &[u8]) -> Result<(), ListenerError> {
+    pub async fn send(&mut self, bytes: &[u8]) -> Result<(), SendError> {
         tokio::select! {
             biased;
-            written = self.stream.write_all(bytes) => written.map_err(|error| ListenerError::ConnectionLost {
+            written = self.stream.write_all(bytes) => written.map_err(|error| SendError::ConnectionLost {
                 reason: error.to_string(),
             }),
-            () = self.listener.closed() => Err(ListenerError::ListenerClosed),
+            () = self.listener.closed() => Err(SendError::ListenerClosed),
         }
     }
 

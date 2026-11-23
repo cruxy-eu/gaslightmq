@@ -32,7 +32,7 @@ use crate::RefusedRequest;
 /// use gaslightmq_wire::messages::{HeartbeatRequest, HeartbeatResponse};
 /// use gaslightmq_wire_edit::prelude::*;
 ///
-/// let lies = Lies::of_every_build().with(Refusal)?;
+/// let lies = Lies::of_every_build().with(Refusal).expect("a kind that is new to the set");
 ///
 /// // A rule refuses a Heartbeat, so the consumer believes that its group rebalances.
 /// let heartbeat = Request::new(4, 7, Some("analytics-etl"), &HeartbeatRequest::default()).expect("a request");
@@ -56,11 +56,9 @@ use crate::RefusedRequest;
 /// | What is wrong | The error |
 /// |---|---|
 /// | The lie is of another kind. | [`LieError::OtherKind`] |
-/// | The response does not decode. | [`LieError::Unreadable`] |
-/// | The request to forward or the response does not encode. | [`LieError::Unwritable`] |
+/// | The response does not decode or answers another request, or the request to forward or the response does not encode. | [`LieError::CallNotRewritten`] |
 /// | The refusal targets parts that the request does not name, as on an API without parts. | [`LieError::PartsNotInRequest`] |
 /// | The refusal targets the whole call, and the response has no place for an error code. | [`LieError::NoPlaceForError`] |
-/// | The response answers another request. | [`LieError::ResponseOfAnotherCall`] |
 ///
 /// # Topics by ID
 ///

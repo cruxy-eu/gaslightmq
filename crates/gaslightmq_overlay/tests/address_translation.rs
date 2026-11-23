@@ -30,7 +30,7 @@ use gaslightmq_wire::messages::{
     HeartbeatResponse, MetadataRequest, MetadataResponse, ProduceRequest, ProduceResponse, ShareAcknowledgeRequest,
     ShareAcknowledgeResponse, ShareFetchRequest, ShareFetchResponse, share_acknowledge_response, share_fetch_response,
 };
-use gaslightmq_wire::{Api, Frame, Request, Response};
+use gaslightmq_wire::{Frame, Request, Response};
 
 const METADATA_VERSIONS: [i16; 7] = [0, 1, 5, 8, 9, 12, 13];
 const COORDINATOR_VERSIONS: [i16; 4] = [0, 1, 2, 3];
@@ -640,10 +640,7 @@ fn a_response_that_cannot_be_read_gives_no_truth() {
 
     let error = overlay.answer(&request, upstream).unwrap_err();
 
-    assert!(matches!(
-        &error,
-        OverlayError::UnreadableResponse { api, .. } if *api == request.api()
-    ));
+    assert!(matches!(&error, AnswerError::NotAnAnswer { .. }), "{error:?}");
     assert!(
         error
             .to_string()
@@ -661,11 +658,8 @@ fn a_response_to_another_request_gives_no_truth() {
     let of_another_correlation = from_the_cluster(&other, &cluster_metadata(12));
     assert_eq!(
         overlay.answer(&request, of_another_correlation).unwrap_err(),
-        OverlayError::ResponseOfAnotherCall {
-            api: request.api(),
-            correlation_id: 7,
-            answered_api: request.api(),
-            answered_correlation_id: 8,
+        AnswerError::NotAnAnswer {
+            reason: "the Metadata v12 response 8 does not answer the Metadata v12 request 7".to_owned(),
         }
     );
 
@@ -675,10 +669,7 @@ fn a_response_to_another_request_gives_no_truth() {
         error.to_string(),
         "the Heartbeat v4 response 7 does not answer the Metadata v12 request 7"
     );
-    assert!(matches!(
-        error,
-        OverlayError::ResponseOfAnotherCall { answered_api, .. } if answered_api == Api::of::<HeartbeatRequest>(4)
-    ));
+    assert!(matches!(error, AnswerError::NotAnAnswer { .. }), "{error:?}");
 }
 
 #[test]
@@ -708,7 +699,7 @@ fn a_request_goes_to_the_real_broker_behind_the_endpoint_of_its_client() {
 
     // An endpoint for a broker that the cluster never named leads nowhere.
     let error = overlay.forward(Endpoint::Broker(broker(9)), &request).unwrap_err();
-    assert_eq!(error, OverlayError::UnknownBroker { broker: broker(9) });
+    assert_eq!(error, ForwardError::UnknownBroker { broker: broker(9) });
     assert_eq!(
         error.to_string(),
         "a request for broker 9 has nowhere to go: the cluster named no such broker"

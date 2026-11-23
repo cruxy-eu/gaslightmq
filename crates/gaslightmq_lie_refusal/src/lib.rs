@@ -25,7 +25,7 @@
 //! use gaslightmq_wire_edit::prelude::*;
 //!
 //! // The engine registers the refusal next to the kinds of every build.
-//! let lies = Lies::of_every_build().with(Refusal)?;
+//! let lies = Lies::of_every_build().with(Refusal).expect("a kind that is new to the set");
 //!
 //! // A client produces to two partitions of `orders.eu`, and a rule refuses one of them.
 //! let orders = || StrBytes::from_static_str("orders.eu").into();
@@ -177,9 +177,9 @@ pub use refused_request::RefusedRequest;
 /// use gaslightmq_lie_api::prelude::*;
 /// use gaslightmq_lie_refusal::prelude::*;
 ///
-/// let lies: Result<Lies, LieError> = Lies::of_every_build().with(Refusal);
+/// let lies: Result<Lies, LiesError> = Lies::of_every_build().with(Refusal);
 /// assert!(lies?.tells(LieKind::Refusal));
-/// # Ok::<(), LieError>(())
+/// # Ok::<(), LiesError>(())
 /// ```
 pub mod prelude {
     #[doc(no_inline)]

@@ -56,8 +56,8 @@ use crate::{Effect, Instruction};
 ///             return Err(LieError::OtherKind { tells: self.kind(), lie: lie.lie().kind() });
 ///         };
 ///         let body = HeartbeatResponse::default().with_error_code(refusal.error.value());
-///         let unwritable = |reason: String| LieError::Unwritable { kind: self.kind(), reason };
-///         let response = request.request().response(&body).map_err(|error| unwritable(error.to_string()))?;
+///         let not_rewritten = |reason: String| LieError::CallNotRewritten { kind: self.kind(), reason };
+///         let response = request.request().response(&body).map_err(|error| not_rewritten(error.to_string()))?;
 ///         Ok(Effect::Answer(response))
 ///     }
 /// }
@@ -154,10 +154,6 @@ pub trait Lie: Send + Sync {
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum LieError {
-    /// Two behaviours tell the same kind of lie, so nothing says which one the pipeline asks.
-    /// [`Lies::with`](crate::Lies::with) returns it, and the set stays without the second behaviour.
-    #[error("{kind} is registered twice")]
-    KindTwice { kind: LieKind },
     /// No behaviour is registered for the kind of the lie.
     /// The build left the kind out, or nobody registered it.
     #[error("no behaviour is registered for {kind}")]
@@ -179,12 +175,11 @@ pub enum LieError {
     /// The kind has no way to tell its lie on calls of this API.
     #[error("{kind} cannot be told on {api}")]
     ApiNotSupported { kind: LieKind, api: Api },
-    /// The lie could not read the request or the response. `reason` says what is wrong with it.
-    #[error("{kind} cannot read the call: {reason}")]
-    Unreadable { kind: LieKind, reason: String },
-    /// The lie could not write the request or the response it asks for. `reason` says what stood in the way.
+    /// The lie could not make the request or the response that it asks for.
+    /// `reason` says what stood in the way: the request or the response it was given does not read,
+    /// the response answers another request, or what the lie makes of them does not write.
     #[error("{kind} cannot rewrite the call: {reason}")]
-    Unwritable { kind: LieKind, reason: String },
+    CallNotRewritten { kind: LieKind, reason: String },
     /// The lie targets parts that the request does not name.
     ///
     /// A request of an API without parts names none.
@@ -198,19 +193,6 @@ pub enum LieError {
     /// A Metadata request for every topic is one, on most versions.
     #[error("{kind} cannot be told on this {api} request: its response has no place for an error code")]
     NoPlaceForError { kind: LieKind, api: Api },
-    /// The response the lie was given answers another request than the one it was given:
-    /// its API or its correlation ID differs.
-    #[error(
-        "{kind} was given the {answered_api} response {answered_correlation_id}, \
-         which does not answer the {api} request {correlation_id}"
-    )]
-    ResponseOfAnotherCall {
-        kind: LieKind,
-        api: Api,
-        correlation_id: i32,
-        answered_api: Api,
-        answered_correlation_id: i32,
-    },
 }
 
 /// The parts as a message lists them, with a comma between them.
@@ -303,10 +285,6 @@ mod tests {
         let reason = || "body of api key 12 read as api key 0".to_owned();
         let cases = [
             (
-                LieError::KindTwice { kind: LieKind::Timing },
-                "timing is registered twice",
-            ),
-            (
                 LieError::NotRegistered { kind: LieKind::HangUp },
                 "no behaviour is registered for hang-up",
             ),
@@ -348,14 +326,7 @@ mod tests {
                 "refusal cannot be told on api 9999 v4",
             ),
             (
-                LieError::Unreadable {
-                    kind: LieKind::Refusal,
-                    reason: reason(),
-                },
-                "refusal cannot read the call: body of api key 12 read as api key 0",
-            ),
-            (
-                LieError::Unwritable {
+                LieError::CallNotRewritten {
                     kind: LieKind::Data,
                     reason: reason(),
                 },
@@ -375,16 +346,6 @@ mod tests {
                     api: Api::from_wire(3, 9),
                 },
                 "refusal cannot be told on this Metadata v9 request: its response has no place for an error code",
-            ),
-            (
-                LieError::ResponseOfAnotherCall {
-                    kind: LieKind::Refusal,
-                    api: Api::from_wire(0, 9),
-                    correlation_id: 7,
-                    answered_api: Api::from_wire(1, 11),
-                    answered_correlation_id: 8,
-                },
-                "refusal was given the Fetch v11 response 8, which does not answer the Produce v9 request 7",
             ),
         ];
 

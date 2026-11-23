@@ -1,9 +1,10 @@
 //! The requests of one connection that the cluster has and has not answered yet.
 
 use std::collections::VecDeque;
+use std::fmt;
 
 use gaslightmq_field::Acks;
-use gaslightmq_wire::{ApiKey, Frame, Request, Response, WireError};
+use gaslightmq_wire::{ApiKey, Frame, Request, Response};
 
 /// Whether the cluster answers a request.
 ///
@@ -33,18 +34,15 @@ impl Reply {
     ///
     /// # Errors
     ///
-    /// [`WireError::Truncated`] when the body of a Produce ends before its `acks`.
+    /// [`AcksCutShort`] when the body of a Produce ends before its `acks`.
     /// Nothing says then whether a response comes.
-    pub(crate) fn to(request: &Request) -> Result<Self, WireError> {
+    pub(crate) fn to(request: &Request) -> Result<Self, AcksCutShort> {
         let api = request.api();
         if api.known() != Some(ApiKey::Produce) {
             return Ok(Self::Comes);
         }
         let body = request.body_bytes();
-        let acks = Self::acks_at_the_start_of(&body, api.version).ok_or(WireError::Truncated {
-            what: "Produce request body",
-            len: body.len(),
-        })?;
+        let acks = Self::acks_at_the_start_of(&body, api.version).ok_or(AcksCutShort { len: body.len() })?;
         Ok(if acks == Acks::NONE { Self::Never } else { Self::Comes })
     }
 
@@ -74,6 +72,19 @@ impl Reply {
             }
         }
         None
+    }
+}
+
+/// A Produce whose body ends before its `acks`, after `len` bytes.
+/// Nothing says whether the cluster answers such a request.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct AcksCutShort {
+    pub(crate) len: usize,
+}
+
+impl fmt::Display for AcksCutShort {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "Produce request body is cut short at {} bytes", self.len)
     }
 }
 
@@ -230,13 +241,10 @@ mod tests {
         let header = whole.frame().payload().len() - whole.body_bytes().len();
         let cut = Request::decode(Frame::new(whole.frame().payload().slice(..header + 3))).unwrap();
 
-        assert_eq!(
-            Reply::to(&cut),
-            Err(WireError::Truncated {
-                what: "Produce request body",
-                len: 3
-            })
-        );
+        let cut_short = Reply::to(&cut).unwrap_err();
+
+        assert_eq!(cut_short, AcksCutShort { len: 3 });
+        assert_eq!(cut_short.to_string(), "Produce request body is cut short at 3 bytes");
     }
 
     #[test]

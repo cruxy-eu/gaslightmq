@@ -28,9 +28,9 @@ use crate::{ConnectionHandler, ConnectionNumbers, ListenerConfiguration, Listene
 ///
 /// - The address refuses new connections.
 /// - Every [`Transport`] that is still open tells its handler so:
-///   its [`receive`](Transport::receive) returns [`ListenerError::ListenerClosed`](crate::ListenerError::ListenerClosed),
+///   its [`receive`](Transport::receive) returns [`ReceiveError::ListenerClosed`](crate::ReceiveError::ListenerClosed),
 ///   and a [`send`](Transport::send) that waits for its client gives up with
-///   [`ListenerError::ListenerClosed`](crate::ListenerError::ListenerClosed).
+///   [`SendError::ListenerClosed`](crate::SendError::ListenerClosed).
 ///   The handler decides what happens to the connection, and it usually closes it.
 ///
 /// Once [`close`](Self::close) returns, a new listener can [bind](Self::bind) to the address.

@@ -285,10 +285,7 @@ fn a_fetch_that_cannot_be_read_is_not_forwarded() {
 
     let error = overlay.forward(broker_2(), &request).unwrap_err();
 
-    assert!(matches!(
-        &error,
-        OverlayError::UnreadableRequest { api, .. } if *api == request.api()
-    ));
+    assert!(matches!(&error, ForwardError::Undecided { .. }), "{error:?}");
     assert!(
         error
             .to_string()

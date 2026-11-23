@@ -98,8 +98,9 @@ The workspace's own checks are tooling, and not product code: they live in `xtas
   and a test reads from it that its topic exists already.
   In every other case, what the other crate said is text in a `reason`.
   No variant copies the variant below it.
-  `ResponseOfAnotherCall` stands in three crates, each time with the API and the correlation ID of both sides.
-  A crate says what the failure below it means for its own caller, and no more.
+  A crate says what the failure below it means for its own caller, and no more:
+  a refusal that cannot rewrite a call is `CallNotRewritten`, whichever of the failures of the surgery stood in the way,
+  and what the surgery said is the reason.
   No error is made up to fill a field:
   a backend that finds an answer out of step has no error of the codec to show, so it does not build one.
   Nothing names `dyn Error`: no signature, no field, no doc example and no test.

@@ -91,18 +91,18 @@
 //!
 //! # Errors
 //!
-//! The crate has one error, [`LieError`], and it is the error of the contract:
+//! Registering a behaviour and telling a lie fail in different ways, so each has an error of its own.
+//! [`LieError`] is the error of the contract:
 //! a behaviour returns it and no other, whatever it reads and writes to tell its lie.
 //!
-//! | What failed | What is wrong |
-//! |---|---|
-//! | [`Lies::with`] | Two behaviours tell the same kind of lie. |
-//! | A lie that is asked | The lie could not be told: no behaviour is registered for its kind, the kind has no behaviour at the stage, the effect is not allowed, the request or the response could not be read or written, the request does not name a part the lie targets, the response has no place for an error code, or the response answers another request. |
+//! | What failed | Error | What is wrong |
+//! |---|---|---|
+//! | [`Lies::with`] | [`LiesError`] | Two behaviours tell the same kind of lie. |
+//! | A lie that is asked | [`LieError`] | The lie could not be told: no behaviour is registered for its kind, the kind has no behaviour at the stage, the effect is not allowed, the kind has no way to lie on the API, the request does not name a part the lie targets, the response has no place for an error code, or the lie could not make the request or the response it asks for. |
 //!
 //! [`Effect`] and [`Instruction`] take every value, so they have no error.
-//! [`LieError::Unreadable`] and [`LieError::Unwritable`] keep what the reader or the writer said as text,
-//! in a field `reason`, and write it once.
-//! The message of the error is complete, so it has no [`source`](std::error::Error::source).
+//! [`LieError::CallNotRewritten`] keeps what stood in the way as text, in a field `reason`, and writes it once.
+//! The message of every error is complete, so no error has a [`source`](std::error::Error::source).
 //!
 //! A lie that fails changes nothing.
 //! The pipeline passes the call on untouched and writes the error into the explanation of the call,
@@ -132,7 +132,7 @@ pub use effect::Effect;
 pub use every_build::{HangUp, Silence, Timing};
 pub use instruction::Instruction;
 pub use lie::{Lie, LieError};
-pub use lies::Lies;
+pub use lies::{Lies, LiesError};
 
 /// Every item of this crate, with its error.
 ///
@@ -143,11 +143,11 @@ pub use lies::Lies;
 /// use gaslightmq_lie::prelude::*;
 /// use gaslightmq_lie_api::prelude::*;
 ///
-/// let lies: Result<Lies, LieError> = Lies::new().with(Timing);
+/// let lies: Result<Lies, LiesError> = Lies::new().with(Timing);
 /// assert!(lies?.tells(LieKind::Timing));
-/// # Ok::<(), LieError>(())
+/// # Ok::<(), LiesError>(())
 /// ```
 pub mod prelude {
     #[doc(no_inline)]
-    pub use crate::{Effect, HangUp, Instruction, Lie, LieError, Lies, Silence, Timing};
+    pub use crate::{Effect, HangUp, Instruction, Lie, LieError, Lies, LiesError, Silence, Timing};
 }

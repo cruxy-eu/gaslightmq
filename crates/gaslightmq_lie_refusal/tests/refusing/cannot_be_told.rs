@@ -255,7 +255,7 @@ fn a_response_that_does_not_decode_cannot_take_a_refusal() {
     assert!(
         matches!(
             error,
-            LieError::Unreadable {
+            LieError::CallNotRewritten {
                 kind: LieKind::Refusal,
                 ..
             }
@@ -275,17 +275,14 @@ fn a_response_to_another_request_cannot_take_a_refusal() {
     let error = refused.after_response(&answer_to_other).unwrap_err();
     assert_eq!(
         error,
-        LieError::ResponseOfAnotherCall {
+        LieError::CallNotRewritten {
             kind: LieKind::Refusal,
-            api: request.api(),
-            correlation_id: CORRELATION_ID,
-            answered_api: other.api(),
-            answered_correlation_id: CORRELATION_ID,
+            reason: "the Fetch v11 response 7 does not answer the Produce v9 request 7".to_owned(),
         }
     );
     assert_eq!(
         error.to_string(),
-        "refusal was given the Fetch v11 response 7, which does not answer the Produce v9 request 7"
+        "refusal cannot rewrite the call: the Fetch v11 response 7 does not answer the Produce v9 request 7"
     );
 
     let error = every_lie()
@@ -293,17 +290,14 @@ fn a_response_to_another_request_cannot_take_a_refusal() {
         .unwrap_err();
     assert_eq!(
         error,
-        LieError::ResponseOfAnotherCall {
+        LieError::CallNotRewritten {
             kind: LieKind::Refusal,
-            api: request.api(),
-            correlation_id: CORRELATION_ID,
-            answered_api: other.api(),
-            answered_correlation_id: CORRELATION_ID,
+            reason: "the Fetch v11 response 7 does not answer the Produce v9 request 7".to_owned(),
         }
     );
     assert_eq!(
         error.to_string(),
-        "refusal was given the Fetch v11 response 7, which does not answer the Produce v9 request 7"
+        "refusal cannot rewrite the call: the Fetch v11 response 7 does not answer the Produce v9 request 7"
     );
 }
 

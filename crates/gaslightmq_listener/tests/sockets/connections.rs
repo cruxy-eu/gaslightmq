@@ -113,9 +113,7 @@ async fn an_address_that_another_listener_holds_takes_no_listener() {
         .await
         .unwrap_err();
 
-    let ListenerError::CannotListen { address, reason } = &error else {
-        unreachable!("a listener error that this test does not know: {error}");
-    };
+    let ListenerError::CannotListen { address, reason } = &error;
     assert_eq!(*address, listener.address());
     assert!(reason.to_lowercase().contains("in use"), "{reason}");
     assert_eq!(

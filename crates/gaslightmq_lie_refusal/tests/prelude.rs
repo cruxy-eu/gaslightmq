@@ -86,6 +86,6 @@ fn the_prelude_is_enough_to_register_the_refusal() {
     assert!(lies.tells(LieKind::Refusal));
     assert_eq!(
         lies.with(Refusal).unwrap_err(),
-        LieError::KindTwice { kind: LieKind::Refusal }
+        LiesError::KindTwice { kind: LieKind::Refusal }
     );
 }
