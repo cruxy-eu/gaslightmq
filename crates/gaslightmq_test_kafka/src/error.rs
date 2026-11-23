@@ -71,12 +71,17 @@ impl KafkaClusterError {
     pub(crate) fn refused(api: ApiKey, about: &dyn fmt::Display, error_code: i16) -> Result<(), Self> {
         match ResponseError::try_from_code(error_code) {
             None => Ok(()),
-            Some(error) => Err(Self::Refused {
-                api,
-                error,
-                about: about.to_string(),
-                detail: None,
-            }),
+            Some(error) => Err(Self::refused_with(api, about, error)),
+        }
+    }
+
+    /// A broker answered a request of `api` about `about` with `error`.
+    pub(crate) fn refused_with(api: ApiKey, about: &dyn fmt::Display, error: ResponseError) -> Self {
+        Self::Refused {
+            api,
+            error,
+            about: about.to_string(),
+            detail: None,
         }
     }
 
