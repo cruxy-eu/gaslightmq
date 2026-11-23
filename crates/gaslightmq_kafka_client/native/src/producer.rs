@@ -8,8 +8,9 @@ use gaslightmq_wire::{Offset, Partition, Record, RecordBatch};
 use crate::configuration::{ProducerConfiguration, RoleNames};
 use crate::error::ClientError;
 use crate::io::access::ClusterAccess;
+use crate::io::clock::milliseconds_since_1970;
 use crate::logic::cluster::TopicPartition;
-use crate::logic::produce::ProduceRecords;
+use crate::logic::produce::{ProduceRecords, stamped};
 
 /// The names of the producers that are configured without a client ID.
 static NAMES: RoleNames = RoleNames::new("producer");
@@ -46,6 +47,8 @@ impl KafkaProducer {
 
     /// Write `records` to a partition, as one batch. Returns the offset of the first record.
     ///
+    /// A record without a timestamp gets the time of the send, as Kafka's producer gives it.
+    ///
     /// # Errors
     ///
     /// [`ClientError::Protocol`] when the records do not encode.
@@ -54,7 +57,7 @@ impl KafkaProducer {
     pub async fn send(&self, topic: &str, partition: Partition, records: &[Record]) -> Result<Offset, ClientError> {
         let produce = ProduceRecords {
             partition: TopicPartition::new(topic, partition),
-            batch: RecordBatch::new(records).encode()?,
+            batch: RecordBatch::new(stamped(records, milliseconds_since_1970())).encode()?,
             acks: self.configuration.acks,
         };
         self.cluster

@@ -3,9 +3,9 @@
 use std::time::Duration;
 
 use bytes::Bytes;
-use gaslightmq_wire::Offset;
 use gaslightmq_wire::messages::produce_request::{PartitionProduceData, TopicProduceData};
 use gaslightmq_wire::messages::{ProduceRequest, ProduceResponse};
+use gaslightmq_wire::{Offset, Record};
 
 use crate::configuration::Acks;
 use crate::error::ClientError;
@@ -13,6 +13,19 @@ use crate::logic::call::{Operation, Reading};
 use crate::logic::cluster::{Route, TopicPartition};
 use crate::logic::versions::Versions;
 use crate::logic::wire_millis;
+
+/// `records` as a producer sends them at `now`, in milliseconds since 1970:
+/// a record without a timestamp gets that time, as Kafka's producer gives it.
+/// A broker reads the timestamp as the age of the record, and deletes a record that is older than its topic keeps.
+pub(crate) fn stamped(records: &[Record], now: i64) -> Vec<Record> {
+    records
+        .iter()
+        .map(|record| match record.timestamp {
+            Some(_) => record.clone(),
+            None => record.clone().with_timestamp(now),
+        })
+        .collect()
+}
 
 /// Write one batch of records to the leader of a partition.
 /// The output is the offset of the first record.
@@ -101,6 +114,16 @@ mod tests {
         assert_eq!(data.index, 3);
         assert_eq!(data.records, Some(Bytes::from_static(b"batch")));
         assert_eq!(produce().route(), Route::Leader(partition("orders", 3)));
+    }
+
+    #[test]
+    fn a_record_without_a_timestamp_gets_the_time_of_the_send() {
+        let records = [Record::new("placed"), Record::new("paid").with_timestamp(7)];
+
+        let sent = stamped(&records, 1_700_000_000_000);
+
+        assert_eq!(sent[0], Record::new("placed").with_timestamp(1_700_000_000_000));
+        assert_eq!(sent[1], records[1]);
     }
 
     #[test]

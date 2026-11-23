@@ -313,6 +313,7 @@ dependencies = [
  "gaslightmq_clock",
  "gaslightmq_kafka_client_api",
  "gaslightmq_kernel",
+ "gaslightmq_test_kafka",
  "gaslightmq_wire",
  "tokio",
  "tracing",
@@ -450,6 +451,17 @@ dependencies = [
  "gaslightmq_kernel",
  "gaslightmq_trigger",
  "gaslightmq_wire",
+]
+
+[[package]]
+name = "gaslightmq_test_kafka"
+version = "0.1.0"
+dependencies = [
+ "bytes",
+ "gaslightmq_clock",
+ "gaslightmq_kernel",
+ "gaslightmq_wire",
+ "tokio",
 ]
 
 [[package]]

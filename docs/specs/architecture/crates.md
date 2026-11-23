@@ -136,7 +136,7 @@ flowchart BT
   F["Workspace<br/>environment · workspace"]
   C["Control<br/>surface · quick_inject · control_api"]
   IO["IO edge<br/>listener · engine · host · backend_upstream · schema_registry<br/>workspace_fs · control_server · control_client"]
-  A["Applications<br/>gmq · ui · test · testcontainers · kafka_client_*"]
+  A["Applications<br/>gmq · ui · test · testcontainers · kafka_client_* · test_kafka"]
 
   T --> V
   P --> T
@@ -271,6 +271,7 @@ Transactions arrive later as `sim_txn`, next to `sim_log` and `sim_group`.
 | `testcontainers` | A container module: it starts the GaslightMQ image next to a test, with the workspace the test hands over, waits until the instance is ready, and hands the test the addresses its clients connect to. This crate does IO. See [instances in a test](#instances-in-a-test). | `control_client` |
 | `kafka_client_api` | What a Kafka client offers to a test, whichever client it is: the producer, consumer and admin traits, one trait per protocol API, and a raw client that sends one request at a fixed version. This crate does IO. | `wire` |
 | `kafka_client_native` | Our own Kafka client behind those traits, as three types: a producer, a consumer and an admin. Every instance has its own connections, its own view of the cluster, its own configuration and its own `client.id`, so a fault or a lie reaches one role alone. The consumer is one member of each group it joins, and everything it says about a group travels on connections of its own, so a Fetch that waits never delays a Heartbeat. Each role follows partition leaders, negotiates API versions on every connection, and reports every failure as an error. What a role decides is sans-IO code inside the crate, and the async part only owns sockets and timers. This crate does IO. | `kafka_client_api`, `wire`, `kernel`, `clock` |
+| `test_kafka` | A real Kafka cluster for the tests of this workspace: brokers of the version the workspace tests against, each with an address for the clients of a test. Its own handles create topics, write records, read them back and open transactions, with one request at a fixed version each. They share the codec with the client a test is about, and no decision of a client. It starts no GaslightMQ. This crate does IO. See [a real cluster in a test](#a-real-cluster-in-a-test). | `wire`, `kernel`, `clock` |
 | `gaslightmq` | The facade crate: `Proxy`, `Broker` and `Host`, and re-exports of what library users need. This crate does IO. | The public crates |
 | `gmq` | The binary: `gmq proxy`, `gmq broker`, `gmq start` and `gmq run`. This crate does IO. | `host`, `control_server` |
 
@@ -616,6 +617,36 @@ A proxy in front of that broker gives the test such a cluster behind a proxy.
 
 From there, a test works the same way with both crates:
 it activates a scenario, runs its clients and [asserts on the recording](control-plane.md#tests).
+
+## A real cluster in a test
+
+`test_kafka` gives a test of this workspace a cluster of real brokers.
+`test` and `testcontainers` start GaslightMQ for the test of a user, and `test_kafka` starts what GaslightMQ imitates.
+
+It stands with the applications, because nothing of the product depends on it.
+A crate that speaks to a real cluster takes it as a dev-dependency:
+`kafka_client_native` today, and `backend_upstream`, `test` and `testcontainers` once they exist.
+It depends on vocabulary alone, so every crate above `wire` can use it without a cycle.
+
+- **One cluster, several brokers.**
+  A cluster has as many brokers as the test asks for.
+  Each one is a real broker with an address of its own, and partitions have their leaders on different brokers.
+  A client that does not follow leaders therefore fails against it.
+- **The version of Kafka is a property.**
+  The image has a default, which is the version this workspace tests against.
+  An environment variable names another image for a whole test run, and a configuration names one for a single cluster.
+- **What sets the cluster up is not what the test is about.**
+  The handles of a cluster create topics, write records and read them back.
+  Each sends one request at a fixed version to the broker that has to answer it.
+  They negotiate nothing, retry nothing and follow no leader over time.
+  A bug in a client cannot hide in the code that checks what the client did.
+  Both sides share the codec of `wire`, so a bug that the codec makes the same way in both directions stays hidden.
+- **The cluster ends with the test.**
+  It ends when the test lets go of it, and when the process of the test ends for any other reason.
+  Tests of one binary share one cluster, and keep apart by the names of their topics and groups.
+- **The tests need Docker.**
+  `cargo test --workspace` runs them, and so do `just test` and CI.
+  Without Docker they fail, and the failure says that the cluster did not start and why.
 
 ## Features
 
