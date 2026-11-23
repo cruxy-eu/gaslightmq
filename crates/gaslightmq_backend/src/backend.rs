@@ -1,11 +1,12 @@
 //! The one trait through which the engine reaches a backend.
 
+use std::net::SocketAddr;
 use std::sync::Arc;
 
-use gaslightmq_field::ConnectionNumber;
+use gaslightmq_field::{ConnectionNumber, Endpoint};
 use gaslightmq_incident::{ExpandedIncident, Incident, IncidentSupport};
 
-use crate::{BackendAnswer, BackendRequest, Endpoints, IncidentRejection};
+use crate::{BackendAnswer, BackendRequest, Endpoints, IncidentRejection, ListenerRejection};
 
 /// What answers a call behind a proxy: a real cluster, or a broker in the same process.
 ///
@@ -17,6 +18,7 @@ use crate::{BackendAnswer, BackendRequest, Endpoints, IncidentRejection};
 /// | Answers a request with the truth. | [`call`](Self::call) |
 /// | Lets go of a connection that ended. | [`close`](Self::close) |
 /// | Reports the endpoints clients connect to. | [`endpoints`](Self::endpoints) |
+/// | Sends clients to the address on which the engine listens for an endpoint. | [`listens`](Self::listens) |
 /// | Declares which incidents it applies, and which it can only emulate. | [`incident_support`](Self::incident_support) |
 /// | Applies or emulates an incident. | [`apply`](Self::apply) |
 ///
@@ -74,8 +76,43 @@ pub trait Backend: Send + Sync {
     ///
     /// The engine closes the listener of every endpoint that [closed](Endpoints::closed_since) since `known`,
     /// together with every session on it, and records that the backend closed those sessions.
-    /// Then it opens a listener for every endpoint that [opened](Endpoints::opened_since).
+    /// Then it opens a listener for every endpoint that [opened](Endpoints::opened_since),
+    /// and says where each one [listens](Self::listens).
     fn endpoints(&self, known: &Endpoints) -> impl Future<Output = Endpoints> + Send;
+
+    /// Takes the address on which the engine listens for `endpoint`, and sends clients there from now on.
+    ///
+    /// A backend names its endpoints, and no address: the environment says where a proxy listens,
+    /// and a listener that takes any free port only knows its port once it is open.
+    /// The engine therefore says so once for every listener it opened, with the address that the listener got.
+    ///
+    /// A client learns from the answers of a cluster where its brokers are.
+    /// From the moment the future ends, every answer of the backend that names the broker of `endpoint`
+    /// sends the client to the listener: to the port of `address`, on the host under which clients reach the proxy.
+    /// The backend knows that host, and the engine does not say it.
+    ///
+    /// - **Until then.**
+    ///   A backend sends no client to a broker whose endpoint has no listener yet.
+    ///   Its answers leave that broker out, as a cluster does with a broker that is starting, and the client asks again.
+    /// - **The bootstrap endpoint.**
+    ///   No answer names it: a client is configured with its address.
+    ///   A backend takes its address all the same, and does nothing with it.
+    /// - **An endpoint that closed.**
+    ///   The address of a listener is gone with its endpoint.
+    ///   An endpoint that [opens again](Endpoints::opened_since) gets a new listener, and the engine says where that one listens.
+    ///   A backend ignores an address for an endpoint that accepts no connections:
+    ///   the engine learns from [`endpoints`](Self::endpoints) that the endpoint closed, and closes the listener.
+    ///
+    /// # Errors
+    ///
+    /// [`ListenerRejection`] when the backend cannot send clients to `address`,
+    /// such as an address that another endpoint of the same proxy has for its clients.
+    /// A rejected listener changed nothing.
+    fn listens(
+        &self,
+        endpoint: Endpoint,
+        address: SocketAddr,
+    ) -> impl Future<Output = Result<(), ListenerRejection>> + Send;
 
     /// Which kinds of incidents the backend applies, and which it can only emulate.
     ///
@@ -125,6 +162,14 @@ impl<B: Backend> Backend for &B {
         (**self).endpoints(known)
     }
 
+    fn listens(
+        &self,
+        endpoint: Endpoint,
+        address: SocketAddr,
+    ) -> impl Future<Output = Result<(), ListenerRejection>> + Send {
+        (**self).listens(endpoint, address)
+    }
+
     fn incident_support(&self) -> IncidentSupport {
         (**self).incident_support()
     }
@@ -146,6 +191,14 @@ impl<B: Backend> Backend for Arc<B> {
 
     fn endpoints(&self, known: &Endpoints) -> impl Future<Output = Endpoints> + Send {
         (**self).endpoints(known)
+    }
+
+    fn listens(
+        &self,
+        endpoint: Endpoint,
+        address: SocketAddr,
+    ) -> impl Future<Output = Result<(), ListenerRejection>> + Send {
+        (**self).listens(endpoint, address)
     }
 
     fn incident_support(&self) -> IncidentSupport {

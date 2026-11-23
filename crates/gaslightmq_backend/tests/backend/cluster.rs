@@ -1,7 +1,8 @@
 //! The backend of these tests: a cluster of three brokers, written by hand.
 
-use std::collections::BTreeSet;
-use std::future::{pending, poll_fn};
+use std::collections::{BTreeMap, BTreeSet};
+use std::future::{pending, poll_fn, ready};
+use std::net::SocketAddr;
 use std::sync::Mutex;
 use std::task::{Poll, Waker};
 
@@ -10,19 +11,24 @@ use gaslightmq_call::prelude::*;
 use gaslightmq_field::prelude::*;
 use gaslightmq_incident::prelude::*;
 use gaslightmq_kernel::prelude::*;
+use gaslightmq_wire::messages::metadata_response::MetadataResponseBroker;
 use gaslightmq_wire::messages::{
     FetchRequest, FetchResponse, MetadataRequest, MetadataResponse, ProduceRequest, ProduceResponse,
 };
-use gaslightmq_wire::protocol::Encodable;
+use gaslightmq_wire::protocol::{Encodable, StrBytes};
 use gaslightmq_wire::{ApiKey as KnownApi, Request, WireError};
 
 /// The client of every request of these tests.
 pub const CLIENT: &str = "order-ingest";
 
+/// The host under which clients reach the listeners of the proxy.
+pub const ADVERTISED_HOST: &str = "gaslight.test";
+
 /// A cluster of brokers 1, 2 and 3.
 ///
 /// Broker 2 leads `orders.eu/3` and hosts the coordinator of the group `payments`.
 /// A Fetch waits until a record arrived, and a Produce brings one.
+/// Metadata names every broker whose endpoint has a listener, at the address of that listener.
 ///
 /// It has no runtime and no channel.
 /// Its state sits behind one lock, and whoever waits for the state to change leaves a waker there.
@@ -34,6 +40,8 @@ pub struct Cluster {
 struct State {
     /// The endpoints that accept connections. The endpoint of a broker that is down is closed.
     endpoints: Endpoints,
+    /// The port on which the engine listens for each broker, once it said so.
+    listening: BTreeMap<BrokerId, u16>,
     unresponsive: BTreeSet<BrokerId>,
     /// The calls whose requests the cluster took, in the order it took them.
     taken: Vec<CallId>,
@@ -52,6 +60,7 @@ impl Default for State {
         endpoints.extend(BROKERS.into_iter().map(broker));
         Self {
             endpoints,
+            listening: BTreeMap::new(),
             unresponsive: BTreeSet::new(),
             taken: Vec::new(),
             records: 0,
@@ -177,6 +186,10 @@ impl Backend for Cluster {
                 }
                 .into(),
             },
+            Some(KnownApi::Metadata) => {
+                let brokers = self.read(|state| state.listening.iter().map(advertised).collect());
+                truth(request.request(), &MetadataResponse::default().with_brokers(brokers))
+            }
             _ => truth(request.request(), &MetadataResponse::default()),
         }
     }
@@ -188,6 +201,15 @@ impl Backend for Cluster {
     async fn endpoints(&self, known: &Endpoints) -> Endpoints {
         self.wait_for(|state| Some(&state.endpoints).filter(|endpoints| *endpoints != known).cloned())
             .await
+    }
+
+    // This cluster decides at once, so the method returns a future that is ready.
+    fn listens(
+        &self,
+        endpoint: Endpoint,
+        address: SocketAddr,
+    ) -> impl Future<Output = Result<(), ListenerRejection>> + Send {
+        ready(self.listening(endpoint, address))
     }
 
     fn incident_support(&self) -> IncidentSupport {
@@ -209,6 +231,32 @@ impl Backend for Cluster {
 }
 
 impl Cluster {
+    fn listening(&self, endpoint: Endpoint, address: SocketAddr) -> Result<(), ListenerRejection> {
+        let Some(broker) = endpoint.broker() else {
+            // No answer names the bootstrap endpoint.
+            return Ok(());
+        };
+        self.change(|state| {
+            if !state.endpoints.contains(endpoint) {
+                // The endpoint closed in the meantime, and its listener goes with it.
+                return Ok(());
+            }
+            let taken = state
+                .listening
+                .iter()
+                .find(|(other, port)| **other != broker && **port == address.port());
+            if let Some((other, _)) = taken {
+                return Err(ListenerRejection::Unadvertisable {
+                    endpoint,
+                    address,
+                    reason: format!("broker {other} is advertised at {ADVERTISED_HOST}:{}", address.port()),
+                });
+            }
+            state.listening.insert(broker, address.port());
+            Ok(())
+        })
+    }
+
     fn applied(&self, incident: Incident) -> Result<ExpandedIncident, IncidentRejection> {
         self.incident_support().check(&Requirements::from(&incident))?;
         let (broker, down, unresponsive) = match &incident {
@@ -229,6 +277,8 @@ impl Cluster {
             state.unresponsive.remove(&broker);
             if down {
                 state.endpoints.close(Endpoint::Broker(broker));
+                // The listener of an endpoint is gone with the endpoint.
+                state.listening.remove(&broker);
             } else {
                 state.endpoints.open(Endpoint::Broker(broker));
             }
@@ -238,6 +288,14 @@ impl Cluster {
             expanded
         }))
     }
+}
+
+/// A broker as Metadata names it to clients: on the advertised host, at the port of its listener.
+fn advertised((broker, port): (&BrokerId, &u16)) -> MetadataResponseBroker {
+    MetadataResponseBroker::default()
+        .with_node_id(i32::try_from(broker.value()).unwrap().into())
+        .with_host(StrBytes::from_static_str(ADVERTISED_HOST))
+        .with_port(i32::from(*port))
 }
 
 /// The truth that is `body`, as the response to `request`.

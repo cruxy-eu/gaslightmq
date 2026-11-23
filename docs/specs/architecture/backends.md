@@ -17,6 +17,7 @@ A backend:
 - declares its **capabilities**: which incidents it can apply, and which it can only emulate,
 - applies or emulates an incident when the scenario runner fires one,
 - reports the endpoints clients should connect to,
+- sends clients to the listener that the engine opens for each endpoint,
 - lets go of a connection when the engine says that it ended.
 
 A backend never lies.
@@ -77,6 +78,22 @@ and records that the backend closed them.
 Then it opens a listener for every endpoint that opened.
 The [environment](storage.md#environments) says where each endpoint listens.
 
+A backend names endpoints, and no address.
+A listener can take any free port, and nobody knows that port before the listener is open.
+The engine therefore tells the backend the address that each listener got.
+From then on, the backend sends clients to that listener:
+to its port, on the host under which clients see the proxy.
+
+| The endpoint of a broker | What the backend tells clients |
+|---|---|
+| Has no listener yet. | Nothing about the broker. A client that asks in between asks again, as it does while a broker starts. |
+| Has a listener. | The address of the listener, wherever an answer names the broker. |
+| Closed. | Nothing about the broker. The address of its listener is gone with the endpoint. |
+
+A backend rejects a listener that it cannot send clients to,
+such as a listener that clients cannot tell from the one of another broker.
+A rejected listener changes nothing, and the engine closes it.
+
 ### Incidents
 
 The scenario runner hands an incident to the backend.
@@ -131,9 +148,50 @@ The check includes each incident's [consequences](../domains/lies-and-incidents.
 The Upstream backend forwards calls to a real cluster.
 It does IO, and it is async like the rest of the [IO edge](crates.md#the-io-edge-is-async).
 It discovers the brokers from the bootstrap address,
-and runs one listener per real broker.
+and names one endpoint per real broker.
+The proxy runs a listener for each endpoint.
 The [environment](storage.md#environments) says which ports the listeners use
 and which host clients see.
+
+### Connections to the cluster
+
+The backend opens one connection to the cluster for every connection of a client.
+That connection goes to the broker of the endpoint that the client connected to.
+A broker handles the requests of one connection one at a time,
+so a client that waits for records never holds up another client.
+The cluster sees each client come and go:
+the backend closes its connection when the connection of the client ends.
+
+A connection to the cluster that ends is gone for its client too.
+The backend opens no new one in its place.
+Every call of that client's connection fails from then on, and the session ends.
+
+The backend never gives up on a broker that takes its time.
+A Fetch waits for records, and the client has a timeout of its own.
+The backend only limits how long it waits for a connection to open.
+
+### Discovering the brokers
+
+The backend asks the cluster for its brokers before the proxy starts.
+A proxy does not start when its cluster does not name its brokers.
+
+The backend asks again from then on:
+after a time that its configuration sets, when a call loses its connection to a broker,
+and when an answer names a broker that has no endpoint.
+
+| The cluster | The backend |
+|---|---|
+| Names a broker it did not name before. | Opens the endpoint of the broker. |
+| No longer names a broker. | Closes the endpoint of the broker. |
+
+A question that the cluster does not answer changes nothing.
+The endpoints stay as the last answer left them.
+
+The backend knows no port.
+The engine opens a listener for each endpoint, and gives each broker its port as the
+[listeners of the environment](storage.md#brokers) say.
+A proxy does not start when those listeners do not hold the brokers of its cluster.
+When a broker gets another port, the engine moves its listener, and tells the backend the new address.
 
 ### Overlay
 
@@ -160,6 +218,8 @@ so the UI can show both.
 
 A client learns the address of a broker from the cluster's answers.
 The overlay writes the address of the broker's listener wherever an answer tells the address of a broker.
+That address is the host under which clients see the proxy, and the port that the listener got.
+The host comes from the environment, and the port from the [engine](#endpoints), once the listener is open.
 
 | Response | Tells the address of |
 |---|---|
@@ -173,13 +233,15 @@ A `DescribeCluster` answer that lists controllers passes unchanged, because a co
 
 The translation works both ways.
 A request that arrives on the listener of a broker goes to that broker.
-A request that arrives on the bootstrap listener goes to any broker.
+A request that arrives on the bootstrap listener goes to any broker:
+the bootstrap server of the environment, or another broker when that server takes no connection.
 The overlay learns the real address of each broker from the same answers, before it rewrites them.
 
 A cluster can name a broker that has no listener yet, such as a broker that just joined.
 A client never learns the real address of that broker.
 Metadata and `DescribeCluster` leave the broker out, and a coordinator on it reads as `COORDINATOR_NOT_AVAILABLE`.
-The backend opens a listener for the broker, and the next answer names it.
+The backend opens the endpoint of the broker, the engine opens a listener for it,
+and the next answer names the broker at that listener.
 
 ### Emulating incidents
 

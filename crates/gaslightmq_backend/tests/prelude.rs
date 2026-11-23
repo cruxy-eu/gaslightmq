@@ -66,6 +66,15 @@ mod next_to_the_others {
             pending().await
         }
 
+        // This backend sends no client anywhere, so the method returns a future that is ready.
+        fn listens(
+            &self,
+            _endpoint: Endpoint,
+            _address: SocketAddr,
+        ) -> impl Future<Output = std::result::Result<(), ListenerRejection>> + Send {
+            ready(Ok(()))
+        }
+
         fn incident_support(&self) -> IncidentSupport {
             IncidentSupport::none()
         }
@@ -105,6 +114,12 @@ mod next_to_the_others {
             reason: "the cluster has no group payments".to_owned(),
         };
 
+        let unadvertisable: ListenerRejection = ListenerRejection::Unadvertisable {
+            endpoint: request.endpoint(),
+            address: "127.0.0.1:0".parse().unwrap(),
+            reason: "the listener did not say which port it got".to_owned(),
+        };
+
         vec![
             format!("{:?}", support_of(&Silent)),
             request.call().to_string(),
@@ -113,6 +128,7 @@ mod next_to_the_others {
             format!("{answer:?}"),
             endpoints.len().to_string(),
             rejection.to_string(),
+            unadvertisable.to_string(),
         ]
     }
 }
@@ -121,13 +137,18 @@ mod next_to_the_others {
 fn the_prelude_names_every_item_next_to_the_other_preludes() {
     let items = next_to_the_others::every_item();
 
-    assert_eq!(items.len(), 7);
+    assert_eq!(items.len(), 8);
     assert!(items.iter().all(|item| !item.is_empty()));
     assert_eq!(
         items[1..4],
         ["#7.3", "41", "the cluster takes no requests on endpoint `bootstrap`"]
     );
     assert_eq!(items[6], "rebalance cannot happen: the cluster has no group payments");
+    assert_eq!(
+        items[7],
+        "clients cannot be told that endpoint `bootstrap` listens on 127.0.0.1:0: \
+         the listener did not say which port it got"
+    );
 }
 
 #[test]
