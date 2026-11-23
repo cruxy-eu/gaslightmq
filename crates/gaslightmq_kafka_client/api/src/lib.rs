@@ -7,6 +7,9 @@
 //!   request of that API and return its response.
 //! - [`RawKafkaClient`] implements the API traits by sending each request as
 //!   it is given, to one address, at a fixed version.
+//!   It also does what no Kafka client does: it sends bytes that are no request,
+//!   and watches the other side close its connection.
+//!   A [`RawClientConfiguration`] holds its properties.
 //!
 //! # Failures
 //!
@@ -27,6 +30,7 @@
 pub mod api_versions;
 pub mod application;
 pub mod client;
+pub mod configuration;
 pub mod create_topics;
 pub mod delete_topics;
 pub mod error;
@@ -42,6 +46,7 @@ pub use application::{
     TopicConfigs, TopicMetadata, Watermarks,
 };
 pub use client::{RawKafkaClient, SentRequest};
+pub use configuration::RawClientConfiguration;
 pub use create_topics::CreateTopics;
 pub use delete_topics::DeleteTopics;
 pub use error::ClientError;
