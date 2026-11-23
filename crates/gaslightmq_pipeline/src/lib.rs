@@ -41,20 +41,22 @@
 //! let shared = SharedBySessions::new(
 //!     ClientContexts::new(Duration::from_secs(60)),
 //!     KnownTopics::new(),
-//!     Arc::new(Lies::of_every_build().with(Refusal)?),
+//!     Arc::new(Lies::of_every_build().with(Refusal).expect("a kind that is new to the set")),
 //! );
 //!
 //! // Someone armed a rule: "refuse partition 3 of orders.eu".
 //! let clock = VirtualClock::new();
 //! let partition_3 = Conditions::new()
-//!     .with(Condition::parse(Field::Topic, "orders.eu")?)
-//!     .with(Condition::parse(Field::Partition, "3")?);
-//! let flap = Rule::new("Leader flap".parse()?, partition_3, RefusalLie::new(ErrorCode::NOT_LEADER_OR_FOLLOWER));
-//! let armed = flap.resolve(&SelectorSet::default(), &PresetSet::default())?.arm(Seed::new(42), clock.now());
-//! let snapshot = Arc::new(Snapshot::new([armed])?);
+//!     .with(Condition::parse(Field::Topic, "orders.eu").expect("a condition"))
+//!     .with(Condition::parse(Field::Partition, "3").expect("a condition"));
+//! let name = "Leader flap".parse().expect("a rule name");
+//! let flap = Rule::new(name, partition_3, RefusalLie::new(ErrorCode::NOT_LEADER_OR_FOLLOWER));
+//! let resolved = flap.resolve(&SelectorSet::default(), &PresetSet::default()).expect("a rule that resolves");
+//! let snapshot = Arc::new(Snapshot::new([resolved.arm(Seed::new(42), clock.now())]).expect("one rule"));
 //!
 //! // A client connects, and the engine opens the pipeline of its connection.
-//! let connection = Connection::new(ConnectionNumber::new(7), "10.0.4.27:51459".parse()?, Endpoint::Bootstrap);
+//! let client = "10.0.4.27:51459".parse().expect("a client address");
+//! let connection = Connection::new(ConnectionNumber::new(7), client, Endpoint::Bootstrap);
 //! let mut pipeline = Pipeline::open(connection, ConnectionOrdinal::FIRST, shared, snapshot, clock.now());
 //!
 //! // The client produces to two partitions of `orders.eu`. The engine reports the bytes.
@@ -84,7 +86,7 @@
 //! };
 //! assert_eq!(record.verdict().to_string(), "NOT_LEADER_OR_FOLLOWER on orders.eu/3");
 //! assert_eq!(record.delivered().to_string(), "ok; NOT_LEADER_OR_FOLLOWER on orders.eu/3");
-//! # Ok::<(), Box<dyn std::error::Error>>(())
+//! # Ok::<(), gaslightmq_wire::WireError>(())
 //! ```
 //!
 //! # The engine drives, and the pipeline decides
@@ -236,7 +238,7 @@ pub use timer::TimerId;
 ///
 /// let timer = TimerId::new("#7.3".parse()?, Stage::BeforeForwarding);
 /// assert_eq!(timer.to_string(), "#7.3 before forwarding");
-/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// # Ok::<(), gaslightmq_call::CallIdError>(())
 /// ```
 pub mod prelude {
     #[doc(no_inline)]
