@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use gaslightmq_clock::Instant;
 use gaslightmq_field::prelude::*;
@@ -98,17 +98,34 @@ impl Snapshot {
     pub fn new(rules: impl IntoIterator<Item = ArmedRule>) -> Result<Self, SnapshotError> {
         let rules: Vec<ArmedRule> = rules.into_iter().collect();
 
-        let mut by_name = BTreeMap::new();
-        for (position, rule) in rules.iter().enumerate() {
-            if by_name.insert(rule.name().clone(), Priority::new(position)).is_some() {
+        let mut names = BTreeSet::new();
+        for rule in &rules {
+            if !names.insert(rule.name()) {
                 return Err(SnapshotError::DuplicateName {
                     name: rule.name().clone(),
                 });
             }
         }
+        Ok(Self::of_distinct(rules))
+    }
 
+    /// The snapshot of the rules of this one that `stays` keeps, in their order.
+    ///
+    /// It is how a rule leaves: the engine keeps every rule but the one that is disarmed or whose lifetime ended.
+    /// The rules of a snapshot have one name each, and so have the ones that stay, so nothing can go wrong.
+    #[must_use]
+    pub fn keeping(&self, stays: impl Fn(&ArmedRule) -> bool) -> Self {
+        Self::of_distinct(self.rules.iter().filter(|rule| stays(rule)).cloned().collect())
+    }
+
+    /// The snapshot of `rules`, which have one name each.
+    fn of_distinct(rules: Vec<ArmedRule>) -> Self {
+        let by_position = || rules.iter().enumerate();
+        let by_name = by_position()
+            .map(|(position, rule)| (rule.name().clone(), Priority::new(position)))
+            .collect();
         let index = |pass: Pass| -> ApiIndex<Priority> {
-            let decided_in_pass = rules.iter().enumerate().filter(|(_, rule)| rule.rule().pass() == pass);
+            let decided_in_pass = by_position().filter(|(_, rule)| rule.rule().pass() == pass);
             decided_in_pass
                 .map(|(position, rule)| (Priority::new(position), rule.rule().selector().clone()))
                 .collect()
@@ -116,12 +133,12 @@ impl Snapshot {
         let request = index(Pass::Request);
         let response = index(Pass::Response);
 
-        Ok(Self {
+        Self {
             rules,
             by_name,
             request,
             response,
-        })
+        }
     }
 
     /// How many rules are armed.
@@ -426,6 +443,33 @@ mod tests {
         let error = Snapshot::new([arm(&refuse), arm(&twice)]).unwrap_err();
 
         assert_eq!(error, SnapshotError::DuplicateName { name: name("Refuse") });
+    }
+
+    #[test]
+    fn the_rules_that_stay_keep_their_order_and_their_arming() {
+        let snapshot = snapshot([
+            &rule("Refuse produce", api(ApiKey::PRODUCE), flap()),
+            &rule("Slow", Conditions::new(), delay()),
+            &rule("Refuse fetch", api(ApiKey::FETCH), flap()),
+        ]);
+        let names = |snapshot: &Snapshot| -> Vec<String> {
+            let names = snapshot.iter().map(|rule| rule.name().as_str().to_owned());
+            names.collect()
+        };
+
+        let without_slow = snapshot.keeping(|rule| rule.name() != &name("Slow"));
+
+        assert_eq!(names(&without_slow), ["Refuse produce", "Refuse fetch"]);
+        assert!(without_slow.get(&name("Slow")).is_none());
+        // A rule that stays is the same arming, at its new priority, and it still matches what it matched.
+        let fetch = without_slow.get(&name("Refuse fetch")).unwrap();
+        assert!(fetch.is(snapshot.get(&name("Refuse fetch")).unwrap()));
+        assert_eq!(without_slow.priority_of(&name("Refuse fetch")), Some(Priority::new(1)));
+        let candidates: Vec<&ArmedRule> = without_slow.candidates(Pass::Request, ApiKey::FETCH).collect();
+        assert_eq!(candidates.len(), 1);
+
+        assert_eq!(names(&snapshot.keeping(|_| true)), names(&snapshot));
+        assert!(snapshot.keeping(|_| false).is_empty());
     }
 
     #[test]
