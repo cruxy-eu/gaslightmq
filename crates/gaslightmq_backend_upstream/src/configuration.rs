@@ -197,7 +197,6 @@ impl fmt::Display for ResponseSizeLimit {
 ///
 /// The message is complete, so no variant has a source.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-#[non_exhaustive]
 pub enum ResponseSizeLimitError {
     /// The limit is zero, and a response holds at least one byte.
     #[error("a response size limit is at least one byte")]

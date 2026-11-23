@@ -84,7 +84,6 @@ impl fmt::Display for Operator {
 
 /// Why a text is not an [`Operator`].
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-#[non_exhaustive]
 pub enum OperatorError {
     /// No operator has this name.
     #[error("no operator is named {name:?}")]
@@ -199,7 +198,6 @@ impl fmt::Display for ValueSet {
 
 /// Why values are not a [`ValueSet`].
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-#[non_exhaustive]
 pub enum ValueSetError {
     /// There is no value, so a condition would have nothing to test against.
     #[error("a condition needs at least one value")]
@@ -430,7 +428,6 @@ impl Holds {
 /// assert_eq!(error.to_string(), "api: unknown API key: \"Prodcue\"");
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-#[non_exhaustive]
 pub enum ConditionError {
     /// The text has no wildcard, and it is not a value of the field.
     /// `error` names the field and says why.

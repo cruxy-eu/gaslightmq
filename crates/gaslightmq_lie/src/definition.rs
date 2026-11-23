@@ -269,7 +269,6 @@ impl fmt::Display for TimingLie {
 /// assert_eq!(error.to_string(), "a jitter of 200ms is longer than the delay of 0s");
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-#[non_exhaustive]
 pub enum TimingLieError {
     /// The jitter is longer than the delay, so the shortest wait would be less than no time.
     #[error("a jitter of {jitter} is longer than the delay of {delay}")]

@@ -9,7 +9,7 @@ use gaslightmq_environment::{HostName, ServerAddress};
 use gaslightmq_field::Endpoint;
 use gaslightmq_kernel::BrokerId;
 use gaslightmq_overlay::{AdvertisedAddresses, BrokerAddress, Destination, Forwarding, Overlay, OverlayError};
-use gaslightmq_wire::{Request, Response, WireError};
+use gaslightmq_wire::{Request, Response};
 
 use crate::error::UpstreamBackendError;
 use crate::in_flight::Reply;
@@ -236,20 +236,23 @@ impl Cluster {
         }
         let forwarding = self.overlay.forward(endpoint, request).map_err(|error| match error {
             OverlayError::UnknownBroker { .. } => BackendFailure::NoSuchEndpoint { endpoint },
-            OverlayError::UnreadableRequest { error, .. } | OverlayError::UnwritableRequest { error, .. } => {
-                BackendFailure::ResponseNotBuilt { error }
-            }
-            other => BackendFailure::ResponseNotBuilt {
-                error: WireError::Encode {
-                    what: "response",
-                    reason: other.to_string(),
-                },
+            // The overlay could not make the request to forward, or the answer it gives itself.
+            // The variants about a response never come from `forward`, and they build no response either.
+            OverlayError::UnreadableRequest { .. }
+            | OverlayError::UnwritableRequest { .. }
+            | OverlayError::UnansweredRequest { .. }
+            | OverlayError::UnreadableResponse { .. }
+            | OverlayError::UnwritableResponse { .. }
+            | OverlayError::ResponseOfAnotherCall { .. } => BackendFailure::ResponseNotBuilt {
+                reason: error.to_string(),
             },
         })?;
         match forwarding {
             Forwarding::Answer(response) => Ok(Route::Answer(response)),
             Forwarding::Forward { to, request } => {
-                let reply = Reply::to(&request).map_err(|error| BackendFailure::ResponseNotBuilt { error })?;
+                let reply = Reply::to(&request).map_err(|error| BackendFailure::ResponseNotBuilt {
+                    reason: error.to_string(),
+                })?;
                 let to = match to {
                     Destination::AnyBroker => self.any_broker(),
                     Destination::Broker { address, .. } => vec![ClusterAddress::from(&address)],
@@ -267,15 +270,27 @@ impl Cluster {
     /// | Cannot read the response, or finds that it answers another request. | [`BackendAnswer::NotAResponse`]. The response may tell a real address, so it goes nowhere. |
     /// | Cannot write the truth. | [`BackendFailure::ResponseNotBuilt`] |
     pub(crate) fn truth(&mut self, request: &Request, upstream: Response) -> BackendAnswer {
-        match self.overlay.answer(request, upstream) {
-            Ok(truth) => truth.into(),
-            Err(OverlayError::UnreadableResponse { error, .. }) => BackendAnswer::NotAResponse { error },
-            Err(OverlayError::UnwritableResponse { error, .. }) => BackendFailure::ResponseNotBuilt { error }.into(),
-            Err(other) => BackendAnswer::NotAResponse {
-                error: WireError::Decode {
-                    what: "response",
-                    reason: other.to_string(),
-                },
+        let error = match self.overlay.answer(request, upstream) {
+            Ok(truth) => return truth.into(),
+            Err(error) => error,
+        };
+        match error {
+            OverlayError::UnwritableResponse { .. } => BackendFailure::ResponseNotBuilt {
+                reason: error.to_string(),
+            }
+            .into(),
+            OverlayError::UnreadableResponse { .. } | OverlayError::ResponseOfAnotherCall { .. } => {
+                BackendAnswer::NotAResponse {
+                    reason: error.to_string(),
+                }
+            }
+            // The overlay reads no request to make the truth, so these never come.
+            // A response that it made no truth of goes nowhere all the same.
+            OverlayError::UnknownBroker { .. }
+            | OverlayError::UnreadableRequest { .. }
+            | OverlayError::UnwritableRequest { .. }
+            | OverlayError::UnansweredRequest { .. } => BackendAnswer::NotAResponse {
+                reason: error.to_string(),
             },
         }
     }
@@ -672,12 +687,12 @@ mod tests {
         ));
 
         let of_another = Request::new(12, 2, None, &MetadataRequest::default()).unwrap();
-        let BackendAnswer::NotAResponse { error } = cluster.truth(&of_another, naming([1])) else {
+        let BackendAnswer::NotAResponse { reason } = cluster.truth(&of_another, naming([1])) else {
             panic!("the response answers request 1");
         };
         assert_eq!(
-            error.to_string(),
-            "cannot decode response: the Metadata v12 response 1 does not answer the Metadata v12 request 2"
+            reason,
+            "the Metadata v12 response 1 does not answer the Metadata v12 request 2"
         );
     }
 

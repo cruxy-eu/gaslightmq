@@ -77,7 +77,6 @@ macro_rules! number_value {
 
         #[doc = concat!("Why a number or a text is not a [`", stringify!($name), "`].")]
         #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-        #[non_exhaustive]
         pub enum $error {
             /// The text has no characters.
             #[error("{} is empty", $what)]

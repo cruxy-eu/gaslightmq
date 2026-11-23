@@ -23,7 +23,7 @@ use gaslightmq_wire::messages::fetch_response::{
     FetchableTopicResponse, LeaderIdAndEpoch, NodeEndpoint, PartitionData,
 };
 use gaslightmq_wire::messages::{FetchRequest, FetchResponse};
-use gaslightmq_wire::{Frame, Request, Response, WireError};
+use gaslightmq_wire::{Frame, Request, Response};
 
 /// The versions of Fetch without fetch sessions.
 const BEFORE_SESSIONS: [i16; 3] = [4, 5, 6];
@@ -287,7 +287,7 @@ fn a_fetch_that_cannot_be_read_is_not_forwarded() {
 
     assert!(matches!(
         &error,
-        OverlayError::UnreadableRequest { api, error: WireError::Decode { .. } } if *api == request.api()
+        OverlayError::UnreadableRequest { api, .. } if *api == request.api()
     ));
     assert!(
         error

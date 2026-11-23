@@ -153,7 +153,6 @@ pub trait Lie: Send + Sync {
 /// assert_eq!(error.to_string(), "refusal cannot be told on api 9999 v4");
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-#[non_exhaustive]
 pub enum LieError {
     /// Two behaviours tell the same kind of lie, so nothing says which one the pipeline asks.
     /// [`Lies::with`](crate::Lies::with) returns it, and the set stays without the second behaviour.

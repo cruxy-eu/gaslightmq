@@ -96,7 +96,6 @@ impl Incident {
 /// [`IncidentDefinition::resolve`](crate::IncidentDefinition::resolve) returns this error then.
 /// The `TryFrom` that reads a definition as one incident has no call, so it returns it for any subject left out.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-#[non_exhaustive]
 pub enum IncidentError {
     /// The incident needs a `subject`, such as a partition or a group.
     /// The definition names none, and the call that fired it offers none.

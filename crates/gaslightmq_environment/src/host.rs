@@ -107,7 +107,6 @@ kept_text!(HostName, HostNameError);
 /// assert_eq!(error.to_string(), "host name \"kafka 1\" holds the character ' '");
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-#[non_exhaustive]
 pub enum HostNameError {
     /// The text has no character.
     #[error("host name \"\" is empty")]

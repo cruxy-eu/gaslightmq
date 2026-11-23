@@ -45,7 +45,7 @@
 //!     async fn call(&self, request: BackendRequest) -> BackendAnswer {
 //!         match request.request().response(&HeartbeatResponse::default()) {
 //!             Ok(response) => Truth::new(response).into(),
-//!             Err(error) => BackendFailure::ResponseNotBuilt { error }.into(),
+//!             Err(error) => BackendFailure::ResponseNotBuilt { reason: error.to_string() }.into(),
 //!         }
 //!     }
 //!
@@ -87,8 +87,8 @@
 //! }
 //!
 //! // The pipeline of connection 7 forwards its first request, which arrived on the bootstrap endpoint.
-//! let heartbeat = Request::new(4, 41, Some("order-ingest"), &HeartbeatRequest::default())?;
-//! let request = BackendRequest::new("#7.1".parse()?, Endpoint::Bootstrap, heartbeat);
+//! let heartbeat = Request::new(4, 41, Some("order-ingest"), &HeartbeatRequest::default()).expect("a request");
+//! let request = BackendRequest::new("#7.1".parse().expect("a call ID"), Endpoint::Bootstrap, heartbeat);
 //!
 //! // Any executor drives a backend. The engine has its runtime, and this example has the smallest one.
 //! let BackendAnswer::Truth(truth) = block_on(Calm.call(request)) else {
@@ -97,13 +97,13 @@
 //! assert_eq!(truth.response().correlation_id(), 41);
 //!
 //! // A rule fires an incident, and the backend says what it had as consequences.
-//! let rebalance = Incident::Rebalance { group: GroupId::new("payments")? };
+//! let rebalance = Incident::Rebalance { group: GroupId::new("payments").expect("a group ID") };
 //! assert!(block_on(Calm.apply(rebalance))?.consequences().is_empty());
 //!
 //! let down = Incident::BrokerGoesDown { broker: BrokerId::from(1), failover: false };
 //! let rejection = block_on(Calm.apply(down)).unwrap_err();
 //! assert_eq!(rejection.to_string(), "the backend cannot apply or emulate: broker-goes-down");
-//! # Ok::<(), Box<dyn std::error::Error>>(())
+//! # Ok::<(), IncidentRejection>(())
 //! ```
 //!
 //! # What the engine does
@@ -134,8 +134,19 @@
 //! # Errors
 //!
 //! No type of this crate checks a value, so none has an error of its own.
-//! [`BackendFailure`], [`ListenerRejection`] and [`IncidentRejection`] say why a backend did not do what it was asked.
+//! The contract has an error for each thing that the engine asks of a backend, because the engine does something else
+//! with each one, and none of them can stand for another:
+//!
+//! | Error | The backend | The engine |
+//! |---|---|---|
+//! | [`BackendFailure`] | Has no answer for a [call](Backend::call), and none will come. | Ends the session, as closed by the backend. |
+//! | [`ListenerRejection`] | Does not send clients to a [listener](Backend::listens). | Closes that listener. |
+//! | [`IncidentRejection`] | Did not [apply](Backend::apply) or emulate an incident. | Records that the incident changed nothing. |
+//!
+//! Every backend returns these errors and no other, whatever stands behind it.
 //! Each says everything in one message, and has no [`source`](std::error::Error::source).
+//! What the cluster, the system or the writer of a response said is text, in a field `reason`.
+//! [`BackendAnswer::NotAResponse`] keeps what does not read the same way.
 //!
 //! # No runtime
 //!
@@ -176,7 +187,7 @@ pub use request::BackendRequest;
 ///
 /// let failure = BackendFailure::NoSuchEndpoint { endpoint: "broker 2".parse()? };
 /// assert_eq!(failure.to_string(), "the cluster takes no requests on endpoint `broker 2`");
-/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// # Ok::<(), EndpointError>(())
 /// ```
 pub mod prelude {
     #[doc(no_inline)]

@@ -86,7 +86,6 @@ impl fmt::Display for CallNumber {
 
 /// Why a number or a text is not a [`CallNumber`].
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-#[non_exhaustive]
 pub enum CallNumberError {
     /// The number is zero, and the first call of a session has number one.
     #[error("a call number is at least one")]
@@ -172,7 +171,6 @@ impl fmt::Display for CallId {
 /// assert_eq!(error.to_string(), "call ID `#7.0`: a call number is at least one");
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-#[non_exhaustive]
 pub enum CallIdError {
     /// The text has no dot between a connection and a call number.
     #[error("call ID `{input}` is not a connection and a call number, such as `#7.3`")]

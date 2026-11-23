@@ -1,4 +1,4 @@
-use gaslightmq_trigger::DiceKey;
+use gaslightmq_trigger::{DiceKey, DiceKeyError};
 
 gaslightmq_resource::name!(RuleName, RuleNameError, "rule name");
 
@@ -11,7 +11,7 @@ impl RuleName {
     pub fn dice_key(&self) -> DiceKey {
         match DiceKey::new(self.as_str()) {
             Ok(key) => key,
-            Err(_) => unreachable!("a rule name has at least one character"),
+            Err(DiceKeyError::Empty) => unreachable!("a rule name has at least one character"),
         }
     }
 }

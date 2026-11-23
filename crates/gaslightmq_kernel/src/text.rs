@@ -189,7 +189,6 @@ macro_rules! text_error {
     (name, $name:ident, $error:ident, $what:literal) => {
         #[doc = concat!("Why a text is not a [`", stringify!($name), "`].")]
         #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-        #[non_exhaustive]
         pub enum $error {
             /// The text has no characters.
             #[error("{} is empty", $what)]
@@ -216,7 +215,6 @@ macro_rules! text_error {
     (non_empty, $name:ident, $error:ident, $what:literal) => {
         #[doc = concat!("Why a text is not a [`", stringify!($name), "`].")]
         #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-        #[non_exhaustive]
         pub enum $error {
             /// The text has no characters.
             #[error("{} is empty", $what)]
@@ -229,7 +227,6 @@ macro_rules! text_error {
     (any, $name:ident, $error:ident, $what:literal) => {
         #[doc = concat!("Why a text is not a [`", stringify!($name), "`].")]
         #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-        #[non_exhaustive]
         pub enum $error {
             #[doc = concat!("The text has more bytes than a ", $what, " has at most.")]
             #[error("{} of {len} bytes exceeds the limit of {max}", $what)]

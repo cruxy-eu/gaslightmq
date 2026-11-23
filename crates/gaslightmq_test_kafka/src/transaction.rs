@@ -273,7 +273,15 @@ impl<'a> Transaction<'a> {
                 Ok(Ok(answer)) => Some(Ok(answer)),
                 Ok(Err(error_code)) => match KafkaClusterError::refused(api, &self.about(), error_code) {
                     Err(KafkaClusterError::Refused { error, .. }) if error.is_retriable() => None,
-                    Err(refused) => Some(Err(refused)),
+                    Err(
+                        refused @ (KafkaClusterError::Refused { .. }
+                        // cannot come from an error code
+                        | KafkaClusterError::NotStarted { .. }
+                        | KafkaClusterError::InvalidTopicName { .. }
+                        | KafkaClusterError::InvalidRecords { .. }
+                        | KafkaClusterError::Unanswered { .. }
+                        | KafkaClusterError::NotSettledInTime { .. }),
+                    ) => Some(Err(refused)),
                     Ok(()) => None,
                 },
                 Err(unanswered) => Some(Err(unanswered)),

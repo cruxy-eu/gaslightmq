@@ -97,7 +97,6 @@ macro_rules! text_key {
 
         #[doc = concat!("Why a text is not a [`", stringify!($name), "`].")]
         #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-        #[non_exhaustive]
         pub enum $error {
             /// The text has no characters.
             #[error("a {} is not empty", $what)]

@@ -153,7 +153,6 @@ impl fmt::Display for ConnectionOrdinal {
 
 /// Why a number or a text is not a [`ConnectionOrdinal`].
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-#[non_exhaustive]
 pub enum ConnectionOrdinalError {
     /// The number is zero, and the first connection has the ordinal one.
     #[error("a connection ordinal is at least one")]

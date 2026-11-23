@@ -103,7 +103,6 @@ text_form!(Part, PartError);
 /// Its message says that a part is wrong, and then what is wrong with it.
 /// The error it holds read the same text, so that error names the text.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-#[non_exhaustive]
 pub enum PartError {
     /// The text has no `/`, and it is not a topic name.
     #[error("part: {error}")]
@@ -449,7 +448,6 @@ impl From<Part> for PartSet {
 
 /// Why parts are not a [`PartSet`].
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-#[non_exhaustive]
 pub enum PartSetError {
     /// There is no part, and a target of no part is no target.
     #[error("a target needs at least one part")]

@@ -1,6 +1,6 @@
 //! Why a backend did not apply or emulate an incident.
 
-use gaslightmq_incident::{IncidentKind, UnsupportedIncidents};
+use gaslightmq_incident::{IncidentKind, Requirement, UnsupportedIncidents};
 
 /// Why a backend rejects an incident.
 ///
@@ -17,25 +17,34 @@ use gaslightmq_incident::{IncidentKind, UnsupportedIncidents};
 /// assert_eq!(rejection.to_string(), "broker-goes-down cannot happen: the cluster has no broker 9");
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-#[non_exhaustive]
 pub enum IncidentRejection {
     /// The backend can neither apply nor emulate the incident, or one of the incidents that follow from it.
+    /// `incidents` names each of them, and the incident it follows from.
     ///
     /// A scenario is checked against the [support](crate::Backend::incident_support) of its backend when it loads.
     /// This rejection is for an incident that reaches the backend without that check.
-    // The error names the incidents itself, and which incident each one follows from.
-    #[error("{error}")]
-    Unsupported { error: UnsupportedIncidents },
+    #[error("the backend cannot apply or emulate: {}", listed(.incidents))]
+    Unsupported { incidents: Vec<Requirement> },
     /// The incident cannot happen in the cluster as it is.
     /// `reason` says why: the cluster has no such broker, or the new leader is no replica of the partition.
     #[error("{incident} cannot happen: {reason}")]
     Impossible { incident: IncidentKind, reason: String },
 }
 
+/// What the [check](gaslightmq_incident::IncidentSupport::check) of an incident found is why the backend rejects it.
+/// The rejection keeps the incidents that the check names.
 impl From<UnsupportedIncidents> for IncidentRejection {
-    fn from(error: UnsupportedIncidents) -> Self {
-        Self::Unsupported { error }
+    fn from(unsupported: UnsupportedIncidents) -> Self {
+        Self::Unsupported {
+            incidents: unsupported.incidents().to_vec(),
+        }
     }
+}
+
+/// The incidents as the message lists them, each as it says itself.
+fn listed(incidents: &[Requirement]) -> String {
+    let incidents: Vec<String> = incidents.iter().map(Requirement::to_string).collect();
+    incidents.join(", ")
 }
 
 #[cfg(test)]

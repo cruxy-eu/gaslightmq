@@ -90,7 +90,6 @@ text_form!(ServerAddress, ServerAddressError);
 /// );
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-#[non_exhaustive]
 pub enum ServerAddressError {
     /// The text names a host and no port.
     #[error("server address {input:?} has no port: write host:port")]
@@ -226,7 +225,6 @@ text_form!(ListenAddress, ListenAddressError);
 /// );
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-#[non_exhaustive]
 pub enum ListenAddressError {
     /// The text is not an IP address, a colon and a port.
     #[error("listen address {input:?} is not an IP address and a port, such as 0.0.0.0:9092")]

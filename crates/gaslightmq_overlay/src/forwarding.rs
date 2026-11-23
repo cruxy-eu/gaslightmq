@@ -17,11 +17,11 @@ use crate::BrokerAddress;
 /// use gaslightmq_wire::messages::ApiVersionsRequest;
 ///
 /// let overlay = Overlay::new(AdvertisedAddresses::new());
-/// let request = Request::new(3, 1, Some("order-ingest"), &ApiVersionsRequest::default())?;
+/// let request = Request::new(3, 1, Some("order-ingest"), &ApiVersionsRequest::default()).expect("a request");
 ///
 /// let forwarding = overlay.forward(Endpoint::Bootstrap, &request)?;
 /// assert_eq!(forwarding.to_string(), "forward ApiVersions v3 to any broker");
-/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// # Ok::<(), OverlayError>(())
 /// ```
 #[derive(Debug, Clone)]
 pub enum Forwarding {

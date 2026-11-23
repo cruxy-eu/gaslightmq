@@ -414,7 +414,6 @@ impl Environment {
 /// # Ok::<(), ListenAddressError>(())
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-#[non_exhaustive]
 pub enum EnvironmentError {
     /// The environment has neither a proxy nor a broker.
     #[error("environment {:?} has neither a proxy nor a broker", .name.as_str())]

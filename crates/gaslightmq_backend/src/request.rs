@@ -27,14 +27,14 @@ use gaslightmq_wire::Request;
 /// use gaslightmq_wire::Request;
 /// use gaslightmq_wire::messages::HeartbeatRequest;
 ///
-/// let heartbeat = Request::new(4, 41, Some("order-ingest"), &HeartbeatRequest::default())?;
+/// let heartbeat = Request::new(4, 41, Some("order-ingest"), &HeartbeatRequest::default()).expect("a request");
 /// let request = BackendRequest::new("#7.3".parse()?, Endpoint::Broker(BrokerId::from(2)), heartbeat);
 ///
 /// assert_eq!(request.call().to_string(), "#7.3");
 /// assert_eq!(request.connection(), ConnectionNumber::new(7));
 /// assert_eq!(request.endpoint().to_string(), "broker 2");
 /// assert_eq!(request.request().correlation_id(), 41);
-/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// # Ok::<(), CallIdError>(())
 /// ```
 #[derive(Debug, Clone)]
 pub struct BackendRequest {

@@ -1,6 +1,6 @@
 //! The answer message: how a call ended at a backend.
 
-use gaslightmq_wire::{Response, WireError};
+use gaslightmq_wire::Response;
 
 use crate::BackendFailure;
 
@@ -38,7 +38,7 @@ use crate::BackendFailure;
 ///
 /// let BackendAnswer::Truth(truth) = answer else { unreachable!("the cluster answered") };
 /// assert_eq!(truth.response().correlation_id(), 41);
-/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// # Ok::<(), gaslightmq_wire::WireError>(())
 /// ```
 #[derive(Debug, Clone)]
 pub enum BackendAnswer {
@@ -57,12 +57,12 @@ pub enum BackendAnswer {
     /// - A [`Truth`](Self::Truth) for a request that expects none changes nothing: the pipeline does not wait for it.
     NoResponse,
     /// The cluster answered the request, and the backend cannot read a response in what it sent.
-    /// `error` says what does not read.
+    /// `reason` says what does not read.
     ///
     /// The client must not get such an answer.
     /// A response that reads, and that does not answer the request, is a [`Truth`](Self::Truth) all the same:
     /// the pipeline finds that out, and does the same with it.
-    NotAResponse { error: WireError },
+    NotAResponse { reason: String },
     /// The backend has no answer for the call, and none will come.
     ///
     /// The backend does not say whether the cluster got the request.
@@ -107,7 +107,7 @@ impl From<BackendFailure> for BackendAnswer {
 /// assert_eq!(truth.response().body::<MetadataResponse>()?.controller_id, -1);
 /// let upstream = truth.upstream().expect("the overlay changed the answer");
 /// assert_eq!(upstream.body::<MetadataResponse>()?.controller_id, 3);
-/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// # Ok::<(), gaslightmq_wire::WireError>(())
 /// ```
 #[derive(Debug, Clone)]
 pub struct Truth {

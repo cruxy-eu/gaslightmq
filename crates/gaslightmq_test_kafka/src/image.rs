@@ -118,7 +118,6 @@ impl fmt::Display for KafkaImage {
 
 /// Why a text is not a [`KafkaImage`].
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-#[non_exhaustive]
 pub enum KafkaImageError {
     /// Nothing stands before the tag.
     #[error("invalid Kafka image `{input}`: missing repository, expected repository:tag")]

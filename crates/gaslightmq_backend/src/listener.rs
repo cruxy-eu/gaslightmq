@@ -30,7 +30,6 @@ use gaslightmq_field::Endpoint;
 ///
 /// The message is complete, so a rejection has no source.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-#[non_exhaustive]
 pub enum ListenerRejection {
     /// The backend cannot tell clients that `endpoint` listens on `address`.
     /// `reason` says why, such as another broker that clients are sent to the same address for.

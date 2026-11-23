@@ -106,7 +106,6 @@ macro_rules! field_values {
         /// assert_eq!(error.to_string(), "topic: topic name \"orders/eu\" has the invalid character '/' at position 6");
         /// ```
         #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-        #[non_exhaustive]
         pub enum FieldValueError {
             $(
                 #[doc = concat!("The text is not a value of [`Field::", stringify!($variant), "`].")]

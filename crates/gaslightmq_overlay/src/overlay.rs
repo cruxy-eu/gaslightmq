@@ -7,7 +7,7 @@ use gaslightmq_wire::messages::{
     ProduceResponse, ShareAcknowledgeResponse, ShareFetchResponse,
 };
 use gaslightmq_wire::protocol::{Decodable, Encodable};
-use gaslightmq_wire::{Api, Request, Response, WireError};
+use gaslightmq_wire::{Api, Request, Response};
 use gaslightmq_wire_edit::prelude::*;
 
 use crate::fetch_session::{SessionlessFetch, SessionlessFetchFlaw};
@@ -52,28 +52,29 @@ use crate::{AdvertisedAddresses, AdvertisedAddressesError, BrokerAddress, Destin
 ///     MetadataResponseBroker::default().with_node_id(id.into()).with_host(StrBytes::from_static_str(host)).with_port(9092)
 /// };
 /// let cluster = MetadataResponse::default().with_brokers(vec![broker(1, "kafka-1.internal"), broker(2, "kafka-2.internal")]);
-/// let discovery = Request::new(12, 1, Some("gaslightmq"), &MetadataRequest::default())?;
-/// overlay.learn_from(&discovery.response(&cluster)?)?;
+/// let discovery = Request::new(12, 1, Some("gaslightmq"), &MetadataRequest::default()).expect("a request");
+/// overlay.learn_from(&discovery.response(&cluster).expect("a response"))?;
 ///
 /// // The backend opens a listener for every broker that has none, and says where clients find it.
 /// let unadvertised: Vec<BrokerId> = overlay.unadvertised().collect();
 /// assert_eq!(unadvertised, [BrokerId::from(1), BrokerId::from(2)]);
-/// overlay.advertise(BrokerId::from(1), "gaslight.staging:19092".parse()?)?;
-/// overlay.advertise(BrokerId::from(2), "gaslight.staging:19093".parse()?)?;
+/// let listener = |address: &str| address.parse::<BrokerAddress>().expect("an address");
+/// overlay.advertise(BrokerId::from(1), listener("gaslight.staging:19092")).expect("an address of its own");
+/// overlay.advertise(BrokerId::from(2), listener("gaslight.staging:19093")).expect("an address of its own");
 ///
 /// // A client asks the listener of broker 2 for metadata. The request goes to the real broker 2.
-/// let request = Request::new(12, 7, Some("order-ingest"), &MetadataRequest::default())?;
+/// let request = Request::new(12, 7, Some("order-ingest"), &MetadataRequest::default()).expect("a request");
 /// let Forwarding::Forward { to, request: forwarded } = overlay.forward(Endpoint::Broker(BrokerId::from(2)), &request)? else {
 ///     panic!("the cluster answers a Metadata request");
 /// };
 /// assert_eq!(to.to_string(), "broker 2 at kafka-2.internal:9092");
 ///
 /// // The cluster tells its own addresses, and the client is told those of the listeners.
-/// let truth = overlay.answer(&request, forwarded.response(&cluster)?)?;
-/// let told: MetadataResponse = truth.response().body()?;
+/// let truth = overlay.answer(&request, forwarded.response(&cluster).expect("a response"))?;
+/// let told: MetadataResponse = truth.response().body().expect("a body that decodes");
 /// let addresses: Vec<(&str, i32)> = told.brokers.iter().map(|broker| (broker.host.as_str(), broker.port)).collect();
 /// assert_eq!(addresses, [("gaslight.staging", 19092), ("gaslight.staging", 19093)]);
-/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// # Ok::<(), OverlayError>(())
 /// ```
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Overlay {
@@ -179,8 +180,14 @@ impl Overlay {
             });
         }
         let sessionless = SessionlessFetch::of(request).map_err(|flaw| match flaw {
-            SessionlessFetchFlaw::UnreadableRequest(error) => OverlayError::UnreadableRequest { api, error },
-            SessionlessFetchFlaw::UnwritableRequest(error) => OverlayError::UnwritableRequest { api, error },
+            SessionlessFetchFlaw::UnreadableRequest(error) => OverlayError::UnreadableRequest {
+                api,
+                reason: error.to_string(),
+            },
+            SessionlessFetchFlaw::UnwritableRequest(error) => OverlayError::UnwritableRequest {
+                api,
+                reason: error.to_string(),
+            },
         })?;
         match sessionless {
             SessionlessFetch::AsItArrived => Ok(Forwarding::Forward {
@@ -189,7 +196,10 @@ impl Overlay {
             }),
             SessionlessFetch::Rewritten(request) => Ok(Forwarding::Forward { to, request }),
             SessionlessFetch::ContinuesSession => {
-                let unanswered = |error| OverlayError::UnansweredRequest { api, error };
+                let unanswered = |error: SurgeryError| OverlayError::UnansweredRequest {
+                    api,
+                    reason: error.to_string(),
+                };
                 let no_session = Failures::whole_call(ErrorCode::FETCH_SESSION_ID_NOT_FOUND);
                 EditableRequest::decode(request, &TopicNames::new())
                     .and_then(|asked| asked.error_response(&no_session))
@@ -305,42 +315,51 @@ where
     B: Decodable + Encodable,
 {
     let api = upstream.api();
-    let mut body: B = upstream
-        .body()
-        .map_err(|error| OverlayError::UnreadableResponse { api, error })?;
+    let mut body: B = upstream.body().map_err(|error| OverlayError::UnreadableResponse {
+        api,
+        reason: error.to_string(),
+    })?;
     if !rewrite(&mut body) {
         return Ok(None);
     }
     Response::new(api, upstream.correlation_id(), &body)
         .map(Some)
-        .map_err(|error| OverlayError::UnwritableResponse { api, error })
+        .map_err(|error| OverlayError::UnwritableResponse {
+            api,
+            reason: error.to_string(),
+        })
 }
 
 /// Why the overlay could not say what happens to a request or to a response.
 ///
 /// An error changes nothing in the overlay, except for what it had already [learned](Overlay::real_address).
+///
+/// The list is complete, so a backend decides for every variant what becomes of the call:
+/// a new variant is a new decision for every backend.
+///
+/// A variant about a body that does not decode or encode keeps what the reader or the writer said as text, in `reason`,
+/// and its message writes that text once.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-#[non_exhaustive]
 pub enum OverlayError {
     /// The client connected to the endpoint of this broker, and the real cluster never named such a broker.
     /// Nothing says where the request goes.
     #[error("a request for broker {broker} has nowhere to go: the cluster named no such broker")]
     UnknownBroker { broker: BrokerId },
     /// The body of the request does not decode.
-    #[error("the {api} request cannot be read: {error}")]
-    UnreadableRequest { api: Api, error: WireError },
+    #[error("the {api} request cannot be read: {reason}")]
+    UnreadableRequest { api: Api, reason: String },
     /// The request without its fetch session does not encode.
-    #[error("the {api} request cannot be written without its fetch session: {error}")]
-    UnwritableRequest { api: Api, error: WireError },
+    #[error("the {api} request cannot be written without its fetch session: {reason}")]
+    UnwritableRequest { api: Api, reason: String },
     /// The overlay answers the request itself, and that answer cannot be written.
-    #[error("the {api} request cannot be answered without the cluster: {error}")]
-    UnansweredRequest { api: Api, error: SurgeryError },
+    #[error("the {api} request cannot be answered without the cluster: {reason}")]
+    UnansweredRequest { api: Api, reason: String },
     /// The body of the real cluster's response does not decode.
-    #[error("the {api} response of the cluster cannot be read: {error}")]
-    UnreadableResponse { api: Api, error: WireError },
+    #[error("the {api} response of the cluster cannot be read: {reason}")]
+    UnreadableResponse { api: Api, reason: String },
     /// The truth does not encode.
-    #[error("the truth of the {api} response cannot be written: {error}")]
-    UnwritableResponse { api: Api, error: WireError },
+    #[error("the truth of the {api} response cannot be written: {reason}")]
+    UnwritableResponse { api: Api, reason: String },
     /// The response belongs to another request: its API or its correlation ID differs.
     #[error("the {answered_api} response {answered_correlation_id} does not answer the {api} request {correlation_id}")]
     ResponseOfAnotherCall {

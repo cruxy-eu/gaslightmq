@@ -181,7 +181,6 @@ impl IntoIterator for EnvironmentSet {
 
 /// Why environments are not an [`EnvironmentSet`], or why a set cannot do what was asked.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-#[non_exhaustive]
 pub enum EnvironmentSetError {
     /// Two environments have this name.
     #[error("two environments are named {:?}", .name.as_str())]

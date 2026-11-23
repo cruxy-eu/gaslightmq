@@ -21,7 +21,7 @@ use gaslightmq_wire::messages::{
     ApiVersionsResponse, HeartbeatRequest, HeartbeatResponse, MetadataRequest, MetadataResponse,
 };
 use gaslightmq_wire::protocol::StrBytes;
-use gaslightmq_wire::{ApiKey, FrameDecoder, Request, Response};
+use gaslightmq_wire::{ApiKey, FrameDecoder, Request, Response, WireError};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::watch;
@@ -230,7 +230,16 @@ impl Serving {
                 match frames.next_frame() {
                     Ok(Some(frame)) => break frame,
                     Ok(None) => {}
-                    Err(_) => return,
+                    Err(
+                        WireError::EmptyFrame
+                        | WireError::FrameTooLarge { .. }
+                        // cannot come from a frame
+                        | WireError::Truncated { .. }
+                        | WireError::UnknownApi { .. }
+                        | WireError::WrongApi { .. }
+                        | WireError::Decode { .. }
+                        | WireError::Encode { .. },
+                    ) => return,
                 }
                 match stream.read_buf(frames.buffer_mut()).await {
                     Ok(0) | Err(_) => return,

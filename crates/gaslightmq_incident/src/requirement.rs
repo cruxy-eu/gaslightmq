@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::fmt;
 
 use crate::consequence::kinds_of_consequences;
 use crate::{Incident, IncidentDefinition, IncidentKind};
@@ -20,6 +21,16 @@ impl Requirement {
     /// It is `None` when a rule fires this kind of incident itself.
     pub fn consequence_of(&self) -> Option<IncidentKind> {
         self.consequence_of
+    }
+}
+
+/// The kind, and the incident it follows from when it has one: `leader-moves (a consequence of broker-goes-down)`.
+impl fmt::Display for Requirement {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self.consequence_of {
+            Some(cause) => write!(f, "{} (a consequence of {cause})", self.kind),
+            None => write!(f, "{}", self.kind),
+        }
     }
 }
 

@@ -177,7 +177,6 @@ text_form!(Field, FieldError);
 /// assert_eq!(error.to_string(), "no field is named \"client.name\"");
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-#[non_exhaustive]
 pub enum FieldError {
     /// No field has this name.
     #[error("no field is named {name:?}")]
@@ -272,7 +271,6 @@ text_form!(FieldGroup, FieldGroupError);
 
 /// Why a text is not a [`FieldGroup`].
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-#[non_exhaustive]
 pub enum FieldGroupError {
     /// No group of fields has this name.
     #[error("unknown field group: {name:?}")]

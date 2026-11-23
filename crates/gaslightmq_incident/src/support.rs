@@ -160,15 +160,9 @@ impl UnsupportedIncidents {
     }
 }
 
-/// The incidents as the message lists them: each kind, and the incident it follows from when it has one.
+/// The incidents as the message lists them, each as it [says itself](Requirement).
 fn listed(incidents: &[Requirement]) -> String {
-    let incidents: Vec<String> = incidents
-        .iter()
-        .map(|incident| match incident.consequence_of() {
-            Some(cause) => format!("{} (a consequence of {cause})", incident.kind()),
-            None => incident.kind().to_string(),
-        })
-        .collect();
+    let incidents: Vec<String> = incidents.iter().map(Requirement::to_string).collect();
     incidents.join(", ")
 }
 

@@ -205,7 +205,6 @@ impl FromStr for LieKind {
 /// assert_eq!(error.to_string(), "no lie is called \"hangup\"");
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-#[non_exhaustive]
 pub enum LieKindError {
     /// No kind of lie has this name.
     #[error("no lie is called {name:?}")]

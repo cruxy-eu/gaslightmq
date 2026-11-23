@@ -265,7 +265,6 @@ impl fmt::Display for LieFate {
 
 /// Why a lie and its targets are not a [`LieFate`].
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-#[non_exhaustive]
 pub enum LieFateError {
     /// The lie neither applied nor lost a target, and a lie that fired went somewhere.
     #[error("a lie that fired applied or lost somewhere, and this one did neither")]
@@ -657,7 +656,6 @@ impl fmt::Display for RuleExplanation {
 
 /// Why the parts of a line are not a [`RuleExplanation`]: the trigger and the action contradict each other.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-#[non_exhaustive]
 pub enum RuleExplanationError {
     /// The trigger says that the rule fired, and the line has no lie and no incident.
     #[error("rule {:?} fired, and the explanation has no lie and no incident of it", .rule.as_str())]
@@ -883,7 +881,6 @@ impl<'a> IntoIterator for &'a Explanation {
 
 /// Why a list of lines is not an [`Explanation`].
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-#[non_exhaustive]
 pub enum ExplanationError {
     /// Two lines are of one rule, and a rule is in one evaluation pass.
     #[error("rule {:?} has two lines in one explanation", .rule.as_str())]

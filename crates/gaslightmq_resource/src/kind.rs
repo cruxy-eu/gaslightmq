@@ -190,7 +190,6 @@ macro_rules! name {
         ///
         /// The rule has four parts, and the error has one variant for each.
         #[derive(Debug, Clone, PartialEq, Eq, ::thiserror::Error)]
-        #[non_exhaustive]
         pub enum $error {
             /// The text has no character.
             #[error("{} \"\" is empty", $label)]

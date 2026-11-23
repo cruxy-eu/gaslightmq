@@ -63,7 +63,6 @@ macro_rules! code_error {
     ) => {
         $(#[$meta])*
         #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-        #[non_exhaustive]
         pub enum $error {
             /// The text has no characters.
             #[error("{} is empty", $what)]

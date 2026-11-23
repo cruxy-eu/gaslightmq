@@ -84,7 +84,6 @@ number_form!(
 
 /// Why a text is not a [`ConnectionNumber`].
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-#[non_exhaustive]
 pub enum ConnectionNumberError {
     /// The text is not digits, with or without a `#` before them.
     #[error("connection number {input:?} does not have the form #N")]
@@ -172,7 +171,6 @@ text_form!(ClientAddress, ClientAddressError);
 
 /// Why a text is not a [`ClientAddress`].
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-#[non_exhaustive]
 pub enum ClientAddressError {
     /// The text is not an IP address and a port.
     #[error("client address {input:?} does not have the form an IP address and a port, such as 10.0.4.27:51459")]
@@ -246,7 +244,6 @@ text_form!(ClientHost, ClientHostError);
 
 /// Why a text is not a [`ClientHost`].
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-#[non_exhaustive]
 pub enum ClientHostError {
     /// The text is not an IP address.
     #[error("client host {input:?} does not have the form an IP address, such as 10.0.4.27")]
@@ -331,7 +328,6 @@ text_form!(Endpoint, EndpointError);
 
 /// Why a text is not an [`Endpoint`].
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-#[non_exhaustive]
 pub enum EndpointError {
     /// The text is not `bootstrap`, and it does not start with `broker` and one space.
     #[error("endpoint {input:?} does not have the form bootstrap or broker N")]
@@ -433,7 +429,6 @@ text_form!(ClientSoftware, ClientSoftwareError);
 
 /// Why a text is not a [`ClientSoftware`].
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-#[non_exhaustive]
 pub enum ClientSoftwareError {
     /// The text is not a name, one space and a version.
     /// The name or the version is empty, or one of them has white space or a control character.

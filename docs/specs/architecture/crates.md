@@ -64,30 +64,51 @@ The workspace's own checks are tooling, and not product code: they live in `xtas
   A whole that checks its members does the same: `SelectorSet` has `SelectorSetError`.
   A type that checks nothing has no error type.
   Types may share their checks as private helpers.
-- **A crate has its own error for its API.**
+- **A variant is something its caller decides on.**
   What a crate does can fail too: it decodes a frame, tells a lie or opens a listener.
-  The crate has an error type of its own for that: its API error.
-  It is named after what the crate is about: `WireError`, `LieError`, `ListenerError`.
-  One API error is enough for most crates.
-  Each variant says what went wrong for the caller.
-  A handle, a step or a noun of the crate has no error type of its own.
-  A crate that only holds value objects has no API error.
-  A crate that holds a contract holds the error of that contract.
-  Every implementation returns that error and no other:
+  The crate has error types of its own for that.
+  A variant is a case for which the caller does something else: it tries again, it closes a connection, it ends a session.
+  The rest of what went wrong is text in the message.
+  Operations that fail in different ways have an error each:
+  a transport that receives and sends has a `ReceiveError` and a `SendError`.
+  Operations that fail in the same ways share one: every call of a client returns a `ClientError`.
+  No caller writes an arm for a variant that cannot come from what it called.
+  An error that asks for such an arm is two errors.
+  A crate that only holds value objects has no error of this kind.
+- **A contract holds its errors.**
+  A crate that holds a contract holds the errors of that contract, one for each thing the caller asks.
+  `backend` is the model.
+  A call that gets no answer ends with a `BackendFailure`.
+  A listener that clients cannot be sent to gets a `ListenerRejection`.
+  An incident that cannot happen gets an `IncidentRejection`.
+  The engine does something else with each one, and it never handles two of them in one place.
+  An implementation returns only the errors of its contract.
+  Those errors hold no error of what an implementation uses:
   a lie returns a `LieError`, whatever it reads or writes to tell its lie.
 - **A crate turns the errors it meets into its own.**
   A crate handles an error where it calls what failed: another crate, a library or the system.
   It returns a variant of its own error, in the words of its own subject.
   No variant, field or type names the tool, the library or the mechanism behind a failure:
   a connection is `ConnectionLost`, and the error is no `IoError`.
-  What the other side said is text.
+  What a library or the system said is text.
   The variant keeps it in a field, named `reason`.
-  No field holds an error type of a library or of the standard library.
-  No field holds the API error of another crate either.
-  A field may hold the error of a value object when the variant is about that value,
-  also a value object of another crate of the workspace.
+  A variant keeps the error of a crate of the workspace, in a field named `error`, in two cases.
+  The error is the error of a part: a `TopicPartitionError` keeps the `PartitionNumberError` of its partition.
+  Or the caller reads it: `Refused { error: ResponseError }` of `test_kafka` keeps the error that the broker answered,
+  and a test reads from it that its topic exists already.
+  In every other case, what the other crate said is text in a `reason`.
+  No variant copies the variant below it.
+  `ResponseOfAnotherCall` stands in three crates, each time with the API and the correlation ID of both sides.
+  A crate says what the failure below it means for its own caller, and no more.
+  No error is made up to fill a field:
+  a backend that finds an answer out of step has no error of the codec to show, so it does not build one.
   Nothing names `dyn Error`: no signature, no field, no doc example and no test.
   A doc example returns one error type, by its name.
+- **No error type is `#[non_exhaustive]`.**
+  A new variant is a new decision for every caller.
+  With the attribute, every `match` outside the crate ends in an arm for whatever comes,
+  and that arm takes the new variant without anyone deciding.
+  Without it, a new variant breaks every `match` that decides on the error, and someone decides.
 - **An error says everything in one message.**
   A file reader, the control plane and the UI show one line, and not a chain of causes.
   A variant that holds another error names its own value first, and then writes that error, once.

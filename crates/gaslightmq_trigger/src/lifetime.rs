@@ -120,7 +120,6 @@ impl fmt::Display for Lifetime {
 /// assert_eq!(error.to_string(), "lifetime `0 firings`: a count is at least one");
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-#[non_exhaustive]
 pub enum LifetimeError {
     /// The text is not `until disarmed`, not a time span, and not a count of matches or firings.
     #[error(

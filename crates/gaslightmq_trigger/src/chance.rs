@@ -113,7 +113,6 @@ impl fmt::Display for Chance {
 /// assert_eq!(error.to_string(), "`40` is not a percentage such as `40%`");
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-#[non_exhaustive]
 pub enum ChanceError {
     /// The text is not a percentage such as `40%`.
     #[error("`{input}` is not a percentage such as `40%`")]
@@ -194,7 +193,6 @@ impl fmt::Display for Roll {
 
 /// Why a number is not a [`Roll`].
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-#[non_exhaustive]
 pub enum RollError {
     /// The number is one million or more, and a die never rolls a whole million.
     #[error("a roll of {ppm} parts per million is not below one million")]

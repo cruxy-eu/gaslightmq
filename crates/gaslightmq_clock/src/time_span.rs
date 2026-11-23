@@ -168,7 +168,6 @@ impl From<TimeSpan> for String {
 /// );
 /// ```
 #[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
-#[non_exhaustive]
 pub enum TimeSpanError {
     /// The text does not start with a whole number.
     #[error("invalid time span `{input}`: expected a whole number and a unit, such as `10s`")]

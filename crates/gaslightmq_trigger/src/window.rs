@@ -93,7 +93,6 @@ impl fmt::Display for TimeWindow {
 
 /// Why two time spans are not a [`TimeWindow`].
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-#[non_exhaustive]
 pub enum TimeWindowError {
     /// The window closes before it opens, or at the moment it opens.
     #[error("a window between {from} and {until} never opens")]

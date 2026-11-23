@@ -117,7 +117,6 @@ impl fmt::Display for BrokerAddress {
 
 /// Why a text is not a [`BrokerAddress`].
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-#[non_exhaustive]
 pub enum BrokerAddressError {
     /// The text has no `:` between a host and a port.
     #[error("invalid broker address `{input}`: missing port, expected host:port")]
@@ -220,7 +219,6 @@ impl fmt::Display for BootstrapServers {
 
 /// Why a list is not a [`BootstrapServers`].
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-#[non_exhaustive]
 pub enum BootstrapServersError {
     /// The list holds no address.
     #[error("bootstrap servers need at least one address")]

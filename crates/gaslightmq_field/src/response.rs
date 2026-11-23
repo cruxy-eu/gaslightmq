@@ -67,7 +67,6 @@ text_form!(Outcome, OutcomeError);
 
 /// Why a text is not an [`Outcome`].
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-#[non_exhaustive]
 pub enum OutcomeError {
     /// No outcome has this name.
     #[error("unknown outcome: {name:?}")]
@@ -162,7 +161,6 @@ text_form!(Latency, LatencyError);
 
 /// Why a text is not a [`Latency`].
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-#[non_exhaustive]
 pub enum LatencyError {
     /// The text is not a whole number and a unit: `ms`, `s`, `m` or `h`.
     #[error("latency {input:?} does not have the form a whole number and a unit, such as 14ms")]

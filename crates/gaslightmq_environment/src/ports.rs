@@ -113,7 +113,6 @@ text_form!(PortRange, PortRangeError);
 /// assert_eq!(error.to_string(), "port range 19191-19092 ends before it starts");
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-#[non_exhaustive]
 pub enum PortRangeError {
     /// A port is not a number between 1 and 65535.
     #[error("port range {input:?} has a port that is no number between 1 and 65535")]

@@ -11,12 +11,18 @@
   `InvalidPartition`, not `Kernel`.
 - A value object that checks its value owns its error, named after it: `TopicName` has `TopicNameError`.
   A type that checks nothing has no error type.
-- A crate has its own error for the rest of its public API, named after its subject: `WireError`, `LieError`.
-  No handle, step or noun has an error of its own. A crate of value objects alone has no API error.
-- A crate turns the errors of what it calls into its own error, where it calls them.
+- A variant is something its caller decides on, and the rest is text.
+  Operations that fail in different ways have an error each: `ReceiveError` and `SendError`.
+  Operations that fail in the same ways share one: every call of a client returns `ClientError`.
+  No caller writes an arm for a variant that cannot come from what it called.
+- A crate that holds a contract holds its errors, one for each thing the caller asks.
+  An implementation returns only those, and they hold no error of what an implementation uses.
+- A crate turns the errors of what it calls into its own, where it calls them.
   No variant, field or type names the tool, library or mechanism behind a failure: `ConnectionLost`, not `IoError`.
-  What the other side said is text, in a field `reason`.
-  Only the error of a value object is kept as a type, in a field `error`.
+  What a library or the system said is text, in a field `reason`.
+  A variant keeps the error of a workspace crate, in a field `error`, when it is the error of a part or the caller reads it: `Refused { error: ResponseError }`.
+  No variant copies the variant below it, and no error is made up to fill a field.
+- No error type is `#[non_exhaustive]`: a new variant breaks every `match` that decides on it.
 - No `dyn Error`: not in code, not in a doc example and not in a test. A doc example returns one error type, by its name.
 - An error says everything in one message.
   A variant writes the `error` or the `reason` it holds once, and no error type writes `source()`.
@@ -25,4 +31,4 @@
 - A Kafka client has Kafka's own properties: the name, meaning, unit and default of the Java client's property.
   The doc comment names the property (`request.timeout.ms`), and no property exists for behaviour the code does not have.
 
-The full text of the last eight rules is in [crates.md → Principles](docs/specs/architecture/crates.md#principles).
+The full text of the last ten rules is in [crates.md → Principles](docs/specs/architecture/crates.md#principles).

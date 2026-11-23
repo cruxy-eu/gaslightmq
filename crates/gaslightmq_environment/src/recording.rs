@@ -68,7 +68,6 @@ text_form!(RecordingMode, RecordingModeError);
 
 /// Why a text is not a [`RecordingMode`].
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-#[non_exhaustive]
 pub enum RecordingModeError {
     /// No mode has this name.
     #[error("no recording mode is named {name:?}: there are full and metadata-only")]

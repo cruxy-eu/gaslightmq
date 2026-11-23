@@ -141,7 +141,6 @@ impl fmt::Display for BrokerAddress {
 
 /// Why a host and a port, or a text, are not a [`BrokerAddress`].
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-#[non_exhaustive]
 pub enum BrokerAddressError {
     /// The host has no character.
     #[error("the host of a broker address cannot be empty")]

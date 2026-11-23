@@ -6,9 +6,9 @@ use gaslightmq_backend::prelude::*;
 use gaslightmq_field::prelude::*;
 use gaslightmq_incident::prelude::*;
 use gaslightmq_kernel::prelude::*;
-use gaslightmq_wire::Request;
 use gaslightmq_wire::messages::produce_request::ProduceRequest;
 use gaslightmq_wire::messages::{FetchRequest, FetchResponse, HeartbeatResponse};
+use gaslightmq_wire::{Request, WireError};
 use tokio::sync::Notify;
 use tokio::time::timeout;
 
@@ -126,7 +126,16 @@ async fn a_produce_without_acks_ends_once_it_is_on_its_way() {
         .broker(1, |request| async move {
             match request.body::<ProduceRequest>() {
                 Ok(_) => Reaction::Nothing,
-                Err(_) => Reaction::Respond(calm(&request)),
+                Err(
+                    WireError::WrongApi { .. }
+                    | WireError::Decode { .. }
+                    // cannot come from the body of a request
+                    | WireError::EmptyFrame
+                    | WireError::FrameTooLarge { .. }
+                    | WireError::Truncated { .. }
+                    | WireError::UnknownApi { .. }
+                    | WireError::Encode { .. },
+                ) => Reaction::Respond(calm(&request)),
             }
         })
         .await;

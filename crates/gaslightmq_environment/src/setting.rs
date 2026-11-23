@@ -85,7 +85,6 @@ text_form!(SettingSource, SettingSourceError);
 
 /// Why a text is not a [`SettingSource`].
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-#[non_exhaustive]
 pub enum SettingSourceError {
     /// No source has this name.
     #[error("no source of a setting is named {name:?}: there are flag, variable, environment, workspace and default")]

@@ -131,7 +131,6 @@ text_form!(TopicPartition, TopicPartitionError);
 /// The text has two parts, and the error says which one is wrong.
 /// Its message names the whole text, and then says what is wrong with that part.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-#[non_exhaustive]
 pub enum TopicPartitionError {
     /// The text has no characters.
     #[error("topic partition is empty")]
@@ -245,7 +244,6 @@ text_form!(PartitionOffset, PartitionOffsetError);
 /// The text has two parts, and the error says which one is wrong.
 /// Its message names the whole text, and then says what is wrong with that part.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-#[non_exhaustive]
 pub enum PartitionOffsetError {
     /// The text has no characters.
     #[error("partition offset is empty")]
@@ -389,7 +387,6 @@ text_form!(TopicPartitionOffset, TopicPartitionOffsetError);
 /// The text has three parts, and the error says which one is wrong.
 /// Its message names the whole text, and then says what is wrong with that part.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-#[non_exhaustive]
 pub enum TopicPartitionOffsetError {
     /// The text has no characters.
     #[error("topic partition offset is empty")]
