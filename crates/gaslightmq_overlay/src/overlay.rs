@@ -183,10 +183,10 @@ impl Overlay {
         }
         let sessionless = SessionlessFetch::of(request).map_err(|flaw| ForwardError::Undecided {
             reason: match flaw {
-                SessionlessFetchFlaw::UnreadableRequest(error) => {
+                SessionlessFetchFlaw::UnreadableRequest { error } => {
                     format!("the {api} request cannot be read: {error}")
                 }
-                SessionlessFetchFlaw::UnwritableRequest(error) => {
+                SessionlessFetchFlaw::UnwritableRequest { error } => {
                     format!("the {api} request cannot be written without its fetch session: {error}")
                 }
             },

@@ -8,7 +8,7 @@ use std::sync::Arc;
 
 use gaslightmq_wire::messages::ApiKey as KnownApi;
 use gaslightmq_wire::protocol::Request as KafkaRequest;
-use gaslightmq_wire::{Request, Response, WireError};
+use gaslightmq_wire::{DecodeError, EncodeError, Request, Response};
 
 /// A topic as an entry of a request names it: by name, by ID, or by both.
 /// The one it does not use is empty, or all zeros.
@@ -172,8 +172,8 @@ pub(crate) trait Editable: KafkaRequest {
 
 /// Why a request and a response did not merge.
 pub(crate) enum MergeFlaw {
-    UnreadableResponse(WireError),
-    UnwritableResponse(WireError),
+    UnreadableResponse { error: DecodeError },
+    UnwritableResponse { error: EncodeError },
 }
 
 /// The decoded body of a request, of whichever API.
@@ -186,10 +186,10 @@ pub(crate) trait Body: fmt::Debug + Send + Sync {
         &self,
         request: &Request,
         stays: &mut dyn FnMut(TopicKey<'_>, Option<i32>) -> bool,
-    ) -> Result<Left, WireError>;
+    ) -> Result<Left, EncodeError>;
 
     /// The response to `request` in which what `verdict` names failed.
-    fn failed(&self, request: &Request, verdict: &Verdict<'_>) -> Result<Response, WireError>;
+    fn failed(&self, request: &Request, verdict: &Verdict<'_>) -> Result<Response, EncodeError>;
 
     /// `truth` with the parts that `verdict` names failed, in the order of the request.
     fn merged(&self, request: &Request, truth: &Response, verdict: &Verdict<'_>) -> Result<Response, MergeFlaw>;
@@ -199,10 +199,10 @@ pub(crate) trait Body: fmt::Debug + Send + Sync {
         &self,
         response: &Response,
         see: &mut dyn FnMut(TopicKey<'_>, Option<i32>, i16),
-    ) -> Result<(), WireError>;
+    ) -> Result<(), DecodeError>;
 
     /// The error code of `response` itself, a response to the request, or zero when it has none.
-    fn error_of_response(&self, response: &Response) -> Result<i16, WireError>;
+    fn error_of_response(&self, response: &Response) -> Result<i16, DecodeError>;
 }
 
 impl<R> Body for R
@@ -221,7 +221,7 @@ where
         &self,
         request: &Request,
         stays: &mut dyn FnMut(TopicKey<'_>, Option<i32>) -> bool,
-    ) -> Result<Left, WireError> {
+    ) -> Result<Left, EncodeError> {
         let api = request.api();
         let mut rest = self.clone();
         let mut keep = Keep::new(stays);
@@ -233,13 +233,13 @@ where
         }
     }
 
-    fn failed(&self, request: &Request, verdict: &Verdict<'_>) -> Result<Response, WireError> {
+    fn failed(&self, request: &Request, verdict: &Verdict<'_>) -> Result<Response, EncodeError> {
         request.response(&Editable::failed(self, request.api().version, verdict))
     }
 
     fn merged(&self, request: &Request, truth: &Response, verdict: &Verdict<'_>) -> Result<Response, MergeFlaw> {
         let version = request.api().version;
-        let mut response: R::Response = truth.body().map_err(MergeFlaw::UnreadableResponse)?;
+        let mut response: R::Response = truth.body().map_err(|error| MergeFlaw::UnreadableResponse { error })?;
         R::merge(&mut response, Editable::failed(self, version, verdict));
         // The request with every part failed has every part in the order the client asked for it.
         let every_part = |_: TopicKey<'_>, _: Option<i32>| Some(0);
@@ -247,19 +247,20 @@ where
             &mut response,
             &Editable::failed(self, version, &Verdict::new(0, &every_part)),
         );
-        Response::new(truth.api(), truth.correlation_id(), &response).map_err(MergeFlaw::UnwritableResponse)
+        Response::new(truth.api(), truth.correlation_id(), &response)
+            .map_err(|error| MergeFlaw::UnwritableResponse { error })
     }
 
     fn each_answered_part(
         &self,
         response: &Response,
         see: &mut dyn FnMut(TopicKey<'_>, Option<i32>, i16),
-    ) -> Result<(), WireError> {
+    ) -> Result<(), DecodeError> {
         R::each_answered_part(&response.body()?, see);
         Ok(())
     }
 
-    fn error_of_response(&self, response: &Response) -> Result<i16, WireError> {
+    fn error_of_response(&self, response: &Response) -> Result<i16, DecodeError> {
         Ok(R::error_of_response(&response.body()?))
     }
 }
@@ -272,7 +273,7 @@ where
 macro_rules! decode_by_api {
     ($($api:ident => $request:ident,)*) => {
         /// Decodes the body of `request` as the request message of `api`.
-        pub(crate) fn decode(api: KnownApi, request: &Request) -> Result<Arc<dyn Body>, WireError> {
+        pub(crate) fn decode(api: KnownApi, request: &Request) -> Result<Arc<dyn Body>, DecodeError> {
             use gaslightmq_wire::messages::{$($request,)*};
             Ok(match api {
                 $(KnownApi::$api => Arc::new(request.body::<$request>()?),)*

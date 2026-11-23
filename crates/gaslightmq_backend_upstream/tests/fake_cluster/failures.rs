@@ -7,7 +7,7 @@ use gaslightmq_clock::TimeSpan;
 use gaslightmq_environment::prelude::*;
 use gaslightmq_field::prelude::*;
 use gaslightmq_wire::messages::{FetchResponse, HeartbeatResponse};
-use gaslightmq_wire::{Frame, WireError};
+use gaslightmq_wire::{Frame, FrameError};
 use tokio::net::TcpListener;
 
 use crate::support::{
@@ -144,7 +144,7 @@ async fn a_response_over_the_limit_is_no_response() {
     let BackendAnswer::NotAResponse { reason } = answer else {
         panic!("the broker announced more than the backend takes: {answer:?}");
     };
-    assert_eq!(reason, WireError::FrameTooLarge { len: 256, max: 64 }.to_string());
+    assert_eq!(reason, FrameError::TooLarge { len: 256, max: 64 }.to_string());
 }
 
 #[tokio::test]

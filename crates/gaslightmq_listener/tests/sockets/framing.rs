@@ -4,7 +4,7 @@ use std::time::Duration;
 
 use gaslightmq_field::prelude::*;
 use gaslightmq_listener::prelude::*;
-use gaslightmq_wire::WireError;
+use gaslightmq_wire::FrameError;
 
 use crate::support::{Client, Echo, frame, listen, on_a_free_port, still_waits};
 
@@ -114,7 +114,7 @@ async fn a_frame_over_the_limit_is_no_frame_before_its_payload_arrives() {
     assert_eq!(
         ended.why,
         ReceiveError::NotAFrame {
-            reason: WireError::FrameTooLarge { len: 9, max: 8 }.to_string()
+            reason: FrameError::TooLarge { len: 9, max: 8 }.to_string()
         }
     );
     assert_eq!(client.receive().await, None, "the handler let go of the connection");
@@ -132,7 +132,7 @@ async fn a_frame_of_no_bytes_is_no_frame() {
     assert_eq!(
         ended.why,
         ReceiveError::NotAFrame {
-            reason: WireError::EmptyFrame.to_string()
+            reason: FrameError::Empty.to_string()
         }
     );
 }

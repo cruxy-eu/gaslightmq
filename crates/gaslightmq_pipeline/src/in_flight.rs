@@ -15,7 +15,7 @@ use gaslightmq_rule::Snapshot;
 use gaslightmq_selector::Pass;
 use gaslightmq_session::{ClosedBy, Session};
 use gaslightmq_trigger::SessionCounters;
-use gaslightmq_wire::{Frame, Request, Response, WireError};
+use gaslightmq_wire::{DecodeError, Frame, Request, Response};
 use gaslightmq_wire_edit::{EditableRequest, TopicNames};
 
 use crate::SharedBySessions;
@@ -841,7 +841,7 @@ fn remainder_of(asked: &EditableRequest, rest: &Request, names: &TopicNames) -> 
 ///
 /// A backend can number its requests anew. The correlation ID is the first four bytes of a response,
 /// so the client's ID goes there, and nothing of the body is decoded.
-fn restored(request: &Request, response: &Response) -> Result<Response, WireError> {
+fn restored(request: &Request, response: &Response) -> Result<Response, DecodeError> {
     if response.api() == request.api() && response.correlation_id() == request.correlation_id() {
         return Ok(response.clone());
     }

@@ -71,7 +71,7 @@
 //! let [Output::Forward { call, request }] = outputs.as_slice() else {
 //!     panic!("the rest of the request goes to the backend");
 //! };
-//! let forwarded: ProduceRequest = request.body()?;
+//! let forwarded: ProduceRequest = request.body().expect("a Produce request");
 //! assert_eq!(forwarded.topic_data[0].partition_data.len(), 1);
 //!
 //! // The backend appends the records of partition 4, and the engine reports its answer under the same call.
@@ -86,7 +86,7 @@
 //! };
 //! assert_eq!(record.verdict().to_string(), "NOT_LEADER_OR_FOLLOWER on orders.eu/3");
 //! assert_eq!(record.delivered().to_string(), "ok; NOT_LEADER_OR_FOLLOWER on orders.eu/3");
-//! # Ok::<(), gaslightmq_wire::WireError>(())
+//! # Ok::<(), gaslightmq_wire::EncodeError>(())
 //! ```
 //!
 //! # The engine drives, and the pipeline decides

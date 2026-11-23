@@ -7,7 +7,7 @@ use gaslightmq_clock::{Duration, Instant};
 use gaslightmq_lie::Stage;
 use gaslightmq_rule::Snapshot;
 use gaslightmq_session::prelude::*;
-use gaslightmq_wire::{FrameDecoder, Request, Response, WireError};
+use gaslightmq_wire::{DecodeError, FrameDecoder, FrameError, Request, Response};
 
 use crate::in_flight::{AtRequestGate, CallInFlight, Leaving, Settled};
 use crate::untold::StageFailure;
@@ -168,25 +168,20 @@ impl Pipeline {
     fn receive(&mut self, bytes: &[u8], now: Instant, outputs: &mut Outputs) {
         self.frames.extend(bytes);
         while self.session.closed().is_none() {
-            let request = match self.frames.next_frame() {
-                Ok(Some(frame)) => Request::decode(frame),
+            // Without a frame, nothing says where the next request starts.
+            // Without a request header, nothing says how to answer this one.
+            // A broker closes such a connection, and so does the proxy: no lie and no backend did it.
+            let frame = match self.frames.next_frame() {
+                Ok(Some(frame)) => frame,
                 Ok(None) => return,
-                Err(error) => Err(error),
+                Err(FrameError::Empty | FrameError::TooLarge { .. }) => {
+                    self.close(ClosedBy::Proxy, None, None, now, outputs);
+                    return;
+                }
             };
-            match request {
+            match Request::decode(frame) {
                 Ok(request) => self.arrive(request, now, outputs),
-                // Without a request header, nothing says where the next request starts or how to answer this one.
-                // A broker closes such a connection, and so does the proxy: no lie and no backend did it.
-                Err(
-                    WireError::EmptyFrame
-                    | WireError::FrameTooLarge { .. }
-                    | WireError::Truncated { .. }
-                    | WireError::Decode { .. }
-                    // cannot come from a frame or from the header of a request
-                    | WireError::UnknownApi { .. }
-                    | WireError::WrongApi { .. }
-                    | WireError::Encode { .. },
-                ) => self.close(ClosedBy::Proxy, None, None, now, outputs),
+                Err(DecodeError { .. }) => self.close(ClosedBy::Proxy, None, None, now, outputs),
             }
         }
     }

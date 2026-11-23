@@ -2,7 +2,7 @@ use bytes::{Bytes, BytesMut};
 use kafka_protocol::messages::RequestHeader;
 use kafka_protocol::protocol::{Decodable, Encodable, Request as KafkaRequest, StrBytes};
 
-use crate::{Api, Frame, Response, WireError};
+use crate::{Api, DecodeError, EncodeError, Frame, Response};
 
 /// A request: a [`Frame`] with its header decoded.
 ///
@@ -22,14 +22,14 @@ impl Request {
     ///
     /// # Errors
     ///
-    /// [`WireError::Encode`] when the header or the body cannot be written
+    /// An [`EncodeError`] when the header or the body cannot be written
     /// at `version`.
     pub fn new<B: KafkaRequest>(
         version: i16,
         correlation_id: i32,
         client_id: Option<&str>,
         body: &B,
-    ) -> Result<Self, WireError> {
+    ) -> Result<Self, EncodeError> {
         let api = Api::of::<B>(version);
         let header = RequestHeader::default()
             .with_request_api_key(api.key)
@@ -39,10 +39,10 @@ impl Request {
         let mut payload = BytesMut::new();
         header
             .encode(&mut payload, api.request_header_version())
-            .map_err(|e| WireError::encode("request header", e))?;
+            .map_err(|e| EncodeError::new("request header", e))?;
         let body_at = payload.len();
         body.encode(&mut payload, api.version)
-            .map_err(|e| WireError::encode("request body", e))?;
+            .map_err(|e| EncodeError::new("request body", e))?;
         Ok(Self {
             header,
             frame: Frame::new(payload.freeze()),
@@ -57,20 +57,17 @@ impl Request {
     ///
     /// # Errors
     ///
-    /// [`WireError::Truncated`] when the frame is too short to name its API,
-    /// and [`WireError::Decode`] when the rest of the header is not valid.
-    pub fn decode(frame: Frame) -> Result<Self, WireError> {
+    /// A [`DecodeError`] when the frame is too short to name its API,
+    /// or the rest of the header is not valid.
+    pub fn decode(frame: Frame) -> Result<Self, DecodeError> {
         let payload = frame.payload();
         let Some(&[k0, k1, v0, v1]) = payload.first_chunk::<4>() else {
-            return Err(WireError::Truncated {
-                what: "request header",
-                len: payload.len(),
-            });
+            return Err(DecodeError::cut_short("request header", payload.len()));
         };
         let api = Api::from_wire(i16::from_be_bytes([k0, k1]), i16::from_be_bytes([v0, v1]));
         let mut rest = payload.clone();
         let header = RequestHeader::decode(&mut rest, api.request_header_version())
-            .map_err(|e| WireError::decode("request header", e))?;
+            .map_err(|e| DecodeError::new("request header", e))?;
         let body_at = payload.len() - rest.len();
         Ok(Self { header, frame, body_at })
     }
@@ -96,17 +93,19 @@ impl Request {
     ///
     /// # Errors
     ///
-    /// [`WireError::WrongApi`] when the request is of another API than `B`,
-    /// and [`WireError::Decode`] when the bytes are not a valid `B`.
-    pub fn body<B: KafkaRequest>(&self) -> Result<B, WireError> {
-        if B::KEY != self.header.request_api_key {
-            return Err(WireError::WrongApi {
-                expected: B::KEY,
-                actual: self.header.request_api_key,
-            });
+    /// A [`DecodeError`] when the request is of another API than `B`,
+    /// or the bytes are not a valid `B`.
+    pub fn body<B: KafkaRequest>(&self) -> Result<B, DecodeError> {
+        let actual = self.header.request_api_key;
+        if B::KEY != actual {
+            let asked = B::KEY;
+            return Err(DecodeError::new(
+                "request body",
+                format_args!("it is of api key {actual}, and it was read as api key {asked}"),
+            ));
         }
         B::decode(&mut self.body_bytes(), self.header.request_api_version)
-            .map_err(|e| WireError::decode("request body", e))
+            .map_err(|e| DecodeError::new("request body", e))
     }
 
     /// The body as it arrived, after the header.
@@ -127,9 +126,9 @@ impl Request {
     ///
     /// # Errors
     ///
-    /// [`WireError::Encode`] when `body` cannot be written at the version of
+    /// An [`EncodeError`] when `body` cannot be written at the version of
     /// this request.
-    pub fn response<B: Encodable>(&self, body: &B) -> Result<Response, WireError> {
+    pub fn response<B: Encodable>(&self, body: &B) -> Result<Response, EncodeError> {
         Response::new(self.api(), self.correlation_id(), body)
     }
 }
@@ -172,24 +171,16 @@ mod tests {
 
         assert_eq!(request.correlation_id(), 5);
         assert_eq!(request.body_bytes().as_ref(), &[0xDE, 0xAD]);
-        assert!(matches!(
-            request.body::<MetadataRequest>(),
-            Err(WireError::Decode {
-                what: "request body",
-                ..
-            })
-        ));
+        let error = request.body::<MetadataRequest>().unwrap_err();
+        assert!(error.to_string().starts_with("cannot decode request body: "), "{error}");
     }
 
     #[test]
     fn body_of_another_api_is_refused() {
         let request = Request::new(12, 1, None, &MetadataRequest::default()).unwrap();
         assert_eq!(
-            request.body::<FetchRequest>().unwrap_err(),
-            WireError::WrongApi {
-                expected: ApiKey::Fetch as i16,
-                actual: ApiKey::Metadata as i16
-            }
+            request.body::<FetchRequest>().unwrap_err().to_string(),
+            "cannot decode request body: it is of api key 3, and it was read as api key 1"
         );
     }
 
@@ -214,14 +205,11 @@ mod tests {
     }
 
     #[test]
-    fn a_frame_shorter_than_a_header_is_truncated() {
+    fn a_frame_shorter_than_a_header_is_cut_short() {
         let frame = Frame::new(Bytes::from_static(&[0, 3, 0]));
         assert_eq!(
-            Request::decode(frame).unwrap_err(),
-            WireError::Truncated {
-                what: "request header",
-                len: 3
-            }
+            Request::decode(frame).unwrap_err().to_string(),
+            "cannot decode request header: it is cut short at 3 bytes"
         );
     }
 }

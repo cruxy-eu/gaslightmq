@@ -3,7 +3,7 @@
 use gaslightmq_call::{CallError, CallId, CallTimingError};
 use gaslightmq_lie_api::{Instruction, LieError};
 use gaslightmq_session::SessionError;
-use gaslightmq_wire::{Api, WireError};
+use gaslightmq_wire::{Api, DecodeError};
 use gaslightmq_wire_edit::SurgeryError;
 
 use crate::explain::UnexplainedRule;
@@ -68,10 +68,10 @@ pub(crate) enum StageFailure {
     UnreadableRequest { error: SurgeryError },
     /// The fields of the body do not decode.
     #[error("the fields of the {api} request cannot be read: {error}")]
-    UnreadableRequestFields { api: Api, error: WireError },
+    UnreadableRequestFields { api: Api, error: DecodeError },
     /// The response of the backend cannot carry the API and the correlation ID of the client's request.
     #[error("the response of the backend does not read as a {api} response: {error}")]
-    UnrestoredResponse { api: Api, error: WireError },
+    UnrestoredResponse { api: Api, error: DecodeError },
     /// The response of the backend cannot be read, so the rules saw no truth.
     #[error("the rules saw no truth: {error}")]
     UnreadableTruth { error: SurgeryError },
@@ -80,7 +80,7 @@ pub(crate) enum StageFailure {
     UnreadableTopicNames { error: SurgeryError },
     /// The member ID that the response of the backend gives the client cannot be read.
     #[error("no member ID was learned from the {api} response: {error}")]
-    UnreadableMemberId { api: Api, error: WireError },
+    UnreadableMemberId { api: Api, error: DecodeError },
     /// The response that the client received cannot be read, so the record shows no answer.
     #[error("the record shows no answer: {error}")]
     UnreadableDelivery { error: SurgeryError },
@@ -197,7 +197,7 @@ mod tests {
                     error: of_another_api.clone(),
                 },
                 "the fields of the Produce v9 request cannot be read: \
-                 body of api key 12 read as api key 0",
+                 cannot decode request body: it is of api key 12, and it was read as api key 0",
             ),
             (
                 StageFailure::UnrestoredResponse {
@@ -205,7 +205,7 @@ mod tests {
                     error: of_another_api.clone(),
                 },
                 "the response of the backend does not read as a Produce v9 response: \
-                 body of api key 12 read as api key 0",
+                 cannot decode request body: it is of api key 12, and it was read as api key 0",
             ),
             (
                 StageFailure::UnreadableTruth {
@@ -223,7 +223,7 @@ mod tests {
                     error: of_another_api,
                 },
                 "no member ID was learned from the JoinGroup v9 response: \
-                 body of api key 12 read as api key 0",
+                 cannot decode request body: it is of api key 12, and it was read as api key 0",
             ),
         ];
 
@@ -263,10 +263,10 @@ mod tests {
             ),
             (
                 StageFailure::UnreadableAnswer {
-                    error: "response header is cut short at 3 bytes".to_owned(),
+                    error: "cannot decode response header: it is cut short at 3 bytes".to_owned(),
                 },
                 "the backend answered with what is no response: \
-                 response header is cut short at 3 bytes",
+                 cannot decode response header: it is cut short at 3 bytes",
             ),
             (
                 StageFailure::BackendFailed {

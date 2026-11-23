@@ -19,21 +19,37 @@
 //! use gaslightmq_wire::{FrameDecoder, Request, Response};
 //!
 //! // A client builds a request and puts it on the connection.
-//! let request = Request::new(12, 7, Some("orders"), &MetadataRequest::default())?;
+//! let request = Request::new(12, 7, Some("orders"), &MetadataRequest::default()).expect("a Metadata v12");
 //! let sent = request.frame().to_bytes();
 //!
 //! // The other side cuts the bytes into frames, and decodes what it needs.
 //! let mut frames = FrameDecoder::new();
 //! frames.extend(&sent);
-//! let received = Request::decode(frames.next_frame()?.expect("a whole frame"))?;
+//! let frame = frames.next_frame().expect("a length within the limit").expect("a whole frame");
+//! let received = Request::decode(frame)?;
 //! assert_eq!(received.client_id(), Some("orders"));
 //! let body: MetadataRequest = received.body()?;
 //!
 //! // It answers under the same correlation ID.
-//! let response = received.response(&MetadataResponse::default())?;
+//! let response = received.response(&MetadataResponse::default()).expect("a Metadata v12");
 //! assert_eq!(Response::peek_correlation_id(response.frame())?, 7);
-//! # Ok::<(), gaslightmq_wire::WireError>(())
+//! # Ok::<(), gaslightmq_wire::DecodeError>(())
 //! ```
+//!
+//! # Errors
+//!
+//! The three things the crate does fail in different ways, so each has an error of its own.
+//! No caller meets a failure that cannot come from what it called.
+//!
+//! | What failed | Error | What is wrong |
+//! |---|---|---|
+//! | [`FrameDecoder::next_frame`] | [`FrameError`] | The length that a frame announces is zero, or over the limit of the decoder. |
+//! | Reading a header, a body or a record batch | [`DecodeError`] | The bytes are not what they were read as. |
+//! | Writing a request, a response or a record batch | [`EncodeError`] | The message cannot be written, for example at a version it does not exist in. |
+//!
+//! A [`DecodeError`] and an [`EncodeError`] have no variants.
+//! Their message names what did not decode or encode, and then says what is wrong, once.
+//! The message of every error is complete, so no error has a [`source`](std::error::Error::source).
 //!
 //! The message types come from the `kafka-protocol` crate.
 //! This crate re-exports them as [`messages`] and [`protocol`],
@@ -47,7 +63,7 @@ mod request;
 mod response;
 
 pub use api::Api;
-pub use error::WireError;
+pub use error::{DecodeError, EncodeError, FrameError};
 pub use frame::{Frame, FrameDecoder};
 pub use record::{Offset, Partition, Record, RecordBatch, RecordHeader};
 pub use request::Request;

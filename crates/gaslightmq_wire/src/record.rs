@@ -6,7 +6,7 @@ use kafka_protocol::records::{
     RecordBatchDecoder, RecordBatchEncoder, RecordEncodeOptions, TimestampType,
 };
 
-use crate::WireError;
+use crate::{DecodeError, EncodeError};
 
 /// One header of a [`Record`].
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -115,9 +115,9 @@ impl RecordBatch {
     ///
     /// # Errors
     ///
-    /// [`WireError::Encode`] when a record is too large for the format, or
+    /// An [`EncodeError`] when a record is too large for the format, or
     /// compressing the batch fails.
-    pub fn encode(&self) -> Result<Bytes, WireError> {
+    pub fn encode(&self) -> Result<Bytes, EncodeError> {
         if self.records.is_empty() {
             return Ok(Bytes::new());
         }
@@ -133,7 +133,7 @@ impl RecordBatch {
             compression: self.compression,
         };
         let mut out = BytesMut::new();
-        RecordBatchEncoder::encode(&mut out, &records, &options).map_err(|e| WireError::encode("record batch", e))?;
+        RecordBatchEncoder::encode(&mut out, &records, &options).map_err(|e| EncodeError::new("record batch", e))?;
         Ok(out.freeze())
     }
 
@@ -146,9 +146,9 @@ impl RecordBatch {
     ///
     /// # Errors
     ///
-    /// [`WireError::Decode`] when a batch announces a negative length, or is
+    /// A [`DecodeError`] when a batch announces a negative length, or is
     /// all there and does not decode.
-    pub fn decode_all(bytes: &Bytes) -> Result<Vec<Self>, WireError> {
+    pub fn decode_all(bytes: &Bytes) -> Result<Vec<Self>, DecodeError> {
         /// A batch starts with its base offset (8 bytes) and the length of the rest (4 bytes).
         const PREFIX: usize = 12;
 
@@ -156,13 +156,13 @@ impl RecordBatch {
         let mut batches = Vec::new();
         while let Some(&[.., l0, l1, l2, l3]) = rest.first_chunk::<PREFIX>() {
             let Ok(len) = usize::try_from(i32::from_be_bytes([l0, l1, l2, l3])) else {
-                return Err(WireError::decode("record batch", "negative length"));
+                return Err(DecodeError::new("record batch", "negative length"));
             };
             if rest.len() < PREFIX + len {
                 break;
             }
             let mut batch = rest.split_to(PREFIX + len);
-            let set = RecordBatchDecoder::decode(&mut batch).map_err(|e| WireError::decode("record batch", e))?;
+            let set = RecordBatchDecoder::decode(&mut batch).map_err(|e| DecodeError::new("record batch", e))?;
             batches.push(Self {
                 records: set.records.iter().map(from_kafka).collect(),
                 compression: set.compression,
@@ -404,13 +404,8 @@ mod tests {
         let last = bytes.len() - 1;
         bytes[last] ^= 0xFF;
 
-        assert!(matches!(
-            RecordBatch::decode_all(&bytes.freeze()),
-            Err(WireError::Decode {
-                what: "record batch",
-                ..
-            })
-        ));
+        let error = RecordBatch::decode_all(&bytes.freeze()).unwrap_err();
+        assert!(error.to_string().starts_with("cannot decode record batch: "), "{error}");
     }
 
     #[test]

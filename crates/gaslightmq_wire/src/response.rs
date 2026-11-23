@@ -2,7 +2,7 @@ use bytes::{Bytes, BytesMut};
 use kafka_protocol::messages::ResponseHeader;
 use kafka_protocol::protocol::{Decodable, Encodable};
 
-use crate::{Api, Frame, WireError};
+use crate::{Api, DecodeError, EncodeError, Frame};
 
 /// A response: a [`Frame`] with its header decoded.
 ///
@@ -24,17 +24,17 @@ impl Response {
     ///
     /// # Errors
     ///
-    /// [`WireError::Encode`] when the header or the body cannot be written
+    /// An [`EncodeError`] when the header or the body cannot be written
     /// at the version of `api`.
-    pub fn new<B: Encodable>(api: Api, correlation_id: i32, body: &B) -> Result<Self, WireError> {
+    pub fn new<B: Encodable>(api: Api, correlation_id: i32, body: &B) -> Result<Self, EncodeError> {
         let header = ResponseHeader::default().with_correlation_id(correlation_id);
         let mut payload = BytesMut::new();
         header
             .encode(&mut payload, api.response_header_version())
-            .map_err(|e| WireError::encode("response header", e))?;
+            .map_err(|e| EncodeError::new("response header", e))?;
         let body_at = payload.len();
         body.encode(&mut payload, api.version)
-            .map_err(|e| WireError::encode("response body", e))?;
+            .map_err(|e| EncodeError::new("response body", e))?;
         Ok(Self {
             api,
             header,
@@ -48,14 +48,11 @@ impl Response {
     ///
     /// # Errors
     ///
-    /// [`WireError::Truncated`] when the frame is shorter than a correlation ID.
-    pub fn peek_correlation_id(frame: &Frame) -> Result<i32, WireError> {
+    /// A [`DecodeError`] when the frame is shorter than a correlation ID.
+    pub fn peek_correlation_id(frame: &Frame) -> Result<i32, DecodeError> {
         match frame.payload().first_chunk::<4>() {
             Some(id) => Ok(i32::from_be_bytes(*id)),
-            None => Err(WireError::Truncated {
-                what: "response header",
-                len: frame.payload().len(),
-            }),
+            None => Err(DecodeError::cut_short("response header", frame.payload().len())),
         }
     }
 
@@ -63,12 +60,12 @@ impl Response {
     ///
     /// # Errors
     ///
-    /// [`WireError::Decode`] when the header is not valid.
-    pub fn decode(api: Api, frame: Frame) -> Result<Self, WireError> {
+    /// A [`DecodeError`] when the header is not valid.
+    pub fn decode(api: Api, frame: Frame) -> Result<Self, DecodeError> {
         let payload = frame.payload();
         let mut rest = payload.clone();
         let header = ResponseHeader::decode(&mut rest, api.response_header_version())
-            .map_err(|e| WireError::decode("response header", e))?;
+            .map_err(|e| DecodeError::new("response header", e))?;
         let body_at = payload.len() - rest.len();
         Ok(Self {
             api,
@@ -96,10 +93,10 @@ impl Response {
     ///
     /// # Errors
     ///
-    /// [`WireError::Decode`] when the bytes are not a valid `B` at the
+    /// A [`DecodeError`] when the bytes are not a valid `B` at the
     /// version of [`api`](Self::api).
-    pub fn body<B: Decodable>(&self) -> Result<B, WireError> {
-        B::decode(&mut self.body_bytes(), self.api.version).map_err(|e| WireError::decode("response body", e))
+    pub fn body<B: Decodable>(&self) -> Result<B, DecodeError> {
+        B::decode(&mut self.body_bytes(), self.api.version).map_err(|e| DecodeError::new("response body", e))
     }
 
     /// The body as it arrived, after the header.
@@ -150,14 +147,11 @@ mod tests {
     }
 
     #[test]
-    fn a_frame_shorter_than_a_correlation_id_is_truncated() {
+    fn a_frame_shorter_than_a_correlation_id_is_cut_short() {
         let frame = Frame::new(Bytes::from_static(&[0, 0, 1]));
         assert_eq!(
-            Response::peek_correlation_id(&frame).unwrap_err(),
-            WireError::Truncated {
-                what: "response header",
-                len: 3
-            }
+            Response::peek_correlation_id(&frame).unwrap_err().to_string(),
+            "cannot decode response header: it is cut short at 3 bytes"
         );
     }
 }
