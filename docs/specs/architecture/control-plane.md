@@ -32,7 +32,8 @@ It is then set up by flags and files alone.
 | `capture` | Start, stop and save as a scenario. |
 | `quick-inject` | [Parse a ⌘K sentence](#drafts) into a rule definition, with completions. |
 
-Every operation on a definition names it by its [name](../domains/rules.md#names), and a definition has no other identifier.
+Every operation on a definition names it by its [name](../domains/rules.md#names).
+No operation names a definition by its [UUID](identity.md#uuid), which stays inside the workspace.
 No operation renames a definition.
 An update changes everything but the name, the [title](../domains/rules.md#titles) included.
 Whoever wants another name creates a new definition and deletes the old one.

@@ -254,7 +254,7 @@ Every other crate speaks in them.
 | Crate | Holds | Depends on |
 |---|---|---|
 | `kernel` | The value objects of Kafka: topic names and IDs, partition numbers, offsets, positions such as `orders.eu/3`, broker IDs, epochs, the IDs of clients, groups and producers, and API keys and error codes with the names Kafka gives them. Each type only holds valid values. | — |
-| `resource` | The [resource](control-plane.md#resources) vocabulary: the name and the title of a resource, with the one rule that every name follows and the one that every title follows. They are the rules of the [name](../domains/rules.md#names) and the [title](../domains/rules.md#titles) of a rule. Each kind of resource has a name and a title of its own that wrap them, so the name of a selector never stands where the name of a rule belongs. This crate is [internal](#internal-crates). | — |
+| `resource` | The [resource](control-plane.md#resources) vocabulary: the name, the UUID and the title of a resource, with the one rule that each of them follows. They are the rules of the [name](../domains/rules.md#names) and the [title](../domains/rules.md#titles) of a rule, and of the [UUID](identity.md#uuid) of an entity. Each kind of resource has a name, a UUID and a title of its own that wrap them, so the name of a selector never stands where the name of a rule belongs. It [makes a UUID](identity.md#making-a-uuid) from the time and the random bits that its caller hands in. This crate is [internal](#internal-crates). | — |
 | `field` | The [field vocabulary](../domains/targeting.md#fields): field names, their typed values, and the `FieldSource` trait that a live call and a recorded call both implement. Also the parts of a call, and the [target](../domains/lies-and-incidents.md#target) that a match yields. Every district of the town plan [shares this vocabulary](../townplan/README.md#targeting-is-a-shared-kernel). | `kernel`, `clock` |
 | `clock` | The [clock](README.md#clock): a `Clock` trait, the virtual clock, and instants that do not come from the system. | — |
 | `wire` | The Kafka codec: frames, headers, lazily decoded bodies and record batches. | — |
@@ -323,7 +323,7 @@ Transactions arrive later as `sim_txn`, next to `sim_log` and `sim_group`.
 | Crate | Holds | Depends on |
 |---|---|---|
 | `environment` | [Environments](storage.md#environments), [secret references](storage.md#secrets), and the order in which flags, variables and files set a value. It never reads a secret. | `kernel`, `resource` |
-| `workspace` | The whole set of definitions as one model: cross-reference validation, and the YAML layout of the [workspace](storage.md#workspace). A [reading error](storage.md#reading) names the path of the key that failed. It works on file contents, not on files. | `selector`, `lie`, `incident`, `rule`, `scenario`, `surface`, `world`, `environment` |
+| `workspace` | The whole set of definitions as one model: cross-reference validation, the check that no two definitions share a [UUID](identity.md#uuid), and the YAML layout of the [workspace](storage.md#workspace). A [reading error](storage.md#reading) names the path of the key that failed. It works on file contents, not on files. | `selector`, `lie`, `incident`, `rule`, `scenario`, `surface`, `world`, `environment` |
 | `workspace_fs` | Loading, watching and writing back, the scratch file, and reading the files that secret references name. This crate does IO. | `workspace` |
 
 ### Control

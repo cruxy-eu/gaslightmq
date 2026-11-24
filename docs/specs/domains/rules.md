@@ -35,6 +35,9 @@ A rule needs a name, a selector and an action.
 `selector: {}` has no conditions, so it matches every call.
 `title`, `scope`, `trigger`, `lifetime` and `dice` are optional.
 
+The file of a rule also holds a `uuid`, which GaslightMQ writes and nobody else does.
+See [UUID](../architecture/identity.md#uuid).
+
 ### Names
 
 A name is the identity of a rule, and nothing else.
@@ -44,7 +47,8 @@ It starts and ends with a letter or a digit, and it has at most 63 characters.
 
 Every reference to a rule uses its name:
 a file, a command, an explanation, the statistics and a pad.
-A rule has no other identifier next to its name.
+Nothing references a rule by anything else.
+Its [UUID](../architecture/identity.md#uuid) stays inside the workspace, which tells its rules apart by it.
 
 A rule keeps its name for as long as it exists.
 Nothing renames a rule.
@@ -67,6 +71,7 @@ A rule without a title shows its name wherever a surface would show the title.
 
 Selectors, presets, scenarios, pad layouts, environments and world definitions follow the same two rules.
 Each has a name, which is a slug and its identity, and each can have a title.
+Each gets a UUID from GaslightMQ too.
 
 ### Where rules live
 
