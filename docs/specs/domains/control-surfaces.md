@@ -13,7 +13,7 @@ and shows what those districts publish.
 | **Selector from call** | Tick the fields of one recorded call to build a selector, and see what it matches. |
 | **Rules** | Every rule grouped by scope, with an inspector for selector, action, trigger and lifetime. |
 | **Clients** | One column per scope. Drag a rule to another column to change its scope. |
-| **Pads** | A grid for playing rules live, by mouse, keyboard or hardware. |
+| **Pads** | A grid for playing rules live, by mouse or keyboard. |
 | **Scenarios** | The scenarios in the workspace, their mode and steps, and the active one. |
 | **World** | Only for an environment with a broker: topics, partitions, groups, broker nodes and where each topic's records come from. |
 | **Quick inject (⌘K)** | Type a sentence such as `delay produce orders.* 750ms 40% order-ingest` and get a live rule. |
@@ -50,8 +50,8 @@ A rule on a client layer does not win over a rule on the all-clients layer.
 See [modes](scenarios.md#modes).
 
 ```yaml
-name: push-2
-title: Push 2
+name: order-desk
+title: Order desk
 rows: [order-producers, fetch, metadata, find-coordinator, join-and-sync, heartbeat, offset-commit, transactions]
 columns: [error-retriable, error-fatal, delay-100ms, delay-1s, delay-10s, blackhole, disconnect, throttle]
 layers: [All clients, order-ingest, payments-svc, analytics-etl, kafka-ui]
@@ -103,23 +103,3 @@ Turning an encoder on an armed rule does not reset the rule's counters.
 - **Hold**: the pad is armed while pressed, and disarms on release.
 
 Pad presses act on the [live set](scenarios.md#the-live-set).
-
-## Hardware mapping
-
-A hardware mapping connects a controller to a pad layout.
-
-| Control | Maps to |
-|---|---|
-| 8×8 pads | The grid of the current layer. |
-| Encoders 1–8 | The encoders of the focused pad. |
-| Scene buttons | Mute a row. |
-| Track select buttons | Switch layers. |
-| Pad colours | Preset colour, brightness for probability, a flash when the rule fires. |
-
-The mapping is a translation between controller messages and surface commands.
-It never talks to Injection directly.
-
-The mapping runs in the browser, over Web MIDI.
-Hardware therefore only works while the UI is open.
-A bridge in the CLI can follow later as one more client of the [control plane](../architecture/control-plane.md).
-It does not change the engine.

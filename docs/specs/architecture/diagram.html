@@ -366,7 +366,7 @@ const CRATES = [
   ["kafka_client_api","Applications","app",0,null,"What a Kafka client offers to a test, whichever client it is: producer, consumer and admin traits, one trait per protocol API, and a raw client that sends one request at a fixed version. Every call returns one error, ClientError: a refusal of the broker holds its error code, and a failure of the client holds none.",["wire","kernel"]],
   ["kafka_client_native","Applications","app",0,null,"Our own Kafka client behind those traits, as three types: a producer, a consumer and an admin. Every instance has its own connections, view of the cluster, configuration and client.id. Each follows partition leaders, negotiates API versions, and reports every failure as the ClientError of kafka_client_api.",["kafka_client_api","wire","kernel","clock"]],
   ["test_kafka","Applications","app",0,null,"A real Kafka cluster for the tests of this workspace: brokers of the version the workspace tests against, each with an address for the clients of a test. Its own handles create topics, write records, read them back and open transactions. They share the codec with the client a test is about, and no decision of a client.",["wire","kernel","clock"]],
-  ["ui","Applications","app",1,4,"The web UI, a Dioxus application. It reaches the engine only through the control plane.",["control_api","control_client","surface","hardware_push2"]],
+  ["ui","Applications","app",1,4,"The web UI, a Dioxus application. It reaches the engine only through the control plane.",["control_api","control_client","surface"]],
 
   ["host","IO edge","io",0,4,"One process with several environments. Starts and stops proxies and brokers, and runs the task that drives each broker.",["engine","broker","listener","backend_upstream","workspace_fs","environment","quick_inject"]],
   ["engine","IO edge","io",0,3,"The runtime of one proxy: one task per session that owns the transport and drives the pipeline, a listener for every endpoint of the backend, plus rule store, scenario runner, event bus, journal, recorder and indexer. Tasks, timers and channels; it opens no socket itself.",["pipeline","session","rule","trigger","lie_api","call","incident","field","wire","scenario","journal","recording","backend","listener","workspace","environment","clock"]],
@@ -380,7 +380,6 @@ const CRATES = [
   ["control_api","Control","sans",1,4,"The control plane as types: resources, commands and stream messages. Re-exports the definition types its messages carry, and holds its own view of the World's state.",["call","journal","rule","scenario","selector","surface","incident","environment"]],
   ["quick_inject","Control","sans",0,4,"The ⌘K sentence parser: text to a rule definition, with completions. The host runs it behind the control plane.",["selector","lie","rule","trigger","field","kernel","clock"]],
   ["surface","Control","sans",1,4,"Pad layouts, layers, pads as positions, the encoder mapping, and the intents a surface sends. Also the state of one surface: the layer it shows, its mode of play and its focus.",["rule","selector","trigger","lie","field","kernel","resource","clock"]],
-  ["hardware_push2","Control","sans",1,7,"The Push 2 mapping: controller messages to surface intents, and rule state back to pad colours.",["surface"]],
 
   ["workspace","Workspace","sans",0,5,"The whole set of definitions as one model: cross-reference validation and the YAML layout. A reading error names the path of the key that failed. Works on file contents, not on files.",["selector","lie","incident","rule","scenario","surface","world","environment"]],
   ["environment","Workspace","sans",1,3,"Environments, secret references, and the order in which flags, variables and files set a value. It never reads a secret.",["kernel","resource"]],
@@ -427,7 +426,7 @@ const CRATES = [
   ["call","Vocabulary","sans",1,2,"The call record: identity, request summary, truth, delivered response, verdict, explanation and timing.",["field","lie","incident","kernel","resource","clock"]],
 ].map(([name,layer,kind,wasm,step,holds,deps]) => ({name,layer,kind,wasm:!!wasm,step,holds,deps}));
 
-const STEPS = ["Rules evaluate against hand-written calls in tests.","The pipeline runs in tests, with partial refusals and explanations.","A proxy that lies.","The UI with live traffic, rules, pads and ⌘K.","Scenarios in files, recordings, and tests in CI.","The broker, alone and behind a proxy.","The remaining lies, hardware and transactions."];
+const STEPS = ["Rules evaluate against hand-written calls in tests.","The pipeline runs in tests, with partial refusals and explanations.","A proxy that lies.","The UI with live traffic, rules, pads and ⌘K.","Scenarios in files, recordings, and tests in CI.","The broker, alone and behind a proxy.","The remaining lies and transactions."];
 const KIND = {sans:"sans-IO", io:"IO edge · async", sig:"async signature only", app:"application"};
 
 const STAGES = [

@@ -96,7 +96,7 @@ gaslight/
 │   ├── leader-election.yaml
 │   └── producer-recovers-from-leader-churn.yaml
 ├── layouts/
-│   └── push-2.yaml
+│   └── order-desk.yaml
 ├── worlds/
 │   └── orders-sim.yaml
 ├── schemas/                 # record schemas: Avro, Protobuf, JSON Schema
@@ -408,6 +408,6 @@ A client's credentials never reach the disk.
 
 ## Browser
 
-The browser keeps view preferences: the open view, display options and the selected hardware.
+The browser keeps view preferences: the open view and display options.
 Nothing else lives there.
 Pad layouts are definitions in the workspace, so a team shares them.

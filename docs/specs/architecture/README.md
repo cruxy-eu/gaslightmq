@@ -20,7 +20,7 @@ These documents call the runtime of one proxy the **engine**.
 | [Backends](backends.md) | Upstream and Simulated, their capabilities, the overlay and incident emulation. |
 | [Storage and configuration](storage.md) | The workspace, environments, secrets, live state and recordings. |
 | [Identity](identity.md) | Every entity per district, and how GaslightMQ identifies it: names, UUIDs and IDs. |
-| [Control plane](control-plane.md) | The API the UI, the CLI and hardware use. |
+| [Control plane](control-plane.md) | The API the UI and the CLI use. |
 | [Crate layout](crates.md) | The crates of the workspace, what each one holds, which ones are sans-IO, and how the async IO edge drives them. |
 
 The [interactive diagram](diagram.html) shows one session, the pipeline stages and every crate with its dependencies.
@@ -53,7 +53,6 @@ flowchart LR
   BE -->|Upstream| kafka["Real cluster"]
   BE -->|Simulated| world["Broker<br/>World"]
   CP <--> ui["Web UI"]
-  ui <-->|Web MIDI| push["Push 2"]
   WS <--> files[("Workspace files")]
   REC --> recs[("Recordings")]
 ```
@@ -123,8 +122,6 @@ flowchart LR
 - **The engine is headless.**
   The UI is one client of the control plane.
   The CLI and test libraries are others.
-  Hardware connects through the UI with Web MIDI,
-  so the engine needs no device drivers.
 
 ## Clock
 
