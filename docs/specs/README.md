@@ -69,7 +69,6 @@ The first version leaves these parts out:
 | Capturing parameter changes on an armed rule | Capture keeps the parameters from the moment of arming. See [capture](domains/scenarios.md#capture). |
 | A pass or fail result from `gmq run` | Tests assert on recordings. See [tests](architecture/control-plane.md#tests). |
 | Transactions on the fake broker | Idempotent producers without transactions. See [Simulated](architecture/backends.md#simulated). |
-| A hardware bridge outside the browser | Web MIDI in the UI. See [hardware mapping](domains/control-surfaces.md#hardware-mapping). |
 
 ## Related material
 

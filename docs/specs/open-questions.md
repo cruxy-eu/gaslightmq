@@ -136,9 +136,3 @@ The second part lists the decisions that were settled, with the reason and the s
 | Where does a fake cluster's data come from? | From the topic's [record source](domains/world.md#records): virtual records from a template or a schema, a file, a recording, or what clients produce. | A consumer test needs data without a producer, and a virtual record is the same at the same partition and offset. |
 | Do records have schemas? | Yes. A topic names a format and a schema, and an environment names a [schema registry](architecture/backends.md#schema-registry). | Avro and Protobuf consumers cannot read a record without one. |
 | Where do secrets live? | In files outside git, referenced by path. An environment variable works as a fallback. See [secrets](architecture/storage.md#secrets). | Platforms mount secrets as files, files rotate, and a reference cannot leak through git. |
-
-### Control surfaces
-
-| Question | Decision | Reason |
-|---|---|---|
-| Where does the hardware bridge live? | In the browser, over Web MIDI. A CLI bridge can follow as one more control-plane client. See [hardware mapping](domains/control-surfaces.md#hardware-mapping). | The engine stays headless and needs no device drivers. |

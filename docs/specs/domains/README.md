@@ -12,7 +12,7 @@ and the concepts it owns.
 | [Scenarios](scenarios.md) | Scenario, Mode, Step, Live set, Capture |
 | [Observation](observation.md) | Call, Verdict, Explanation, Recording, Journal, Index, Facet |
 | [World](world.md) | Cluster, Broker node, Topic, Partition, Group, Producer, Transaction, Record source, Virtual record, Template, Seeding |
-| [Control surfaces](control-surfaces.md) | View, Pad layout, Layer, Hardware mapping |
+| [Control surfaces](control-surfaces.md) | View, Pad layout, Layer |
 
 Backend, Capability, Overlay and Emulation belong to [backends](../architecture/backends.md).
 Proxy, Broker and Host belong to the [architecture](../architecture/README.md#instances-and-processes).

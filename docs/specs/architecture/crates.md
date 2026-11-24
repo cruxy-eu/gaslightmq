@@ -331,7 +331,6 @@ Transactions arrive later as `sim_txn`, next to `sim_log` and `sim_group`.
 | Crate | Holds | Depends on |
 |---|---|---|
 | `surface` | [Pad layouts](../domains/control-surfaces.md#pad-layout), layers, pads as positions, the encoder mapping, and the intents a surface sends. Also the state of one surface: the layer it shows, its mode of play and its focus. | `rule`, `selector`, `trigger`, `lie`, `field`, `kernel`, `resource`, `clock` |
-| `hardware_push2` | The Push 2 mapping: controller messages to surface intents, and rule state back to pad colours. | `surface` |
 | `quick_inject` | The ⌘K sentence parser: text to a rule definition, with completions for the word that is being typed, and the words it could not read. Whoever reads a sentence hands over the names the system knows. The host runs it behind the [control plane](control-plane.md#drafts). | `selector`, `lie`, `rule`, `trigger`, `field`, `kernel`, `clock` |
 | `control_api` | The [control plane](control-plane.md) as types: resources, commands and stream messages. It re-exports the definition types its messages carry, and it holds its own view of the World's state. | `call`, `journal`, `rule`, `scenario`, `selector`, `surface`, `incident`, `environment` |
 | `control_client` | A client for the control plane, for native targets and for WebAssembly. This crate does IO. | `control_api` |
@@ -342,7 +341,7 @@ Transactions arrive later as `sim_txn`, next to `sim_log` and `sim_group`.
 | Crate | Holds | Depends on |
 |---|---|---|
 | `engine` | The runtime of one proxy: one task per session that owns the transport and drives the pipeline, a listener for every endpoint of the backend, the rule store, the scenario runner, the event bus, the journal, the recorder and the indexer. This crate does IO. | `pipeline`, `session`, `rule`, `trigger`, `lie_api`, `call`, `incident`, `field`, `wire`, `scenario`, `journal`, `recording`, `backend`, `listener`, `workspace`, `environment`, `clock` |
-| `ui` | The web UI, a Dioxus application. It reaches the engine only through the control plane. This crate does IO. | `control_api`, `control_client`, `surface`, `hardware_push2` |
+| `ui` | The web UI, a Dioxus application. It reaches the engine only through the control plane. This crate does IO. | `control_api`, `control_client`, `surface` |
 | `listener` | Kafka on a socket: accept connections, frame bytes, and run whatever [handles a connection](#the-connection-handler). A proxy's pipeline and a broker alone both sit behind it. This crate does IO. | `wire`, `field`, `clock` |
 | `host` | One process with several [environments](storage.md#several-environments-in-one-process): it starts and stops proxies and brokers, runs the task that drives each broker, and shares the workspace and the control plane between them. This crate does IO. | `engine`, `broker`, `listener`, `backend_upstream`, `workspace_fs`, `environment`, `quick_inject` |
 | `test` | The test library: it starts a proxy, a broker, or a proxy in front of a broker inside the test's own process, on free ports, and hands the test the addresses its clients connect to. The test then activates a scenario and asserts on the recording. This crate does IO. See [instances in a test](#instances-in-a-test). | `host`, `control_client` |
@@ -641,7 +640,7 @@ The UI therefore checks a value in a form with the engine's own types, and witho
 | `lie`, `incident`, `trigger`, `rule`, `scenario` | Edit definitions with the engine's own types. |
 | `call`, `journal` | Render verdicts, explanations and the history of a rule. |
 | `environment`, `clock` | Show environments, and the instants that calls and journal entries carry. |
-| `surface`, `hardware_push2` | Turn pad presses and controller messages into intents. |
+| `surface` | Turn pad presses into intents. |
 | `control_api`, `control_client` | Talk to the engine. |
 
 The UI names the definition types through `control_api`, which re-exports them.
@@ -663,12 +662,9 @@ The World is the one district whose definition types the UI does not share.
 Those types live in `world` and `virtual_log`, which reach `wire` and `schema`.
 `control_api` holds its own view of the World's state instead.
 
-`surface` and `hardware_push2` do run behaviour in the browser:
-they turn pad presses and controller messages into intents.
+`surface` does run behaviour in the browser:
+it turns pad presses into intents.
 That behaviour belongs to a control surface, not to the engine.
-Web MIDI only exists in the browser, so the hardware mapping runs there.
-The same two crates later serve a hardware bridge in the CLI,
-which sends the same intents through `control_client`.
 
 The crates in the table stay free of threads, files and sockets.
 `control_client` is the exception.
@@ -749,7 +745,7 @@ The crates arrive in the order the [first version](../README.md#first-version) n
 | 4 | `host`, `control_api`, `control_server`, `control_client`, `traffic`, `index`, `surface`, `quick_inject`, `ui` | The UI with live traffic, rules, pads and ⌘K. |
 | 5 | `journal`, `scenario`, `workspace`, `workspace_fs`, `recording`, `test`, `testcontainers`, `gmq` | Scenarios in files, recordings, and tests in CI. |
 | 6 | `schema`, `schema_registry`, `virtual_log`, `world`, `sim_log`, `sim_group`, `broker`, `world_seed` | The broker, alone and behind a proxy. |
-| 7 | `lie_topology`, `lie_data`, `lie_progress`, `lie_config`, `hardware_push2`, `sim_txn` | The remaining lies, hardware and transactions. |
+| 7 | `lie_topology`, `lie_data`, `lie_progress`, `lie_config`, `sim_txn` | The remaining lies and transactions. |
 
 `test` and `testcontainers` arrive in step 5.
 `testcontainers` needs the binary for its image, and both need the workspace files.
