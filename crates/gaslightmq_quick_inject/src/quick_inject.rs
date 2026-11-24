@@ -67,16 +67,11 @@ impl QuickInject {
     /// Reading changes nothing and creates no rule: the [`Sentence`] only says what the text means.
     pub fn read(&self, text: &str, known: &KnownNames) -> Sentence {
         let words = Word::all(text);
-        let mut reader = Reader {
-            words: words.iter(),
-            known,
-            draft: Draft::of(text),
-        };
-        reader.read_every_word();
+        let typing = Typing::at_the_end_of(text, &words);
+        let before = Reader::draft_of(text, typing.words_before(&words), known);
+        let completions = typing.completions(&before, known, self.configuration.completion_limit);
 
-        let completions =
-            Typing::at_the_end_of(text, &words).completions(&reader.draft, known, self.configuration.completion_limit);
-        let (rule, unread) = reader.draft.finish(&self.configuration);
+        let (rule, unread) = Reader::draft_of(text, &words, known).finish(&self.configuration);
         Sentence::new(text, rule, completions, unread)
     }
 }
@@ -92,11 +87,17 @@ struct Reader<'a> {
 }
 
 impl<'a> Reader<'a> {
-    /// Reads the sentence to its end.
-    fn read_every_word(&mut self) {
-        while let Some(word) = self.words.next() {
-            self.read(word, None);
+    /// What `words` say, which are words of `sentence`, in their order.
+    fn draft_of(sentence: &'a str, words: &'a [Word<'a>], known: &'a KnownNames) -> Draft<'a> {
+        let mut reader = Self {
+            words: words.iter(),
+            known,
+            draft: Draft::of(sentence),
+        };
+        while let Some(word) = reader.words.next() {
+            reader.read(word, None);
         }
+        reader.draft
     }
 
     /// The next word, without taking it.

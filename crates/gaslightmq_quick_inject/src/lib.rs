@@ -113,6 +113,7 @@
 //! - After the word for a kind of name, it offers names of that kind only.
 //! - After a preposition, the kind the preposition hints at comes first.
 //! - It offers nothing the sentence has no place for: no second lie, and no selector next to an API.
+//!   The words before the one that is being typed decide that. The word itself does not, whatever it reads as so far.
 //! - A name that would read as something else is offered with the word for its kind: `client payments`, `preset blackhole`.
 //! - A text that ends in white space offers every next word, up to the [limit](QuickInjectConfiguration::completion_limit).
 //!

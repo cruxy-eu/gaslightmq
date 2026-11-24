@@ -165,6 +165,32 @@ fn a_sentence_offers_only_what_it_still_has_a_place_for() {
 }
 
 #[test]
+fn the_word_that_is_being_typed_does_not_decide_what_it_can_become() {
+    let quick_inject = QuickInject::default();
+    let known = Shop::known().with_presets(["delay-1s".parse().unwrap()]);
+
+    let sentences: [(&str, &[Offered]); 3] = [
+        // `delay` is the lie already, and it can still become the preset.
+        ("delay", &[(PRESET, "delay-1s")]),
+        // After `on`, `order-p` is a topic already, and it can still become the selector.
+        ("leader-flap on order-p", &[(SELECTOR, "order-producers")]),
+        // The words before it do decide: a sentence with an API takes no selector.
+        ("leader-flap produce on order-p", &[]),
+    ];
+
+    for (typed, offered) in sentences {
+        let sentence = quick_inject.read(typed, &known);
+        let completions: Vec<(CompletionKind, &str)> = sentence
+            .completions()
+            .iter()
+            .map(|completion| (completion.kind(), completion.word()))
+            .collect();
+
+        assert_eq!(completions, offered, "{typed}");
+    }
+}
+
+#[test]
 fn a_name_completes_to_words_that_read_back_as_that_name() {
     let quick_inject = QuickInject::default();
     let known = Shop::known()

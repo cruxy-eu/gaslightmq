@@ -149,6 +149,8 @@ pub(crate) struct Typing<'a> {
     before: &'a str,
     /// What the word before says about this one.
     after: Option<Meaning<'a>>,
+    /// How many words stand before this one.
+    words_before: usize,
 }
 
 impl<'a> Typing<'a> {
@@ -162,7 +164,16 @@ impl<'a> Typing<'a> {
             typed: typed.map_or("", |typed| typed.text),
             before: typed.map_or(sentence, |typed| sentence.get(..typed.span.start()).unwrap_or_default()),
             after: earlier.last().and_then(|word| Meaning::of(word.text)),
+            words_before: earlier.len(),
         }
+    }
+
+    /// The words of the sentence that stand before this one, of which `words` are all the words.
+    ///
+    /// What they say decides what this word can still become.
+    /// The word itself does not: half a word often reads as something already, such as a topic after `on`.
+    pub(crate) fn words_before<'w>(&self, words: &'w [Word<'a>]) -> &'w [Word<'a>] {
+        words.get(..self.words_before).unwrap_or(words)
     }
 
     /// The kinds this word can be, best first.
@@ -228,7 +239,7 @@ impl<'a> Typing<'a> {
         }
     }
 
-    /// What the word can become, for a sentence that said `draft` so far: at most `limit` completions.
+    /// What the word can become, when the words before it said `draft`: at most `limit` completions.
     pub(crate) fn completions(&self, draft: &Draft<'_>, known: &KnownNames, limit: usize) -> Vec<Completion> {
         self.kinds()
             .into_iter()
