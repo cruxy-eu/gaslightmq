@@ -5,10 +5,11 @@ use std::sync::Arc;
 
 /// The name of a resource, such as `order-producers`.
 ///
-/// A name is the identity of a resource, and nothing else.
+/// A name is the identity of a resource between domains, and nothing else.
 /// Things reference a resource by its name: a rule names its selector and its preset, and a command names an
 /// environment.
-/// A resource keeps its name for as long as it exists, and no other identifier stands next to it.
+/// A resource keeps its name for as long as it exists.
+/// Its UUID stands next to its name, and only the workspace tells resources apart by it.
 ///
 /// A resource name does not say which kind of resource it names.
 /// Every kind has a name type of its own that wraps this one, and code speaks in those.
