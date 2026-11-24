@@ -282,7 +282,7 @@ Every other crate speaks in them.
 
 | Crate | Holds | Depends on |
 |---|---|---|
-| `session` | The state of one [session](../domains/session.md), which its pipeline owns: lifecycle, identity, session key, per-session counters, in-flight calls, response ordering and the stalled state. Also the client context that sessions share. | `field`, `kernel`, `call`, `wire`, `trigger`, `clock` |
+| `session` | The state of one [session](../domains/session.md), which its pipeline owns: lifecycle, identity, session key, per-session counters, in-flight calls, response ordering and the stalled state. Also the client context that sessions share, and the count that gives every call of an environment its [call ID](identity.md#call-id). | `field`, `kernel`, `call`, `wire`, `trigger`, `clock` |
 | `pipeline` | The [request pipeline](request-pipeline.md) as a state machine: all stages, both evaluation passes and partial refusals. Also the topics that a proxy knows by ID, which its sessions share. | `wire`, `wire_edit`, `selector`, `rule`, `trigger`, `lie`, `lie_api`, `combine`, `session`, `call`, `incident`, `field`, `kernel`, `clock` |
 
 ### Scenarios
@@ -396,10 +396,13 @@ impl Pipeline {
 - `BackendAnswerUnreadable` leaves its call without an answer, and returns a `Close` once that answer would be the next to leave.
 - A partial refusal returns a `Forward` with fewer partitions,
   and merges the refusals when `BackendAnswered` arrives.
-- A call ID is the connection and the number of the call on it, so it names one call of the engine.
+- A [call ID](identity.md#call-id) is one number, and it names one call of the environment.
+  The sessions of an engine count their calls together, so a higher ID is a later call, on whichever connection it came.
+  The ID does not say the connection: the call record keeps the connection number next to it.
 - An input that names a call or a timer the pipeline does not wait for changes nothing.
   The engine cannot avoid every race, such as an answer for a call whose session just closed.
-  Only `BackendFailed` ends the session whichever call of the connection it names.
+  Only `BackendFailed` ends the session whichever call it names.
+  The engine reports what a backend says about a call to the pipeline that forwarded the request, and to no other.
 - Shared counters and budgets are handles to atomics.
   They travel inside the armed rules of the snapshot.
   The pipeline increments them, and it still does no IO.
@@ -408,6 +411,8 @@ impl Pipeline {
     At the Identify stage, the pipeline takes the context of its `client.id` and `host` from that handle.
     It reads learned fields from the context, and writes what it learns.
     The engine expires the contexts that no session has shared for a while.
+  - The call IDs of the environment: one count of its calls, behind a handle to an atomic.
+    Every request that arrives takes the next ID from it, so the pipeline keeps no count of its own.
   - The topics that the cluster named with their ID.
     A topic ID is a fact of the cluster, so the names belong to the proxy, and not to one client.
     Every pipeline learns them from the truth of Metadata, `CreateTopics` and `DescribeTopicPartitions` calls,
@@ -552,7 +557,7 @@ The listener knows nothing about what a handler does with the client's bytes.
 ### The backend seam
 
 The engine reaches its backend through one async trait in the `backend` crate.
-The engine hands over a request under a call ID,
+The engine hands over a request under a call ID, with the number of the connection it arrived on,
 and the answer arrives later under the same ID.
 The backend names the [endpoints](backends.md#endpoints), and the engine opens a listener for each.
 A listener says which address it got, and the engine passes that address on to the backend,

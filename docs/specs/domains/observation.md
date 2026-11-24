@@ -9,9 +9,14 @@ Nothing depends on Observation.
 
 A call is one request and its response on one session.
 
+A call has a [call ID](../architecture/identity.md#call-id): one number.
+An environment counts its calls from 1, across all its connections, so a higher ID is a later call.
+The ID is written as the number alone, such as `42`.
+The form `#7` is a connection number, and a call ID never looks like one.
+
 | Part | Meaning |
 |---|---|
-| **Session** | The session the call ran on, with its identity. |
+| **Session** | The session the call ran on, with its identity. The number of its connection is no part of the call ID. |
 | **Request** | The decoded request, with every [field](targeting.md#fields). |
 | **Upstream** | What the real cluster answered, when the Upstream backend's [overlay](../architecture/backends.md#overlay) changed it. |
 | **Truth** | What the backend answered, if the request reached it. |

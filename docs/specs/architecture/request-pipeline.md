@@ -216,7 +216,8 @@ The same happens when the endpoint of the session closes, because its broker wen
 
 - No call in flight gets an answer, and none gets a response that the cluster did not send.
 - Every call in flight gets its record, and the explanation says why the backend ended the session.
-- A failure ends the session whichever call of the connection it names.
+- A failure ends the session whichever call it names.
   A Produce with `acks=0` has left the pipeline by the time its failure arrives.
+  The engine reports a failure to the pipeline that forwarded the request, and to no other.
 
 See [answers](backends.md#answers).
