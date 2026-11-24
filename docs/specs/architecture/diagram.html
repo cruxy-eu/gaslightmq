@@ -379,7 +379,7 @@ const CRATES = [
 
   ["control_api","Control","sans",1,4,"The control plane as types: resources, commands and stream messages. Re-exports the definition types its messages carry, and holds its own view of the World's state.",["call","journal","rule","scenario","selector","surface","incident","environment"]],
   ["quick_inject","Control","sans",0,4,"The ⌘K sentence parser: text to a rule definition, with completions. The host runs it behind the control plane.",["selector","lie","rule","trigger","field","kernel","clock"]],
-  ["surface","Control","sans",1,4,"Pad layouts, layers, pads as positions, the encoder mapping, and the intents a surface sends.",["rule"]],
+  ["surface","Control","sans",1,4,"Pad layouts, layers, pads as positions, the encoder mapping, and the intents a surface sends. Also the state of one surface: the layer it shows, its mode of play and its focus.",["rule","selector","trigger","lie","field","kernel","resource","clock"]],
   ["hardware_push2","Control","sans",1,7,"The Push 2 mapping: controller messages to surface intents, and rule state back to pad colours.",["surface"]],
 
   ["workspace","Workspace","sans",0,5,"The whole set of definitions as one model: cross-reference validation and the YAML layout. A reading error names the path of the key that failed. Works on file contents, not on files.",["selector","lie","incident","rule","scenario","surface","world","environment"]],
