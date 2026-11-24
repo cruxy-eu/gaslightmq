@@ -30,8 +30,8 @@ fn the_word_at_the_end_completes_to_the_words_that_start_like_it() {
 
     let sentences: [(&str, &[Offered]); 7] = [
         ("thr", &[(LIE, "throttle"), (ERROR_CODE, "THROTTLING_QUOTA_EXCEEDED")]),
-        ("delay prod", &[(API, "Produce")]),
-        ("delay PROD", &[(API, "Produce")]),
+        ("delay fetchs", &[(API, "FetchSnapshot")]),
+        ("delay FETCHS", &[(API, "FetchSnapshot")]),
         (
             "delay produce ord",
             &[(TOPIC, "orders.eu"), (TOPIC, "orders.us"), (CLIENT, "order-ingest")],
@@ -77,6 +77,9 @@ fn a_completion_gives_the_whole_sentence_with_room_for_the_next_word() {
         ("delay produce client ", "delay produce client order-ingest "),
         ("delay order-producers ", "delay order-producers order-ingest "),
         ("leader-fl", "leader-flap "),
+        // A word of a title finds the name, and the sentence takes the name.
+        ("flap", "leader-flap "),
+        ("delay producers", "delay order-producers "),
         ("leader-flap on order-p", "leader-flap on order-producers "),
     ];
 
@@ -89,6 +92,76 @@ fn a_completion_gives_the_whole_sentence_with_room_for_the_next_word() {
             "{typed}"
         );
     }
+}
+
+#[test]
+fn a_preset_and_a_selector_complete_from_a_word_of_their_title() {
+    let quick_inject = QuickInject::default();
+    let known = Shop::known().with_presets([("election-storm".parse().unwrap(), None)]);
+
+    let sentences: [(&str, &[(CompletionKind, &str, Option<&str>)]); 8] = [
+        ("flap", &[(PRESET, "leader-flap", Some("Leader flap"))]),
+        (
+            "delay prod",
+            &[
+                (API, "Produce", None),
+                (SELECTOR, "order-producers", Some("Order producers")),
+            ],
+        ),
+        (
+            "delay PROD",
+            &[
+                (API, "Produce", None),
+                (SELECTOR, "order-producers", Some("Order producers")),
+            ],
+        ),
+        // The whole word of a title finds the name too.
+        (
+            "delay producers",
+            &[(SELECTOR, "order-producers", Some("Order producers"))],
+        ),
+        // A name that starts like the word comes before a name with such a title.
+        (
+            "elec",
+            &[
+                (PRESET, "election-storm", None),
+                (PRESET, "leader-election", Some("Leader election")),
+                (API, "ElectLeaders", None),
+                (ERROR_CODE, "ELECTION_NOT_NEEDED", None),
+            ],
+        ),
+        // A name that starts like the word carries its title as well.
+        ("order-p", &[(SELECTOR, "order-producers", Some("Order producers"))]),
+        // The word starts a word of the title, and does not stand somewhere inside one.
+        ("delay ducers", &[]),
+        // The name is there already.
+        ("leader-flap", &[]),
+    ];
+
+    for (typed, offered) in sentences {
+        let sentence = quick_inject.read(typed, &known);
+        let completions: Vec<(CompletionKind, &str, Option<&str>)> = sentence
+            .completions()
+            .iter()
+            .map(|completion| (completion.kind(), completion.word(), completion.title()))
+            .collect();
+
+        assert_eq!(completions, offered, "{typed}");
+    }
+}
+
+#[test]
+fn a_topic_and_a_client_have_no_title() {
+    let quick_inject = QuickInject::default();
+    let sentence = quick_inject.read("delay produce or", &Shop::known());
+
+    let titles: Vec<(CompletionKind, Option<&str>)> = sentence
+        .completions()
+        .iter()
+        .map(|completion| (completion.kind(), completion.title()))
+        .collect();
+
+    assert_eq!(titles, [(TOPIC, None), (TOPIC, None), (CLIENT, None)]);
 }
 
 #[test]
@@ -167,7 +240,7 @@ fn a_sentence_offers_only_what_it_still_has_a_place_for() {
 #[test]
 fn the_word_that_is_being_typed_does_not_decide_what_it_can_become() {
     let quick_inject = QuickInject::default();
-    let known = Shop::known().with_presets(["delay-1s".parse().unwrap()]);
+    let known = Shop::known().with_presets([("delay-1s".parse().unwrap(), None)]);
 
     let sentences: [(&str, &[Offered]); 3] = [
         // `delay` is the lie already, and it can still become the preset.
@@ -195,7 +268,7 @@ fn a_name_completes_to_words_that_read_back_as_that_name() {
     let quick_inject = QuickInject::default();
     let known = Shop::known()
         .with_topics(["fetch".parse().unwrap()])
-        .with_presets(["blackhole".parse().unwrap()]);
+        .with_presets([("blackhole".parse().unwrap(), None)]);
 
     let sentences: [(&str, &[Offered]); 6] = [
         (

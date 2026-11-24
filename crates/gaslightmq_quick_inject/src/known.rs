@@ -1,34 +1,44 @@
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use gaslightmq_kernel::{ClientId, GroupId, TopicName};
-use gaslightmq_rule::PresetName;
-use gaslightmq_selector::SelectorName;
+use gaslightmq_rule::{PresetName, PresetTitle};
+use gaslightmq_selector::{SelectorName, SelectorTitle};
 
 use crate::CompletionKind;
 
 /// The names the system knows, which a sentence can say without saying what they are.
 ///
 /// Whoever reads a sentence hands them over: the topics, groups and clients that the traffic showed,
-/// and the presets and selectors of the workspace.
+/// and the presets and selectors of the workspace, each with its title when it has one.
 /// A sentence reads a known name by itself, and it offers the known names as completions.
 /// A name that is not known still reads after the word for its kind: `topic orders.eu`.
+///
+/// A sentence says a preset and a selector by its name, and never by its title.
+/// The title only helps to find the name: a word that starts a word of the title completes to the name.
 ///
 /// ```
 /// use gaslightmq_kernel::prelude::*;
 /// use gaslightmq_quick_inject::prelude::*;
+/// use gaslightmq_selector::prelude::*;
 ///
 /// let known = KnownNames::new()
 ///     .with_topics(["orders.eu".parse()?, "orders.us".parse()?])
-///     .with_clients([ClientId::new("order-ingest").expect("a client ID")]);
+///     .with_clients([ClientId::new("order-ingest").expect("a client ID")])
+///     .with_selectors([(
+///         "order-producers".parse().expect("a selector name"),
+///         Some("Order producers".parse().expect("a selector title")),
+///     )]);
 ///
 /// assert_eq!(known.topics().count(), 2);
 /// assert!(known.groups().next().is_none());
+/// let titles: Vec<Option<&str>> = known.selectors().map(|(_, title)| title.map(SelectorTitle::as_str)).collect();
+/// assert_eq!(titles, [Some("Order producers")]);
 /// # Ok::<(), TopicNameError>(())
 /// ```
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct KnownNames {
-    presets: BTreeSet<PresetName>,
-    selectors: BTreeSet<SelectorName>,
+    presets: BTreeMap<PresetName, Option<PresetTitle>>,
+    selectors: BTreeMap<SelectorName, Option<SelectorTitle>>,
     topics: BTreeSet<TopicName>,
     groups: BTreeSet<GroupId>,
     clients: BTreeSet<ClientId>,
@@ -61,16 +71,21 @@ impl KnownNames {
         self
     }
 
-    /// The same names, and those presets.
+    /// The same names, and those presets, each with its title when it has one.
+    /// A preset that is there already takes the new title.
     #[must_use]
-    pub fn with_presets(mut self, presets: impl IntoIterator<Item = PresetName>) -> Self {
+    pub fn with_presets(mut self, presets: impl IntoIterator<Item = (PresetName, Option<PresetTitle>)>) -> Self {
         self.presets.extend(presets);
         self
     }
 
-    /// The same names, and those selectors.
+    /// The same names, and those selectors, each with its title when it has one.
+    /// A selector that is there already takes the new title.
     #[must_use]
-    pub fn with_selectors(mut self, selectors: impl IntoIterator<Item = SelectorName>) -> Self {
+    pub fn with_selectors(
+        mut self,
+        selectors: impl IntoIterator<Item = (SelectorName, Option<SelectorTitle>)>,
+    ) -> Self {
         self.selectors.extend(selectors);
         self
     }
@@ -90,21 +105,21 @@ impl KnownNames {
         self.clients.iter()
     }
 
-    /// The known presets, in the order of their names.
-    pub fn presets(&self) -> impl Iterator<Item = &PresetName> {
-        self.presets.iter()
+    /// The known presets with their titles, in the order of their names.
+    pub fn presets(&self) -> impl Iterator<Item = (&PresetName, Option<&PresetTitle>)> {
+        self.presets.iter().map(|(name, title)| (name, title.as_ref()))
     }
 
-    /// The known selectors, in the order of their names.
-    pub fn selectors(&self) -> impl Iterator<Item = &SelectorName> {
-        self.selectors.iter()
+    /// The known selectors with their titles, in the order of their names.
+    pub fn selectors(&self) -> impl Iterator<Item = (&SelectorName, Option<&SelectorTitle>)> {
+        self.selectors.iter().map(|(name, title)| (name, title.as_ref()))
     }
 
     /// Whether `name` is known as a name of `kind`.
     pub(crate) fn knows(&self, kind: NameKind, name: &str) -> bool {
         match kind {
-            NameKind::Preset => self.presets.contains(name),
-            NameKind::Selector => self.selectors.contains(name),
+            NameKind::Preset => self.presets.contains_key(name),
+            NameKind::Selector => self.selectors.contains_key(name),
             NameKind::Topic => self.topics.contains(name),
             NameKind::Group => self.groups.contains(name),
             NameKind::Client => self.clients.contains(name),
@@ -120,17 +135,37 @@ impl KnownNames {
             .or_else(|| NameKind::KNOWN.into_iter().find(|kind| self.knows(*kind, name)))
     }
 
-    /// The text of every known name of `kind`, in the order of the names.
-    pub(crate) fn names(&self, kind: NameKind) -> Vec<&str> {
+    /// Every known name of `kind`, in the order of the names.
+    pub(crate) fn names(&self, kind: NameKind) -> Vec<Known<'_>> {
+        let untitled = |name| Known { name, title: None };
         match kind {
-            NameKind::Preset => self.presets.iter().map(PresetName::as_str).collect(),
-            NameKind::Selector => self.selectors.iter().map(SelectorName::as_str).collect(),
-            NameKind::Topic => self.topics.iter().map(TopicName::as_str).collect(),
-            NameKind::Group => self.groups.iter().map(GroupId::as_str).collect(),
-            NameKind::Client => self.clients.iter().map(ClientId::as_str).collect(),
+            NameKind::Preset => self
+                .presets()
+                .map(|(name, title)| Known {
+                    name: name.as_str(),
+                    title: title.map(PresetTitle::as_str),
+                })
+                .collect(),
+            NameKind::Selector => self
+                .selectors()
+                .map(|(name, title)| Known {
+                    name: name.as_str(),
+                    title: title.map(SelectorTitle::as_str),
+                })
+                .collect(),
+            NameKind::Topic => self.topics.iter().map(TopicName::as_str).map(untitled).collect(),
+            NameKind::Group => self.groups.iter().map(GroupId::as_str).map(untitled).collect(),
+            NameKind::Client => self.clients.iter().map(ClientId::as_str).map(untitled).collect(),
             NameKind::Broker => Vec::new(),
         }
     }
+}
+
+/// One known name, with the title of what it names. Only a preset and a selector can have one.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct Known<'a> {
+    pub name: &'a str,
+    pub title: Option<&'a str>,
 }
 
 /// What a name in a sentence names.

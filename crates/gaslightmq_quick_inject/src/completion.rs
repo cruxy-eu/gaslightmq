@@ -4,7 +4,7 @@ use gaslightmq_kernel::{ApiKey, ErrorCode};
 
 use crate::KnownNames;
 use crate::draft::Draft;
-use crate::known::NameKind;
+use crate::known::{Known, NameKind};
 use crate::words::{LieWord, Meaning, Word};
 
 /// What a completion is, so a surface can show it next to the word.
@@ -99,13 +99,18 @@ impl fmt::Display for CompletionKind {
 /// ```
 /// use gaslightmq_quick_inject::prelude::*;
 ///
-/// let known = KnownNames::new().with_presets(["leader-flap".parse()?, "blackhole".parse()?]);
+/// let known = KnownNames::new().with_presets([
+///     ("leader-flap".parse()?, Some("Flapping leader".parse().expect("a preset title"))),
+///     ("blackhole".parse()?, None),
+/// ]);
 /// let quick_inject = QuickInject::default();
 ///
-/// let sentence = quick_inject.read("produce lead", &known);
+/// // A word that starts a word of the title finds the preset, and the sentence takes its name.
+/// let sentence = quick_inject.read("produce flap", &known);
 /// let completion = &sentence.completions()[0];
 /// assert_eq!(completion.kind(), CompletionKind::Preset);
 /// assert_eq!(completion.word(), "leader-flap");
+/// assert_eq!(completion.title(), Some("Flapping leader"));
 /// assert_eq!(completion.sentence(), "produce leader-flap ");
 ///
 /// // `blackhole` alone is the lie, so the preset of that name has the word for its kind in front.
@@ -118,6 +123,7 @@ impl fmt::Display for CompletionKind {
 pub struct Completion {
     kind: CompletionKind,
     word: String,
+    title: Option<String>,
     sentence: String,
 }
 
@@ -127,11 +133,17 @@ impl Completion {
         self.kind
     }
 
-    /// The word as the sentence writes it.
+    /// The word as the sentence writes it. For a preset and a selector it is the name, and never the title.
     ///
     /// A name that would read as something else has the word for its kind in front: `client payments`.
     pub fn word(&self) -> &str {
         &self.word
+    }
+
+    /// The title of the preset or the selector that the word names, when it has one.
+    /// A surface shows it next to the name. Every other kind of completion has none.
+    pub fn title(&self) -> Option<&str> {
+        self.title.as_deref()
     }
 
     /// The whole sentence with the word in place, and a space after it for the next word.
@@ -200,6 +212,26 @@ impl<'a> Typing<'a> {
             && !candidate.eq_ignore_ascii_case(self.typed)
     }
 
+    /// Whether the word starts like a word of `title`, in any case.
+    /// Whatever is no letter and no digit stands between the words of a title.
+    fn starts_a_word_of(&self, title: &str) -> bool {
+        let typed = self.typed.to_lowercase();
+        title
+            .split(|character: char| !character.is_alphanumeric())
+            .any(|word| !word.is_empty() && word.to_lowercase().starts_with(&typed))
+    }
+
+    /// The names among `known` that this word can still become: first those it starts like,
+    /// then those with a title of which it starts a word.
+    fn found_among<'k>(&self, known: Vec<Known<'k>>) -> Vec<Known<'k>> {
+        let by_title = |known: &Known<'_>| {
+            !known.name.eq_ignore_ascii_case(self.typed)
+                && known.title.is_some_and(|title| self.starts_a_word_of(title))
+        };
+        let (by_name, others): (Vec<_>, Vec<_>) = known.into_iter().partition(|known| self.starts(known.name));
+        by_name.into_iter().chain(others.into_iter().filter(by_title)).collect()
+    }
+
     /// How a sentence writes `name` here, so that it reads back as a name of `kind`.
     /// `None` for a name that no sentence can write: one without a character, or one with white space.
     fn written(&self, kind: NameKind, name: &str, known: &KnownNames) -> Option<String> {
@@ -221,20 +253,22 @@ impl<'a> Typing<'a> {
         }
     }
 
-    /// Every word of `kind` that this word can become, as the sentence writes it.
-    fn candidates(&self, kind: CompletionKind, known: &KnownNames) -> Vec<String> {
+    /// Every word of `kind` that this word can become, as the sentence writes it, with the title of what it names.
+    fn candidates(&self, kind: CompletionKind, known: &KnownNames) -> Vec<(String, Option<String>)> {
         match kind.names() {
             None => kind
                 .vocabulary()
                 .into_iter()
                 .filter(|word| self.starts(word))
-                .map(str::to_owned)
+                .map(|word| (word.to_owned(), None))
                 .collect(),
-            Some(names) => known
-                .names(names)
+            Some(names) => self
+                .found_among(known.names(names))
                 .into_iter()
-                .filter(|name| self.starts(name))
-                .filter_map(|name| self.written(names, name, known))
+                .filter_map(|found| {
+                    let word = self.written(names, found.name, known)?;
+                    Some((word, found.title.map(str::to_owned)))
+                })
                 .collect(),
         }
     }
@@ -245,11 +279,14 @@ impl<'a> Typing<'a> {
             .into_iter()
             .filter(|kind| draft.still_takes(*kind))
             .flat_map(|kind| {
-                self.candidates(kind, known).into_iter().map(move |word| Completion {
-                    kind,
-                    sentence: format!("{}{word} ", self.before),
-                    word,
-                })
+                self.candidates(kind, known)
+                    .into_iter()
+                    .map(move |(word, title)| Completion {
+                        kind,
+                        sentence: format!("{}{word} ", self.before),
+                        word,
+                        title,
+                    })
             })
             .take(limit)
             .collect()

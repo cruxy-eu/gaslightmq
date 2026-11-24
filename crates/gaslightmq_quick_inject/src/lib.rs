@@ -8,7 +8,7 @@
 //! |---|---|
 //! | [`QuickInject`] | The parser. It [reads](QuickInject::read) the text typed so far. |
 //! | [`QuickInjectConfiguration`] | What a sentence means where it leaves a value out, and how many completions it offers. |
-//! | [`KnownNames`] | The topics, groups, clients, presets and selectors the system knows. Whoever reads a sentence hands them over. |
+//! | [`KnownNames`] | The topics, groups, clients, presets and selectors the system knows, and the titles of the last two. Whoever reads a sentence hands them over. |
 //! | [`Sentence`] | A sentence as it was read: the rule, the completions and what was not read. |
 //! | [`Completion`], [`CompletionKind`] | One thing the word at the end can become, and what it is. |
 //! | [`Unread`] | A part of the sentence that was not read: where it stands, and why. |
@@ -24,7 +24,7 @@
 //! // The host knows these names from the traffic and from the workspace.
 //! let known = KnownNames::new()
 //!     .with_topics(["orders.eu".parse().expect("a topic"), "orders.us".parse().expect("a topic")])
-//!     .with_presets(["leader-flap".parse()?]);
+//!     .with_presets([("leader-flap".parse()?, None)]);
 //! let quick_inject = QuickInject::default();
 //!
 //! // Someone types. The word at the end of the text is no word yet, and it can become a topic.
@@ -110,6 +110,9 @@
 //! A sentence [offers](Sentence::completions) the words that start like it, in any case:
 //! lie words, presets, APIs, selectors, topics, groups, clients and error codes, in that order.
 //!
+//! - A preset and a selector also complete from their title: a word that starts any word of the title offers the name.
+//!   `prod` offers `order-producers`, when its title is `Order producers`.
+//!   The sentence takes the name and never the title, and the [completion](Completion::title) carries the title to show.
 //! - After the word for a kind of name, it offers names of that kind only.
 //! - After a preposition, the kind the preposition hints at comes first.
 //! - It offers nothing the sentence has no place for: no second lie, and no selector next to an API.
