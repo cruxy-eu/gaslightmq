@@ -7,6 +7,7 @@ use crate::name::{EnvironmentName, WorldName};
 use crate::ports::Taken;
 use crate::recording::RecordingMode;
 use crate::schema_registry::SchemaRegistry;
+use crate::title::EnvironmentTitle;
 use crate::upstream::Upstream;
 
 /// The proxy of an environment: where it listens, and how much its recordings keep.
@@ -246,18 +247,36 @@ impl fmt::Display for Instances {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Environment {
     name: EnvironmentName,
+    title: Option<EnvironmentTitle>,
     instances: Instances,
     schema_registry: Option<SchemaRegistry>,
 }
 
 impl Environment {
-    /// The environment of this name with these instances, and without a schema registry.
+    /// The environment of this name with these instances, without a title and without a schema registry.
     pub fn new(name: EnvironmentName, instances: Instances) -> Self {
         Self {
             name,
+            title: None,
             instances,
             schema_registry: None,
         }
+    }
+
+    /// The same environment with a title, which says what the environment is.
+    /// It replaces the title the environment had before.
+    #[must_use]
+    pub fn with_title(self, title: EnvironmentTitle) -> Self {
+        Self {
+            title: Some(title),
+            ..self
+        }
+    }
+
+    /// The same environment without a title.
+    #[must_use]
+    pub fn without_title(self) -> Self {
+        Self { title: None, ..self }
     }
 
     /// The same environment with this schema registry.
@@ -296,9 +315,14 @@ impl Environment {
         self
     }
 
-    /// The name of the environment.
+    /// The name of the environment, unique among environments. It is the identity of the environment.
     pub fn name(&self) -> &EnvironmentName {
         &self.name
+    }
+
+    /// What the environment is, in free text, when someone wrote it down.
+    pub fn title(&self) -> Option<&EnvironmentTitle> {
+        self.title.as_ref()
     }
 
     /// The instances that run together, and the shape they have.
@@ -695,5 +719,22 @@ mod tests {
             }),
             "environment \"shop\" has its schema registry and a Kafka listener both on 0.0.0.0:9092"
         );
+    }
+
+    #[test]
+    fn an_environment_has_a_title_when_someone_gives_it_one() {
+        let title = |text: &str| text.parse::<EnvironmentTitle>().unwrap();
+        let staging = Environment::new(name("staging-proxy"), in_front_of_cluster());
+        let titled = staging.clone().with_title(title("The proxy in front of staging"));
+
+        assert_eq!(staging.title(), None);
+        assert_eq!(titled.title(), Some(&title("The proxy in front of staging")));
+        assert_eq!(titled.name(), staging.name());
+        assert_eq!(titled.instances(), staging.instances());
+        assert_eq!(
+            titled.clone().with_title(title("Staging")).title(),
+            Some(&title("Staging"))
+        );
+        assert_eq!(titled.without_title(), staging);
     }
 }

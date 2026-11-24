@@ -99,7 +99,7 @@
 //!
 //! | Type | Form |
 //! |---|---|
-//! | A name, a [`HostName`], an address, a [`PortRange`], a [`SchemaRegistryUrl`], a [`FilePath`], a [`VariableName`] | The text. |
+//! | A name, an [`EnvironmentTitle`], a [`HostName`], an address, a [`PortRange`], a [`SchemaRegistryUrl`], a [`FilePath`], a [`VariableName`] | The text. |
 //! | [`RecordingMode`], [`SaslMechanism`], [`SettingSource`] | The name. |
 //! | [`SecretRef`] | A map with one entry: `file` and the path, or `env` and the name of the variable. |
 //! | [`BrokerListeners`] | The text of a range, or a map from broker IDs to addresses. |
@@ -108,7 +108,7 @@
 //! | [`Tls`] | A map with `ca` when it has one. |
 //! | [`Sasl`] | A map with `mechanism`, `username` and `password`. |
 //! | [`SchemaRegistry`] | A map with `listen`, or a map with `url`. |
-//! | [`Environment`] | A map with `name`, and with the `broker`, `proxy` and `schema_registry` blocks it has. |
+//! | [`Environment`] | A map with `name`, with `title` when it has one, and with the `broker`, `proxy` and `schema_registry` blocks it has. |
 //! | [`EffectiveSetting`] | A map with `value` and `source`. |
 //!
 //! The `proxy` block has `listen`, and `upstream` and `recording` when the proxy has them.
@@ -117,6 +117,7 @@
 //!
 //! ```yaml
 //! name: orders-sim
+//! title: The order cluster behind a proxy
 //! broker:
 //!   world: orders-sim
 //! proxy:
@@ -135,6 +136,7 @@
 //! | Type | Error | What is wrong |
 //! |---|---|---|
 //! | [`EnvironmentName`], [`WorldName`] | [`EnvironmentNameError`], [`WorldNameError`] | The text breaks a part of the [rule for names](EnvironmentName#the-rule-for-names). |
+//! | [`EnvironmentTitle`] | [`EnvironmentTitleError`] | The text breaks a part of the [rule for titles](EnvironmentTitle#the-rule-for-titles). |
 //! | [`HostName`] | [`HostNameError`] | The text is no IP address and no name of a host. |
 //! | [`ServerAddress`] | [`ServerAddressError`] | The host or the port is missing or wrong. |
 //! | [`ListenAddress`] | [`ListenAddressError`] | The text is not an IP address and a port. |
@@ -173,6 +175,7 @@ mod serde;
 mod set;
 mod setting;
 mod text;
+mod title;
 mod upstream;
 
 pub use address::{ListenAddress, ListenAddressError, ServerAddress, ServerAddressError};
@@ -186,6 +189,7 @@ pub use schema_registry::{SchemaRegistry, SchemaRegistryError, SchemaRegistryUrl
 pub use secret::{FilePath, FilePathError, SecretRef, SecretRefError, VariableName, VariableNameError};
 pub use set::{EnvironmentSet, EnvironmentSetError};
 pub use setting::{EffectiveSetting, Setting, SettingSource, SettingSourceError};
+pub use title::{EnvironmentTitle, EnvironmentTitleError};
 pub use upstream::{Sasl, SaslMechanism, SaslMechanismError, SaslUsername, SaslUsernameError, Tls, Upstream};
 
 /// Every item of this crate.
@@ -207,11 +211,12 @@ pub mod prelude {
     #[doc(no_inline)]
     pub use crate::{
         BrokerDefinition, BrokerListeners, BrokerListenersError, EffectiveSetting, Environment, EnvironmentError,
-        EnvironmentName, EnvironmentNameError, EnvironmentSet, EnvironmentSetError, FilePath, FilePathError, HostName,
-        HostNameError, Instances, ListenAddress, ListenAddressError, Listeners, ListenersError, PortRange,
-        PortRangeError, ProxyDefinition, RecordingMode, RecordingModeError, Sasl, SaslMechanism, SaslMechanismError,
-        SaslUsername, SaslUsernameError, SchemaRegistry, SchemaRegistryError, SchemaRegistryUrl,
-        SchemaRegistryUrlError, SecretRef, SecretRefError, ServerAddress, ServerAddressError, Setting, SettingSource,
-        SettingSourceError, Tls, Upstream, VariableName, VariableNameError, WorldName, WorldNameError,
+        EnvironmentName, EnvironmentNameError, EnvironmentSet, EnvironmentSetError, EnvironmentTitle,
+        EnvironmentTitleError, FilePath, FilePathError, HostName, HostNameError, Instances, ListenAddress,
+        ListenAddressError, Listeners, ListenersError, PortRange, PortRangeError, ProxyDefinition, RecordingMode,
+        RecordingModeError, Sasl, SaslMechanism, SaslMechanismError, SaslUsername, SaslUsernameError, SchemaRegistry,
+        SchemaRegistryError, SchemaRegistryUrl, SchemaRegistryUrlError, SecretRef, SecretRefError, ServerAddress,
+        ServerAddressError, Setting, SettingSource, SettingSourceError, Tls, Upstream, VariableName, VariableNameError,
+        WorldName, WorldNameError,
     };
 }

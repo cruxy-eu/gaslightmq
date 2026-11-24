@@ -162,6 +162,39 @@ fn a_broker_alone_writes_its_own_listeners() {
 }
 
 #[test]
+fn an_environment_writes_its_title_when_it_has_one() {
+    // name: plain-kafka
+    // title: A broker that nothing lies about
+    // broker:
+    //   world: orders-sim
+    //   listen:
+    //     bootstrap: 0.0.0.0:39092
+    //     brokers: 0.0.0.0:39093-39192
+    //     advertise: localhost
+    let plain = Environment::new(
+        name("plain-kafka"),
+        Instances::BrokerAlone {
+            broker: broker("orders-sim"),
+            listen: listen("0.0.0.0:39092", "0.0.0.0:39093-39192", "localhost"),
+        },
+    )
+    .with_title("A broker that nothing lies about".parse().unwrap());
+
+    writes(
+        &plain,
+        concat!(
+            r#"{"name":"plain-kafka","title":"A broker that nothing lies about","broker":{"world":"orders-sim","#,
+            r#""listen":{"bootstrap":"0.0.0.0:39092","brokers":"0.0.0.0:39093-39192","advertise":"localhost"}}}"#,
+        ),
+    );
+    writes(
+        &"A broker that nothing lies about".parse::<EnvironmentTitle>().unwrap(),
+        r#""A broker that nothing lies about""#,
+    );
+    rejects::<EnvironmentTitle>(r#""""#, "environment title \"\" is empty");
+}
+
+#[test]
 fn an_environment_writes_its_schema_registry() {
     // schema_registry:
     //   listen: 0.0.0.0:8081

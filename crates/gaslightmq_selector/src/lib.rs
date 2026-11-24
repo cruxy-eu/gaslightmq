@@ -91,7 +91,7 @@
 //!
 //! | Type | Form |
 //! |---|---|
-//! | [`SelectorName`], [`Glob`] | The text. |
+//! | [`SelectorName`], [`SelectorTitle`], [`Glob`] | The text. |
 //! | [`Conditions`], [`Scope`] | A map with one entry per condition: the field, and the form of the condition. |
 //! | [`Condition`] | The same map with one entry. |
 //! | [`Selector`] | A map with `name`, and with `include` and `match` when it has them. |
@@ -133,6 +133,7 @@
 //! |---|---|---|
 //! | [`Glob`] | [`GlobError`] | The pattern is empty. |
 //! | [`SelectorName`] | [`SelectorNameError`] | The text breaks a part of the [rule for names](SelectorName#the-rule-for-names). |
+//! | [`SelectorTitle`] | [`SelectorTitleError`] | The text breaks a part of the [rule for titles](SelectorTitle#the-rule-for-titles). |
 //! | [`Operator`] | [`OperatorError`] | No operator has this name. |
 //! | [`ValueSet`] | [`ValueSetError`] | There is no value, the values belong to different fields, or a list holds a pattern. |
 //! | [`Condition`] | [`ConditionError`] | The text is not a value of the field. |
@@ -159,6 +160,7 @@ mod selector;
 mod serde;
 mod set;
 mod text;
+mod title;
 
 pub use condition::{Condition, ConditionError, Operator, OperatorError, ValueSet, ValueSetError};
 pub use conditions::{Conditions, Scope, ScopeError};
@@ -168,6 +170,7 @@ pub use index::ApiIndex;
 pub use name::{SelectorName, SelectorNameError};
 pub use selector::{Selector, SelectorRef};
 pub use set::{SelectorSet, SelectorSetError};
+pub use title::{SelectorTitle, SelectorTitleError};
 
 /// Every item of this crate.
 ///
@@ -188,6 +191,6 @@ pub mod prelude {
     pub use crate::{
         ApiIndex, Apis, Condition, ConditionError, Conditions, EffectiveSelector, Glob, GlobError, Match, Operator,
         OperatorError, Pass, Scope, ScopeError, Selector, SelectorName, SelectorNameError, SelectorRef, SelectorSet,
-        SelectorSetError, ValueSet, ValueSetError,
+        SelectorSetError, SelectorTitle, SelectorTitleError, ValueSet, ValueSetError,
     };
 }

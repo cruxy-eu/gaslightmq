@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 use std::collections::btree_map;
 
-use crate::{Action, ActionRef, PresetName};
+use crate::{Action, ActionRef, PresetName, PresetTitle};
 
 /// A named, reusable lie or incident with its parameters.
 ///
@@ -37,17 +37,36 @@ use crate::{Action, ActionRef, PresetName};
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Preset {
     name: PresetName,
+    #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Option::is_none"))]
+    title: Option<PresetTitle>,
     #[cfg_attr(feature = "serde", serde(flatten))]
     action: Action,
 }
 
 impl Preset {
-    /// The preset that gives `action` a name.
+    /// The preset that gives `action` a name. It has no title.
     pub fn new(name: PresetName, action: impl Into<Action>) -> Self {
         Self {
             name,
+            title: None,
             action: action.into(),
         }
+    }
+
+    /// The same preset with a title, which says what the preset does.
+    /// It replaces the title the preset had before.
+    #[must_use]
+    pub fn with_title(self, title: PresetTitle) -> Self {
+        Self {
+            title: Some(title),
+            ..self
+        }
+    }
+
+    /// The same preset without a title.
+    #[must_use]
+    pub fn without_title(self) -> Self {
+        Self { title: None, ..self }
     }
 
     /// The same preset with another action.
@@ -59,9 +78,14 @@ impl Preset {
         }
     }
 
-    /// The name of the preset, unique among presets.
+    /// The name of the preset, unique among presets. It is the identity of the preset.
     pub fn name(&self) -> &PresetName {
         &self.name
+    }
+
+    /// What the preset does, in free text, when someone wrote it down.
+    pub fn title(&self) -> Option<&PresetTitle> {
+        self.title.as_ref()
     }
 
     /// The lie or the incident the preset names.
@@ -270,5 +294,20 @@ mod tests {
         assert_eq!(set.resolve(&name("Leader flap").into()), Some(flap().action()));
         assert_eq!(set.resolve(&inline), Some(&Action::Lie(LieDefinition::Silence)));
         assert_eq!(set.resolve(&name("Blackhole").into()), None);
+    }
+
+    #[test]
+    fn a_preset_has_a_title_when_someone_gives_it_one() {
+        let title = |text: &str| text.parse::<PresetTitle>().unwrap();
+        let titled = delay().with_title(title("Delay 1 s"));
+
+        assert_eq!(delay().title(), None);
+        assert_eq!(titled.title(), Some(&title("Delay 1 s")));
+        assert_eq!(titled.name(), delay().name());
+        assert_eq!(
+            titled.clone().with_title(title("One second late")).title(),
+            Some(&title("One second late"))
+        );
+        assert_eq!(titled.without_title(), delay());
     }
 }

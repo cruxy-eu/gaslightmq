@@ -1,4 +1,5 @@
-//! The resource vocabulary: the name of a resource, and the one rule that every name follows.
+//! The resource vocabulary: the name and the title of a resource, with the one rule that every name follows and the
+//! one that every title follows.
 //!
 //! A resource is a definition that someone names: a selector, a preset, a rule or an environment.
 //! A name is the identity of its resource, and nothing else: whatever references a resource does so by its name,
@@ -6,11 +7,18 @@
 //! A resource keeps its name for as long as it exists.
 //! Whoever wants another name makes a new resource.
 //!
+//! A title is the free text that says what a resource is for.
+//! It is a part of the resource, next to its name, and never a part of the name.
+//! Nothing references a title, so it changes freely.
+//!
 //! | Type | Is |
 //! |---|---|
 //! | [`ResourceName`] | The name of a resource: a slug that follows [the rule for names](ResourceName#the-rule-for-names). |
 //! | [`ResourceNameError`] | Why a text is no name: the part of the rule it breaks. |
 //! | [`name!`] | The name of one kind of resource and its error, written into the crate of that kind. |
+//! | [`ResourceTitle`] | The title of a resource: free text that follows [the rule for titles](ResourceTitle#the-rule-for-titles). |
+//! | [`ResourceTitleError`] | Why a text is no title: the part of the rule it breaks. |
+//! | [`title!`] | The title of one kind of resource and its error, written into the crate of that kind. |
 //!
 //! ```
 //! use gaslightmq_resource::{ResourceName, ResourceNameError};
@@ -24,7 +32,7 @@
 //! # Ok::<(), ResourceNameError>(())
 //! ```
 //!
-//! # A name per kind
+//! # A name and a title per kind
 //!
 //! Every kind of resource has a name type of its own, in the crate of that kind: the name of a selector, of a rule,
 //! of a preset.
@@ -38,20 +46,27 @@
 //! The crate of a kind calls it once for each name, with the two types and the words that a message calls the name by:
 //! `gaslightmq_resource::name!(SelectorName, SelectorNameError, "selector name");`
 //!
+//! The same holds for titles.
+//! [`title!`] writes the title of one kind and its error, around a [`ResourceTitle`]:
+//! `gaslightmq_resource::title!(SelectorTitle, SelectorTitleError, "selector title");`
+//! The type that holds a resource has the title as an optional part: a title is never a part of a name.
+//!
 //! The crate is internal, and says so in its manifest.
 //! A crate that uses it shows none of its types: not in what it offers, and not in what it documents.
 //! `cargo xtask internal-crates` holds every such crate to that.
 //! A call of the macro passes that check, because it names no type of this crate,
-//! and what the macro writes keeps the [`ResourceName`] in a private field.
+//! and what a macro writes keeps the [`ResourceName`] or the [`ResourceTitle`] in a private field.
 //!
 //! # No IO
 //!
 //! The crate depends on no other crate of the workspace.
 //! It has no async code, no IO, no system clock and no randomness, and it compiles to WebAssembly.
 //!
-//! The `serde` feature maps a [`ResourceName`] to its text.
+//! The `serde` feature maps a [`ResourceName`] and a [`ResourceTitle`] to their text.
 
 mod kind;
 mod name;
+mod title;
 
 pub use name::{ResourceName, ResourceNameError};
+pub use title::{ResourceTitle, ResourceTitleError};

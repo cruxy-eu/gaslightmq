@@ -6,8 +6,9 @@
 //!
 //! | Type | Is |
 //! |---|---|
-//! | [`Rule`] | A rule as a file writes it: a name, a selector, a scope, an action, a trigger, a lifetime and a dice key. |
-//! | [`RuleName`], [`PresetName`] | The names that other things reference a rule and a preset by. |
+//! | [`Rule`] | A rule as a file writes it: a name, a title, a selector, a scope, an action, a trigger, a lifetime and a dice key. |
+//! | [`RuleName`], [`PresetName`] | The names that other things reference a rule and a preset by: slugs, and their identity. |
+//! | [`RuleTitle`], [`PresetTitle`] | The free text that says what a rule is for and what a preset does. |
 //! | [`Action`] | What happens when a rule fires: a lie or an incident. |
 //! | [`ActionRef`] | How a rule says it: a preset name, or an inline action. |
 //! | [`Preset`] | A named, reusable lie or incident. |
@@ -30,7 +31,8 @@
 //! | Type | Error | What is wrong |
 //! |---|---|---|
 //! | [`RuleName`], [`PresetName`] | [`RuleNameError`], [`PresetNameError`] | The text breaks a part of the [rule for names](RuleName#the-rule-for-names). |
-//! | [`RuleSet`] | [`RuleSetError`] | Two rules share a name, or no rule has that name. |
+//! | [`RuleTitle`], [`PresetTitle`] | [`RuleTitleError`], [`PresetTitleError`] | The text breaks a part of the [rule for titles](RuleTitle#the-rule-for-titles). |
+//! | [`RuleSet`] | [`RuleSetError`] | Two rules share a name. |
 //! | [`PresetSet`] | [`PresetSetError`] | Two presets share a name. |
 //! | [`RuleState`] | [`RuleStateError`] | No state has this name. |
 //! | [`Snapshot`] | [`SnapshotError`] | Two armed rules share a name. |
@@ -152,11 +154,11 @@
 //!
 //! | Type | Form |
 //! |---|---|
-//! | [`RuleName`], [`PresetName`] | The text. |
+//! | [`RuleName`], [`PresetName`], [`RuleTitle`], [`PresetTitle`] | The text. |
 //! | [`Action`] | The flat map of the lie or of the incident: `{ lie: refusal, error: NOT_LEADER_OR_FOLLOWER }`. |
 //! | [`ActionRef`] | The name of a preset as text, or the map of an inline action. |
-//! | [`Preset`] | The map of its action, with a `name` key next to the others. |
-//! | [`Rule`] | A map with `name`, `selector` and `action`, and with `scope`, `trigger`, `lifetime` and `dice` when it has them. |
+//! | [`Preset`] | The map of its action, with a `name` key next to the others, and a `title` key when it has a title. |
+//! | [`Rule`] | A map with `name`, `selector` and `action`, and with `title`, `scope`, `trigger`, `lifetime` and `dice` when it has them. |
 //! | [`RuleState`] | Its name: `draft`, `armed` or `disarmed`. |
 //!
 //! ```yaml
@@ -197,6 +199,7 @@ mod serde;
 mod set;
 mod snapshot;
 mod state;
+mod title;
 
 pub use action::{Action, ActionRef};
 pub use armed::{ArmedRule, HandFiring};
@@ -209,6 +212,7 @@ pub use rule::Rule;
 pub use set::{RuleSet, RuleSetError};
 pub use snapshot::{Snapshot, SnapshotError};
 pub use state::{RuleState, RuleStateError};
+pub use title::{PresetTitle, PresetTitleError, RuleTitle, RuleTitleError};
 
 /// Every item of this crate.
 ///
@@ -228,7 +232,8 @@ pub mod prelude {
     #[doc(no_inline)]
     pub use crate::{
         Action, ActionRef, ArmedRule, FiredAction, HandFiring, PassEvaluation, Preset, PresetName, PresetNameError,
-        PresetSet, PresetSetError, ResolvedRule, Rule, RuleError, RuleEvaluation, RuleName, RuleNameError, RuleSet,
-        RuleSetError, RuleState, RuleStateError, Snapshot, SnapshotError,
+        PresetSet, PresetSetError, PresetTitle, PresetTitleError, ResolvedRule, Rule, RuleError, RuleEvaluation,
+        RuleName, RuleNameError, RuleSet, RuleSetError, RuleState, RuleStateError, RuleTitle, RuleTitleError, Snapshot,
+        SnapshotError,
     };
 }

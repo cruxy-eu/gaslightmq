@@ -49,6 +49,11 @@ fn every_error() -> Vec<(Said, &'static str)> {
             said(PresetNameError::SurroundingHyphen { input: "-x".into() }),
             "preset name \"-x\" starts or ends with a hyphen",
         ),
+        (said(RuleTitleError::Empty), "rule title \"\" is empty"),
+        (
+            said(PresetTitleError::SurroundingWhiteSpace { input: " x".into() }),
+            "preset title \" x\" starts or ends with white space",
+        ),
         (
             said(RuleSetError::DuplicateName { name: rule("Flap") }),
             "two rules are named \"Flap\"",

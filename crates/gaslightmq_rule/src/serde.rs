@@ -599,6 +599,62 @@ mod tests {
     }
 
     #[test]
+    fn a_rule_writes_its_title_when_it_has_one() {
+        let blackhole = Rule::new(
+            "blackhole-metadata".parse().unwrap(),
+            Conditions::from(Condition::is(ApiKey::METADATA)),
+            LieDefinition::Silence,
+        );
+        let titled = blackhole.clone().with_title("No answer to Metadata".parse().unwrap());
+        let form = json!({
+            "name": "blackhole-metadata",
+            "selector": { "api": "Metadata" },
+            "action": { "lie": "silence" },
+        });
+        let titled_form = json!({
+            "name": "blackhole-metadata",
+            "title": "No answer to Metadata",
+            "selector": { "api": "Metadata" },
+            "action": { "lie": "silence" },
+        });
+
+        assert_eq!(write(&blackhole), form);
+        assert_eq!(read::<Rule>(form), blackhole);
+        assert_eq!(write(&titled), titled_form);
+        assert_eq!(read::<Rule>(titled_form), titled);
+    }
+
+    #[test]
+    fn a_preset_writes_its_title_when_it_has_one() {
+        let blackhole = Preset::new("blackhole".parse().unwrap(), LieDefinition::Silence);
+        let titled = blackhole.clone().with_title("No answer at all".parse().unwrap());
+        let form = json!({ "name": "blackhole", "lie": "silence" });
+        let titled_form = json!({ "name": "blackhole", "title": "No answer at all", "lie": "silence" });
+
+        assert_eq!(write(&blackhole), form);
+        assert_eq!(read::<Preset>(form), blackhole);
+        assert_eq!(write(&titled), titled_form);
+        assert_eq!(read::<Preset>(titled_form), titled);
+    }
+
+    #[test]
+    fn a_title_that_breaks_the_rule_for_titles_does_not_read() {
+        assert_eq!(
+            error::<Rule>(json!({ "name": "blackhole", "title": "", "selector": {}, "action": { "lie": "silence" } })),
+            "rule title \"\" is empty"
+        );
+        assert_eq!(
+            error::<Preset>(json!({ "name": "blackhole", "title": "No answer ", "lie": "silence" })),
+            "preset title \"No answer \" starts or ends with white space"
+        );
+        // A title is free text, and a name is not.
+        assert_eq!(
+            error::<Preset>(json!({ "name": "No answer at all", "lie": "silence" })),
+            "preset name \"No answer at all\" holds 'N' at position 0, which is no lowercase letter, digit or hyphen"
+        );
+    }
+
+    #[test]
     fn a_state_is_its_name() {
         for state in RuleState::ALL {
             assert_eq!(write(&state), json!(state.name()));

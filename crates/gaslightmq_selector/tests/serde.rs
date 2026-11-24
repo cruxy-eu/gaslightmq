@@ -547,3 +547,37 @@ fn the_forms_are_those_of_any_format_that_describes_itself() {
         "a condition needs at least one value",
     );
 }
+
+#[test]
+fn a_selector_writes_its_title_when_it_has_one() {
+    // name: order-producers
+    // title: Order producers
+    // match:
+    //   api: Produce
+    //   topic: "orders.*"
+    let selector =
+        Selector::new(name("order-producers"), order_producers()).with_title("Order producers".parse().unwrap());
+
+    writes(
+        &selector,
+        r#"{"name":"order-producers","title":"Order producers","match":{"api":"Produce","topic":"orders.*"}}"#,
+    );
+    writes(
+        &"Order producers".parse::<SelectorTitle>().unwrap(),
+        r#""Order producers""#,
+    );
+}
+
+#[test]
+fn a_title_that_breaks_the_rule_for_titles_does_not_read() {
+    rejects::<SelectorTitle>(r#""""#, "selector title \"\" is empty");
+    rejects::<Selector>(
+        r#"{"name":"order-producers","title":" Order producers"}"#,
+        "selector title \" Order producers\" starts or ends with white space",
+    );
+    // A title is free text, and a name is not.
+    rejects::<Selector>(
+        r#"{"name":"Order producers"}"#,
+        "selector name \"Order producers\" holds 'O' at position 0",
+    );
+}

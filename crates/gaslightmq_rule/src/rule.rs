@@ -1,13 +1,14 @@
 use gaslightmq_selector::{Scope, SelectorRef};
 use gaslightmq_trigger::{DiceKey, Lifetime, Trigger};
 
-use crate::{ActionRef, RuleName};
+use crate::{ActionRef, RuleName, RuleTitle};
 
 /// A rule as a file, a scenario or the UI writes it: what happens to which calls, when, and for how long.
 ///
 /// | Part | Meaning | When left out |
 /// |---|---|---|
-/// | Name | Unique among rules. Other things reference the rule by it. | |
+/// | Name | The identity of the rule: a slug, unique among rules. Other things reference the rule by it. | |
+/// | Title | What the rule is for, in free text. | No title. |
 /// | Selector | Which calls the rule considers: a selector name, or inline conditions. | |
 /// | Scope | Extra conditions over connection fields: who the rule applies to. | All clients. |
 /// | Action | What happens when the rule fires: a preset name, or an inline lie or incident. | |
@@ -57,6 +58,8 @@ use crate::{ActionRef, RuleName};
 )]
 pub struct Rule {
     name: RuleName,
+    #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Option::is_none"))]
+    title: Option<RuleTitle>,
     selector: SelectorRef,
     #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Scope::is_all"))]
     scope: Scope,
@@ -76,10 +79,11 @@ fn until_disarmed(lifetime: &Lifetime) -> bool {
 }
 
 impl Rule {
-    /// A rule for all clients that fires on every matching call, and stays armed until disarmed.
+    /// A rule for all clients that fires on every matching call, and stays armed until disarmed. It has no title.
     pub fn new(name: RuleName, selector: impl Into<SelectorRef>, action: impl Into<ActionRef>) -> Self {
         Self {
             name,
+            title: None,
             selector: selector.into(),
             scope: Scope::all(),
             action: action.into(),
@@ -87,6 +91,22 @@ impl Rule {
             lifetime: Lifetime::UntilDisarmed,
             dice: None,
         }
+    }
+
+    /// The same rule with a title, which says what the rule is for.
+    /// It replaces the title the rule had before.
+    #[must_use]
+    pub fn with_title(self, title: RuleTitle) -> Self {
+        Self {
+            title: Some(title),
+            ..self
+        }
+    }
+
+    /// The same rule without a title.
+    #[must_use]
+    pub fn without_title(self) -> Self {
+        Self { title: None, ..self }
     }
 
     /// The same rule for other calls.
@@ -144,9 +164,14 @@ impl Rule {
         Self { dice: None, ..self }
     }
 
-    /// The name of the rule, unique among rules.
+    /// The name of the rule, unique among rules. It is the identity of the rule.
     pub fn name(&self) -> &RuleName {
         &self.name
+    }
+
+    /// What the rule is for, in free text, when someone wrote it down.
+    pub fn title(&self) -> Option<&RuleTitle> {
+        self.title.as_ref()
     }
 
     /// Which calls the rule considers, before its scope.
@@ -273,5 +298,27 @@ mod tests {
 
         assert_eq!(slow_down().dice_key().as_str(), "Slow down order producers");
         assert_eq!(slow_down().with_dice(dice.clone()).dice_key(), dice);
+    }
+
+    #[test]
+    fn a_rule_has_a_title_when_someone_gives_it_one() {
+        let title = |text: &str| text.parse::<RuleTitle>().unwrap();
+        let titled = slow_down().with_title(title("Slow down order producers"));
+
+        assert_eq!(slow_down().title(), None);
+        assert_eq!(titled.title(), Some(&title("Slow down order producers")));
+        assert_eq!(
+            titled.clone().with_title(title("Slow ingest")).title(),
+            Some(&title("Slow ingest"))
+        );
+        assert_eq!(titled.without_title(), slow_down());
+    }
+
+    #[test]
+    fn a_title_is_no_part_of_the_identity_of_a_rule() {
+        let titled = slow_down().with_title("Slow down order producers".parse().unwrap());
+
+        assert_eq!(titled.name(), slow_down().name());
+        assert_eq!(titled.dice_key(), slow_down().dice_key());
     }
 }
