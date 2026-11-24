@@ -369,7 +369,7 @@ const CRATES = [
   ["ui","Applications","app",1,4,"The web UI, a Dioxus application. It reaches the engine only through the control plane.",["control_api","control_client","surface","hardware_push2"]],
 
   ["host","IO edge","io",0,4,"One process with several environments. Starts and stops proxies and brokers, and runs the task that drives each broker.",["engine","broker","listener","backend_upstream","workspace_fs","environment","quick_inject"]],
-  ["engine","IO edge","io",0,3,"The runtime of one proxy: one task per session that owns the transport and drives the pipeline, a listener for every endpoint of the backend, plus rule store, scenario runner, event bus, journal, recorder and indexer. Tasks, timers and channels; it opens no socket itself.",["pipeline","session","rule","trigger","lie_api","call","incident","field","wire","scenario","journal","traffic","index","recording","backend","listener","workspace","environment","clock"]],
+  ["engine","IO edge","io",0,3,"The runtime of one proxy: one task per session that owns the transport and drives the pipeline, a listener for every endpoint of the backend, plus rule store, scenario runner, event bus, journal, recorder and indexer. Tasks, timers and channels; it opens no socket itself.",["pipeline","session","rule","trigger","lie_api","call","incident","field","wire","scenario","journal","index","recording","backend","listener","workspace","environment","clock"]],
   ["listener","IO edge","io",0,3,"Kafka on a socket: accept connections, frame bytes, and run whatever handles a connection. Gives a session its transport.",["wire","field","clock"]],
   ["backend_upstream","IO edge","io",0,3,"The Upstream backend: the discovery of the brokers, and one connection to the real cluster for each connection of a client, with the overlay around them.",["backend","overlay","environment","wire","field","kernel","incident","clock"]],
   ["schema_registry","IO edge","io",0,6,"The built-in schema registry over HTTP, and a client for a real one.",["schema"]],
@@ -397,7 +397,7 @@ const CRATES = [
   ["overlay","World and backends","sans",0,3,"The Upstream overlay: address translation, emulated incidents and sessionless Fetch. Rewrites requests and responses, opens no connection.",["backend","wire","wire_edit","incident","field","kernel"]],
   ["schema","World and backends","sans",0,6,"Record formats and schemas: encode and decode JSON, Avro and Protobuf, one feature per format.",[]],
 
-  ["traffic","Observation","sans",0,4,"The live window of recent calls, subscriptions by selector, and statistics per rule and per API.",["call","selector"]],
+  ["traffic","Observation","sans",0,4,"The live window of recent calls, subscriptions by selector, and statistics per rule and per API. It takes the record of each call and says which subscriptions it goes to, and it sends nothing itself.",["call","selector","rule","field","kernel"]],
   ["index","Observation","sans",0,4,"The index: facets, counts under the active filters, suggested patterns.",["call","selector"]],
   ["journal","Observation","sans",1,5,"The journal: its entries, and the window of recent entries the engine keeps in memory.",["incident","clock"]],
   ["recording","Observation","sans",0,5,"The recording format: append-only chunks, metadata-only mode, blanked credentials, a reader and a writer over std::io.",["call","journal","wire"]],

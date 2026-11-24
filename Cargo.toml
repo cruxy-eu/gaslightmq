@@ -21,6 +21,7 @@ members = [
     "crates/gaslightmq_selector",
     "crates/gaslightmq_session",
     "crates/gaslightmq_test_kafka",
+    "crates/gaslightmq_traffic",
     "crates/gaslightmq_trigger",
     "crates/gaslightmq_wire",
     "crates/gaslightmq_wire_edit",

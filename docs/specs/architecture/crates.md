@@ -295,7 +295,7 @@ Every other crate speaks in them.
 
 | Crate | Holds | Depends on |
 |---|---|---|
-| `traffic` | The live window of recent calls, subscriptions by selector, and statistics per rule and per API. | `call`, `selector` |
+| `traffic` | The live window of recent calls, subscriptions by selector, and statistics per rule and per API. It takes the record of each call and says which subscriptions it goes to, and it sends nothing itself. | `call`, `selector`, `rule`, `field`, `kernel` |
 | `index` | The [index](../domains/observation.md#index): facets, counts under the active filters, suggested patterns. | `call`, `selector` |
 | `journal` | The [journal](../domains/observation.md#journal): its entries, and the window of recent entries the engine keeps in memory. | `incident`, `clock` |
 | `recording` | The [recording](storage.md#recordings) format: append-only chunks with summaries, calls and journal entries, metadata-only mode, blanked credentials, a reader and a writer over `std::io`. | `call`, `journal`, `wire` |
@@ -341,7 +341,7 @@ Transactions arrive later as `sim_txn`, next to `sim_log` and `sim_group`.
 
 | Crate | Holds | Depends on |
 |---|---|---|
-| `engine` | The runtime of one proxy: one task per session that owns the transport and drives the pipeline, a listener for every endpoint of the backend, the rule store, the scenario runner, the event bus, the journal, the recorder and the indexer. This crate does IO. | `pipeline`, `session`, `rule`, `trigger`, `lie_api`, `call`, `incident`, `field`, `wire`, `scenario`, `journal`, `traffic`, `index`, `recording`, `backend`, `listener`, `workspace`, `environment`, `clock` |
+| `engine` | The runtime of one proxy: one task per session that owns the transport and drives the pipeline, a listener for every endpoint of the backend, the rule store, the scenario runner, the event bus, the journal, the recorder and the indexer. This crate does IO. | `pipeline`, `session`, `rule`, `trigger`, `lie_api`, `call`, `incident`, `field`, `wire`, `scenario`, `journal`, `index`, `recording`, `backend`, `listener`, `workspace`, `environment`, `clock` |
 | `ui` | The web UI, a Dioxus application. It reaches the engine only through the control plane. This crate does IO. | `control_api`, `control_client`, `surface`, `hardware_push2` |
 | `listener` | Kafka on a socket: accept connections, frame bytes, and run whatever [handles a connection](#the-connection-handler). A proxy's pipeline and a broker alone both sit behind it. This crate does IO. | `wire`, `field`, `clock` |
 | `host` | One process with several [environments](storage.md#several-environments-in-one-process): it starts and stops proxies and brokers, runs the task that drives each broker, and shares the workspace and the control plane between them. This crate does IO. | `engine`, `broker`, `listener`, `backend_upstream`, `workspace_fs`, `environment`, `quick_inject` |
