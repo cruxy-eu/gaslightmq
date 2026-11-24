@@ -1,5 +1,6 @@
-name: Node failure
+name: node-failure
+title: Node failure
 mode: chain
 seed: 42
 rules:
-  - Node 2 fails on the 50th fetch
+  - node-2-fails-on-the-50th-fetch

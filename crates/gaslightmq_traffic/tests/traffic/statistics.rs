@@ -31,7 +31,7 @@ fn every_call_counts_for_its_api() -> anyhow::Result<()> {
 #[test]
 fn a_rule_counts_the_calls_it_matched_and_the_calls_it_lied_to() -> anyhow::Result<()> {
     let orders_eu: TopicPartition = "orders.eu/3".parse()?;
-    let refuse_every_2nd: RuleName = "Refuse every 2nd".parse()?;
+    let refuse_every_2nd: RuleName = "refuse-every-2nd".parse()?;
     let mut traffic = Traffic::new(TrafficConfiguration::new());
     let mut ingest = ClientConnection::first("order-ingest".parse()?);
 
@@ -52,8 +52,8 @@ fn a_rule_counts_the_calls_it_matched_and_the_calls_it_lied_to() -> anyhow::Resu
 #[test]
 fn a_lie_that_lost_everything_to_another_rule_is_no_firing() -> anyhow::Result<()> {
     let orders_eu: TopicPartition = "orders.eu/3".parse()?;
-    let leader_flap: RuleName = "Leader flap".parse()?;
-    let refuse_orders: RuleName = "Refuse orders".parse()?;
+    let leader_flap: RuleName = "leader-flap".parse()?;
+    let refuse_orders: RuleName = "refuse-orders".parse()?;
     let mut traffic = Traffic::new(TrafficConfiguration::new());
     let mut ingest = ClientConnection::first("order-ingest".parse()?);
 
@@ -78,9 +78,9 @@ fn a_lie_that_lost_everything_to_another_rule_is_no_firing() -> anyhow::Result<(
 #[test]
 fn the_statistics_list_every_rule_that_a_call_touched() -> anyhow::Result<()> {
     let orders_eu: TopicPartition = "orders.eu/3".parse()?;
-    let leader_flap: RuleName = "Leader flap".parse()?;
-    let refuse_orders: RuleName = "Refuse orders".parse()?;
-    let never_matched: RuleName = "Lose heartbeats".parse()?;
+    let leader_flap: RuleName = "leader-flap".parse()?;
+    let refuse_orders: RuleName = "refuse-orders".parse()?;
+    let never_matched: RuleName = "lose-heartbeats".parse()?;
     let mut traffic = Traffic::new(TrafficConfiguration::new());
     let mut ingest = ClientConnection::first("order-ingest".parse()?);
     traffic.record(ingest.produce(&orders_eu).refused_by(&refuse_orders).ended());
@@ -102,7 +102,7 @@ fn the_statistics_list_every_rule_that_a_call_touched() -> anyhow::Result<()> {
 #[test]
 fn the_statistics_go_on_counting_the_calls_that_left_the_live_window() -> anyhow::Result<()> {
     let orders_eu: TopicPartition = "orders.eu/3".parse()?;
-    let leader_flap: RuleName = "Leader flap".parse()?;
+    let leader_flap: RuleName = "leader-flap".parse()?;
     let one_call = LiveWindowSize::new(1)?;
     let mut configuration = TrafficConfiguration::new();
     configuration.live_window = one_call;

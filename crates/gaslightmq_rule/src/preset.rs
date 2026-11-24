@@ -6,14 +6,15 @@ use crate::{Action, ActionRef, PresetName, PresetTitle};
 /// A named, reusable lie or incident with its parameters.
 ///
 /// ```yaml
-/// name: Delay 1 s
+/// name: delay-1s
+/// title: Delay 1 s
 /// lie: timing
 /// delay: 1s
 /// jitter: 200ms
 /// ```
 ///
 /// ```yaml
-/// name: Leader election
+/// name: leader-election
 /// incident: leader-moves
 /// ```
 ///
@@ -27,9 +28,10 @@ use crate::{Action, ActionRef, PresetName, PresetTitle};
 /// let delay = TimingLie::new()
 ///     .with_delay(TimeSpan::from_secs(1))
 ///     .with_jitter(TimeSpan::from_millis(200));
-/// let preset = Preset::new("Delay 1 s".parse()?, delay);
+/// let preset = Preset::new("delay-1s".parse()?, delay).with_title("Delay 1 s".parse().expect("a preset title"));
 ///
-/// assert_eq!(preset.name(), "Delay 1 s");
+/// assert_eq!(preset.name(), "delay-1s");
+/// assert_eq!(preset.title().map(PresetTitle::as_str), Some("Delay 1 s"));
 /// assert_eq!(preset.action().to_string(), "+1 s ±200 ms");
 /// # Ok::<(), PresetNameError>(())
 /// ```
@@ -107,17 +109,17 @@ impl Preset {
 /// use gaslightmq_lie::prelude::*;
 /// use gaslightmq_rule::prelude::*;
 ///
-/// let name = "Leader flap".parse().expect("a preset name");
+/// let name = "leader-flap".parse().expect("a preset name");
 /// let flap = Preset::new(name, RefusalLie::new(ErrorCode::NOT_LEADER_OR_FOLLOWER));
 /// let presets = PresetSet::new([flap])?;
 ///
-/// // A rule writes `action: Leader flap`, or an action of its own.
-/// let named = ActionRef::from("Leader flap".parse::<PresetName>().expect("a preset name"));
+/// // A rule writes `action: leader-flap`, or an action of its own.
+/// let named = ActionRef::from("leader-flap".parse::<PresetName>().expect("a preset name"));
 /// let inline = ActionRef::from(LieDefinition::Silence);
 ///
 /// assert_eq!(presets.resolve(&named).map(ToString::to_string), Some("NOT_LEADER_OR_FOLLOWER".into()));
 /// assert_eq!(presets.resolve(&inline).map(ToString::to_string), Some("silence".into()));
-/// assert_eq!(presets.resolve(&"Blackhole".parse::<PresetName>().expect("a preset name").into()), None);
+/// assert_eq!(presets.resolve(&"blackhole".parse::<PresetName>().expect("a preset name").into()), None);
 /// # Ok::<(), PresetSetError>(())
 /// ```
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -219,16 +221,16 @@ mod tests {
     }
 
     fn delay() -> Preset {
-        Preset::new(name("Delay 1 s"), TimingLie::new().with_delay(TimeSpan::from_secs(1)))
+        Preset::new(name("delay-1s"), TimingLie::new().with_delay(TimeSpan::from_secs(1)))
     }
 
     fn flap() -> Preset {
-        Preset::new(name("Leader flap"), RefusalLie::new(ErrorCode::NOT_LEADER_OR_FOLLOWER))
+        Preset::new(name("leader-flap"), RefusalLie::new(ErrorCode::NOT_LEADER_OR_FOLLOWER))
     }
 
     fn election() -> Preset {
         Preset::new(
-            name("Leader election"),
+            name("leader-election"),
             IncidentDefinition::LeaderMoves {
                 partition: None,
                 to: None,
@@ -238,7 +240,7 @@ mod tests {
 
     #[test]
     fn a_preset_names_a_lie_or_an_incident() {
-        assert_eq!(delay().name(), "Delay 1 s");
+        assert_eq!(delay().name(), "delay-1s");
         assert!(delay().action().is_lie());
         assert!(election().action().is_incident());
     }
@@ -256,13 +258,12 @@ mod tests {
 
         assert_eq!(set.len(), 3);
         assert!(!set.is_empty());
-        assert!(set.contains(&name("Leader flap")));
-        assert!(!set.contains(&name("leader flap")));
-        assert_eq!(set.get(&name("Delay 1 s")), Some(&delay()));
-        assert_eq!(set.get(&name("Blackhole")), None);
+        assert!(set.contains(&name("leader-flap")));
+        assert_eq!(set.get(&name("delay-1s")), Some(&delay()));
+        assert_eq!(set.get(&name("blackhole")), None);
         assert_eq!(
             set.iter().map(Preset::name).collect::<Vec<_>>(),
-            [&name("Delay 1 s"), &name("Leader election"), &name("Leader flap")]
+            [&name("delay-1s"), &name("leader-election"), &name("leader-flap")]
         );
         assert_eq!((&set).into_iter().count(), 3);
         assert_eq!(set.into_iter().collect::<Vec<_>>(), [delay(), election(), flap()]);
@@ -280,9 +281,7 @@ mod tests {
     fn two_presets_with_one_name_are_an_error() {
         assert_eq!(
             PresetSet::new([delay(), flap(), delay().with_action(LieDefinition::Silence)]),
-            Err(PresetSetError::DuplicateName {
-                name: name("Delay 1 s")
-            })
+            Err(PresetSetError::DuplicateName { name: name("delay-1s") })
         );
     }
 
@@ -291,9 +290,9 @@ mod tests {
         let set = PresetSet::new([delay(), flap()]).unwrap();
         let inline = ActionRef::from(LieDefinition::Silence);
 
-        assert_eq!(set.resolve(&name("Leader flap").into()), Some(flap().action()));
+        assert_eq!(set.resolve(&name("leader-flap").into()), Some(flap().action()));
         assert_eq!(set.resolve(&inline), Some(&Action::Lie(LieDefinition::Silence)));
-        assert_eq!(set.resolve(&name("Blackhole").into()), None);
+        assert_eq!(set.resolve(&name("blackhole").into()), None);
     }
 
     #[test]

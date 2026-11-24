@@ -210,7 +210,6 @@ mod tests {
         assert_eq!(set.len(), 3);
         assert!(!set.is_empty());
         assert!(set.contains(&name("shop")));
-        assert!(!set.contains(&name("Shop")));
         assert_eq!(set.get(&name("staging")), Some(&environment("staging", 19092)));
         assert_eq!(set.get(&name("tests")), None);
         assert_eq!(names(&set.iter().collect::<Vec<_>>()), ["demo", "shop", "staging"]);

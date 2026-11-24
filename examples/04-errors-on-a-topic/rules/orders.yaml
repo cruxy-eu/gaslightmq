@@ -1,4 +1,5 @@
-- name: Orders sometimes fail
+- name: orders-sometimes-fail
+  title: Orders sometimes fail
   selector:
     api: Produce
     topic: orders

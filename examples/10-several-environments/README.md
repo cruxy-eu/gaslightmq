@@ -30,7 +30,7 @@ gmq start
   Switching changes what you look at. Nothing restarts.
 - The rule and the scenario exist once, and both environments can use them.
 - Each environment has its own state.
-  Activate *Flaky orders* in `shop`, and `staging` still answers truthfully.
+  Activate `flaky-orders` in `shop`, and `staging` still answers truthfully.
 - The World view only appears for `shop`, because only `shop` has a fake cluster.
 
 *This example shows the target design. It does not run yet.*

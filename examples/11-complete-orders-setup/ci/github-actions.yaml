@@ -16,7 +16,7 @@ jobs:
             -p 9092:9092 -p 19092-19094:19092-19094 -p 8081:8081 -p 8080:8080 \
             ghcr.io/cruxy-eu/gaslightmq:latest \
             start --workspace=/workspace --env=orders-sim \
-            --scenario="Consumer survives leader churn" \
+            --scenario=consumer-survives-leader-churn \
             --advertise=localhost   # a flag wins over the environment file
 
       # Replace this with the test command of your own application.

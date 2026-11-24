@@ -328,8 +328,8 @@ fn a_value_that_breaks_the_rule_of_its_type_is_an_error() {
     let rejects = |json: String, reason: &str| rejects::<Environment>(&json, reason);
 
     rejects(
-        format!(r#"{{"name":"shop ","broker":{{"world":"shop","listen":{LISTEN}}}}}"#),
-        "environment name \"shop \" starts or ends with white space",
+        format!(r#"{{"name":"shop-","broker":{{"world":"shop","listen":{LISTEN}}}}}"#),
+        "environment name \"shop-\" starts or ends with a hyphen",
     );
     rejects(
         format!(r#"{{"name":"shop","broker":{{"world":"","listen":{LISTEN}}}}}"#),

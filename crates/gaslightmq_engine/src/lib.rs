@@ -87,7 +87,7 @@
 //!
 //! // Someone arms a rule: "answer every Heartbeat 20 ms late".
 //! let late = Rule::new(
-//!     "Late heartbeat".parse().expect("a rule name"),
+//!     "late-heartbeat".parse().expect("a rule name"),
 //!     Conditions::from(Condition::is(ApiKey::HEARTBEAT)),
 //!     TimingLie::new().with_delay(TimeSpan::from_millis(20)),
 //! );

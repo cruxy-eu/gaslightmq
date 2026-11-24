@@ -44,19 +44,19 @@ mod next_to_the_others {
             stage: Stage::AfterResponse,
             target: partition,
         };
-        let refusal: FiredLie<&str> = FiredLie::new("Lost acknowledgement", priority, claim.clone());
+        let refusal: FiredLie<&str> = FiredLie::new("lost-acknowledgement", priority, claim.clone());
         let hang_up: FiredLie<&str> = FiredLie::new(
-            "Late disconnect",
+            "late-disconnect",
             Priority::HIGHEST,
             Claim::Terminal {
                 stage: Stage::AfterResponse,
             },
         );
-        let slow = FiredLie::new("Slow", Priority::new(2), TimingLie::new().at(Stage::BeforeForwarding));
+        let slow = FiredLie::new("slow", Priority::new(2), TimingLie::new().at(Stage::BeforeForwarding));
 
         let request: RequestPass<&str> = RequestPass::of([refusal, hang_up, slow]);
         let call: Combination<&str> = request.without_response_pass();
-        let fate: &Fate<&str> = call.fate_of(&"Lost acknowledgement").unwrap();
+        let fate: &Fate<&str> = call.fate_of(&"lost-acknowledgement").unwrap();
         let loss: &Loss<&str> = &fate.shadowed()[0];
         let effect: &StageEffect<&str> = call.after_response();
         let winners: &Winners<&str> = effect.refusals();
@@ -99,9 +99,9 @@ fn the_prelude_names_every_type_next_to_the_other_preludes() {
         [
             "1",
             "refusal",
-            "Lost acknowledgement",
-            "Late disconnect",
-            "Late disconnect",
+            "lost-acknowledgement",
+            "late-disconnect",
+            "late-disconnect",
             "true",
             "+0 s",
         ]
@@ -132,9 +132,9 @@ fn the_prelude_is_enough_to_combine_the_lies_of_a_call() {
     let refusal = LieDefinition::from(RefusalLie::new(ErrorCode::NOT_LEADER_OR_FOLLOWER)).on(matched);
 
     let call = RequestPass::of([
-        FiredLie::new("Delay 1 s", Priority::new(0), Claim::try_from(&delay).unwrap()),
+        FiredLie::new("delay-1s", Priority::new(0), Claim::try_from(&delay).unwrap()),
         FiredLie::new(
-            "Refuse the 3rd Produce",
+            "refuse-the-3rd-produce",
             Priority::new(1),
             Claim::try_from(&refusal).unwrap(),
         ),

@@ -71,19 +71,19 @@
 //!
 //! // A workspace has selectors and presets, and rules that name them.
 //! let selectors = SelectorSet::new([Selector::new(
-//!     "Order producers".parse().expect("a selector name"),
+//!     "order-producers".parse().expect("a selector name"),
 //!     Conditions::new()
 //!         .with(Condition::is(ApiKey::PRODUCE))
 //!         .with(Condition::parse(Field::Topic, "orders.*").expect("a condition")),
 //! )]).expect("a selector set");
 //! let presets = PresetSet::new([Preset::new(
-//!     "Leader flap".parse().expect("a preset name"),
+//!     "leader-flap".parse().expect("a preset name"),
 //!     RefusalLie::new(ErrorCode::NOT_LEADER_OR_FOLLOWER),
 //! )]).expect("a preset set");
 //! let rule = Rule::new(
-//!     "Refuse the 3rd order".parse().expect("a rule name"),
-//!     "Order producers".parse::<SelectorName>().expect("a selector name"),
-//!     "Leader flap".parse::<PresetName>().expect("a preset name"),
+//!     "refuse-the-3rd-order".parse().expect("a rule name"),
+//!     "order-producers".parse::<SelectorName>().expect("a selector name"),
+//!     "leader-flap".parse::<PresetName>().expect("a preset name"),
 //! )
 //! .with_trigger(TriggerParts::new().with_nth(MatchNumber::new(3).expect("a match number")))
 //! .with_lifetime(Lifetime::Firings(Count::ONE));
@@ -162,18 +162,19 @@
 //! | [`RuleState`] | Its name: `draft`, `armed` or `disarmed`. |
 //!
 //! ```yaml
-//! name: Slow down order producers
-//! selector: Order producers
+//! name: slow-order-producers
+//! title: Slow down order producers
+//! selector: order-producers
 //! scope:
 //!   client.id: order-ingest
-//! action: Delay 1 s
+//! action: delay-1s
 //! trigger:
 //!   chance: 40%
 //! lifetime: until disarmed
 //! ```
 //!
 //! Reading a rule rejects a key it does not know.
-//! Writing leaves out an empty scope, a trigger that fires on every match, the lifetime `until disarmed`,
+//! Writing leaves out a title that the rule does not have, an empty scope, a trigger that fires on every match, the lifetime `until disarmed`,
 //! and a dice key that the rule does not set.
 //!
 //! Live state has no form: an [`ArmedRule`], a [`Snapshot`] and an evaluation exist in memory only.
@@ -224,8 +225,8 @@ pub use title::{PresetTitle, PresetTitleError, RuleTitle, RuleTitleError};
 /// use gaslightmq_rule::prelude::*;
 /// use gaslightmq_selector::prelude::*;
 ///
-/// let rule: Result<Rule, RuleNameError> = "Blackhole".parse().map(|name| Rule::new(name, Conditions::new(), LieDefinition::Silence));
-/// assert_eq!(rule?.name(), "Blackhole");
+/// let rule: Result<Rule, RuleNameError> = "blackhole".parse().map(|name| Rule::new(name, Conditions::new(), LieDefinition::Silence));
+/// assert_eq!(rule?.name(), "blackhole");
 /// # Ok::<(), RuleNameError>(())
 /// ```
 pub mod prelude {

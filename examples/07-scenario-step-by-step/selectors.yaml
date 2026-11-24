@@ -1,4 +1,5 @@
-- name: Order fetches
+- name: order-fetches
+  title: Order fetches
   match:
     api: Fetch
     topic: orders

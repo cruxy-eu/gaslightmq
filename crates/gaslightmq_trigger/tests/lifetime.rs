@@ -14,7 +14,7 @@ use gaslightmq_trigger::prelude::*;
 const ARMED_AT: Instant = Instant::from_nanos(5_000_000_000);
 
 fn die() -> Die {
-    Die::new(Seed::new(42), &DiceKey::new("Refuse with NOT_LEADER").unwrap())
+    Die::new(Seed::new(42), &DiceKey::new("refuse-with-not-leader").unwrap())
 }
 
 fn arm(trigger: impl Into<Trigger>, lifetime: Lifetime) -> Arming {
@@ -566,7 +566,7 @@ fn a_lifetime_that_counts_something_else_starts_a_new_budget() {
 
 #[test]
 fn a_counted_until_of_a_sequence_step_is_a_budget() {
-    // `until: { calls: 100, selector: Order producers }` counts matching calls, with no rule around it.
+    // `until: { calls: 100, selector: order-producers }` counts matching calls, with no rule around it.
     let calls = Budget::new(count(100));
     let ended: Vec<bool> = (0..100)
         .map(|_| calls.take().expect("the step runs").is_last())

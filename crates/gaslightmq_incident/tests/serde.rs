@@ -311,7 +311,7 @@ fn a_definition_rejects_a_key_that_no_incident_has() {
         "unknown field `partiton`",
     );
     rejects::<IncidentDefinition>(
-        r#"{"incident":"leader-moves","name":"Leader election"}"#,
+        r#"{"incident":"leader-moves","name":"leader-election"}"#,
         "unknown field `name`",
     );
 }
@@ -426,34 +426,34 @@ enum Action {
 
 #[test]
 fn a_definition_sits_in_a_preset_next_to_its_name() {
-    // name: Leader election
+    // name: leader-election
     // incident: leader-moves
     writes(
         &Preset {
-            name: "Leader election".into(),
+            name: "leader-election".into(),
             action: Action::Incident(IncidentDefinition::LeaderMoves {
                 partition: None,
                 to: None,
             }),
         },
-        r#"{"name":"Leader election","incident":"leader-moves"}"#,
+        r#"{"name":"leader-election","incident":"leader-moves"}"#,
     );
     writes(
         &Preset {
-            name: "Fail over broker 2".into(),
+            name: "fail-over-broker-2".into(),
             action: Action::Incident(IncidentDefinition::BrokerGoesDown {
                 broker: Some(BrokerId::from(2)),
                 failover: true,
             }),
         },
-        r#"{"name":"Fail over broker 2","incident":"broker-goes-down","broker":2,"failover":true}"#,
+        r#"{"name":"fail-over-broker-2","incident":"broker-goes-down","broker":2,"failover":true}"#,
     );
     writes(
         &Preset {
-            name: "Leader flap".into(),
+            name: "leader-flap".into(),
             action: Action::Lie { lie: "refusal".into() },
         },
-        r#"{"name":"Leader flap","lie":"refusal"}"#,
+        r#"{"name":"leader-flap","lie":"refusal"}"#,
     );
 }
 
@@ -461,7 +461,7 @@ fn a_definition_sits_in_a_preset_next_to_its_name() {
 fn a_definition_in_a_preset_still_rejects_a_misspelt_key() {
     assert!(
         serde_json::from_str::<Preset>(
-            r#"{"name":"Leader election","incident":"leader-moves","partiton":"orders.eu/3"}"#
+            r#"{"name":"leader-election","incident":"leader-moves","partiton":"orders.eu/3"}"#
         )
         .is_err()
     );

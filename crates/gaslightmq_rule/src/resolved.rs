@@ -28,21 +28,21 @@ use crate::{Action, ActionRef, ArmedRule, Preset, PresetSet, Rule, RuleError, Ru
 /// use gaslightmq_trigger::prelude::*;
 ///
 /// let order_producers = Selector::new(
-///     "Order producers".parse().expect("a selector name"),
+///     "order-producers".parse().expect("a selector name"),
 ///     Conditions::new()
 ///         .with(Condition::is(ApiKey::PRODUCE))
 ///         .with(Condition::parse(Field::Topic, "orders.*").expect("a condition")),
 /// );
 /// let selectors = SelectorSet::new([order_producers]).expect("a selector set");
 /// let presets = PresetSet::new([Preset::new(
-///     "Leader flap".parse().expect("a preset name"),
+///     "leader-flap".parse().expect("a preset name"),
 ///     RefusalLie::new(ErrorCode::NOT_LEADER_OR_FOLLOWER),
 /// )]).expect("a preset set");
 ///
 /// let rule = Rule::new(
-///     "Refuse order producers".parse().expect("a rule name"),
-///     "Order producers".parse::<SelectorName>().expect("a selector name"),
-///     "Leader flap".parse::<PresetName>().expect("a preset name"),
+///     "refuse-order-producers".parse().expect("a rule name"),
+///     "order-producers".parse::<SelectorName>().expect("a selector name"),
+///     "leader-flap".parse::<PresetName>().expect("a preset name"),
 /// )
 /// .scoped(Scope::client(ClientId::new("order-ingest").expect("a client ID")));
 ///
@@ -211,7 +211,7 @@ mod tests {
 
     fn selectors() -> SelectorSet {
         let order_producers = Selector::new(
-            selector_name("Order producers"),
+            selector_name("order-producers"),
             Conditions::new()
                 .with(Condition::is(ApiKey::PRODUCE))
                 .with(Condition::parse(Field::Topic, "orders.*").unwrap()),
@@ -224,14 +224,14 @@ mod tests {
     }
 
     fn presets() -> PresetSet {
-        PresetSet::new([Preset::new(preset_name("Delay 1 s"), delay())]).unwrap()
+        PresetSet::new([Preset::new(preset_name("delay-1s"), delay())]).unwrap()
     }
 
     fn slow_down() -> Rule {
         Rule::new(
-            name("Slow down order producers"),
-            selector_name("Order producers"),
-            preset_name("Delay 1 s"),
+            name("slow-order-producers"),
+            selector_name("order-producers"),
+            preset_name("delay-1s"),
         )
     }
 
@@ -249,7 +249,7 @@ mod tests {
 
         let resolved = rule.resolve(&selectors(), &presets()).unwrap();
 
-        assert_eq!(resolved.name(), "Slow down order producers");
+        assert_eq!(resolved.name(), "slow-order-producers");
         assert_eq!(
             resolved.selector().to_string(),
             "api is Produce and topic matches orders.*"
@@ -275,7 +275,7 @@ mod tests {
     #[test]
     fn inline_conditions_and_an_inline_action_need_no_set() {
         let metadata = Conditions::from(Condition::is(ApiKey::METADATA));
-        let rule = Rule::new(name("Blackhole metadata"), metadata.clone(), LieDefinition::Silence);
+        let rule = Rule::new(name("blackhole-metadata"), metadata.clone(), LieDefinition::Silence);
 
         let resolved = rule.resolve(&SelectorSet::default(), &PresetSet::default()).unwrap();
 
@@ -288,20 +288,20 @@ mod tests {
         let dice = DiceKey::new("an old name").unwrap();
         let resolve = |rule: Rule| rule.resolve(&selectors(), &presets()).unwrap();
 
-        assert_eq!(resolve(slow_down()).dice_key().as_str(), "Slow down order producers");
+        assert_eq!(resolve(slow_down()).dice_key().as_str(), "slow-order-producers");
         assert_eq!(resolve(slow_down().with_dice(dice.clone())).dice_key(), &dice);
     }
 
     #[test]
     fn a_selector_that_does_not_exist_is_an_error() {
-        let rule = slow_down().with_selector(selector_name("Order consumers"));
+        let rule = slow_down().with_selector(selector_name("order-consumers"));
 
         assert_eq!(
             rule.resolve(&selectors(), &presets()),
             Err(RuleError::UnknownSelector {
-                rule: name("Slow down order producers"),
+                rule: name("slow-order-producers"),
                 error: SelectorSetError::UnknownSelector {
-                    name: selector_name("Order consumers")
+                    name: selector_name("order-consumers")
                 },
             })
         );
@@ -309,13 +309,13 @@ mod tests {
 
     #[test]
     fn a_preset_that_does_not_exist_is_an_error() {
-        let rule = slow_down().with_action(preset_name("Blackhole"));
+        let rule = slow_down().with_action(preset_name("blackhole"));
 
         assert_eq!(
             rule.resolve(&selectors(), &presets()),
             Err(RuleError::UnknownPreset {
-                rule: name("Slow down order producers"),
-                preset: preset_name("Blackhole"),
+                rule: name("slow-order-producers"),
+                preset: preset_name("blackhole"),
             })
         );
     }
@@ -323,7 +323,7 @@ mod tests {
     #[test]
     fn a_rule_that_tests_the_truth_is_decided_in_the_response_pass() {
         let lost = RefusalLie::new(ErrorCode::REQUEST_TIMED_OUT).at(Stage::AfterResponse);
-        let rule = Rule::new(name("Lost acknowledgement"), succeeded(), lost);
+        let rule = Rule::new(name("lost-acknowledgement"), succeeded(), lost);
 
         let resolved = rule.resolve(&SelectorSet::default(), &PresetSet::default()).unwrap();
 
@@ -340,11 +340,11 @@ mod tests {
         ];
 
         for (lie, kind) in lies {
-            let rule = Rule::new(name("Too early"), succeeded(), lie);
+            let rule = Rule::new(name("too-early"), succeeded(), lie);
             assert_eq!(
                 rule.resolve(&SelectorSet::default(), &PresetSet::default()),
                 Err(RuleError::LieBeforeTruth {
-                    rule: name("Too early"),
+                    rule: name("too-early"),
                     lie: kind,
                 })
             );
@@ -356,7 +356,7 @@ mod tests {
         let lies: [LieDefinition; 2] = [delay().into(), HangUpLie::new().at(Stage::AfterResponse).into()];
 
         for lie in lies {
-            let rule = Rule::new(name("Late enough"), succeeded(), lie);
+            let rule = Rule::new(name("late-enough"), succeeded(), lie);
             assert!(rule.resolve(&SelectorSet::default(), &PresetSet::default()).is_ok());
         }
     }
@@ -367,7 +367,7 @@ mod tests {
             partition: None,
             to: None,
         };
-        let rule = Rule::new(name("Election after a write"), succeeded(), election);
+        let rule = Rule::new(name("election-after-a-write"), succeeded(), election);
 
         let resolved = rule.resolve(&SelectorSet::default(), &PresetSet::default()).unwrap();
 
@@ -381,12 +381,12 @@ mod tests {
             to: None,
         };
         let resolve = |rule: Rule| rule.resolve(&SelectorSet::default(), &PresetSet::default());
-        let rule = |incident: IncidentDefinition| Rule::new(name("Leader election"), Conditions::new(), incident);
+        let rule = |incident: IncidentDefinition| Rule::new(name("leader-election"), Conditions::new(), incident);
 
         assert_eq!(
             resolve(rule(election(None)).with_trigger(Trigger::Manual)),
             Err(RuleError::ManualWithoutSubject {
-                rule: name("Leader election"),
+                rule: name("leader-election"),
                 error: IncidentError::MissingSubject {
                     incident: IncidentKind::LeaderMoves,
                     subject: "partition",
@@ -397,7 +397,7 @@ mod tests {
         assert!(resolve(rule(election(None))).is_ok());
         // A manual rule names its subject, or has a lie, which waits for the next matching call.
         assert!(resolve(rule(election(Some("orders.eu/3"))).with_trigger(Trigger::Manual)).is_ok());
-        let blackhole = Rule::new(name("Blackhole"), Conditions::new(), LieDefinition::Silence);
+        let blackhole = Rule::new(name("blackhole"), Conditions::new(), LieDefinition::Silence);
         assert!(resolve(blackhole.with_trigger(Trigger::Manual)).is_ok());
     }
 
@@ -407,9 +407,9 @@ mod tests {
             partition: None,
             to: None,
         };
-        let presets = PresetSet::new([Preset::new(preset_name("Leader election"), election)]).unwrap();
+        let presets = PresetSet::new([Preset::new(preset_name("leader-election"), election)]).unwrap();
         let rule =
-            Rule::new(name("Pad 3"), Conditions::new(), preset_name("Leader election")).with_trigger(Trigger::Manual);
+            Rule::new(name("pad-3"), Conditions::new(), preset_name("leader-election")).with_trigger(Trigger::Manual);
 
         assert!(matches!(
             rule.resolve(&SelectorSet::default(), &presets),

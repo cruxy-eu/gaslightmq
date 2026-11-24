@@ -499,7 +499,7 @@ mod tests {
 
     #[test]
     fn a_named_subject_needs_no_call() {
-        // The rule of the "Leader election" scenario.
+        // The rule of the "leader-election" scenario.
         let definition = IncidentDefinition::LeaderMoves {
             partition: Some(partition("orders.eu/3")),
             to: None,
@@ -531,7 +531,7 @@ mod tests {
 
     #[test]
     fn a_subject_that_is_left_out_comes_from_the_call() {
-        // The "Leader election" preset: `incident: leader-moves`.
+        // The "leader-election" preset: `incident: leader-moves`.
         let preset = IncidentDefinition::LeaderMoves {
             partition: None,
             to: None,

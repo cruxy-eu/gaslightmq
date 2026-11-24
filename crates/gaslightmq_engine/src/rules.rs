@@ -217,10 +217,10 @@ mod tests {
     fn the_rule_that_was_armed_last_wins() {
         let store = store(&SteppedClock::new());
 
-        store.arm(resolved(&rule("Blackhole"))).unwrap();
-        store.arm(resolved(&rule("Leader flap"))).unwrap();
+        store.arm(resolved(&rule("blackhole"))).unwrap();
+        store.arm(resolved(&rule("leader-flap"))).unwrap();
 
-        assert_eq!(armed(&store), ["Leader flap", "Blackhole"]);
+        assert_eq!(armed(&store), ["leader-flap", "blackhole"]);
     }
 
     #[test]
@@ -229,13 +229,13 @@ mod tests {
         let store = store(&clock);
         let now = clock.advance(Duration::from_secs(7));
 
-        let arming = store.arm(resolved(&rule("Blackhole"))).unwrap();
+        let arming = store.arm(resolved(&rule("blackhole"))).unwrap();
 
         assert_eq!(arming.arming().armed_at(), now);
-        let with_the_seed = resolved(&rule("Blackhole")).arm(Seed::new(42), now);
+        let with_the_seed = resolved(&rule("blackhole")).arm(Seed::new(42), now);
         assert_eq!(arming.arming().die(), with_the_seed.arming().die());
         // The handle is the one that the sessions evaluate.
-        assert!(store.snapshot().get(&name("Blackhole")).unwrap().is(&arming));
+        assert!(store.snapshot().get(&name("blackhole")).unwrap().is(&arming));
     }
 
     #[test]
@@ -244,11 +244,11 @@ mod tests {
         let mut session = store.published();
         assert!(!session.has_changed().unwrap());
 
-        store.arm(resolved(&rule("Blackhole"))).unwrap();
+        store.arm(resolved(&rule("blackhole"))).unwrap();
         assert!(session.has_changed().unwrap());
         assert_eq!(session.borrow_and_update().len(), 1);
 
-        store.disarm(&name("Blackhole")).unwrap();
+        store.disarm(&name("blackhole")).unwrap();
         assert!(session.has_changed().unwrap());
         assert!(session.borrow_and_update().is_empty());
     }
@@ -256,41 +256,41 @@ mod tests {
     #[test]
     fn arming_an_armed_rule_is_an_error_and_changes_nothing() {
         let store = store(&SteppedClock::new());
-        let first = store.arm(resolved(&rule("Blackhole"))).unwrap();
+        let first = store.arm(resolved(&rule("blackhole"))).unwrap();
         let session = store.published();
 
-        let again = store.arm(resolved(&rule("Blackhole")));
+        let again = store.arm(resolved(&rule("blackhole")));
 
         assert_eq!(
             again.unwrap_err(),
             ArmError::AlreadyArmed {
-                rule: name("Blackhole")
+                rule: name("blackhole")
             }
         );
         assert!(!session.has_changed().unwrap());
-        assert!(store.snapshot().get(&name("Blackhole")).unwrap().is(&first));
+        assert!(store.snapshot().get(&name("blackhole")).unwrap().is(&first));
     }
 
     #[test]
     fn disarming_a_rule_that_is_not_armed_is_an_error() {
         let store = store(&SteppedClock::new());
-        store.arm(resolved(&rule("Blackhole"))).unwrap();
+        store.arm(resolved(&rule("blackhole"))).unwrap();
 
-        let unknown = store.disarm(&name("Leader flap"));
-        let first = store.disarm(&name("Blackhole"));
-        let second = store.disarm(&name("Blackhole"));
+        let unknown = store.disarm(&name("leader-flap"));
+        let first = store.disarm(&name("blackhole"));
+        let second = store.disarm(&name("blackhole"));
 
         assert_eq!(
             unknown.unwrap_err(),
             DisarmError::NotArmed {
-                rule: name("Leader flap")
+                rule: name("leader-flap")
             }
         );
-        assert_eq!(first.unwrap().name(), "Blackhole");
+        assert_eq!(first.unwrap().name(), "blackhole");
         assert_eq!(
             second.unwrap_err(),
             DisarmError::NotArmed {
-                rule: name("Blackhole")
+                rule: name("blackhole")
             }
         );
     }
@@ -298,10 +298,10 @@ mod tests {
     #[test]
     fn arming_a_rule_again_starts_a_new_arming() {
         let store = store(&SteppedClock::new());
-        let first = store.arm(resolved(&rule("Blackhole"))).unwrap();
-        store.disarm(&name("Blackhole")).unwrap();
+        let first = store.arm(resolved(&rule("blackhole"))).unwrap();
+        store.disarm(&name("blackhole")).unwrap();
 
-        let second = store.arm(resolved(&rule("Blackhole"))).unwrap();
+        let second = store.arm(resolved(&rule("blackhole"))).unwrap();
 
         assert!(!second.is(&first));
     }
@@ -310,13 +310,13 @@ mod tests {
     fn a_rule_that_spent_its_budget_is_disarmed_after_the_call_that_spent_it() {
         let clock = SteppedClock::new();
         let store = store(&clock);
-        let once = rule("Blackhole").with_lifetime(Lifetime::Firings(Count::ONE));
+        let once = rule("blackhole").with_lifetime(Lifetime::Firings(Count::ONE));
         let arming = store.arm(resolved(&once)).unwrap();
-        store.arm(resolved(&rule("Leader flap"))).unwrap();
+        store.arm(resolved(&rule("leader-flap"))).unwrap();
 
         // Nothing ended yet, so nothing changes.
         store.disarm_ended(clock.now());
-        assert_eq!(armed(&store), ["Leader flap", "Blackhole"]);
+        assert_eq!(armed(&store), ["leader-flap", "blackhole"]);
 
         // A session confirms the one firing, and says so after the call.
         let mut session = SessionCounters::new(CounterKey::new("10.0.4.27 broker 2 #1").unwrap());
@@ -328,7 +328,7 @@ mod tests {
         assert!(firing.confirm().ends_lifetime());
         store.disarm_ended(clock.now());
 
-        assert_eq!(armed(&store), ["Leader flap"]);
+        assert_eq!(armed(&store), ["leader-flap"]);
         // Its name is free for a new arming.
         store.arm(resolved(&once)).unwrap();
     }
@@ -337,14 +337,14 @@ mod tests {
     fn a_rule_whose_lifetime_ended_does_not_stand_in_the_way_of_a_new_arming() {
         let clock = SteppedClock::new();
         let store = store(&clock);
-        let short = rule("Blackhole").with_lifetime(Lifetime::Duration(TimeSpan::from_secs(30)));
+        let short = rule("blackhole").with_lifetime(Lifetime::Duration(TimeSpan::from_secs(30)));
         let first = store.arm(resolved(&short)).unwrap();
 
         // The lifetime ended, and nobody disarmed the rule yet.
         clock.advance(Duration::from_secs(30));
         let second = store.arm(resolved(&short)).unwrap();
 
-        assert_eq!(armed(&store), ["Blackhole"]);
+        assert_eq!(armed(&store), ["blackhole"]);
         assert!(!second.is(&first));
     }
 
@@ -352,26 +352,26 @@ mod tests {
     fn a_rule_whose_lifetime_ended_is_not_armed_also_before_the_store_swept_it() {
         let clock = SteppedClock::new();
         let store = store(&clock);
-        let short = rule("Blackhole").with_lifetime(Lifetime::Duration(TimeSpan::from_secs(30)));
+        let short = rule("blackhole").with_lifetime(Lifetime::Duration(TimeSpan::from_secs(30)));
         store.arm(resolved(&short)).unwrap();
-        store.arm(resolved(&rule("Leader flap"))).unwrap();
+        store.arm(resolved(&rule("leader-flap"))).unwrap();
         let mut session = store.published();
         session.borrow_and_update();
 
         // The lifetime ended, and nothing published a snapshot without the rule yet.
         clock.advance(Duration::from_secs(30));
-        assert_eq!(armed(&store), ["Leader flap", "Blackhole"]);
-        let disarmed = store.disarm(&name("Blackhole"));
+        assert_eq!(armed(&store), ["leader-flap", "blackhole"]);
+        let disarmed = store.disarm(&name("blackhole"));
 
         assert_eq!(
             disarmed.unwrap_err(),
             DisarmError::NotArmed {
-                rule: name("Blackhole")
+                rule: name("blackhole")
             }
         );
         // Asking was enough for the store to see it: the sessions get a snapshot without the rule.
         assert!(session.has_changed().unwrap());
-        assert_eq!(armed(&store), ["Leader flap"]);
+        assert_eq!(armed(&store), ["leader-flap"]);
     }
 
     #[tokio::test]
@@ -383,8 +383,8 @@ mod tests {
             let (store, clock) = (store.clone(), clock.clone());
             async move { store.end_lifetimes(&clock).await }
         });
-        let short = rule("Blackhole").with_lifetime(Lifetime::Duration(TimeSpan::from_secs(30)));
-        let shorter = rule("Leader flap").with_lifetime(Lifetime::Duration(TimeSpan::from_secs(10)));
+        let short = rule("blackhole").with_lifetime(Lifetime::Duration(TimeSpan::from_secs(30)));
+        let shorter = rule("leader-flap").with_lifetime(Lifetime::Duration(TimeSpan::from_secs(10)));
         store.arm(resolved(&short)).unwrap();
         // The second rule is armed while the task waits for the first one, and it ends first.
         tokio::task::yield_now().await;
@@ -393,7 +393,7 @@ mod tests {
 
         clock.advance(Duration::from_secs(10));
         session.changed().await.unwrap();
-        assert_eq!(armed(&store), ["Blackhole"]);
+        assert_eq!(armed(&store), ["blackhole"]);
 
         clock.advance(Duration::from_secs(20));
         session.changed().await.unwrap();

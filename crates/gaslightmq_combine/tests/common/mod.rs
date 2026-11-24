@@ -76,7 +76,7 @@ pub fn stale_watermark(target: Target) -> Claim {
     rewrite(Aspect::HighWatermark, target)
 }
 
-/// The fate of the lie `id` as one line: `applied on orders.eu/4; shadowed on orders.eu/3 by Leader flap`.
+/// The fate of the lie `id` as one line: `applied on orders.eu/4; shadowed on orders.eu/3 by leader-flap`.
 pub fn fate(call: &Combination<&'static str>, id: &'static str) -> String {
     told(call.fate_of(&id).unwrap_or_else(|| panic!("no lie {id:?} fired")))
 }
@@ -105,7 +105,7 @@ pub fn ids(call: &Combination<&'static str>) -> Vec<&'static str> {
     call.fates().iter().map(|fate| *fate.id()).collect()
 }
 
-/// The lies that hold parts, as `orders.eu/3: Leader flap`.
+/// The lies that hold parts, as `orders.eu/3: leader-flap`.
 pub fn held(winners: &Winners<&'static str>) -> Vec<String> {
     winners
         .of_call()

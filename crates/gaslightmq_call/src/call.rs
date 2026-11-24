@@ -53,7 +53,7 @@ use crate::{CallId, CallNumber, CallTiming, Delivered, Explanation, ResponseSumm
 /// let refusal = LieDefinition::from(RefusalLie::new(ErrorCode::NOT_LEADER_OR_FOLLOWER)).on(target.clone());
 /// let fired = TriggerExplanation::new(TriggerDecision::Fired, Some(NonZeroU64::MIN), TriggerChecks::new())
 ///     .expect("a match that fired");
-/// let rule = "Leader flap".parse().expect("a rule name");
+/// let rule = "leader-flap".parse().expect("a rule name");
 /// let flapped = RuleExplanation::lied(rule, Priority::HIGHEST, target, fired, LieFate::all_applied(refusal));
 /// let explanation = Explanation::new([flapped.expect("a rule that fired tells its lie")]).expect("one line per rule");
 ///
@@ -68,7 +68,7 @@ use crate::{CallId, CallNumber, CallTiming, Delivered, Explanation, ResponseSumm
 ///
 /// assert_eq!(call.id().to_string(), "#7.1");
 /// assert_eq!(call.verdict().to_string(), "NOT_LEADER_OR_FOLLOWER on orders.eu/3");
-/// assert!(call.explanation().applied("Leader flap"));
+/// assert!(call.explanation().applied("leader-flap"));
 ///
 /// // The record answers like the live call did.
 /// assert_eq!(call.read(Field::Api), Reading::Present(FieldValues::one(ApiKey::PRODUCE)));

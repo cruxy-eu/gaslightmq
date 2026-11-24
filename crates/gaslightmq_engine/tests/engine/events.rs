@@ -16,7 +16,7 @@ async fn an_incident_that_a_rule_fires_leaves_the_engine_before_the_record_of_it
     let mut proxy = EngineUnderTest::start(ScriptedBackend::with_three_brokers()).await?;
     let payments: GroupId = "payments".parse()?;
     proxy.arm(&Rule::new(
-        "Rebalance payments".parse()?,
+        "rebalance-payments".parse()?,
         Conditions::from(Condition::is(ApiKey::HEARTBEAT)),
         IncidentDefinition::Rebalance {
             group: Some(payments.clone()),

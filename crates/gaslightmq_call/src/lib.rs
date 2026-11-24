@@ -75,11 +75,11 @@
 //!     TriggerExplanation::new(decision, Some(number), checks).expect("the decision fits its checks")
 //! };
 //!
-//! // Three rules matched one Fetch. `Leader flap` has `chance: 40%` and `lifetime: 3 firings`.
+//! // Three rules matched one Fetch. `leader-flap` has `chance: 40%` and `lifetime: 3 firings`.
 //! let die = DieCheck::new(374_213, 400_000).expect("a roll under the chance");
 //! let budget = BudgetCheck::new(2, number(3)).expect("two of three firings left");
 //! let flap = trigger(TriggerDecision::Fired, number(7), TriggerChecks::new().with_die(die)).with_budget(budget);
-//! // `Slow fetch` has no trigger, and `Refuse every 2nd` has `every: 2`.
+//! // `slow-fetch` has no trigger, and `refuse-every-2nd` has `every: 2`.
 //! let slow = trigger(TriggerDecision::Fired, number(12), TriggerChecks::new());
 //! let every = trigger(TriggerDecision::Held, number(5), TriggerChecks::new().with_count(false));
 //!
@@ -87,9 +87,9 @@
 //! let delay = LieDefinition::from(TimingLie::new().with_delay(TimeSpan::from_millis(750))).on(Target::Call);
 //!
 //! let matched = on("orders.eu/3");
-//! let flapped = RuleExplanation::lied(rule("Leader flap"), Priority::new(0), matched.clone(), flap, LieFate::all_applied(refusal));
-//! let slowed = RuleExplanation::lied(rule("Slow fetch"), Priority::new(1), matched.clone(), slow, LieFate::all_applied(delay));
-//! let held = RuleExplanation::held(rule("Refuse every 2nd"), Priority::new(2), matched, every);
+//! let flapped = RuleExplanation::lied(rule("leader-flap"), Priority::new(0), matched.clone(), flap, LieFate::all_applied(refusal));
+//! let slowed = RuleExplanation::lied(rule("slow-fetch"), Priority::new(1), matched.clone(), slow, LieFate::all_applied(delay));
+//! let held = RuleExplanation::held(rule("refuse-every-2nd"), Priority::new(2), matched, every);
 //! let explanation = Explanation::new([
 //!     flapped.expect("a rule that fired tells its lie"),
 //!     slowed.expect("a rule that fired tells its lie"),
@@ -100,8 +100,8 @@
 //! assert_eq!(explanation.verdict().to_string(), "NOT_LEADER_OR_FOLLOWER on orders.eu/3; +750 ms");
 //!
 //! // Why did my rule not fire?
-//! let line = explanation.rule("Refuse every 2nd").expect("the rule matched");
-//! assert_eq!(line.to_string(), "Refuse every 2nd: matched orders.eu/3; match 5, count did not agree: held");
+//! let line = explanation.rule("refuse-every-2nd").expect("the rule matched");
+//! assert_eq!(line.to_string(), "refuse-every-2nd: matched orders.eu/3; match 5, count did not agree: held");
 //! # Ok::<(), ExplanationError>(())
 //! ```
 //!
@@ -145,7 +145,7 @@
 //! | [`WindowCheck`] | `{ opens-after: 10s, closes-after: 40s, since-armed: 12s }`. |
 //! | [`BudgetCheck`] | `{ left: 2, limit: 3 }`. |
 //! | [`TriggerExplanation`] | A map with `decision`, and with `match-number`, `count-agreed`, `die`, `window`, `budget` and `reason` when it has them. |
-//! | [`LostTarget`] | `{ on: …, to: Leader flap }`. |
+//! | [`LostTarget`] | `{ on: …, to: leader-flap }`. |
 //! | [`LieFate`] | A map with `fired`, and with `applied`, `shadowed`, `pre-empted` and `untold` when it has them. `untold` is the failure of a lie that GaslightMQ could not tell. |
 //! | [`RuleExplanation`] | A map with `rule` and `priority`, and the keys of how far the rule got. |
 //! | [`Explanation`] | A map with `rules` and `failure`, each when it has it. |

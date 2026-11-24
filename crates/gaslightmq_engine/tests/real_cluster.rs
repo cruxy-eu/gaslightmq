@@ -104,7 +104,7 @@ async fn a_client_retries_a_refused_produce_and_then_succeeds() -> anyhow::Resul
     let mut events = engine.live_events();
     // Someone arms a rule: "tell the 1st Produce that its broker no longer leads the partition".
     let flap = Rule::new(
-        "Leader flap".parse()?,
+        "leader-flap".parse()?,
         Conditions::from(Condition::is(ApiKey::PRODUCE)),
         RefusalLie::new(ErrorCode::NOT_LEADER_OR_FOLLOWER),
     )
@@ -159,7 +159,7 @@ async fn a_client_reconnects_after_a_hang_up_and_then_succeeds() -> anyhow::Resu
     let mut events = engine.live_events();
     // Someone arms a rule: "hang up on the 1st Produce".
     let disconnect = Rule::new(
-        "Disconnect".parse()?,
+        "disconnect".parse()?,
         Conditions::from(Condition::is(ApiKey::PRODUCE)),
         HangUpLie::new(),
     )

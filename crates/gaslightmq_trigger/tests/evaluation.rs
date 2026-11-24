@@ -8,6 +8,7 @@
 use gaslightmq_clock::{Duration, Instant, TimeSpan};
 use gaslightmq_trigger::prelude::*;
 
+/// The dice key of the rule. A dice key is any text, and the rolls in these tests are the ones of this key.
 const RULE: &str = "Slow down order producers";
 const ARMED_AT: Instant = Instant::from_nanos(5_000_000_000);
 

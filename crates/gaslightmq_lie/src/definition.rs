@@ -15,12 +15,12 @@ use crate::{Aspect, CombinationClass, LieKind, Stage, TargetedLie};
 /// use gaslightmq_kernel::prelude::*;
 /// use gaslightmq_lie::prelude::*;
 ///
-/// // "Leader flap": nothing is written, and the client refreshes its metadata.
+/// // "leader-flap": nothing is written, and the client refreshes its metadata.
 /// let flap = RefusalLie::new(ErrorCode::NOT_LEADER_OR_FOLLOWER);
 /// assert_eq!(flap.stage, Stage::BeforeForwarding);
 /// assert_eq!(flap.to_string(), "NOT_LEADER_OR_FOLLOWER");
 ///
-/// // "Lost acknowledgement": the backend writes the records, and the client is told it failed.
+/// // "lost-acknowledgement": the backend writes the records, and the client is told it failed.
 /// let lost = RefusalLie::new(ErrorCode::REQUEST_TIMED_OUT).at(Stage::AfterResponse);
 /// assert_eq!(lost.to_string(), "REQUEST_TIMED_OUT after the response");
 /// ```
@@ -82,7 +82,7 @@ impl fmt::Display for RefusalLie {
 /// use gaslightmq_clock::TimeSpan;
 /// use gaslightmq_lie::prelude::*;
 ///
-/// // "Delay 1 s": between 800 ms and 1200 ms.
+/// // "delay-1s": between 800 ms and 1200 ms.
 /// let delay = TimingLie::new()
 ///     .with_delay(TimeSpan::from_secs(1))
 ///     .with_jitter(TimeSpan::from_millis(200));

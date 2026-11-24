@@ -20,8 +20,8 @@ use crate::{RecordedRuleName, TriggerDecision, TriggerExplanation, Verdict};
 /// use gaslightmq_field::prelude::*;
 ///
 /// let partition = Target::of_parts(["orders.eu/3".parse().expect("a part")]).expect("one part");
-/// let loss = LostTarget::new(partition, "Leader flap".parse()?);
-/// assert_eq!(loss.to_string(), "on orders.eu/3 by Leader flap");
+/// let loss = LostTarget::new(partition, "leader-flap".parse()?);
+/// assert_eq!(loss.to_string(), "on orders.eu/3 by leader-flap");
 /// # Ok::<(), RecordedRuleNameError>(())
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -47,7 +47,7 @@ impl LostTarget {
     }
 }
 
-/// Writes the target and the other rule: `on orders.eu/3 by Leader flap`, or `by Blackhole` for the whole call.
+/// Writes the target and the other rule: `on orders.eu/3 by leader-flap`, or `by blackhole` for the whole call.
 impl fmt::Display for LostTarget {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         if self.on.is_call() {
@@ -89,7 +89,7 @@ impl fmt::Display for LostTarget {
 /// let refusal = LieDefinition::from(RefusalLie::new(ErrorCode::NOT_LEADER_OR_FOLLOWER));
 ///
 /// // The rule refused two partitions, and a rule with a higher priority refused one of them first.
-/// let lost = LostTarget::new(on(&["orders.eu/3"]), "Leader flap".parse().expect("a recorded rule name"));
+/// let lost = LostTarget::new(on(&["orders.eu/3"]), "leader-flap".parse().expect("a recorded rule name"));
 /// let fate = LieFate::new(
 ///     refusal.clone().on(on(&["orders.eu/3", "orders.eu/4"])),
 ///     Some(on(&["orders.eu/4"])),
@@ -236,7 +236,7 @@ fn within(inner: &Target, outer: &Target) -> bool {
     }
 }
 
-/// Writes the lie and then each fate: `NOT_LEADER_OR_FOLLOWER applied on orders.eu/4, shadowed on orders.eu/3 by Leader flap`.
+/// Writes the lie and then each fate: `NOT_LEADER_OR_FOLLOWER applied on orders.eu/4, shadowed on orders.eu/3 by leader-flap`.
 /// A lie that could not be told ends with the reason: `NOT_LEADER_OR_FOLLOWER not told: …`.
 impl fmt::Display for LieFate {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -390,7 +390,7 @@ pub(crate) enum Course {
 /// let refusal = LieDefinition::from(RefusalLie::new(ErrorCode::NOT_LEADER_OR_FOLLOWER)).on(partition.clone());
 ///
 /// let line = RuleExplanation::lied(
-///     "Refuse the 3rd order".parse().expect("a recorded rule name"),
+///     "refuse-the-3rd-order".parse().expect("a recorded rule name"),
 ///     Priority::HIGHEST,
 ///     partition,
 ///     rolled,
@@ -401,7 +401,7 @@ pub(crate) enum Course {
 /// assert!(!line.has(ExplanationStatus::Shadowed));
 /// assert_eq!(
 ///     line.to_string(),
-///     "Refuse the 3rd order: matched orders.eu/3; match 3, count agreed: fired; \
+///     "refuse-the-3rd-order: matched orders.eu/3; match 3, count agreed: fired; \
 ///      NOT_LEADER_OR_FOLLOWER applied on orders.eu/3"
 /// );
 /// # Ok::<(), RuleExplanationError>(())
@@ -737,29 +737,29 @@ impl fmt::Display for Failure {
 /// let rule = |name: &str| name.parse::<RecordedRuleName>().expect("a rule name");
 /// let silence = LieDefinition::Silence.on(Target::Call);
 /// let hang_up = LieDefinition::from(HangUpLie::new()).on(Target::Call);
-/// let lost = LostTarget::new(Target::Call, rule("Blackhole"));
+/// let lost = LostTarget::new(Target::Call, rule("blackhole"));
 /// let shadowed = LieFate::new(hang_up, None, vec![lost], vec![]).expect("a lie that lost its whole target");
 ///
 /// // Two rules fired a terminal lie, and the rule with the higher priority won.
 /// let blackhole = RuleExplanation::lied(
-///     rule("Blackhole"),
+///     rule("blackhole"),
 ///     Priority::new(0),
 ///     Target::Call,
 ///     fired(),
 ///     LieFate::all_applied(silence.clone()),
 /// );
-/// let hang_up = RuleExplanation::lied(rule("Hang up"), Priority::new(1), Target::Call, fired(), shadowed);
+/// let hang_up = RuleExplanation::lied(rule("hang-up"), Priority::new(1), Target::Call, fired(), shadowed);
 /// let explanation = Explanation::new([
 ///     blackhole.expect("a rule that fired tells its lie"),
 ///     hang_up.expect("a rule that fired tells its lie"),
 /// ])?;
 ///
 /// assert_eq!(explanation.verdict(), Verdict::lied([silence]));
-/// assert!(explanation.applied("Blackhole"));
-/// assert!(!explanation.applied("Hang up"));
+/// assert!(explanation.applied("blackhole"));
+/// assert!(!explanation.applied("hang-up"));
 ///
 /// let shadowed: Vec<_> = explanation.with(ExplanationStatus::Shadowed).map(|line| line.rule().as_str()).collect();
-/// assert_eq!(shadowed, ["Hang up"]);
+/// assert_eq!(shadowed, ["hang-up"]);
 /// # Ok::<(), ExplanationError>(())
 /// ```
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -956,7 +956,7 @@ mod tests {
     fn a_lie_that_could_not_be_told_applied_nowhere_and_keeps_what_it_lost() {
         let three = parts(&["orders.eu/3"]);
         let both = parts(&["orders.eu/3", "orders.eu/4"]);
-        let lost = LostTarget::new(three, name("Leader flap"));
+        let lost = LostTarget::new(three, name("leader-flap"));
         let failure = Failure::new("no behaviour is registered for refusal");
         let won_a_part =
             LieFate::new(refusal(both), Some(parts(&["orders.eu/4"])), vec![lost.clone()], vec![]).unwrap();
@@ -970,12 +970,12 @@ mod tests {
         assert_eq!(untold.verdict_line(), None);
         assert_eq!(
             untold.to_string(),
-            "NOT_LEADER_OR_FOLLOWER shadowed on orders.eu/3 by Leader flap, \
+            "NOT_LEADER_OR_FOLLOWER shadowed on orders.eu/3 by leader-flap, \
              not told: no behaviour is registered for refusal"
         );
 
         // The rule fired, and its action did not take effect.
-        let line = lied("Refuse orders", 1, untold);
+        let line = lied("refuse-orders", 1, untold);
         assert_eq!(statuses(&line), "matched rolled fired shadowed");
         assert!(!line.applied());
         // A lie that was told has no failure.
@@ -1022,31 +1022,31 @@ mod tests {
                 LieFate::new(
                     refusal(both.clone()),
                     Some(four.clone()),
-                    vec![lost(&three, "Leader flap")],
+                    vec![lost(&three, "leader-flap")],
                     vec![],
                 )
                 .unwrap(),
-                "NOT_LEADER_OR_FOLLOWER applied on orders.eu/4, shadowed on orders.eu/3 by Leader flap",
+                "NOT_LEADER_OR_FOLLOWER applied on orders.eu/4, shadowed on orders.eu/3 by leader-flap",
             ),
             (
                 LieFate::new(
                     refusal(both),
                     None,
-                    vec![lost(&three, "Leader flap")],
-                    vec![lost(&four, "Blackhole")],
+                    vec![lost(&three, "leader-flap")],
+                    vec![lost(&four, "blackhole")],
                 )
                 .unwrap(),
-                "NOT_LEADER_OR_FOLLOWER shadowed on orders.eu/3 by Leader flap, pre-empted on orders.eu/4 by Blackhole",
+                "NOT_LEADER_OR_FOLLOWER shadowed on orders.eu/3 by leader-flap, pre-empted on orders.eu/4 by blackhole",
             ),
             (
                 LieFate::new(
                     refusal(Target::Call),
                     None,
                     vec![],
-                    vec![lost(&Target::Call, "Blackhole")],
+                    vec![lost(&Target::Call, "blackhole")],
                 )
                 .unwrap(),
-                "NOT_LEADER_OR_FOLLOWER pre-empted by Blackhole",
+                "NOT_LEADER_OR_FOLLOWER pre-empted by blackhole",
             ),
         ];
 
@@ -1058,7 +1058,7 @@ mod tests {
     #[test]
     fn a_firing_counts_when_the_lie_applied_somewhere() {
         let three = parts(&["orders.eu/3"]);
-        let lost = vec![LostTarget::new(three.clone(), name("Leader flap"))];
+        let lost = vec![LostTarget::new(three.clone(), name("leader-flap"))];
         let applied = LieFate::all_applied(refusal(three.clone()));
         let shadowed = LieFate::new(refusal(three.clone()), None, lost, vec![]).unwrap();
 
@@ -1071,17 +1071,17 @@ mod tests {
     #[test]
     fn every_end_of_a_rule_has_its_statuses() {
         let three = parts(&["orders.eu/3"]);
-        let lost = || vec![LostTarget::new(three.clone(), name("Leader flap"))];
+        let lost = || vec![LostTarget::new(three.clone(), name("leader-flap"))];
         let held = |decision| {
             let trigger = if decision == TriggerDecision::LifetimeOver {
                 TriggerExplanation::lifetime_over()
             } else {
                 trigger(decision)
             };
-            RuleExplanation::held(name("Rule"), Priority::HIGHEST, three.clone(), trigger).unwrap()
+            RuleExplanation::held(name("rule"), Priority::HIGHEST, three.clone(), trigger).unwrap()
         };
         let incidents = RuleExplanation::fired_incidents(
-            name("Rule"),
+            name("rule"),
             Priority::HIGHEST,
             three.clone(),
             trigger(TriggerDecision::FiredByHand),
@@ -1096,13 +1096,13 @@ mod tests {
             (held(TriggerDecision::NothingToActOn), "matched rolled"),
             (held(TriggerDecision::LifetimeOver), "matched"),
             (
-                lied("Rule", 0, LieFate::all_applied(refusal(three.clone()))),
+                lied("rule", 0, LieFate::all_applied(refusal(three.clone()))),
                 "matched rolled fired applied",
             ),
-            (lied("Rule", 0, partly), "matched rolled fired applied shadowed"),
+            (lied("rule", 0, partly), "matched rolled fired applied shadowed"),
             (
                 lied(
-                    "Rule",
+                    "rule",
                     0,
                     LieFate::new(refusal(three.clone()), None, vec![], lost()).unwrap(),
                 ),
@@ -1110,7 +1110,7 @@ mod tests {
             ),
             (incidents, "matched rolled fired applied"),
             (
-                RuleExplanation::ended_before_truth(name("Rule"), Priority::HIGHEST, name("Blackhole")),
+                RuleExplanation::ended_before_truth(name("rule"), Priority::HIGHEST, name("blackhole")),
                 "pre-empted",
             ),
         ];
@@ -1125,9 +1125,9 @@ mod tests {
     #[test]
     fn a_line_shows_each_part_it_has() {
         let three = parts(&["orders.eu/3"]);
-        let ended = RuleExplanation::ended_before_truth(name("Lost ack"), Priority::new(2), name("Blackhole"));
+        let ended = RuleExplanation::ended_before_truth(name("lost-ack"), Priority::new(2), name("blackhole"));
         let fired = RuleExplanation::fired_incidents(
-            name("Move"),
+            name("move"),
             Priority::new(1),
             three.clone(),
             trigger(TriggerDecision::Fired),
@@ -1135,11 +1135,11 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(ended.rule(), "Lost ack");
+        assert_eq!(ended.rule(), "lost-ack");
         assert_eq!(ended.priority(), Priority::new(2));
         assert_eq!(ended.matched(), None);
         assert_eq!(ended.trigger(), None);
-        assert_eq!(ended.ended_by(), Some(&name("Blackhole")));
+        assert_eq!(ended.ended_by(), Some(&name("blackhole")));
         assert_eq!(ended.incidents(), []);
 
         assert_eq!(fired.matched(), Some(&three));
@@ -1156,78 +1156,78 @@ mod tests {
     fn a_line_writes_what_happened() {
         let three = parts(&["orders.eu/3"]);
         let held = RuleExplanation::held(
-            name("Slow"),
+            name("slow"),
             Priority::HIGHEST,
             Target::Call,
             trigger(TriggerDecision::Held),
         )
         .unwrap();
         let fired = RuleExplanation::fired_incidents(
-            name("Move"),
+            name("move"),
             Priority::HIGHEST,
             three,
             trigger(TriggerDecision::Fired),
             vec![leader_moves(), leader_moves()],
         )
         .unwrap();
-        let ended = RuleExplanation::ended_before_truth(name("Lost ack"), Priority::HIGHEST, name("Blackhole"));
+        let ended = RuleExplanation::ended_before_truth(name("lost-ack"), Priority::HIGHEST, name("blackhole"));
 
-        assert_eq!(held.to_string(), "Slow: matched the call; match 1: held");
+        assert_eq!(held.to_string(), "slow: matched the call; match 1: held");
         assert_eq!(
             fired.to_string(),
-            "Move: matched orders.eu/3; match 1: fired; leader-moves, leader-moves"
+            "move: matched orders.eu/3; match 1: fired; leader-moves, leader-moves"
         );
         assert_eq!(
             ended.to_string(),
-            "Lost ack: pre-empted by Blackhole, which ended the call before the truth"
+            "lost-ack: pre-empted by blackhole, which ended the call before the truth"
         );
     }
 
     #[test]
     fn a_trigger_and_an_action_that_contradict_are_an_error() {
         let three = parts(&["orders.eu/3"]);
-        let line = |trigger| RuleExplanation::held(name("Rule"), Priority::HIGHEST, three.clone(), trigger);
+        let line = |trigger| RuleExplanation::held(name("rule"), Priority::HIGHEST, three.clone(), trigger);
         let fate = LieFate::all_applied(refusal(three.clone()));
 
         assert_eq!(
             line(trigger(TriggerDecision::Fired)),
-            Err(RuleExplanationError::FiredWithoutAction { rule: name("Rule") })
+            Err(RuleExplanationError::FiredWithoutAction { rule: name("rule") })
         );
         assert_eq!(
             RuleExplanation::lied(
-                name("Rule"),
+                name("rule"),
                 Priority::HIGHEST,
                 three.clone(),
                 trigger(TriggerDecision::BudgetEmpty),
                 fate
             ),
             Err(RuleExplanationError::ActionWithoutFiring {
-                rule: name("Rule"),
+                rule: name("rule"),
                 decision: TriggerDecision::BudgetEmpty
             })
         );
         assert_eq!(
             RuleExplanation::fired_incidents(
-                name("Rule"),
+                name("rule"),
                 Priority::HIGHEST,
                 three.clone(),
                 trigger(TriggerDecision::Held),
                 vec![leader_moves()]
             ),
             Err(RuleExplanationError::ActionWithoutFiring {
-                rule: name("Rule"),
+                rule: name("rule"),
                 decision: TriggerDecision::Held
             })
         );
         assert_eq!(
             RuleExplanation::fired_incidents(
-                name("Rule"),
+                name("rule"),
                 Priority::HIGHEST,
                 three,
                 trigger(TriggerDecision::Fired),
                 vec![]
             ),
-            Err(RuleExplanationError::NoIncident { rule: name("Rule") })
+            Err(RuleExplanationError::NoIncident { rule: name("rule") })
         );
     }
 
@@ -1235,19 +1235,19 @@ mod tests {
     fn a_rule_explanation_error_says_what_is_wrong() {
         let cases = [
             (
-                RuleExplanationError::FiredWithoutAction { rule: name("Rule") },
-                "rule \"Rule\" fired, and the explanation has no lie and no incident of it",
+                RuleExplanationError::FiredWithoutAction { rule: name("rule") },
+                "rule \"rule\" fired, and the explanation has no lie and no incident of it",
             ),
             (
                 RuleExplanationError::ActionWithoutFiring {
-                    rule: name("Rule"),
+                    rule: name("rule"),
                     decision: TriggerDecision::Held,
                 },
-                "rule \"Rule\" did not fire (`held`), and the explanation has a lie or an incident of it",
+                "rule \"rule\" did not fire (`held`), and the explanation has a lie or an incident of it",
             ),
             (
-                RuleExplanationError::NoIncident { rule: name("Rule") },
-                "rule \"Rule\" fired incidents, and the explanation lists none",
+                RuleExplanationError::NoIncident { rule: name("rule") },
+                "rule \"rule\" fired incidents, and the explanation lists none",
             ),
         ];
 
@@ -1259,44 +1259,44 @@ mod tests {
     #[test]
     fn an_explanation_has_one_line_per_rule() {
         let three = parts(&["orders.eu/3"]);
-        let line = || lied("Leader flap", 0, LieFate::all_applied(refusal(three.clone())));
+        let line = || lied("leader-flap", 0, LieFate::all_applied(refusal(three.clone())));
         let error = Explanation::new([line(), line()]).unwrap_err();
 
         assert_eq!(
             error,
             ExplanationError::RuleTwice {
-                rule: name("Leader flap")
+                rule: name("leader-flap")
             }
         );
         assert_eq!(
             error.to_string(),
-            "rule \"Leader flap\" has two lines in one explanation"
+            "rule \"leader-flap\" has two lines in one explanation"
         );
     }
 
     #[test]
     fn an_explanation_lists_every_rule_it_names() {
         let three = parts(&["orders.eu/3"]);
-        let lost = vec![LostTarget::new(three.clone(), name("Leader flap"))];
+        let lost = vec![LostTarget::new(three.clone(), name("leader-flap"))];
         let shadowed = lied(
-            "Refuse orders",
+            "refuse-orders",
             1,
             LieFate::new(refusal(three.clone()), None, lost, vec![]).unwrap(),
         );
-        let ended = RuleExplanation::ended_before_truth(name("Lost ack"), Priority::new(2), name("Blackhole"));
-        let winner = lied("Leader flap", 0, LieFate::all_applied(refusal(three)));
+        let ended = RuleExplanation::ended_before_truth(name("lost-ack"), Priority::new(2), name("blackhole"));
+        let winner = lied("leader-flap", 0, LieFate::all_applied(refusal(three)));
 
         let error = Explanation::new([shadowed.clone()]).unwrap_err();
         assert_eq!(
             error,
             ExplanationError::UnlistedRule {
-                rule: name("Leader flap"),
-                named_by: name("Refuse orders")
+                rule: name("leader-flap"),
+                named_by: name("refuse-orders")
             }
         );
         assert_eq!(
             error.to_string(),
-            "rule \"Refuse orders\" lost to rule \"Leader flap\", which has no line in the explanation"
+            "rule \"refuse-orders\" lost to rule \"leader-flap\", which has no line in the explanation"
         );
         assert!(matches!(
             Explanation::new([ended]),
@@ -1308,16 +1308,16 @@ mod tests {
     #[test]
     fn an_explanation_answers_by_rule_and_by_status() {
         let three = parts(&["orders.eu/3"]);
-        let lost = vec![LostTarget::new(three.clone(), name("Leader flap"))];
+        let lost = vec![LostTarget::new(three.clone(), name("leader-flap"))];
         let held = RuleExplanation::held(
-            name("Slow"),
+            name("slow"),
             Priority::new(3),
             Target::Call,
             trigger(TriggerDecision::Held),
         )
         .unwrap();
         let moved = RuleExplanation::fired_incidents(
-            name("Move"),
+            name("move"),
             Priority::new(2),
             three.clone(),
             trigger(TriggerDecision::Fired),
@@ -1325,9 +1325,9 @@ mod tests {
         )
         .unwrap();
         let explanation = Explanation::new([
-            lied("Leader flap", 0, LieFate::all_applied(refusal(three.clone()))),
+            lied("leader-flap", 0, LieFate::all_applied(refusal(three.clone()))),
             lied(
-                "Refuse orders",
+                "refuse-orders",
                 1,
                 LieFate::new(refusal(three.clone()), None, lost, vec![]).unwrap(),
             ),
@@ -1340,12 +1340,12 @@ mod tests {
         assert!(!explanation.is_empty());
         assert_eq!(explanation.iter().count(), 4);
         assert_eq!((&explanation).into_iter().count(), 4);
-        assert_eq!(explanation.rule("Slow").map(RuleExplanation::fired), Some(false));
+        assert_eq!(explanation.rule("slow").map(RuleExplanation::fired), Some(false));
         assert_eq!(explanation.rule("slow"), None);
-        assert!(explanation.applied("Leader flap"));
-        assert!(explanation.applied("Move"));
-        assert!(!explanation.applied("Refuse orders"));
-        assert!(!explanation.applied("Nobody"));
+        assert!(explanation.applied("leader-flap"));
+        assert!(explanation.applied("move"));
+        assert!(!explanation.applied("refuse-orders"));
+        assert!(!explanation.applied("nobody"));
         assert_eq!(explanation.with(ExplanationStatus::Fired).count(), 3);
         assert_eq!(explanation.incidents().collect::<Vec<_>>(), [&leader_moves()]);
         assert_eq!(explanation.verdict(), Verdict::lied([refusal(three)]));

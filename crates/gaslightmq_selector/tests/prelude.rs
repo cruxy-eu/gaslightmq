@@ -45,7 +45,7 @@ mod next_to_the_others {
             .with(condition.clone())
             .with(Condition::IsAnyOf(values.clone()));
         let scope: Scope = Scope::client(ClientId::new("order-ingest").unwrap());
-        let name: SelectorName = SelectorName::new("Group orders").unwrap();
+        let name: SelectorName = SelectorName::new("group-orders").unwrap();
         let title: SelectorTitle = SelectorTitle::new("The group calls of the order services").unwrap();
         let selector: Selector = Selector::new(name.clone(), conditions.clone());
         let reference: SelectorRef = SelectorRef::Named(name.clone());
@@ -90,7 +90,7 @@ mod next_to_the_others {
             error.to_string()
         }
 
-        let name: SelectorName = "Order producers".parse().unwrap();
+        let name: SelectorName = "order-producers".parse().unwrap();
         vec![
             message_of(GlobError::Empty),
             message_of(SelectorNameError::Empty),
@@ -128,7 +128,7 @@ fn the_prelude_names_the_error_of_every_type() {
             "a condition needs at least one value",
             "topic: topic name is empty",
             "a scope only tests connection fields, and topic is a request field",
-            "no selector is named \"Order producers\"",
+            "no selector is named \"order-producers\"",
         ]
     );
 }

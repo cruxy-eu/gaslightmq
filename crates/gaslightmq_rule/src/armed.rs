@@ -31,7 +31,7 @@ use crate::{Action, ResolvedRule, RuleError, RuleName};
 /// // A pad that moves the leader of one partition when someone presses it.
 /// let partition = "orders.eu/3".parse::<gaslightmq_kernel::TopicPartition>().expect("a topic partition");
 /// let election = IncidentDefinition::LeaderMoves { partition: Some(partition.clone()), to: None };
-/// let name = "Leader election".parse().expect("a rule name");
+/// let name = "leader-election".parse().expect("a rule name");
 /// let rule = Rule::new(name, Conditions::new(), election).with_trigger(Trigger::Manual);
 /// let armed = rule.resolve(&SelectorSet::default(), &PresetSet::default())?.arm(Seed::new(42), Instant::ZERO);
 ///
@@ -199,12 +199,12 @@ mod tests {
             partition: partition.map(|text| text.parse().unwrap()),
             to: None,
         };
-        Rule::new("Leader election".parse().unwrap(), Conditions::new(), incident)
+        Rule::new("leader-election".parse().unwrap(), Conditions::new(), incident)
     }
 
     fn flap() -> Rule {
         Rule::new(
-            "Leader flap".parse().unwrap(),
+            "leader-flap".parse().unwrap(),
             Conditions::from(Condition::is(ApiKey::PRODUCE)),
             RefusalLie::new(ErrorCode::NOT_LEADER_OR_FOLLOWER),
         )
@@ -220,7 +220,7 @@ mod tests {
         let handle = armed.clone();
 
         assert!(armed.is(&handle));
-        assert_eq!(handle.name(), "Leader flap");
+        assert_eq!(handle.name(), "leader-flap");
         assert_eq!(handle.rule(), &resolve(&flap()));
 
         let _ = handle.arming().evaluate(NOW, &mut session());
@@ -311,7 +311,7 @@ mod tests {
         assert_eq!(
             error,
             RuleError::NoCallForIncident {
-                rule: "Leader election".parse().unwrap(),
+                rule: "leader-election".parse().unwrap(),
                 error: IncidentError::MissingSubject {
                     incident: IncidentKind::LeaderMoves,
                     subject: "partition",

@@ -6,7 +6,7 @@ services:
       - start
       - --workspace=/workspace
       - --env=orders-sim
-      - --scenario=Flaky orders     # nothing is armed unless the command says so
+      - --scenario=flaky-orders     # nothing is armed unless the command says so
     volumes:
       - ./gaslight:/workspace:ro    # read-only: the files in git stay the source of truth
     ports:

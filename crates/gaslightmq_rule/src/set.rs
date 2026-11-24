@@ -21,7 +21,7 @@ use crate::{Rule, RuleName};
 /// use gaslightmq_selector::prelude::*;
 ///
 /// let metadata = Conditions::from(Condition::is(ApiKey::METADATA));
-/// let blackhole = Rule::new("Blackhole metadata".parse().expect("a rule name"), metadata, LieDefinition::Silence);
+/// let blackhole = Rule::new("blackhole-metadata".parse().expect("a rule name"), metadata, LieDefinition::Silence);
 /// let rules = RuleSet::new([blackhole.clone()])?;
 /// assert_eq!(rules.get(blackhole.name()), Some(&blackhole));
 ///
@@ -124,22 +124,21 @@ mod tests {
 
     #[test]
     fn a_set_holds_its_rules_by_name() {
-        let set = RuleSet::new([rule("Stale metadata"), rule("Leader moves away")]).unwrap();
+        let set = RuleSet::new([rule("stale-metadata"), rule("leader-moves-away")]).unwrap();
 
         assert_eq!(set.len(), 2);
         assert!(!set.is_empty());
-        assert!(set.contains(&name("Stale metadata")));
-        assert!(!set.contains(&name("stale metadata")));
-        assert_eq!(set.get(&name("Leader moves away")), Some(&rule("Leader moves away")));
-        assert_eq!(set.get(&name("Background jitter")), None);
+        assert!(set.contains(&name("stale-metadata")));
+        assert_eq!(set.get(&name("leader-moves-away")), Some(&rule("leader-moves-away")));
+        assert_eq!(set.get(&name("background-jitter")), None);
         assert_eq!(
             set.iter().map(Rule::name).collect::<Vec<_>>(),
-            [&name("Leader moves away"), &name("Stale metadata")]
+            [&name("leader-moves-away"), &name("stale-metadata")]
         );
         assert_eq!((&set).into_iter().count(), 2);
         assert_eq!(
             set.into_iter().collect::<Vec<_>>(),
-            [rule("Leader moves away"), rule("Stale metadata")]
+            [rule("leader-moves-away"), rule("stale-metadata")]
         );
     }
 
@@ -154,8 +153,8 @@ mod tests {
     #[test]
     fn two_rules_with_one_name_are_an_error() {
         assert_eq!(
-            RuleSet::new([rule("A"), rule("B"), rule("A")]),
-            Err(RuleSetError::DuplicateName { name: name("A") })
+            RuleSet::new([rule("a"), rule("b"), rule("a")]),
+            Err(RuleSetError::DuplicateName { name: name("a") })
         );
     }
 }

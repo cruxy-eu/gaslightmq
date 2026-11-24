@@ -57,15 +57,15 @@ impl<Id> Loss<Id> {
 /// };
 ///
 /// let call = RequestPass::of([
-///     FiredLie::new("Leader flap", Priority::new(0), refusal(&[&three])),
-///     FiredLie::new("Refuse orders", Priority::new(1), refusal(&[&three, &four])),
+///     FiredLie::new("leader-flap", Priority::new(0), refusal(&[&three])),
+///     FiredLie::new("refuse-orders", Priority::new(1), refusal(&[&three, &four])),
 /// ])
 /// .without_response_pass();
 ///
-/// let fate = call.fate_of(&"Refuse orders").expect("the lie fired");
+/// let fate = call.fate_of(&"refuse-orders").expect("the lie fired");
 /// assert_eq!(fate.applied(), Target::of_parts([four]).as_ref());
 /// assert_eq!(Some(fate.shadowed()[0].on()), Target::of_parts([three]).as_ref());
-/// assert_eq!(fate.shadowed()[0].to(), &"Leader flap");
+/// assert_eq!(fate.shadowed()[0].to(), &"leader-flap");
 /// assert!(fate.pre_empted().is_empty());
 ///
 /// // Shadowed on one partition and applied on another: one firing.

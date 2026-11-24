@@ -89,8 +89,8 @@ fn per_writes_its_name() {
 #[test]
 fn a_dice_key_writes_its_text() {
     writes(
-        &DiceKey::new("Slow down order producers").unwrap(),
-        r#""Slow down order producers""#,
+        &DiceKey::new("slow-order-producers").unwrap(),
+        r#""slow-order-producers""#,
     );
     rejects::<DiceKey>(r#""""#, "a dice key is not empty");
 }
@@ -273,10 +273,10 @@ fn a_rule_keeps_its_trigger_its_lifetime_and_its_dice_key() {
 
     let json = concat!(
         r#"{"seed":42,"rules":["#,
-        r#"{"name":"Slow down order producers","trigger":{"chance":"40%"},"lifetime":"until disarmed"},"#,
-        r#"{"name":"Stale metadata v2","trigger":{"first":2,"per":"session"},"lifetime":"3 firings","dice":"Stale metadata"},"#,
-        r#"{"name":"Leader moves away","trigger":"manual","lifetime":"30s"},"#,
-        r#"{"name":"Delay everything","lifetime":"100 matches"}"#,
+        r#"{"name":"slow-order-producers","trigger":{"chance":"40%"},"lifetime":"until disarmed"},"#,
+        r#"{"name":"stale-metadata-v2","trigger":{"first":2,"per":"session"},"lifetime":"3 firings","dice":"stale-metadata"},"#,
+        r#"{"name":"leader-moves-away","trigger":"manual","lifetime":"30s"},"#,
+        r#"{"name":"delay-everything","lifetime":"100 matches"}"#,
         r#"]}"#,
     );
     let scenario: Scenario = serde_json::from_str(json).unwrap();
@@ -286,25 +286,25 @@ fn a_rule_keeps_its_trigger_its_lifetime_and_its_dice_key() {
             seed: Seed::new(42),
             rules: vec![
                 Rule {
-                    name: "Slow down order producers".into(),
+                    name: "slow-order-producers".into(),
                     trigger: TriggerParts::new().with_chance(chance("40%")).into(),
                     lifetime: Lifetime::UntilDisarmed,
                     dice: None,
                 },
                 Rule {
-                    name: "Stale metadata v2".into(),
+                    name: "stale-metadata-v2".into(),
                     trigger: TriggerParts::new().with_first(count(2)).with_per(Per::Session).into(),
                     lifetime: Lifetime::Firings(count(3)),
-                    dice: Some(DiceKey::new("Stale metadata").unwrap()),
+                    dice: Some(DiceKey::new("stale-metadata").unwrap()),
                 },
                 Rule {
-                    name: "Leader moves away".into(),
+                    name: "leader-moves-away".into(),
                     trigger: Trigger::Manual,
                     lifetime: Lifetime::Duration(secs(30)),
                     dice: None,
                 },
                 Rule {
-                    name: "Delay everything".into(),
+                    name: "delay-everything".into(),
                     trigger: Trigger::always(),
                     lifetime: Lifetime::Matches(count(100)),
                     dice: None,
@@ -315,7 +315,7 @@ fn a_rule_keeps_its_trigger_its_lifetime_and_its_dice_key() {
     assert_eq!(serde_json::to_string(&scenario).unwrap(), json);
 
     // A rule that names no trigger and no lifetime fires on every matching call, until disarmed.
-    let bare: Rule = serde_json::from_str(r#"{"name":"Delay everything"}"#).unwrap();
+    let bare: Rule = serde_json::from_str(r#"{"name":"delay-everything"}"#).unwrap();
     assert!(bare.trigger.is_always());
     assert_eq!(bare.lifetime, Lifetime::UntilDisarmed);
 }

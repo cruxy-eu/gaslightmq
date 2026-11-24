@@ -17,7 +17,7 @@ Level: easy.
 ## Run
 
 ```sh
-gmq start --env shop --scenario "Flaky orders"
+gmq start --env shop --scenario flaky-orders
 echo "hello" | kcat -b localhost:9092 -P -t orders
 ```
 

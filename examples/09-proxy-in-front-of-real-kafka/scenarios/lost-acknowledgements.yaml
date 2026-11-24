@@ -1,5 +1,6 @@
-name: Lost acknowledgements
+name: lost-acknowledgements
+title: Lost acknowledgements
 mode: chain
 seed: 42
 rules:
-  - Order acknowledgements get lost
+  - order-acknowledgements-get-lost

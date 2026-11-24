@@ -7,6 +7,7 @@
 
 use gaslightmq_trigger::prelude::*;
 
+/// The dice key of a rule. A dice key is any text, and the rolls below are written out for this one.
 const RULE: &str = "Slow down order producers";
 
 fn die(seed: u64, key: &str) -> Die {

@@ -91,7 +91,7 @@ fn a_call_id_is_its_text() {
 
 #[test]
 fn a_recorded_rule_name_is_its_text() {
-    writes(&name("Leader flap"), r#""Leader flap""#);
+    writes(&name("leader-flap"), r#""leader-flap""#);
     rejects::<RecordedRuleName>(r#""""#, "recorded rule name \"\" is empty");
 }
 
@@ -231,9 +231,9 @@ fn a_trigger_explanation_that_contradicts_itself_does_not_read() {
 #[test]
 fn a_fate_writes_where_the_lie_went() {
     let three = parts(&["orders.eu/3"]);
-    let lost = LostTarget::new(three.clone(), name("Leader flap"));
+    let lost = LostTarget::new(three.clone(), name("leader-flap"));
 
-    writes(&lost, &format!(r#"{{"on":{THREE},"to":"Leader flap"}}"#));
+    writes(&lost, &format!(r#"{{"on":{THREE},"to":"leader-flap"}}"#));
     writes(
         &LieFate::all_applied(refusal(three.clone())),
         &format!(r#"{{"fired":{REFUSAL},"applied":{THREE}}}"#),
@@ -241,7 +241,7 @@ fn a_fate_writes_where_the_lie_went() {
     writes(
         &LieFate::new(refusal(three.clone()), None, vec![lost.clone()], vec![lost]).unwrap(),
         &format!(
-            r#"{{"fired":{REFUSAL},"shadowed":[{{"on":{THREE},"to":"Leader flap"}}],"pre-empted":[{{"on":{THREE},"to":"Leader flap"}}]}}"#
+            r#"{{"fired":{REFUSAL},"shadowed":[{{"on":{THREE},"to":"leader-flap"}}],"pre-empted":[{{"on":{THREE},"to":"leader-flap"}}]}}"#
         ),
     );
     writes(
@@ -253,7 +253,7 @@ fn a_fate_writes_where_the_lie_went() {
 #[test]
 fn a_fate_writes_why_the_lie_could_not_be_told() {
     let three = parts(&["orders.eu/3"]);
-    let lost = LostTarget::new(three.clone(), name("Leader flap"));
+    let lost = LostTarget::new(three.clone(), name("leader-flap"));
     let failure = || Failure::new("no behaviour is registered for refusal");
 
     // The lie won its target and changed nothing there.
@@ -267,7 +267,7 @@ fn a_fate_writes_why_the_lie_could_not_be_told() {
             .unwrap()
             .untold(failure()),
         &format!(
-            r#"{{"fired":{REFUSAL},"shadowed":[{{"on":{THREE},"to":"Leader flap"}}],"untold":"no behaviour is registered for refusal"}}"#
+            r#"{{"fired":{REFUSAL},"shadowed":[{{"on":{THREE},"to":"leader-flap"}}],"untold":"no behaviour is registered for refusal"}}"#
         ),
     );
     rejects::<LieFate>(
@@ -292,78 +292,78 @@ fn a_fate_that_cannot_be_does_not_read() {
 fn a_line_has_the_keys_of_how_far_its_rule_got() {
     let three = parts(&["orders.eu/3"]);
     let held = RuleExplanation::held(
-        name("Slow"),
+        name("slow"),
         Priority::new(2),
         Target::Call,
         trigger(TriggerDecision::Held),
     );
     let lied = RuleExplanation::lied(
-        name("Leader flap"),
+        name("leader-flap"),
         Priority::HIGHEST,
         three.clone(),
         trigger(TriggerDecision::Fired),
         LieFate::all_applied(refusal(three.clone())),
     );
     let fired = RuleExplanation::fired_incidents(
-        name("Move"),
+        name("move"),
         Priority::new(1),
         three,
         trigger(TriggerDecision::Fired),
         vec![leader_moves()],
     );
-    let ended = RuleExplanation::ended_before_truth(name("Lost ack"), Priority::new(3), name("Blackhole"));
+    let ended = RuleExplanation::ended_before_truth(name("lost-ack"), Priority::new(3), name("blackhole"));
 
     writes(
         &held.unwrap(),
-        r#"{"rule":"Slow","priority":2,"matched":"call","trigger":{"decision":"held","match-number":1}}"#,
+        r#"{"rule":"slow","priority":2,"matched":"call","trigger":{"decision":"held","match-number":1}}"#,
     );
     writes(
         &lied.unwrap(),
         &format!(
-            r#"{{"rule":"Leader flap","priority":0,"matched":{THREE},"trigger":{FIRED},"lie":{{"fired":{REFUSAL},"applied":{THREE}}}}}"#
+            r#"{{"rule":"leader-flap","priority":0,"matched":{THREE},"trigger":{FIRED},"lie":{{"fired":{REFUSAL},"applied":{THREE}}}}}"#
         ),
     );
     writes(
         &fired.unwrap(),
         &format!(
-            r#"{{"rule":"Move","priority":1,"matched":{THREE},"trigger":{FIRED},"incidents":[{{"incident":"leader-moves","partition":"orders.eu/3"}}]}}"#
+            r#"{{"rule":"move","priority":1,"matched":{THREE},"trigger":{FIRED},"incidents":[{{"incident":"leader-moves","partition":"orders.eu/3"}}]}}"#
         ),
     );
-    writes(&ended, r#"{"rule":"Lost ack","priority":3,"ended-by":"Blackhole"}"#);
+    writes(&ended, r#"{"rule":"lost-ack","priority":3,"ended-by":"blackhole"}"#);
 }
 
 #[test]
 fn a_line_with_keys_that_do_not_go_together_does_not_read() {
     let shape = "has `ended-by` alone, or `matched` and `trigger` with at most one of `lie` and `incidents`";
 
-    rejects::<RuleExplanation>(r#"{"rule":"Slow","priority":0}"#, shape);
-    rejects::<RuleExplanation>(r#"{"rule":"Slow","priority":0,"matched":"call"}"#, shape);
+    rejects::<RuleExplanation>(r#"{"rule":"slow","priority":0}"#, shape);
+    rejects::<RuleExplanation>(r#"{"rule":"slow","priority":0,"matched":"call"}"#, shape);
     rejects::<RuleExplanation>(
-        &format!(r#"{{"rule":"Slow","priority":0,"matched":"call","trigger":{FIRED},"ended-by":"Blackhole"}}"#),
+        &format!(r#"{{"rule":"slow","priority":0,"matched":"call","trigger":{FIRED},"ended-by":"blackhole"}}"#),
         shape,
     );
     rejects::<RuleExplanation>(
-        &format!(r#"{{"rule":"Slow","priority":0,"matched":"call","trigger":{FIRED}}}"#),
-        "rule \"Slow\" fired, and the explanation has no lie and no incident of it",
+        &format!(r#"{{"rule":"slow","priority":0,"matched":"call","trigger":{FIRED}}}"#),
+        "rule \"slow\" fired, and the explanation has no lie and no incident of it",
     );
     rejects::<RuleExplanation>(
         &format!(
-            r#"{{"rule":"Slow","priority":0,"matched":"call","trigger":{{"decision":"held","match-number":1}},"lie":{{"fired":{REFUSAL},"applied":{THREE}}}}}"#
+            r#"{{"rule":"slow","priority":0,"matched":"call","trigger":{{"decision":"held","match-number":1}},"lie":{{"fired":{REFUSAL},"applied":{THREE}}}}}"#
         ),
         "did not fire (`held`)",
     );
-    rejects::<RuleExplanation>(r#"{"rule":"","priority":0,"ended-by":"Blackhole"}"#, "is empty");
+    rejects::<RuleExplanation>(r#"{"rule":"","priority":0,"ended-by":"blackhole"}"#, "is empty");
     rejects::<RuleExplanation>(
-        r#"{"rule":"Slow","priority":0,"ended-by":"Blackhole","pass":"request"}"#,
+        r#"{"rule":"slow","priority":0,"ended-by":"blackhole","pass":"request"}"#,
         "unknown field `pass`",
     );
 }
 
 #[test]
 fn an_explanation_writes_its_rules_and_its_failure() {
-    let ended = RuleExplanation::ended_before_truth(name("Lost ack"), Priority::new(1), name("Blackhole"));
+    let ended = RuleExplanation::ended_before_truth(name("lost-ack"), Priority::new(1), name("blackhole"));
     let blackhole = RuleExplanation::lied(
-        name("Blackhole"),
+        name("blackhole"),
         Priority::HIGHEST,
         Target::Call,
         trigger(TriggerDecision::Fired),
@@ -379,7 +379,7 @@ fn an_explanation_writes_its_rules_and_its_failure() {
     writes(
         &Explanation::new([blackhole, ended]).unwrap(),
         &format!(
-            r#"{{"rules":[{{"rule":"Blackhole","priority":0,"matched":"call","trigger":{FIRED},"lie":{{"fired":{{"lie":"silence"}},"applied":"call"}}}},{{"rule":"Lost ack","priority":1,"ended-by":"Blackhole"}}]}}"#
+            r#"{{"rules":[{{"rule":"blackhole","priority":0,"matched":"call","trigger":{FIRED},"lie":{{"fired":{{"lie":"silence"}},"applied":"call"}}}},{{"rule":"lost-ack","priority":1,"ended-by":"blackhole"}}]}}"#
         ),
     );
 }
@@ -387,12 +387,12 @@ fn an_explanation_writes_its_rules_and_its_failure() {
 #[test]
 fn an_explanation_that_names_a_rule_it_does_not_list_does_not_read() {
     rejects::<Explanation>(
-        r#"{"rules":[{"rule":"Lost ack","priority":1,"ended-by":"Blackhole"}]}"#,
-        "rule \"Lost ack\" lost to rule \"Blackhole\", which has no line in the explanation",
+        r#"{"rules":[{"rule":"lost-ack","priority":1,"ended-by":"blackhole"}]}"#,
+        "rule \"lost-ack\" lost to rule \"blackhole\", which has no line in the explanation",
     );
     rejects::<Explanation>(
-        r#"{"rules":[{"rule":"A","priority":0,"ended-by":"A"},{"rule":"A","priority":1,"ended-by":"A"}]}"#,
-        "rule \"A\" has two lines in one explanation",
+        r#"{"rules":[{"rule":"a","priority":0,"ended-by":"a"},{"rule":"a","priority":1,"ended-by":"a"}]}"#,
+        "rule \"a\" has two lines in one explanation",
     );
 }
 
@@ -446,7 +446,7 @@ const FETCH: &str = concat!(
 fn a_call_writes_every_part_of_its_record() {
     let four = parts(&["orders.eu/4"]);
     let explanation = Explanation::new([RuleExplanation::lied(
-        name("Refuse orders"),
+        name("refuse-orders"),
         Priority::HIGHEST,
         four.clone(),
         trigger(TriggerDecision::Fired),
@@ -485,7 +485,7 @@ fn a_call_writes_every_part_of_its_record() {
             r#"{{"number":3,"fields":{fields},"upstream":{{"answer":"ok"}},"#,
             r#""delivered":{{"response":{{"answer":"ok","parts":{{"orders.eu/3":{{"error":"NOT_LEADER_OR_FOLLOWER"}},"orders.eu/4":{{"error":"REQUEST_TIMED_OUT"}}}}}}}},"#,
             r#""verdict":[{lie}],"#,
-            r#""explanation":{{"rules":[{{"rule":"Refuse orders","priority":0,"matched":{{"parts":["orders.eu/4"]}},"trigger":{fired},"lie":{{"fired":{lie},"applied":{{"parts":["orders.eu/4"]}}}}}}]}},"#,
+            r#""explanation":{{"rules":[{{"rule":"refuse-orders","priority":0,"matched":{{"parts":["orders.eu/4"]}},"trigger":{fired},"lie":{{"fired":{lie},"applied":{{"parts":["orders.eu/4"]}}}}}}]}},"#,
             r#""timing":{{"arrived":250000000,"forwarded":250000000,"answered":264000000,"delivered":264000000}}}}"#
         ),
         fields = FETCH,

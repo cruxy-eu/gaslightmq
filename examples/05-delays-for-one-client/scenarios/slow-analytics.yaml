@@ -1,5 +1,6 @@
-name: Slow analytics
+name: slow-analytics
+title: Slow analytics
 mode: chain
 seed: 42
 rules:
-  - Order fetches are slow for analytics
+  - order-fetches-are-slow-for-analytics

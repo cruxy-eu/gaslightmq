@@ -70,16 +70,16 @@ fn produce(partitions: &[&str]) -> Fields {
 fn workspace() -> SelectorSet {
     SelectorSet::new([
         Selector::new(
-            name("Order producers"),
+            name("order-producers"),
             Conditions::new()
                 .with(on(Field::Api, "Produce"))
                 .with(on(Field::Topic, "orders.*")),
         ),
         Selector::new(
-            name("Order producers from ingest"),
+            name("order-producers-from-ingest"),
             on(Field::ClientId, "order-ingest").into(),
         )
-        .including(name("Order producers")),
+        .including(name("order-producers")),
     ])
     .unwrap()
 }
@@ -385,7 +385,7 @@ fn a_request_that_carries_its_group_matches_that_group_only() {
 #[test]
 fn a_selector_is_a_named_set_of_conditions() {
     let selectors = workspace();
-    let order_producers = selectors.effective(&name("Order producers")).unwrap();
+    let order_producers = selectors.effective(&name("order-producers")).unwrap();
 
     assert_eq!(order_producers.to_string(), "api is Produce and topic matches orders.*");
     assert_eq!(
@@ -401,7 +401,7 @@ fn a_selector_is_a_named_set_of_conditions() {
 #[test]
 fn the_included_conditions_combine_with_and() {
     let selectors = workspace();
-    let from_ingest = selectors.effective(&name("Order producers from ingest")).unwrap();
+    let from_ingest = selectors.effective(&name("order-producers-from-ingest")).unwrap();
     let from_payments = Fields::new()
         .with(client("payments-svc"))
         .with(ApiKey::PRODUCE)
@@ -425,11 +425,11 @@ fn the_included_conditions_combine_with_and() {
 #[test]
 fn an_include_and_its_selector_can_test_the_same_field() {
     let selectors = SelectorSet::new([
-        Selector::new(name("Orders"), on(Field::Topic, "orders.*").into()),
-        Selector::new(name("European orders"), on(Field::Topic, "*.eu").into()).including(name("Orders")),
+        Selector::new(name("orders"), on(Field::Topic, "orders.*").into()),
+        Selector::new(name("european-orders"), on(Field::Topic, "*.eu").into()).including(name("orders")),
     ])
     .unwrap();
-    let european_orders = selectors.effective(&name("European orders")).unwrap();
+    let european_orders = selectors.effective(&name("european-orders")).unwrap();
 
     assert_eq!(
         european_orders.evaluate(&produce(&["orders.eu/3", "orders.us/0", "payments.eu/1"])),
@@ -443,14 +443,14 @@ fn things_reference_selectors_by_name_and_a_name_that_no_selector_has_does_not_r
 
     assert_eq!(
         selectors
-            .get(&name("Order producers from ingest"))
+            .get(&name("order-producers-from-ingest"))
             .and_then(Selector::include),
-        Some(&name("Order producers"))
+        Some(&name("order-producers"))
     );
     assert_eq!(
-        selectors.resolve(&SelectorRef::Named(name("Order writers"))),
+        selectors.resolve(&SelectorRef::Named(name("order-writers"))),
         Err(SelectorSetError::UnknownSelector {
-            name: name("Order writers")
+            name: name("order-writers")
         })
     );
 }
@@ -458,7 +458,7 @@ fn things_reference_selectors_by_name_and_a_name_that_no_selector_has_does_not_r
 #[test]
 fn a_rule_names_a_selector_or_writes_its_conditions_inline() {
     let selectors = workspace();
-    let by_name = SelectorRef::Named(name("Order producers"));
+    let by_name = SelectorRef::Named(name("order-producers"));
     let inline = SelectorRef::Inline(on(Field::Api, "Metadata").into());
 
     assert!(
@@ -568,10 +568,10 @@ fn a_scope_is_a_selector_that_only_uses_connection_fields() {
 
 #[test]
 fn the_effective_selector_of_a_rule_is_its_selector_and_its_scope() {
-    // selector: Order producers
+    // selector: order-producers
     // scope: { client.id: order-ingest }
     let selectors = workspace();
-    let selector = SelectorRef::Named(name("Order producers"));
+    let selector = SelectorRef::Named(name("order-producers"));
     let scope = Scope::client(client("order-ingest"));
 
     let effective = selectors.resolve(&selector).unwrap().and(scope);
@@ -591,7 +591,7 @@ fn the_effective_selector_of_a_rule_is_its_selector_and_its_scope() {
     assert_eq!(effective.evaluate(&from_payments), Match::NotMatched);
     assert_eq!(
         effective,
-        selectors.effective(&name("Order producers from ingest")).unwrap()
+        selectors.effective(&name("order-producers-from-ingest")).unwrap()
     );
 }
 
@@ -628,15 +628,15 @@ fn a_selector_over_connection_request_and_learned_fields_is_for_the_request_pass
 #[test]
 fn a_selector_that_tests_a_response_field_is_for_the_response_pass() {
     let selectors = SelectorSet::new([
-        Selector::new(name("Succeeded"), on(Field::Outcome, "ok").into()),
-        Selector::new(name("Orders that succeeded"), on(Field::Topic, "orders.*").into()).including(name("Succeeded")),
+        Selector::new(name("succeeded"), on(Field::Outcome, "ok").into()),
+        Selector::new(name("orders-that-succeeded"), on(Field::Topic, "orders.*").into()).including(name("succeeded")),
     ])
     .unwrap();
 
-    assert_eq!(selectors.effective(&name("Succeeded")).unwrap().pass(), Pass::Response);
+    assert_eq!(selectors.effective(&name("succeeded")).unwrap().pass(), Pass::Response);
     // The selector's own conditions only test the request. The include makes it wait for the truth.
     assert_eq!(
-        selectors.effective(&name("Orders that succeeded")).unwrap().pass(),
+        selectors.effective(&name("orders-that-succeeded")).unwrap().pass(),
         Pass::Response
     );
     assert_eq!(
@@ -760,17 +760,17 @@ fn most_calls_test_only_a_few_selectors() {
     let selectors = workspace();
     let index = ApiIndex::new([
         (
-            "order producers",
-            selectors.effective(&name("Order producers")).unwrap(),
+            "order-producers",
+            selectors.effective(&name("order-producers")).unwrap(),
         ),
-        ("stale metadata", all([on(Field::Api, "Metadata")])),
-        ("slow group", all([is_any_of(Field::Api, &["JoinGroup", "SyncGroup"])])),
+        ("stale-metadata", all([on(Field::Api, "Metadata")])),
+        ("slow-group", all([is_any_of(Field::Api, &["JoinGroup", "SyncGroup"])])),
         ("everyone", Scope::all().into()),
     ]);
     let tested = |api: ApiKey| index.candidates(api).map(|(rule, _)| *rule).collect::<Vec<_>>();
 
-    assert_eq!(tested(ApiKey::PRODUCE), ["order producers", "everyone"]);
-    assert_eq!(tested(ApiKey::METADATA), ["stale metadata", "everyone"]);
+    assert_eq!(tested(ApiKey::PRODUCE), ["order-producers", "everyone"]);
+    assert_eq!(tested(ApiKey::METADATA), ["stale-metadata", "everyone"]);
     assert_eq!(tested(ApiKey::HEARTBEAT), ["everyone"]);
 
     let targets: Vec<(&str, Target)> = index
@@ -780,7 +780,7 @@ fn most_calls_test_only_a_few_selectors() {
     assert_eq!(
         targets,
         [
-            ("order producers", matched(&["orders.eu/3"]).into_target().unwrap()),
+            ("order-producers", matched(&["orders.eu/3"]).into_target().unwrap()),
             (
                 "everyone",
                 matched(&["orders.eu/3", "payments.settled/0"]).into_target().unwrap()

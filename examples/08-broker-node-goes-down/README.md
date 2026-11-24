@@ -17,7 +17,7 @@ Level: medium.
 ## Run
 
 ```sh
-gmq start --env shop --scenario "Node failure"
+gmq start --env shop --scenario node-failure
 kcat -b localhost:9092 -C -t orders
 kcat -b localhost:9092 -L
 ```

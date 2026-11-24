@@ -201,7 +201,7 @@ mod tests {
         assert_eq!(statistics.missed_events(), 0);
         assert_eq!(statistics.apis().count(), 0);
         assert_eq!(statistics.rules().count(), 0);
-        let leader_flap: RuleName = "Leader flap".parse().unwrap();
+        let leader_flap: RuleName = "leader-flap".parse().unwrap();
         for status in ExplanationStatus::ALL {
             assert_eq!(statistics.rule(&leader_flap).calls(status), 0, "{status}");
         }

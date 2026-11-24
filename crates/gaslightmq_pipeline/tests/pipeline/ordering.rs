@@ -27,7 +27,7 @@ fn answers_leave_in_the_order_of_their_requests() {
 
 #[test]
 fn a_delay_after_the_response_holds_back_the_answers_behind_it_and_no_request() {
-    let mut driver = Driver::with([on_api("Delay 1 s", ApiKey::PRODUCE, delay(1000))]);
+    let mut driver = Driver::with([on_api("delay-1s", ApiKey::PRODUCE, delay(1000))]);
     let slow = driver.send(&produce(41, &["orders.eu/3"])).forwarded();
 
     // The answer of the Produce waits for its timer.
@@ -49,7 +49,7 @@ fn a_delay_after_the_response_holds_back_the_answers_behind_it_and_no_request() 
 #[test]
 fn a_delay_before_forwarding_holds_back_the_requests_behind_it() {
     let late = delay(1000).at(Stage::BeforeForwarding);
-    let mut driver = Driver::with([on_api("Late produce", ApiKey::PRODUCE, late)]);
+    let mut driver = Driver::with([on_api("late-produce", ApiKey::PRODUCE, late)]);
 
     let timer = driver.send(&produce(41, &["orders.eu/3"])).timer();
     // The Heartbeat is ready at once, and it waits for the request before it.
@@ -63,7 +63,7 @@ fn a_delay_before_forwarding_holds_back_the_requests_behind_it() {
 
 #[test]
 fn a_call_that_the_lies_answered_waits_for_the_answers_before_it() {
-    let mut driver = Driver::with([on_api("Rebalance", ApiKey::HEARTBEAT, refusal(REBALANCING))]);
+    let mut driver = Driver::with([on_api("rebalance", ApiKey::HEARTBEAT, refusal(REBALANCING))]);
     let produce = produce(41, &["orders.eu/3"]);
     let slow = driver.send(&produce).forwarded();
 
@@ -82,8 +82,8 @@ fn a_call_that_the_lies_answered_waits_for_the_answers_before_it() {
 fn a_hang_up_before_forwarding_waits_for_the_requests_before_it() {
     let late = delay(1000).at(Stage::BeforeForwarding);
     let mut driver = Driver::with([
-        on_api("Late produce", ApiKey::PRODUCE, late),
-        on_api("Disconnect", ApiKey::HEARTBEAT, HangUpLie::new()),
+        on_api("late-produce", ApiKey::PRODUCE, late),
+        on_api("disconnect", ApiKey::HEARTBEAT, HangUpLie::new()),
     ]);
 
     // The Produce is held back, and the Heartbeat behind it hangs up once it is its turn.
@@ -105,8 +105,8 @@ fn a_hang_up_before_forwarding_waits_for_the_requests_before_it() {
 #[test]
 fn a_delay_after_the_response_also_holds_an_answer_that_a_refusal_gave() {
     let mut driver = Driver::with([
-        on_api("Rebalance", ApiKey::HEARTBEAT, refusal(REBALANCING)),
-        on_api("Delay 1 s", ApiKey::HEARTBEAT, delay(1000)),
+        on_api("rebalance", ApiKey::HEARTBEAT, refusal(REBALANCING)),
+        on_api("delay-1s", ApiKey::HEARTBEAT, delay(1000)),
     ]);
     let request = heartbeat(41);
 
@@ -126,7 +126,7 @@ fn a_delay_after_the_response_also_holds_an_answer_that_a_refusal_gave() {
 
 #[test]
 fn a_timer_of_a_session_that_ended_changes_nothing() {
-    let mut driver = Driver::with([on_api("Delay 1 s", ApiKey::HEARTBEAT, delay(1000))]);
+    let mut driver = Driver::with([on_api("delay-1s", ApiKey::HEARTBEAT, delay(1000))]);
     let arrived = driver.send(&heartbeat(41));
     let timer = driver.answer(&arrived.forwarded()).timer();
 

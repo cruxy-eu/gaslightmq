@@ -22,8 +22,8 @@ use crate::{Apis, EffectiveSelector};
 /// use gaslightmq_selector::prelude::*;
 ///
 /// let index = ApiIndex::new([
-///     ("slow produce", EffectiveSelector::from(Condition::is(ApiKey::PRODUCE))),
-///     ("lost fetch", EffectiveSelector::from(Condition::is(ApiKey::FETCH))),
+///     ("slow-produce", EffectiveSelector::from(Condition::is(ApiKey::PRODUCE))),
+///     ("lost-fetch", EffectiveSelector::from(Condition::is(ApiKey::FETCH))),
 ///     ("everything", EffectiveSelector::new()),
 /// ]);
 ///
@@ -32,7 +32,7 @@ use crate::{Apis, EffectiveSelector};
 ///
 /// let matched = |call: &Fields| index.matches(call).map(|(rule, _)| *rule).collect::<Vec<_>>();
 /// assert_eq!(matched(&heartbeat), ["everything"]);
-/// assert_eq!(matched(&produce), ["slow produce", "everything"]);
+/// assert_eq!(matched(&produce), ["slow-produce", "everything"]);
 /// assert_eq!(index.candidates(ApiKey::HEARTBEAT).count(), 1);
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -159,7 +159,7 @@ mod tests {
     /// Rules in priority order, with the APIs their selectors name.
     fn index() -> ApiIndex<&'static str> {
         ApiIndex::new([
-            ("produce orders", is(ApiKey::PRODUCE).and(topic("orders.*"))),
+            ("produce-orders", is(ApiKey::PRODUCE).and(topic("orders.*"))),
             ("everything", EffectiveSelector::new()),
             ("fetch", is(ApiKey::FETCH)),
             (
@@ -171,7 +171,7 @@ mod tests {
             ("orders", topic("orders.*").into()),
             ("produce", is(ApiKey::PRODUCE)),
             ("never", is(ApiKey::PRODUCE).and(Condition::is(ApiKey::FETCH))),
-            ("not produce", Condition::is_not(ApiKey::PRODUCE).into()),
+            ("not-produce", Condition::is_not(ApiKey::PRODUCE).into()),
         ])
     }
 
@@ -192,15 +192,15 @@ mod tests {
 
         assert_eq!(
             candidates(&index, ApiKey::PRODUCE),
-            ["produce orders", "everything", "orders", "produce", "not produce"]
+            ["produce-orders", "everything", "orders", "produce", "not-produce"]
         );
         assert_eq!(
             candidates(&index, ApiKey::FETCH),
-            ["everything", "fetch", "orders", "not produce"]
+            ["everything", "fetch", "orders", "not-produce"]
         );
         assert_eq!(
             candidates(&index, ApiKey::SYNC_GROUP),
-            ["everything", "group", "orders", "not produce"]
+            ["everything", "group", "orders", "not-produce"]
         );
     }
 
@@ -210,11 +210,11 @@ mod tests {
 
         assert_eq!(
             candidates(&index, ApiKey::HEARTBEAT),
-            ["everything", "orders", "not produce"]
+            ["everything", "orders", "not-produce"]
         );
         assert_eq!(
             candidates(&index, ApiKey::new(9_999)),
-            ["everything", "orders", "not produce"]
+            ["everything", "orders", "not-produce"]
         );
     }
 
@@ -229,7 +229,7 @@ mod tests {
         assert_eq!(
             matches(&index, &produce),
             [
-                ("produce orders", "orders.eu/3".to_owned()),
+                ("produce-orders", "orders.eu/3".to_owned()),
                 ("everything", "orders.eu/3, payments.settled/0".to_owned()),
                 ("orders", "orders.eu/3".to_owned()),
                 ("produce", "orders.eu/3, payments.settled/0".to_owned()),
@@ -244,7 +244,7 @@ mod tests {
 
         assert_eq!(
             matches(&index, &heartbeat),
-            [("everything", "call".to_owned()), ("not produce", "call".to_owned())]
+            [("everything", "call".to_owned()), ("not-produce", "call".to_owned())]
         );
     }
 
@@ -280,7 +280,7 @@ mod tests {
             [
                 ("everything", "orders.eu/3".to_owned()),
                 ("orders", "orders.eu/3".to_owned()),
-                ("not produce", "orders.eu/3".to_owned()),
+                ("not-produce", "orders.eu/3".to_owned()),
             ]
         );
     }
@@ -288,7 +288,7 @@ mod tests {
     #[test]
     fn a_match_that_waits_for_the_truth_is_left_out() {
         let index = ApiIndex::new([
-            ("failed produce", is(ApiKey::PRODUCE).and(Condition::is(Outcome::Error))),
+            ("failed-produce", is(ApiKey::PRODUCE).and(Condition::is(Outcome::Error))),
             ("produce", is(ApiKey::PRODUCE)),
         ]);
         let asked = Fields::new().with(ApiKey::PRODUCE);
@@ -296,7 +296,7 @@ mod tests {
         assert_eq!(matches(&index, &asked), [("produce", "call".to_owned())]);
         assert_eq!(
             matches(&index, &asked.with(Outcome::Error)),
-            [("failed produce", "call".to_owned()), ("produce", "call".to_owned())]
+            [("failed-produce", "call".to_owned()), ("produce", "call".to_owned())]
         );
     }
 

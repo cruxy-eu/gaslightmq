@@ -55,7 +55,7 @@ fn a_subscription_to_one_client_leaves_the_other_clients_out() -> anyhow::Result
 #[test]
 fn a_selector_on_the_truth_decides_at_once_because_a_record_is_of_a_call_that_ended() -> anyhow::Result<()> {
     let orders_eu: TopicPartition = "orders.eu/3".parse()?;
-    let leader_flap: RuleName = "Leader flap".parse()?;
+    let leader_flap: RuleName = "leader-flap".parse()?;
     let mut traffic = Traffic::new(TrafficConfiguration::new());
     let answered = traffic.subscribe(Condition::is(Outcome::Ok).into());
     let timed_out = traffic.subscribe(Condition::is(Outcome::Timeout).into());

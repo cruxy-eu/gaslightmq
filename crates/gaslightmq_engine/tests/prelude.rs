@@ -114,7 +114,7 @@ mod next_to_the_others {
                 .await
                 .unwrap();
         let rules: &RuleStore = engine.rules();
-        let silence = Rule::new("Blackhole".parse().unwrap(), Conditions::new(), LieDefinition::Silence);
+        let silence = Rule::new("blackhole".parse().unwrap(), Conditions::new(), LieDefinition::Silence);
         let resolved = silence.resolve(&SelectorSet::default(), &PresetSet::default()).unwrap();
         let armed = rules.arm(resolved).unwrap();
         let watching: LiveEvents = engine.live_events();
@@ -147,10 +147,10 @@ mod next_to_the_others {
             error: not_opened.clone(),
         };
         let armed: ArmError = ArmError::AlreadyArmed {
-            rule: "Blackhole".parse().unwrap(),
+            rule: "blackhole".parse().unwrap(),
         };
         let not_armed: DisarmError = DisarmError::NotArmed {
-            rule: "Blackhole".parse().unwrap(),
+            rule: "blackhole".parse().unwrap(),
         };
         let stopped: LiveEventsError = LiveEventsError::EngineStopped;
         // A message says everything, so no error has a source.
@@ -178,7 +178,7 @@ async fn the_prelude_names_every_item_next_to_the_other_preludes() {
     assert_eq!(items.len(), 8);
     assert!(items.iter().all(|item| !item.is_empty()));
     assert_eq!(items[1], "16 events");
-    assert_eq!(items[5], "Blackhole");
+    assert_eq!(items[5], "blackhole");
 }
 
 #[test]
@@ -189,8 +189,8 @@ fn the_prelude_names_the_error_of_every_type() {
             "an event backlog holds at least one event",
             "endpoint `bootstrap` did not open: cannot listen on 127.0.0.1:9092: address in use",
             "endpoint `bootstrap` did not open: cannot listen on 127.0.0.1:9092: address in use",
-            "rule \"Blackhole\" is armed already",
-            "rule \"Blackhole\" is not armed",
+            "rule \"blackhole\" is armed already",
+            "rule \"blackhole\" is not armed",
             "the engine stopped",
         ]
     );

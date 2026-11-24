@@ -265,10 +265,10 @@ fn the_current_filter_can_be_saved_as_a_selector() {
     let filter = Conditions::new().with(produce).with(orders);
 
     // The filter is the `match` of a selector, and the selector matches what the filter left.
-    let saved = Selector::new("Order producers".parse().unwrap(), filter.clone());
+    let saved = Selector::new("order-producers".parse().unwrap(), filter.clone());
     let selectors = SelectorSet::new([saved]).unwrap();
     let by_name = selectors
-        .resolve(&SelectorRef::Named("Order producers".parse().unwrap()))
+        .resolve(&SelectorRef::Named("order-producers".parse().unwrap()))
         .unwrap();
 
     assert_eq!(by_name.to_string(), "api is Produce and topic matches orders.*");

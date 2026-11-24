@@ -1,25 +1,29 @@
 # Rules: a selector, a lie and a trigger. They load disarmed.
 
-- name: Orders sometimes fail
-  selector: Order producers
-  action: Error retriable
+- name: orders-sometimes-fail
+  title: Orders sometimes fail
+  selector: order-producers
+  action: error-retriable
   trigger:
     chance: 20%
 
-- name: Order fetches are slow for analytics
-  selector: Order fetches
+- name: order-fetches-are-slow-for-analytics
+  title: Order fetches are slow for analytics
+  selector: order-fetches
   scope:
     client.id: analytics-etl
-  action: Delay 1 s
+  action: delay-1s
   trigger:
     chance: 30%
 
-- name: Every hundredth order fetch hangs
-  selector: Order fetches
-  action: Blackhole
+- name: every-hundredth-order-fetch-hangs
+  title: Every hundredth order fetch hangs
+  selector: order-fetches
+  action: blackhole
   trigger:
     every: 100
 
-- name: Refuse with NOT_LEADER
-  selector: Order fetches
-  action: Error retriable
+- name: refuse-with-not-leader
+  title: Refuse with NOT_LEADER
+  selector: order-fetches
+  action: error-retriable

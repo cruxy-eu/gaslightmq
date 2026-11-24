@@ -443,7 +443,7 @@ fn leader_flap() -> RefusalLie {
 #[test]
 fn a_refusal_of_one_partition_forwards_the_rest_and_puts_its_error_into_the_response() {
     let request = produce(&["orders.eu/3", "orders.eu/4", "payments.settled/0"]);
-    let rules = [fired("Leader flap", leader_flap(), parts(&["orders.eu/3"]))];
+    let rules = [fired("leader-flap", leader_flap(), parts(&["orders.eu/3"]))];
 
     let walked = walk(&every_lie(), &rules, &request, backend);
 
@@ -468,9 +468,9 @@ fn a_refusal_of_one_partition_forwards_the_rest_and_puts_its_error_into_the_resp
 fn a_lie_is_asked_with_the_target_it_holds() {
     let request = produce(&["orders.eu/3", "orders.eu/4", "payments.settled/0"]);
     let rules = [
-        fired("Leader flap", leader_flap(), parts(&["orders.eu/3"])),
+        fired("leader-flap", leader_flap(), parts(&["orders.eu/3"])),
         fired(
-            "Refuse orders",
+            "refuse-orders",
             RefusalLie::new(ErrorCode::REQUEST_TIMED_OUT),
             parts(&["orders.eu/3", "orders.eu/4"]),
         ),
@@ -478,7 +478,7 @@ fn a_lie_is_asked_with_the_target_it_holds() {
 
     let walked = walk(&every_lie(), &rules, &request, backend);
 
-    // "Refuse orders" lost `orders.eu/3`, so it only refuses `orders.eu/4`.
+    // "refuse-orders" lost `orders.eu/3`, so it only refuses `orders.eu/4`.
     assert_eq!(produced(walked.forwarded.as_ref().unwrap()), ["payments.settled/0"]);
     assert_eq!(
         told(walked.sent()),
@@ -494,9 +494,9 @@ fn a_lie_is_asked_with_the_target_it_holds() {
 fn refusals_of_every_partition_answer_the_call_without_the_backend() {
     let request = produce(&["orders.eu/3", "orders.eu/4"]);
     let rules = [
-        fired("Leader flap", leader_flap(), parts(&["orders.eu/3"])),
+        fired("leader-flap", leader_flap(), parts(&["orders.eu/3"])),
         fired(
-            "Time out",
+            "time-out",
             RefusalLie::new(ErrorCode::REQUEST_TIMED_OUT),
             parts(&["orders.eu/4"]),
         ),
@@ -517,7 +517,7 @@ fn refusals_of_every_partition_answer_the_call_without_the_backend() {
 fn a_refusal_of_the_whole_call_answers_it_without_the_backend() {
     let request = heartbeat();
     let rules = [fired(
-        "Rebalance",
+        "rebalance",
         RefusalLie::new(ErrorCode::REBALANCE_IN_PROGRESS),
         Target::Call,
     )];
@@ -536,7 +536,7 @@ fn a_refusal_of_the_whole_call_answers_it_without_the_backend() {
 fn a_refusal_after_the_response_lets_the_backend_handle_the_whole_request() {
     let request = produce(&["orders.eu/3", "orders.eu/4"]);
     let lost = RefusalLie::new(ErrorCode::REQUEST_TIMED_OUT).at(AFTER);
-    let rules = [fired("Lost acknowledgement", lost, parts(&["orders.eu/3"]))];
+    let rules = [fired("lost-acknowledgement", lost, parts(&["orders.eu/3"]))];
 
     let walked = walk(&every_lie(), &rules, &request, backend);
 
@@ -555,10 +555,10 @@ fn a_refusal_after_the_response_lets_the_backend_handle_the_whole_request() {
 fn a_lie_that_does_not_apply_is_not_asked() {
     let request = produce(&["orders.eu/3"]);
     let rules = [
-        fired("Blackhole", LieDefinition::Silence, Target::Call),
-        fired("Leader flap", leader_flap(), parts(&["orders.eu/3"])),
+        fired("blackhole", LieDefinition::Silence, Target::Call),
+        fired("leader-flap", leader_flap(), parts(&["orders.eu/3"])),
         fired(
-            "Delay 1 s",
+            "delay-1s",
             TimingLie::new().with_delay(TimeSpan::from_secs(1)),
             Target::Call,
         ),
@@ -574,7 +574,7 @@ fn a_lie_that_does_not_apply_is_not_asked() {
 #[test]
 fn a_hang_up_after_the_response_closes_the_connection_once_the_backend_answered() {
     let request = produce(&["orders.eu/3"]);
-    let rules = [fired("Late disconnect", HangUpLie::new().at(AFTER), Target::Call)];
+    let rules = [fired("late-disconnect", HangUpLie::new().at(AFTER), Target::Call)];
 
     let walked = walk(&every_lie(), &rules, &request, backend);
 
@@ -594,8 +594,8 @@ fn the_wait_of_a_stage_comes_from_combining_and_a_hold_is_one_lie_s() {
         .with_delay(TimeSpan::from_millis(500))
         .with_throttle(TimeSpan::from_millis(500));
     let rules = [
-        fired("Delay 1 s", second, Target::Call),
-        fired("Background jitter", more, Target::Call),
+        fired("delay-1s", second, Target::Call),
+        fired("background-jitter", more, Target::Call),
     ];
     let lies = every_lie();
 

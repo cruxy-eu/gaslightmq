@@ -18,7 +18,7 @@ fn rule(text: &str) -> RuleName {
 
 fn unknown_selector() -> SelectorSetError {
     SelectorSetError::UnknownSelector {
-        name: "Order producers".parse().unwrap(),
+        name: "order-producers".parse().unwrap(),
     }
 }
 
@@ -55,55 +55,55 @@ fn every_error() -> Vec<(Said, &'static str)> {
             "preset title \" x\" starts or ends with white space",
         ),
         (
-            said(RuleSetError::DuplicateName { name: rule("Flap") }),
-            "two rules are named \"Flap\"",
+            said(RuleSetError::DuplicateName { name: rule("flap") }),
+            "two rules are named \"flap\"",
         ),
         (
             said(PresetSetError::DuplicateName {
-                name: "Delay 1 s".parse().unwrap(),
+                name: "delay-1s".parse().unwrap(),
             }),
-            "two presets are named \"Delay 1 s\"",
+            "two presets are named \"delay-1s\"",
         ),
         (
-            said(SnapshotError::DuplicateName { name: rule("Flap") }),
-            "two rules are named \"Flap\"",
+            said(SnapshotError::DuplicateName { name: rule("flap") }),
+            "two rules are named \"flap\"",
         ),
         (
             said(RuleError::UnknownSelector {
-                rule: rule("Flap"),
+                rule: rule("flap"),
                 error: unknown_selector(),
             }),
-            "rule \"Flap\": no selector is named \"Order producers\"",
+            "rule \"flap\": no selector is named \"order-producers\"",
         ),
         (
             said(RuleError::UnknownPreset {
-                rule: rule("Flap"),
-                preset: "Leader flap".parse().unwrap(),
+                rule: rule("flap"),
+                preset: "leader-flap".parse().unwrap(),
             }),
-            "rule \"Flap\": no preset is named \"Leader flap\"",
+            "rule \"flap\": no preset is named \"leader-flap\"",
         ),
         (
             said(RuleError::LieBeforeTruth {
-                rule: rule("Flap"),
+                rule: rule("flap"),
                 lie: LieKind::Refusal,
             }),
-            "rule \"Flap\" tests a response field, and its refusal acts before forwarding, \
+            "rule \"flap\" tests a response field, and its refusal acts before forwarding, \
              when the truth is not known yet. Give the lie `stage: after`",
         ),
         (
             said(RuleError::ManualWithoutSubject {
-                rule: rule("Election"),
+                rule: rule("election"),
                 error: missing_partition(),
             }),
-            "rule \"Election\" can never fire, because its trigger is manual and a hand firing has no call: \
+            "rule \"election\" can never fire, because its trigger is manual and a hand firing has no call: \
              leader-moves needs a partition, and none is named",
         ),
         (
             said(RuleError::NoCallForIncident {
-                rule: rule("Election"),
+                rule: rule("election"),
                 error: missing_partition(),
             }),
-            "rule \"Election\" cannot fire by hand, because there is no call: \
+            "rule \"election\" cannot fire by hand, because there is no call: \
              leader-moves needs a partition, and none is named",
         ),
         (
@@ -152,21 +152,21 @@ fn the_message_holds_the_error_of_another_crate_once() {
     let cases: [(Said, &String); 3] = [
         (
             said(RuleError::UnknownSelector {
-                rule: rule("Flap"),
+                rule: rule("flap"),
                 error: unknown_selector(),
             }),
             &selector,
         ),
         (
             said(RuleError::ManualWithoutSubject {
-                rule: rule("Election"),
+                rule: rule("election"),
                 error: missing_partition(),
             }),
             &incident,
         ),
         (
             said(RuleError::NoCallForIncident {
-                rule: rule("Election"),
+                rule: rule("election"),
                 error: missing_partition(),
             }),
             &incident,

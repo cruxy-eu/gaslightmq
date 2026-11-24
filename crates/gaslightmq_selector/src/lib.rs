@@ -24,20 +24,20 @@
 //!
 //! // Two selectors of a workspace. The second includes the first.
 //! let order_producers = Selector::new(
-//!     "Order producers".parse().expect("a selector name"),
+//!     "order-producers".parse().expect("a selector name"),
 //!     Conditions::new()
 //!         .with(Condition::is(ApiKey::PRODUCE))
 //!         .with(Condition::parse(Field::Topic, "orders.*").expect("a condition")),
 //! );
 //! let from_ingest = Selector::new(
-//!     "Order producers from ingest".parse().expect("a selector name"),
+//!     "order-producers-from-ingest".parse().expect("a selector name"),
 //!     Condition::is(ClientId::new("order-ingest").expect("a client ID")).into(),
 //! )
-//! .including("Order producers".parse().expect("a selector name"));
+//! .including("order-producers".parse().expect("a selector name"));
 //! let selectors = SelectorSet::new([order_producers, from_ingest])?;
 //!
 //! // A rule names a selector and a scope. Its effective selector is the selector and the scope.
-//! let selector = SelectorRef::Named("Order producers from ingest".parse().expect("a selector name"));
+//! let selector = SelectorRef::Named("order-producers-from-ingest".parse().expect("a selector name"));
 //! let scope = Scope::endpoint(Endpoint::Broker(BrokerId::from(2)));
 //! let effective = selectors.resolve(&selector)?.and(scope);
 //! assert_eq!(effective.pass(), Pass::Request);
@@ -116,8 +116,8 @@
 //! A pattern inside a list is an error too, because a list holds values.
 //!
 //! ```yaml
-//! name: Order producers from ingest
-//! include: Order producers
+//! name: order-producers-from-ingest
+//! include: order-producers
 //! match:
 //!   client.id: order-ingest
 //!   topic: "orders.*"

@@ -34,7 +34,7 @@ use crate::{
 ///
 /// // `trigger: { nth: 2 }` with `lifetime: 1 firing`.
 /// let trigger = Trigger::from(TriggerParts::new().with_nth(MatchNumber::new(2)?));
-/// let die = Die::new(Seed::new(42), &DiceKey::new("Refuse the 2nd Produce").expect("a dice key"));
+/// let die = Die::new(Seed::new(42), &DiceKey::new("refuse-the-2nd-produce").expect("a dice key"));
 /// let armed_at = Instant::ZERO;
 /// let arming = Arming::new(trigger, Lifetime::Firings(Count::ONE), die, armed_at);
 ///

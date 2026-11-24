@@ -11,15 +11,15 @@ Level: easy.
 |---|---|
 | `worlds/shop.yaml`, `templates/order.json` | A fake cluster with a million orders. |
 | `environments/shop.yaml` | The fake cluster with a proxy in front of it. |
-| `selectors.yaml` | *Order fetches*: which calls. |
-| `presets.yaml` | *Delay 1 s*: which lie. |
+| `selectors.yaml` | `order-fetches`: which calls. |
+| `presets.yaml` | `delay-1s`: which lie. |
 | `rules/orders.yaml` | The rule that joins the two, for the client `analytics-etl` only. |
 | `scenarios/slow-analytics.yaml` | The scenario that arms the rule. |
 
 ## Run
 
 ```sh
-gmq start --env shop --scenario "Slow analytics"
+gmq start --env shop --scenario slow-analytics
 kcat -b localhost:9092 -C -t orders -X client.id=analytics-etl
 kcat -b localhost:9092 -C -t orders -X client.id=billing
 ```

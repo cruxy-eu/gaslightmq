@@ -175,11 +175,11 @@ pub enum ClaimError {
 /// use gaslightmq_field::prelude::*;
 /// use gaslightmq_lie::prelude::*;
 ///
-/// // The rule "Blackhole" fired, and it is the first rule of the chain.
+/// // The rule "blackhole" fired, and it is the first rule of the chain.
 /// let silence = LieDefinition::Silence.on(Target::Call);
-/// let blackhole = FiredLie::new("Blackhole", Priority::HIGHEST, Claim::try_from(&silence)?);
+/// let blackhole = FiredLie::new("blackhole", Priority::HIGHEST, Claim::try_from(&silence)?);
 ///
-/// assert_eq!(blackhole.id(), &"Blackhole");
+/// assert_eq!(blackhole.id(), &"blackhole");
 /// assert_eq!(blackhole.claim().class(), CombinationClass::Terminal);
 /// # Ok::<(), ClaimError>(())
 /// ```

@@ -98,7 +98,7 @@ fn bytes_that_end_in_the_middle_of_a_request_wait_for_the_rest() {
 fn a_rule_that_does_not_fire_changes_nothing_and_shows_in_the_explanation() {
     use gaslightmq_trigger::prelude::*;
 
-    let third = on_api("Refuse the 3rd Heartbeat", ApiKey::HEARTBEAT, refusal(REBALANCING))
+    let third = on_api("refuse-the-3rd-heartbeat", ApiKey::HEARTBEAT, refusal(REBALANCING))
         .with_trigger(TriggerParts::new().with_nth(MatchNumber::new(3).unwrap()));
     let mut driver = Driver::with([third]);
     let request = heartbeat(1);
@@ -109,7 +109,7 @@ fn a_rule_that_does_not_fire_changes_nothing_and_shows_in_the_explanation() {
     assert!(record.verdict().is_pass());
     assert_eq!(
         explained(&record),
-        ["Refuse the 3rd Heartbeat: matched the call; match 1, count did not agree: held"]
+        ["refuse-the-3rd-heartbeat: matched the call; match 1, count did not agree: held"]
     );
 }
 
@@ -120,7 +120,7 @@ fn an_incident_of_a_rule_goes_to_the_engine_and_the_call_passes() {
     use gaslightmq_selector::prelude::*;
 
     let election = Rule::new(
-        "Leader election".parse().unwrap(),
+        "leader-election".parse().unwrap(),
         Conditions::from(Condition::parse(Field::Topic, "orders.*").unwrap()),
         IncidentDefinition::LeaderMoves {
             partition: None,
@@ -142,6 +142,6 @@ fn an_incident_of_a_rule_goes_to_the_engine_and_the_call_passes() {
     // An incident is no lie: the call passes, and the explanation keeps the incident.
     let record = driver.answer(&arrived.forwarded()).emitted();
     assert!(record.verdict().is_pass());
-    assert!(record.explanation().applied("Leader election"));
+    assert!(record.explanation().applied("leader-election"));
     assert_eq!(record.explanation().incidents().count(), 1);
 }

@@ -78,7 +78,7 @@ impl fmt::Display for Action {
 /// How a rule says what happens when it fires: a preset name, or an inline action.
 ///
 /// ```yaml
-/// action: Delay 1 s
+/// action: delay-1s
 /// ```
 ///
 /// ```yaml
@@ -91,10 +91,10 @@ impl fmt::Display for Action {
 /// use gaslightmq_lie::prelude::*;
 /// use gaslightmq_rule::prelude::*;
 ///
-/// let named = ActionRef::from("Delay 1 s".parse::<PresetName>()?);
+/// let named = ActionRef::from("delay-1s".parse::<PresetName>()?);
 /// let inline = ActionRef::from(LieDefinition::Silence);
 ///
-/// assert_eq!(named.preset().map(PresetName::as_str), Some("Delay 1 s"));
+/// assert_eq!(named.preset().map(PresetName::as_str), Some("delay-1s"));
 /// assert_eq!(inline.preset(), None);
 /// # Ok::<(), PresetNameError>(())
 /// ```
@@ -244,7 +244,7 @@ mod tests {
 
     #[test]
     fn a_reference_is_a_preset_name_or_an_inline_action() {
-        let name: PresetName = "Delay 1 s".parse().unwrap();
+        let name: PresetName = "delay-1s".parse().unwrap();
         let named = ActionRef::from(name.clone());
 
         assert_eq!(named, ActionRef::Preset(name.clone()));

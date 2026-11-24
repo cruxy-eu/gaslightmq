@@ -22,11 +22,11 @@ use gaslightmq_selector::prelude::*;
 use gaslightmq_trigger::prelude::*;
 
 /// The seed of the scenario, which every die derives from.
-const SEED: Seed = Seed::new(42);
+const SEED: Seed = Seed::new(7);
 
 fn selectors() -> SelectorSet {
     let order_producers = Selector::new(
-        "Order producers".parse().unwrap(),
+        "order-producers".parse().unwrap(),
         Conditions::new()
             .with(Condition::is(ApiKey::PRODUCE))
             .with(Condition::parse(Field::Topic, "orders.*").unwrap()),
@@ -44,32 +44,32 @@ fn presets() -> PresetSet {
         to: None,
     };
     PresetSet::new([
-        Preset::new("Delay 1 s".parse().unwrap(), delay_1s),
-        Preset::new("Leader flap".parse().unwrap(), leader_flap),
-        Preset::new("Leader election".parse().unwrap(), leader_election),
+        Preset::new("delay-1s".parse().unwrap(), delay_1s),
+        Preset::new("leader-flap".parse().unwrap(), leader_flap),
+        Preset::new("leader-election".parse().unwrap(), leader_election),
     ])
     .unwrap()
 }
 
 /// The rules in the order in which they win a conflict, as a Chain scenario lists them.
 fn rules() -> Vec<Rule> {
-    let order_producers = || "Order producers".parse::<SelectorName>();
+    let order_producers = || "order-producers".parse::<SelectorName>();
     let preset = |name: &str| name.parse::<PresetName>();
 
     // The rule of rules.md: `chance: 40%`, for one client.
     let slow_down = Rule::new(
-        "Slow down order producers".parse().unwrap(),
+        "slow-order-producers".parse().unwrap(),
         order_producers().unwrap(),
-        preset("Delay 1 s").unwrap(),
+        preset("delay-1s").unwrap(),
     )
     .scoped(Scope::client(ClientId::new("order-ingest").unwrap()))
     .with_trigger(TriggerParts::new().with_chance("40%".parse().unwrap()));
 
     // A refusal on `orders.*`, on the 3rd matching call of each connection.
     let refuse_orders = Rule::new(
-        "Refuse the 3rd call on orders".parse().unwrap(),
+        "refuse-the-3rd-call-on-orders".parse().unwrap(),
         Conditions::from(Condition::parse(Field::Topic, "orders.*").unwrap()),
-        preset("Leader flap").unwrap(),
+        preset("leader-flap").unwrap(),
     )
     .with_trigger(
         TriggerParts::new()
@@ -77,21 +77,21 @@ fn rules() -> Vec<Rule> {
             .with_per(Per::Session),
     );
 
-    // The first rule of the "Leader election" scenario, with the preset that takes its partition from the call.
+    // The first rule of the "leader-election" scenario, with the preset that takes its partition from the call.
     let leader_moves_away = Rule::new(
-        "Leader moves away".parse().unwrap(),
+        "leader-moves-away".parse().unwrap(),
         order_producers().unwrap(),
-        preset("Leader election").unwrap(),
+        preset("leader-election").unwrap(),
     )
     .with_trigger(TriggerParts::new().with_nth(MatchNumber::new(1).unwrap()));
 
     // A rule that waits for the truth: it only delays a Fetch that succeeded, twice.
     let slow_fetches = Rule::new(
-        "Slow down two successful fetches".parse().unwrap(),
+        "slow-down-two-successful-fetches".parse().unwrap(),
         Conditions::new()
             .with(Condition::is(ApiKey::FETCH))
             .with(Condition::is(Outcome::Ok)),
-        preset("Delay 1 s").unwrap(),
+        preset("delay-1s").unwrap(),
     )
     .with_lifetime("2 firings".parse().unwrap());
 
@@ -227,9 +227,9 @@ fn the_rules_of_the_request_pass_evaluate_against_hand_written_produce_calls() {
     assert_eq!(
         first.iter().map(Run::line).collect::<Vec<_>>(),
         [
-            "Slow down order producers | matched orders.eu/3 | match 1 | rolled 44.461% for 40% | Held",
-            "Refuse the 3rd call on orders | matched orders.eu/3 | match 1 | Held",
-            "Leader moves away | matched orders.eu/3 | match 1 | Fired | leader-moves",
+            "slow-order-producers | matched orders.eu/3 | match 1 | rolled 54.8202% for 40% | Held",
+            "refuse-the-3rd-call-on-orders | matched orders.eu/3 | match 1 | Held",
+            "leader-moves-away | matched orders.eu/3 | match 1 | Fired | leader-moves",
         ]
     );
     // Nothing shadows an incident, so its firing counts once the incident is on its way.
@@ -246,9 +246,9 @@ fn the_rules_of_the_request_pass_evaluate_against_hand_written_produce_calls() {
     assert_eq!(
         run.pass(Pass::Request, &produce, &mut ingest),
         [
-            "Slow down order producers | matched orders.eu/3 | match 2 | rolled 11.6519% for 40% | Fired | +1 s ±200 ms",
-            "Refuse the 3rd call on orders | matched orders.eu/3 | match 2 | Held",
-            "Leader moves away | matched orders.eu/3 | match 2 | Held",
+            "slow-order-producers | matched orders.eu/3 | match 2 | rolled 38.4211% for 40% | Fired | +1 s ±200 ms",
+            "refuse-the-3rd-call-on-orders | matched orders.eu/3 | match 2 | Held",
+            "leader-moves-away | matched orders.eu/3 | match 2 | Held",
         ]
     );
 
@@ -258,8 +258,8 @@ fn the_rules_of_the_request_pass_evaluate_against_hand_written_produce_calls() {
     assert_eq!(
         run.pass(Pass::Request, &other, &mut payments),
         [
-            "Refuse the 3rd call on orders | matched orders.us/0 | match 1 | Held",
-            "Leader moves away | matched orders.us/0 | match 3 | Held",
+            "refuse-the-3rd-call-on-orders | matched orders.us/0 | match 1 | Held",
+            "leader-moves-away | matched orders.us/0 | match 3 | Held",
         ]
     );
 
@@ -268,18 +268,18 @@ fn the_rules_of_the_request_pass_evaluate_against_hand_written_produce_calls() {
     assert_eq!(
         run.pass(Pass::Request, &produce, &mut ingest),
         [
-            "Slow down order producers | matched orders.eu/3 | match 3 | rolled 73.8645% for 40% | Held",
-            "Refuse the 3rd call on orders | matched orders.eu/3 | match 3 | Fired | NOT_LEADER_OR_FOLLOWER on orders.eu/3",
-            "Leader moves away | matched orders.eu/3 | match 4 | Held",
+            "slow-order-producers | matched orders.eu/3 | match 3 | rolled 77.8235% for 40% | Held",
+            "refuse-the-3rd-call-on-orders | matched orders.eu/3 | match 3 | Fired | NOT_LEADER_OR_FOLLOWER on orders.eu/3",
+            "leader-moves-away | matched orders.eu/3 | match 4 | Held",
         ]
     );
 
     // The shared counters say how many calls each rule matched, across all connections.
-    assert_eq!(run.matches("Slow down order producers"), 3);
-    assert_eq!(run.matches("Leader moves away"), 4);
-    assert_eq!(run.matches("Slow down two successful fetches"), 0);
+    assert_eq!(run.matches("slow-order-producers"), 3);
+    assert_eq!(run.matches("leader-moves-away"), 4);
+    assert_eq!(run.matches("slow-down-two-successful-fetches"), 0);
     // The refusal counts `per: session`, so each connection keeps its own count of it.
-    let refusal = run.rule("Refuse the 3rd call on orders").arming().counter();
+    let refusal = run.rule("refuse-the-3rd-call-on-orders").arming().counter();
     assert_eq!(ingest.counters.matches(refusal), 3);
     assert_eq!(payments.counters.matches(refusal), 1);
     assert_eq!(refusal.matches(), 0);
@@ -292,7 +292,7 @@ fn a_rule_that_waits_for_the_truth_evaluates_against_hand_written_fetch_calls() 
     let fetch = analytics.call(ApiKey::FETCH, &["orders.eu/3", "orders.us/0"]);
     let answered = fetch.clone().with(Outcome::Ok).with(Latency::from_millis(14));
     assert_eq!(
-        run.rule("Slow down two successful fetches").rule().pass(),
+        run.rule("slow-down-two-successful-fetches").rule().pass(),
         Pass::Response
     );
 
@@ -300,15 +300,15 @@ fn a_rule_that_waits_for_the_truth_evaluates_against_hand_written_fetch_calls() 
     run.later();
     assert_eq!(
         run.pass(Pass::Request, &fetch, &mut analytics),
-        ["Refuse the 3rd call on orders | matched orders.eu/3, orders.us/0 | match 1 | Held"]
+        ["refuse-the-3rd-call-on-orders | matched orders.eu/3, orders.us/0 | match 1 | Held"]
     );
-    assert_eq!(run.waiting(&fetch), ["Slow down two successful fetches"]);
+    assert_eq!(run.waiting(&fetch), ["slow-down-two-successful-fetches"]);
     // The backend answers, and the delay takes the first of its two firings.
     run.later();
     assert_eq!(
         run.pass(Pass::Response, &answered, &mut analytics),
         [
-            "Slow down two successful fetches | matched orders.eu/3, orders.us/0 | match 1 | 1 of 2 left | Fired \
+            "slow-down-two-successful-fetches | matched orders.eu/3, orders.us/0 | match 1 | 1 of 2 left | Fired \
              | +1 s ±200 ms"
         ]
     );
@@ -317,17 +317,17 @@ fn a_rule_that_waits_for_the_truth_evaluates_against_hand_written_fetch_calls() 
     run.later();
     assert_eq!(
         run.pass(Pass::Request, &fetch, &mut analytics),
-        ["Refuse the 3rd call on orders | matched orders.eu/3, orders.us/0 | match 2 | Held"]
+        ["refuse-the-3rd-call-on-orders | matched orders.eu/3, orders.us/0 | match 2 | Held"]
     );
     assert_eq!(
         run.pass(Pass::Response, &answered, &mut analytics),
         [
-            "Slow down two successful fetches | matched orders.eu/3, orders.us/0 | match 2 | 0 of 2 left | Fired \
+            "slow-down-two-successful-fetches | matched orders.eu/3, orders.us/0 | match 2 | 0 of 2 left | Fired \
              | +1 s ±200 ms"
         ]
     );
     assert!(
-        run.rule("Slow down two successful fetches")
+        run.rule("slow-down-two-successful-fetches")
             .arming()
             .has_ended(run.clock.now())
     );
@@ -337,7 +337,7 @@ fn a_rule_that_waits_for_the_truth_evaluates_against_hand_written_fetch_calls() 
     assert_eq!(
         run.pass(Pass::Request, &fetch, &mut analytics),
         [
-            "Refuse the 3rd call on orders | matched orders.eu/3, orders.us/0 | match 3 | Fired \
+            "refuse-the-3rd-call-on-orders | matched orders.eu/3, orders.us/0 | match 3 | Fired \
              | NOT_LEADER_OR_FOLLOWER on orders.eu/3, orders.us/0"
         ]
     );
@@ -349,9 +349,9 @@ fn a_rule_that_waits_for_the_truth_evaluates_against_hand_written_fetch_calls() 
     run.later();
     assert_eq!(
         run.pass(Pass::Response, &answered, &mut analytics),
-        ["Slow down two successful fetches | matched orders.eu/3, orders.us/0 | 0 of 2 left | LifetimeOver"]
+        ["slow-down-two-successful-fetches | matched orders.eu/3, orders.us/0 | 0 of 2 left | LifetimeOver"]
     );
-    assert_eq!(run.matches("Slow down two successful fetches"), 2);
+    assert_eq!(run.matches("slow-down-two-successful-fetches"), 2);
     // A rule that cannot fire anymore does not wait for the truth of a Fetch either.
     assert_eq!(run.waiting(&fetch), [""; 0]);
 }
@@ -375,14 +375,14 @@ fn the_same_seed_gives_the_same_firings_in_every_run() {
     };
 
     let first = firings(&slow_down, SEED);
-    // The die rolls 44.461%, 11.6519%, 73.8645%, 48.5064%, 62.5689%, 34.6021%, 79.717% and 12.0951%, for `chance: 40%`.
-    assert_eq!(first, [false, true, false, false, false, true, false, true]);
+    // The die rolls 54.8202%, 38.4211%, 77.8235%, 64.6284%, 89.9933%, 36.1797%, 65.1773% and 82.5857%, for `chance: 40%`.
+    assert_eq!(first, [false, true, false, false, false, true, false, false]);
     assert_eq!(first, firings(&slow_down, SEED));
-    assert_ne!(first, firings(&slow_down, Seed::new(7)));
+    assert_ne!(first, firings(&slow_down, Seed::new(42)));
 
     // A rule of another name rolls a die of its own.
     let other = Rule::new(
-        "Slow ingest".parse().unwrap(),
+        "slow-ingest".parse().unwrap(),
         slow_down.selector().clone(),
         slow_down.action().clone(),
     )

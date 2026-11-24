@@ -49,7 +49,7 @@ mod next_to_std_and_every_neighbour {
         let subscription: SubscriptionId = traffic.subscribe(gaslightmq_selector::EffectiveSelector::new());
         let window: &LiveWindow = traffic.live_window();
         let statistics: &Statistics = traffic.statistics();
-        let rule: RuleStatistics = statistics.rule(&"Leader flap".parse().expect("a rule name"));
+        let rule: RuleStatistics = statistics.rule(&"leader-flap".parse().expect("a rule name"));
 
         vec![
             size.to_string(),

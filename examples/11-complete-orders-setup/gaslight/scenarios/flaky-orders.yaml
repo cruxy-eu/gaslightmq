@@ -1,5 +1,6 @@
 # Steady background trouble on the order topics.
-name: Flaky orders
+name: flaky-orders
+title: Flaky orders
 mode: chain
 seed: 42
 
@@ -7,6 +8,6 @@ seed: 42
 # The order only decides between rules that conflict:
 # a fetch that hangs cannot also be delayed.
 rules:
-  - Every hundredth order fetch hangs
-  - Orders sometimes fail
-  - Order fetches are slow for analytics
+  - every-hundredth-order-fetch-hangs
+  - orders-sometimes-fail
+  - order-fetches-are-slow-for-analytics
