@@ -99,11 +99,11 @@ See [world](../domains/world.md).
 
 See [control surfaces](../domains/control-surfaces.md).
 
-| Entity     | Type                 | Name                                  | ID                                  | Title         |
-|------------|----------------------|---------------------------------------|-------------------------------------|---------------|
-| Pad layout | User-defined         | `LayoutName`                          | `LayoutUuid`                        | `LayoutTitle` |
-| Layer      | Part of a pad layout | `LayerName`, unique within its layout | —                                   | —             |
-| Pad        | Part of a pad layout | —                                     | Its position: layer, row and column | —             |
+| Entity     | Type                 | Name         | ID                                                           | Title         |
+|------------|----------------------|--------------|--------------------------------------------------------------|---------------|
+| Pad layout | User-defined         | `LayoutName` | `LayoutUuid`                                                 | `LayoutTitle` |
+| Layer      | Part of a pad layout | —            | Its scope: all clients, a `client.id`, or a scope of its own | —             |
+| Pad        | Part of a pad layout | —            | Its position: layer, row and column                          | —             |
 
 ### Storage
 
