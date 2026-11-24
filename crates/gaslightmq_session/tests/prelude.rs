@@ -57,7 +57,8 @@ mod next_to_the_others {
         let ordinal: ConnectionOrdinal = ordinals.assign(connection.host(), connection.endpoint());
         let key: SessionKey = SessionKey::of(&connection, ordinal);
         let contexts: ClientContexts = ClientContexts::new(core::time::Duration::from_secs(60));
-        let mut session: Session<&str> = Session::open(connection, ordinal, contexts.clone(), now);
+        let call_ids: CallIds = CallIds::new();
+        let mut session: Session<&str> = Session::open(connection, ordinal, contexts.clone(), call_ids.clone(), now);
         let opened: Lifecycle = session.lifecycle();
         let identification: Identification = session.identify(&request);
         let change: IdentityChange = identification.changes()[0].clone();
@@ -65,8 +66,8 @@ mod next_to_the_others {
         let client: ClientInstance = session.client().unwrap().clone();
         let context: ClientContext = contexts.join(&client);
         let learned: LearnedFields = LearnedFields::new().with(GroupId::new("analytics-etl").unwrap());
-        let mut calls: InFlightCalls<&str> = InFlightCalls::new();
-        let call: CallNumber = calls.arrive("Metadata", now);
+        let mut calls: InFlightCalls<&str> = InFlightCalls::new(call_ids.clone());
+        let call: CallId = calls.arrive("Metadata", now);
         let phase: CallPhase = calls.get(call).unwrap().phase();
         let in_flight: InFlightCall<&str> = calls.get(call).unwrap().clone();
         let stalled: Stalled = calls.silence(call, now).unwrap();
@@ -88,6 +89,7 @@ mod next_to_the_others {
             client.to_string(),
             context.sessions().to_string(),
             format!("{learned:?}"),
+            call_ids.assigned().to_string(),
             calls.len().to_string(),
             call.to_string(),
             phase.to_string(),
@@ -116,9 +118,7 @@ mod next_to_the_others {
             message_of(SessionError::InvalidClientSoftware {
                 error: "librdkafka".parse::<ClientSoftware>().unwrap_err(),
             }),
-            message_of(SessionError::CallNotInFlight {
-                call: CallNumber::FIRST,
-            }),
+            message_of(SessionError::CallNotInFlight { call: CallId::FIRST }),
         ]
     }
 }
@@ -127,7 +127,7 @@ mod next_to_the_others {
 fn the_prelude_names_every_item_next_to_the_other_preludes() {
     let items = next_to_the_others::every_item();
 
-    assert_eq!(items.len(), 20);
+    assert_eq!(items.len(), 21);
     assert!(items.iter().all(|item| !item.is_empty()));
 }
 
@@ -159,6 +159,7 @@ fn the_prelude_is_enough_to_open_a_session() {
         connection,
         ConnectionOrdinal::FIRST,
         contexts,
+        CallIds::new(),
         gaslightmq_clock::Instant::ZERO,
     );
 

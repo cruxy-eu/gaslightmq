@@ -10,8 +10,8 @@ use gaslightmq_selector::prelude::*;
 
 #[test]
 fn facet_counts_respect_the_other_active_filters() {
-    let mut ingest = Client::identified_as("order-ingest");
-    let mut etl = Client::identified_as("analytics").in_group("analytics-etl");
+    let ingest = Client::identified_as("order-ingest");
+    let etl = Client::identified_as("analytics").in_group("analytics-etl");
 
     let mut index = CallIndex::new(IndexConfiguration::new());
     index.add(&ingest.sends(Request::of(ApiKey::PRODUCE).ok("orders.eu/0")));
@@ -41,16 +41,16 @@ fn facet_counts_respect_the_other_active_filters() {
 fn an_index_groups_calls_into_the_facets_of_the_spec() {
     let first_broker = Endpoint::Broker(BrokerId::from(1));
     let second_broker = Endpoint::Broker(BrokerId::from(2));
-    let mut ingest = Client::identified_as("order-ingest").connected_to(first_broker);
-    let mut payments = Client::identified_as("payments-svc")
+    let ingest = Client::identified_as("order-ingest").connected_to(first_broker);
+    let payments = Client::identified_as("payments-svc")
         .connected_to(second_broker)
         .in_group("payments")
         .transacting_as("payments-tx-1");
-    let mut etl = Client::identified_as("analytics")
+    let etl = Client::identified_as("analytics")
         .connected_to(second_broker)
         .in_group("analytics-etl");
     // A client that only asks the bootstrap endpoint about the cluster.
-    let mut ui = Client::identified_as("kafka-ui");
+    let ui = Client::identified_as("kafka-ui");
 
     let mut index = CallIndex::new(IndexConfiguration::new());
     index.add(&ui.sends(Request::of(ApiKey::METADATA).ok("orders.eu")));
@@ -90,7 +90,7 @@ fn an_index_groups_calls_into_the_facets_of_the_spec() {
 
 #[test]
 fn a_filter_without_a_condition_leaves_every_call() {
-    let mut ingest = Client::identified_as("order-ingest");
+    let ingest = Client::identified_as("order-ingest");
 
     let mut index = CallIndex::new(IndexConfiguration::new());
     assert!(index.is_empty());
@@ -117,9 +117,9 @@ fn an_index_without_a_call_has_empty_facets() {
 
 #[test]
 fn a_click_on_a_value_leaves_as_many_calls_as_the_facet_said() {
-    let mut ingest = Client::identified_as("order-ingest");
-    let mut payments = Client::identified_as("payments-svc").in_group("payments");
-    let mut etl = Client::identified_as("analytics").in_group("analytics-etl");
+    let ingest = Client::identified_as("order-ingest");
+    let payments = Client::identified_as("payments-svc").in_group("payments");
+    let etl = Client::identified_as("analytics").in_group("analytics-etl");
 
     let mut index = CallIndex::new(IndexConfiguration::new());
     index.add(&ingest.sends(Request::of(ApiKey::PRODUCE).ok("orders.eu/0").ok("orders.us/0")));
@@ -167,7 +167,7 @@ fn a_click_on_a_value_leaves_as_many_calls_as_the_facet_said() {
 
 #[test]
 fn conditions_on_a_part_apply_to_the_same_part() {
-    let mut ingest = Client::identified_as("order-ingest");
+    let ingest = Client::identified_as("order-ingest");
 
     let mut index = CallIndex::new(IndexConfiguration::new());
     index.add(
@@ -195,8 +195,8 @@ fn conditions_on_a_part_apply_to_the_same_part() {
 
 #[test]
 fn a_value_counts_whether_the_request_carries_it_or_the_client_context_knows_it() {
-    let mut etl = Client::identified_as("analytics").in_group("analytics-etl");
-    let mut ingest = Client::identified_as("order-ingest");
+    let etl = Client::identified_as("analytics").in_group("analytics-etl");
+    let ingest = Client::identified_as("order-ingest");
 
     let mut index = CallIndex::new(IndexConfiguration::new());
     // A Fetch never names a group. The client context of `analytics` knows it.
@@ -212,7 +212,7 @@ fn a_value_counts_whether_the_request_carries_it_or_the_client_context_knows_it(
 
 #[test]
 fn a_call_that_never_reached_the_backend_has_no_outcome() {
-    let mut ingest = Client::identified_as("order-ingest");
+    let ingest = Client::identified_as("order-ingest");
 
     let mut index = CallIndex::new(IndexConfiguration::new());
     index.add(&ingest.sends(Request::of(ApiKey::PRODUCE).ok("orders.eu/0")));
@@ -226,8 +226,8 @@ fn a_call_that_never_reached_the_backend_has_no_outcome() {
 
 #[test]
 fn a_filter_that_excludes_a_value_narrows_the_other_facets() {
-    let mut ingest = Client::identified_as("order-ingest");
-    let mut ui = Client::identified_as("kafka-ui");
+    let ingest = Client::identified_as("order-ingest");
+    let ui = Client::identified_as("kafka-ui");
 
     let mut index = CallIndex::new(IndexConfiguration::new());
     index.add(&ingest.sends(Request::of(ApiKey::PRODUCE).ok("orders.eu/0")));
@@ -249,8 +249,8 @@ fn a_filter_that_excludes_a_value_narrows_the_other_facets() {
 
 #[test]
 fn the_current_filter_can_be_saved_as_a_selector() {
-    let mut ingest = Client::identified_as("order-ingest");
-    let mut etl = Client::identified_as("analytics");
+    let ingest = Client::identified_as("order-ingest");
+    let etl = Client::identified_as("analytics");
 
     let mut index = CallIndex::new(IndexConfiguration::new());
     index.add(&ingest.sends(Request::of(ApiKey::PRODUCE).ok("orders.eu/0")));
@@ -279,8 +279,8 @@ fn the_current_filter_can_be_saved_as_a_selector() {
 #[test]
 fn every_field_can_have_a_facet() {
     // The same client on two connections.
-    let mut ingest = Client::identified_as("order-ingest");
-    let mut retry = Client::identified_as("order-ingest");
+    let ingest = Client::identified_as("order-ingest");
+    let retry = Client::identified_as("order-ingest");
 
     let mut index = CallIndex::new(IndexConfiguration::new());
     index.add(&ingest.sends(Request::of(ApiKey::PRODUCE).ok("orders.eu/0")));
@@ -303,7 +303,7 @@ fn every_field_can_have_a_facet() {
 
 #[test]
 fn the_configuration_says_which_facets_an_index_has() {
-    let mut ingest = Client::identified_as("order-ingest");
+    let ingest = Client::identified_as("order-ingest");
 
     let mut configuration = IndexConfiguration::new();
     configuration.facets = vec![Field::Connection, Field::Topic];
@@ -319,8 +319,8 @@ fn the_configuration_says_which_facets_an_index_has() {
 
 #[test]
 fn the_configuration_says_when_values_suggest_a_pattern() {
-    let mut ingest = Client::identified_as("order-ingest");
-    let mut worker = Client::identified_as("order-worker");
+    let ingest = Client::identified_as("order-ingest");
+    let worker = Client::identified_as("order-worker");
 
     let mut configuration = IndexConfiguration::new();
     configuration.pattern_separators = vec!['_'];
@@ -346,9 +346,9 @@ fn the_configuration_says_when_values_suggest_a_pattern() {
 
 #[test]
 fn every_facet_suggests_the_patterns_its_values_share() {
-    let mut ingest = Client::identified_as("order-ingest");
-    let mut worker = Client::identified_as("order-worker");
-    let mut payments = Client::identified_as("payments-svc");
+    let ingest = Client::identified_as("order-ingest");
+    let worker = Client::identified_as("order-worker");
+    let payments = Client::identified_as("payments-svc");
 
     let mut index = CallIndex::new(IndexConfiguration::new());
     index.add(&ingest.sends(Request::of(ApiKey::PRODUCE).ok("orders.eu/0")));

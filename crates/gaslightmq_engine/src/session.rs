@@ -316,7 +316,7 @@ impl<'a, B: Backend, C: WaitableClock> Session<'a, B, C> {
     async fn forward(&mut self, call: CallId, request: Request) -> Option<Input<'static>> {
         self.forwarded = true;
         let backend = &self.of.backend;
-        let request = BackendRequest::new(call, self.transport.endpoint(), request);
+        let request = BackendRequest::new(call, self.transport.number(), self.transport.endpoint(), request);
         let mut answer: BoxFuture<'a, (CallId, BackendAnswer)> =
             Box::pin(async move { (call, backend.call(request).await) });
         match futures::poll!(answer.as_mut()) {

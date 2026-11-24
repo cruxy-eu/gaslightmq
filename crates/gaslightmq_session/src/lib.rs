@@ -20,6 +20,7 @@
 //! | [`LearnedFields`] | What a client context knows at one moment: the values of the learned fields. |
 //! | [`InFlightCalls`] | The calls in flight, and the order in which their requests and responses go on. |
 //! | [`InFlightCall`], [`CallPhase`] | One call in flight, and how far it is. |
+//! | [`CallIds`] | The call IDs of one environment, which its sessions hand out together. |
 //! | [`Stalled`] | That a silence stopped a connection, and by which call. |
 //!
 //! ```
@@ -30,8 +31,10 @@
 //! use gaslightmq_wire::Request;
 //! use gaslightmq_wire::messages::{FetchRequest, JoinGroupRequest};
 //!
-//! // The engine owns the client contexts, and hands every session a handle to them.
+//! // The engine owns the client contexts and the call IDs of its environment,
+//! // and hands every session a handle to each.
 //! let contexts = ClientContexts::new(Duration::from_secs(60));
+//! let call_ids = CallIds::new();
 //! let mut ordinals = ConnectionOrdinals::new();
 //! let now = Instant::ZERO;
 //! let mut open = |number: u64, broker: i32| {
@@ -39,7 +42,7 @@
 //!     let endpoint = Endpoint::Broker(BrokerId::try_from(broker).expect("a broker"));
 //!     let connection = Connection::new(ConnectionNumber::new(number), address, endpoint);
 //!     let ordinal = ordinals.assign(connection.host(), endpoint);
-//!     Session::<()>::open(connection, ordinal, contexts.clone(), now)
+//!     Session::<()>::open(connection, ordinal, contexts.clone(), call_ids.clone(), now)
 //! };
 //!
 //! // A consumer joins its group on the connection to its coordinator.
@@ -89,8 +92,11 @@
 //!
 //! # Calls in flight
 //!
-//! [`InFlightCalls`] numbers the calls of a session with a [`CallNumber`](gaslightmq_call::CallNumber),
+//! [`InFlightCalls`] gives every call of a session its [`CallId`](gaslightmq_call::CallId),
 //! and keeps what the pipeline needs for each one.
+//! The IDs come from the [`CallIds`] of the environment: the engine owns that count,
+//! and every session holds a clone of the handle, so a higher ID is a later call on whichever connection.
+//! The handle never waits, because the count is an atomic number.
 //! It holds the rules of ordering on one connection:
 //! requests reach the backend in the order they arrived, responses leave in that order,
 //! and a silence stalls everything behind it.
@@ -118,7 +124,7 @@
 //! # No IO
 //!
 //! The crate depends on `gaslightmq_field` and `gaslightmq_kernel` for the fields and their values,
-//! on `gaslightmq_call` for the number of a call,
+//! on `gaslightmq_call` for the ID of a call,
 //! on `gaslightmq_wire` for the request whose header it reads,
 //! on `gaslightmq_trigger` for the counters of a session,
 //! and on `gaslightmq_clock` for instants.
@@ -132,6 +138,7 @@ mod client;
 mod connection;
 mod error;
 mod identity;
+mod ids;
 mod key;
 mod session;
 
@@ -140,6 +147,7 @@ pub use client::{ClientContext, ClientContexts, ClientInstance, LearnedFields};
 pub use connection::{Connection, ConnectionOrdinal, ConnectionOrdinalError, ConnectionOrdinals};
 pub use error::SessionError;
 pub use identity::{Closed, ClosedBy, Identification, Identity, IdentityChange, Lifecycle};
+pub use ids::CallIds;
 pub use key::{SessionKey, SessionKeyError};
 pub use session::Session;
 
@@ -159,8 +167,9 @@ pub use session::Session;
 pub mod prelude {
     #[doc(no_inline)]
     pub use crate::{
-        CallPhase, ClientContext, ClientContexts, ClientInstance, Closed, ClosedBy, Connection, ConnectionOrdinal,
-        ConnectionOrdinalError, ConnectionOrdinals, Identification, Identity, IdentityChange, InFlightCall,
-        InFlightCalls, LearnedFields, Lifecycle, Session, SessionError, SessionKey, SessionKeyError, Stalled,
+        CallIds, CallPhase, ClientContext, ClientContexts, ClientInstance, Closed, ClosedBy, Connection,
+        ConnectionOrdinal, ConnectionOrdinalError, ConnectionOrdinals, Identification, Identity, IdentityChange,
+        InFlightCall, InFlightCalls, LearnedFields, Lifecycle, Session, SessionError, SessionKey, SessionKeyError,
+        Stalled,
     };
 }

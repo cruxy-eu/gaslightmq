@@ -29,14 +29,15 @@ fn a_silence_never_answers_and_stalls_the_session() {
 
     // The session is stalled, and it stays open until the client gives up.
     let stalled = driver.pipeline.stalled().unwrap();
-    assert_eq!(stalled.by(), CallNumber::FIRST);
+    let the_produce = CallId::FIRST;
+    assert_eq!(stalled.by(), the_produce);
     assert_eq!(driver.pipeline.closed(), None);
 
     // A request behind the silence never reaches the backend and never gets an answer.
     let behind = driver.send(&heartbeat(42));
     assert_eq!(behind.kinds(), ["emit"]);
     let record = behind.emitted();
-    assert_eq!(record.id(), Driver::call(2));
+    assert_eq!(record.id(), the_produce.next());
     assert_eq!(record.delivered(), &Delivered::Nothing);
     assert!(record.verdict().is_pass());
     assert_eq!(driver.pipeline.in_flight(), 2);
@@ -57,9 +58,10 @@ fn a_call_before_a_silence_still_finishes() {
     let arrived = driver.send(&first);
     assert_eq!(driver.send(&produce(42, &["orders.eu/3"])).kinds(), ["emit"]);
 
-    let answered = driver.answer(&arrived.forwarded());
+    let the_heartbeat = arrived.forwarded();
+    let answered = driver.answer(&the_heartbeat);
     assert_eq!(answered.kinds(), ["send", "emit"]);
-    assert_eq!(answered.emitted().id(), Driver::call(1));
+    assert_eq!(answered.emitted().id(), the_heartbeat.0);
 }
 
 #[test]
@@ -219,7 +221,7 @@ fn a_backend_without_an_answer_ends_the_session_and_every_record_says_why() {
     for record in [&heartbeat, &produce] {
         assert_eq!(
             record.explanation().failure().map(Failure::message),
-            Some(format!("the backend has no answer for call #7.2: {failure}").as_str())
+            Some(format!("the backend has no answer for call {}: {failure}", second.0).as_str())
         );
         assert!(record.verdict().is_pass(), "a failure of the backend is no lie");
     }
@@ -232,34 +234,29 @@ fn a_backend_without_an_answer_ends_the_session_and_every_record_says_why() {
 }
 
 #[test]
-fn a_failure_ends_the_session_whichever_call_of_the_connection_it_names() {
+fn a_failure_ends_the_session_also_when_its_call_has_left() {
     let mut driver = Driver::with([]);
 
     // A Produce without a response leaves at once, and a Heartbeat waits for the backend.
     let no_acks = driver.send(&produce_with_acks(41, &["orders.eu/3"], 0));
     assert_eq!(no_acks.kinds(), ["forward", "emit"]);
-    driver.send(&heartbeat(42));
-
-    // A failure for a call of another connection is not for this session.
-    let elsewhere = driver.handle(Input::BackendFailed {
-        call: "#8.1".parse().unwrap(),
-        reason: "the backend cannot reach the cluster".to_owned(),
-    });
-    assert!(elsewhere.is_empty());
-    assert_eq!(driver.pipeline.closed(), None);
+    let the_produce = no_acks.forwarded().0;
+    let the_heartbeat = driver.send(&heartbeat(42)).forwarded().0;
 
     // The backend could not hand on the Produce. That call is gone, and the session ends all the same.
     let ended = driver.handle(Input::BackendFailed {
-        call: no_acks.forwarded().0,
+        call: the_produce,
         reason: "the backend cannot reach the cluster".to_owned(),
     });
     assert_eq!(ended.kinds(), ["emit", "close"]);
     let record = ended.emitted();
-    assert_eq!(record.id(), Driver::call(2));
+    assert_eq!(record.id(), the_heartbeat);
     assert_eq!(record.delivered(), &Delivered::Nothing);
     assert_eq!(
         record.explanation().failure().map(Failure::message),
-        Some("the backend has no answer for call #7.1: the backend cannot reach the cluster")
+        Some(
+            format!("the backend has no answer for call {the_produce}: the backend cannot reach the cluster").as_str()
+        )
     );
     assert_eq!(
         driver.pipeline.closed().map(|closed| closed.by()),

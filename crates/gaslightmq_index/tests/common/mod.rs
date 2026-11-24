@@ -61,14 +61,16 @@ impl Request {
 /// The number of the next connection, across every test of the binary: each client gets one of its own.
 static CONNECTIONS: AtomicU64 = AtomicU64::new(1);
 
-/// One client on one connection. Every request it sends is the next call of its session.
+/// The ID of the next call, across every test of the binary: an environment counts the calls of all its connections.
+static CALLS: AtomicU64 = AtomicU64::new(1);
+
+/// One client on one connection. Every request it sends is the next call of its environment.
 pub struct Client {
     connection: ConnectionNumber,
     endpoint: Endpoint,
     id: ClientId,
     group: Option<GroupId>,
     transactional_id: Option<TransactionalId>,
-    next: CallNumber,
 }
 
 impl Client {
@@ -80,7 +82,6 @@ impl Client {
             id: ClientId::new(id).unwrap(),
             group: None,
             transactional_id: None,
-            next: CallNumber::FIRST,
         }
     }
 
@@ -121,9 +122,8 @@ impl Client {
     }
 
     /// The record of the next call of the client: `request`, which no rule touched.
-    pub fn sends(&mut self, request: Request) -> Call {
-        let number = self.next;
-        self.next = number.next();
+    pub fn sends(&self, request: Request) -> Call {
+        let id = CallId::new(CALLS.fetch_add(1, Ordering::Relaxed)).unwrap();
 
         let asked = self.session().with(request.api);
         let fields = match request.outcome {
@@ -136,6 +136,6 @@ impl Client {
                 .without_truth(),
         };
         let arrived = CallTiming::arrived(Instant::ZERO);
-        Call::new(number, fields, Delivered::Nothing, Explanation::none(), arrived).unwrap()
+        Call::new(id, fields, Delivered::Nothing, Explanation::none(), arrived).unwrap()
     }
 }

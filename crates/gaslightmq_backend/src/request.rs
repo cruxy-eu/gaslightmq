@@ -4,14 +4,15 @@ use gaslightmq_call::CallId;
 use gaslightmq_field::{ConnectionNumber, Endpoint};
 use gaslightmq_wire::Request;
 
-/// A request as a backend takes it: under the ID of its call, from the endpoint its connection is on.
+/// A request as a backend takes it: under the ID of its call, with its connection and the endpoint that is on.
 ///
 /// The engine makes one from every request that a pipeline forwards.
 /// A broker that runs alone gets the same message from whoever drives it.
 ///
 /// | Part | Tells the backend |
 /// |---|---|
-/// | [`call`](Self::call) | Which call the request belongs to, and so which [connection](Self::connection) it arrived on. |
+/// | [`call`](Self::call) | Which call the request belongs to. An answer in a later step comes under this ID. |
+/// | [`connection`](Self::connection) | Which connection the request arrived on. The ID of a call does not say that. |
 /// | [`endpoint`](Self::endpoint) | Which endpoint that connection is on: `bootstrap`, or the broker the client meant to reach. |
 /// | [`request`](Self::request) | What the client asked, or what the lies before forwarding left of it. |
 ///
@@ -28,26 +29,29 @@ use gaslightmq_wire::Request;
 /// use gaslightmq_wire::messages::HeartbeatRequest;
 ///
 /// let heartbeat = Request::new(4, 41, Some("order-ingest"), &HeartbeatRequest::default()).expect("a request");
-/// let request = BackendRequest::new("#7.3".parse()?, Endpoint::Broker(BrokerId::from(2)), heartbeat);
+/// let call = CallId::FIRST;
+/// let connection = ConnectionNumber::new(7);
+/// let request = BackendRequest::new(call, connection, Endpoint::Broker(BrokerId::from(2)), heartbeat);
 ///
-/// assert_eq!(request.call().to_string(), "#7.3");
-/// assert_eq!(request.connection(), ConnectionNumber::new(7));
+/// assert_eq!(request.call(), call);
+/// assert_eq!(request.connection(), connection);
 /// assert_eq!(request.endpoint().to_string(), "broker 2");
 /// assert_eq!(request.request().correlation_id(), 41);
-/// # Ok::<(), CallIdError>(())
 /// ```
 #[derive(Debug, Clone)]
 pub struct BackendRequest {
     call: CallId,
+    connection: ConnectionNumber,
     endpoint: Endpoint,
     request: Request,
 }
 
 impl BackendRequest {
-    /// The request of `call`, which arrived on a connection to `endpoint`.
-    pub const fn new(call: CallId, endpoint: Endpoint, request: Request) -> Self {
+    /// The request of `call`, which arrived on `connection`, a connection to `endpoint`.
+    pub const fn new(call: CallId, connection: ConnectionNumber, endpoint: Endpoint, request: Request) -> Self {
         Self {
             call,
+            connection,
             endpoint,
             request,
         }
@@ -60,9 +64,9 @@ impl BackendRequest {
         self.call
     }
 
-    /// The connection the request arrived on, which is the connection of its [call](Self::call).
+    /// The connection the request arrived on.
     pub const fn connection(&self) -> ConnectionNumber {
-        self.call.connection()
+        self.connection
     }
 
     /// The endpoint that the connection of the request is on.
@@ -75,7 +79,7 @@ impl BackendRequest {
         &self.request
     }
 
-    /// The request itself, without the call and the endpoint.
+    /// The request itself, without the call, the connection and the endpoint.
     pub fn into_request(self) -> Request {
         self.request
     }

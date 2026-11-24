@@ -25,14 +25,12 @@ async fn a_request_goes_to_the_backend_and_the_truth_comes_back() -> anyhow::Res
         offset: ScriptedBackend::written_at(),
     };
     assert_eq!(written, Ok(truth));
-    // The backend took the request under the call of the pipeline: the first call of the first connection.
-    let first_call_of_the_first_connection: CallId = "#1.1".parse()?;
-    assert_eq!(
-        proxy.backend().calls_taken_so_far(),
-        [first_call_of_the_first_connection]
-    );
+    // The backend took the request under the call of the pipeline: the first call of the proxy.
+    let the_first_call_of_the_proxy = CallId::FIRST;
+    assert_eq!(proxy.backend().calls_taken_so_far(), [the_first_call_of_the_proxy]);
     let record = proxy.next_record().await?;
-    assert_eq!(record.id(), first_call_of_the_first_connection);
+    assert_eq!(record.id(), the_first_call_of_the_proxy);
+    assert_eq!(record.connection(), ConnectionNumber::new(1));
     assert_eq!(record.verdict().to_string(), "pass");
     assert_eq!(record.explanation().failure().map(Failure::message), None);
     Ok(())
@@ -50,8 +48,14 @@ async fn the_requests_of_a_connection_reach_the_backend_in_order_before_any_answ
     let third = client.send_metadata().await?;
 
     // The engine does not wait for one answer before it starts the next call.
-    let calls_of_the_connection: [CallId; 3] = ["#1.1".parse()?, "#1.2".parse()?, "#1.3".parse()?];
-    assert_eq!(proxy.backend().calls_taken(3).await?, calls_of_the_connection);
+    // The calls reach the backend in the order of their requests, and a later call has a higher ID.
+    let the_first_metadata = CallId::FIRST;
+    let the_heartbeat = the_first_metadata.next();
+    let the_second_metadata = the_heartbeat.next();
+    assert_eq!(
+        proxy.backend().calls_taken(3).await?,
+        [the_first_metadata, the_heartbeat, the_second_metadata]
+    );
     assert!(proxy.leaves_unanswered(client.receive_response(&first)).await);
 
     // The answers leave in the order of the requests.
@@ -75,8 +79,9 @@ async fn a_request_without_a_response_goes_to_the_backend_and_nothing_comes_back
 
     // The first response on the connection answers the second request.
     EngineUnderTest::soon(client.receive_response(&heartbeat)).await??;
-    let produce_and_heartbeat: [CallId; 2] = ["#1.1".parse()?, "#1.2".parse()?];
-    assert_eq!(proxy.backend().calls_taken_so_far(), produce_and_heartbeat);
+    let the_produce = CallId::FIRST;
+    let the_heartbeat = the_produce.next();
+    assert_eq!(proxy.backend().calls_taken_so_far(), [the_produce, the_heartbeat]);
     assert_eq!(proxy.next_record().await?.delivered(), &Delivered::Nothing);
     Ok(())
 }
@@ -92,17 +97,20 @@ async fn every_connection_is_a_session_of_its_own() -> anyhow::Result<()> {
     second.heartbeat(group.as_str()).await?;
     first.heartbeat(group.as_str()).await?;
 
-    // The endpoints of one proxy number their connections together, and every connection numbers its own calls.
-    let first_call_of_the_first: CallId = "#1.1".parse()?;
-    let first_call_of_the_second: CallId = "#2.1".parse()?;
-    let second_call_of_the_first: CallId = "#1.2".parse()?;
+    // The proxy counts the calls of all its connections together: a later call has a higher ID.
+    let first_call = CallId::FIRST;
+    let second_call = first_call.next();
+    let third_call = second_call.next();
     assert_eq!(
         proxy.backend().calls_taken_so_far(),
-        [
-            first_call_of_the_first,
-            first_call_of_the_second,
-            second_call_of_the_first
-        ]
+        [first_call, second_call, third_call]
+    );
+    // The endpoints of one proxy number their connections together, and each call keeps the connection it came on.
+    let the_first = ConnectionNumber::new(1);
+    let the_second = ConnectionNumber::new(2);
+    assert_eq!(
+        proxy.backend().connections_of_the_calls_taken_so_far(),
+        [the_first, the_second, the_first]
     );
     Ok(())
 }

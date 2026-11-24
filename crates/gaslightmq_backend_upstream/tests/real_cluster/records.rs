@@ -2,6 +2,7 @@
 
 use gaslightmq_backend::prelude::*;
 use gaslightmq_backend_upstream::prelude::*;
+use gaslightmq_call::prelude::*;
 use gaslightmq_environment::prelude::*;
 use gaslightmq_field::prelude::*;
 use gaslightmq_test_kafka::KafkaCluster;
@@ -33,7 +34,12 @@ async fn a_record_produced_through_the_backend_is_in_the_log_of_its_partition() 
     let request = Request::new(9, 1, Some("order-ingest"), &produce)?;
     let leader = Endpoint::Broker(orders.partition(0).leader().await?);
     let answer = backend
-        .call(BackendRequest::new("#1.1".parse()?, leader, request))
+        .call(BackendRequest::new(
+            CallId::FIRST,
+            ConnectionNumber::new(1),
+            leader,
+            request,
+        ))
         .await;
 
     let BackendAnswer::Truth(truth) = answer else {
@@ -60,7 +66,10 @@ async fn a_produce_without_acks_has_no_response_and_its_record_is_in_the_log() -
     // One client writes two records on one connection: the first without acks, and the second with them.
     let leader = Endpoint::Broker(orders.partition(0).leader().await?);
     let mut answers = Vec::new();
-    for (correlation_id, acks, value) in [(1, 0, "placed"), (2, -1, "paid")] {
+    let connection = ConnectionNumber::new(1);
+    let unacknowledged = CallId::FIRST;
+    let acknowledged = unacknowledged.next();
+    for (call, correlation_id, acks, value) in [(unacknowledged, 1, 0, "placed"), (acknowledged, 2, -1, "paid")] {
         let record = Record::new(value).with_timestamp(1_700_000_000_000);
         let partition = PartitionProduceData::default()
             .with_index(0)
@@ -73,8 +82,8 @@ async fn a_produce_without_acks_has_no_response_and_its_record_is_in_the_log() -
             .with_timeout_ms(30_000)
             .with_topic_data(vec![topic]);
         let request = Request::new(9, correlation_id, Some("order-ingest"), &produce)?;
-        let call = format!("#1.{correlation_id}").parse()?;
-        answers.push(backend.call(BackendRequest::new(call, leader, request)).await);
+        let request = BackendRequest::new(call, connection, leader, request);
+        answers.push(backend.call(request).await);
     }
 
     assert!(matches!(answers[0], BackendAnswer::NoResponse), "{:?}", answers[0]);
@@ -132,7 +141,12 @@ async fn a_fetch_through_the_backend_reads_the_log_of_a_partition_and_gets_no_fe
     let request = Request::new(12, 1, Some("order-billing"), &fetch)?;
     let leader = Endpoint::Broker(orders.partition(0).leader().await?);
     let answer = backend
-        .call(BackendRequest::new("#1.1".parse()?, leader, request))
+        .call(BackendRequest::new(
+            CallId::FIRST,
+            ConnectionNumber::new(1),
+            leader,
+            request,
+        ))
         .await;
 
     let BackendAnswer::Truth(truth) = answer else {

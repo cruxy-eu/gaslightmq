@@ -196,6 +196,8 @@
 //!   does not let go of. The engine lets go of what is left then.
 //!
 //! The listeners of one engine number their connections together.
+//! Its sessions count their calls together too: one proxy is one environment,
+//! so the first request that arrives is call 1, and a higher call ID is a later call on whichever connection.
 //!
 //! # Rules
 //!

@@ -66,8 +66,8 @@ pub struct ScriptedBackend {
 /// What a backend saw of its engine.
 #[derive(Debug, Clone, Default)]
 struct Seen {
-    /// The calls that started, in order.
-    taken: Vec<CallId>,
+    /// The calls that started, in order, each with the connection its request arrived on.
+    taken: Vec<(CallId, ConnectionNumber)>,
     /// The connections that the engine said have ended, in order.
     closed: Vec<ConnectionNumber>,
     /// Where the engine said its listeners listen, in order.
@@ -170,12 +170,19 @@ impl ScriptedBackend {
     /// Waits until `count` calls started, and returns every call that did, in order.
     pub async fn calls_taken(&self, count: usize) -> anyhow::Result<Vec<CallId>> {
         let seen = self.saw(|seen| seen.taken.len() >= count).await;
-        Ok(seen.context("the engine starts the calls")?.taken)
+        let taken = seen.context("the engine starts the calls")?.taken;
+        Ok(taken.into_iter().map(|(call, _)| call).collect())
     }
 
     /// Every call that started so far, in order.
     pub fn calls_taken_so_far(&self) -> Vec<CallId> {
-        self.seen.borrow().taken.clone()
+        self.seen.borrow().taken.iter().map(|(call, _)| *call).collect()
+    }
+
+    /// The connection on which the request of every call that started so far arrived, in the order of the calls.
+    pub fn connections_of_the_calls_taken_so_far(&self) -> Vec<ConnectionNumber> {
+        let seen = self.seen.borrow();
+        seen.taken.iter().map(|(_, connection)| *connection).collect()
     }
 
     /// Waits until the engine said of `count` connections that they ended, and returns them, in order.
@@ -251,7 +258,8 @@ impl ScriptedBackend {
 
 impl Backend for ScriptedBackend {
     async fn call(&self, request: BackendRequest) -> BackendAnswer {
-        self.seen.send_modify(|seen| seen.taken.push(request.call()));
+        self.seen
+            .send_modify(|seen| seen.taken.push((request.call(), request.connection())));
         let mut holding = self.holding.subscribe();
         // The backend holds the script for as long as it lives, so the wait only ends when the answers are let go.
         let _ = holding.wait_for(|holding| !holding).await;

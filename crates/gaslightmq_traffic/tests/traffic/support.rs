@@ -1,7 +1,7 @@
 //! What the tests of the traffic share: the connection of a client, whose calls end with a record.
 //!
 //! A traffic takes the records that an engine hands over, and a test writes them the way a session does.
-//! A [`ClientConnection`] numbers its calls, and an [`EndingCall`] notes what each rule did to the call
+//! A [`ClientConnection`] makes its calls, and an [`EndingCall`] notes what each rule did to the call
 //! before it becomes the record.
 //!
 //! Every call reaches the backend, and the backend answers it without an error.
@@ -9,6 +9,7 @@
 
 use std::num::NonZeroU64;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use gaslightmq_call::prelude::*;
 use gaslightmq_clock::Instant;
@@ -17,11 +18,13 @@ use gaslightmq_kernel::prelude::*;
 use gaslightmq_lie::prelude::*;
 use gaslightmq_rule::RuleName;
 
-/// One connection of a client. It numbers its calls in the order in which the test makes them.
+/// The ID of the next call, across every test of the binary: a proxy counts the calls of all its connections.
+static CALLS: AtomicU64 = AtomicU64::new(1);
+
+/// One connection of a client. Every call that the test makes on it is the next call of the proxy.
 pub struct ClientConnection {
     client: ClientId,
     connection: ConnectionNumber,
-    next: CallNumber,
 }
 
 impl ClientConnection {
@@ -36,38 +39,33 @@ impl ClientConnection {
     }
 
     fn accepted(client: ClientId, connection: ConnectionNumber) -> Self {
-        Self {
-            client,
-            connection,
-            next: CallNumber::FIRST,
-        }
+        Self { client, connection }
     }
 
     /// The next call of the connection: a Produce to that partition.
-    pub fn produce(&mut self, partition: &TopicPartition) -> EndingCall {
+    pub fn produce(&self, partition: &TopicPartition) -> EndingCall {
         self.call(ApiKey::PRODUCE, Some(partition))
     }
 
     /// The next call of the connection: a Fetch from that partition.
-    pub fn fetch(&mut self, partition: &TopicPartition) -> EndingCall {
+    pub fn fetch(&self, partition: &TopicPartition) -> EndingCall {
         self.call(ApiKey::FETCH, Some(partition))
     }
 
     /// The next call of the connection: a Heartbeat, which names no partition.
-    pub fn heartbeat(&mut self) -> EndingCall {
+    pub fn heartbeat(&self) -> EndingCall {
         self.call(ApiKey::HEARTBEAT, None)
     }
 
-    fn call(&mut self, api: ApiKey, partition: Option<&TopicPartition>) -> EndingCall {
-        let number = self.next;
-        self.next = number.next();
+    fn call(&self, api: ApiKey, partition: Option<&TopicPartition>) -> EndingCall {
+        let id = CallId::new(CALLS.fetch_add(1, Ordering::Relaxed)).expect("the count starts at one");
         let fields = Fields::new()
             .with(self.connection)
             .with(self.client.clone())
             .with(api)
             .with(Outcome::Ok);
         EndingCall {
-            number,
+            id,
             fields,
             partition: partition.cloned(),
             rules: Vec::new(),
@@ -77,7 +75,7 @@ impl ClientConnection {
 
 /// A call that the backend answered, on its way to its record: the rules that it touched, in priority order.
 pub struct EndingCall {
-    number: CallNumber,
+    id: CallId,
     fields: Fields,
     partition: Option<TopicPartition>,
     rules: Vec<RuleExplanation>,
@@ -123,7 +121,7 @@ impl EndingCall {
         }
         let explanation = Explanation::new(self.rules).expect("one line for each rule, and every winner has its own");
         let record = Call::new(
-            self.number,
+            self.id,
             fields,
             delivered.into(),
             explanation,

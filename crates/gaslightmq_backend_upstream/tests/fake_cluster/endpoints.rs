@@ -80,17 +80,17 @@ async fn a_call_that_loses_its_broker_asks_the_cluster_again_at_once() {
     // This backend asks on its own every five minutes.
     let backend = backend(&first).await;
     let known = soon(backend.endpoints(&Endpoints::none())).await;
-    soon(backend.call(on(7, 1, broker(2), heartbeat(1)))).await;
+    soon(backend.call(on(7, broker(2), heartbeat(1)))).await;
 
     cluster.forget(2);
     drop(second);
-    let answer = soon(backend.call(on(7, 2, broker(2), heartbeat(2)))).await;
+    let answer = soon(backend.call(on(7, broker(2), heartbeat(2)))).await;
 
     assert!(matches!(failure(answer), BackendFailure::ConnectionLost { .. }));
     let now = soon(backend.endpoints(&known)).await;
     assert_eq!(now.closed_since(&known).collect::<Vec<_>>(), [broker(2)]);
     // A session that is still on that endpoint has nowhere to go.
-    let late = soon(backend.call(on(8, 1, broker(2), heartbeat(1)))).await;
+    let late = soon(backend.call(on(8, broker(2), heartbeat(1)))).await;
     assert_eq!(failure(late), BackendFailure::NoSuchEndpoint { endpoint: broker(2) });
 }
 
@@ -104,7 +104,7 @@ async fn an_answer_that_names_a_new_broker_asks_the_cluster_again_at_once() {
     listening(&backend, 1, 50_001).await;
 
     let _second = cluster.calm_broker(2).await;
-    let before = truth(soon(backend.call(on(7, 1, Endpoint::Bootstrap, metadata(1)))).await);
+    let before = truth(soon(backend.call(on(7, Endpoint::Bootstrap, metadata(1)))).await);
 
     // The client is not told about a broker that has no endpoint.
     assert_eq!(named(before.response()), [(1, "gaslight.test:50001".to_owned())]);
@@ -112,7 +112,7 @@ async fn an_answer_that_names_a_new_broker_asks_the_cluster_again_at_once() {
     let now = soon(backend.endpoints(&known)).await;
     assert_eq!(now.opened_since(&known).collect::<Vec<_>>(), [broker(2)]);
     listening(&backend, 2, 50_002).await;
-    let after = truth(soon(backend.call(on(7, 2, Endpoint::Bootstrap, metadata(2)))).await);
+    let after = truth(soon(backend.call(on(7, Endpoint::Bootstrap, metadata(2)))).await);
     assert_eq!(
         named(after.response()),
         [
@@ -130,7 +130,7 @@ async fn a_client_is_told_about_a_broker_once_the_engine_says_where_its_endpoint
     let backend = backend(&first).await;
 
     // No endpoint has a listener yet: a client that asks now is told about no broker, and asks again.
-    let before = truth(soon(backend.call(on(7, 1, Endpoint::Bootstrap, metadata(1)))).await);
+    let before = truth(soon(backend.call(on(7, Endpoint::Bootstrap, metadata(1)))).await);
     assert_eq!(named(before.response()), []);
 
     // The engine opens a listener for every endpoint, and says which address each one got.
@@ -138,11 +138,11 @@ async fn a_client_is_told_about_a_broker_once_the_engine_says_where_its_endpoint
         .await
         .unwrap();
     listening(&backend, 2, 50_002).await;
-    let between = truth(soon(backend.call(on(7, 2, Endpoint::Bootstrap, metadata(2)))).await);
+    let between = truth(soon(backend.call(on(7, Endpoint::Bootstrap, metadata(2)))).await);
     assert_eq!(named(between.response()), [(2, "gaslight.test:50002".to_owned())]);
 
     listening(&backend, 1, 50_001).await;
-    let after = truth(soon(backend.call(on(7, 3, Endpoint::Bootstrap, metadata(3)))).await);
+    let after = truth(soon(backend.call(on(7, Endpoint::Bootstrap, metadata(3)))).await);
     assert_eq!(
         named(after.response()),
         [
@@ -173,6 +173,6 @@ async fn a_listener_on_the_port_of_another_broker_is_rejected() {
         "clients cannot be told that endpoint `broker 2` listens on 10.0.4.2:19092: \
          broker 2 cannot be advertised at gaslight.test:19092: broker 1 is advertised there"
     );
-    let answer = truth(soon(backend.call(on(7, 1, Endpoint::Bootstrap, metadata(1)))).await);
+    let answer = truth(soon(backend.call(on(7, Endpoint::Bootstrap, metadata(1)))).await);
     assert_eq!(named(answer.response()), [(1, "gaslight.test:19092".to_owned())]);
 }

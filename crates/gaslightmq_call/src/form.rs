@@ -17,9 +17,9 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use crate::explanation::Course;
 use crate::{
-    BudgetCheck, BudgetCheckError, Call, CallId, CallNumber, CallTiming, CallTimingError, Delivered, DieCheck,
-    DieCheckError, Explanation, Failure, LieFate, LieFateError, LostTarget, RecordedRuleName, ResponseSummary,
-    RuleExplanation, TriggerChecks, TriggerDecision, TriggerExplanation, Verdict, WindowCheck, WindowCheckError,
+    BudgetCheck, BudgetCheckError, Call, CallId, CallTiming, CallTimingError, Delivered, DieCheck, DieCheckError,
+    Explanation, Failure, LieFate, LieFateError, LostTarget, RecordedRuleName, ResponseSummary, RuleExplanation,
+    TriggerChecks, TriggerDecision, TriggerExplanation, Verdict, WindowCheck, WindowCheckError,
 };
 
 /// Write a type as its form, and read it back through the checks of `TryFrom`.
@@ -60,7 +60,7 @@ macro_rules! as_text {
     };
 }
 
-as_text!(CallId, TriggerDecision,);
+as_text!(TriggerDecision,);
 
 through_form!(
     DieCheck => DieForm,
@@ -75,15 +75,15 @@ through_form!(
     Call => CallForm,
 );
 
-impl Serialize for CallNumber {
+impl Serialize for CallId {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         self.value().serialize(serializer)
     }
 }
 
-impl<'de> Deserialize<'de> for CallNumber {
+impl<'de> Deserialize<'de> for CallId {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        CallNumber::new(u64::deserialize(deserializer)?).map_err(D::Error::custom)
+        CallId::new(u64::deserialize(deserializer)?).map_err(D::Error::custom)
     }
 }
 
@@ -604,7 +604,7 @@ fn with_learned(fields: Fields, value: FieldValue) -> Result<Fields, String> {
 #[derive(Serialize, Deserialize)]
 #[serde(rename = "Call")]
 struct CallForm {
-    number: CallNumber,
+    id: CallId,
     fields: FieldsForm,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     upstream: Option<ResponseSummary>,
@@ -618,7 +618,7 @@ struct CallForm {
 impl From<&Call> for CallForm {
     fn from(call: &Call) -> Self {
         CallForm {
-            number: call.number(),
+            id: call.id(),
             fields: FieldsForm::from(call.fields()),
             upstream: call.upstream().cloned(),
             delivered: call.delivered().clone(),
@@ -634,7 +634,7 @@ impl TryFrom<CallForm> for Call {
 
     fn try_from(form: CallForm) -> Result<Self, Self::Error> {
         let fields = Fields::try_from(form.fields)?;
-        let call = Call::new(form.number, fields, form.delivered, form.explanation, form.timing)
+        let call = Call::new(form.id, fields, form.delivered, form.explanation, form.timing)
             .map_err(|error| error.to_string())?;
         Ok(match form.upstream {
             Some(upstream) => call.with_upstream(upstream),

@@ -6,7 +6,7 @@ use std::sync::Arc;
 use arc_swap::ArcSwap;
 use gaslightmq_kernel::prelude::*;
 use gaslightmq_lie_api::Lies;
-use gaslightmq_session::ClientContexts;
+use gaslightmq_session::{CallIds, ClientContexts};
 use gaslightmq_wire::Response;
 use gaslightmq_wire_edit::{SurgeryError, TopicNames};
 
@@ -105,10 +105,13 @@ impl KnownTopics {
 /// | Handle | Shares |
 /// |---|---|
 /// | [`ClientContexts`] | What the sessions of one client instance learned together, such as its group. |
+/// | [`CallIds`] | The count of the calls of the environment, which gives every call its ID. |
 /// | [`KnownTopics`] | The topics that the cluster named with their ID. |
 /// | [`Lies`] | The kinds of lies of this build, one behaviour per kind. |
 ///
 /// The engine makes one of these per proxy and hands a clone to every pipeline it opens.
+/// One proxy is one environment, so its sessions count their calls together:
+/// a higher call ID is a later call, on whichever connection it came.
 /// The counters and budgets of the rules are shared too.
 /// They travel inside the armed rules of a [`Snapshot`](gaslightmq_rule::Snapshot), so they need no handle here.
 ///
@@ -123,29 +126,42 @@ impl KnownTopics {
 ///
 /// let shared = SharedBySessions::new(
 ///     ClientContexts::new(Duration::from_secs(60)),
+///     CallIds::new(),
 ///     KnownTopics::new(),
 ///     Arc::new(Lies::of_every_build()),
 /// );
 ///
 /// assert!(shared.lies().tells(LieKind::Silence));
+/// assert_eq!(shared.call_ids().assigned(), 0);
 /// assert!(shared.clone().topics().is(shared.topics()));
 /// ```
 #[derive(Clone)]
 pub struct SharedBySessions {
     contexts: ClientContexts,
+    call_ids: CallIds,
     topics: KnownTopics,
     lies: Arc<Lies>,
 }
 
 impl SharedBySessions {
     /// What the sessions of one proxy share.
-    pub const fn new(contexts: ClientContexts, topics: KnownTopics, lies: Arc<Lies>) -> Self {
-        Self { contexts, topics, lies }
+    pub const fn new(contexts: ClientContexts, call_ids: CallIds, topics: KnownTopics, lies: Arc<Lies>) -> Self {
+        Self {
+            contexts,
+            call_ids,
+            topics,
+            lies,
+        }
     }
 
     /// The client contexts that the sessions of the proxy join.
     pub const fn contexts(&self) -> &ClientContexts {
         &self.contexts
+    }
+
+    /// The call IDs of the environment, which the sessions of the proxy take the IDs of their calls from.
+    pub const fn call_ids(&self) -> &CallIds {
+        &self.call_ids
     }
 
     /// The topics that the proxy knows by ID.
@@ -159,11 +175,12 @@ impl SharedBySessions {
     }
 }
 
-/// Writes the kinds of lies and how much is known, and not the contexts themselves.
+/// Writes the kinds of lies, how many calls arrived and how much is known, and not the contexts themselves.
 impl fmt::Debug for SharedBySessions {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("SharedBySessions")
             .field("client_contexts", &self.contexts.len())
+            .field("calls", &self.call_ids.assigned())
             .field("known_topics", &self.topics.names().len())
             .field("lies", &self.lies)
             .finish()

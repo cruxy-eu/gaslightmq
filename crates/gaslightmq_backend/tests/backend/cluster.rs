@@ -100,8 +100,8 @@ impl Topology for State {
 
 impl Cluster {
     /// The calls whose requests the cluster took, in the order it took them.
-    pub fn taken(&self) -> Vec<String> {
-        self.read(|state| state.taken.iter().map(ToString::to_string).collect())
+    pub fn taken(&self) -> Vec<CallId> {
+        self.read(|state| state.taken.clone())
     }
 
     /// The connections that the engine closed, in that order.
@@ -312,29 +312,34 @@ pub fn broker(id: u16) -> Endpoint {
     Endpoint::Broker(BrokerId::from(id))
 }
 
-/// A Metadata request under `call`, such as `#7.1`, from a connection on `endpoint`.
-pub fn metadata(call: &str, endpoint: Endpoint) -> BackendRequest {
+/// The connection of a consumer to the proxy.
+pub const CONSUMER: ConnectionNumber = ConnectionNumber::new(7);
+
+/// The connection of a producer to the same proxy.
+pub const PRODUCER: ConnectionNumber = ConnectionNumber::new(8);
+
+/// A Metadata request under `call`, which arrived on `connection`, a connection on `endpoint`.
+pub fn metadata(call: CallId, connection: ConnectionNumber, endpoint: Endpoint) -> BackendRequest {
     let request = Request::new(12, correlation_id(call), Some(CLIENT), &MetadataRequest::default()).unwrap();
-    BackendRequest::new(call.parse().unwrap(), endpoint, request)
+    BackendRequest::new(call, connection, endpoint, request)
 }
 
-/// A Fetch under `call`, from a connection on `endpoint`. It waits for a record.
-pub fn fetch(call: &str, endpoint: Endpoint) -> BackendRequest {
+/// A Fetch under `call`, which arrived on `connection`, a connection on `endpoint`. It waits for a record.
+pub fn fetch(call: CallId, connection: ConnectionNumber, endpoint: Endpoint) -> BackendRequest {
     let request = Request::new(13, correlation_id(call), Some(CLIENT), &FetchRequest::default()).unwrap();
-    BackendRequest::new(call.parse().unwrap(), endpoint, request)
+    BackendRequest::new(call, connection, endpoint, request)
 }
 
-/// A Produce under `call`, from a connection on `endpoint`. It brings a record.
-pub fn produce(call: &str, endpoint: Endpoint, acks: i16) -> BackendRequest {
+/// A Produce under `call`, which arrived on `connection`, a connection on `endpoint`. It brings a record.
+pub fn produce(call: CallId, connection: ConnectionNumber, endpoint: Endpoint, acks: i16) -> BackendRequest {
     let body = ProduceRequest::default().with_acks(acks);
     let request = Request::new(9, correlation_id(call), Some(CLIENT), &body).unwrap();
-    BackendRequest::new(call.parse().unwrap(), endpoint, request)
+    BackendRequest::new(call, connection, endpoint, request)
 }
 
-/// The correlation ID that the client gave the request of `call`: a number of its own, and not the call number.
-pub fn correlation_id(call: &str) -> i32 {
-    let call: CallId = call.parse().unwrap();
-    1000 + i32::try_from(call.number().value()).unwrap()
+/// The correlation ID that the client gave the request of `call`: a number of its own, and not the call ID.
+pub fn correlation_id(call: CallId) -> i32 {
+    1000 + i32::try_from(call.value()).unwrap()
 }
 
 /// The response of an answer that is the truth.

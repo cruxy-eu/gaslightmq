@@ -40,6 +40,7 @@ impl<'a, B: Backend> Session<'a, B> {
     fn open(endpoint: Endpoint, backend: &'a B) -> Self {
         let shared = SharedBySessions::new(
             ClientContexts::new(Duration::from_secs(60)),
+            CallIds::new(),
             KnownTopics::new(),
             Arc::new(Lies::of_every_build()),
         );
@@ -73,7 +74,8 @@ impl<'a, B: Backend> Session<'a, B> {
         while let Some(output) = outputs.pop_front() {
             match output {
                 Output::Forward { call, request } => {
-                    let request = BackendRequest::new(call, self.endpoint, request);
+                    let connection = self.pipeline.connection().number();
+                    let request = BackendRequest::new(call, connection, self.endpoint, request);
                     // Every answer of a backend has its input, but the one that says there is nothing to report.
                     let input = match self.backend.call(request).await {
                         BackendAnswer::Truth(truth) => Input::BackendAnswered {
@@ -138,7 +140,8 @@ fn a_request_that_a_pipeline_forwards_comes_back_as_the_truth() {
     block_on(session.client_sends(&metadata()));
 
     // The backend took the request under the call ID of the pipeline, and the client got the answer.
-    assert_eq!(cluster.taken(), ["#7.1"]);
+    let the_first_call_of_the_proxy = CallId::FIRST;
+    assert_eq!(cluster.taken(), [the_first_call_of_the_proxy]);
     assert_eq!(session.sent.len(), 1);
     assert_eq!(correlation_id(&session.sent[0]), 41);
     assert_eq!(session.failures(), [None]);
@@ -153,7 +156,7 @@ fn a_request_without_a_response_goes_to_the_backend_and_nothing_comes_back() {
 
     block_on(session.client_sends(&produce));
 
-    assert_eq!(cluster.taken(), ["#7.1"]);
+    assert_eq!(cluster.taken(), [CallId::FIRST]);
     assert_eq!(session.sent, Vec::<Vec<u8>>::new());
     assert_eq!(session.closed_by(), None);
 }
@@ -175,7 +178,7 @@ fn a_failure_of_the_backend_ends_the_session_as_closed_by_the_backend() {
     assert_eq!(
         session.failures(),
         [Some(
-            "the backend has no answer for call #7.1: the cluster takes no requests on endpoint `broker 2`"
+            "the backend has no answer for call 1: the cluster takes no requests on endpoint `broker 2`"
         )]
     );
     // The backend knows that the connection is gone.

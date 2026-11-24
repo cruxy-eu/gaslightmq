@@ -1,6 +1,6 @@
 //! What a session cannot do, or cannot keep.
 
-use gaslightmq_call::CallNumber;
+use gaslightmq_call::CallId;
 use gaslightmq_field::prelude::*;
 use gaslightmq_kernel::prelude::*;
 
@@ -18,10 +18,10 @@ use crate::CallPhase;
 /// A variant about a value that is wrong keeps the error of that value, and writes it after the name of the field.
 ///
 /// ```
-/// use gaslightmq_call::CallNumber;
+/// use gaslightmq_call::CallId;
 /// use gaslightmq_session::prelude::*;
 ///
-/// let error = SessionError::CallNotInFlight { call: CallNumber::FIRST };
+/// let error = SessionError::CallNotInFlight { call: CallId::FIRST };
 /// assert_eq!(error.to_string(), "call 1 is not in flight");
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -36,15 +36,15 @@ pub enum SessionError {
     /// The name and the version in the `ApiVersions` request are not client software.
     #[error("{}: {error}", Field::ClientSoftware)]
     InvalidClientSoftware { error: ClientSoftwareError },
-    /// No call with that number is in flight: it never arrived, it left, or it ended with its session.
+    /// No call with that ID is in flight: it never arrived, it left, or it ended with its session.
     #[error("call {call} is not in flight")]
-    CallNotInFlight { call: CallNumber },
+    CallNotInFlight { call: CallId },
     /// The request of the call cannot be let go, because the pipeline does not hold it any more.
     #[error("the request of call {call} is not held: the call is in the phase {phase}")]
-    RequestNotHeld { call: CallNumber, phase: CallPhase },
+    RequestNotHeld { call: CallId, phase: CallPhase },
     /// The response of the call cannot be let go, because the call does not await one.
     #[error("call {call} does not await its response: the call is in the phase {phase}")]
-    ResponseNotAwaited { call: CallNumber, phase: CallPhase },
+    ResponseNotAwaited { call: CallId, phase: CallPhase },
 }
 
 #[cfg(test)]
@@ -55,7 +55,7 @@ mod tests {
 
     #[test]
     fn each_error_of_a_call_names_the_call_and_says_what_is_wrong() {
-        let call = CallNumber::new(7).unwrap();
+        let call = CallId::new(7).unwrap();
         let cases = [
             (SessionError::CallNotInFlight { call }, "call 7 is not in flight"),
             (

@@ -26,10 +26,11 @@ fn a_delay_after_the_response_holds_the_answer_until_its_timer_fires() {
 
     // The answer waits: the pipeline asks for a timer, and sends nothing.
     driver.clock.advance(Duration::from_millis(4));
-    let answered = driver.answer(&arrived.forwarded());
+    let the_produce = arrived.forwarded();
+    let answered = driver.answer(&the_produce);
     assert_eq!(answered.kinds(), ["set timer"]);
     let (timer, at) = answered.timer();
-    assert_eq!(timer, TimerId::new(Driver::call(1), Stage::AfterResponse));
+    assert_eq!(timer, TimerId::new(the_produce.0, Stage::AfterResponse));
     assert_eq!(at, driver.now() + SECOND);
 
     // The timer fires, and the answer leaves. It is the truth: a delay changes when, and not what.
@@ -57,7 +58,11 @@ fn a_delay_before_forwarding_holds_the_request_until_its_timer_fires() {
     let arrived = driver.send(&request);
     assert_eq!(arrived.kinds(), ["set timer"]);
     let (timer, at) = arrived.timer();
-    assert_eq!(timer, TimerId::new(Driver::call(1), Stage::BeforeForwarding));
+    let the_first_call_of_the_proxy = CallId::FIRST;
+    assert_eq!(
+        timer,
+        TimerId::new(the_first_call_of_the_proxy, Stage::BeforeForwarding)
+    );
     assert_eq!(at, driver.now() + Duration::from_secs(45));
 
     // The timer fires, and the backend sees the request late.
@@ -176,12 +181,13 @@ fn a_timer_that_ends_no_wait_changes_nothing() {
     let arrived = driver.send(&heartbeat(41));
 
     // The call waits for the backend, and not for a timer.
+    let (call, _) = arrived.forwarded();
     for stage in Stage::ALL {
-        let timer = TimerId::new(Driver::call(1), stage);
+        let timer = TimerId::new(call, stage);
         assert!(driver.handle(Input::TimerFired(timer)).is_empty(), "{timer}");
     }
-    // No call has this number.
-    let timer = TimerId::new(Driver::call(9), Stage::AfterResponse);
+    // No call has this ID yet.
+    let timer = TimerId::new(call.next(), Stage::AfterResponse);
     assert!(driver.handle(Input::TimerFired(timer)).is_empty());
 
     // The call goes on as if nothing happened.

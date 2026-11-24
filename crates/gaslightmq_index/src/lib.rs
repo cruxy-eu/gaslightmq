@@ -54,7 +54,7 @@
 //! let record = |request: Fields| {
 //!     let fields = request.with(ConnectionNumber::new(7)).with(Outcome::Ok);
 //!     let arrived = CallTiming::arrived(Instant::ZERO);
-//!     Call::new(CallNumber::FIRST, fields, Delivered::Nothing, Explanation::none(), arrived)
+//!     Call::new(CallId::FIRST, fields, Delivered::Nothing, Explanation::none(), arrived)
 //! };
 //! let partition = |text: &str| text.parse::<TopicPartition>().expect("a topic partition");
 //! let etl = GroupId::new("analytics-etl").expect("a group ID");

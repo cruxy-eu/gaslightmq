@@ -2,6 +2,7 @@
 
 use gaslightmq_backend::prelude::*;
 use gaslightmq_backend_upstream::prelude::*;
+use gaslightmq_call::prelude::*;
 use gaslightmq_environment::prelude::*;
 use gaslightmq_field::prelude::*;
 use gaslightmq_test_kafka::KafkaCluster;
@@ -21,7 +22,12 @@ async fn a_client_learns_the_versions_of_the_real_broker() -> anyhow::Result<()>
         .with_client_software_version(StrBytes::from_static_str("1.0.0"));
     let request = Request::new(3, 1, Some("order-ingest"), &greeting)?;
     let answer = backend
-        .call(BackendRequest::new("#1.1".parse()?, Endpoint::Bootstrap, request))
+        .call(BackendRequest::new(
+            CallId::FIRST,
+            ConnectionNumber::new(1),
+            Endpoint::Bootstrap,
+            request,
+        ))
         .await;
 
     let BackendAnswer::Truth(truth) = answer else {

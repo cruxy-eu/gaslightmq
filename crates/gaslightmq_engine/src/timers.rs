@@ -42,14 +42,23 @@ impl Timers {
 
 #[cfg(test)]
 mod tests {
+    use gaslightmq_call::CallId;
     use gaslightmq_clock::Duration;
     use gaslightmq_lie::Stage;
 
     use super::*;
 
     /// The timer of the answer that the call waits with.
-    fn timer(call: &str) -> TimerId {
-        TimerId::new(call.parse().unwrap(), Stage::AfterResponse)
+    fn timer(call: CallId) -> TimerId {
+        TimerId::new(call, Stage::AfterResponse)
+    }
+
+    /// The first four calls of a proxy.
+    fn four_calls() -> [CallId; 4] {
+        let first = CallId::FIRST;
+        let second = first.next();
+        let third = second.next();
+        [first, second, third, third.next()]
     }
 
     fn at(millis: u64) -> Instant {
@@ -67,8 +76,9 @@ mod tests {
     #[test]
     fn the_next_timer_is_the_one_that_ends_first() {
         let mut timers = Timers::default();
-        timers.set(timer("#7.1"), at(500));
-        timers.set(TimerId::new("#7.2".parse().unwrap(), Stage::BeforeForwarding), at(200));
+        let [first, second, ..] = four_calls();
+        timers.set(timer(first), at(500));
+        timers.set(TimerId::new(second, Stage::BeforeForwarding), at(200));
 
         assert_eq!(timers.next(), Some(at(200)));
     }
@@ -76,15 +86,16 @@ mod tests {
     #[test]
     fn the_timers_that_are_due_come_in_the_order_in_which_they_fire() {
         let mut timers = Timers::default();
-        timers.set(timer("#7.3"), at(300));
-        timers.set(timer("#7.2"), at(200));
-        timers.set(timer("#7.1"), at(200));
-        timers.set(timer("#7.4"), at(301));
+        let [first, second, third, fourth] = four_calls();
+        timers.set(timer(third), at(300));
+        timers.set(timer(second), at(200));
+        timers.set(timer(first), at(200));
+        timers.set(timer(fourth), at(301));
 
         assert_eq!(timers.due(at(199)), []);
-        assert_eq!(timers.due(at(300)), [timer("#7.1"), timer("#7.2"), timer("#7.3")]);
+        assert_eq!(timers.due(at(300)), [timer(first), timer(second), timer(third)]);
         assert_eq!(timers.next(), Some(at(301)));
-        assert_eq!(timers.due(at(301)), [timer("#7.4")]);
+        assert_eq!(timers.due(at(301)), [timer(fourth)]);
         assert_eq!(timers.next(), None);
     }
 }

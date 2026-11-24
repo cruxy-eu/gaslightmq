@@ -20,12 +20,11 @@ use gaslightmq_lie::Stage;
 /// use gaslightmq_lie::prelude::*;
 /// use gaslightmq_pipeline::prelude::*;
 ///
-/// let call: CallId = "#7.3".parse()?;
+/// let call = CallId::FIRST;
 /// let timer = TimerId::new(call, Stage::AfterResponse);
 ///
 /// assert_eq!(timer.call(), call);
-/// assert_eq!(timer.to_string(), "#7.3 after the response");
-/// # Ok::<(), CallIdError>(())
+/// assert_eq!(timer.to_string(), "call 1 after the response");
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct TimerId {
@@ -50,9 +49,9 @@ impl TimerId {
     }
 }
 
-/// Writes the call and the stage: `#7.3 before forwarding`.
+/// Writes the call and the stage: `call 42 before forwarding`.
 impl fmt::Display for TimerId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{} {}", self.call, self.stage.phrase())
+        write!(f, "call {} {}", self.call, self.stage.phrase())
     }
 }

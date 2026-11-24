@@ -37,7 +37,7 @@ use gaslightmq_selector::{Condition, Glob};
 /// #     use gaslightmq_call::prelude::*;
 /// #     use gaslightmq_clock::Instant;
 /// #     let fields = fields.with(ConnectionNumber::new(7)).with(Outcome::Ok);
-/// #     Call::new(CallNumber::FIRST, fields, Delivered::Nothing, Explanation::none(), CallTiming::arrived(Instant::ZERO))
+/// #     Call::new(CallId::FIRST, fields, Delivered::Nothing, Explanation::none(), CallTiming::arrived(Instant::ZERO))
 /// #         .expect("a call that ended on a connection")
 /// # };
 /// let produce = |topic: &str| Fields::new().with(ApiKey::PRODUCE).with_part(TopicName::new(topic).expect("a topic"));

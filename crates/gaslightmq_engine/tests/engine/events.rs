@@ -34,7 +34,7 @@ async fn an_incident_that_a_rule_fires_leaves_the_engine_before_the_record_of_it
     let EngineEvent::CallRecorded(record) = proxy.next_event().await? else {
         anyhow::bail!("the record of the call follows the incident");
     };
-    let the_heartbeat: CallId = "#1.1".parse()?;
+    let the_heartbeat = CallId::FIRST;
     assert_eq!(record.id(), the_heartbeat);
     assert_eq!(record.verdict().to_string(), "pass");
     // The engine hands the incident over, and applies nothing: the backend only saw the call.
@@ -56,18 +56,21 @@ async fn every_listener_receives_the_records_of_every_session() -> anyhow::Resul
     }
 
     // Whoever watches and whoever keeps see the same records, in the same order.
-    let first_call_of_each_connection = ["#1.1", "#2.1"];
-    for call in first_call_of_each_connection {
+    let the_call_of_each_connection = [
+        (CallId::FIRST, ConnectionNumber::new(1)),
+        (CallId::FIRST.next(), ConnectionNumber::new(2)),
+    ];
+    for call_and_connection in the_call_of_each_connection {
         let EngineEvent::CallRecorded(record) = watching.next().await? else {
             anyhow::bail!("every event of these sessions is the record of a call");
         };
-        assert_eq!(record.id(), call.parse::<CallId>()?);
+        assert_eq!((record.id(), record.connection()), call_and_connection);
     }
-    for call in first_call_of_each_connection {
+    for call_and_connection in the_call_of_each_connection {
         let Some(EngineEvent::CallRecorded(record)) = keeping.next().await else {
             anyhow::bail!("every event of these sessions is the record of a call");
         };
-        assert_eq!(record.id(), call.parse::<CallId>()?);
+        assert_eq!((record.id(), record.connection()), call_and_connection);
     }
     Ok(())
 }
@@ -84,8 +87,11 @@ async fn a_slow_recorder_gets_every_event_while_a_live_listener_misses_the_oldes
     let group: GroupId = "analytics-etl".parse()?;
 
     // Neither listener takes an event while the session records five calls, which no listener holds up.
-    let five_calls_of_one_connection = ["#1.1", "#1.2", "#1.3", "#1.4", "#1.5"];
-    for _ in five_calls_of_one_connection {
+    let five_calls_of_one_connection: Vec<CallId> =
+        std::iter::successors(Some(CallId::FIRST), |call| Some(call.next()))
+            .take(5)
+            .collect();
+    for _ in &five_calls_of_one_connection {
         member.heartbeat(group.as_str()).await?;
     }
 
@@ -96,14 +102,14 @@ async fn a_slow_recorder_gets_every_event_while_a_live_listener_misses_the_oldes
         let EngineEvent::CallRecorded(record) = watching.next().await? else {
             anyhow::bail!("every event of this session is the record of a call");
         };
-        assert_eq!(record.id(), call.parse::<CallId>()?);
+        assert_eq!(record.id(), *call);
     }
     // The recorder is as slow, and misses nothing: the engine kept every event for it.
     for call in five_calls_of_one_connection {
         let Some(EngineEvent::CallRecorded(record)) = recording.next().await else {
             anyhow::bail!("every event of this session is the record of a call");
         };
-        assert_eq!(record.id(), call.parse::<CallId>()?);
+        assert_eq!(record.id(), call);
     }
     Ok(())
 }

@@ -55,7 +55,7 @@ use crate::{Facet, Facets, IndexConfiguration};
 ///         .with(ClientId::new(client).expect("a client ID"))
 ///         .with(Outcome::Ok);
 ///     let arrived = CallTiming::arrived(Instant::ZERO);
-///     Call::new(CallNumber::FIRST, fields, Delivered::Nothing, Explanation::none(), arrived)
+///     Call::new(CallId::FIRST, fields, Delivered::Nothing, Explanation::none(), arrived)
 /// };
 /// let produce = |topic: &str| Fields::new().with(ApiKey::PRODUCE).with_part(TopicName::new(topic).expect("a topic"));
 /// let fetch = |topic: &str| Fields::new().with(ApiKey::FETCH).with_part(TopicName::new(topic).expect("a topic"));
