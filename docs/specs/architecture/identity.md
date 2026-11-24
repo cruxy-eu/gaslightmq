@@ -1,6 +1,6 @@
 # Identity: names and IDs
 
-This document lists every entity of GaslightMQ,
+This document lists every entity of GaslightMQ per district of the [town plan](../townplan/README.md),
 and how GaslightMQ identifies each one.
 
 ## Types of entities
@@ -11,7 +11,7 @@ and how GaslightMQ identifies each one.
 | Observed               | What GaslightMQ observes while it runs. Nobody defines it.     | An ID of its own         |
 | Part of another entity | A piece of an entity, such as the trigger of a rule.           | The entity it is part of |
 
-## Entities per domain
+## Entities per district
 
 A user-defined entity has a name, a UUID and an optional title.
 The [title](#title) is no identifier.
@@ -45,9 +45,9 @@ See [lies and incidents](../domains/lies-and-incidents.md).
 | Lie      | Part of a rule or a preset | —            | —            | —             |
 | Incident | Part of a rule or a preset | —            | —            | —             |
 
-### Rules and triggers
+### Injection
 
-See [rules and triggers](../domains/rules.md).
+See [injection](../domains/rules.md).
 
 | Entity                 | Type           | Name       | ID         | Title       |
 |------------------------|----------------|------------|------------|-------------|
@@ -105,9 +105,9 @@ See [control surfaces](../domains/control-surfaces.md).
 | Layer      | Part of a pad layout | —            | Its scope: all clients, a `client.id`, or a scope of its own | —             |
 | Pad        | Part of a pad layout | —            | Its position: layer, row and column                          | —             |
 
-### Storage
+### Workspace
 
-See [storage](../architecture/storage.md).
+See [workspace](../architecture/storage.md).
 
 | Entity      | Type                | Name              | ID                   | Title              |
 |-------------|---------------------|-------------------|----------------------|--------------------|
