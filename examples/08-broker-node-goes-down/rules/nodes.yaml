@@ -1,6 +1,7 @@
 # A rule can cause an incident instead of telling a lie.
 # An incident changes the fake cluster itself, for every client.
-- name: Node 2 fails on the 50th fetch
+- name: node-2-fails-on-the-50th-fetch
+  title: Node 2 fails on the 50th fetch
   selector:
     api: Fetch
     topic: orders

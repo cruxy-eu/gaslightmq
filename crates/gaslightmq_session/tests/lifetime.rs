@@ -246,7 +246,7 @@ fn a_rule_that_counts_per_session_counts_each_connection_apart() {
     let trigger = TriggerParts::new()
         .with_first(Count::new(2).unwrap())
         .with_per(Per::Session);
-    let die = Die::new(Seed::new(42), &DiceKey::new("Stale metadata").unwrap());
+    let die = Die::new(Seed::new(42), &DiceKey::new("stale-metadata").unwrap());
     let arming = Arming::new(trigger.into(), Lifetime::UntilDisarmed, die, at(0));
     let outcome = |session: &mut Session<Request>| {
         let evaluation = arming.evaluate(at(5), session.counters_mut());

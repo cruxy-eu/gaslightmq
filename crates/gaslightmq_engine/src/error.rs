@@ -85,8 +85,8 @@ pub enum EngineStartError {
 /// ```
 /// use gaslightmq_engine::prelude::*;
 ///
-/// let error = ArmError::AlreadyArmed { rule: "Leader flap".parse().expect("a rule name") };
-/// assert_eq!(error.to_string(), "rule \"Leader flap\" is armed already");
+/// let error = ArmError::AlreadyArmed { rule: "leader-flap".parse().expect("a rule name") };
+/// assert_eq!(error.to_string(), "rule \"leader-flap\" is armed already");
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum ArmError {
@@ -100,8 +100,8 @@ pub enum ArmError {
 /// ```
 /// use gaslightmq_engine::prelude::*;
 ///
-/// let error = DisarmError::NotArmed { rule: "Leader flap".parse().expect("a rule name") };
-/// assert_eq!(error.to_string(), "rule \"Leader flap\" is not armed");
+/// let error = DisarmError::NotArmed { rule: "leader-flap".parse().expect("a rule name") };
+/// assert_eq!(error.to_string(), "rule \"leader-flap\" is not armed");
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum DisarmError {
@@ -140,7 +140,7 @@ mod tests {
     use super::*;
 
     fn rule() -> RuleName {
-        "Leader flap".parse().unwrap()
+        "leader-flap".parse().unwrap()
     }
 
     #[test]
@@ -200,8 +200,8 @@ mod tests {
         let already_armed = ArmError::AlreadyArmed { rule: rule() };
         let not_armed = DisarmError::NotArmed { rule: rule() };
 
-        assert_eq!(already_armed.to_string(), "rule \"Leader flap\" is armed already");
-        assert_eq!(not_armed.to_string(), "rule \"Leader flap\" is not armed");
+        assert_eq!(already_armed.to_string(), "rule \"leader-flap\" is armed already");
+        assert_eq!(not_armed.to_string(), "rule \"leader-flap\" is not armed");
         assert!(already_armed.source().is_none());
         assert!(not_armed.source().is_none());
     }

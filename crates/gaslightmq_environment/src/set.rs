@@ -3,7 +3,7 @@ use std::collections::btree_map;
 
 use crate::address::ListenAddress;
 use crate::environment::Environment;
-use crate::name::{EnvironmentName, WorldName};
+use crate::name::EnvironmentName;
 
 /// The environments of a workspace by name.
 ///
@@ -122,43 +122,6 @@ impl EnvironmentSet {
         }
         Ok(together)
     }
-
-    /// Renames an environment.
-    ///
-    /// What names the environment from outside the set, such as the workspace settings, is for whoever holds it to
-    /// update.
-    ///
-    /// # Errors
-    ///
-    /// [`EnvironmentSetError::UnknownEnvironment`] when no environment is named `from`,
-    /// and [`EnvironmentSetError::DuplicateName`] when another environment is named `to` already.
-    pub fn rename(&mut self, from: &EnvironmentName, to: EnvironmentName) -> Result<(), EnvironmentSetError> {
-        if !self.contains(from) {
-            return Err(EnvironmentSetError::UnknownEnvironment { name: from.clone() });
-        }
-        if *from == to {
-            return Ok(());
-        }
-        if self.contains(&to) {
-            return Err(EnvironmentSetError::DuplicateName { name: to });
-        }
-        if let Some(mut environment) = self.by_name.remove(from) {
-            environment.rename(to.clone());
-            self.by_name.insert(to, environment);
-        }
-        Ok(())
-    }
-
-    /// Names the world `to` in every environment whose broker names the world `from`.
-    ///
-    /// Returns how many environments changed.
-    pub fn rename_world(&mut self, from: &WorldName, to: &WorldName) -> usize {
-        self.by_name
-            .values_mut()
-            .map(|environment| environment.rename_world(from, to))
-            .filter(|renamed| *renamed)
-            .count()
-    }
 }
 
 impl<'a> IntoIterator for &'a EnvironmentSet {
@@ -202,6 +165,7 @@ mod tests {
     use super::*;
     use crate::environment::{BrokerDefinition, Instances};
     use crate::listeners::Listeners;
+    use crate::name::WorldName;
 
     fn name(text: &str) -> EnvironmentName {
         text.parse().unwrap()
@@ -246,7 +210,6 @@ mod tests {
         assert_eq!(set.len(), 3);
         assert!(!set.is_empty());
         assert!(set.contains(&name("shop")));
-        assert!(!set.contains(&name("Shop")));
         assert_eq!(set.get(&name("staging")), Some(&environment("staging", 19092)));
         assert_eq!(set.get(&name("tests")), None);
         assert_eq!(names(&set.iter().collect::<Vec<_>>()), ["demo", "shop", "staging"]);
@@ -306,56 +269,5 @@ mod tests {
 
         assert_eq!(error, EnvironmentSetError::UnknownEnvironment { name: name("tests") });
         assert_eq!(error.to_string(), "no environment is named \"tests\"");
-    }
-
-    #[test]
-    fn a_rename_gives_an_environment_another_name() {
-        let mut set = set();
-
-        set.rename(&name("shop"), name("orders-sim")).unwrap();
-        assert!(!set.contains(&name("shop")));
-        assert_eq!(set.get(&name("orders-sim")).unwrap().name(), "orders-sim");
-        assert_eq!(set.get(&name("orders-sim")).unwrap().world(), Some(&world("shop")));
-        assert_eq!(set.len(), 3);
-
-        set.rename(&name("demo"), name("demo")).unwrap();
-        assert!(set.contains(&name("demo")));
-    }
-
-    #[test]
-    fn a_rename_keeps_every_name_there_once() {
-        let mut set = set();
-
-        assert_eq!(
-            set.rename(&name("tests"), name("shop")),
-            Err(EnvironmentSetError::UnknownEnvironment { name: name("tests") })
-        );
-        assert_eq!(
-            set.rename(&name("demo"), name("shop")),
-            Err(EnvironmentSetError::DuplicateName { name: name("shop") })
-        );
-        assert_eq!(set, self::set());
-    }
-
-    #[test]
-    fn a_renamed_world_changes_every_broker_that_names_it() {
-        let mut set = EnvironmentSet::new([
-            environment("shop", 9092),
-            environment("staging", 19092),
-            Environment::new(
-                name("demo"),
-                Instances::BrokerAlone {
-                    broker: BrokerDefinition::new(world("shop")),
-                    listen: environment("demo", 29092).listeners().clone(),
-                },
-            ),
-        ])
-        .unwrap();
-
-        assert_eq!(set.rename_world(&world("shop"), &world("web-shop")), 2);
-        assert_eq!(set.get(&name("shop")).unwrap().world(), Some(&world("web-shop")));
-        assert_eq!(set.get(&name("demo")).unwrap().world(), Some(&world("web-shop")));
-        assert_eq!(set.get(&name("staging")).unwrap().world(), Some(&world("staging")));
-        assert_eq!(set.rename_world(&world("shop"), &world("web-shop")), 0);
     }
 }

@@ -1,13 +1,14 @@
 use gaslightmq_selector::{Scope, SelectorRef};
 use gaslightmq_trigger::{DiceKey, Lifetime, Trigger};
 
-use crate::{ActionRef, RuleName};
+use crate::{ActionRef, RuleName, RuleTitle};
 
 /// A rule as a file, a scenario or the UI writes it: what happens to which calls, when, and for how long.
 ///
 /// | Part | Meaning | When left out |
 /// |---|---|---|
-/// | Name | Unique among rules. Other things reference the rule by it. | |
+/// | Name | The identity of the rule: a slug, unique among rules. Other things reference the rule by it. | |
+/// | Title | What the rule is for, in free text. | No title. |
 /// | Selector | Which calls the rule considers: a selector name, or inline conditions. | |
 /// | Scope | Extra conditions over connection fields: who the rule applies to. | All clients. |
 /// | Action | What happens when the rule fires: a preset name, or an inline lie or incident. | |
@@ -16,11 +17,12 @@ use crate::{ActionRef, RuleName};
 /// | Dice key | What the rule's die derives from. | The name of the rule. |
 ///
 /// ```yaml
-/// name: Slow down order producers
-/// selector: Order producers
+/// name: slow-order-producers
+/// title: Slow down order producers
+/// selector: order-producers
 /// scope:
 ///   client.id: order-ingest
-/// action: Delay 1 s
+/// action: delay-1s
 /// trigger:
 ///   chance: 40%
 /// lifetime: until disarmed
@@ -37,20 +39,19 @@ use crate::{ActionRef, RuleName};
 /// use gaslightmq_trigger::prelude::*;
 ///
 /// let rule = Rule::new(
-///     "Slow down order producers".parse()?,
-///     "Order producers".parse::<SelectorName>().expect("a selector name"),
-///     "Delay 1 s".parse::<PresetName>().expect("a preset name"),
+///     "slow-order-producers".parse()?,
+///     "order-producers".parse::<SelectorName>().expect("a selector name"),
+///     "delay-1s".parse::<PresetName>().expect("a preset name"),
 /// )
+/// .with_title("Slow down order producers".parse().expect("a rule title"))
 /// .scoped(Scope::client(ClientId::new("order-ingest").expect("a client ID")))
 /// .with_trigger(TriggerParts::new().with_chance("40%".parse().expect("a chance")));
 ///
-/// assert_eq!(rule.name(), "Slow down order producers");
+/// // The name is the identity of the rule, and the title says what the rule is for.
+/// assert_eq!(rule.name(), "slow-order-producers");
+/// assert_eq!(rule.title().map(RuleTitle::as_str), Some("Slow down order producers"));
 /// assert_eq!(rule.lifetime(), Lifetime::UntilDisarmed);
-/// assert_eq!(rule.dice_key().as_str(), "Slow down order producers");
-///
-/// // A rename does not change which calls the rule hits: the old name stays as the dice key.
-/// let renamed = rule.renamed("Slow ingest".parse()?);
-/// assert_eq!(renamed.dice_key().as_str(), "Slow down order producers");
+/// assert_eq!(rule.dice_key().as_str(), "slow-order-producers");
 /// # Ok::<(), RuleNameError>(())
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -61,6 +62,8 @@ use crate::{ActionRef, RuleName};
 )]
 pub struct Rule {
     name: RuleName,
+    #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Option::is_none"))]
+    title: Option<RuleTitle>,
     selector: SelectorRef,
     #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Scope::is_all"))]
     scope: Scope,
@@ -80,10 +83,11 @@ fn until_disarmed(lifetime: &Lifetime) -> bool {
 }
 
 impl Rule {
-    /// A rule for all clients that fires on every matching call, and stays armed until disarmed.
+    /// A rule for all clients that fires on every matching call, and stays armed until disarmed. It has no title.
     pub fn new(name: RuleName, selector: impl Into<SelectorRef>, action: impl Into<ActionRef>) -> Self {
         Self {
             name,
+            title: None,
             selector: selector.into(),
             scope: Scope::all(),
             action: action.into(),
@@ -93,21 +97,20 @@ impl Rule {
         }
     }
 
-    /// The same rule under another name, which keeps hitting the same calls.
-    ///
-    /// A rule that sets no dice key rolls a die of its name.
-    /// The rename writes the old name as the dice key, so the die stays the same one.
-    /// A rule that has a dice key already keeps it.
-    ///
-    /// What references the rule by its old name does not follow: whoever holds those references updates them.
+    /// The same rule with a title, which says what the rule is for.
+    /// It replaces the title the rule had before.
     #[must_use]
-    pub fn renamed(self, name: RuleName) -> Self {
-        let dice = self.dice_key();
+    pub fn with_title(self, title: RuleTitle) -> Self {
         Self {
-            dice: (dice != name.dice_key()).then_some(dice),
-            name,
+            title: Some(title),
             ..self
         }
+    }
+
+    /// The same rule without a title.
+    #[must_use]
+    pub fn without_title(self) -> Self {
+        Self { title: None, ..self }
     }
 
     /// The same rule for other calls.
@@ -165,9 +168,14 @@ impl Rule {
         Self { dice: None, ..self }
     }
 
-    /// The name of the rule, unique among rules.
+    /// The name of the rule, unique among rules. It is the identity of the rule.
     pub fn name(&self) -> &RuleName {
         &self.name
+    }
+
+    /// What the rule is for, in free text, when someone wrote it down.
+    pub fn title(&self) -> Option<&RuleTitle> {
+        self.title.as_ref()
     }
 
     /// Which calls the rule considers, before its scope.
@@ -222,22 +230,22 @@ mod tests {
     }
 
     fn order_producers() -> SelectorName {
-        "Order producers".parse().unwrap()
+        "order-producers".parse().unwrap()
     }
 
     fn delay_1s() -> PresetName {
-        "Delay 1 s".parse().unwrap()
+        "delay-1s".parse().unwrap()
     }
 
     fn slow_down() -> Rule {
-        Rule::new(name("Slow down order producers"), order_producers(), delay_1s())
+        Rule::new(name("slow-order-producers"), order_producers(), delay_1s())
     }
 
     #[test]
     fn a_new_rule_is_for_all_clients_on_every_match_until_disarmed() {
         let rule = slow_down();
 
-        assert_eq!(rule.name(), "Slow down order producers");
+        assert_eq!(rule.name(), "slow-order-producers");
         assert_eq!(rule.selector(), &SelectorRef::Named(order_producers()));
         assert!(rule.scope().is_all());
         assert_eq!(rule.action(), &ActionRef::Preset(delay_1s()));
@@ -249,7 +257,7 @@ mod tests {
     #[test]
     fn a_rule_takes_inline_conditions_and_an_inline_action() {
         let metadata = Conditions::from(Condition::is(ApiKey::METADATA));
-        let rule = Rule::new(name("Blackhole metadata"), metadata.clone(), LieDefinition::Silence);
+        let rule = Rule::new(name("blackhole-metadata"), metadata.clone(), LieDefinition::Silence);
 
         assert_eq!(rule.selector(), &SelectorRef::Inline(metadata));
         assert_eq!(rule.action(), &ActionRef::from(LieDefinition::Silence));
@@ -292,42 +300,29 @@ mod tests {
     fn the_die_derives_from_the_name_unless_the_rule_sets_a_dice_key() {
         let dice = DiceKey::new("an old name").unwrap();
 
-        assert_eq!(slow_down().dice_key().as_str(), "Slow down order producers");
+        assert_eq!(slow_down().dice_key().as_str(), "slow-order-producers");
         assert_eq!(slow_down().with_dice(dice.clone()).dice_key(), dice);
     }
 
     #[test]
-    fn a_rename_writes_the_old_name_as_the_dice_key() {
-        let renamed = slow_down().renamed(name("Slow ingest"));
+    fn a_rule_has_a_title_when_someone_gives_it_one() {
+        let title = |text: &str| text.parse::<RuleTitle>().unwrap();
+        let titled = slow_down().with_title(title("Slow down order producers"));
 
-        assert_eq!(renamed.name(), "Slow ingest");
-        assert_eq!(renamed.dice().map(DiceKey::as_str), Some("Slow down order producers"));
-        assert_eq!(renamed.dice_key(), slow_down().dice_key());
+        assert_eq!(slow_down().title(), None);
+        assert_eq!(titled.title(), Some(&title("Slow down order producers")));
+        assert_eq!(
+            titled.clone().with_title(title("Slow ingest")).title(),
+            Some(&title("Slow ingest"))
+        );
+        assert_eq!(titled.without_title(), slow_down());
     }
 
     #[test]
-    fn a_second_rename_keeps_the_first_name_as_the_dice_key() {
-        let renamed = slow_down().renamed(name("Slow ingest")).renamed(name("Slower ingest"));
+    fn a_title_is_no_part_of_the_identity_of_a_rule() {
+        let titled = slow_down().with_title("Slow down order producers".parse().unwrap());
 
-        assert_eq!(renamed.name(), "Slower ingest");
-        assert_eq!(renamed.dice_key(), slow_down().dice_key());
-    }
-
-    #[test]
-    fn a_rename_keeps_a_dice_key_the_rule_set_itself() {
-        let dice = DiceKey::new("shared die").unwrap();
-        let renamed = slow_down().with_dice(dice.clone()).renamed(name("Slow ingest"));
-
-        assert_eq!(renamed.dice(), Some(&dice));
-    }
-
-    #[test]
-    fn a_rename_back_to_the_first_name_needs_no_dice_key() {
-        let back = slow_down()
-            .renamed(name("Slow ingest"))
-            .renamed(name("Slow down order producers"));
-
-        assert_eq!(back, slow_down());
-        assert_eq!(slow_down().renamed(name("Slow down order producers")), slow_down());
+        assert_eq!(titled.name(), slow_down().name());
+        assert_eq!(titled.dice_key(), slow_down().dice_key());
     }
 }

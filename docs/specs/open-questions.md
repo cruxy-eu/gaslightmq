@@ -124,6 +124,9 @@ The second part lists the decisions that were settled, with the reason and the s
 | Question | Decision | Reason |
 |---|---|---|
 | Are names unique across kinds? | No, per kind. The UI shows the kind where kinds mix. See [names](architecture/storage.md#names). | Every reference already says which kind it means. |
+| What is a name? | A slug, like the name of a resource in Kubernetes. It is the identity of its definition, and no hidden identifier stands next to it. See [names](domains/rules.md#names). | One string names a definition in a file, a command, an explanation and the statistics. |
+| Where does free text go? | In an optional title on the definition itself. See [titles](domains/rules.md#titles). | Nothing references a title, so it changes without breaking anything. |
+| Can someone rename a definition? | No. Another name means a new definition, and the old one is deleted. | A rename had to rewrite every reference, and its history hung on a name that no longer existed. |
 | What is the default for recordings? | Metadata-only on Upstream, full on Simulated. See [privacy](architecture/storage.md#privacy). | The real cluster can carry sensitive data. The World's data is synthetic. |
 | Does GaslightMQ need a database? | No. Definitions are files, live state is memory, recordings are append-only files. See [storage](architecture/storage.md). | A recording is a write-once stream that travels as one file, and selectors already are the query language. |
 | What survives a restart? | Definitions and recordings. Nothing is armed. See [a restart is a clean slate](architecture/storage.md#a-restart-is-a-clean-slate). | A fault injector that resumes on its own is a hazard. |

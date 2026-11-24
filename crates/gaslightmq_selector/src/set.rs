@@ -12,7 +12,7 @@ use crate::{EffectiveSelector, Selector, SelectorName, SelectorRef};
 /// - no selector includes itself, directly or through other selectors.
 ///
 /// [`new`](Self::new) checks all three, so [`resolve`](Self::resolve) only fails for a name the set does not have.
-/// A set does not change, apart from a [rename](Self::rename): build a new one from the selectors after an edit.
+/// A set does not change: build a new one from the selectors after an edit.
 ///
 /// The set knows the references between selectors.
 /// Whether a rule or a pad layout names a selector that exists is for whoever holds those to check,
@@ -24,19 +24,19 @@ use crate::{EffectiveSelector, Selector, SelectorName, SelectorRef};
 /// use gaslightmq_selector::prelude::*;
 ///
 /// let order_producers = Selector::new(
-///     "Order producers".parse().expect("a selector name"),
+///     "order-producers".parse().expect("a selector name"),
 ///     Conditions::new()
 ///         .with(Condition::is(ApiKey::PRODUCE))
 ///         .with(Condition::parse(Field::Topic, "orders.*").expect("a condition")),
 /// );
 /// let from_ingest = Selector::new(
-///     "Order producers from ingest".parse().expect("a selector name"),
+///     "order-producers-from-ingest".parse().expect("a selector name"),
 ///     Condition::is(ClientId::new("order-ingest").expect("a client ID")).into(),
 /// )
-/// .including("Order producers".parse().expect("a selector name"));
+/// .including("order-producers".parse().expect("a selector name"));
 ///
 /// let set = SelectorSet::new([order_producers, from_ingest])?;
-/// let effective = set.effective(&"Order producers from ingest".parse().expect("a selector name"))?;
+/// let effective = set.effective(&"order-producers-from-ingest".parse().expect("a selector name"))?;
 /// assert_eq!(
 ///     effective.to_string(),
 ///     "api is Produce and topic matches orders.* and client.id is order-ingest"
@@ -124,35 +124,6 @@ impl SelectorSet {
             SelectorRef::Named(name) => self.effective(name),
             SelectorRef::Inline(conditions) => Ok(conditions.clone().into()),
         }
-    }
-
-    /// Renames a selector, and updates every selector that includes it.
-    ///
-    /// What references the selector from outside the set, such as a rule, is for whoever holds it to update.
-    ///
-    /// # Errors
-    ///
-    /// [`SelectorSetError::UnknownSelector`] when no selector is named `from`,
-    /// and [`SelectorSetError::DuplicateName`] when another selector is named `to` already.
-    pub fn rename(&mut self, from: &SelectorName, to: SelectorName) -> Result<(), SelectorSetError> {
-        if !self.contains(from) {
-            return Err(SelectorSetError::UnknownSelector { name: from.clone() });
-        }
-        if *from == to {
-            return Ok(());
-        }
-        if self.contains(&to) {
-            return Err(SelectorSetError::DuplicateName { name: to });
-        }
-        if let Some(selector) = self.by_name.remove(from) {
-            self.by_name.insert(to.clone(), selector.renamed(to.clone()));
-        }
-        for include in self.by_name.values_mut().filter_map(Selector::include_mut) {
-            if include == from {
-                *include = to.clone();
-            }
-        }
-        Ok(())
     }
 
     /// `selector`, the selector it includes, the one that one includes, and so on.
@@ -248,23 +219,23 @@ mod tests {
     }
 
     fn produce() -> Selector {
-        Selector::new(name("Produce"), Condition::is(ApiKey::PRODUCE).into())
+        Selector::new(name("produce"), Condition::is(ApiKey::PRODUCE).into())
     }
 
     fn order_producers() -> Selector {
         Selector::new(
-            name("Order producers"),
+            name("order-producers"),
             Condition::parse(Field::Topic, "orders.*").unwrap().into(),
         )
-        .including(name("Produce"))
+        .including(name("produce"))
     }
 
     fn from_ingest() -> Selector {
         Selector::new(
-            name("Order producers from ingest"),
+            name("order-producers-from-ingest"),
             Condition::is(ClientId::new("order-ingest").unwrap()).into(),
         )
-        .including(name("Order producers"))
+        .including(name("order-producers"))
     }
 
     #[test]
@@ -273,13 +244,12 @@ mod tests {
 
         assert_eq!(set.len(), 2);
         assert!(!set.is_empty());
-        assert!(set.contains(&name("Produce")));
-        assert!(!set.contains(&name("produce")));
-        assert_eq!(set.get(&name("Order producers")), Some(&order_producers()));
-        assert_eq!(set.get(&name("Order consumers")), None);
+        assert!(set.contains(&name("produce")));
+        assert_eq!(set.get(&name("order-producers")), Some(&order_producers()));
+        assert_eq!(set.get(&name("order-consumers")), None);
         assert_eq!(
             set.iter().map(Selector::name).collect::<Vec<_>>(),
-            [&name("Order producers"), &name("Produce")]
+            [&name("order-producers"), &name("produce")]
         );
         assert_eq!((&set).into_iter().count(), 2);
         assert_eq!(set.into_iter().collect::<Vec<_>>(), [order_producers(), produce()]);
@@ -296,8 +266,8 @@ mod tests {
     #[test]
     fn two_selectors_with_one_name_are_an_error() {
         assert_eq!(
-            SelectorSet::new([produce(), order_producers(), link("Produce", None)]),
-            Err(SelectorSetError::DuplicateName { name: name("Produce") })
+            SelectorSet::new([produce(), order_producers(), link("produce", None)]),
+            Err(SelectorSetError::DuplicateName { name: name("produce") })
         );
     }
 
@@ -306,15 +276,15 @@ mod tests {
         assert_eq!(
             SelectorSet::new([order_producers()]),
             Err(SelectorSetError::UnknownInclude {
-                selector: name("Order producers"),
-                include: name("Produce"),
+                selector: name("order-producers"),
+                include: name("produce"),
             })
         );
         assert_eq!(
             SelectorSet::new([from_ingest(), order_producers()]),
             Err(SelectorSetError::UnknownInclude {
-                selector: name("Order producers"),
-                include: name("Produce"),
+                selector: name("order-producers"),
+                include: name("produce"),
             })
         );
     }
@@ -322,9 +292,9 @@ mod tests {
     #[test]
     fn a_selector_that_includes_itself_is_an_error() {
         assert_eq!(
-            SelectorSet::new([link("A", Some("A"))]),
+            SelectorSet::new([link("a", Some("a"))]),
             Err(SelectorSetError::IncludeCycle {
-                path: names(&["A", "A"])
+                path: names(&["a", "a"])
             })
         );
     }
@@ -332,15 +302,15 @@ mod tests {
     #[test]
     fn selectors_that_include_each_other_in_a_circle_are_an_error() {
         assert_eq!(
-            SelectorSet::new([link("A", Some("B")), link("B", Some("A"))]),
+            SelectorSet::new([link("a", Some("b")), link("b", Some("a"))]),
             Err(SelectorSetError::IncludeCycle {
-                path: names(&["A", "B", "A"])
+                path: names(&["a", "b", "a"])
             })
         );
         assert_eq!(
-            SelectorSet::new([link("C", Some("A")), link("A", Some("B")), link("B", Some("C"))]),
+            SelectorSet::new([link("c", Some("a")), link("a", Some("b")), link("b", Some("c"))]),
             Err(SelectorSetError::IncludeCycle {
-                path: names(&["A", "B", "C", "A"])
+                path: names(&["a", "b", "c", "a"])
             })
         );
     }
@@ -348,16 +318,16 @@ mod tests {
     #[test]
     fn a_selector_that_leads_into_a_circle_names_the_circle_only() {
         assert_eq!(
-            SelectorSet::new([link("A", Some("X")), link("X", Some("Y")), link("Y", Some("X"))]),
+            SelectorSet::new([link("a", Some("x")), link("x", Some("y")), link("y", Some("x"))]),
             Err(SelectorSetError::IncludeCycle {
-                path: names(&["X", "Y", "X"])
+                path: names(&["x", "y", "x"])
             })
         );
     }
 
     #[test]
     fn several_selectors_can_include_the_same_one() {
-        let set = SelectorSet::new([link("A", Some("C")), link("B", Some("C")), link("C", None)]);
+        let set = SelectorSet::new([link("a", Some("c")), link("b", Some("c")), link("c", None)]);
 
         assert_eq!(set.map(|set| set.len()), Ok(3));
     }
@@ -366,13 +336,13 @@ mod tests {
     fn the_effective_selector_has_the_included_conditions_first() {
         let set = SelectorSet::new([from_ingest(), order_producers(), produce()]).unwrap();
 
-        assert_eq!(set.effective(&name("Produce")).unwrap().to_string(), "api is Produce");
+        assert_eq!(set.effective(&name("produce")).unwrap().to_string(), "api is Produce");
         assert_eq!(
-            set.effective(&name("Order producers")).unwrap().to_string(),
+            set.effective(&name("order-producers")).unwrap().to_string(),
             "api is Produce and topic matches orders.*"
         );
         assert_eq!(
-            set.effective(&name("Order producers from ingest")).unwrap().to_string(),
+            set.effective(&name("order-producers-from-ingest")).unwrap().to_string(),
             "api is Produce and topic matches orders.* and client.id is order-ingest"
         );
     }
@@ -380,18 +350,18 @@ mod tests {
     #[test]
     fn an_include_can_test_a_field_that_the_selector_tests_too() {
         let orders = Selector::new(
-            name("Orders"),
+            name("orders"),
             Condition::parse(Field::Topic, "orders.*").unwrap().into(),
         );
         let european = Selector::new(
-            name("European orders"),
+            name("european-orders"),
             Condition::parse(Field::Topic, "*.eu").unwrap().into(),
         )
-        .including(name("Orders"));
+        .including(name("orders"));
         let set = SelectorSet::new([orders, european]).unwrap();
 
         assert_eq!(
-            set.effective(&name("European orders")).unwrap().to_string(),
+            set.effective(&name("european-orders")).unwrap().to_string(),
             "topic matches orders.* and topic matches *.eu"
         );
     }
@@ -402,8 +372,8 @@ mod tests {
         let inline = Conditions::from(Condition::is(ApiKey::METADATA));
 
         assert_eq!(
-            set.resolve(&name("Order producers").into()),
-            set.effective(&name("Order producers"))
+            set.resolve(&name("order-producers").into()),
+            set.effective(&name("order-producers"))
         );
         assert_eq!(set.resolve(&inline.clone().into()), Ok(inline.into()));
     }
@@ -412,53 +382,10 @@ mod tests {
     fn a_name_that_no_selector_has_does_not_resolve() {
         let set = SelectorSet::new([produce()]).unwrap();
         let unknown = SelectorSetError::UnknownSelector {
-            name: name("Order producers"),
+            name: name("order-producers"),
         };
 
-        assert_eq!(set.effective(&name("Order producers")), Err(unknown.clone()));
-        assert_eq!(set.resolve(&name("Order producers").into()), Err(unknown));
-    }
-
-    #[test]
-    fn renaming_a_selector_updates_every_selector_that_includes_it() {
-        let mut set = SelectorSet::new([from_ingest(), order_producers(), produce()]).unwrap();
-
-        set.rename(&name("Order producers"), name("Order writers")).unwrap();
-
-        assert!(!set.contains(&name("Order producers")));
-        assert_eq!(
-            set.get(&name("Order writers")),
-            Some(&order_producers().renamed(name("Order writers")))
-        );
-        assert_eq!(
-            set.get(&name("Order producers from ingest"))
-                .and_then(Selector::include),
-            Some(&name("Order writers"))
-        );
-        assert_eq!(set.get(&name("Produce")), Some(&produce()));
-        assert_eq!(
-            set.effective(&name("Order producers from ingest")).unwrap().to_string(),
-            "api is Produce and topic matches orders.* and client.id is order-ingest"
-        );
-        assert_eq!(SelectorSet::new(set.clone()), Ok(set));
-    }
-
-    #[test]
-    fn renaming_needs_a_selector_and_a_free_name() {
-        let mut set = SelectorSet::new([order_producers(), produce()]).unwrap();
-        let before = set.clone();
-
-        assert_eq!(
-            set.rename(&name("Order consumers"), name("Consumers")),
-            Err(SelectorSetError::UnknownSelector {
-                name: name("Order consumers")
-            })
-        );
-        assert_eq!(
-            set.rename(&name("Order producers"), name("Produce")),
-            Err(SelectorSetError::DuplicateName { name: name("Produce") })
-        );
-        assert_eq!(set.rename(&name("Produce"), name("Produce")), Ok(()));
-        assert_eq!(set, before);
+        assert_eq!(set.effective(&name("order-producers")), Err(unknown.clone()));
+        assert_eq!(set.resolve(&name("order-producers").into()), Err(unknown));
     }
 }

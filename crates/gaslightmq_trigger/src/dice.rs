@@ -143,15 +143,15 @@ text_key! {
     /// What tells the die of one rule from the die of another.
     ///
     /// The dice key is the rule's name, unless the rule sets `dice`.
-    /// Renaming a rule writes the old name as its `dice` key, so a rename does not change which calls the rule hits.
+    /// A new rule that takes the place of another sets `dice` to the name of the other, so it hits the same calls.
     ///
     /// A [`Die`] hashes the UTF-8 bytes of the key, so two keys roll the same only when they are the same text.
     ///
     /// ```
     /// use gaslightmq_trigger::prelude::*;
     ///
-    /// let key = DiceKey::new("Slow down order producers")?;
-    /// assert_eq!(key.as_str(), "Slow down order producers");
+    /// let key = DiceKey::new("slow-order-producers")?;
+    /// assert_eq!(key.as_str(), "slow-order-producers");
     /// assert_eq!(DiceKey::new(""), Err(DiceKeyError::Empty));
     /// # Ok::<(), DiceKeyError>(())
     /// ```
@@ -218,12 +218,12 @@ text_key! {
 /// ```
 /// use gaslightmq_trigger::prelude::*;
 ///
-/// let die = Die::new(Seed::new(42), &DiceKey::new("Slow down order producers").expect("a dice key"));
+/// let die = Die::new(Seed::new(42), &DiceKey::new("slow-order-producers").expect("a dice key"));
 ///
 /// // The same seed, key and match number roll the same, in every run and on every machine.
 /// let third = MatchNumber::new(3).expect("a match number");
 /// assert_eq!(die.roll(third), die.roll(third));
-/// assert_eq!(die.roll(third).to_string(), "73.8645%");
+/// assert_eq!(die.roll(third).to_string(), "96.2915%");
 ///
 /// // With `per: session`, every session rolls a die of its own.
 /// let session = die.for_counter(&CounterKey::new("10.0.4.27 broker 2 #1")?);
@@ -291,13 +291,13 @@ mod tests {
 
     #[test]
     fn a_key_converts_from_and_to_text() {
-        let key = DiceKey::new("Stale metadata").unwrap();
-        assert_eq!(key.as_str(), "Stale metadata");
-        assert_eq!(key.as_ref(), "Stale metadata");
-        assert_eq!(key.to_string(), "Stale metadata");
-        assert_eq!("Stale metadata".parse(), Ok(key.clone()));
-        assert_eq!(DiceKey::try_from("Stale metadata".to_owned()), Ok(key.clone()));
-        assert_eq!(String::from(key), "Stale metadata");
+        let key = DiceKey::new("stale-metadata").unwrap();
+        assert_eq!(key.as_str(), "stale-metadata");
+        assert_eq!(key.as_ref(), "stale-metadata");
+        assert_eq!(key.to_string(), "stale-metadata");
+        assert_eq!("stale-metadata".parse(), Ok(key.clone()));
+        assert_eq!(DiceKey::try_from("stale-metadata".to_owned()), Ok(key.clone()));
+        assert_eq!(String::from(key), "stale-metadata");
     }
 
     #[test]

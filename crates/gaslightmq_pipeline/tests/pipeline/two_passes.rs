@@ -19,7 +19,7 @@ fn truth_with_a_failed_partition(request: &gaslightmq_wire::Request, error: Erro
 
 #[test]
 fn a_rule_of_the_response_pass_only_lies_about_what_the_backend_answered() {
-    let lost = on_success("Lost acknowledgement", ApiKey::PRODUCE, late_refusal(TIMED_OUT));
+    let lost = on_success("lost-acknowledgement", ApiKey::PRODUCE, late_refusal(TIMED_OUT));
     let mut driver = Driver::with([lost]);
     let request = produce(41, &["orders.eu/3", "orders.eu/4"]);
 
@@ -39,7 +39,7 @@ fn a_rule_of_the_response_pass_only_lies_about_what_the_backend_answered() {
     let record = answered.emitted();
     assert_eq!(
         explained(&record),
-        ["Lost acknowledgement: matched orders.eu/4; match 1: fired; \
+        ["lost-acknowledgement: matched orders.eu/4; match 1: fired; \
           REQUEST_TIMED_OUT after the response applied on orders.eu/4"]
     );
     assert_eq!(truth_of(&record, "orders.eu/3"), "NOT_ENOUGH_REPLICAS");
@@ -48,7 +48,7 @@ fn a_rule_of_the_response_pass_only_lies_about_what_the_backend_answered() {
 
 #[test]
 fn a_rule_of_the_response_pass_that_does_not_match_the_truth_leaves_no_line() {
-    let lost = on_success("Lost acknowledgement", ApiKey::PRODUCE, late_refusal(TIMED_OUT));
+    let lost = on_success("lost-acknowledgement", ApiKey::PRODUCE, late_refusal(TIMED_OUT));
     let mut driver = Driver::with([lost]);
     let request = produce(41, &["orders.eu/3"]);
 
@@ -68,9 +68,9 @@ fn the_response_pass_leaves_out_a_partition_that_was_refused_before_forwarding()
         .with(Condition::is(ApiKey::PRODUCE))
         .with(Condition::is_not(Outcome::Error));
     let mut driver = Driver::with([
-        on_partition("Leader flap", "orders.eu", "3", refusal(NOT_LEADER)),
+        on_partition("leader-flap", "orders.eu", "3", refusal(NOT_LEADER)),
         Rule::new(
-            "Lost acknowledgement".parse().unwrap(),
+            "lost-acknowledgement".parse().unwrap(),
             not_failed,
             LieDefinition::from(late_refusal(TIMED_OUT)),
         ),
@@ -94,16 +94,16 @@ fn the_response_pass_leaves_out_a_partition_that_was_refused_before_forwarding()
     let record = answered.emitted();
     assert_eq!(
         explained(&record)[1],
-        "Lost acknowledgement: matched orders.eu/3, orders.eu/4, payments.settled/0; match 1: fired; \
+        "lost-acknowledgement: matched orders.eu/3, orders.eu/4, payments.settled/0; match 1: fired; \
          REQUEST_TIMED_OUT after the response applied on orders.eu/4, payments.settled/0, \
-         pre-empted on orders.eu/3 by Leader flap"
+         pre-empted on orders.eu/3 by leader-flap"
     );
 }
 
 #[test]
 fn a_refusal_of_the_whole_call_in_the_response_pass_replaces_the_truth() {
     // A Heartbeat names no partition, so the rule holds the whole call.
-    let lost = on_success("Lost heartbeat", ApiKey::HEARTBEAT, late_refusal(REBALANCING));
+    let lost = on_success("lost-heartbeat", ApiKey::HEARTBEAT, late_refusal(REBALANCING));
     let mut driver = Driver::with([lost]);
     let request = heartbeat(41);
 
@@ -120,7 +120,7 @@ fn a_refusal_of_the_whole_call_in_the_response_pass_replaces_the_truth() {
 
 #[test]
 fn a_call_in_flight_finishes_on_the_snapshot_it_started_with() {
-    let lost = || on_success("Lost acknowledgement", ApiKey::PRODUCE, late_refusal(TIMED_OUT));
+    let lost = || on_success("lost-acknowledgement", ApiKey::PRODUCE, late_refusal(TIMED_OUT));
     let mut driver = Driver::with([lost()]);
     let first = produce(41, &["orders.eu/3"]);
     let second = produce(42, &["orders.eu/3"]);
@@ -139,7 +139,7 @@ fn a_call_in_flight_finishes_on_the_snapshot_it_started_with() {
     assert_eq!(told(&first, &answered.sent(&first)), ["orders.eu/3 REQUEST_TIMED_OUT"]);
     let record = answered.emitted();
     assert_eq!(record.id(), Driver::call(1));
-    assert!(record.explanation().applied("Lost acknowledgement"));
+    assert!(record.explanation().applied("lost-acknowledgement"));
 
     // The call that arrived after the change uses the new one.
     let answered = driver.answer(&after.forwarded());
@@ -147,7 +147,7 @@ fn a_call_in_flight_finishes_on_the_snapshot_it_started_with() {
     assert!(answered.emitted().explanation().is_empty());
 
     // The rule counted the one call that it matched.
-    let rule = old_snapshot.get(&"Lost acknowledgement".parse().unwrap()).unwrap();
+    let rule = old_snapshot.get(&"lost-acknowledgement".parse().unwrap()).unwrap();
     assert_eq!(rule.arming().counter().matches(), 1);
 }
 
@@ -157,7 +157,7 @@ fn a_rule_that_is_armed_while_a_call_is_in_flight_does_not_touch_that_call() {
     let request = produce(41, &["orders.eu/3"]);
 
     let in_flight = driver.send(&request);
-    driver.publish([on_topic("Lost acknowledgement", "orders.*", late_refusal(TIMED_OUT))]);
+    driver.publish([on_topic("lost-acknowledgement", "orders.*", late_refusal(TIMED_OUT))]);
 
     let answered = driver.answer(&in_flight.forwarded());
     assert_eq!(told(&request, &answered.sent(&request)), ["orders.eu/3 ok"]);
@@ -167,11 +167,11 @@ fn a_rule_that_is_armed_while_a_call_is_in_flight_does_not_touch_that_call() {
 #[test]
 fn a_hang_up_of_the_response_pass_and_a_refusal_before_forwarding_both_apply() {
     let late = on_success(
-        "Late disconnect",
+        "late-disconnect",
         ApiKey::PRODUCE,
         HangUpLie::new().at(Stage::AfterResponse),
     );
-    let flap = on_partition("Leader flap", "orders.eu", "3", refusal(NOT_LEADER));
+    let flap = on_partition("leader-flap", "orders.eu", "3", refusal(NOT_LEADER));
     let mut driver = Driver::with([late, flap]);
     let request = produce(41, &["orders.eu/3", "orders.eu/4"]);
 

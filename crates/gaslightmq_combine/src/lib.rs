@@ -65,22 +65,22 @@
 //! let stale = Claim::Rewrite { aspect: Aspect::HighWatermark, target: on(&four) };
 //!
 //! let request = RequestPass::of([
-//!     FiredLie::new("Slow fetch", Priority::new(0), Claim::try_from(&delay)?),
-//!     FiredLie::new("Leader flap", Priority::new(1), Claim::try_from(&flap)?),
-//!     FiredLie::new("Stale watermark", Priority::new(2), stale),
+//!     FiredLie::new("slow-fetch", Priority::new(0), Claim::try_from(&delay)?),
+//!     FiredLie::new("leader-flap", Priority::new(1), Claim::try_from(&flap)?),
+//!     FiredLie::new("stale-watermark", Priority::new(2), stale),
 //! ]);
 //!
 //! // Before forwarding: `orders.eu/3` leaves the request, and nothing ends the call.
 //! let before = request.before_forwarding();
 //! assert_eq!(before.terminal(), None);
-//! assert_eq!(before.refusals().of(&three), Some(&"Leader flap"));
+//! assert_eq!(before.refusals().of(&three), Some(&"leader-flap"));
 //!
 //! // No rule waited for the truth, so the response pass adds nothing.
 //! let call = request.without_response_pass();
 //!
 //! // After the response: the watermark of `orders.eu/4` goes stale, and the answer waits.
 //! let after = call.after_response();
-//! assert_eq!(after.rewrite(Aspect::HighWatermark, &four), Some(&"Stale watermark"));
+//! assert_eq!(after.rewrite(Aspect::HighWatermark, &four), Some(&"stale-watermark"));
 //! assert_eq!(after.delay().length(), TimeSpan::from_millis(750));
 //!
 //! // None of the three conflict, so all of them apply, and every firing counts.
@@ -113,16 +113,16 @@
 //!
 //! // A scenario rule blackholes the call. A live rule, with a higher priority, waits for the truth.
 //! let request = RequestPass::of([
-//!     FiredLie::new("Blackhole", Priority::new(1), Claim::Terminal { stage: Stage::BeforeForwarding }),
+//!     FiredLie::new("blackhole", Priority::new(1), Claim::Terminal { stage: Stage::BeforeForwarding }),
 //! ]);
-//! assert_eq!(request.before_forwarding().terminal(), Some(&"Blackhole"));
+//! assert_eq!(request.before_forwarding().terminal(), Some(&"blackhole"));
 //!
 //! // The call ended before the truth existed, so the live rule is pre-empted.
 //! let lost = Claim::Refusal { stage: Stage::AfterResponse, target: Target::Call };
-//! let call = request.response_pass([FiredLie::new("Lost acknowledgement", Priority::new(0), lost)]);
-//! let lost = call.fate_of(&"Lost acknowledgement").expect("the lie fired");
+//! let call = request.response_pass([FiredLie::new("lost-acknowledgement", Priority::new(0), lost)]);
+//! let lost = call.fate_of(&"lost-acknowledgement").expect("the lie fired");
 //! assert!(!lost.counts());
-//! assert_eq!(lost.pre_empted()[0].to(), &"Blackhole");
+//! assert_eq!(lost.pre_empted()[0].to(), &"blackhole");
 //! ```
 //!
 //! # Firings

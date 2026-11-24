@@ -115,7 +115,7 @@
 //! A rule or a preset that wants every lie to do something checks that itself.
 //!
 //! The map is flat, so a preset or a rule holds the keys of a lie next to its own.
-//! `#[serde(flatten)]` on a field of type [`LieDefinition`] reads `{ name: Delay 1 s, lie: timing, delay: 1s }`.
+//! `#[serde(flatten)]` on a field of type [`LieDefinition`] reads `{ name: delay-1s, lie: timing, delay: 1s }`.
 //!
 //! The other types write these forms:
 //!

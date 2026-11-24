@@ -243,7 +243,7 @@ fn a_jitter_longer_than_the_delay_does_not_read() {
         "a jitter of 200ms is longer than the delay of 0s",
     );
     rejects::<Preset>(
-        r#"{"name":"Jitter","lie":"timing","jitter":"200ms"}"#,
+        r#"{"name":"jitter","lie":"timing","jitter":"200ms"}"#,
         "a jitter of 200ms is longer than the delay of 0s",
     );
 
@@ -318,7 +318,7 @@ fn a_key_that_no_lie_has_does_not_read() {
         r#"{"lie":"refusal","error":"REQUEST_TIMED_OUT","Stage":"after"}"#,
         "unknown field `Stage`",
     );
-    rejects::<LieDefinition>(r#"{"lie":"silence","name":"Blackhole"}"#, "unknown field `name`");
+    rejects::<LieDefinition>(r#"{"lie":"silence","name":"blackhole"}"#, "unknown field `name`");
     // A definition does not say what it lies about.
     rejects::<LieDefinition>(r#"{"lie":"silence","target":"call"}"#, "unknown field `target`");
 }
@@ -478,47 +478,47 @@ fn preset(name: &str, lie: LieDefinition) -> Preset {
 fn a_preset_holds_a_name_next_to_the_keys_of_its_lie() {
     writes(
         &preset(
-            "Delay 1 s",
+            "delay-1s",
             timing(TimingLie::new().with_delay(millis(1000)).with_jitter(millis(200))),
         ),
-        r#"{"name":"Delay 1 s","lie":"timing","delay":"1s","jitter":"200ms"}"#,
+        r#"{"name":"delay-1s","lie":"timing","delay":"1s","jitter":"200ms"}"#,
     );
     writes(
         &preset(
-            "Lost acknowledgement",
+            "lost-acknowledgement",
             refusal_after_the_response(ErrorCode::REQUEST_TIMED_OUT),
         ),
-        r#"{"name":"Lost acknowledgement","lie":"refusal","error":"REQUEST_TIMED_OUT","stage":"after"}"#,
+        r#"{"name":"lost-acknowledgement","lie":"refusal","error":"REQUEST_TIMED_OUT","stage":"after"}"#,
     );
     writes(
-        &preset("Leader flap", refusal(ErrorCode::NOT_LEADER_OR_FOLLOWER)),
-        r#"{"name":"Leader flap","lie":"refusal","error":"NOT_LEADER_OR_FOLLOWER"}"#,
+        &preset("leader-flap", refusal(ErrorCode::NOT_LEADER_OR_FOLLOWER)),
+        r#"{"name":"leader-flap","lie":"refusal","error":"NOT_LEADER_OR_FOLLOWER"}"#,
     );
     writes(
-        &preset("Blackhole", LieDefinition::Silence),
-        r#"{"name":"Blackhole","lie":"silence"}"#,
+        &preset("blackhole", LieDefinition::Silence),
+        r#"{"name":"blackhole","lie":"silence"}"#,
     );
     reads(
-        r#"{"lie":"hang-up","stage":"after","name":"Disconnect"}"#,
-        &preset("Disconnect", hang_up(AFTER)),
+        r#"{"lie":"hang-up","stage":"after","name":"disconnect"}"#,
+        &preset("disconnect", hang_up(AFTER)),
     );
 }
 
 #[test]
 fn a_preset_rejects_what_its_lie_rejects() {
     rejects::<Preset>(
-        r#"{"name":"Delay 1 s","lie":"timing","dely":"1s"}"#,
+        r#"{"name":"delay-1s","lie":"timing","dely":"1s"}"#,
         "unknown field `dely`",
     );
     rejects::<Preset>(
-        r#"{"name":"Blackhole","lie":"silence","stage":"after"}"#,
+        r#"{"name":"blackhole","lie":"silence","stage":"after"}"#,
         "silence cannot act after the response",
     );
     rejects::<Preset>(
-        r#"{"name":"Leader flap","lie":"refusal","error":"NOT_LEADER_OR_FOLLOWER","delay":"1s"}"#,
+        r#"{"name":"leader-flap","lie":"refusal","error":"NOT_LEADER_OR_FOLLOWER","delay":"1s"}"#,
         "`delay` does not belong to refusal",
     );
-    rejects::<Preset>(r#"{"name":"Leader flap","lie":"refusal"}"#, "missing field `error`");
-    rejects::<Preset>(r#"{"name":"Nothing"}"#, "missing field `lie`");
+    rejects::<Preset>(r#"{"name":"leader-flap","lie":"refusal"}"#, "missing field `error`");
+    rejects::<Preset>(r#"{"name":"nothing"}"#, "missing field `lie`");
     rejects::<Preset>(r#"{"lie":"silence"}"#, "missing field `name`");
 }

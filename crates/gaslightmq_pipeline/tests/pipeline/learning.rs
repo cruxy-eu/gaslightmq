@@ -12,7 +12,7 @@ use crate::driver::*;
 
 #[test]
 fn a_topic_that_a_request_names_by_id_has_its_name_once_the_cluster_told_it() {
-    let flap = || on_partition("Leader flap", "orders.eu", "3", refusal(NOT_LEADER));
+    let flap = || on_partition("leader-flap", "orders.eu", "3", refusal(NOT_LEADER));
     let mut driver = Driver::with([flap()]);
     let fetch = fetch_by_id(41, &["orders.eu/3", "orders.eu/4"]);
 
@@ -54,13 +54,13 @@ fn a_topic_that_a_request_names_by_id_has_its_name_once_the_cluster_told_it() {
 
 #[test]
 fn a_group_that_one_connection_names_targets_the_calls_of_another() {
-    // "Delay the Fetch of the group analytics-etl". A Fetch never names a group.
+    // "delay-the-fetch-of-the-group-analytics-etl". A Fetch never names a group.
     let of_the_group = Conditions::new()
         .with(Condition::is(ApiKey::FETCH))
         .with(Condition::parse(Field::Group, "analytics-etl").unwrap());
     let slow = || {
         Rule::new(
-            "Slow fetch".parse().unwrap(),
+            "slow-fetch".parse().unwrap(),
             of_the_group.clone(),
             LieDefinition::from(TimingLie::new().with_delay(TimeSpan::from_secs(1))),
         )

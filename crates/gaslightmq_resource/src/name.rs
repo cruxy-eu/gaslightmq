@@ -3,39 +3,34 @@ use std::fmt;
 use std::str::FromStr;
 use std::sync::Arc;
 
-/// The name of a resource, such as `Order producers`.
+/// The name of a resource, such as `order-producers`.
 ///
+/// A name is the identity of a resource, and nothing else.
 /// Things reference a resource by its name: a rule names its selector and its preset, and a command names an
 /// environment.
-/// A name is exact: `Order producers` and `order producers` are two names.
+/// A resource keeps its name for as long as it exists, and no other identifier stands next to it.
 ///
 /// A resource name does not say which kind of resource it names.
 /// Every kind has a name type of its own that wraps this one, and code speaks in those.
 ///
 /// # The rule for names
 ///
-/// A name has at least one character.
-/// It does not start or end with white space, and it holds no control character such as a line break.
-/// It holds no format character either, such as a zero-width space or a mark that turns the text direction.
-/// Nobody sees those, so two names that hold them can look the same and still differ.
-///
-/// The format characters are those of the Unicode general category `Cf`, as of Unicode 16.0.
-/// The zero-width joiner is one of them, so a name cannot hold an emoji that joins others with it.
-///
-/// The rule does not compare how two names look.
-/// Letters of different scripts that look alike, and one letter written in two ways, still make two names.
+/// A name is a slug, like the name of a resource in Kubernetes.
+/// It holds lowercase letters from `a` to `z`, digits and hyphens.
+/// It starts and ends with a letter or a digit.
+/// It has at least one character, and at most [`MAX_LENGTH`](Self::MAX_LENGTH), which is 63.
 ///
 /// ```
 /// use gaslightmq_resource::{ResourceName, ResourceNameError};
 ///
-/// let name: ResourceName = "Order producers".parse()?;
-/// assert_eq!(name, "Order producers");
-/// assert_eq!(name.to_string(), "Order producers");
+/// let name: ResourceName = "order-producers".parse()?;
+/// assert_eq!(name, "order-producers");
+/// assert_eq!(name.to_string(), "order-producers");
 ///
 /// assert_eq!(ResourceName::new(""), Err(ResourceNameError::Empty));
-/// assert!(ResourceName::new("Order producers ").is_err());
-/// // A zero-width space hides between the two words.
-/// assert!(ResourceName::new("Order\u{200b}producers").is_err());
+/// // Free text is for the title of a resource, and never for its name.
+/// assert!(ResourceName::new("Order producers").is_err());
+/// assert!(ResourceName::new("order-producers-").is_err());
 /// # Ok::<(), ResourceNameError>(())
 /// ```
 ///
@@ -44,23 +39,35 @@ use std::sync::Arc;
 pub struct ResourceName(Arc<str>);
 
 impl ResourceName {
+    /// The most characters a name has.
+    pub const MAX_LENGTH: usize = 63;
+
     /// Checks the [rule for names](Self#the-rule-for-names), and keeps the text as it is.
     ///
     /// # Errors
     ///
     /// The [`ResourceNameError`] that says which part of the rule the text breaks:
-    /// it is empty, starts or ends with white space, or holds a control character or a format character.
+    /// it is empty, holds a character that no name holds, starts or ends with a hyphen, or is too long.
+    /// A text that breaks several parts gets the first of them, in this order.
     pub fn new(name: impl AsRef<str>) -> Result<Self, ResourceNameError> {
         let name = name.as_ref();
-        let input = || name.to_owned();
+        let invalid = name
+            .chars()
+            .enumerate()
+            .find(|(_, character)| !is_name_character(*character));
         if name.is_empty() {
             Err(ResourceNameError::Empty)
-        } else if name.trim() != name {
-            Err(ResourceNameError::SurroundingWhiteSpace { input: input() })
-        } else if name.chars().any(char::is_control) {
-            Err(ResourceNameError::ControlCharacter { input: input() })
-        } else if name.chars().any(is_format) {
-            Err(ResourceNameError::FormatCharacter { input: input() })
+        } else if let Some((position, character)) = invalid {
+            Err(ResourceNameError::InvalidCharacter {
+                input: name.to_owned(),
+                character,
+                position,
+            })
+        } else if name.starts_with('-') || name.ends_with('-') {
+            Err(ResourceNameError::SurroundingHyphen { input: name.to_owned() })
+        } else if name.len() > Self::MAX_LENGTH {
+            // Every character that a name holds is one byte.
+            Err(ResourceNameError::TooLong { length: name.len() })
         } else {
             Ok(Self(name.into()))
         }
@@ -72,36 +79,9 @@ impl ResourceName {
     }
 }
 
-/// Whether the character is a format character: one of the Unicode general category `Cf`, as of Unicode 16.0.
-///
-/// The standard library has no table of it, so the ranges stand here.
-const fn is_format(character: char) -> bool {
-    matches!(
-        character,
-        // The soft hyphen.
-        '\u{00AD}'
-        // The Arabic number signs, the Arabic letter mark and the end of ayah.
-        | '\u{0600}'..='\u{0605}' | '\u{061C}' | '\u{06DD}' | '\u{0890}'..='\u{0891}' | '\u{08E2}'
-        // The Syriac abbreviation mark and the Mongolian vowel separator.
-        | '\u{070F}' | '\u{180E}'
-        // The zero-width space, non-joiner and joiner, and the left-to-right and right-to-left marks.
-        | '\u{200B}'..='\u{200F}'
-        // The embeddings and overrides of the text direction.
-        | '\u{202A}'..='\u{202E}'
-        // The word joiner and the invisible operators.
-        | '\u{2060}'..='\u{2064}'
-        // The isolates of the text direction, and the deprecated format characters.
-        | '\u{2066}'..='\u{206F}'
-        // The byte order mark, which is also the zero-width no-break space.
-        | '\u{FEFF}'
-        // The interlinear annotation marks.
-        | '\u{FFF9}'..='\u{FFFB}'
-        // The Kaithi number signs, and the format controls of Egyptian hieroglyphs, of shorthand and of music.
-        | '\u{110BD}' | '\u{110CD}' | '\u{13430}'..='\u{1343F}' | '\u{1BCA0}'..='\u{1BCA3}'
-        | '\u{1D173}'..='\u{1D17A}'
-        // The language tag and the tag characters.
-        | '\u{E0001}' | '\u{E0020}'..='\u{E007F}'
-    )
+/// Whether a name holds the character: a lowercase letter from `a` to `z`, a digit or a hyphen.
+const fn is_name_character(character: char) -> bool {
+    matches!(character, 'a'..='z' | '0'..='9' | '-')
 }
 
 impl FromStr for ResourceName {
@@ -190,24 +170,35 @@ impl<'de> serde::Deserialize<'de> for ResourceName {
 /// ```
 /// use gaslightmq_resource::{ResourceName, ResourceNameError};
 ///
-/// let error = ResourceName::new("Order\u{feff}producers").unwrap_err();
-/// assert_eq!(error, ResourceNameError::FormatCharacter { input: "Order\u{feff}producers".to_owned() });
-/// assert_eq!(error.to_string(), "name \"Order\\u{feff}producers\" holds a format character");
+/// let error = ResourceName::new("Order producers").unwrap_err();
+/// assert_eq!(
+///     error,
+///     ResourceNameError::InvalidCharacter { input: "Order producers".to_owned(), character: 'O', position: 0 }
+/// );
+/// assert_eq!(
+///     error.to_string(),
+///     "name \"Order producers\" holds 'O' at position 0, which is no lowercase letter, digit or hyphen"
+/// );
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum ResourceNameError {
     /// The text has no character.
     #[error("name \"\" is empty")]
     Empty,
-    /// The text starts or ends with white space.
-    #[error("name {input:?} starts or ends with white space")]
-    SurroundingWhiteSpace { input: String },
-    /// The text holds a control character, such as a line break.
-    #[error("name {input:?} holds a control character")]
-    ControlCharacter { input: String },
-    /// The text holds a format character, such as a zero-width space, which nobody sees.
-    #[error("name {input:?} holds a format character")]
-    FormatCharacter { input: String },
+    /// The text holds a character that no name holds, such as an uppercase letter, a space or a dot.
+    /// It is the first such character, and `position` counts characters from zero.
+    #[error("name {input:?} holds {character:?} at position {position}, which is no lowercase letter, digit or hyphen")]
+    InvalidCharacter {
+        input: String,
+        character: char,
+        position: usize,
+    },
+    /// The text starts or ends with a hyphen.
+    #[error("name {input:?} starts or ends with a hyphen")]
+    SurroundingHyphen { input: String },
+    /// The text has `length` characters, which is more than a name has.
+    #[error("name of {length} characters is longer than {} characters", ResourceName::MAX_LENGTH)]
+    TooLong { length: usize },
 }
 
 #[cfg(test)]
@@ -216,9 +207,14 @@ mod tests {
 
     use super::*;
 
+    /// A name of `length` characters.
+    fn name_of(length: usize) -> String {
+        "a".repeat(length)
+    }
+
     #[test]
     fn a_name_keeps_its_text() {
-        for text in ["Order producers", "x", "Ünïcode ✓", "a  b", "orders.* (EU)"] {
+        for text in ["order-producers", "x", "7", "delay-1s", "a--b", "2nd-produce"] {
             let name = ResourceName::new(text).unwrap();
             assert_eq!(name.as_str(), text);
             assert_eq!(name.to_string(), text);
@@ -234,50 +230,87 @@ mod tests {
 
     #[test]
     fn a_name_that_breaks_the_rule_is_an_error() {
-        use ResourceNameError::{ControlCharacter, FormatCharacter, SurroundingWhiteSpace};
+        use ResourceNameError::{InvalidCharacter, SurroundingHyphen, TooLong};
 
-        type Breaks = fn(String) -> ResourceNameError;
-        let cases: [(&str, Breaks); 13] = [
-            (" ", |input| SurroundingWhiteSpace { input }),
-            (" Order producers", |input| SurroundingWhiteSpace { input }),
-            ("Order producers\n", |input| SurroundingWhiteSpace { input }),
-            ("Order producers\u{a0}", |input| SurroundingWhiteSpace { input }),
-            ("Order\nproducers", |input| ControlCharacter { input }),
-            ("Order\tproducers", |input| ControlCharacter { input }),
-            // A zero-width space, a right-to-left override and a byte order mark.
-            ("Order\u{200b}producers", |input| FormatCharacter { input }),
-            ("Order \u{202e}producers", |input| FormatCharacter { input }),
-            ("\u{feff}Order producers", |input| FormatCharacter { input }),
-            ("Order producers\u{200d}", |input| FormatCharacter { input }),
-            ("Order\u{ad}producers", |input| FormatCharacter { input }),
-            // White space at an end is named before a control character in the middle.
-            ("Order\nproducers ", |input| SurroundingWhiteSpace { input }),
-            // A control character is named before a format character.
-            ("Order\u{200b}\tproducers", |input| ControlCharacter { input }),
+        let invalid = |input: &str, character, position| InvalidCharacter {
+            input: input.to_owned(),
+            character,
+            position,
+        };
+        let hyphen = |input: &str| SurroundingHyphen {
+            input: input.to_owned(),
+        };
+        let long = name_of(ResourceName::MAX_LENGTH + 1);
+        let cases = [
+            ("Order producers", invalid("Order producers", 'O', 0)),
+            ("order producers", invalid("order producers", ' ', 5)),
+            ("orders.eu", invalid("orders.eu", '.', 6)),
+            ("order_producers", invalid("order_producers", '_', 5)),
+            (" orders", invalid(" orders", ' ', 0)),
+            ("orders\n", invalid("orders\n", '\n', 6)),
+            // The position counts characters, and not bytes.
+            ("ördérs", invalid("ördérs", 'ö', 0)),
+            ("ordérs!", invalid("ordérs!", 'é', 3)),
+            // A zero-width space hides between the two words.
+            (
+                "order\u{200b}producers",
+                invalid("order\u{200b}producers", '\u{200b}', 5),
+            ),
+            ("-orders", hyphen("-orders")),
+            ("orders-", hyphen("orders-")),
+            ("-", hyphen("-")),
+            // A character that no name holds is named before a hyphen at an end.
+            ("-Orders", invalid("-Orders", 'O', 1)),
+            (long.as_str(), TooLong { length: 64 }),
         ];
 
         assert_eq!(ResourceName::new(""), Err(ResourceNameError::Empty));
         for (text, error) in cases {
-            assert_eq!(ResourceName::new(text), Err(error(text.to_owned())), "{text:?}");
+            assert_eq!(ResourceName::new(text), Err(error), "{text:?}");
         }
     }
 
     #[test]
+    fn a_hyphen_at_an_end_is_named_before_the_length() {
+        let text = format!("-{}", name_of(ResourceName::MAX_LENGTH));
+
+        assert_eq!(
+            ResourceName::new(&text),
+            Err(ResourceNameError::SurroundingHyphen { input: text })
+        );
+    }
+
+    #[test]
+    fn a_name_has_at_most_63_characters() {
+        let longest = name_of(ResourceName::MAX_LENGTH);
+        let too_long = name_of(ResourceName::MAX_LENGTH + 1);
+
+        assert_eq!(ResourceName::MAX_LENGTH, 63);
+        assert_eq!(ResourceName::new(&longest).unwrap(), *longest);
+        assert_eq!(
+            ResourceName::new(&too_long),
+            Err(ResourceNameError::TooLong { length: 64 })
+        );
+    }
+
+    #[test]
     fn the_error_says_which_part_of_the_rule_a_text_breaks() {
+        let long = name_of(ResourceName::MAX_LENGTH + 1);
         let cases = [
             ("", "name \"\" is empty"),
             (
-                "Order producers ",
-                "name \"Order producers \" starts or ends with white space",
+                "Order producers",
+                "name \"Order producers\" holds 'O' at position 0, which is no lowercase letter, digit or hyphen",
             ),
             (
-                "Order\nproducers",
-                "name \"Order\\nproducers\" holds a control character",
+                "order\nproducers",
+                "name \"order\\nproducers\" holds '\\n' at position 5, which is no lowercase letter, digit or hyphen",
             ),
             (
-                "Order\u{2060}producers",
-                "name \"Order\\u{2060}producers\" holds a format character",
+                "order-producers-",
+                "name \"order-producers-\" starts or ends with a hyphen",
             ),
+            (long.as_str(), "name of 64 characters is longer than 63 characters"),
         ];
 
         for (text, message) in cases {
@@ -286,128 +319,46 @@ mod tests {
     }
 
     #[test]
-    fn the_format_characters_are_those_of_the_category_cf() {
-        // Every range of the general category Cf in Unicode 16.0, which holds 170 characters.
-        let ranges = [
-            (0x00AD, 0x00AD),
-            (0x0600, 0x0605),
-            (0x061C, 0x061C),
-            (0x06DD, 0x06DD),
-            (0x070F, 0x070F),
-            (0x0890, 0x0891),
-            (0x08E2, 0x08E2),
-            (0x180E, 0x180E),
-            (0x200B, 0x200F),
-            (0x202A, 0x202E),
-            (0x2060, 0x2064),
-            (0x2066, 0x206F),
-            (0xFEFF, 0xFEFF),
-            (0xFFF9, 0xFFFB),
-            (0x110BD, 0x110BD),
-            (0x110CD, 0x110CD),
-            (0x13430, 0x1343F),
-            (0x1BCA0, 0x1BCA3),
-            (0x1D173, 0x1D17A),
-            (0xE0001, 0xE0001),
-            (0xE0020, 0xE007F),
-        ];
-
-        let format: Vec<u32> = (0..=u32::from(char::MAX))
-            .filter(|code| char::from_u32(*code).is_some_and(is_format))
-            .collect();
-        let expected: Vec<u32> = ranges.iter().flat_map(|(first, last)| *first..=*last).collect();
-
-        assert_eq!(format.len(), 170);
-        assert_eq!(format, expected);
-    }
-
-    #[test]
-    fn a_name_takes_every_character_in_its_middle_but_the_control_and_the_format_characters() {
-        let mut refused = 0;
+    fn a_name_holds_lowercase_letters_digits_and_hyphens_and_no_other_character() {
+        let mut held = String::new();
         let mut text = String::new();
         for character in (0..=u32::from(char::MAX)).filter_map(char::from_u32) {
-            // In the middle of a name, where white space is no reason to refuse it.
+            // In the middle of a name, where a hyphen is no reason to refuse it.
             text.clear();
             text.extend(['a', character, 'b']);
-            if ResourceName::new(&text).is_err() {
-                assert!(character.is_control() || is_format(character), "{text:?}");
-                refused += 1;
+            if ResourceName::new(&text).is_ok() {
+                held.push(character);
             }
         }
-        // The 65 control characters and the 170 format characters.
-        assert_eq!(refused, 235);
-    }
 
-    #[test]
-    fn white_space_starts_and_ends_no_name() {
-        let mut white_space = 0;
-        for character in (0..=u32::from(char::MAX)).filter_map(char::from_u32) {
-            if character.is_whitespace() {
-                assert!(ResourceName::new(format!("{character}shop")).is_err());
-                assert!(ResourceName::new(format!("shop{character}")).is_err());
-                white_space += 1;
-            }
-        }
-        assert_eq!(white_space, 25);
-    }
-
-    #[test]
-    fn a_name_takes_the_characters_next_to_the_format_characters() {
-        // A no-break space, a combining accent, a variation selector and an emoji are no format characters.
-        for text in [
-            "Order\u{a0}producers",
-            "Orde\u{301}r",
-            "Order \u{2764}\u{fe0f}",
-            "Order 🚀",
-        ] {
-            assert!(ResourceName::new(text).is_ok(), "{text:?}");
-        }
-    }
-
-    #[test]
-    fn names_that_would_look_the_same_cannot_both_exist() {
-        let seen = ResourceName::new("Stale metadata").unwrap();
-
-        for hidden in ['\u{200b}', '\u{200e}', '\u{202e}', '\u{2060}', '\u{feff}'] {
-            let text = format!("Stale{hidden} metadata");
-            assert!(ResourceName::new(&text).is_err(), "{text:?}");
-        }
-        assert_eq!(ResourceName::new("Stale metadata"), Ok(seen));
-    }
-
-    #[test]
-    fn a_name_is_exact() {
-        assert_ne!(
-            ResourceName::new("Order producers").unwrap(),
-            ResourceName::new("order producers").unwrap()
-        );
+        assert_eq!(held, "-0123456789abcdefghijklmnopqrstuvwxyz");
     }
 
     #[test]
     fn a_map_by_name_finds_its_entry_with_text() {
-        let name = || ResourceName::new("Order producers").unwrap();
+        let name = || ResourceName::new("order-producers").unwrap();
         let sorted = BTreeMap::from([(name(), 1)]);
         let hashed = HashMap::from([(name(), 1)]);
 
-        assert_eq!(sorted.get("Order producers"), Some(&1));
-        assert_eq!(sorted.get("Order consumers"), None);
-        assert_eq!(hashed.get("Order producers"), Some(&1));
-        assert_eq!(hashed.get("Order consumers"), None);
+        assert_eq!(sorted.get("order-producers"), Some(&1));
+        assert_eq!(sorted.get("order-consumers"), None);
+        assert_eq!(hashed.get("order-producers"), Some(&1));
+        assert_eq!(hashed.get("order-consumers"), None);
     }
 
     #[test]
     fn a_name_pads_like_text() {
-        assert_eq!(format!("{:>8}|", ResourceName::new("Flap").unwrap()), "    Flap|");
+        assert_eq!(format!("{:>8}|", ResourceName::new("flap").unwrap()), "    flap|");
     }
 
     #[cfg(feature = "serde")]
     #[test]
     fn a_name_is_its_text_in_serde() {
-        let name = ResourceName::new("Order producers").unwrap();
+        let name = ResourceName::new("order-producers").unwrap();
 
-        assert_eq!(serde_json::to_string(&name).unwrap(), "\"Order producers\"");
+        assert_eq!(serde_json::to_string(&name).unwrap(), "\"order-producers\"");
         assert_eq!(
-            serde_json::from_str::<ResourceName>("\"Order producers\"").unwrap(),
+            serde_json::from_str::<ResourceName>("\"order-producers\"").unwrap(),
             name
         );
     }
@@ -415,11 +366,11 @@ mod tests {
     #[cfg(feature = "serde")]
     #[test]
     fn a_text_that_breaks_the_rule_does_not_read_as_a_name() {
-        let error = serde_json::from_str::<ResourceName>("\" Order producers\"").unwrap_err();
+        let error = serde_json::from_str::<ResourceName>("\"-order-producers\"").unwrap_err();
 
         assert_eq!(
             error.to_string(),
-            "name \" Order producers\" starts or ends with white space"
+            "name \"-order-producers\" starts or ends with a hyphen"
         );
         assert!(serde_json::from_str::<ResourceName>("7").is_err());
     }

@@ -65,8 +65,8 @@ Nothing is stored, so the fake cluster starts at once.
 ## Where the errors come from
 
 Open `gaslight/rules/orders.yaml` and `gaslight/scenarios/flaky-orders.yaml`.
-The rule *Orders sometimes fail* refuses one in five Produce calls on the order topics.
-The scenario *Flaky orders* arms that rule and two others.
+The rule `orders-sometimes-fail` refuses one in five Produce calls on the order topics.
+The scenario `flaky-orders` arms that rule and two others.
 
 Nothing is armed until someone says so.
 The commands below name the scenario to activate at start.

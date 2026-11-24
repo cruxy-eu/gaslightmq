@@ -882,12 +882,12 @@ mod tests {
         );
         shared.topics().learn(id, TopicName::new("orders.eu").unwrap());
 
-        // "Refuse partition 3 of orders.eu", and a Fetch that names the topic by its ID.
+        // "refuse-partition-3-of-orders-eu", and a Fetch that names the topic by its ID.
         let partition_3 = Conditions::new()
             .with(Condition::parse(Field::Topic, "orders.eu").unwrap())
             .with(Condition::parse(Field::Partition, "3").unwrap());
         let flap = Rule::new(
-            "Leader flap".parse().unwrap(),
+            "leader-flap".parse().unwrap(),
             partition_3,
             RefusalLie::new(ErrorCode::NOT_LEADER_OR_FOLLOWER),
         );

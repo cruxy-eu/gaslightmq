@@ -29,7 +29,7 @@
 //! // `trigger: { first: 2, per: session }` and `lifetime: 3 firings`, in a scenario with `seed: 42`.
 //! let trigger = Trigger::from(TriggerParts::new().with_first(Count::new(2).expect("a count")).with_per(Per::Session));
 //! let lifetime: Lifetime = "3 firings".parse().expect("a lifetime");
-//! let die = Die::new(Seed::new(42), &DiceKey::new("Stale metadata").expect("a dice key"));
+//! let die = Die::new(Seed::new(42), &DiceKey::new("stale-metadata").expect("a dice key"));
 //!
 //! // The engine arms the rule, and shares the arming with every session.
 //! let armed_at = Instant::ZERO + Duration::from_secs(1);

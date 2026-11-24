@@ -50,7 +50,7 @@ mod next_to_std_the_clock_and_the_kernel {
         let lifetime = Lifetime::Firings(count);
 
         let seed = Seed::new(42);
-        let dice_key = DiceKey::new("Stale metadata").unwrap();
+        let dice_key = DiceKey::new("stale-metadata").unwrap();
         let counter_key = CounterKey::new("10.0.4.27 broker 2 #1").unwrap();
         let die: Die = Die::new(seed, &dice_key);
         let roll: Roll = die.for_counter(&counter_key).roll(nth);

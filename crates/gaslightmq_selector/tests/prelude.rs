@@ -45,7 +45,8 @@ mod next_to_the_others {
             .with(condition.clone())
             .with(Condition::IsAnyOf(values.clone()));
         let scope: Scope = Scope::client(ClientId::new("order-ingest").unwrap());
-        let name: SelectorName = SelectorName::new("Group orders").unwrap();
+        let name: SelectorName = SelectorName::new("group-orders").unwrap();
+        let title: SelectorTitle = SelectorTitle::new("The group calls of the order services").unwrap();
         let selector: Selector = Selector::new(name.clone(), conditions.clone());
         let reference: SelectorRef = SelectorRef::Named(name.clone());
         let set: SelectorSet = SelectorSet::new([selector.clone()]).unwrap();
@@ -67,6 +68,7 @@ mod next_to_the_others {
             conditions.to_string(),
             scope.to_string(),
             name.to_string(),
+            title.to_string(),
             selector.name().to_string(),
             format!("{reference:?}"),
             set.len().to_string(),
@@ -88,10 +90,11 @@ mod next_to_the_others {
             error.to_string()
         }
 
-        let name: SelectorName = "Order producers".parse().unwrap();
+        let name: SelectorName = "order-producers".parse().unwrap();
         vec![
             message_of(GlobError::Empty),
             message_of(SelectorNameError::Empty),
+            message_of(SelectorTitleError::Empty),
             message_of(OperatorError::Unknown {
                 name: "isnt".to_owned(),
             }),
@@ -109,7 +112,7 @@ mod next_to_the_others {
 fn the_prelude_names_every_item_next_to_the_other_preludes() {
     let items = next_to_the_others::every_item();
 
-    assert_eq!(items.len(), 15);
+    assert_eq!(items.len(), 16);
     assert!(items.iter().all(|item| !item.is_empty()));
 }
 
@@ -120,11 +123,12 @@ fn the_prelude_names_the_error_of_every_type() {
         [
             "a pattern is empty",
             "selector name \"\" is empty",
+            "selector title \"\" is empty",
             "no operator is named \"isnt\"",
             "a condition needs at least one value",
             "topic: topic name is empty",
             "a scope only tests connection fields, and topic is a request field",
-            "no selector is named \"Order producers\"",
+            "no selector is named \"order-producers\"",
         ]
     );
 }

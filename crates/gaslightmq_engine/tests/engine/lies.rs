@@ -16,7 +16,7 @@ use crate::support::{EngineUnderTest, ScriptedBackend};
 async fn a_delayed_answer_leaves_when_the_clock_reaches_its_instant() -> anyhow::Result<()> {
     let mut proxy = EngineUnderTest::start(ScriptedBackend::with_three_brokers()).await?;
     proxy.arm(&Rule::new(
-        "Delay 1 s".parse()?,
+        "delay-1s".parse()?,
         Conditions::from(Condition::is(ApiKey::PRODUCE)),
         TimingLie::new().with_delay(TimeSpan::from_secs(1)),
     ))?;
@@ -49,7 +49,7 @@ async fn a_delayed_request_reaches_the_backend_when_the_clock_reaches_its_instan
         .with_delay(TimeSpan::from_secs(45))
         .at(Stage::BeforeForwarding);
     proxy.arm(&Rule::new(
-        "Late heartbeat".parse()?,
+        "late-heartbeat".parse()?,
         Conditions::from(Condition::is(ApiKey::HEARTBEAT)),
         late,
     ))?;
@@ -73,12 +73,12 @@ async fn a_delayed_request_reaches_the_backend_when_the_clock_reaches_its_instan
 async fn two_delays_end_in_the_order_of_their_instants() -> anyhow::Result<()> {
     let proxy = EngineUnderTest::start(ScriptedBackend::with_three_brokers()).await?;
     proxy.arm(&Rule::new(
-        "Slow produce".parse()?,
+        "slow-produce".parse()?,
         Conditions::from(Condition::is(ApiKey::PRODUCE)),
         TimingLie::new().with_delay(TimeSpan::from_secs(3)),
     ))?;
     proxy.arm(&Rule::new(
-        "Slow heartbeat".parse()?,
+        "slow-heartbeat".parse()?,
         Conditions::from(Condition::is(ApiKey::HEARTBEAT)),
         TimingLie::new().with_delay(TimeSpan::from_secs(1)),
     ))?;
@@ -108,7 +108,7 @@ async fn two_delays_end_in_the_order_of_their_instants() -> anyhow::Result<()> {
 async fn a_refused_request_never_reaches_the_backend() -> anyhow::Result<()> {
     let mut proxy = EngineUnderTest::start(ScriptedBackend::with_three_brokers()).await?;
     proxy.arm(&Rule::new(
-        "Leader flap".parse()?,
+        "leader-flap".parse()?,
         Conditions::from(Condition::is(ApiKey::PRODUCE)),
         RefusalLie::new(ErrorCode::NOT_LEADER_OR_FOLLOWER),
     ))?;
@@ -136,7 +136,7 @@ async fn a_refused_request_never_reaches_the_backend() -> anyhow::Result<()> {
 async fn a_hang_up_closes_the_connection_and_the_client_connects_again() -> anyhow::Result<()> {
     let mut proxy = EngineUnderTest::start(ScriptedBackend::with_three_brokers()).await?;
     let disconnect = proxy.arm(&Rule::new(
-        "Disconnect".parse()?,
+        "disconnect".parse()?,
         Conditions::from(Condition::is(ApiKey::HEARTBEAT)),
         HangUpLie::new(),
     ))?;
@@ -175,7 +175,7 @@ async fn a_hang_up_closes_the_connection_and_the_client_connects_again() -> anyh
 async fn a_silence_never_answers_and_the_connection_stays_open() -> anyhow::Result<()> {
     let mut proxy = EngineUnderTest::start(ScriptedBackend::with_three_brokers()).await?;
     proxy.arm(&Rule::new(
-        "Blackhole".parse()?,
+        "blackhole".parse()?,
         Conditions::from(Condition::is(ApiKey::HEARTBEAT)),
         LieDefinition::Silence,
     ))?;

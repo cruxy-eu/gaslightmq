@@ -30,18 +30,18 @@ use crate::{Claim, Delay, Fate, FiredLie, Loss, StageEffect};
 ///
 /// let three = Target::of_parts(["orders.eu/3".parse().expect("a part")]).expect("one part");
 ///
-/// // A chain of "Delay 1 s" above "Refuse the 3rd Produce": the rule's position is its priority.
+/// // A chain of "delay-1s" above "refuse-the-3rd-produce": the rule's position is its priority.
 /// let delay = LieDefinition::from(TimingLie::new().with_delay(TimeSpan::from_secs(1))).on(three.clone());
 /// let refusal = LieDefinition::from(RefusalLie::new(ErrorCode::NOT_LEADER_OR_FOLLOWER)).on(three.clone());
 ///
 /// let request = RequestPass::of([
-///     FiredLie::new("Delay 1 s", Priority::new(0), Claim::try_from(&delay)?),
-///     FiredLie::new("Refuse the 3rd Produce", Priority::new(1), Claim::try_from(&refusal)?),
+///     FiredLie::new("delay-1s", Priority::new(0), Claim::try_from(&delay)?),
+///     FiredLie::new("refuse-the-3rd-produce", Priority::new(1), Claim::try_from(&refusal)?),
 /// ]);
 ///
 /// // Before forwarding, the refused partition leaves the request.
 /// let part = three.parts().next().expect("one part");
-/// assert_eq!(request.before_forwarding().refusals().of(part), Some(&"Refuse the 3rd Produce"));
+/// assert_eq!(request.before_forwarding().refusals().of(part), Some(&"refuse-the-3rd-produce"));
 /// assert_eq!(request.before_forwarding().terminal(), None);
 ///
 /// // No rule waited for the truth. A delay and a refusal do not conflict, so both apply.
@@ -189,21 +189,21 @@ impl<Id: Clone> RequestPass<Id> {
 /// use gaslightmq_field::prelude::*;
 /// use gaslightmq_lie::prelude::*;
 ///
-/// // A chain of "Blackhole" above "Refuse": both are ways to fail the call, so they conflict.
+/// // A chain of "blackhole" above "refuse": both are ways to fail the call, so they conflict.
 /// let silence = Claim::Terminal { stage: Stage::BeforeForwarding };
 /// let refusal = Claim::Refusal { stage: Stage::BeforeForwarding, target: Target::Call };
 ///
 /// let call = RequestPass::of([
-///     FiredLie::new("Blackhole", Priority::new(0), silence),
-///     FiredLie::new("Refuse", Priority::new(1), refusal),
+///     FiredLie::new("blackhole", Priority::new(0), silence),
+///     FiredLie::new("refuse", Priority::new(1), refusal),
 /// ])
 /// .without_response_pass();
 ///
-/// assert_eq!(call.before_forwarding().terminal(), Some(&"Blackhole"));
+/// assert_eq!(call.before_forwarding().terminal(), Some(&"blackhole"));
 ///
-/// let refuse = call.fate_of(&"Refuse").expect("the lie fired");
+/// let refuse = call.fate_of(&"refuse").expect("the lie fired");
 /// assert!(!refuse.counts());
-/// assert_eq!(refuse.shadowed()[0].to(), &"Blackhole");
+/// assert_eq!(refuse.shadowed()[0].to(), &"blackhole");
 /// assert_eq!(refuse.shadowed()[0].on(), &Target::Call);
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq)]

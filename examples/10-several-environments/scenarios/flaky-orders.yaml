@@ -1,5 +1,6 @@
-name: Flaky orders
+name: flaky-orders
+title: Flaky orders
 mode: chain
 seed: 42
 rules:
-  - Orders sometimes fail
+  - orders-sometimes-fail

@@ -49,7 +49,7 @@
 //! let partition_3 = Conditions::new()
 //!     .with(Condition::parse(Field::Topic, "orders.eu").expect("a condition"))
 //!     .with(Condition::parse(Field::Partition, "3").expect("a condition"));
-//! let name = "Leader flap".parse().expect("a rule name");
+//! let name = "leader-flap".parse().expect("a rule name");
 //! let flap = Rule::new(name, partition_3, RefusalLie::new(ErrorCode::NOT_LEADER_OR_FOLLOWER));
 //! let resolved = flap.resolve(&SelectorSet::default(), &PresetSet::default()).expect("a rule that resolves");
 //! let snapshot = Arc::new(Snapshot::new([resolved.arm(Seed::new(42), clock.now())]).expect("one rule"));

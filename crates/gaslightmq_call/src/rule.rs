@@ -4,8 +4,9 @@ gaslightmq_resource::name! {
     /// It is the name a rule had when a call met it, as the record of that call keeps it.
     /// An explanation names every rule the call touched, and the rule that won a conflict.
     ///
-    /// A record outlives the rules it names: someone can rename or delete a rule after the call.
-    /// A recorded name is therefore only text that names a rule, and nobody looks it up.
+    /// A record outlives the rules it names: someone can delete a rule after the call,
+    /// and make another rule under its name.
+    /// A recorded name is therefore only a name, and nobody looks it up.
     RecordedRuleName, RecordedRuleNameError, "recorded rule name"
 }
 
@@ -17,7 +18,7 @@ mod tests {
 
     #[test]
     fn a_recorded_name_keeps_its_text() {
-        for text in ["Slow down order producers", "x", "Ünïcode ✓", "a  b"] {
+        for text in ["slow-order-producers", "x", "7", "a--b"] {
             let name = RecordedRuleName::new(text).unwrap();
 
             assert_eq!(name.as_str(), text);
@@ -34,31 +35,32 @@ mod tests {
 
     #[test]
     fn a_recorded_name_that_breaks_the_rule_for_names_is_an_error() {
-        use RecordedRuleNameError::{ControlCharacter, Empty, FormatCharacter, SurroundingWhiteSpace};
+        use RecordedRuleNameError::{Empty, InvalidCharacter, SurroundingHyphen, TooLong};
 
         let input = |text: &str| text.to_owned();
+        let long = "a".repeat(RecordedRuleName::MAX_LENGTH + 1);
         let cases = [
             ("", Empty, "recorded rule name \"\" is empty"),
             (
-                " Leader flap",
-                SurroundingWhiteSpace {
-                    input: input(" Leader flap"),
+                "Leader flap",
+                InvalidCharacter {
+                    input: input("Leader flap"),
+                    character: 'L',
+                    position: 0,
                 },
-                "recorded rule name \" Leader flap\" starts or ends with white space",
+                "recorded rule name \"Leader flap\" holds 'L' at position 0, which is no lowercase letter, digit or hyphen",
             ),
             (
-                "Leader\nflap",
-                ControlCharacter {
-                    input: input("Leader\nflap"),
+                "leader-flap-",
+                SurroundingHyphen {
+                    input: input("leader-flap-"),
                 },
-                "recorded rule name \"Leader\\nflap\" holds a control character",
+                "recorded rule name \"leader-flap-\" starts or ends with a hyphen",
             ),
             (
-                "Leader\u{200b}flap",
-                FormatCharacter {
-                    input: input("Leader\u{200b}flap"),
-                },
-                "recorded rule name \"Leader\\u{200b}flap\" holds a format character",
+                long.as_str(),
+                TooLong { length: 64 },
+                "recorded rule name of 64 characters is longer than 63 characters",
             ),
         ];
 
@@ -71,21 +73,21 @@ mod tests {
     #[test]
     fn a_map_by_name_finds_its_entry_with_text() {
         let mut by_name = BTreeMap::new();
-        by_name.insert(RecordedRuleName::new("Leader flap").unwrap(), 1);
+        by_name.insert(RecordedRuleName::new("leader-flap").unwrap(), 1);
 
-        assert_eq!(by_name.get("Leader flap"), Some(&1));
-        assert_eq!(by_name.get("leader flap"), None);
+        assert_eq!(by_name.get("leader-flap"), Some(&1));
+        assert_eq!(by_name.get("leader-election"), None);
     }
 
     #[test]
     fn a_recorded_name_shows_as_its_text_when_debugging() {
-        let name = RecordedRuleName::new("Leader flap").unwrap();
+        let name = RecordedRuleName::new("leader-flap").unwrap();
 
-        assert_eq!(format!("{name:?}"), "RecordedRuleName(\"Leader flap\")");
+        assert_eq!(format!("{name:?}"), "RecordedRuleName(\"leader-flap\")");
     }
 
     #[test]
     fn a_recorded_name_pads_like_text() {
-        assert_eq!(format!("{:>8}|", RecordedRuleName::new("Flap").unwrap()), "    Flap|");
+        assert_eq!(format!("{:>8}|", RecordedRuleName::new("flap").unwrap()), "    flap|");
     }
 }

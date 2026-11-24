@@ -205,7 +205,7 @@ async fn an_engine_runs_on_the_wall_clock_too() -> anyhow::Result<()> {
     let backend = ScriptedBackend::with_three_brokers();
     let engine = Engine::start(configuration, backend, WallClock::new(), Lies::of_every_build()).await?;
     let late = Rule::new(
-        "Late heartbeat".parse()?,
+        "late-heartbeat".parse()?,
         Conditions::from(Condition::is(ApiKey::HEARTBEAT)),
         TimingLie::new().with_delay(TimeSpan::from_millis(20)),
     );

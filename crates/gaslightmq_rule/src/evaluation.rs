@@ -276,7 +276,7 @@ impl RuleEvaluation {
 /// use gaslightmq_trigger::prelude::*;
 ///
 /// let orders = Conditions::from(Condition::parse(Field::Topic, "orders.*").expect("a condition"));
-/// let name = "Leader flap".parse().expect("a rule name");
+/// let name = "leader-flap".parse().expect("a rule name");
 /// let flap = Rule::new(name, orders, RefusalLie::new(ErrorCode::NOT_LEADER_OR_FOLLOWER));
 /// let armed = flap.resolve(&SelectorSet::default(), &PresetSet::default())?.arm(Seed::new(42), Instant::ZERO);
 /// let snapshot = Snapshot::new([armed]).expect("a snapshot");

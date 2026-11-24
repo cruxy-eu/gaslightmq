@@ -17,7 +17,7 @@ Level: medium.
 ## Run
 
 ```sh
-gmq run "Consumer survives leader churn" --env shop &
+gmq run consumer-survives-leader-churn --env shop &
 kcat -b localhost:9092 -C -t orders
 ```
 

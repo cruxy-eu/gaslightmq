@@ -12,7 +12,7 @@ use crate::driver::*;
 
 #[test]
 fn a_silence_never_answers_and_stalls_the_session() {
-    let mut driver = Driver::with([on_api("Blackhole", ApiKey::PRODUCE, LieDefinition::Silence)]);
+    let mut driver = Driver::with([on_api("blackhole", ApiKey::PRODUCE, LieDefinition::Silence)]);
 
     // The request is read and never answered: no forward, and no send.
     let silenced = driver.send(&produce(41, &["orders.eu/3"]));
@@ -22,7 +22,7 @@ fn a_silence_never_answers_and_stalls_the_session() {
     assert_eq!(record.verdict().to_string(), "silence");
     assert_eq!(
         explained(&record),
-        ["Blackhole: matched orders.eu/3; match 1: fired; silence applied"]
+        ["blackhole: matched orders.eu/3; match 1: fired; silence applied"]
     );
     assert_eq!(truth_of(&record, "orders.eu/3"), "none");
     assert_eq!(record.timing().forwarded_at(), None);
@@ -51,7 +51,7 @@ fn a_silence_never_answers_and_stalls_the_session() {
 
 #[test]
 fn a_call_before_a_silence_still_finishes() {
-    let mut driver = Driver::with([on_api("Blackhole", ApiKey::PRODUCE, LieDefinition::Silence)]);
+    let mut driver = Driver::with([on_api("blackhole", ApiKey::PRODUCE, LieDefinition::Silence)]);
     let first = heartbeat(41);
 
     let arrived = driver.send(&first);
@@ -64,9 +64,9 @@ fn a_call_before_a_silence_still_finishes() {
 
 #[test]
 fn a_request_behind_a_silence_is_no_match_of_any_rule() {
-    let blackhole = on_api("Blackhole", ApiKey::PRODUCE, LieDefinition::Silence);
+    let blackhole = on_api("blackhole", ApiKey::PRODUCE, LieDefinition::Silence);
     let once =
-        on_api("Refuse once", ApiKey::HEARTBEAT, refusal(REBALANCING)).with_lifetime(Lifetime::Firings(Count::ONE));
+        on_api("refuse-once", ApiKey::HEARTBEAT, refusal(REBALANCING)).with_lifetime(Lifetime::Firings(Count::ONE));
     let mut driver = Driver::with([blackhole, once]);
 
     driver.send(&produce(41, &["orders.eu/3"]));
@@ -75,14 +75,14 @@ fn a_request_behind_a_silence_is_no_match_of_any_rule() {
     // No rule was evaluated for it, so the rule counted no match and set no firing aside.
     assert!(behind.explanation().is_empty());
     let snapshot = driver.pipeline.snapshot();
-    let rule = snapshot.get(&"Refuse once".parse().unwrap()).unwrap();
+    let rule = snapshot.get(&"refuse-once".parse().unwrap()).unwrap();
     assert_eq!(rule.arming().counter().matches(), 0);
     assert_eq!(rule.arming().budget().map(Budget::left), Some(1));
 }
 
 #[test]
 fn a_hang_up_before_forwarding_closes_the_connection() {
-    let mut driver = Driver::with([on_api("Disconnect", ApiKey::HEARTBEAT, HangUpLie::new())]);
+    let mut driver = Driver::with([on_api("disconnect", ApiKey::HEARTBEAT, HangUpLie::new())]);
 
     let hung_up = driver.send(&heartbeat(41));
 
@@ -107,7 +107,7 @@ fn a_hang_up_before_forwarding_closes_the_connection() {
 #[test]
 fn a_hang_up_after_the_response_closes_instead_of_sending() {
     let late = HangUpLie::new().at(Stage::AfterResponse);
-    let mut driver = Driver::with([on_api("Late disconnect", ApiKey::PRODUCE, late)]);
+    let mut driver = Driver::with([on_api("late-disconnect", ApiKey::PRODUCE, late)]);
     let request = produce(41, &["orders.eu/3"]);
 
     // The backend handles the request.
@@ -127,9 +127,9 @@ fn a_hang_up_after_the_response_closes_instead_of_sending() {
 
 #[test]
 fn a_hang_up_ends_every_call_in_flight_and_their_firings_go_back() {
-    let lost = on_api("Lost acknowledgement", ApiKey::PRODUCE, late_refusal(TIMED_OUT))
+    let lost = on_api("lost-acknowledgement", ApiKey::PRODUCE, late_refusal(TIMED_OUT))
         .with_lifetime(Lifetime::Firings(Count::ONE));
-    let disconnect = on_api("Disconnect", ApiKey::HEARTBEAT, HangUpLie::new());
+    let disconnect = on_api("disconnect", ApiKey::HEARTBEAT, HangUpLie::new());
     let mut driver = Driver::with([lost, disconnect]);
 
     // The Produce waits for the backend when the Heartbeat hangs up.
@@ -147,20 +147,20 @@ fn a_hang_up_ends_every_call_in_flight_and_their_firings_go_back() {
     assert_eq!(
         explained(&produce),
         [
-            "Lost acknowledgement: matched orders.eu/3; match 1, 0 of 1 left: fired; \
+            "lost-acknowledgement: matched orders.eu/3; match 1, 0 of 1 left: fired; \
           REQUEST_TIMED_OUT after the response not told: the call ended before the lie could be told"
         ]
     );
     let snapshot = driver.pipeline.snapshot();
-    let rule = snapshot.get(&"Lost acknowledgement".parse().unwrap()).unwrap();
+    let rule = snapshot.get(&"lost-acknowledgement".parse().unwrap()).unwrap();
     assert_eq!(rule.arming().budget().map(Budget::left), Some(1));
 }
 
 #[test]
 fn a_rule_that_waits_for_the_truth_is_pre_empted_when_a_silence_ends_the_call() {
     // The rule that waits has the higher priority, and it still loses: the truth never exists.
-    let lost = on_success("Lost acknowledgement", ApiKey::PRODUCE, late_refusal(TIMED_OUT));
-    let blackhole = on_api("Blackhole", ApiKey::PRODUCE, LieDefinition::Silence);
+    let lost = on_success("lost-acknowledgement", ApiKey::PRODUCE, late_refusal(TIMED_OUT));
+    let blackhole = on_api("blackhole", ApiKey::PRODUCE, LieDefinition::Silence);
     let mut driver = Driver::with([lost, blackhole]);
 
     let record = driver.send(&produce(41, &["orders.eu/3"])).emitted();
@@ -168,13 +168,13 @@ fn a_rule_that_waits_for_the_truth_is_pre_empted_when_a_silence_ends_the_call() 
     assert_eq!(
         explained(&record),
         [
-            "Lost acknowledgement: pre-empted by Blackhole, which ended the call before the truth",
-            "Blackhole: matched orders.eu/3; match 1: fired; silence applied",
+            "lost-acknowledgement: pre-empted by blackhole, which ended the call before the truth",
+            "blackhole: matched orders.eu/3; match 1: fired; silence applied",
         ]
     );
     // Nobody evaluated the rule, so the call is no match of it.
     let snapshot = driver.pipeline.snapshot();
-    let rule = snapshot.get(&"Lost acknowledgement".parse().unwrap()).unwrap();
+    let rule = snapshot.get(&"lost-acknowledgement".parse().unwrap()).unwrap();
     assert_eq!(rule.arming().counter().matches(), 0);
 }
 
@@ -319,8 +319,8 @@ fn bytes_that_are_no_request_close_the_connection() {
 
 #[test]
 fn a_lie_whose_turn_never_came_is_not_told_when_the_session_ends() {
-    let rebalance = on_api("Rebalance", ApiKey::HEARTBEAT, refusal(REBALANCING));
-    let lost = on_topic("Lost acknowledgement", "orders.*", late_refusal(TIMED_OUT));
+    let rebalance = on_api("rebalance", ApiKey::HEARTBEAT, refusal(REBALANCING));
+    let lost = on_topic("lost-acknowledgement", "orders.*", late_refusal(TIMED_OUT));
     let mut driver = Driver::with([rebalance, lost]);
 
     // The first Produce waits for the backend, so everything behind it waits for its answer.
@@ -340,7 +340,7 @@ fn a_lie_whose_turn_never_came_is_not_told_when_the_session_ends() {
     assert!(second.verdict().is_pass());
     let fate = second
         .explanation()
-        .rule("Lost acknowledgement")
+        .rule("lost-acknowledgement")
         .unwrap()
         .lie()
         .unwrap();
@@ -355,7 +355,7 @@ fn a_lie_whose_turn_never_came_is_not_told_when_the_session_ends() {
 
 #[test]
 fn a_request_behind_a_silence_teaches_the_client_context_nothing() {
-    let mut driver = Driver::with([on_api("Blackhole", ApiKey::PRODUCE, LieDefinition::Silence)]);
+    let mut driver = Driver::with([on_api("blackhole", ApiKey::PRODUCE, LieDefinition::Silence)]);
     driver.send(&produce(41, &["orders.eu/3"]));
 
     // The request names a group, and it never reaches the backend: nothing happens to it.
@@ -377,7 +377,7 @@ fn a_request_behind_a_silence_teaches_the_client_context_nothing() {
 fn a_request_behind_a_silence_does_not_identify_the_session() {
     // The silence takes every call, also the first one of the connection.
     let everything = gaslightmq_rule::Rule::new(
-        "Blackhole".parse().unwrap(),
+        "blackhole".parse().unwrap(),
         gaslightmq_selector::Conditions::new(),
         LieDefinition::Silence,
     );

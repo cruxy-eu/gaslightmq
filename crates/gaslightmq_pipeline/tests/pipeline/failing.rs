@@ -16,7 +16,7 @@ use crate::driver::*;
 #[test]
 fn a_lie_of_a_kind_that_the_build_leaves_out_is_not_told() {
     // This build tells no refusal.
-    let flap = on_topic("Leader flap", "orders.*", refusal(NOT_LEADER)).with_lifetime(Lifetime::Firings(Count::ONE));
+    let flap = on_topic("leader-flap", "orders.*", refusal(NOT_LEADER)).with_lifetime(Lifetime::Firings(Count::ONE));
     let mut driver = Driver::telling(Lies::of_every_build(), [flap]);
     let request = produce(41, &["orders.eu/3"]);
 
@@ -31,14 +31,14 @@ fn a_lie_of_a_kind_that_the_build_leaves_out_is_not_told() {
     assert!(record.verdict().is_pass());
     assert_eq!(
         explained(&record),
-        ["Leader flap: matched orders.eu/3; match 1, 0 of 1 left: fired; \
+        ["leader-flap: matched orders.eu/3; match 1, 0 of 1 left: fired; \
           NOT_LEADER_OR_FOLLOWER not told: no behaviour is registered for refusal"]
     );
-    assert!(!record.explanation().applied("Leader flap"));
+    assert!(!record.explanation().applied("leader-flap"));
 
     // The firing goes back to the budget, so the lifetime of the rule has not ended.
     let snapshot = driver.pipeline.snapshot();
-    let rule = snapshot.get(&"Leader flap".parse().unwrap()).unwrap();
+    let rule = snapshot.get(&"leader-flap".parse().unwrap()).unwrap();
     assert_eq!(rule.arming().budget().map(Budget::left), Some(1));
 }
 
@@ -46,12 +46,12 @@ fn a_lie_of_a_kind_that_the_build_leaves_out_is_not_told() {
 fn only_the_lie_that_fails_changes_nothing() {
     // A Metadata request for every topic names nothing, so its response has no place for an error.
     let refuse = on_api(
-        "No metadata",
+        "no-metadata",
         ApiKey::METADATA,
         refusal(ErrorCode::UNKNOWN_TOPIC_OR_PARTITION),
     );
     let slow = on_api(
-        "Delay 1 s",
+        "delay-1s",
         ApiKey::METADATA,
         TimingLie::new().with_delay(TimeSpan::from_secs(1)),
     );
@@ -77,7 +77,7 @@ fn only_the_lie_that_fails_changes_nothing() {
 
     let record = fired.emitted();
     assert_eq!(record.verdict().to_string(), "+1 s");
-    let fate = record.explanation().rule("No metadata").unwrap().lie().unwrap();
+    let fate = record.explanation().rule("no-metadata").unwrap().lie().unwrap();
     assert_eq!(
         fate.failure().map(Failure::message),
         Some("refusal cannot be told on this Metadata v9 request: its response has no place for an error code")
@@ -87,8 +87,8 @@ fn only_the_lie_that_fails_changes_nothing() {
 #[test]
 fn a_terminal_lie_that_cannot_be_told_ends_nothing_and_takes_nothing_from_the_other_lies() {
     // This build tells refusals, and no silence.
-    let lost = on_success("Lost acknowledgement", ApiKey::PRODUCE, late_refusal(TIMED_OUT));
-    let blackhole = on_api("Blackhole", ApiKey::PRODUCE, LieDefinition::Silence);
+    let lost = on_success("lost-acknowledgement", ApiKey::PRODUCE, late_refusal(TIMED_OUT));
+    let blackhole = on_api("blackhole", ApiKey::PRODUCE, LieDefinition::Silence);
     let mut driver = Driver::telling(Lies::new().with(Refusal).unwrap(), [lost, blackhole]);
     let request = produce(41, &["orders.eu/3"]);
 
@@ -107,13 +107,13 @@ fn a_terminal_lie_that_cannot_be_told_ends_nothing_and_takes_nothing_from_the_ot
     assert_eq!(
         explained(&record),
         [
-            "Lost acknowledgement: matched orders.eu/3; match 1: fired; \
+            "lost-acknowledgement: matched orders.eu/3; match 1: fired; \
              REQUEST_TIMED_OUT after the response applied on orders.eu/3",
-            "Blackhole: matched orders.eu/3; match 1: fired; silence not told: no behaviour is registered for silence",
+            "blackhole: matched orders.eu/3; match 1: fired; silence not told: no behaviour is registered for silence",
         ]
     );
     let snapshot = driver.pipeline.snapshot();
-    let rule = snapshot.get(&"Lost acknowledgement".parse().unwrap()).unwrap();
+    let rule = snapshot.get(&"lost-acknowledgement".parse().unwrap()).unwrap();
     assert_eq!(rule.arming().counter().matches(), 1);
 }
 
@@ -121,8 +121,8 @@ fn a_terminal_lie_that_cannot_be_told_ends_nothing_and_takes_nothing_from_the_ot
 fn a_lie_that_lost_to_a_terminal_lie_that_cannot_be_told_applies_after_all() {
     // This build tells hang-ups and refusals, and no silence.
     let lies = Lies::new().with(Refusal).unwrap().with(HangUp).unwrap();
-    let blackhole = on_api("Blackhole", ApiKey::HEARTBEAT, LieDefinition::Silence);
-    let disconnect = on_api("Disconnect", ApiKey::HEARTBEAT, HangUpLie::new());
+    let blackhole = on_api("blackhole", ApiKey::HEARTBEAT, LieDefinition::Silence);
+    let disconnect = on_api("disconnect", ApiKey::HEARTBEAT, HangUpLie::new());
     let mut driver = Driver::telling(lies, [blackhole, disconnect]);
 
     // The silence has the higher priority, and it cannot be told. The hang-up is asked in its place.
@@ -134,8 +134,8 @@ fn a_lie_that_lost_to_a_terminal_lie_that_cannot_be_told_applies_after_all() {
     assert_eq!(
         explained(&record),
         [
-            "Blackhole: matched the call; match 1: fired; silence not told: no behaviour is registered for silence",
-            "Disconnect: matched the call; match 1: fired; hang-up applied",
+            "blackhole: matched the call; match 1: fired; silence not told: no behaviour is registered for silence",
+            "disconnect: matched the call; match 1: fired; hang-up applied",
         ]
     );
 }
@@ -144,7 +144,7 @@ fn a_lie_that_lost_to_a_terminal_lie_that_cannot_be_told_applies_after_all() {
 fn a_request_that_does_not_decode_goes_through_and_no_rule_sees_it() {
     // A rule that would silence every call, and a request of an API that the codec has no messages for.
     let everything = gaslightmq_rule::Rule::new(
-        "Blackhole".parse().unwrap(),
+        "blackhole".parse().unwrap(),
         gaslightmq_selector::Conditions::new(),
         LieDefinition::Silence,
     );
@@ -175,7 +175,7 @@ fn a_request_that_does_not_decode_goes_through_and_no_rule_sees_it() {
 
 #[test]
 fn the_truth_carries_the_correlation_id_of_the_client_before_a_lie_reads_it() {
-    let lost = on_partition("Lost acknowledgement", "orders.eu", "3", late_refusal(TIMED_OUT));
+    let lost = on_partition("lost-acknowledgement", "orders.eu", "3", late_refusal(TIMED_OUT));
     let mut driver = Driver::with([lost]);
     let request = produce(41, &["orders.eu/3", "orders.eu/4"]);
 
@@ -212,11 +212,11 @@ fn a_truth_that_nobody_can_read_has_no_outcome_and_no_rule_tests_it() {
         .with(gaslightmq_selector::Condition::is(ApiKey::PRODUCE))
         .with(gaslightmq_selector::Condition::is_not(Outcome::Error));
     let unless_failed = gaslightmq_rule::Rule::new(
-        "Unless it failed".parse().unwrap(),
+        "unless-it-failed".parse().unwrap(),
         not_failed,
         LieDefinition::from(late_refusal(NOT_LEADER)),
     );
-    let lost = on_success("Lost acknowledgement", ApiKey::PRODUCE, late_refusal(TIMED_OUT));
+    let lost = on_success("lost-acknowledgement", ApiKey::PRODUCE, late_refusal(TIMED_OUT));
     let mut driver = Driver::with([lost, unless_failed]);
     let request = produce(41, &["orders.eu/3"]);
 
@@ -249,7 +249,7 @@ fn a_truth_that_nobody_can_read_has_no_outcome_and_no_rule_tests_it() {
 #[test]
 fn a_refusal_that_withheld_a_partition_stays_told_when_its_error_cannot_join_the_response() {
     let flap =
-        on_partition("Leader flap", "orders.eu", "3", refusal(NOT_LEADER)).with_lifetime(Lifetime::Firings(Count::ONE));
+        on_partition("leader-flap", "orders.eu", "3", refusal(NOT_LEADER)).with_lifetime(Lifetime::Firings(Count::ONE));
     let mut driver = Driver::with([flap]);
     let request = produce(41, &["orders.eu/3", "orders.eu/4"]);
 
@@ -264,17 +264,17 @@ fn a_refusal_that_withheld_a_partition_stays_told_when_its_error_cannot_join_the
 
     // The lie did act: its partition was withheld. So it is told, and its firing is spent.
     assert_eq!(record.verdict().to_string(), "NOT_LEADER_OR_FOLLOWER on orders.eu/3");
-    assert!(record.explanation().applied("Leader flap"));
-    let fate = record.explanation().rule("Leader flap").unwrap().lie().unwrap();
+    assert!(record.explanation().applied("leader-flap"));
+    let fate = record.explanation().rule("leader-flap").unwrap().lie().unwrap();
     assert_eq!(fate.failure(), None);
     let snapshot = driver.pipeline.snapshot();
-    let rule = snapshot.get(&"Leader flap".parse().unwrap()).unwrap();
+    let rule = snapshot.get(&"leader-flap".parse().unwrap()).unwrap();
     assert_eq!(rule.arming().budget().map(Budget::left), Some(0));
 
     // The call says that its response lacks what the lie was to add.
     let failure = record.explanation().failure().unwrap().message();
     assert!(
-        failure.contains("the lie of \"Leader flap\" changed the request, and could not make the response fit it: "),
+        failure.contains("the lie of \"leader-flap\" changed the request, and could not make the response fit it: "),
         "{failure}"
     );
     assert_eq!(record.delivered(), &Delivered::UnreadResponse);

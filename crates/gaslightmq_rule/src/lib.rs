@@ -6,8 +6,9 @@
 //!
 //! | Type | Is |
 //! |---|---|
-//! | [`Rule`] | A rule as a file writes it: a name, a selector, a scope, an action, a trigger, a lifetime and a dice key. |
-//! | [`RuleName`], [`PresetName`] | The names that other things reference a rule and a preset by. |
+//! | [`Rule`] | A rule as a file writes it: a name, a title, a selector, a scope, an action, a trigger, a lifetime and a dice key. |
+//! | [`RuleName`], [`PresetName`] | The names that other things reference a rule and a preset by: slugs, and their identity. |
+//! | [`RuleTitle`], [`PresetTitle`] | The free text that says what a rule is for and what a preset does. |
 //! | [`Action`] | What happens when a rule fires: a lie or an incident. |
 //! | [`ActionRef`] | How a rule says it: a preset name, or an inline action. |
 //! | [`Preset`] | A named, reusable lie or incident. |
@@ -30,7 +31,8 @@
 //! | Type | Error | What is wrong |
 //! |---|---|---|
 //! | [`RuleName`], [`PresetName`] | [`RuleNameError`], [`PresetNameError`] | The text breaks a part of the [rule for names](RuleName#the-rule-for-names). |
-//! | [`RuleSet`] | [`RuleSetError`] | Two rules share a name, or no rule has that name. |
+//! | [`RuleTitle`], [`PresetTitle`] | [`RuleTitleError`], [`PresetTitleError`] | The text breaks a part of the [rule for titles](RuleTitle#the-rule-for-titles). |
+//! | [`RuleSet`] | [`RuleSetError`] | Two rules share a name. |
 //! | [`PresetSet`] | [`PresetSetError`] | Two presets share a name. |
 //! | [`RuleState`] | [`RuleStateError`] | No state has this name. |
 //! | [`Snapshot`] | [`SnapshotError`] | Two armed rules share a name. |
@@ -69,19 +71,19 @@
 //!
 //! // A workspace has selectors and presets, and rules that name them.
 //! let selectors = SelectorSet::new([Selector::new(
-//!     "Order producers".parse().expect("a selector name"),
+//!     "order-producers".parse().expect("a selector name"),
 //!     Conditions::new()
 //!         .with(Condition::is(ApiKey::PRODUCE))
 //!         .with(Condition::parse(Field::Topic, "orders.*").expect("a condition")),
 //! )]).expect("a selector set");
 //! let presets = PresetSet::new([Preset::new(
-//!     "Leader flap".parse().expect("a preset name"),
+//!     "leader-flap".parse().expect("a preset name"),
 //!     RefusalLie::new(ErrorCode::NOT_LEADER_OR_FOLLOWER),
 //! )]).expect("a preset set");
 //! let rule = Rule::new(
-//!     "Refuse the 3rd order".parse().expect("a rule name"),
-//!     "Order producers".parse::<SelectorName>().expect("a selector name"),
-//!     "Leader flap".parse::<PresetName>().expect("a preset name"),
+//!     "refuse-the-3rd-order".parse().expect("a rule name"),
+//!     "order-producers".parse::<SelectorName>().expect("a selector name"),
+//!     "leader-flap".parse::<PresetName>().expect("a preset name"),
 //! )
 //! .with_trigger(TriggerParts::new().with_nth(MatchNumber::new(3).expect("a match number")))
 //! .with_lifetime(Lifetime::Firings(Count::ONE));
@@ -127,7 +129,7 @@
 //! | A name, a scope, a trigger and a lifetime are valid. | Their types, when they are built or read. |
 //! | The selector and the preset of one rule exist, and the rule can fire: its lie can act when its selector is decided, and a manual rule names the subject of its incident. | [`Rule::resolve`] |
 //! | The names of presets, of rules and of armed rules are unique. | [`PresetSet::new`], [`RuleSet::new`], [`Snapshot::new`] |
-//! | A scenario, a step or a pad names a rule that exists. A rename reaches every reference. | Whoever holds the whole workspace. |
+//! | A scenario, a step or a pad names a rule that exists. | Whoever holds the whole workspace. |
 //!
 //! A snapshot only holds resolved rules, so evaluating a call never looks up a name.
 //!
@@ -152,26 +154,27 @@
 //!
 //! | Type | Form |
 //! |---|---|
-//! | [`RuleName`], [`PresetName`] | The text. |
+//! | [`RuleName`], [`PresetName`], [`RuleTitle`], [`PresetTitle`] | The text. |
 //! | [`Action`] | The flat map of the lie or of the incident: `{ lie: refusal, error: NOT_LEADER_OR_FOLLOWER }`. |
 //! | [`ActionRef`] | The name of a preset as text, or the map of an inline action. |
-//! | [`Preset`] | The map of its action, with a `name` key next to the others. |
-//! | [`Rule`] | A map with `name`, `selector` and `action`, and with `scope`, `trigger`, `lifetime` and `dice` when it has them. |
+//! | [`Preset`] | The map of its action, with a `name` key next to the others, and a `title` key when it has a title. |
+//! | [`Rule`] | A map with `name`, `selector` and `action`, and with `title`, `scope`, `trigger`, `lifetime` and `dice` when it has them. |
 //! | [`RuleState`] | Its name: `draft`, `armed` or `disarmed`. |
 //!
 //! ```yaml
-//! name: Slow down order producers
-//! selector: Order producers
+//! name: slow-order-producers
+//! title: Slow down order producers
+//! selector: order-producers
 //! scope:
 //!   client.id: order-ingest
-//! action: Delay 1 s
+//! action: delay-1s
 //! trigger:
 //!   chance: 40%
 //! lifetime: until disarmed
 //! ```
 //!
 //! Reading a rule rejects a key it does not know.
-//! Writing leaves out an empty scope, a trigger that fires on every match, the lifetime `until disarmed`,
+//! Writing leaves out a title that the rule does not have, an empty scope, a trigger that fires on every match, the lifetime `until disarmed`,
 //! and a dice key that the rule does not set.
 //!
 //! Live state has no form: an [`ArmedRule`], a [`Snapshot`] and an evaluation exist in memory only.
@@ -197,6 +200,7 @@ mod serde;
 mod set;
 mod snapshot;
 mod state;
+mod title;
 
 pub use action::{Action, ActionRef};
 pub use armed::{ArmedRule, HandFiring};
@@ -209,6 +213,7 @@ pub use rule::Rule;
 pub use set::{RuleSet, RuleSetError};
 pub use snapshot::{Snapshot, SnapshotError};
 pub use state::{RuleState, RuleStateError};
+pub use title::{PresetTitle, PresetTitleError, RuleTitle, RuleTitleError};
 
 /// Every item of this crate.
 ///
@@ -220,15 +225,16 @@ pub use state::{RuleState, RuleStateError};
 /// use gaslightmq_rule::prelude::*;
 /// use gaslightmq_selector::prelude::*;
 ///
-/// let rule: Result<Rule, RuleNameError> = "Blackhole".parse().map(|name| Rule::new(name, Conditions::new(), LieDefinition::Silence));
-/// assert_eq!(rule?.name(), "Blackhole");
+/// let rule: Result<Rule, RuleNameError> = "blackhole".parse().map(|name| Rule::new(name, Conditions::new(), LieDefinition::Silence));
+/// assert_eq!(rule?.name(), "blackhole");
 /// # Ok::<(), RuleNameError>(())
 /// ```
 pub mod prelude {
     #[doc(no_inline)]
     pub use crate::{
         Action, ActionRef, ArmedRule, FiredAction, HandFiring, PassEvaluation, Preset, PresetName, PresetNameError,
-        PresetSet, PresetSetError, ResolvedRule, Rule, RuleError, RuleEvaluation, RuleName, RuleNameError, RuleSet,
-        RuleSetError, RuleState, RuleStateError, Snapshot, SnapshotError,
+        PresetSet, PresetSetError, PresetTitle, PresetTitleError, ResolvedRule, Rule, RuleError, RuleEvaluation,
+        RuleName, RuleNameError, RuleSet, RuleSetError, RuleState, RuleStateError, RuleTitle, RuleTitleError, Snapshot,
+        SnapshotError,
     };
 }

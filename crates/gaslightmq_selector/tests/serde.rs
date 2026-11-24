@@ -60,40 +60,40 @@ fn order_producers() -> Conditions {
 
 #[test]
 fn a_selector_writes_its_name_and_its_conditions() {
-    // name: Order producers
+    // name: order-producers
     // match:
     //   api: Produce
     //   topic: "orders.*"
-    let selector = Selector::new(name("Order producers"), order_producers());
+    let selector = Selector::new(name("order-producers"), order_producers());
 
     writes(
         &selector,
-        r#"{"name":"Order producers","match":{"api":"Produce","topic":"orders.*"}}"#,
+        r#"{"name":"order-producers","match":{"api":"Produce","topic":"orders.*"}}"#,
     );
 }
 
 #[test]
 fn a_selector_writes_the_name_of_the_selector_it_includes() {
-    // name: Order producers from ingest
-    // include: Order producers
+    // name: order-producers-from-ingest
+    // include: order-producers
     // match:
     //   client.id: order-ingest
     let selector = Selector::new(
-        name("Order producers from ingest"),
+        name("order-producers-from-ingest"),
         Condition::is(client("order-ingest")).into(),
     )
-    .including(name("Order producers"));
+    .including(name("order-producers"));
 
     writes(
         &selector,
-        r#"{"name":"Order producers from ingest","include":"Order producers","match":{"client.id":"order-ingest"}}"#,
+        r#"{"name":"order-producers-from-ingest","include":"order-producers","match":{"client.id":"order-ingest"}}"#,
     );
 }
 
 #[test]
 fn a_rule_writes_a_selector_name_or_inline_conditions() {
-    // selector: Order producers
-    writes(&SelectorRef::Named(name("Order producers")), r#""Order producers""#);
+    // selector: order-producers
+    writes(&SelectorRef::Named(name("order-producers")), r#""order-producers""#);
     // selector: { api: Metadata }
     writes(
         &SelectorRef::Inline(Condition::is(ApiKey::METADATA).into()),
@@ -420,10 +420,10 @@ fn a_scope_only_reads_connection_fields() {
 
 #[test]
 fn a_name_and_a_pattern_write_their_text() {
-    writes(&name("Order producers"), r#""Order producers""#);
+    writes(&name("order-producers"), r#""order-producers""#);
     writes(&"orders.*".parse::<Glob>().unwrap(), r#""orders.*""#);
     rejects::<SelectorName>(r#""""#, "selector name \"\" is empty");
-    rejects::<SelectorName>(r#"" x""#, "starts or ends with white space");
+    rejects::<SelectorName>(r#""-x""#, "starts or ends with a hyphen");
     rejects::<SelectorName>("7", "expected a string");
     rejects::<Glob>(r#""""#, "a pattern is empty");
 }
@@ -431,20 +431,20 @@ fn a_name_and_a_pattern_write_their_text() {
 #[test]
 fn a_selector_without_conditions_writes_its_name_alone() {
     writes(
-        &Selector::new(name("All clients"), Conditions::new()),
-        r#"{"name":"All clients"}"#,
+        &Selector::new(name("all-clients"), Conditions::new()),
+        r#"{"name":"all-clients"}"#,
     );
     writes(
-        &Selector::new(name("Alias"), Conditions::new()).including(name("Order producers")),
-        r#"{"name":"Alias","include":"Order producers"}"#,
+        &Selector::new(name("alias"), Conditions::new()).including(name("order-producers")),
+        r#"{"name":"alias","include":"order-producers"}"#,
     );
     reads(
-        r#"{"name":"All clients","match":{}}"#,
-        &Selector::new(name("All clients"), Conditions::new()),
+        r#"{"name":"all-clients","match":{}}"#,
+        &Selector::new(name("all-clients"), Conditions::new()),
     );
     reads(
-        r#"{"match":{"api":"Produce"},"name":"Produce"}"#,
-        &Selector::new(name("Produce"), Condition::is(ApiKey::PRODUCE).into()),
+        r#"{"match":{"api":"Produce"},"name":"produce"}"#,
+        &Selector::new(name("produce"), Condition::is(ApiKey::PRODUCE).into()),
     );
 }
 
@@ -471,14 +471,14 @@ fn a_reference_is_text_or_a_map() {
 #[test]
 fn the_selectors_of_a_file_make_a_set() {
     let json = r#"[
-        {"name": "Order producers", "match": {"api": "Produce", "topic": "orders.*"}},
-        {"name": "Order producers from ingest", "include": "Order producers", "match": {"client.id": "order-ingest"}}
+        {"name": "order-producers", "match": {"api": "Produce", "topic": "orders.*"}},
+        {"name": "order-producers-from-ingest", "include": "order-producers", "match": {"client.id": "order-ingest"}}
     ]"#;
     let selectors: Vec<Selector> = serde_json::from_str(json).unwrap();
     let set = SelectorSet::new(selectors).unwrap();
 
     assert_eq!(
-        set.effective(&name("Order producers from ingest")).unwrap().to_string(),
+        set.effective(&name("order-producers-from-ingest")).unwrap().to_string(),
         "api is Produce and topic matches orders.* and client.id is order-ingest"
     );
 }
@@ -488,8 +488,8 @@ fn the_selectors_of_a_file_make_a_set() {
 #[test]
 fn the_forms_are_those_of_any_format_that_describes_itself() {
     assert_tokens(
-        &Selector::new(name("Order producers"), order_producers())
-            .including(name("Producers"))
+        &Selector::new(name("order-producers"), order_producers())
+            .including(name("producers"))
             .readable(),
         &[
             Token::Struct {
@@ -497,10 +497,10 @@ fn the_forms_are_those_of_any_format_that_describes_itself() {
                 len: 3,
             },
             Token::Str("name"),
-            Token::Str("Order producers"),
+            Token::Str("order-producers"),
             Token::Str("include"),
             Token::Some,
-            Token::Str("Producers"),
+            Token::Str("producers"),
             Token::Str("match"),
             Token::Map { len: Some(2) },
             Token::Str("api"),
@@ -545,5 +545,39 @@ fn the_forms_are_those_of_any_format_that_describes_itself() {
             Token::SeqEnd,
         ],
         "a condition needs at least one value",
+    );
+}
+
+#[test]
+fn a_selector_writes_its_title_when_it_has_one() {
+    // name: order-producers
+    // title: Order producers
+    // match:
+    //   api: Produce
+    //   topic: "orders.*"
+    let selector =
+        Selector::new(name("order-producers"), order_producers()).with_title("Order producers".parse().unwrap());
+
+    writes(
+        &selector,
+        r#"{"name":"order-producers","title":"Order producers","match":{"api":"Produce","topic":"orders.*"}}"#,
+    );
+    writes(
+        &"Order producers".parse::<SelectorTitle>().unwrap(),
+        r#""Order producers""#,
+    );
+}
+
+#[test]
+fn a_title_that_breaks_the_rule_for_titles_does_not_read() {
+    rejects::<SelectorTitle>(r#""""#, "selector title \"\" is empty");
+    rejects::<Selector>(
+        r#"{"name":"order-producers","title":" Order producers"}"#,
+        "selector title \" Order producers\" starts or ends with white space",
+    );
+    // A title is free text, and a name is not.
+    rejects::<Selector>(
+        r#"{"name":"Whoever produces orders"}"#,
+        "selector name \"Whoever produces orders\" holds 'W' at position 0",
     );
 }

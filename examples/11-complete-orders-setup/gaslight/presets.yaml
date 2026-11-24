@@ -1,18 +1,22 @@
 # Which lies. Rules, pads and ⌘K refer to these by name.
 
-- name: Error retriable
+- name: error-retriable
+  title: Error retriable
   lie: refusal
   error: NOT_LEADER_OR_FOLLOWER
 
-- name: Lost acknowledgement
+- name: lost-acknowledgement
+  title: Lost acknowledgement
   lie: refusal
   error: REQUEST_TIMED_OUT
   stage: after          # the records are written, and the client is told they failed
 
-- name: Delay 1 s
+- name: delay-1s
+  title: Delay 1 s
   lie: timing
   delay: 1s
   jitter: 200ms
 
-- name: Blackhole
+- name: blackhole
+  title: Blackhole
   lie: silence

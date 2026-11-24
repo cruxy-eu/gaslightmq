@@ -310,26 +310,26 @@ mod tests {
     fn the_presets_of_the_specs_read_and_write_back() {
         let cases = [
             (
-                json!({ "name": "Delay 1 s", "lie": "timing", "delay": "1s", "jitter": "200ms" }),
-                Preset::new("Delay 1 s".parse().unwrap(), delay_1s()),
+                json!({ "name": "delay-1s", "title": "Delay 1 s", "lie": "timing", "delay": "1s", "jitter": "200ms" }),
+                Preset::new("delay-1s".parse().unwrap(), delay_1s()).with_title("Delay 1 s".parse().unwrap()),
             ),
             (
-                json!({ "name": "Lost acknowledgement", "lie": "refusal", "error": "REQUEST_TIMED_OUT", "stage": "after" }),
+                json!({ "name": "lost-acknowledgement", "lie": "refusal", "error": "REQUEST_TIMED_OUT", "stage": "after" }),
                 Preset::new(
-                    "Lost acknowledgement".parse().unwrap(),
+                    "lost-acknowledgement".parse().unwrap(),
                     RefusalLie::new(ErrorCode::REQUEST_TIMED_OUT).at(Stage::AfterResponse),
                 ),
             ),
             (
-                json!({ "name": "Leader flap", "lie": "refusal", "error": "NOT_LEADER_OR_FOLLOWER" }),
+                json!({ "name": "leader-flap", "lie": "refusal", "error": "NOT_LEADER_OR_FOLLOWER" }),
                 Preset::new(
-                    "Leader flap".parse().unwrap(),
+                    "leader-flap".parse().unwrap(),
                     RefusalLie::new(ErrorCode::NOT_LEADER_OR_FOLLOWER),
                 ),
             ),
             (
-                json!({ "name": "Leader election", "incident": "leader-moves" }),
-                Preset::new("Leader election".parse().unwrap(), leader_moves(None)),
+                json!({ "name": "leader-election", "incident": "leader-moves" }),
+                Preset::new("leader-election".parse().unwrap(), leader_moves(None)),
             ),
         ];
 
@@ -342,22 +342,22 @@ mod tests {
     #[test]
     fn a_preset_reads_its_keys_in_any_order() {
         let preset: Preset =
-            serde_json::from_str(r#"{ "jitter": "200ms", "delay": "1s", "lie": "timing", "name": "Delay 1 s" }"#)
+            serde_json::from_str(r#"{ "jitter": "200ms", "delay": "1s", "lie": "timing", "name": "delay-1s" }"#)
                 .unwrap();
 
-        assert_eq!(preset, Preset::new("Delay 1 s".parse().unwrap(), delay_1s()));
+        assert_eq!(preset, Preset::new("delay-1s".parse().unwrap(), delay_1s()));
     }
 
     #[test]
     fn a_preset_needs_a_name_and_an_action() {
         assert_eq!(error::<Preset>(json!({ "lie": "silence" })), "missing field `name`");
         assert_eq!(
-            error::<Preset>(json!({ "name": "Nothing" })),
+            error::<Preset>(json!({ "name": "nothing" })),
             "an action needs a `lie` or an `incident` key"
         );
         assert_eq!(
-            error::<Preset>(json!({ "name": " Delay", "lie": "silence" })),
-            "preset name \" Delay\" starts or ends with white space"
+            error::<Preset>(json!({ "name": "-delay", "lie": "silence" })),
+            "preset name \"-delay\" starts or ends with a hyphen"
         );
     }
 
@@ -365,16 +365,16 @@ mod tests {
     fn a_key_that_does_not_belong_to_the_action_is_an_error() {
         assert_eq!(
             error::<Preset>(
-                json!({ "name": "Flap", "lie": "refusal", "error": "NOT_LEADER_OR_FOLLOWER", "delay": "1s" })
+                json!({ "name": "flap", "lie": "refusal", "error": "NOT_LEADER_OR_FOLLOWER", "delay": "1s" })
             ),
             "`delay` does not belong to refusal"
         );
         assert!(
-            error::<Preset>(json!({ "name": "Flap", "lie": "silence", "colour": "red" }))
+            error::<Preset>(json!({ "name": "flap", "lie": "silence", "colour": "red" }))
                 .starts_with("unknown field `colour`")
         );
         assert!(
-            error::<Preset>(json!({ "name": "Election", "incident": "leader-moves", "partitoin": "orders.eu/3" }))
+            error::<Preset>(json!({ "name": "election", "incident": "leader-moves", "partitoin": "orders.eu/3" }))
                 .starts_with("unknown field `partitoin`")
         );
     }
@@ -446,11 +446,11 @@ mod tests {
 
     #[test]
     fn a_reference_is_the_name_of_a_preset_or_the_map_of_an_action() {
-        let named = ActionRef::Preset("Delay 1 s".parse().unwrap());
+        let named = ActionRef::Preset("delay-1s".parse().unwrap());
         let inline = ActionRef::from(leader_moves(Some("orders.eu/3")));
 
-        assert_eq!(read::<ActionRef>(json!("Delay 1 s")), named);
-        assert_eq!(write(&named), json!("Delay 1 s"));
+        assert_eq!(read::<ActionRef>(json!("delay-1s")), named);
+        assert_eq!(write(&named), json!("delay-1s"));
 
         let form = json!({ "incident": "leader-moves", "partition": "orders.eu/3" });
         assert_eq!(read::<ActionRef>(form.clone()), inline);
@@ -463,10 +463,11 @@ mod tests {
     /// The rule of rules.md, with JSON for its YAML.
     fn slow_down_form() -> Value {
         json!({
-            "name": "Slow down order producers",
-            "selector": "Order producers",
+            "name": "slow-order-producers",
+            "title": "Slow down order producers",
+            "selector": "order-producers",
             "scope": { "client.id": "order-ingest" },
-            "action": "Delay 1 s",
+            "action": "delay-1s",
             "trigger": { "chance": "40%" },
             "lifetime": "until disarmed",
         })
@@ -474,10 +475,11 @@ mod tests {
 
     fn slow_down() -> Rule {
         Rule::new(
-            "Slow down order producers".parse().unwrap(),
-            "Order producers".parse::<SelectorName>().unwrap(),
-            "Delay 1 s".parse::<PresetName>().unwrap(),
+            "slow-order-producers".parse().unwrap(),
+            "order-producers".parse::<SelectorName>().unwrap(),
+            "delay-1s".parse::<PresetName>().unwrap(),
         )
+        .with_title("Slow down order producers".parse().unwrap())
         .scoped(Scope::client(ClientId::new("order-ingest").unwrap()))
         .with_trigger(TriggerParts::new().with_chance("40%".parse().unwrap()))
     }
@@ -499,20 +501,20 @@ mod tests {
     #[test]
     fn the_rules_of_the_leader_election_scenario_read_and_write_back() {
         let moves_away = Rule::new(
-            "Leader moves away".parse().unwrap(),
-            "Order producers".parse::<SelectorName>().unwrap(),
+            "leader-moves-away".parse().unwrap(),
+            "order-producers".parse::<SelectorName>().unwrap(),
             leader_moves(Some("orders.eu/3")),
         )
         .with_trigger(TriggerParts::new().with_nth(MatchNumber::new(1).unwrap()));
         let moves_away_form = json!({
-            "name": "Leader moves away",
-            "selector": "Order producers",
+            "name": "leader-moves-away",
+            "selector": "order-producers",
             "action": { "incident": "leader-moves", "partition": "orders.eu/3" },
             "trigger": { "nth": 1 },
         });
 
         let stale = Rule::new(
-            "Stale metadata".parse().unwrap(),
+            "stale-metadata".parse().unwrap(),
             Conditions::from(Condition::is(ApiKey::METADATA)),
             LieDefinition::Silence,
         )
@@ -522,7 +524,7 @@ mod tests {
                 .with_per(Per::Session),
         );
         let stale_form = json!({
-            "name": "Stale metadata",
+            "name": "stale-metadata",
             "selector": { "api": "Metadata" },
             "action": { "lie": "silence" },
             "trigger": { "first": 2, "per": "session" },
@@ -537,20 +539,20 @@ mod tests {
     #[test]
     fn a_rule_writes_every_part_it_has() {
         let rule = Rule::new(
-            "Refuse orders".parse().unwrap(),
+            "refuse-orders".parse().unwrap(),
             Conditions::from(Condition::parse(Field::Topic, "orders.*").unwrap()),
             RefusalLie::new(ErrorCode::NOT_LEADER_OR_FOLLOWER),
         )
         .with_trigger(Trigger::Manual)
         .with_lifetime(Lifetime::Firings(Count::new(3).unwrap()))
-        .with_dice(DiceKey::new("Refuse the orders").unwrap());
+        .with_dice(DiceKey::new("refuse-the-orders").unwrap());
         let form = json!({
-            "name": "Refuse orders",
+            "name": "refuse-orders",
             "selector": { "topic": "orders.*" },
             "action": { "lie": "refusal", "error": "NOT_LEADER_OR_FOLLOWER" },
             "trigger": "manual",
             "lifetime": "3 firings",
-            "dice": "Refuse the orders",
+            "dice": "refuse-the-orders",
         });
 
         assert_eq!(write(&rule), form);
@@ -572,7 +574,7 @@ mod tests {
 
     #[test]
     fn a_selector_without_conditions_is_every_call() {
-        let rule: Rule = read(json!({ "name": "Blackhole", "selector": {}, "action": { "lie": "silence" } }));
+        let rule: Rule = read(json!({ "name": "blackhole", "selector": {}, "action": { "lie": "silence" } }));
 
         assert_eq!(rule.selector(), &SelectorRef::Inline(Conditions::new()));
     }
@@ -585,7 +587,7 @@ mod tests {
             error::<Rule>(form)
         };
 
-        assert!(with("selecter", json!("Order producers")).starts_with("unknown field `selecter`"));
+        assert!(with("selecter", json!("order-producers")).starts_with("unknown field `selecter`"));
         assert_eq!(
             with("scope", json!({ "topic": "orders.eu" })),
             "a scope only tests connection fields, and topic is a request field"
@@ -596,6 +598,62 @@ mod tests {
         );
         assert!(with("lifetime", json!("a while")).contains("a while"));
         assert_eq!(with("name", json!("")), "rule name \"\" is empty");
+    }
+
+    #[test]
+    fn a_rule_writes_its_title_when_it_has_one() {
+        let blackhole = Rule::new(
+            "blackhole-metadata".parse().unwrap(),
+            Conditions::from(Condition::is(ApiKey::METADATA)),
+            LieDefinition::Silence,
+        );
+        let titled = blackhole.clone().with_title("No answer to Metadata".parse().unwrap());
+        let form = json!({
+            "name": "blackhole-metadata",
+            "selector": { "api": "Metadata" },
+            "action": { "lie": "silence" },
+        });
+        let titled_form = json!({
+            "name": "blackhole-metadata",
+            "title": "No answer to Metadata",
+            "selector": { "api": "Metadata" },
+            "action": { "lie": "silence" },
+        });
+
+        assert_eq!(write(&blackhole), form);
+        assert_eq!(read::<Rule>(form), blackhole);
+        assert_eq!(write(&titled), titled_form);
+        assert_eq!(read::<Rule>(titled_form), titled);
+    }
+
+    #[test]
+    fn a_preset_writes_its_title_when_it_has_one() {
+        let blackhole = Preset::new("blackhole".parse().unwrap(), LieDefinition::Silence);
+        let titled = blackhole.clone().with_title("No answer at all".parse().unwrap());
+        let form = json!({ "name": "blackhole", "lie": "silence" });
+        let titled_form = json!({ "name": "blackhole", "title": "No answer at all", "lie": "silence" });
+
+        assert_eq!(write(&blackhole), form);
+        assert_eq!(read::<Preset>(form), blackhole);
+        assert_eq!(write(&titled), titled_form);
+        assert_eq!(read::<Preset>(titled_form), titled);
+    }
+
+    #[test]
+    fn a_title_that_breaks_the_rule_for_titles_does_not_read() {
+        assert_eq!(
+            error::<Rule>(json!({ "name": "blackhole", "title": "", "selector": {}, "action": { "lie": "silence" } })),
+            "rule title \"\" is empty"
+        );
+        assert_eq!(
+            error::<Preset>(json!({ "name": "blackhole", "title": "No answer ", "lie": "silence" })),
+            "preset title \"No answer \" starts or ends with white space"
+        );
+        // A title is free text, and a name is not.
+        assert_eq!(
+            error::<Preset>(json!({ "name": "No answer at all", "lie": "silence" })),
+            "preset name \"No answer at all\" holds 'N' at position 0, which is no lowercase letter, digit or hyphen"
+        );
     }
 
     #[test]

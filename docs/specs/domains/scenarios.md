@@ -9,7 +9,8 @@ A scenario has:
 
 | Part | Meaning |
 |---|---|
-| **Name** | Unique among scenarios. |
+| **Name** | The identity of the scenario: a slug, unique among scenarios. |
+| **Title** | What the scenario shows, in free text. Optional. |
 | **Mode** | How rules combine: Live, Chain or Sequence. |
 | **Seed** | The root of every die in the run. |
 | **Rules** | The rules the scenario owns, or references by name. They stay armed for the whole run. |
@@ -17,15 +18,16 @@ A scenario has:
 | **Requirements** | What the backend must support, such as the incidents the scenario uses. |
 
 ```yaml
-name: Leader election
+name: leader-election
+title: Leader election
 mode: chain
 seed: 42
 rules:
-  - name: Leader moves away
-    selector: Order producers
+  - name: leader-moves-away
+    selector: order-producers
     action: { incident: leader-moves, partition: orders.eu/3 }
     trigger: { nth: 1 }
-  - name: Stale metadata
+  - name: stale-metadata
     selector: { api: Metadata }
     action: { lie: topology, leader: previous }
     trigger: { first: 2, per: session }
@@ -33,6 +35,8 @@ rules:
 
 Rule names are unique among all rules,
 whether a scenario owns the rule or the workspace does.
+
+The name and the title of a scenario follow the rules for the [name](rules.md#names) and the [title](rules.md#titles) of a rule.
 
 ## Modes
 
@@ -78,9 +82,9 @@ The scenario orders its rules.
 - In a conflict, the higher rule wins.
 - The lower rule is shadowed for the target they share.
 
-A chain of *Delay 1 s* above *Refuse the 3rd Produce* delays every Produce and refuses the 3rd:
+A chain of `delay-1s` above `refuse-the-3rd-produce` delays every Produce and refuses the 3rd:
 a delay and a refusal do not conflict.
-A chain of *Blackhole at 50%* above *Refuse at 50%* refuses a quarter of the calls:
+A chain of `blackhole-half` above `refuse-half`, each at 50%, refuses a quarter of the calls:
 both are ways to fail the call, so the refusal only applies when the blackhole did not fire.
 
 Each rule rolls its own die.
@@ -94,22 +98,28 @@ The scenario is a list of steps.
 Each step arms a set of rules and ends on a condition.
 
 ```yaml
-name: Producer recovers from leader churn
+name: producer-recovers-from-leader-churn
+title: Producer recovers from leader churn
 mode: sequence
 seed: 7
 rules:
-  - Background jitter
+  - background-jitter
 steps:
-  - name: Warm up
-    until: { calls: 100, selector: Order producers }
-  - name: Leader churn
-    arm: [Refuse with NOT_LEADER]
-    until: { firings: 3, rule: Refuse with NOT_LEADER }
-  - name: Slow recovery
-    arm: [Slow down order producers]
+  - name: warm-up
+    until: { calls: 100, selector: order-producers }
+  - name: leader-churn
+    arm: [refuse-with-not-leader]
+    until: { firings: 3, rule: refuse-with-not-leader }
+  - name: slow-recovery
+    title: Slow recovery of the producer
+    arm: [slow-order-producers]
     until: { after: 20s }
-  - name: Back to normal
+  - name: back-to-normal
 ```
+
+A step has a name, which is a slug and unique among the steps of its scenario.
+The journal and the UI name a step by it.
+A step can have a title too.
 
 A step ends when its `until` condition holds.
 Then the next step starts, and the rules the previous step armed disarm.
@@ -181,6 +191,6 @@ and their [consequences](lies-and-incidents.md#consequences).
 The backend checks a scenario's requirements when the scenario loads,
 and rejects it with the list of unsupported incidents.
 
-The *Leader election* scenario above needs "leader moves",
+The `leader-election` scenario above needs "leader moves",
 so it runs on the Simulated backend only.
 See [capabilities](../architecture/backends.md#capabilities).

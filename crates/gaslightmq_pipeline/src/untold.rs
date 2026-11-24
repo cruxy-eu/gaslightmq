@@ -141,9 +141,9 @@ mod tests {
             ),
             (
                 UntoldLie::AnsweredBefore {
-                    by: "Leader flap".to_owned(),
+                    by: "leader-flap".to_owned(),
                 },
-                "the lie of \"Leader flap\" answered the call before",
+                "the lie of \"leader-flap\" answered the call before",
             ),
             (
                 UntoldLie::ForwardsAnotherCall {
@@ -238,10 +238,10 @@ mod tests {
             ),
             (
                 StageFailure::UnmergedLie {
-                    rule: "Leader flap".to_owned(),
+                    rule: "leader-flap".to_owned(),
                     error: UntoldLie::NoLie,
                 },
-                "the lie of \"Leader flap\" changed the request, and could not make the response fit it: \
+                "the lie of \"leader-flap\" changed the request, and could not make the response fit it: \
                  the rule fired no lie",
             ),
             (

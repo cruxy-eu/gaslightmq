@@ -43,15 +43,15 @@ use crate::{ArmedRule, PassEvaluation, RuleEvaluation, RuleName};
 /// let none = (SelectorSet::default(), PresetSet::default());
 /// let now = Instant::ZERO;
 ///
-/// // "Refuse the 2nd Produce", above a delay on everything.
+/// // "refuse-the-2nd-produce", above a delay on everything.
 /// let refuse = Rule::new(
-///     "Refuse the 2nd Produce".parse().expect("a rule name"),
+///     "refuse-the-2nd-produce".parse().expect("a rule name"),
 ///     Conditions::from(Condition::is(ApiKey::PRODUCE)),
 ///     RefusalLie::new(ErrorCode::NOT_LEADER_OR_FOLLOWER),
 /// )
 /// .with_trigger(TriggerParts::new().with_nth(MatchNumber::new(2).expect("a match number")));
 /// let delay = Rule::new(
-///     "Delay 1 s".parse().expect("a rule name"),
+///     "delay-1s".parse().expect("a rule name"),
 ///     Conditions::new(),
 ///     TimingLie::new().with_delay(TimeSpan::from_secs(1)),
 /// );
@@ -398,26 +398,26 @@ mod tests {
 
     #[test]
     fn a_snapshot_keeps_its_rules_in_the_order_it_is_given() {
-        let refuse = rule("Refuse", api(ApiKey::PRODUCE), flap());
-        let slow = rule("Slow", Conditions::new(), delay());
+        let refuse = rule("refuse", api(ApiKey::PRODUCE), flap());
+        let slow = rule("slow", Conditions::new(), delay());
         let snapshot = snapshot([&refuse, &slow]);
 
         assert_eq!(snapshot.len(), 2);
         assert!(!snapshot.is_empty());
         assert_eq!(
             snapshot.iter().map(ArmedRule::name).collect::<Vec<_>>(),
-            [&name("Refuse"), &name("Slow")]
+            [&name("refuse"), &name("slow")]
         );
         assert_eq!((&snapshot).into_iter().count(), 2);
-        assert_eq!(snapshot.priority_of(&name("Refuse")), Some(Priority::HIGHEST));
-        assert_eq!(snapshot.priority_of(&name("Slow")), Some(Priority::new(1)));
-        assert_eq!(snapshot.priority_of(&name("Fast")), None);
-        assert_eq!(snapshot.get(&name("Slow")).map(ArmedRule::name), Some(&name("Slow")));
+        assert_eq!(snapshot.priority_of(&name("refuse")), Some(Priority::HIGHEST));
+        assert_eq!(snapshot.priority_of(&name("slow")), Some(Priority::new(1)));
+        assert_eq!(snapshot.priority_of(&name("fast")), None);
+        assert_eq!(snapshot.get(&name("slow")).map(ArmedRule::name), Some(&name("slow")));
         assert_eq!(
             snapshot.rule(Priority::new(1)).map(ArmedRule::name),
-            Some(&name("Slow"))
+            Some(&name("slow"))
         );
-        assert!(snapshot.get(&name("Fast")).is_none());
+        assert!(snapshot.get(&name("fast")).is_none());
         assert!(snapshot.rule(Priority::new(2)).is_none());
     }
 
@@ -437,34 +437,34 @@ mod tests {
 
     #[test]
     fn two_armed_rules_with_one_name_are_an_error() {
-        let refuse = rule("Refuse", api(ApiKey::PRODUCE), flap());
-        let twice = rule("Refuse", Conditions::new(), delay());
+        let refuse = rule("refuse", api(ApiKey::PRODUCE), flap());
+        let twice = rule("refuse", Conditions::new(), delay());
 
         let error = Snapshot::new([arm(&refuse), arm(&twice)]).unwrap_err();
 
-        assert_eq!(error, SnapshotError::DuplicateName { name: name("Refuse") });
+        assert_eq!(error, SnapshotError::DuplicateName { name: name("refuse") });
     }
 
     #[test]
     fn the_rules_that_stay_keep_their_order_and_their_arming() {
         let snapshot = snapshot([
-            &rule("Refuse produce", api(ApiKey::PRODUCE), flap()),
-            &rule("Slow", Conditions::new(), delay()),
-            &rule("Refuse fetch", api(ApiKey::FETCH), flap()),
+            &rule("refuse-produce", api(ApiKey::PRODUCE), flap()),
+            &rule("slow", Conditions::new(), delay()),
+            &rule("refuse-fetch", api(ApiKey::FETCH), flap()),
         ]);
         let names = |snapshot: &Snapshot| -> Vec<String> {
             let names = snapshot.iter().map(|rule| rule.name().as_str().to_owned());
             names.collect()
         };
 
-        let without_slow = snapshot.keeping(|rule| rule.name() != &name("Slow"));
+        let without_slow = snapshot.keeping(|rule| rule.name() != &name("slow"));
 
-        assert_eq!(names(&without_slow), ["Refuse produce", "Refuse fetch"]);
-        assert!(without_slow.get(&name("Slow")).is_none());
+        assert_eq!(names(&without_slow), ["refuse-produce", "refuse-fetch"]);
+        assert!(without_slow.get(&name("slow")).is_none());
         // A rule that stays is the same arming, at its new priority, and it still matches what it matched.
-        let fetch = without_slow.get(&name("Refuse fetch")).unwrap();
-        assert!(fetch.is(snapshot.get(&name("Refuse fetch")).unwrap()));
-        assert_eq!(without_slow.priority_of(&name("Refuse fetch")), Some(Priority::new(1)));
+        let fetch = without_slow.get(&name("refuse-fetch")).unwrap();
+        assert!(fetch.is(snapshot.get(&name("refuse-fetch")).unwrap()));
+        assert_eq!(without_slow.priority_of(&name("refuse-fetch")), Some(Priority::new(1)));
         let candidates: Vec<&ArmedRule> = without_slow.candidates(Pass::Request, ApiKey::FETCH).collect();
         assert_eq!(candidates.len(), 1);
 
@@ -475,35 +475,35 @@ mod tests {
     #[test]
     fn the_candidates_of_an_api_are_the_rules_of_the_pass_that_can_match_it() {
         let snapshot = snapshot([
-            &rule("Refuse produce", api(ApiKey::PRODUCE), flap()),
-            &rule("Lost produce", succeeded(ApiKey::PRODUCE), lost()),
-            &rule("Slow", Conditions::new(), delay()),
-            &rule("Refuse fetch", api(ApiKey::FETCH), flap()),
+            &rule("refuse-produce", api(ApiKey::PRODUCE), flap()),
+            &rule("lost-produce", succeeded(ApiKey::PRODUCE), lost()),
+            &rule("slow", Conditions::new(), delay()),
+            &rule("refuse-fetch", api(ApiKey::FETCH), flap()),
         ]);
         let candidates = |pass, api| -> Vec<&str> {
             let candidates = snapshot.candidates(pass, api);
             candidates.map(|rule| rule.name().as_str()).collect()
         };
 
-        assert_eq!(candidates(Pass::Request, ApiKey::PRODUCE), ["Refuse produce", "Slow"]);
-        assert_eq!(candidates(Pass::Request, ApiKey::FETCH), ["Slow", "Refuse fetch"]);
-        assert_eq!(candidates(Pass::Response, ApiKey::PRODUCE), ["Lost produce"]);
+        assert_eq!(candidates(Pass::Request, ApiKey::PRODUCE), ["refuse-produce", "slow"]);
+        assert_eq!(candidates(Pass::Request, ApiKey::FETCH), ["slow", "refuse-fetch"]);
+        assert_eq!(candidates(Pass::Response, ApiKey::PRODUCE), ["lost-produce"]);
         assert_eq!(candidates(Pass::Response, ApiKey::FETCH), [""; 0]);
     }
 
     #[test]
     fn a_pass_holds_the_rules_that_matched_in_priority_order_with_their_targets() {
         let snapshot = snapshot([
-            &rule("Refuse fetch", api(ApiKey::FETCH), flap()),
-            &rule("Refuse orders", orders(ApiKey::PRODUCE), flap()),
-            &rule("Slow", Conditions::new(), delay()),
+            &rule("refuse-fetch", api(ApiKey::FETCH), flap()),
+            &rule("refuse-orders", orders(ApiKey::PRODUCE), flap()),
+            &rule("slow", Conditions::new(), delay()),
         ]);
 
         let pass = snapshot.evaluate(Pass::Request, &produce(), NOW, &mut session());
 
         assert_eq!(pass.pass(), Pass::Request);
         assert_eq!(pass.len(), 2);
-        assert_eq!(names(&pass), ["Refuse orders", "Slow"]);
+        assert_eq!(names(&pass), ["refuse-orders", "slow"]);
         let [refuse, slow] = pass.rules() else {
             panic!("two rules matched");
         };
@@ -514,12 +514,12 @@ mod tests {
             slow.target().to_string(),
             "orders.eu/3, orders.eu/4, payments.settled/0"
         );
-        assert!(refuse.rule().is(snapshot.get(&name("Refuse orders")).unwrap()));
+        assert!(refuse.rule().is(snapshot.get(&name("refuse-orders")).unwrap()));
     }
 
     #[test]
     fn a_lie_gets_the_target_the_selector_matched() {
-        let snapshot = snapshot([&rule("Refuse orders", orders(ApiKey::PRODUCE), flap())]);
+        let snapshot = snapshot([&rule("refuse-orders", orders(ApiKey::PRODUCE), flap())]);
 
         let pass = snapshot.evaluate(Pass::Request, &produce(), NOW, &mut session());
         let refuse = &pass.rules()[0];
@@ -542,7 +542,7 @@ mod tests {
 
     #[test]
     fn a_lie_on_the_whole_call_keeps_what_the_selector_matched_next_to_it() {
-        let snapshot = snapshot([&rule("Slow orders", orders(ApiKey::PRODUCE), delay())]);
+        let snapshot = snapshot([&rule("slow-orders", orders(ApiKey::PRODUCE), delay())]);
 
         let pass = snapshot.evaluate(Pass::Request, &produce(), NOW, &mut session());
         let slow = &pass.rules()[0];
@@ -554,7 +554,7 @@ mod tests {
 
     #[test]
     fn a_rule_that_does_not_fire_is_still_in_the_pass() {
-        let snapshot = snapshot([&rule("Refuse the 2nd", api(ApiKey::PRODUCE), flap()).with_trigger(nth(2))]);
+        let snapshot = snapshot([&rule("refuse-the-2nd", api(ApiKey::PRODUCE), flap()).with_trigger(nth(2))]);
         let mut session = session();
 
         let first = snapshot.evaluate(Pass::Request, &produce(), NOW, &mut session);
@@ -576,15 +576,15 @@ mod tests {
     #[test]
     fn the_lies_of_a_pass_come_in_priority_order_with_their_priority() {
         let snapshot = snapshot([
-            &rule("Slow", Conditions::new(), delay()),
-            &rule("Never", api(ApiKey::PRODUCE), LieDefinition::Silence).with_trigger(Trigger::Manual),
-            &rule("Election", orders(ApiKey::PRODUCE), leader_moves()),
-            &rule("Refuse orders", orders(ApiKey::PRODUCE), flap()),
+            &rule("slow", Conditions::new(), delay()),
+            &rule("never", api(ApiKey::PRODUCE), LieDefinition::Silence).with_trigger(Trigger::Manual),
+            &rule("election", orders(ApiKey::PRODUCE), leader_moves()),
+            &rule("refuse-orders", orders(ApiKey::PRODUCE), flap()),
         ]);
 
         let pass = snapshot.evaluate(Pass::Request, &produce(), NOW, &mut session());
 
-        assert_eq!(names(&pass), ["Slow", "Never", "Election", "Refuse orders"]);
+        assert_eq!(names(&pass), ["slow", "never", "election", "refuse-orders"]);
         assert_eq!(
             pass.lies()
                 .map(|(priority, lie)| (priority.position(), lie.to_string()))
@@ -596,13 +596,13 @@ mod tests {
         );
         assert_eq!(
             pass.fired().map(|rule| rule.name().as_str()).collect::<Vec<_>>(),
-            ["Slow", "Election", "Refuse orders"]
+            ["slow", "election", "refuse-orders"]
         );
     }
 
     #[test]
     fn an_incident_without_a_subject_takes_it_from_the_parts_the_selector_matched() {
-        let snapshot = snapshot([&rule("Election", orders(ApiKey::PRODUCE), leader_moves())]);
+        let snapshot = snapshot([&rule("election", orders(ApiKey::PRODUCE), leader_moves())]);
 
         let pass = snapshot.evaluate(Pass::Request, &produce(), NOW, &mut session());
 
@@ -628,7 +628,7 @@ mod tests {
             partition: Some(partition("payments.settled/0")),
             to: Some(BrokerId::from(1)),
         };
-        let snapshot = snapshot([&rule("Election", orders(ApiKey::PRODUCE), named)]);
+        let snapshot = snapshot([&rule("election", orders(ApiKey::PRODUCE), named)]);
 
         let pass = snapshot.evaluate(Pass::Request, &produce(), NOW, &mut session());
 
@@ -653,9 +653,9 @@ mod tests {
         };
         let topic_deleted = IncidentDefinition::TopicDeleted { topic: None };
         let snapshot = snapshot([
-            &rule("Broker down", Conditions::new(), down),
-            &rule("Coordinators move", Conditions::new(), coordinator_moves),
-            &rule("Topic deleted", Conditions::new(), topic_deleted),
+            &rule("broker-down", Conditions::new(), down),
+            &rule("coordinators-move", Conditions::new(), coordinator_moves),
+            &rule("topic-deleted", Conditions::new(), topic_deleted),
         ]);
         let group = |id: &str| GroupId::new(id).unwrap();
         let transactional_id = TransactionalId::new("payments-tx-1").unwrap();
@@ -697,7 +697,7 @@ mod tests {
     #[test]
     fn a_call_on_the_bootstrap_endpoint_offers_no_broker() {
         let down = IncidentDefinition::BrokerGoesUnresponsive { broker: None };
-        let snapshot = snapshot([&rule("Broker hangs", Conditions::new(), down)]);
+        let snapshot = snapshot([&rule("broker-hangs", Conditions::new(), down)]);
         let call = Fields::new().with(Endpoint::Bootstrap).with(ApiKey::METADATA);
 
         let pass = snapshot.evaluate(Pass::Request, &call, NOW, &mut session());
@@ -715,11 +715,11 @@ mod tests {
     #[test]
     fn the_record_and_the_evaluation_agree_on_whether_a_rule_fired() {
         let snapshot = snapshot([
-            &rule("Slow", Conditions::new(), delay()),
-            &rule("Never", Conditions::new(), LieDefinition::Silence).with_trigger(Trigger::Manual),
-            &rule("Refuse the 2nd", Conditions::new(), flap()).with_trigger(nth(2)),
-            &rule("Election", Conditions::new(), leader_moves()),
-            &rule("Refuse once", Conditions::new(), flap()).with_lifetime(Lifetime::Firings(count(1))),
+            &rule("slow", Conditions::new(), delay()),
+            &rule("never", Conditions::new(), LieDefinition::Silence).with_trigger(Trigger::Manual),
+            &rule("refuse-the-2nd", Conditions::new(), flap()).with_trigger(nth(2)),
+            &rule("election", Conditions::new(), leader_moves()),
+            &rule("refuse-once", Conditions::new(), flap()).with_lifetime(Lifetime::Firings(count(1))),
         ]);
         let mut session = session();
         let mut seen = Vec::new();
@@ -752,9 +752,9 @@ mod tests {
 
     #[test]
     fn an_incident_without_a_subject_on_the_call_does_not_happen_and_gives_its_firing_back() {
-        let election = rule("Election", Conditions::new(), leader_moves()).with_lifetime(Lifetime::Firings(count(1)));
+        let election = rule("election", Conditions::new(), leader_moves()).with_lifetime(Lifetime::Firings(count(1)));
         let snapshot = snapshot([&election]);
-        let armed = snapshot.get(&name("Election")).unwrap();
+        let armed = snapshot.get(&name("election")).unwrap();
         let mut session = session();
 
         let mut pass = snapshot.evaluate(Pass::Request, &heartbeat(), NOW, &mut session);
@@ -792,9 +792,9 @@ mod tests {
 
     #[test]
     fn confirming_a_firing_counts_it_for_the_lifetime() {
-        let refuse = rule("Refuse", api(ApiKey::PRODUCE), flap()).with_lifetime(Lifetime::Firings(count(2)));
+        let refuse = rule("refuse", api(ApiKey::PRODUCE), flap()).with_lifetime(Lifetime::Firings(count(2)));
         let snapshot = snapshot([&refuse]);
-        let armed = snapshot.get(&name("Refuse")).unwrap();
+        let armed = snapshot.get(&name("refuse")).unwrap();
         let mut session = session();
 
         let mut first = snapshot.evaluate(Pass::Request, &produce(), NOW, &mut session);
@@ -822,9 +822,9 @@ mod tests {
 
     #[test]
     fn withdrawing_a_firing_gives_it_back_to_the_budget() {
-        let refuse = rule("Refuse", api(ApiKey::PRODUCE), flap()).with_lifetime(Lifetime::Firings(count(1)));
+        let refuse = rule("refuse", api(ApiKey::PRODUCE), flap()).with_lifetime(Lifetime::Firings(count(1)));
         let snapshot = snapshot([&refuse]);
-        let armed = snapshot.get(&name("Refuse")).unwrap();
+        let armed = snapshot.get(&name("refuse")).unwrap();
         let mut session = session();
 
         let mut shadowed = snapshot.evaluate(Pass::Request, &produce(), NOW, &mut session);
@@ -846,9 +846,9 @@ mod tests {
 
     #[test]
     fn a_pass_that_is_dropped_gives_its_firings_back() {
-        let refuse = rule("Refuse", api(ApiKey::PRODUCE), flap()).with_lifetime(Lifetime::Firings(count(1)));
+        let refuse = rule("refuse", api(ApiKey::PRODUCE), flap()).with_lifetime(Lifetime::Firings(count(1)));
         let snapshot = snapshot([&refuse]);
-        let armed = snapshot.get(&name("Refuse")).unwrap();
+        let armed = snapshot.get(&name("refuse")).unwrap();
 
         let pass = snapshot.evaluate(Pass::Request, &produce(), NOW, &mut session());
         assert_eq!(armed.arming().budget().map(Budget::left), Some(0));
@@ -860,7 +860,7 @@ mod tests {
 
     #[test]
     fn the_firing_can_be_taken_out_to_settle_it_elsewhere() {
-        let snapshot = snapshot([&rule("Refuse", api(ApiKey::PRODUCE), flap())]);
+        let snapshot = snapshot([&rule("refuse", api(ApiKey::PRODUCE), flap())]);
 
         let pass = snapshot.evaluate(Pass::Request, &produce(), NOW, &mut session());
         let mut rules = pass.into_rules();
@@ -873,7 +873,7 @@ mod tests {
 
     #[test]
     fn a_hand_firing_of_a_lie_shows_in_the_next_matching_call() {
-        let refuse = rule("Refuse", api(ApiKey::PRODUCE), flap()).with_trigger(Trigger::Manual);
+        let refuse = rule("refuse", api(ApiKey::PRODUCE), flap()).with_trigger(Trigger::Manual);
         let snapshot = snapshot([&refuse]);
         let mut session = session();
 
@@ -882,7 +882,7 @@ mod tests {
 
         assert!(
             snapshot
-                .get(&name("Refuse"))
+                .get(&name("refuse"))
                 .unwrap()
                 .fire_by_hand(NOW)
                 .unwrap()
@@ -905,9 +905,9 @@ mod tests {
 
     #[test]
     fn a_hand_firing_of_a_lie_that_is_withdrawn_lies_on_the_next_matching_call() {
-        let refuse = rule("Refuse", api(ApiKey::PRODUCE), flap()).with_trigger(Trigger::Manual);
+        let refuse = rule("refuse", api(ApiKey::PRODUCE), flap()).with_trigger(Trigger::Manual);
         let snapshot = snapshot([&refuse]);
-        let armed = snapshot.get(&name("Refuse")).unwrap();
+        let armed = snapshot.get(&name("refuse")).unwrap();
         let mut session = session();
 
         // Someone presses the pad once.
@@ -938,11 +938,11 @@ mod tests {
 
     #[test]
     fn a_hand_firing_of_a_call_that_ended_early_lies_on_the_next_matching_call() {
-        let refuse = rule("Refuse", api(ApiKey::PRODUCE), flap())
+        let refuse = rule("refuse", api(ApiKey::PRODUCE), flap())
             .with_trigger(Trigger::Manual)
             .with_lifetime(Lifetime::Firings(count(1)));
         let snapshot = snapshot([&refuse]);
-        let armed = snapshot.get(&name("Refuse")).unwrap();
+        let armed = snapshot.get(&name("refuse")).unwrap();
         let mut session = session();
         assert!(armed.fire_by_hand(NOW).unwrap().fired());
 
@@ -963,14 +963,14 @@ mod tests {
     #[test]
     fn a_rule_that_tests_the_truth_is_in_the_response_pass_only() {
         let snapshot = snapshot([
-            &rule("Lost acknowledgement", succeeded(ApiKey::PRODUCE), lost()),
-            &rule("Slow", api(ApiKey::PRODUCE), delay()),
+            &rule("lost-acknowledgement", succeeded(ApiKey::PRODUCE), lost()),
+            &rule("slow", api(ApiKey::PRODUCE), delay()),
         ]);
         let mut session = session();
         let asked = produce();
 
         let request = snapshot.evaluate(Pass::Request, &asked, NOW, &mut session);
-        assert_eq!(names(&request), ["Slow"]);
+        assert_eq!(names(&request), ["slow"]);
         assert_eq!(request.rules()[0].priority(), Priority::new(1));
 
         // Before the backend answers, the response pass has nothing to decide.
@@ -981,7 +981,7 @@ mod tests {
         let later = NOW + TimeSpan::from_millis(14);
         let response = snapshot.evaluate(Pass::Response, &answered, later, &mut session);
         assert_eq!(response.pass(), Pass::Response);
-        assert_eq!(names(&response), ["Lost acknowledgement"]);
+        assert_eq!(names(&response), ["lost-acknowledgement"]);
         assert_eq!(response.rules()[0].priority(), Priority::HIGHEST);
         assert_eq!(
             lies(&response),
@@ -989,12 +989,12 @@ mod tests {
         );
         // The rule of the request pass ran once, and the rule of the response pass too.
         let matches = |rule: &str| snapshot.get(&name(rule)).unwrap().arming().counter().matches();
-        assert_eq!((matches("Slow"), matches("Lost acknowledgement")), (1, 1));
+        assert_eq!((matches("slow"), matches("lost-acknowledgement")), (1, 1));
     }
 
     #[test]
     fn the_response_pass_targets_the_parts_whose_truth_passes() {
-        let snapshot = snapshot([&rule("Lost acknowledgement", succeeded(ApiKey::PRODUCE), lost())]);
+        let snapshot = snapshot([&rule("lost-acknowledgement", succeeded(ApiKey::PRODUCE), lost())]);
         let answered = Fields::new()
             .with(ApiKey::PRODUCE)
             .with_part(PartFields::new(partition("orders.eu/3")).succeeded())
@@ -1015,31 +1015,31 @@ mod tests {
     #[test]
     fn the_rules_that_wait_for_the_truth_are_those_whose_request_conditions_hold() {
         let snapshot = snapshot([
-            &rule("Lost produce", succeeded(ApiKey::PRODUCE), lost()),
-            &rule("Slow", Conditions::new(), delay()),
-            &rule("Lost fetch", succeeded(ApiKey::FETCH), lost()),
-            &rule("Slow success", Condition::is(Outcome::Ok).into(), delay()),
+            &rule("lost-produce", succeeded(ApiKey::PRODUCE), lost()),
+            &rule("slow", Conditions::new(), delay()),
+            &rule("lost-fetch", succeeded(ApiKey::FETCH), lost()),
+            &rule("slow-success", Condition::is(Outcome::Ok).into(), delay()),
         ]);
         let waiting = |call: &Fields| -> Vec<String> {
             let waiting = snapshot.waiting(call, NOW);
             waiting.into_iter().map(|rule| rule.name().to_string()).collect()
         };
 
-        assert_eq!(waiting(&produce()), ["Lost produce", "Slow success"]);
-        assert_eq!(waiting(&heartbeat()), ["Slow success"]);
+        assert_eq!(waiting(&produce()), ["lost-produce", "slow-success"]);
+        assert_eq!(waiting(&heartbeat()), ["slow-success"]);
         // Once the truth is there, nobody waits.
         assert_eq!(waiting(&produce().with(Outcome::Ok)), [""; 0]);
         assert_eq!(waiting(&produce().without_truth()), [""; 0]);
         // A source without one API asks every rule of the response pass.
-        assert_eq!(waiting(&Fields::new()), ["Slow success"]);
+        assert_eq!(waiting(&Fields::new()), ["slow-success"]);
         assert_eq!(
             waiting(&Fields::new().with(ApiKey::PRODUCE).with(ApiKey::FETCH)),
-            ["Lost produce", "Lost fetch", "Slow success"]
+            ["lost-produce", "lost-fetch", "slow-success"]
         );
         // Waiting counts no match.
         assert_eq!(
             snapshot
-                .get(&name("Lost produce"))
+                .get(&name("lost-produce"))
                 .map(|rule| rule.arming().counter().matches()),
             Some(0)
         );
@@ -1049,9 +1049,9 @@ mod tests {
     fn a_rule_whose_lifetime_ended_does_not_wait_for_the_truth() {
         let half_a_minute = Lifetime::Duration(TimeSpan::from_secs(30));
         let snapshot = snapshot([
-            &rule("Lost for 30 s", succeeded(ApiKey::PRODUCE), lost()).with_lifetime(half_a_minute),
-            &rule("Lost once", succeeded(ApiKey::PRODUCE), lost()).with_lifetime(Lifetime::Firings(count(1))),
-            &rule("Lost", succeeded(ApiKey::PRODUCE), lost()),
+            &rule("lost-for-30s", succeeded(ApiKey::PRODUCE), lost()).with_lifetime(half_a_minute),
+            &rule("lost-once", succeeded(ApiKey::PRODUCE), lost()).with_lifetime(Lifetime::Firings(count(1))),
+            &rule("lost", succeeded(ApiKey::PRODUCE), lost()),
         ]);
         let waiting = |call: &Fields, now: Instant| -> Vec<String> {
             let waiting = snapshot.waiting(call, now);
@@ -1059,13 +1059,13 @@ mod tests {
         };
         let later = NOW + TimeSpan::from_secs(30);
 
-        assert_eq!(waiting(&produce(), NOW), ["Lost for 30 s", "Lost once", "Lost"]);
+        assert_eq!(waiting(&produce(), NOW), ["lost-for-30s", "lost-once", "lost"]);
         // The duration passed, and the engine has not disarmed the rule yet.
-        assert_eq!(waiting(&produce(), later), ["Lost once", "Lost"]);
+        assert_eq!(waiting(&produce(), later), ["lost-once", "lost"]);
         // A source without one API leaves the rule out too.
         assert_eq!(
             waiting(&Fields::new().with(ApiKey::PRODUCE).with(ApiKey::FETCH), later),
-            ["Lost once", "Lost"]
+            ["lost-once", "lost"]
         );
 
         // A call spends the one firing of the second rule, which ends its lifetime.
@@ -1073,13 +1073,13 @@ mod tests {
         for evaluated in &mut response {
             evaluated.confirm();
         }
-        assert_eq!(waiting(&produce(), NOW), ["Lost for 30 s", "Lost"]);
+        assert_eq!(waiting(&produce(), NOW), ["lost-for-30s", "lost"]);
     }
 
     #[test]
     fn a_rule_that_counts_per_session_counts_each_session_on_its_own() {
         let first_two = TriggerParts::new().with_first(count(2)).with_per(Per::Session);
-        let snapshot = snapshot([&rule("Stale", api(ApiKey::PRODUCE), flap()).with_trigger(first_two)]);
+        let snapshot = snapshot([&rule("stale", api(ApiKey::PRODUCE), flap()).with_trigger(first_two)]);
         let mut one = session();
         let mut other = SessionCounters::new(CounterKey::new("10.0.4.27 broker 2 #2").unwrap());
         let fired = |session: &mut SessionCounters| {
@@ -1096,8 +1096,8 @@ mod tests {
 
     #[test]
     fn a_new_snapshot_of_the_same_armed_rules_continues_their_counts() {
-        let refuse = arm(&rule("Refuse the 2nd", api(ApiKey::PRODUCE), flap()).with_trigger(nth(2)));
-        let slow = arm(&rule("Slow", Conditions::new(), delay()));
+        let refuse = arm(&rule("refuse-the-2nd", api(ApiKey::PRODUCE), flap()).with_trigger(nth(2)));
+        let slow = arm(&rule("slow", Conditions::new(), delay()));
         let mut session = session();
 
         let before = Snapshot::new([refuse.clone()]).unwrap();
@@ -1107,7 +1107,7 @@ mod tests {
         // Someone arms another rule above it, and the engine publishes a new snapshot.
         let after = Snapshot::new([slow, refuse]).unwrap();
         let second = after.evaluate(Pass::Request, &produce(), NOW, &mut session);
-        assert_eq!(names(&second), ["Slow", "Refuse the 2nd"]);
+        assert_eq!(names(&second), ["slow", "refuse-the-2nd"]);
         assert_eq!(outcomes(&second), [TriggerOutcome::Fired, TriggerOutcome::Fired]);
         assert_eq!(
             second.rules()[1].rolled().match_number(),
@@ -1118,7 +1118,7 @@ mod tests {
     #[test]
     fn a_time_window_opens_at_the_instant_the_call_is_evaluated() {
         let after_10s = TriggerParts::new().with_window(TimeWindow::after(TimeSpan::from_secs(10)));
-        let snapshot = snapshot([&rule("Late", api(ApiKey::PRODUCE), flap()).with_trigger(after_10s)]);
+        let snapshot = snapshot([&rule("late", api(ApiKey::PRODUCE), flap()).with_trigger(after_10s)]);
         let mut session = session();
         let mut at = |seconds: u64| {
             let now = NOW + TimeSpan::from_secs(seconds);
@@ -1133,8 +1133,8 @@ mod tests {
     #[test]
     fn a_pass_iterates_over_its_rules() {
         let snapshot = snapshot([
-            &rule("Refuse", api(ApiKey::PRODUCE), flap()),
-            &rule("Slow", Conditions::new(), delay()),
+            &rule("refuse", api(ApiKey::PRODUCE), flap()),
+            &rule("slow", Conditions::new(), delay()),
         ]);
 
         let mut pass = snapshot.evaluate(Pass::Request, &produce(), NOW, &mut session());
@@ -1146,7 +1146,7 @@ mod tests {
         assert!(pass.rules().iter().all(|rule| !rule.is_unsettled()));
         assert_eq!(
             pass.into_iter().map(|rule| rule.name().to_string()).collect::<Vec<_>>(),
-            ["Refuse", "Slow"]
+            ["refuse", "slow"]
         );
     }
 }

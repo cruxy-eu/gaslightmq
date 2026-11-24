@@ -23,12 +23,12 @@ use gaslightmq_lie::prelude::*;
 /// };
 ///
 /// let request = RequestPass::of([
-///     FiredLie::new("Leader flap", Priority::new(0), refusal(&three)),
-///     FiredLie::new("Refuse the 3rd Produce", Priority::new(1), refusal(&three)),
+///     FiredLie::new("leader-flap", Priority::new(0), refusal(&three)),
+///     FiredLie::new("refuse-the-3rd-produce", Priority::new(1), refusal(&three)),
 /// ]);
 /// let refusals = request.before_forwarding().refusals();
 ///
-/// assert_eq!(refusals.of(&three), Some(&"Leader flap"));
+/// assert_eq!(refusals.of(&three), Some(&"leader-flap"));
 /// assert_eq!(refusals.of(&four), None);
 /// assert_eq!(refusals.of_call(), None);
 /// # Ok::<(), PartError>(())
@@ -110,8 +110,8 @@ impl<Id> Default for Winners<Id> {
 /// let more = TimingLie::new().with_delay(TimeSpan::from_millis(500));
 ///
 /// let request = RequestPass::of([
-///     FiredLie::new("Delay 1 s", Priority::new(0), second),
-///     FiredLie::new("Background jitter", Priority::new(1), more),
+///     FiredLie::new("delay-1s", Priority::new(0), second),
+///     FiredLie::new("background-jitter", Priority::new(1), more),
 /// ]);
 /// let delay = request.without_response_pass().after_response().delay();
 ///
@@ -213,20 +213,20 @@ const fn sum(one: TimeSpan, other: TimeSpan) -> TimeSpan {
 /// let stale = Claim::Rewrite { aspect: Aspect::HighWatermark, target: on(&four) };
 ///
 /// let request = RequestPass::of([
-///     FiredLie::new("Delay 1 s", Priority::new(0), delay),
-///     FiredLie::new("Leader flap", Priority::new(1), refusal),
-///     FiredLie::new("Stale watermark", Priority::new(2), stale),
+///     FiredLie::new("delay-1s", Priority::new(0), delay),
+///     FiredLie::new("leader-flap", Priority::new(1), refusal),
+///     FiredLie::new("stale-watermark", Priority::new(2), stale),
 /// ]);
 ///
 /// // Before forwarding, `orders.eu/3` leaves the request.
 /// let before = request.before_forwarding();
-/// assert_eq!(before.refusals().of(&three), Some(&"Leader flap"));
+/// assert_eq!(before.refusals().of(&three), Some(&"leader-flap"));
 /// assert!(before.delay().is_zero());
 ///
 /// // After the response, the watermark of `orders.eu/4` goes stale, and the answer waits.
 /// let call = request.without_response_pass();
 /// let after = call.after_response();
-/// assert_eq!(after.rewrite(Aspect::HighWatermark, &four), Some(&"Stale watermark"));
+/// assert_eq!(after.rewrite(Aspect::HighWatermark, &four), Some(&"stale-watermark"));
 /// assert_eq!(after.delay().length(), TimeSpan::from_secs(1));
 /// assert_eq!(after.terminal(), None);
 /// # Ok::<(), PartError>(())

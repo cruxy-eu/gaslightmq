@@ -9,7 +9,7 @@ use crate::driver::*;
 
 #[test]
 fn a_refusal_of_the_whole_call_answers_without_the_backend() {
-    let mut driver = Driver::with([on_api("Rebalance", ApiKey::HEARTBEAT, refusal(REBALANCING))]);
+    let mut driver = Driver::with([on_api("rebalance", ApiKey::HEARTBEAT, refusal(REBALANCING))]);
     let request = heartbeat(41);
 
     // The backend never sees the Heartbeat, and the client gets the error at once.
@@ -25,7 +25,7 @@ fn a_refusal_of_the_whole_call_answers_without_the_backend() {
     assert_eq!(record.delivered().to_string(), "REBALANCE_IN_PROGRESS");
     assert_eq!(
         explained(&record),
-        ["Rebalance: matched the call; match 1: fired; REBALANCE_IN_PROGRESS applied"]
+        ["rebalance: matched the call; match 1: fired; REBALANCE_IN_PROGRESS applied"]
     );
     // The call has no truth: nobody asked the backend.
     assert!(record.read(Field::Outcome).is_absent());
@@ -35,7 +35,7 @@ fn a_refusal_of_the_whole_call_answers_without_the_backend() {
 
 #[test]
 fn a_partial_refusal_of_a_produce_forwards_the_rest_and_merges() {
-    let flap = on_partition("Leader flap", "orders.eu", "3", refusal(NOT_LEADER));
+    let flap = on_partition("leader-flap", "orders.eu", "3", refusal(NOT_LEADER));
     let mut driver = Driver::with([flap]);
     let request = produce(41, &["orders.eu/3", "orders.eu/4", "payments.settled/0"]);
 
@@ -62,7 +62,7 @@ fn a_partial_refusal_of_a_produce_forwards_the_rest_and_merges() {
     assert_eq!(record.verdict().to_string(), "NOT_LEADER_OR_FOLLOWER on orders.eu/3");
     assert_eq!(
         explained(&record),
-        ["Leader flap: matched orders.eu/3; match 1: fired; NOT_LEADER_OR_FOLLOWER applied on orders.eu/3"]
+        ["leader-flap: matched orders.eu/3; match 1: fired; NOT_LEADER_OR_FOLLOWER applied on orders.eu/3"]
     );
     assert_eq!(
         record.delivered().to_string(),
@@ -77,8 +77,8 @@ fn a_partial_refusal_of_a_produce_forwards_the_rest_and_merges() {
 #[test]
 fn refusals_of_every_partition_leave_nothing_to_forward() {
     let mut driver = Driver::with([
-        on_topic("Leader flap", "orders.*", refusal(NOT_LEADER)),
-        on_topic("Slow payments", "payments.*", refusal(TIMED_OUT)),
+        on_topic("leader-flap", "orders.*", refusal(NOT_LEADER)),
+        on_topic("slow-payments", "payments.*", refusal(TIMED_OUT)),
     ]);
     let request = produce(41, &["orders.eu/3", "payments.settled/0"]);
 
@@ -103,7 +103,7 @@ fn refusals_of_every_partition_leave_nothing_to_forward() {
 
 #[test]
 fn a_refusal_after_the_response_lets_the_backend_handle_the_request() {
-    let lost = on_topic("Lost acknowledgement", "orders.*", late_refusal(TIMED_OUT));
+    let lost = on_topic("lost-acknowledgement", "orders.*", late_refusal(TIMED_OUT));
     let mut driver = Driver::with([lost]);
     let request = produce(41, &["orders.eu/3", "payments.settled/0"]);
 
@@ -134,8 +134,8 @@ fn a_refusal_after_the_response_lets_the_backend_handle_the_request() {
 #[test]
 fn a_refusal_with_a_higher_priority_shadows_one_of_the_same_partition() {
     let mut driver = Driver::with([
-        on_partition("Leader flap", "orders.eu", "3", refusal(NOT_LEADER)),
-        on_topic("Refuse orders", "orders.*", refusal(TIMED_OUT)),
+        on_partition("leader-flap", "orders.eu", "3", refusal(NOT_LEADER)),
+        on_topic("refuse-orders", "orders.*", refusal(TIMED_OUT)),
     ]);
     let request = produce(41, &["orders.eu/3", "orders.eu/4"]);
 
@@ -149,10 +149,10 @@ fn a_refusal_with_a_higher_priority_shadows_one_of_the_same_partition() {
     let record = refused.emitted();
     assert_eq!(
         explained(&record)[1],
-        "Refuse orders: matched orders.eu/3, orders.eu/4; match 1: fired; \
-         REQUEST_TIMED_OUT applied on orders.eu/4, shadowed on orders.eu/3 by Leader flap"
+        "refuse-orders: matched orders.eu/3, orders.eu/4; match 1: fired; \
+         REQUEST_TIMED_OUT applied on orders.eu/4, shadowed on orders.eu/3 by leader-flap"
     );
-    assert!(record.explanation().applied("Refuse orders"));
+    assert!(record.explanation().applied("refuse-orders"));
 }
 
 // A Produce that expects no response.
@@ -179,7 +179,7 @@ fn a_produce_with_acks_0_has_no_answer() {
 
 #[test]
 fn a_refused_produce_with_acks_0_keeps_its_records_from_the_backend_and_sends_nothing() {
-    let flap = on_partition("Leader flap", "orders.eu", "3", refusal(NOT_LEADER));
+    let flap = on_partition("leader-flap", "orders.eu", "3", refusal(NOT_LEADER));
     let mut driver = Driver::with([flap]);
 
     // Some partitions: the backend gets the others, and the client gets nothing.
@@ -198,7 +198,7 @@ fn a_refused_produce_with_acks_0_keeps_its_records_from_the_backend_and_sends_no
 
 #[test]
 fn a_lie_after_the_response_is_not_told_on_a_call_without_a_response() {
-    let lost = on_topic("Lost acknowledgement", "orders.*", late_refusal(TIMED_OUT));
+    let lost = on_topic("lost-acknowledgement", "orders.*", late_refusal(TIMED_OUT));
     let mut driver = Driver::with([lost]);
 
     let arrived = driver.send(&produce_with_acks(41, &["orders.eu/3"], 0));
@@ -208,7 +208,7 @@ fn a_lie_after_the_response_is_not_told_on_a_call_without_a_response() {
     assert!(record.verdict().is_pass());
     let fate = record
         .explanation()
-        .rule("Lost acknowledgement")
+        .rule("lost-acknowledgement")
         .unwrap()
         .lie()
         .unwrap();
@@ -240,14 +240,14 @@ fn a_lie_that_applied_spends_its_firing_for_good() {
     use gaslightmq_trigger::prelude::*;
 
     let once =
-        on_api("Rebalance once", ApiKey::HEARTBEAT, refusal(REBALANCING)).with_lifetime(Lifetime::Firings(Count::ONE));
+        on_api("rebalance-once", ApiKey::HEARTBEAT, refusal(REBALANCING)).with_lifetime(Lifetime::Firings(Count::ONE));
     let mut driver = Driver::with([once]);
 
     // The first Heartbeat takes the one firing of the lifetime.
     let first = driver.send(&heartbeat(41)).emitted();
     assert_eq!(first.verdict().to_string(), "REBALANCE_IN_PROGRESS");
     let snapshot = driver.pipeline.snapshot().clone();
-    let rule = snapshot.get(&"Rebalance once".parse().unwrap()).unwrap();
+    let rule = snapshot.get(&"rebalance-once".parse().unwrap()).unwrap();
     assert!(rule.arming().has_ended(driver.now()));
 
     // The second one finds the lifetime over, before the engine disarmed the rule: it passes, and it is no match.
@@ -256,7 +256,7 @@ fn a_lie_that_applied_spends_its_firing_for_good() {
     assert!(second.verdict().is_pass());
     assert_eq!(
         explained(&second),
-        ["Rebalance once: matched the call; 0 of 1 left: lifetime-over"]
+        ["rebalance-once: matched the call; 0 of 1 left: lifetime-over"]
     );
     assert_eq!(rule.arming().counter().matches(), 1);
 }

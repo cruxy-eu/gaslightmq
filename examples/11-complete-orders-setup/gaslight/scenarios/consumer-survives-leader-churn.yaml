@@ -1,19 +1,24 @@
 # An exact test case: the consumer keeps reading while the leader churns.
-name: Consumer survives leader churn
+name: consumer-survives-leader-churn
+title: Consumer survives leader churn
 mode: sequence
 seed: 7
 
 steps:
-  - name: Warm up
-    until: { calls: 100, selector: Order fetches }
+  - name: warm-up
+    title: Warm up
+    until: { calls: 100, selector: order-fetches }
 
-  - name: Leader churn
-    arm: [Refuse with NOT_LEADER]
+  - name: leader-churn
+    title: Leader churn
+    arm: [refuse-with-not-leader]
     # A budget: exactly three refusals, however many connections fetch at once.
-    until: { firings: 3, rule: Refuse with NOT_LEADER }
+    until: { firings: 3, rule: refuse-with-not-leader }
 
-  - name: Slow recovery
-    arm: [Order fetches are slow for analytics]
+  - name: slow-recovery
+    title: Slow recovery
+    arm: [order-fetches-are-slow-for-analytics]
     until: { after: 20s }
 
-  - name: Back to normal
+  - name: back-to-normal
+    title: Back to normal

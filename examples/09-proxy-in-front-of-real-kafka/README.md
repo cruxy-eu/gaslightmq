@@ -25,7 +25,7 @@ cp /path/to/ca.pem secrets/kafka-ca.pem
 ```
 
 ```sh
-gmq start --env staging --scenario "Lost acknowledgements"
+gmq start --env staging --scenario lost-acknowledgements
 ```
 
 Point your application at `localhost:9092` instead of the real cluster.

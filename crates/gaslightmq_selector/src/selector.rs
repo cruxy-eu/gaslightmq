@@ -1,10 +1,10 @@
-use crate::{Conditions, SelectorName};
+use crate::{Conditions, SelectorName, SelectorTitle};
 
 /// A named set of conditions, which can include another selector by name.
 ///
 /// ```yaml
-/// name: Order producers from ingest
-/// include: Order producers
+/// name: order-producers-from-ingest
+/// include: order-producers
 /// match:
 ///   client.id: order-ingest
 /// ```
@@ -19,13 +19,13 @@ use crate::{Conditions, SelectorName};
 /// use gaslightmq_selector::prelude::*;
 ///
 /// let from_ingest = Selector::new(
-///     "Order producers from ingest".parse()?,
+///     "order-producers-from-ingest".parse()?,
 ///     Condition::is(ClientId::new("order-ingest").expect("a client ID")).into(),
 /// )
-/// .including("Order producers".parse()?);
+/// .including("order-producers".parse()?);
 ///
-/// assert_eq!(from_ingest.name(), "Order producers from ingest");
-/// assert_eq!(from_ingest.include().map(SelectorName::as_str), Some("Order producers"));
+/// assert_eq!(from_ingest.name(), "order-producers-from-ingest");
+/// assert_eq!(from_ingest.include().map(SelectorName::as_str), Some("order-producers"));
 /// assert_eq!(from_ingest.conditions().to_string(), "client.id is order-ingest");
 /// # Ok::<(), SelectorNameError>(())
 /// ```
@@ -38,6 +38,8 @@ use crate::{Conditions, SelectorName};
 pub struct Selector {
     name: SelectorName,
     #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Option::is_none"))]
+    title: Option<SelectorTitle>,
+    #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Option::is_none"))]
     include: Option<SelectorName>,
     #[cfg_attr(
         feature = "serde",
@@ -47,13 +49,30 @@ pub struct Selector {
 }
 
 impl Selector {
-    /// A selector with its own conditions, which includes no other selector.
+    /// A selector with its own conditions, which includes no other selector. It has no title.
     pub fn new(name: SelectorName, conditions: Conditions) -> Self {
         Self {
             name,
+            title: None,
             include: None,
             conditions,
         }
+    }
+
+    /// The same selector with a title, which says which calls the selector describes.
+    /// It replaces the title the selector had before.
+    #[must_use]
+    pub fn with_title(self, title: SelectorTitle) -> Self {
+        Self {
+            title: Some(title),
+            ..self
+        }
+    }
+
+    /// The same selector without a title.
+    #[must_use]
+    pub fn without_title(self) -> Self {
+        Self { title: None, ..self }
     }
 
     /// The same selector, which includes the selector named `include`.
@@ -72,23 +91,20 @@ impl Selector {
         Self { include: None, ..self }
     }
 
-    /// The same selector under another name.
-    /// What references the selector by its old name does not follow:
-    /// [`SelectorSet::rename`](crate::SelectorSet::rename) renames a selector with the selectors that include it.
-    #[must_use]
-    pub fn renamed(self, name: SelectorName) -> Self {
-        Self { name, ..self }
-    }
-
     /// The same selector with other conditions of its own.
     #[must_use]
     pub fn with_conditions(self, conditions: Conditions) -> Self {
         Self { conditions, ..self }
     }
 
-    /// The name of the selector, unique among selectors.
+    /// The name of the selector, unique among selectors. It is the identity of the selector.
     pub fn name(&self) -> &SelectorName {
         &self.name
+    }
+
+    /// Which calls the selector describes, in free text, when someone wrote it down.
+    pub fn title(&self) -> Option<&SelectorTitle> {
+        self.title.as_ref()
     }
 
     /// The name of the selector this one includes.
@@ -105,16 +121,12 @@ impl Selector {
     pub fn conditions_mut(&mut self) -> &mut Conditions {
         &mut self.conditions
     }
-
-    pub(crate) fn include_mut(&mut self) -> Option<&mut SelectorName> {
-        self.include.as_mut()
-    }
 }
 
 /// How a rule, a filter or a subscription says which calls it considers: a selector name, or inline conditions.
 ///
 /// ```yaml
-/// selector: Order producers
+/// selector: order-producers
 /// ```
 ///
 /// ```yaml
@@ -129,10 +141,10 @@ impl Selector {
 /// use gaslightmq_kernel::prelude::*;
 /// use gaslightmq_selector::prelude::*;
 ///
-/// let named = SelectorRef::from("Order producers".parse::<SelectorName>()?);
+/// let named = SelectorRef::from("order-producers".parse::<SelectorName>()?);
 /// let inline = SelectorRef::from(Conditions::from(Condition::is(ApiKey::METADATA)));
 ///
-/// assert_eq!(named.name().map(SelectorName::as_str), Some("Order producers"));
+/// assert_eq!(named.name().map(SelectorName::as_str), Some("order-producers"));
 /// assert_eq!(inline.name(), None);
 /// # Ok::<(), SelectorNameError>(())
 /// ```
@@ -186,33 +198,28 @@ mod tests {
 
     #[test]
     fn a_new_selector_includes_no_other() {
-        let selector = Selector::new(name("Order producers"), order_producers());
+        let selector = Selector::new(name("order-producers"), order_producers());
 
-        assert_eq!(selector.name(), "Order producers");
+        assert_eq!(selector.name(), "order-producers");
         assert_eq!(selector.include(), None);
         assert_eq!(selector.conditions(), &order_producers());
     }
 
     #[test]
     fn a_selector_includes_one_other_by_name() {
-        let selector = Selector::new(name("From ingest"), Conditions::new()).including(name("Order producers"));
+        let selector = Selector::new(name("from-ingest"), Conditions::new()).including(name("order-producers"));
 
-        assert_eq!(selector.include(), Some(&name("Order producers")));
+        assert_eq!(selector.include(), Some(&name("order-producers")));
         assert_eq!(
-            selector.clone().including(name("Order consumers")).include(),
-            Some(&name("Order consumers"))
+            selector.clone().including(name("order-consumers")).include(),
+            Some(&name("order-consumers"))
         );
         assert_eq!(selector.not_including().include(), None);
     }
 
     #[test]
     fn a_selector_changes_one_part_at_a_time() {
-        let selector = Selector::new(name("Order producers"), order_producers()).including(name("Producers"));
-
-        let renamed = selector.clone().renamed(name("Order writers"));
-        assert_eq!(renamed.name(), "Order writers");
-        assert_eq!(renamed.include(), selector.include());
-        assert_eq!(renamed.conditions(), selector.conditions());
+        let selector = Selector::new(name("order-producers"), order_producers()).including(name("producers"));
 
         let emptied = selector.clone().with_conditions(Conditions::new());
         assert_eq!(emptied.name(), selector.name());
@@ -226,12 +233,29 @@ mod tests {
 
     #[test]
     fn a_reference_is_a_name_or_inline_conditions() {
-        let named = SelectorRef::from(name("Order producers"));
+        let named = SelectorRef::from(name("order-producers"));
         let inline = SelectorRef::from(order_producers());
 
-        assert_eq!(named, SelectorRef::Named(name("Order producers")));
-        assert_eq!(named.name(), Some(&name("Order producers")));
+        assert_eq!(named, SelectorRef::Named(name("order-producers")));
+        assert_eq!(named.name(), Some(&name("order-producers")));
         assert_eq!(inline, SelectorRef::Inline(order_producers()));
         assert_eq!(inline.name(), None);
+    }
+
+    #[test]
+    fn a_selector_has_a_title_when_someone_gives_it_one() {
+        let title = |text: &str| text.parse::<SelectorTitle>().unwrap();
+        let selector = Selector::new(name("order-producers"), order_producers());
+        let titled = selector.clone().with_title(title("Order producers"));
+
+        assert_eq!(selector.title(), None);
+        assert_eq!(titled.title(), Some(&title("Order producers")));
+        assert_eq!(titled.name(), selector.name());
+        assert_eq!(titled.conditions(), selector.conditions());
+        assert_eq!(
+            titled.clone().with_title(title("Whoever produces orders")).title(),
+            Some(&title("Whoever produces orders"))
+        );
+        assert_eq!(titled.without_title(), selector);
     }
 }

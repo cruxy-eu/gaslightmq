@@ -146,7 +146,8 @@ A pattern works on every field: `api matches *Group*` matches `JoinGroup` and `S
 A selector is a named set of conditions.
 
 ```yaml
-name: Order producers
+name: order-producers
+title: Order producers
 match:
   api: Produce
   topic: "orders.*"
@@ -179,14 +180,16 @@ An included selector can test a field that the selector tests too, and both cond
 Selectors cannot include each other in a circle.
 
 ```yaml
-name: Order producers from ingest
-include: Order producers
+name: order-producers-from-ingest
+include: order-producers
 match:
   client.id: order-ingest
 ```
 
 Things reference selectors by name.
-Renaming a selector updates every reference to it.
+The name of a selector is a slug, and a selector can have a title.
+Both follow the rules for the [name](rules.md#names) and the [title](rules.md#titles) of a rule.
+A selector keeps its name: whoever wants another name makes a new selector, and points the references at it.
 
 ### Building selectors from traffic
 

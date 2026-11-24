@@ -1,4 +1,5 @@
-- name: Order acknowledgements get lost
+- name: order-acknowledgements-get-lost
+  title: Order acknowledgements get lost
   selector:
     api: Produce
     topic: "orders.*"

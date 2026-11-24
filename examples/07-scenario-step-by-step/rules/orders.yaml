@@ -1,5 +1,6 @@
-- name: Refuse with NOT_LEADER
-  selector: Order fetches
+- name: refuse-with-not-leader
+  title: Refuse with NOT_LEADER
+  selector: order-fetches
   action:
     lie: refusal
     error: NOT_LEADER_OR_FOLLOWER

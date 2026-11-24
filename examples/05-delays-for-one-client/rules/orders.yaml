@@ -1,5 +1,6 @@
-- name: Order fetches are slow for analytics
-  selector: Order fetches
+- name: order-fetches-are-slow-for-analytics
+  title: Order fetches are slow for analytics
+  selector: order-fetches
   scope:
     client.id: analytics-etl       # only this client
-  action: Delay 1 s
+  action: delay-1s

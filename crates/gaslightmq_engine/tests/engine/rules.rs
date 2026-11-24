@@ -33,7 +33,7 @@ async fn a_snapshot_published_while_a_call_is_in_flight_only_affects_the_next_ca
     });
     proxy.backend().calls_taken(1).await?;
     proxy.arm(&Rule::new(
-        "Refuse the answer".parse()?,
+        "refuse-the-answer".parse()?,
         Conditions::from(Condition::is(ApiKey::PRODUCE)),
         RefusalLie::new(ErrorCode::NOT_LEADER_OR_FOLLOWER).at(Stage::AfterResponse),
     ))?;
@@ -61,7 +61,7 @@ async fn a_rule_that_is_armed_reaches_the_sessions_that_are_open() -> anyhow::Re
     early.send(orders.as_str(), partition, &placed).await?;
 
     let flap = proxy.arm(&Rule::new(
-        "Leader flap".parse()?,
+        "leader-flap".parse()?,
         Conditions::from(Condition::is(ApiKey::PRODUCE)),
         RefusalLie::new(ErrorCode::NOT_LEADER_OR_FOLLOWER),
     ))?;
@@ -90,12 +90,12 @@ async fn a_rule_that_is_armed_reaches_the_sessions_that_are_open() -> anyhow::Re
 async fn the_rule_that_was_armed_last_wins_a_conflict() -> anyhow::Result<()> {
     let proxy = EngineUnderTest::start(ScriptedBackend::with_three_brokers()).await?;
     proxy.arm(&Rule::new(
-        "Leader flap".parse()?,
+        "leader-flap".parse()?,
         Conditions::from(Condition::is(ApiKey::PRODUCE)),
         RefusalLie::new(ErrorCode::NOT_LEADER_OR_FOLLOWER),
     ))?;
     proxy.arm(&Rule::new(
-        "Time out".parse()?,
+        "time-out".parse()?,
         Conditions::from(Condition::is(ApiKey::PRODUCE)),
         RefusalLie::new(ErrorCode::REQUEST_TIMED_OUT),
     ))?;
@@ -108,7 +108,7 @@ async fn the_rule_that_was_armed_last_wins_a_conflict() -> anyhow::Result<()> {
         .await;
 
     let armed = proxy.armed_rules();
-    assert_eq!(armed, ["Time out".parse::<RuleName>()?, "Leader flap".parse()?]);
+    assert_eq!(armed, ["time-out".parse::<RuleName>()?, "leader-flap".parse()?]);
     // The broker's `REQUEST_TIMED_OUT` is the lie of the rule, and no client that waited in vain.
     assert_eq!(
         written,
@@ -123,7 +123,7 @@ async fn the_rule_that_was_armed_last_wins_a_conflict() -> anyhow::Result<()> {
 async fn a_rule_is_disarmed_after_the_call_that_spent_its_last_firing() -> anyhow::Result<()> {
     let mut proxy = EngineUnderTest::start(ScriptedBackend::with_three_brokers()).await?;
     let once = Rule::new(
-        "Leader flap".parse()?,
+        "leader-flap".parse()?,
         Conditions::from(Condition::is(ApiKey::PRODUCE)),
         RefusalLie::new(ErrorCode::NOT_LEADER_OR_FOLLOWER),
     )
@@ -160,7 +160,7 @@ async fn a_rule_is_disarmed_after_the_call_that_spent_its_last_firing() -> anyho
 async fn a_rule_is_disarmed_when_the_clock_reaches_the_end_of_its_lifetime() -> anyhow::Result<()> {
     let proxy = EngineUnderTest::start(ScriptedBackend::with_three_brokers()).await?;
     let short = Rule::new(
-        "Leader flap".parse()?,
+        "leader-flap".parse()?,
         Conditions::from(Condition::is(ApiKey::PRODUCE)),
         RefusalLie::new(ErrorCode::NOT_LEADER_OR_FOLLOWER),
     )

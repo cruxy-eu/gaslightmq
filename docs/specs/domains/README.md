@@ -51,11 +51,12 @@ Workspace, Environment, Secret and Scratch file belong to [storage](../architect
 | **Live rule** | A rule that only exists in the engine's memory, until someone keeps it. |
 | **Live set** | Rules armed by hand on top of the active scenario. Live rules win conflicts with scenario rules. |
 | **Mode** | How a scenario resolves conflicts: Live (most recently armed), Chain (order) or Sequence (order, with steps). |
+| **Name** | The identity of a definition: a slug, unique within its kind. Every reference uses it, and it never changes. |
 | **Overlay** | The Upstream backend's layer over the real cluster: address translation and emulated incidents. Part of the truth. |
 | **Pad layout** | A grid that maps rows to selectors, columns to presets and layers to scopes. |
 | **Pre-empted** | A lie that fired but had nothing left to change, because another lie ended the call or replaced its target. |
 | **Proxy** | The instance that stands in front of a cluster or a broker. It runs sessions, rules and scenarios, and it is the only place where lies happen. |
-| **Preset** | A named, reusable lie or incident with its parameters, such as "Delay 1 s". |
+| **Preset** | A named, reusable lie or incident with its parameters, such as `delay-1s`. |
 | **Priority** | Where a rule stands among the armed rules. When two lies conflict, the lie of the rule with the higher priority wins. |
 | **Recording** | A captured stretch of calls across sessions. |
 | **Rule** | A named selector, action and trigger, with a lifetime. |
@@ -70,6 +71,7 @@ Workspace, Environment, Secret and Scratch file belong to [storage](../architect
 | **Session** | The runtime of one client connection: its transport and its pipeline. |
 | **Step** | One part of a Sequence scenario. It arms rules and ends on a condition. |
 | **Template** | A file that describes one record of a topic, with placeholders the broker fills per partition and offset. |
+| **Title** | What a definition is for, in free text. Optional, and nothing references it. |
 | **Target** | The part of a call a lie changes: the partitions the selector matched, or the whole call. |
 | **Trigger** | What decides that a rule fires: chance, count, time or manual. |
 | **Truth** | What the backend answers when no lie applies. On the proxy, that includes the overlay. |

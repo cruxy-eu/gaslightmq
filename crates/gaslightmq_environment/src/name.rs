@@ -15,7 +15,7 @@ mod tests {
 
     #[test]
     fn a_name_keeps_its_text() {
-        for text in ["staging-proxy", "x", "Ünïcode ✓", "orders sim", "shop (EU)"] {
+        for text in ["staging-proxy", "x", "7", "orders-sim", "shop-eu-2"] {
             let name = EnvironmentName::new(text).unwrap();
             assert_eq!(name.as_str(), text);
             assert_eq!(name.to_string(), text);
@@ -30,33 +30,44 @@ mod tests {
     #[test]
     fn a_name_that_breaks_the_rule_is_an_error() {
         let input = |text: &str| text.to_owned();
+        let long = "a".repeat(EnvironmentName::MAX_LENGTH + 1);
 
         assert_eq!(EnvironmentName::new(""), Err(EnvironmentNameError::Empty));
         assert_eq!(
-            EnvironmentName::new(" shop"),
-            Err(EnvironmentNameError::SurroundingWhiteSpace { input: input(" shop") })
-        );
-        assert_eq!(
-            EnvironmentName::new("shop\n"),
-            Err(EnvironmentNameError::SurroundingWhiteSpace { input: input("shop\n") })
-        );
-        assert_eq!(
-            EnvironmentName::new("orders\tsim"),
-            Err(EnvironmentNameError::ControlCharacter {
-                input: input("orders\tsim")
+            EnvironmentName::new("Staging"),
+            Err(EnvironmentNameError::InvalidCharacter {
+                input: input("Staging"),
+                character: 'S',
+                position: 0
             })
         );
         assert_eq!(
-            EnvironmentName::new("orders\u{200b}sim"),
-            Err(EnvironmentNameError::FormatCharacter {
-                input: input("orders\u{200b}sim")
+            EnvironmentName::new("orders sim"),
+            Err(EnvironmentNameError::InvalidCharacter {
+                input: input("orders sim"),
+                character: ' ',
+                position: 6
             })
         );
         assert_eq!(
-            WorldName::new("\u{feff}shop"),
-            Err(WorldNameError::FormatCharacter {
-                input: input("\u{feff}shop")
+            EnvironmentName::new("shop-"),
+            Err(EnvironmentNameError::SurroundingHyphen { input: input("shop-") })
+        );
+        assert_eq!(
+            EnvironmentName::new(&long),
+            Err(EnvironmentNameError::TooLong { length: 64 })
+        );
+        assert_eq!(
+            WorldName::new("shop (EU)"),
+            Err(WorldNameError::InvalidCharacter {
+                input: input("shop (EU)"),
+                character: ' ',
+                position: 4
             })
+        );
+        assert_eq!(
+            WorldName::new("-shop"),
+            Err(WorldNameError::SurroundingHyphen { input: input("-shop") })
         );
     }
 
@@ -64,20 +75,18 @@ mod tests {
     fn the_error_says_whose_name_breaks_which_part_of_the_rule() {
         let environment = |text: &str| EnvironmentName::new(text).unwrap_err().to_string();
         let world = |text: &str| WorldName::new(text).unwrap_err().to_string();
+        let long = "a".repeat(WorldName::MAX_LENGTH + 1);
 
         assert_eq!(environment(""), "environment name \"\" is empty");
         assert_eq!(
-            environment("shop "),
-            "environment name \"shop \" starts or ends with white space"
+            environment("Staging"),
+            "environment name \"Staging\" holds 'S' at position 0, which is no lowercase letter, digit or hyphen"
         );
         assert_eq!(
-            environment("orders\nsim"),
-            "environment name \"orders\\nsim\" holds a control character"
+            environment("shop-"),
+            "environment name \"shop-\" starts or ends with a hyphen"
         );
-        assert_eq!(
-            world("orders\u{2060}sim"),
-            "world name \"orders\\u{2060}sim\" holds a format character"
-        );
+        assert_eq!(world(&long), "world name of 64 characters is longer than 63 characters");
         assert_eq!(world(""), "world name \"\" is empty");
     }
 
@@ -88,14 +97,6 @@ mod tests {
             "EnvironmentName(\"shop\")"
         );
         assert_eq!(format!("{:?}", WorldName::new("shop").unwrap()), "WorldName(\"shop\")");
-    }
-
-    #[test]
-    fn a_name_is_exact() {
-        assert_ne!(
-            EnvironmentName::new("Staging").unwrap(),
-            EnvironmentName::new("staging").unwrap()
-        );
     }
 
     #[test]

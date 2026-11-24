@@ -134,12 +134,16 @@ The message after it comes from the type of the value, which knows nothing about
 
 - Every definition has a name, unique within its kind.
   A selector and a rule can share a name, because every reference says which kind it means.
-- Definitions reference each other by name.
-- File names derive from names, but the name inside the file is authoritative.
-- Renaming in the UI rewrites every reference in the workspace in one change.
-- Renaming a rule also writes its old name as the rule's `dice` key,
-  so the rule keeps hitting the same calls.
-  See [dice](../domains/rules.md#dice).
+- A name is a slug, and it is the identity of its definition.
+  See [names](../domains/rules.md#names).
+- Definitions reference each other by name, and by nothing else.
+- A file that holds one definition carries the name of that definition: `scenarios/leader-election.yaml`.
+  The name inside the file is authoritative.
+- A definition can have a `title`, which is free text.
+  See [titles](../domains/rules.md#titles).
+- Nothing renames a definition, so no change rewrites references.
+  A definition under another name is a new definition.
+  A reference to a name that no definition has is an error, as on every [validation](#validation).
 
 ### What files do not hold
 
@@ -235,8 +239,9 @@ broker:
     advertise: localhost
 ```
 
-The name of an environment follows the same rule as the [name of a rule](../domains/rules.md#rule),
+The name of an environment follows the same rule as the [name of a rule](../domains/rules.md#names),
 and so does the name of the world that a broker names.
+An environment can have a `title`, which follows the rule for the [title of a rule](../domains/rules.md#titles).
 
 An environment has one of these three shapes.
 A proxy stands in front of its `upstream` or in front of the broker of its environment, and never in front of both.

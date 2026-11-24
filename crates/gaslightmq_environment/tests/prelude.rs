@@ -45,6 +45,7 @@ mod next_to_the_others {
     /// One value of every type of the prelude, each named without a path.
     pub fn every_item() -> Vec<String> {
         let name: EnvironmentName = EnvironmentName::new("staging-proxy").unwrap();
+        let title: EnvironmentTitle = EnvironmentTitle::new("The proxy in front of staging").unwrap();
         let world: WorldName = WorldName::new("orders-sim").unwrap();
         let host: HostName = HostName::new("gaslight.staging").unwrap();
         let bootstrap: ServerAddress = ServerAddress::new(HostName::new("kafka-1.staging").unwrap(), 9092).unwrap();
@@ -82,6 +83,7 @@ mod next_to_the_others {
 
         vec![
             name.to_string(),
+            title.to_string(),
             world.to_string(),
             host.to_string(),
             bootstrap.to_string(),
@@ -125,6 +127,7 @@ mod next_to_the_others {
         let name: EnvironmentName = "shop".parse().unwrap();
         vec![
             message_of(EnvironmentNameError::Empty),
+            message_of(EnvironmentTitleError::Empty),
             message_of(WorldNameError::Empty),
             message_of(HostNameError::Empty),
             message_of(ServerAddressError::InvalidHost {
@@ -170,7 +173,7 @@ mod next_to_the_others {
 fn the_prelude_names_every_item_next_to_the_other_preludes() {
     let items = next_to_the_others::every_item();
 
-    assert_eq!(items.len(), 28);
+    assert_eq!(items.len(), 29);
     assert!(items.iter().all(|item| !item.is_empty()));
 }
 
@@ -180,6 +183,7 @@ fn the_prelude_names_the_error_of_every_type() {
         next_to_the_others::every_error(),
         [
             "environment name \"\" is empty",
+            "environment title \"\" is empty",
             "world name \"\" is empty",
             "host name \"\" is empty",
             "server address \":9092\": host name \"\" is empty",

@@ -49,11 +49,11 @@ mod next_to_std_and_every_neighbour {
         let silence = gaslightmq_lie::LieDefinition::Silence.on(gaslightmq_field::Target::Call);
         let lost = LostTarget::new(
             gaslightmq_field::Target::Call,
-            RecordedRuleName::new("Blackhole").expect("a name"),
+            RecordedRuleName::new("blackhole").expect("a name"),
         );
         let fate = LieFate::all_applied(silence.clone());
         let line = RuleExplanation::lied(
-            RecordedRuleName::new("Blackhole").expect("a name"),
+            RecordedRuleName::new("blackhole").expect("a name"),
             gaslightmq_lie::Priority::HIGHEST,
             gaslightmq_field::Target::Call,
             fired(),
@@ -148,9 +148,9 @@ fn the_prelude_names_every_type_next_to_std_and_every_neighbour() {
             "rolled 0.0001% under 0.0002%",
             "window open 0s after arming",
             "1 of 1 left",
-            "by Blackhole",
+            "by blackhole",
             "silence applied",
-            "Blackhole: matched the call; match 1: fired; silence applied",
+            "blackhole: matched the call; match 1: fired; silence applied",
             "the frame ends early",
         ]
     );
