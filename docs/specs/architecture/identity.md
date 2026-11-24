@@ -1,46 +1,45 @@
-# Identity: names, titles and IDs
+# Identity: names and IDs
 
 This document lists everything GaslightMQ identifies,
 and how it identifies each one.
 
-## Three kinds of identifier
+GaslightMQ knows two types of things:
 
-| Identifier | Example | Who gives it | What it is for |
+| Type | What it is | Examples | Identified by |
 |---|---|---|---|
-| **Name** | `order-producers` | The user | The identity of a definition between domains. Files, the control plane, ⌘K and explanations refer to a definition by its name. |
-| **Title** | `Order producers` | The user, optionally | A readable label in the UI. Nothing refers to a title. |
-| **UUID** | `0193b6c2-…` | GaslightMQ | The identity of a definition inside the workspace. It lets the workspace track and store definitions without one overwriting another. |
+| **User-defined** | What a user writes: in a workspace file, in the UI or with ⌘K. | A selector, a preset, a rule | A name and a UUID |
+| **Recorded** | What GaslightMQ observes while it runs. Nobody defines it. | A call, a session | An ID of its own |
 
-Things that nobody defines and that have no name, such as a call, have an ID of their own.
-See [runtime things](#runtime-things).
+## User-defined things
 
-## Definitions
+A user-defined thing is a definition.
+It has a name and a UUID, and it can have a title.
 
-A definition is what a user writes: in a workspace file, in the UI or with ⌘K.
-Every definition has a name, an optional title and a UUID.
-
-| Kind | Name | Title | UUID |
+| Kind | Name | UUID | Title |
 |---|---|---|---|
-| Selector | `SelectorName` | `SelectorTitle` | `SelectorUuid` |
-| Preset | `PresetName` | `PresetTitle` | `PresetUuid` |
-| Rule, in the workspace or live | `RuleName` | `RuleTitle` | `RuleUuid` |
-| Scenario | `ScenarioName` | `ScenarioTitle` | `ScenarioUuid` |
-| Pad layout | `LayoutName` | `LayoutTitle` | `LayoutUuid` |
-| Environment | `EnvironmentName` | `EnvironmentTitle` | `EnvironmentUuid` |
-| World | `WorldName` | `WorldTitle` | `WorldUuid` |
+| Selector | `SelectorName` | `SelectorUuid` | `SelectorTitle` |
+| Preset | `PresetName` | `PresetUuid` | `PresetTitle` |
+| Rule, in the workspace or live | `RuleName` | `RuleUuid` | `RuleTitle` |
+| Scenario | `ScenarioName` | `ScenarioUuid` | `ScenarioTitle` |
+| Pad layout | `LayoutName` | `LayoutUuid` | `LayoutTitle` |
+| Environment | `EnvironmentName` | `EnvironmentUuid` | `EnvironmentTitle` |
+| World | `WorldName` | `WorldUuid` | `WorldTitle` |
 
-Each kind has a type of its own for each identifier,
+Each kind has a type of its own for each of them,
 so the name of a selector never stands where the name of a rule belongs.
 
 ```yaml
 name: slow-order-producers
-title: Slow down order producers
 uuid: 0193b6c2-5f3e-7a41-9c2d-8e4b1f6a7d10
+title: Slow down order producers
 selector: order-producers
 action: delay-1s
 ```
 
 ### Name
+
+The name is the identity of a definition between domains.
+Files, the control plane, ⌘K and explanations refer to a definition by its name.
 
 A name is a slug, like the name of a Kubernetes object.
 
@@ -51,34 +50,36 @@ A name is a slug, like the name of a Kubernetes object.
   A selector and a rule can share a name, because every reference says which kind it means.
 
 A name is a name and nothing else.
-It carries no title and no UUID.
+
+### UUID
+
+The UUID is the identity of a definition inside the workspace.
+It lets the workspace track and store definitions without one overwriting another.
+
+A UUID is a UUID v7, so UUIDs sort in the order the definitions were created.
+
+- GaslightMQ gives a definition its UUID when someone creates it, in the workspace or as a live rule.
+  Nobody writes a UUID by hand.
+- The UUID is stored in the definition's file.
+  A live rule keeps it in memory, and in its file once someone keeps it.
+  A file without a UUID gets one when the workspace first loads it.
+- Two definitions with the same UUID make the workspace invalid.
+  That happens when someone copies a file.
 
 ### Title
 
-A title is optional.
-It belongs to the definition itself, next to its name.
+A title is no identifier.
+It is an optional, readable label of the definition itself, and nothing refers to it.
+The UI shows the title when a definition has one, and the name otherwise.
 
 - It has at least 1 and at most 2000 characters.
 - It does not start or end with white space.
 - It holds no control character, such as a line break,
   and no format character, such as a zero-width space.
 
-The UI shows the title when a definition has one, and the name otherwise.
+### References
 
-### UUID
-
-A UUID is a UUID v7, so UUIDs sort in the order the definitions were created.
-
-- GaslightMQ gives a definition its UUID when someone creates it, in the workspace or as a live rule.
-  Nobody writes a UUID by hand.
-- The UUID is stored in the definition's file. A live rule keeps it in memory, and in its file once someone keeps it.
-  A file without a UUID gets one when the workspace first loads it.
-- Two definitions with the same UUID make the workspace invalid.
-  That happens when someone copies a file.
-
-## References
-
-Domains refer to each other by name:
+Domains refer to definitions by name:
 
 - a rule refers to its selector and its preset,
 - the explanation of a call refers to the rules that touched it,
@@ -92,16 +93,19 @@ Creating a definition never overwrites another one:
 - creating fails when the name is already taken within its kind,
 - updating fails when no definition has that name.
 
-## Runtime things
+A pad has no identity of its own.
+It is a position in a pad layout: its layer, row and column.
+See [a pad is a position, not a rule](../domains/control-surfaces.md#a-pad-is-a-position-not-a-rule).
 
-These things exist while GaslightMQ runs, and nobody defines them.
-They have no name, no title and no UUID.
+## Recorded things
+
+A recorded thing exists because GaslightMQ observed it.
+It has no name, no UUID and no title.
 
 | Thing | Identified by | Lives as long as |
 |---|---|---|
 | Call | `CallId`, a number | Its environment's run, and every recording that holds it. |
 | Session | Its connection number | Its connection. A client that reconnects gets a new session and a new number. |
-| Pad | Its position: layout, layer, row and column | Its layout. A pad is [a position, not a rule](../domains/control-surfaces.md#a-pad-is-a-position-not-a-rule). |
 
 ### Call ID
 
@@ -113,8 +117,16 @@ A call also keeps the number of its connection,
 which says which connection it came on.
 That number is no part of the call's identity.
 
-A call ID is unique within one run of an environment.
-Within a recording, it is unique too.
+A call ID is unique within one run of an environment,
+and within a recording.
+
+### What a recorded thing says about a definition
+
+A recorded thing can refer to a definition, such as the rules in the explanation of a call.
+It keeps the definition's name as it was at that moment: a `RecordedRuleName`.
+
+A recorded name follows the rule for names,
+but nothing promises that a definition with that name still exists.
 
 ## Not decided yet
 
