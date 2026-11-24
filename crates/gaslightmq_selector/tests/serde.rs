@@ -564,7 +564,7 @@ fn a_selector_writes_its_title_when_it_has_one() {
     );
     writes(
         &"Order producers".parse::<SelectorTitle>().unwrap(),
-        r#""order-producers""#,
+        r#""Order producers""#,
     );
 }
 
