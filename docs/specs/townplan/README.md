@@ -9,7 +9,7 @@ Districts talk to each other through narrow, named contracts.
 ```mermaid
 flowchart TB
   subgraph surfaces["Control surfaces"]
-    CS["Rules list · Clients board · ⌘K · Pad grid · Push · Capture"]
+    CS["Rules list · Clients board · ⌘K · Pad grid · Capture"]
   end
 
   subgraph core["Core"]
