@@ -77,14 +77,14 @@ async fn an_engine_does_not_start_when_the_listeners_do_not_hold_the_brokers() -
 async fn stopping_an_engine_ends_its_sessions_and_frees_its_addresses() -> anyhow::Result<()> {
     let proxy = EngineUnderTest::start(ScriptedBackend::with_three_brokers()).await?;
     let mut events = proxy.engine().live_events();
-    let mut client = proxy.socket_on(Endpoint::Bootstrap).await?;
+    let client = RawKafkaClient::new(proxy.address_of(Endpoint::Bootstrap)?);
     let metadata = client.send_metadata().await?;
-    client.receive_answer_to(&metadata).await?;
+    EngineUnderTest::soon(client.receive_response(&metadata)).await??;
     let address = proxy.address_of(Endpoint::Bootstrap)?;
 
     proxy.stop().await;
 
-    client.wait_until_closed().await?;
+    assert_eq!(EngineUnderTest::soon(client.closed()).await?, Ok(()));
     assert!(TcpStream::connect(address).await.is_err());
     // A listener of the events gets what the engine kept, and then hears that it stopped.
     assert!(matches!(events.next().await, Ok(EngineEvent::CallRecorded(_))));
@@ -140,7 +140,7 @@ async fn an_engine_stops_also_when_its_backend_never_lets_go_of_a_connection() -
     let mut configuration = EngineUnderTest::configuration()?;
     configuration.stop_timeout = stop_timeout;
     let proxy = EngineUnderTest::start_with(configuration, ScriptedBackend::with_three_brokers()).await?;
-    let member = proxy.client_on(Endpoint::Bootstrap)?;
+    let member = RawKafkaClient::new(proxy.address_of(Endpoint::Bootstrap)?);
     let group: GroupId = "analytics-etl".parse()?;
     assert_eq!(member.heartbeat(group.as_str()).await, Ok(()));
     // The client leaves, and the backend hears that its connection ended, and never lets go of it:
@@ -166,11 +166,11 @@ async fn an_engine_stops_also_when_its_backend_never_lets_go_of_a_connection() -
 #[tokio::test]
 async fn an_engine_that_someone_lets_go_of_stops_too() -> anyhow::Result<()> {
     let proxy = EngineUnderTest::start(ScriptedBackend::with_three_brokers()).await?;
-    let mut client = proxy.socket_on(Endpoint::Bootstrap).await?;
+    let client = RawKafkaClient::connect(proxy.address_of(Endpoint::Bootstrap)?).await?;
 
     drop(proxy);
 
-    client.wait_until_closed().await?;
+    assert_eq!(EngineUnderTest::soon(client.closed()).await?, Ok(()));
     Ok(())
 }
 
@@ -180,7 +180,7 @@ async fn the_sessions_of_one_client_share_what_they_learned_until_the_context_li
     configuration.client_context_linger = TimeSpan::from_secs(30);
     let proxy = EngineUnderTest::start_with(configuration, ScriptedBackend::with_three_brokers()).await?;
     let contexts = proxy.engine().shared_by_sessions().contexts().clone();
-    let member = proxy.client_on(Endpoint::Bootstrap)?;
+    let member = RawKafkaClient::new(proxy.address_of(Endpoint::Bootstrap)?);
     let group: GroupId = "analytics-etl".parse()?;
     assert_eq!(member.heartbeat(group.as_str()).await, Ok(()));
     assert_eq!(contexts.len(), 1);

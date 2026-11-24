@@ -5,14 +5,14 @@ use std::net::SocketAddr;
 use std::sync::atomic::{AtomicI32, Ordering};
 
 use futures::StreamExt;
-use gaslightmq_kernel::MemberId;
+use gaslightmq_kernel::{ClientId, GroupId, MemberId, TopicPartition};
 use gaslightmq_wire::messages::fetch_request::{FetchPartition, FetchTopic};
 use gaslightmq_wire::messages::produce_request::{PartitionProduceData, TopicProduceData};
 use gaslightmq_wire::messages::{
     ApiVersionsRequest, ApiVersionsResponse, CreateTopicsRequest, CreateTopicsResponse, DeleteTopicsRequest,
-    DeleteTopicsResponse, FetchRequest, FetchResponse, FindCoordinatorRequest, FindCoordinatorResponse, GroupId,
+    DeleteTopicsResponse, FetchRequest, FetchResponse, FindCoordinatorRequest, FindCoordinatorResponse,
     HeartbeatRequest, JoinGroupRequest, ListOffsetsRequest, ListOffsetsResponse, MetadataRequest, MetadataResponse,
-    ProduceRequest, ProduceResponse, SyncGroupRequest, TopicName,
+    ProduceRequest, ProduceResponse, SyncGroupRequest,
 };
 use gaslightmq_wire::protocol::{Request as KafkaRequest, StrBytes};
 use gaslightmq_wire::{Frame, FrameDecoder, Offset, Partition, Record, RecordBatch, Request, Response};
@@ -23,13 +23,39 @@ use tokio::sync::Mutex;
 use crate::application::{JoinGroupResult, ProduceResult, Producer, ProtocolConsumer, RecordStream};
 use crate::{
     ApiVersions, ClientError, CreateTopics, DeleteTopics, Fetch, FindCoordinator, ListOffsets, Metadata, Produce,
+    RawClientConfiguration,
 };
+
+/// The version at which the client sends the requests of each API. The Kafka protocol numbers them.
+mod version {
+    pub const API_VERSIONS: i16 = 0;
+    pub const CREATE_TOPICS: i16 = 2;
+    pub const DELETE_TOPICS: i16 = 1;
+    pub const FETCH: i16 = 4;
+    pub const FIND_COORDINATOR: i16 = 0;
+    pub const HEARTBEAT: i16 = 0;
+    pub const JOIN_GROUP: i16 = 0;
+    pub const LIST_OFFSETS: i16 = 1;
+    pub const METADATA: i16 = 1;
+    pub const PRODUCE: i16 = 3;
+    pub const SYNC_GROUP: i16 = 0;
+}
+
+/// The `acks` of a Produce that every in-sync replica has before the broker answers.
+const ACKS_OF_EVERY_REPLICA: i16 = -1;
+
+/// The `acks` of a Produce that the broker does not answer.
+const NO_ACKS: i16 = 0;
+
+/// The correlation ID of a request that is the only one on its connection.
+const FIRST_CORRELATION_ID: i32 = 0;
 
 /// Sends each request as it is given, to one address, at a fixed version.
 ///
 /// It follows no leaders, negotiates no versions and retries nothing, so a
 /// test sees exactly what one request gets back.
-/// It waits for a response as long as the response takes: a test that expects none bounds the wait itself.
+/// It waits as long as the other side takes, for a response and for the end of the connection alike:
+/// a test that expects neither bounds the wait itself.
 ///
 /// # Error codes
 ///
@@ -46,7 +72,7 @@ use crate::{
 /// | [`ClientError::UnwritableRequest`] | The request does not encode at its version. |
 /// | [`ClientError::Unreachable`] | No connection to the address opens. |
 /// | [`ClientError::ConnectionLost`] | The connection ends before the response arrived. The next request opens a new one. |
-/// | [`ClientError::UnreadableAnswer`] | What arrives is no response, answers another request, or does not hold what was asked for. |
+/// | [`ClientError::UnreadableAnswer`] | What arrives is no response, answers another request, or does not hold what was asked for. Or it arrives where the client waits for the end of the connection. |
 ///
 /// # A request without its response
 ///
@@ -70,8 +96,36 @@ use crate::{
 /// A broker answers the requests of a connection in the order they arrived in.
 /// The client reads one response at a time, so the responses are received in the order of their requests,
 /// and before any other method of the client, which waits for the response to its own request.
+///
+/// # What no Kafka client does
+///
+/// A test of a proxy or of a broker also asks how the other side treats a client that misbehaves, or that only waits.
+///
+/// | The client | With |
+/// |---|---|
+/// | Opens its connection before it has a request to send. | [`connect`](Self::connect) |
+/// | Sends a request, and goes on without its response. | [`send_request`](Self::send_request), [`send_heartbeat`](Self::send_heartbeat), [`send_metadata`](Self::send_metadata) |
+/// | Sends records, and asks for no response. | [`send_unacknowledged`](Self::send_unacknowledged) |
+/// | Sends bytes that are no request. | [`send_bytes`](Self::send_bytes) |
+/// | Watches the other side close the connection. | [`closed`](Self::closed) |
+///
+/// ```no_run
+/// # use std::net::SocketAddr;
+/// # use gaslightmq_kafka_client_api::{ClientError, RawKafkaClient};
+/// # use gaslightmq_wire::Frame;
+/// # async fn a_frame_of_no_bytes(proxy: SocketAddr) -> Result<(), ClientError> {
+/// let client = RawKafkaClient::connect(proxy).await?;
+///
+/// // The start of a frame that holds no bytes, which is no request.
+/// client.send_bytes(&Frame::length_prefix(0)).await?;
+///
+/// // The proxy sends nothing back, and closes the connection.
+/// client.closed().await?;
+/// # Ok(())
+/// # }
+/// ```
 pub struct RawKafkaClient {
-    addr: SocketAddr,
+    configuration: RawClientConfiguration,
     connection: Mutex<Connection>,
     correlation_id: AtomicI32,
 }
@@ -89,6 +143,8 @@ pub struct SentRequest<R> {
 struct Socket {
     stream: TcpStream,
     frames: FrameDecoder,
+    /// Whether the other side closed the stream. This side of it stays open until the socket is dropped.
+    ended: bool,
 }
 
 impl Socket {
@@ -99,14 +155,12 @@ impl Socket {
         Ok(Self {
             stream,
             frames: FrameDecoder::new(),
+            ended: false,
         })
     }
 
-    async fn send(&mut self, request: &Request) -> Result<(), ClientError> {
-        self.stream
-            .write_all(&request.frame().to_bytes())
-            .await
-            .map_err(ClientError::connection_lost)
+    async fn send(&mut self, bytes: &[u8]) -> Result<(), ClientError> {
+        self.stream.write_all(bytes).await.map_err(ClientError::connection_lost)
     }
 
     /// The next frame that arrives.
@@ -125,12 +179,34 @@ impl Socket {
             }
         }
     }
+
+    /// Waits until the other side closes the stream, which has to be the next thing it does.
+    ///
+    /// Bytes that arrive instead stay with the socket, for the frame they belong to.
+    async fn closed(&mut self) -> Result<(), ClientError> {
+        if self.ended {
+            return Ok(());
+        }
+        if self.frames.buffered() == 0 {
+            // A stream that was reset is as closed as one that ended.
+            let read = self.stream.read_buf(self.frames.buffer_mut()).await;
+            if matches!(read, Ok(0) | Err(_)) {
+                self.ended = true;
+                return Ok(());
+            }
+        }
+        Err(ClientError::unreadable_answer(format_args!(
+            "{} bytes arrived where the end of the connection is next",
+            self.frames.buffered()
+        )))
+    }
 }
 
 /// The connection to one address.
 ///
-/// It opens when the first request needs it.
+/// It opens when the first request needs it, or when the client asks for it.
 /// A connection that fails closes, and the next request opens a new one.
+/// A connection that the client saw the other side close stays open on this side, until the next request opens a new one.
 struct Connection {
     addr: SocketAddr,
     socket: Option<Socket>,
@@ -142,13 +218,24 @@ impl Connection {
         Self { addr, socket: None }
     }
 
-    /// Send `request`, on a new socket when none is open.
-    async fn send(&mut self, request: &Request) -> Result<(), ClientError> {
+    /// Opens the connection, when it is not open.
+    async fn open(&mut self) -> Result<(), ClientError> {
+        if self.socket.is_none() {
+            self.socket = Some(Socket::connect(self.addr).await?);
+        }
+        Ok(())
+    }
+
+    /// Send `bytes`, on a new socket when none is open, and when the other side closed the one that is.
+    async fn send(&mut self, bytes: &[u8]) -> Result<(), ClientError> {
+        if self.socket.as_ref().is_some_and(|socket| socket.ended) {
+            self.socket = None;
+        }
         let socket = match self.socket.as_mut() {
             Some(socket) => socket,
             None => self.socket.insert(Socket::connect(self.addr).await?),
         };
-        let sent = socket.send(request).await;
+        let sent = socket.send(bytes).await;
         if sent.is_err() {
             self.socket = None;
         }
@@ -182,8 +269,17 @@ impl Connection {
 
     /// Send `request`, and wait for its response.
     async fn exchange(&mut self, request: &Request) -> Result<Response, ClientError> {
-        self.send(request).await?;
+        self.send(&request.frame().to_bytes()).await?;
         self.receive(request).await
+    }
+
+    /// Waits until the other side closes the connection, which has to be the next thing it does.
+    /// A connection that is not open has no end to wait for.
+    async fn closed(&mut self) -> Result<(), ClientError> {
+        match self.socket.as_mut() {
+            Some(socket) => socket.closed().await,
+            None => Ok(()),
+        }
     }
 }
 
@@ -194,16 +290,38 @@ impl From<SocketAddr> for RawKafkaClient {
 }
 
 impl RawKafkaClient {
-    pub fn new(addr: SocketAddr) -> Self {
+    /// A client with that configuration. An address alone is a configuration with Kafka's defaults.
+    ///
+    /// The client connects when it first sends.
+    pub fn new(configuration: impl Into<RawClientConfiguration>) -> Self {
+        let configuration = configuration.into();
         Self {
-            addr,
-            connection: Mutex::new(Connection::to(addr)),
+            connection: Mutex::new(Connection::to(configuration.address)),
+            configuration,
             correlation_id: AtomicI32::new(1),
         }
     }
 
+    /// A client with that configuration, whose connection is open.
+    ///
+    /// The other side has the connection before the client sends its first request, and also when it never sends one.
+    ///
+    /// # Errors
+    ///
+    /// [`ClientError::Unreachable`] when no connection opens.
+    pub async fn connect(configuration: impl Into<RawClientConfiguration>) -> Result<Self, ClientError> {
+        let client = Self::new(configuration);
+        client.connection.lock().await.open().await?;
+        Ok(client)
+    }
+
+    /// What the client is configured with.
+    pub fn configuration(&self) -> &RawClientConfiguration {
+        &self.configuration
+    }
+
     pub fn addr(&self) -> SocketAddr {
-        self.addr
+        self.configuration.address
     }
 
     /// Send `body` at `version`, and return without waiting for its response.
@@ -215,11 +333,60 @@ impl RawKafkaClient {
     /// and [`ClientError::ConnectionLost`] when the connection ends while the request goes out.
     pub async fn send_request<R: KafkaRequest>(&self, version: i16, body: &R) -> Result<SentRequest<R>, ClientError> {
         let request = self.next_request(version, body)?;
-        self.connection.lock().await.send(&request).await?;
+        self.send_bytes(&request.frame().to_bytes()).await?;
         Ok(SentRequest {
             request,
             body: PhantomData,
         })
+    }
+
+    /// Send a Heartbeat of a member of `group`, and return without waiting for its response.
+    ///
+    /// It is the request of [`heartbeat`](ProtocolConsumer::heartbeat), which waits for the response.
+    ///
+    /// # Errors
+    ///
+    /// As [`send_request`](Self::send_request).
+    pub async fn send_heartbeat(&self, group: &GroupId) -> Result<SentRequest<HeartbeatRequest>, ClientError> {
+        self.send_request(version::HEARTBEAT, &heartbeat_request(group.as_str()))
+            .await
+    }
+
+    /// Send a Metadata request for every topic, and return without waiting for its response.
+    ///
+    /// # Errors
+    ///
+    /// As [`send_request`](Self::send_request).
+    pub async fn send_metadata(&self) -> Result<SentRequest<MetadataRequest>, ClientError> {
+        self.send_request(version::METADATA, &MetadataRequest::default()).await
+    }
+
+    /// Write `records` to `partition`, and ask the broker for no response: Kafka's `acks=0`.
+    ///
+    /// The broker sends none, so there is no response to receive, and the next response on the connection
+    /// answers the next request.
+    /// [`send`](Producer::send) asks for a response, and waits for it.
+    ///
+    /// # Errors
+    ///
+    /// As [`send_request`](Self::send_request), and [`ClientError::UnwritableRequest`] when `records` do not encode.
+    pub async fn send_unacknowledged(&self, partition: &TopicPartition, records: &[Record]) -> Result<(), ClientError> {
+        let index = i32::from(partition.partition());
+        let request = produce_request(partition.topic().as_str(), index, records, NO_ACKS)?;
+        self.send_request(version::PRODUCE, &request).await?;
+        Ok(())
+    }
+
+    /// Send `bytes` as they are, whether they are a request or not.
+    ///
+    /// The client does not look at them: it counts no request, and waits for no response.
+    ///
+    /// # Errors
+    ///
+    /// [`ClientError::Unreachable`] when no connection opens,
+    /// and [`ClientError::ConnectionLost`] when the connection ends while the bytes go out.
+    pub async fn send_bytes(&self, bytes: &[u8]) -> Result<(), ClientError> {
+        self.connection.lock().await.send(bytes).await
     }
 
     /// Wait for the next response on the connection, which has to answer `sent`.
@@ -236,6 +403,26 @@ impl RawKafkaClient {
         response.body().map_err(ClientError::unreadable_answer)
     }
 
+    /// Wait until the other side closes the connection, which has to be the next thing it does.
+    ///
+    /// It returns once the connection ended, whether a request waits for its response or not.
+    /// The client keeps its own side of the connection open, as a client does that has not noticed yet:
+    /// that side closes when the client is dropped, and when its next request opens a new connection.
+    /// A client without an open connection has no end to wait for, so the call returns at once:
+    /// [`connect`](Self::connect) opens one without a request.
+    ///
+    /// While the connection stays open and nothing arrives, the call waits, and no other call of the client goes on.
+    /// Giving up on the wait loses nothing, and leaves the connection open.
+    ///
+    /// # Errors
+    ///
+    /// [`ClientError::UnreadableAnswer`] when bytes arrive on the connection instead.
+    /// They stay with the client, and the connection stays open:
+    /// [`receive_response`](Self::receive_response) still reads the response they hold.
+    pub async fn closed(&self) -> Result<(), ClientError> {
+        self.connection.lock().await.closed().await
+    }
+
     /// Send `body` at `version`, and wait for its response. No other request goes out in between.
     async fn request<R: KafkaRequest>(&self, version: i16, body: &R) -> Result<R::Response, ClientError> {
         let request = self.next_request(version, body)?;
@@ -246,13 +433,19 @@ impl RawKafkaClient {
     /// `body` at `version`, as the next request of the client.
     fn next_request<R: KafkaRequest>(&self, version: i16, body: &R) -> Result<Request, ClientError> {
         let correlation_id = self.correlation_id.fetch_add(1, Ordering::Relaxed);
-        Request::new(version, correlation_id, None, body).map_err(ClientError::unwritable_request)
+        let client_id = self.configuration.client_id.as_str();
+        Request::new(version, correlation_id, Some(client_id), body).map_err(ClientError::unwritable_request)
     }
 }
 
 /// One Fetch for one partition on a connection of its own.
-async fn fetch_once(addr: SocketAddr, request: &FetchRequest) -> Result<Vec<Record>, ClientError> {
-    let request = Request::new(4, 0, None, request).map_err(ClientError::unwritable_request)?;
+async fn fetch_once(
+    addr: SocketAddr,
+    client_id: &ClientId,
+    request: &FetchRequest,
+) -> Result<Vec<Record>, ClientError> {
+    let request = Request::new(version::FETCH, FIRST_CORRELATION_ID, Some(client_id.as_str()), request)
+        .map_err(ClientError::unwritable_request)?;
     let response = Connection::to(addr).exchange(&request).await?;
     records_of(&response.body().map_err(ClientError::unreadable_answer)?)
 }
@@ -264,7 +457,7 @@ fn fetch_request(topic: &str, partition: Partition, offset: i64, max_wait_ms: i3
         .with_max_bytes(1024 * 1024)
         .with_topics(vec![
             FetchTopic::default()
-                .with_topic(topic_name(topic))
+                .with_topic(text(topic).into())
                 .with_partitions(vec![
                     FetchPartition::default()
                         .with_partition(i32::from(partition))
@@ -303,59 +496,82 @@ fn accepted(error_code: i16) -> Result<(), ClientError> {
     ClientError::refusal(error_code).map_or(Ok(()), Err)
 }
 
-fn topic_name(topic: &str) -> TopicName {
-    TopicName(StrBytes::from_string(topic.to_string()))
+/// A Produce of `records` to the partition `index` of `topic`, which asks for `acks`.
+///
+/// # Errors
+///
+/// [`ClientError::UnwritableRequest`] when `records` do not encode.
+fn produce_request(topic: &str, index: i32, records: &[Record], acks: i16) -> Result<ProduceRequest, ClientError> {
+    let batch = RecordBatch::new(records)
+        .encode()
+        .map_err(ClientError::unwritable_request)?;
+    let partition = PartitionProduceData::default()
+        .with_index(index)
+        .with_records(Some(batch));
+    let topic = TopicProduceData::default()
+        .with_name(text(topic).into())
+        .with_partition_data(vec![partition]);
+    Ok(ProduceRequest::default()
+        .with_acks(acks)
+        .with_timeout_ms(5000)
+        .with_topic_data(vec![topic]))
 }
 
-fn group_id(group: &str) -> GroupId {
-    GroupId(StrBytes::from_string(group.to_string()))
+/// A Heartbeat of a member of `group`.
+fn heartbeat_request(group: &str) -> HeartbeatRequest {
+    HeartbeatRequest::default().with_group_id(text(group).into())
+}
+
+/// `value` as the text of a Kafka message.
+fn text(value: &str) -> StrBytes {
+    StrBytes::from_string(value.to_owned())
 }
 
 impl Produce for RawKafkaClient {
     async fn produce(&self, request: ProduceRequest) -> Result<ProduceResponse, ClientError> {
-        self.request(3, &request).await
+        self.request(version::PRODUCE, &request).await
     }
 }
 
 impl Fetch for RawKafkaClient {
     async fn fetch(&self, request: FetchRequest) -> Result<FetchResponse, ClientError> {
-        self.request(4, &request).await
+        self.request(version::FETCH, &request).await
     }
 }
 
 impl Metadata for RawKafkaClient {
     async fn metadata(&self, request: MetadataRequest) -> Result<MetadataResponse, ClientError> {
-        self.request(1, &request).await
+        self.request(version::METADATA, &request).await
     }
 }
 
 impl ApiVersions for RawKafkaClient {
     async fn api_versions(&self, request: ApiVersionsRequest) -> Result<ApiVersionsResponse, ClientError> {
-        self.request(0, &request).await
+        self.request(version::API_VERSIONS, &request).await
     }
 }
 
 impl ListOffsets for RawKafkaClient {
     async fn list_offsets(&self, request: ListOffsetsRequest) -> Result<ListOffsetsResponse, ClientError> {
-        self.request(1, &request).await
+        self.request(version::LIST_OFFSETS, &request).await
     }
 }
 
 impl FindCoordinator for RawKafkaClient {
     async fn find_coordinator(&self, request: FindCoordinatorRequest) -> Result<FindCoordinatorResponse, ClientError> {
-        self.request(0, &request).await
+        self.request(version::FIND_COORDINATOR, &request).await
     }
 }
 
 impl CreateTopics for RawKafkaClient {
     async fn create_topics(&self, request: CreateTopicsRequest) -> Result<CreateTopicsResponse, ClientError> {
-        self.request(2, &request).await
+        self.request(version::CREATE_TOPICS, &request).await
     }
 }
 
 impl DeleteTopics for RawKafkaClient {
     async fn delete_topics(&self, request: DeleteTopicsRequest) -> Result<DeleteTopicsResponse, ClientError> {
-        self.request(1, &request).await
+        self.request(version::DELETE_TOPICS, &request).await
     }
 }
 
@@ -365,23 +581,9 @@ impl Producer for RawKafkaClient {
     /// Also [`ClientError::UnwritableRequest`] when `records` do not encode,
     /// and [`ClientError::UnreadableAnswer`] when the response holds no result for the partition.
     async fn send(&self, topic: &str, partition: Partition, records: &[Record]) -> Result<ProduceResult, ClientError> {
-        let batch = RecordBatch::new(records)
-            .encode()
-            .map_err(ClientError::unwritable_request)?;
-        let request = ProduceRequest::default()
-            .with_acks(-1)
-            .with_timeout_ms(5000)
-            .with_topic_data(vec![
-                TopicProduceData::default()
-                    .with_name(topic_name(topic))
-                    .with_partition_data(vec![
-                        PartitionProduceData::default()
-                            .with_index(i32::from(partition))
-                            .with_records(Some(batch)),
-                    ]),
-            ]);
+        let request = produce_request(topic, i32::from(partition), records, ACKS_OF_EVERY_REPLICA)?;
 
-        let response = self.request(3, &request).await?;
+        let response = self.request(version::PRODUCE, &request).await?;
 
         let written = response
             .responses
@@ -402,7 +604,10 @@ impl ProtocolConsumer for RawKafkaClient {
     /// Also [`ClientError::UnreadableAnswer`] when the records of the response do not decode.
     async fn fetch(&self, topic: &str, partition: Partition, offset: Offset) -> Result<Vec<Record>, ClientError> {
         let response = self
-            .request(4, &fetch_request(topic, partition, i64::from(offset), 1000))
+            .request(
+                version::FETCH,
+                &fetch_request(topic, partition, i64::from(offset), 1000),
+            )
             .await?;
         records_of(&response)
     }
@@ -411,15 +616,17 @@ impl ProtocolConsumer for RawKafkaClient {
     /// connection of its own. The stream ends after the first Fetch that brings
     /// no records, and after the first one that fails, which is its last item.
     fn stream(&self, topic: &str, partition: Partition, offset: Offset) -> RecordStream {
-        let addr = self.addr;
+        let addr = self.addr();
+        let client_id = self.configuration.client_id.clone();
         let topic = topic.to_string();
 
         Box::pin(
             futures::stream::unfold(Some(i64::from(offset)), move |next_offset| {
                 let request = next_offset.map(|offset| (offset, fetch_request(&topic, partition, offset, 100)));
+                let client_id = client_id.clone();
                 async move {
                     let (offset, request) = request?;
-                    match fetch_once(addr, &request).await {
+                    match fetch_once(addr, &client_id, &request).await {
                         Ok(records) if records.is_empty() => None,
                         Ok(records) => {
                             let fetched = i64::try_from(records.len()).unwrap_or(i64::MAX);
@@ -436,11 +643,11 @@ impl ProtocolConsumer for RawKafkaClient {
 
     async fn join_group(&self, group: &str) -> Result<JoinGroupResult, ClientError> {
         let request = JoinGroupRequest::default()
-            .with_group_id(group_id(group))
+            .with_group_id(text(group).into())
             .with_session_timeout_ms(30000)
             .with_protocol_type(StrBytes::from_static_str("consumer"));
 
-        let response = self.request(0, &request).await?;
+        let response = self.request(version::JOIN_GROUP, &request).await?;
 
         accepted(response.error_code)?;
         Ok(JoinGroupResult {
@@ -450,16 +657,13 @@ impl ProtocolConsumer for RawKafkaClient {
     }
 
     async fn sync_group(&self, group: &str) -> Result<(), ClientError> {
-        let response = self
-            .request(0, &SyncGroupRequest::default().with_group_id(group_id(group)))
-            .await?;
+        let request = SyncGroupRequest::default().with_group_id(text(group).into());
+        let response = self.request(version::SYNC_GROUP, &request).await?;
         accepted(response.error_code)
     }
 
     async fn heartbeat(&self, group: &str) -> Result<(), ClientError> {
-        let response = self
-            .request(0, &HeartbeatRequest::default().with_group_id(group_id(group)))
-            .await?;
+        let response = self.request(version::HEARTBEAT, &heartbeat_request(group)).await?;
         accepted(response.error_code)
     }
 }

@@ -100,6 +100,21 @@ impl ClientConnection {
         .await?
     }
 
+    /// The next `count` bytes of the client, as they arrived, whether they are a request or not.
+    pub async fn bytes(&mut self, count: usize) -> anyhow::Result<Vec<u8>> {
+        soon(async {
+            while self.frames.buffered() < count {
+                let read = self.stream.read_buf(self.frames.buffer_mut()).await?;
+                anyhow::ensure!(
+                    read > 0,
+                    "the client closed the connection before it sent {count} bytes"
+                );
+            }
+            Ok(self.frames.buffer_mut().split_to(count).to_vec())
+        })
+        .await?
+    }
+
     /// Answers `request` with `body`.
     pub async fn answer(&mut self, request: &Request, body: &impl Encodable) -> anyhow::Result<()> {
         let response = request.response(body)?;

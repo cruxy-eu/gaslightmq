@@ -5,7 +5,7 @@ use std::sync::Arc;
 use gaslightmq_clock::TimeSpan;
 use gaslightmq_engine::prelude::*;
 use gaslightmq_field::prelude::*;
-use gaslightmq_kafka_client_api::{ClientError, Producer};
+use gaslightmq_kafka_client_api::{ClientError, Producer, RawKafkaClient};
 use gaslightmq_kernel::prelude::*;
 use gaslightmq_lie::prelude::*;
 use gaslightmq_rule::prelude::*;
@@ -18,7 +18,7 @@ use crate::support::{EngineUnderTest, ScriptedBackend};
 #[tokio::test]
 async fn a_snapshot_published_while_a_call_is_in_flight_only_affects_the_next_call() -> anyhow::Result<()> {
     let proxy = EngineUnderTest::start(ScriptedBackend::with_three_brokers()).await?;
-    let producer = Arc::new(proxy.client_on(Endpoint::Bootstrap)?);
+    let producer = Arc::new(RawKafkaClient::new(proxy.address_of(Endpoint::Bootstrap)?));
     let orders: TopicName = "orders.eu".parse()?;
     let partition = Partition::new(3);
 
@@ -57,7 +57,7 @@ async fn a_rule_that_is_armed_reaches_the_sessions_that_are_open() -> anyhow::Re
     let orders: TopicName = "orders.eu".parse()?;
     let partition = Partition::new(3);
     let placed = [Record::new("placed")];
-    let early = proxy.client_on(Endpoint::Bootstrap)?;
+    let early = RawKafkaClient::new(proxy.address_of(Endpoint::Bootstrap)?);
     early.send(orders.as_str(), partition, &placed).await?;
 
     let flap = proxy.arm(&Rule::new(
@@ -67,7 +67,7 @@ async fn a_rule_that_is_armed_reaches_the_sessions_that_are_open() -> anyhow::Re
     ))?;
 
     // Both the session that was open and one that opens now refuse.
-    let late = proxy.client_on(Endpoint::Bootstrap)?;
+    let late = RawKafkaClient::new(proxy.address_of(Endpoint::Bootstrap)?);
     for client in [&early, &late] {
         let written = client.send(orders.as_str(), partition, &placed).await;
         assert_eq!(
@@ -99,7 +99,7 @@ async fn the_rule_that_was_armed_last_wins_a_conflict() -> anyhow::Result<()> {
         Conditions::from(Condition::is(ApiKey::PRODUCE)),
         RefusalLie::new(ErrorCode::REQUEST_TIMED_OUT),
     ))?;
-    let producer = proxy.client_on(Endpoint::Bootstrap)?;
+    let producer = RawKafkaClient::new(proxy.address_of(Endpoint::Bootstrap)?);
     let orders: TopicName = "orders.eu".parse()?;
     let partition = Partition::new(3);
 
@@ -129,7 +129,7 @@ async fn a_rule_is_disarmed_after_the_call_that_spent_its_last_firing() -> anyho
     )
     .with_lifetime(Lifetime::Firings(Count::ONE));
     proxy.arm(&once)?;
-    let producer = proxy.client_on(Endpoint::Bootstrap)?;
+    let producer = RawKafkaClient::new(proxy.address_of(Endpoint::Bootstrap)?);
     let orders: TopicName = "orders.eu".parse()?;
     let partition = Partition::new(3);
     let placed = [Record::new("placed")];
@@ -166,7 +166,7 @@ async fn a_rule_is_disarmed_when_the_clock_reaches_the_end_of_its_lifetime() -> 
     )
     .with_lifetime(Lifetime::Duration(TimeSpan::from_secs(30)));
     proxy.arm(&short)?;
-    let producer = proxy.client_on(Endpoint::Bootstrap)?;
+    let producer = RawKafkaClient::new(proxy.address_of(Endpoint::Bootstrap)?);
     let orders: TopicName = "orders.eu".parse()?;
     let partition = Partition::new(3);
     let placed = [Record::new("placed")];

@@ -4,6 +4,7 @@
 //! The tests here need exactly that: a broker that answers late, answers the wrong request, sends what is no response,
 //! or hangs up.
 
+mod connections;
 mod failures;
 mod requests;
 mod support;

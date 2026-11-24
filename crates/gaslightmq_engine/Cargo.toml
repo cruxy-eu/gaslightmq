@@ -46,4 +46,4 @@ gaslightmq_selector.workspace = true
 # The preludes that code imports next to this one. `tests/prelude.rs` checks that no name clashes.
 gaslightmq_combine.workspace = true
 gaslightmq_wire_edit.workspace = true
-tokio = { workspace = true, features = ["rt-multi-thread", "net", "io-util"] }
+tokio = { workspace = true, features = ["rt-multi-thread", "net"] }

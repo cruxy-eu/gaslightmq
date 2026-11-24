@@ -18,6 +18,21 @@ impl Frame {
         Self(payload.into())
     }
 
+    /// The length prefix of a frame whose payload has `len` bytes: the four bytes that travel before the payload.
+    ///
+    /// A prefix without its payload is the start of a frame, and what a peer sends to announce one:
+    ///
+    /// ```
+    /// use gaslightmq_wire::{Frame, FrameDecoder, FrameError};
+    ///
+    /// let mut frames = FrameDecoder::with_max_len(64);
+    /// frames.extend(&Frame::length_prefix(65));
+    /// assert_eq!(frames.next_frame(), Err(FrameError::TooLarge { len: 65, max: 64 }));
+    /// ```
+    pub const fn length_prefix(len: u32) -> [u8; 4] {
+        len.to_be_bytes()
+    }
+
     /// The bytes after the length prefix.
     pub fn payload(&self) -> &Bytes {
         &self.0
@@ -47,7 +62,7 @@ impl Frame {
     /// cannot say.
     pub fn write_to(&self, out: &mut BytesMut) {
         let len = u32::try_from(self.0.len()).expect("a frame payload of at most u32::MAX bytes");
-        out.extend_from_slice(&len.to_be_bytes());
+        out.extend_from_slice(&Self::length_prefix(len));
         out.extend_from_slice(&self.0);
     }
 }
@@ -155,6 +170,13 @@ mod tests {
     #[test]
     fn to_bytes_puts_the_length_in_front() {
         assert_eq!(frame(b"abc").to_bytes().as_ref(), &[0, 0, 0, 3, b'a', b'b', b'c']);
+    }
+
+    #[test]
+    fn a_length_prefix_is_the_length_in_four_bytes_with_the_highest_first() {
+        assert_eq!(Frame::length_prefix(0), [0, 0, 0, 0]);
+        assert_eq!(Frame::length_prefix(258), [0, 0, 1, 2]);
+        assert_eq!(frame(b"abc").to_bytes()[..4], Frame::length_prefix(3));
     }
 
     #[test]
