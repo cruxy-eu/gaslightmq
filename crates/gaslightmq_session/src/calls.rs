@@ -3,10 +3,10 @@
 use std::collections::VecDeque;
 use std::fmt;
 
-use gaslightmq_call::CallNumber;
+use gaslightmq_call::CallId;
 use gaslightmq_clock::Instant;
 
-use crate::SessionError;
+use crate::{CallIds, SessionError};
 
 /// How far a call in flight is.
 ///
@@ -49,22 +49,22 @@ impl fmt::Display for CallPhase {
     }
 }
 
-/// One call in flight: its number, when it arrived, how far it is, and what the pipeline keeps for it.
+/// One call in flight: its ID, when it arrived, how far it is, and what the pipeline keeps for it.
 ///
 /// `C` is whatever the pipeline needs to finish the call, such as the request, the rules that fired and the truth.
 /// The session never looks at it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct InFlightCall<C> {
-    number: CallNumber,
+    id: CallId,
     arrived_at: Instant,
     phase: CallPhase,
     content: C,
 }
 
 impl<C> InFlightCall<C> {
-    /// Which request of the session the call is.
-    pub const fn number(&self) -> CallNumber {
-        self.number
+    /// Which call of its environment the call is.
+    pub const fn id(&self) -> CallId {
+        self.id
     }
 
     /// When the request arrived.
@@ -100,13 +100,13 @@ impl<C> InFlightCall<C> {
 /// The session stays open until the client gives up.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Stalled {
-    by: CallNumber,
+    by: CallId,
     since: Instant,
 }
 
 impl Stalled {
     /// The call that the silence took. With several silenced calls, it is the earliest one.
-    pub const fn by(&self) -> CallNumber {
+    pub const fn by(&self) -> CallId {
         self.by
     }
 
@@ -121,6 +121,13 @@ impl Stalled {
 /// A call is in flight from the moment its request arrives until its response leaves.
 /// The pipeline keeps what it needs for the call here, as `C`,
 /// so a lie after the response applies to the call it belongs to.
+///
+/// # Call IDs
+///
+/// Every call that arrives gets its [`CallId`] from the [`CallIds`] of the environment,
+/// which all of its sessions share.
+/// The IDs of one session therefore rise in the order its requests arrived, and they need not follow each other:
+/// the calls of other sessions lie between them.
 ///
 /// # Ordering
 ///
@@ -145,7 +152,7 @@ impl Stalled {
 /// use gaslightmq_session::prelude::*;
 ///
 /// let now = Instant::ZERO;
-/// let mut calls = InFlightCalls::new();
+/// let mut calls = InFlightCalls::new(CallIds::new());
 /// let produce = calls.arrive("Produce", now);
 /// let fetch = calls.arrive("Fetch", now);
 ///
@@ -155,8 +162,8 @@ impl Stalled {
 ///
 /// // The delay ends, and both requests go on in the order they arrived.
 /// calls.release_request(produce)?;
-/// assert_eq!(calls.next_request().map(|(number, _)| number), Some(produce));
-/// assert_eq!(calls.next_request().map(|(number, _)| number), Some(fetch));
+/// assert_eq!(calls.next_request().map(|(call, _)| call), Some(produce));
+/// assert_eq!(calls.next_request().map(|(call, _)| call), Some(fetch));
 ///
 /// // The backend answers the Fetch first. Its response waits for the response of the Produce.
 /// calls.release_response(fetch)?;
@@ -180,7 +187,7 @@ impl Stalled {
 /// use gaslightmq_session::prelude::*;
 ///
 /// let now = Instant::ZERO;
-/// let mut calls = InFlightCalls::new();
+/// let mut calls = InFlightCalls::new(CallIds::new());
 /// let metadata = calls.arrive("Metadata", now);
 /// let produce = calls.arrive("Produce", now);
 /// let fetch = calls.arrive("Fetch", now);
@@ -191,46 +198,56 @@ impl Stalled {
 /// assert_eq!(calls.stalled().map(|stalled| stalled.by()), Some(produce));
 ///
 /// // The Metadata before the silence still goes on, and the Fetch behind it never does.
-/// assert_eq!(calls.next_request().map(|(number, _)| number), Some(metadata));
+/// assert_eq!(calls.next_request().map(|(call, _)| call), Some(metadata));
 /// assert!(calls.next_request().is_none());
 /// # Ok::<(), SessionError>(())
 /// ```
 #[derive(Debug, Clone)]
 pub struct InFlightCalls<C> {
-    /// The calls in flight, with consecutive numbers: a call only leaves at the front.
+    /// The call IDs of the environment, which every call that arrives takes its ID from.
+    ids: CallIds,
+    /// The calls in flight, in the order they arrived, which is the order of their IDs.
+    /// A call only leaves at the front.
     calls: VecDeque<InFlightCall<C>>,
+    /// How many calls arrived, in flight or not.
+    arrived: u64,
     /// The call that arrived last, or `None` before the first one.
-    last_arrived: Option<CallNumber>,
+    last_arrived: Option<CallId>,
     /// The call whose request passed the request gate last. Requests pass in order, so every earlier one passed too.
-    last_passed: Option<CallNumber>,
+    last_passed: Option<CallId>,
     stalled: Option<Stalled>,
 }
 
 impl<C> InFlightCalls<C> {
     /// The calls of a session that received no request yet.
-    pub const fn new() -> Self {
+    ///
+    /// `ids` is the handle to the call IDs of the environment of the session.
+    pub const fn new(ids: CallIds) -> Self {
         Self {
+            ids,
             calls: VecDeque::new(),
+            arrived: 0,
             last_arrived: None,
             last_passed: None,
             stalled: None,
         }
     }
 
-    /// A request arrived: the call is in flight from now on, and gets the next number.
+    /// A request arrived: the call is in flight from now on, and gets the next call ID of the environment.
     ///
     /// `content` is what the pipeline keeps for the call.
     /// The call starts with its [request held](CallPhase::RequestHeld).
-    pub fn arrive(&mut self, content: C, now: Instant) -> CallNumber {
-        let number = following(self.last_arrived);
-        self.last_arrived = Some(number);
+    pub fn arrive(&mut self, content: C, now: Instant) -> CallId {
+        let id = self.ids.assign();
+        self.arrived = self.arrived.saturating_add(1);
+        self.last_arrived = Some(id);
         self.calls.push_back(InFlightCall {
-            number,
+            id,
             arrived_at: now,
             phase: CallPhase::RequestHeld,
             content,
         });
-        number
+        id
     }
 
     /// The pipeline lets the request of `call` go.
@@ -240,7 +257,7 @@ impl<C> InFlightCalls<C> {
     ///
     /// [`SessionError::CallNotInFlight`] when the call is not in flight,
     /// and [`SessionError::RequestNotHeld`] when its request was let go before, or a silence took the call.
-    pub fn release_request(&mut self, call: CallNumber) -> Result<(), SessionError> {
+    pub fn release_request(&mut self, call: CallId) -> Result<(), SessionError> {
         let in_flight = self.in_flight_mut(call)?;
         if in_flight.phase != CallPhase::RequestHeld {
             return Err(SessionError::RequestNotHeld {
@@ -260,14 +277,16 @@ impl<C> InFlightCalls<C> {
     ///
     /// `None` when the next request is still held, when no request waits,
     /// or when the next request arrived after a call that a silence took.
-    pub fn next_request(&mut self) -> Option<(CallNumber, &mut C)> {
-        let next = following(self.last_passed);
-        if self.stalled.is_some_and(|stalled| stalled.by <= next) {
-            return None;
-        }
-        let index = self.index_of(next)?;
+    pub fn next_request(&mut self) -> Option<(CallId, &mut C)> {
+        let stalled = self.stalled;
+        // The calls are in the order of their IDs, so the first one after the last that passed is next.
+        let index = match self.last_passed {
+            Some(last) => self.calls.partition_point(|call| call.id <= last),
+            None => 0,
+        };
         let in_flight = self.calls.get_mut(index)?;
-        if in_flight.phase != CallPhase::RequestQueued {
+        let next = in_flight.id;
+        if stalled.is_some_and(|stalled| stalled.by <= next) || in_flight.phase != CallPhase::RequestQueued {
             return None;
         }
         in_flight.phase = CallPhase::AwaitingResponse;
@@ -283,7 +302,7 @@ impl<C> InFlightCalls<C> {
     /// [`SessionError::CallNotInFlight`] when the call is not in flight,
     /// and [`SessionError::ResponseNotAwaited`] when its request did not pass the request gate yet,
     /// its response was let go before, or a silence took the call.
-    pub fn release_response(&mut self, call: CallNumber) -> Result<(), SessionError> {
+    pub fn release_response(&mut self, call: CallId) -> Result<(), SessionError> {
         let in_flight = self.in_flight_mut(call)?;
         if in_flight.phase != CallPhase::AwaitingResponse {
             return Err(SessionError::ResponseNotAwaited {
@@ -317,7 +336,7 @@ impl<C> InFlightCalls<C> {
     /// # Errors
     ///
     /// [`SessionError::CallNotInFlight`] when the call is not in flight.
-    pub fn silence(&mut self, call: CallNumber, now: Instant) -> Result<Stalled, SessionError> {
+    pub fn silence(&mut self, call: CallId, now: Instant) -> Result<Stalled, SessionError> {
         self.in_flight_mut(call)?.phase = CallPhase::Silenced;
         let stalled = match self.stalled {
             Some(earlier) if earlier.by <= call => earlier,
@@ -332,13 +351,13 @@ impl<C> InFlightCalls<C> {
         self.stalled
     }
 
-    /// The call with that number, when it is in flight.
-    pub fn get(&self, call: CallNumber) -> Option<&InFlightCall<C>> {
+    /// The call with that ID, when it is in flight.
+    pub fn get(&self, call: CallId) -> Option<&InFlightCall<C>> {
         self.calls.get(self.index_of(call)?)
     }
 
-    /// The call with that number, when it is in flight, to change what the pipeline keeps for it.
-    pub fn get_mut(&mut self, call: CallNumber) -> Option<&mut InFlightCall<C>> {
+    /// The call with that ID, when it is in flight, to change what the pipeline keeps for it.
+    pub fn get_mut(&mut self, call: CallId) -> Option<&mut InFlightCall<C>> {
         let index = self.index_of(call)?;
         self.calls.get_mut(index)
     }
@@ -359,39 +378,28 @@ impl<C> InFlightCalls<C> {
     }
 
     /// How many calls arrived on the session, in flight or not.
-    pub fn arrived(&self) -> u64 {
-        self.last_arrived.map_or(0, CallNumber::value)
+    pub const fn arrived(&self) -> u64 {
+        self.arrived
     }
 
     /// Ends every call in flight, and returns them in the order their requests arrived.
     ///
     /// A session that closes does this, because none of its calls gets a response any more.
-    /// The numbers go on: a later call does not get the number of a call that ended.
+    /// The call IDs go on: a later call does not get the ID of a call that ended.
     pub fn end_all(&mut self) -> Vec<InFlightCall<C>> {
         self.last_passed = self.last_arrived;
         self.calls.drain(..).collect()
     }
 
-    /// Where the call with that number is in the queue, when it is in flight.
-    fn index_of(&self, call: CallNumber) -> Option<usize> {
-        let front = self.calls.front()?.number;
-        let index = usize::try_from(call.value().checked_sub(front.value())?).ok()?;
-        (index < self.calls.len()).then_some(index)
+    /// Where the call with that ID is in the queue, when it is in flight.
+    ///
+    /// The calls are in the order of their IDs, and the IDs of one session need not follow each other.
+    fn index_of(&self, call: CallId) -> Option<usize> {
+        self.calls.binary_search_by_key(&call, |in_flight| in_flight.id).ok()
     }
 
-    fn in_flight_mut(&mut self, call: CallNumber) -> Result<&mut InFlightCall<C>, SessionError> {
+    fn in_flight_mut(&mut self, call: CallId) -> Result<&mut InFlightCall<C>, SessionError> {
         self.get_mut(call).ok_or(SessionError::CallNotInFlight { call })
-    }
-}
-
-/// The number of the call after `last`, or of the first call of a session.
-fn following(last: Option<CallNumber>) -> CallNumber {
-    last.map_or(CallNumber::FIRST, CallNumber::next)
-}
-
-impl<C> Default for InFlightCalls<C> {
-    fn default() -> Self {
-        Self::new()
     }
 }
 
@@ -403,15 +411,11 @@ mod tests {
 
     const NOW: Instant = Instant::from_nanos(1_000_000_000);
 
-    fn number(value: u64) -> CallNumber {
-        CallNumber::new(value).unwrap()
-    }
-
     /// Calls with their API as content, and their requests held.
-    fn arrived<const N: usize>(apis: [&'static str; N]) -> (InFlightCalls<&'static str>, [CallNumber; N]) {
-        let mut calls = InFlightCalls::new();
-        let numbers = apis.map(|api| calls.arrive(api, NOW));
-        (calls, numbers)
+    fn arrived<const N: usize>(apis: [&'static str; N]) -> (InFlightCalls<&'static str>, [CallId; N]) {
+        let mut calls = InFlightCalls::new(CallIds::new());
+        let ids = apis.map(|api| calls.arrive(api, NOW));
+        (calls, ids)
     }
 
     /// Takes from the request gate until it gives nothing.
@@ -425,18 +429,18 @@ mod tests {
     }
 
     #[test]
-    fn calls_are_numbered_in_the_order_they_arrive() {
-        let mut calls = InFlightCalls::new();
+    fn calls_get_their_ids_in_the_order_they_arrive() {
+        let mut calls = InFlightCalls::new(CallIds::new());
         assert!(calls.is_empty());
 
         let first = calls.arrive("Metadata", NOW);
         let second = calls.arrive("Produce", NOW + Duration::from_millis(5));
 
-        assert_eq!([first, second], [number(1), number(2)]);
+        assert_eq!([first, second], [CallId::FIRST, CallId::FIRST.next()]);
         assert_eq!(calls.len(), 2);
         assert_eq!(calls.arrived(), 2);
         let produce = calls.get(second).unwrap();
-        assert_eq!(produce.number(), second);
+        assert_eq!(produce.id(), second);
         assert_eq!(produce.arrived_at(), NOW + Duration::from_millis(5));
         assert_eq!(produce.phase(), CallPhase::RequestHeld);
         assert_eq!(*produce.content(), "Produce");
@@ -447,8 +451,60 @@ mod tests {
     }
 
     #[test]
+    fn the_sessions_of_an_environment_count_their_calls_together() {
+        let call_ids = CallIds::new();
+        let mut one = InFlightCalls::new(call_ids.clone());
+        let mut other = InFlightCalls::new(call_ids.clone());
+
+        let produce = one.arrive("Produce", NOW);
+        let heartbeat = other.arrive("Heartbeat", NOW);
+        let fetch = one.arrive("Fetch", NOW);
+
+        // A later call has a higher ID, on whichever session it arrived.
+        assert_eq!(
+            [produce, heartbeat, fetch],
+            [CallId::FIRST, produce.next(), heartbeat.next()]
+        );
+        assert_eq!([one.arrived(), other.arrived()], [2, 1]);
+        assert_eq!(call_ids.assigned(), 3);
+
+        // A session only knows its own calls, and keeps them in order although their IDs do not follow each other.
+        assert_eq!(one.get(heartbeat), None);
+        assert_eq!(other.get(produce), None);
+        one.release_request(fetch).unwrap();
+        assert_eq!(requests(&mut one), Vec::<&str>::new());
+        one.release_request(produce).unwrap();
+        assert_eq!(requests(&mut one), ["Produce", "Fetch"]);
+        one.release_response(fetch).unwrap();
+        one.release_response(produce).unwrap();
+        assert_eq!(responses(&mut one), ["Produce", "Fetch"]);
+    }
+
+    #[test]
+    fn a_silence_stalls_its_session_whatever_the_other_sessions_do() {
+        let call_ids = CallIds::new();
+        let mut one = InFlightCalls::new(call_ids.clone());
+        let mut other = InFlightCalls::new(call_ids);
+
+        let metadata = one.arrive("Metadata", NOW);
+        let heartbeat = other.arrive("Heartbeat", NOW);
+        let produce = one.arrive("Produce", NOW);
+        other.arrive("Heartbeat", NOW);
+        let fetch = one.arrive("Fetch", NOW);
+
+        one.silence(produce, NOW).unwrap();
+        one.release_request(metadata).unwrap();
+        one.release_request(fetch).unwrap();
+        other.release_request(heartbeat).unwrap();
+
+        assert_eq!(requests(&mut one), ["Metadata"]);
+        assert_eq!(requests(&mut other), ["Heartbeat"]);
+        assert_eq!(other.stalled(), None);
+    }
+
+    #[test]
     fn the_pipeline_changes_what_it_keeps_for_a_call() {
-        let mut calls = InFlightCalls::new();
+        let mut calls = InFlightCalls::new(CallIds::new());
         let call = calls.arrive(vec!["request"], NOW);
 
         calls.get_mut(call).unwrap().content_mut().push("truth");
@@ -470,7 +526,7 @@ mod tests {
         assert_eq!(phase(&calls), Some(CallPhase::ResponseQueued));
 
         let left = calls.next_response().unwrap();
-        assert_eq!(left.number(), call);
+        assert_eq!(left.id(), call);
         assert_eq!(left.phase(), CallPhase::ResponseQueued);
         assert_eq!(phase(&calls), None);
         assert!(calls.is_empty());
@@ -528,7 +584,7 @@ mod tests {
         assert_eq!(responses(&mut calls), ["Produce"]);
 
         let fetch = calls.arrive("Fetch", NOW);
-        assert_eq!(fetch, number(2));
+        assert_eq!(fetch, produce.next());
         calls.release_request(fetch).unwrap();
         assert_eq!(requests(&mut calls), ["Fetch"]);
         calls.release_response(fetch).unwrap();
@@ -606,7 +662,7 @@ mod tests {
     }
 
     #[test]
-    fn ending_every_call_returns_them_in_order_and_keeps_the_numbers_going() {
+    fn ending_every_call_returns_them_in_order_and_keeps_the_ids_going() {
         let (mut calls, [produce, fetch]) = arrived(["Produce", "Fetch"]);
         calls.release_request(produce).unwrap();
         assert_eq!(requests(&mut calls), ["Produce"]);
@@ -614,17 +670,14 @@ mod tests {
         let ended = calls.end_all();
 
         assert_eq!(
-            ended
-                .iter()
-                .map(|call| (call.number(), call.phase()))
-                .collect::<Vec<_>>(),
+            ended.iter().map(|call| (call.id(), call.phase())).collect::<Vec<_>>(),
             [(produce, CallPhase::AwaitingResponse), (fetch, CallPhase::RequestHeld)]
         );
         assert!(calls.is_empty());
         assert_eq!(calls.get(fetch), None);
 
         let next = calls.arrive("Metadata", NOW);
-        assert_eq!(next, number(3));
+        assert_eq!(next, fetch.next());
         calls.release_request(next).unwrap();
         assert_eq!(requests(&mut calls), ["Metadata"]);
     }
@@ -632,7 +685,7 @@ mod tests {
     #[test]
     fn a_call_that_is_not_in_flight_is_an_error() {
         let (mut calls, [produce]) = arrived(["Produce"]);
-        let never = number(2);
+        let never = produce.next();
         let not_in_flight = |call| Err(SessionError::CallNotInFlight { call });
 
         assert_eq!(calls.release_request(never), not_in_flight(never));

@@ -6,6 +6,7 @@ use std::collections::BTreeMap;
 
 use gaslightmq_backend::prelude::*;
 use gaslightmq_backend_upstream::prelude::*;
+use gaslightmq_call::prelude::*;
 use gaslightmq_environment::prelude::*;
 use gaslightmq_field::prelude::*;
 use gaslightmq_kernel::BrokerId;
@@ -32,7 +33,12 @@ async fn a_client_is_told_the_listener_of_every_broker_and_never_its_real_addres
     }
     let metadata = Request::new(12, 1, Some("order-ingest"), &MetadataRequest::default())?;
     let answer = backend
-        .call(BackendRequest::new("#1.1".parse()?, Endpoint::Bootstrap, metadata))
+        .call(BackendRequest::new(
+            CallId::FIRST,
+            ConnectionNumber::new(1),
+            Endpoint::Bootstrap,
+            metadata,
+        ))
         .await;
 
     let broker = |id: u16| Endpoint::Broker(BrokerId::from(id));
@@ -89,8 +95,10 @@ async fn a_request_on_the_listener_of_a_broker_goes_to_that_broker() -> anyhow::
     }
 
     // One client per broker writes a record to the partition, each on the listener of its broker.
+    // The proxy counts their calls together, and each client has a connection of its own.
+    let calls = std::iter::successors(Some(CallId::FIRST), |call| Some(call.next()));
     let mut answered = Vec::new();
-    for broker in cluster.brokers() {
+    for (broker, call) in cluster.brokers().iter().zip(calls) {
         let placed = RecordBatch::new([Record::new("placed")]).encode()?;
         let partition = PartitionProduceData::default().with_index(0).with_records(Some(placed));
         let topic = TopicProduceData::default()
@@ -101,9 +109,14 @@ async fn a_request_on_the_listener_of_a_broker_goes_to_that_broker() -> anyhow::
             .with_timeout_ms(30_000)
             .with_topic_data(vec![topic]);
         let request = Request::new(10, 1, Some("order-ingest"), &produce)?;
-        let call = format!("#{}.1", broker.id()).parse()?;
+        let connection = ConnectionNumber::new(call.value());
         let answer = backend
-            .call(BackendRequest::new(call, Endpoint::Broker(broker.id()), request))
+            .call(BackendRequest::new(
+                call,
+                connection,
+                Endpoint::Broker(broker.id()),
+                request,
+            ))
             .await;
         let BackendAnswer::Truth(truth) = answer else {
             anyhow::bail!(

@@ -21,7 +21,7 @@ use crate::{IndexConfiguration, SuggestedPattern};
 /// #     use gaslightmq_call::prelude::*;
 /// #     use gaslightmq_clock::Instant;
 /// #     let fields = fields.with(ConnectionNumber::new(7)).with(Outcome::Ok);
-/// #     Call::new(CallNumber::FIRST, fields, Delivered::Nothing, Explanation::none(), CallTiming::arrived(Instant::ZERO))
+/// #     Call::new(CallId::FIRST, fields, Delivered::Nothing, Explanation::none(), CallTiming::arrived(Instant::ZERO))
 /// #         .expect("a call that ended on a connection")
 /// # };
 /// let mut index = CallIndex::new(IndexConfiguration::new());
@@ -95,7 +95,7 @@ impl fmt::Display for FacetValue {
 /// #     use gaslightmq_call::prelude::*;
 /// #     use gaslightmq_clock::Instant;
 /// #     let fields = fields.with(ConnectionNumber::new(7)).with(Outcome::Ok);
-/// #     Call::new(CallNumber::FIRST, fields, Delivered::Nothing, Explanation::none(), CallTiming::arrived(Instant::ZERO))
+/// #     Call::new(CallId::FIRST, fields, Delivered::Nothing, Explanation::none(), CallTiming::arrived(Instant::ZERO))
 /// #         .expect("a call that ended on a connection")
 /// # };
 /// let topic = |name: &str| TopicName::new(name).expect("a topic name");
@@ -181,7 +181,7 @@ impl fmt::Display for Facet {
 /// #     use gaslightmq_call::prelude::*;
 /// #     use gaslightmq_clock::Instant;
 /// #     let fields = fields.with(ConnectionNumber::new(7)).with(Outcome::Ok);
-/// #     Call::new(CallNumber::FIRST, fields, Delivered::Nothing, Explanation::none(), CallTiming::arrived(Instant::ZERO))
+/// #     Call::new(CallId::FIRST, fields, Delivered::Nothing, Explanation::none(), CallTiming::arrived(Instant::ZERO))
 /// #         .expect("a call that ended on a connection")
 /// # };
 /// let mut index = CallIndex::new(IndexConfiguration::new());

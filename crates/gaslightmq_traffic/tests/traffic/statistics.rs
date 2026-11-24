@@ -5,14 +5,15 @@ use gaslightmq_kernel::prelude::*;
 use gaslightmq_rule::prelude::*;
 use gaslightmq_traffic::prelude::*;
 
-use crate::support::ClientConnection;
+use crate::support::Proxy;
 
 #[test]
 fn every_call_counts_for_its_api() -> anyhow::Result<()> {
     let orders_eu: TopicPartition = "orders.eu/3".parse()?;
     let mut traffic = Traffic::new(TrafficConfiguration::new());
-    let mut ingest = ClientConnection::first("order-ingest".parse()?);
-    let mut payments = ClientConnection::second("payments-svc".parse()?);
+    let proxy = Proxy::new();
+    let ingest = proxy.accepts("order-ingest".parse()?);
+    let payments = proxy.accepts("payments-svc".parse()?);
 
     traffic.record(ingest.produce(&orders_eu).ended());
     traffic.record(payments.heartbeat().ended());
@@ -33,7 +34,8 @@ fn a_rule_counts_the_calls_it_matched_and_the_calls_it_lied_to() -> anyhow::Resu
     let orders_eu: TopicPartition = "orders.eu/3".parse()?;
     let refuse_every_2nd: RuleName = "refuse-every-2nd".parse()?;
     let mut traffic = Traffic::new(TrafficConfiguration::new());
-    let mut ingest = ClientConnection::first("order-ingest".parse()?);
+    let proxy = Proxy::new();
+    let ingest = proxy.accepts("order-ingest".parse()?);
 
     // The rule matches every Produce, and refuses the second one.
     traffic.record(ingest.produce(&orders_eu).held_by(&refuse_every_2nd).ended());
@@ -55,7 +57,8 @@ fn a_lie_that_lost_everything_to_another_rule_is_no_firing() -> anyhow::Result<(
     let leader_flap: RuleName = "leader-flap".parse()?;
     let refuse_orders: RuleName = "refuse-orders".parse()?;
     let mut traffic = Traffic::new(TrafficConfiguration::new());
-    let mut ingest = ClientConnection::first("order-ingest".parse()?);
+    let proxy = Proxy::new();
+    let ingest = proxy.accepts("order-ingest".parse()?);
 
     let refused_twice = ingest
         .produce(&orders_eu)
@@ -82,7 +85,8 @@ fn the_statistics_list_every_rule_that_a_call_touched() -> anyhow::Result<()> {
     let refuse_orders: RuleName = "refuse-orders".parse()?;
     let never_matched: RuleName = "lose-heartbeats".parse()?;
     let mut traffic = Traffic::new(TrafficConfiguration::new());
-    let mut ingest = ClientConnection::first("order-ingest".parse()?);
+    let proxy = Proxy::new();
+    let ingest = proxy.accepts("order-ingest".parse()?);
     traffic.record(ingest.produce(&orders_eu).refused_by(&refuse_orders).ended());
     traffic.record(ingest.fetch(&orders_eu).refused_by(&leader_flap).ended());
 
@@ -107,7 +111,8 @@ fn the_statistics_go_on_counting_the_calls_that_left_the_live_window() -> anyhow
     let mut configuration = TrafficConfiguration::new();
     configuration.live_window = one_call;
     let mut traffic = Traffic::new(configuration);
-    let mut ingest = ClientConnection::first("order-ingest".parse()?);
+    let proxy = Proxy::new();
+    let ingest = proxy.accepts("order-ingest".parse()?);
 
     let three_calls = 3;
     for _ in 0..three_calls {
@@ -123,7 +128,8 @@ fn the_statistics_go_on_counting_the_calls_that_left_the_live_window() -> anyhow
 #[test]
 fn a_copy_of_the_statistics_stays_at_its_moment_so_two_copies_give_a_rate() -> anyhow::Result<()> {
     let mut traffic = Traffic::new(TrafficConfiguration::new());
-    let mut ingest = ClientConnection::first("order-ingest".parse()?);
+    let proxy = Proxy::new();
+    let ingest = proxy.accepts("order-ingest".parse()?);
     traffic.record(ingest.heartbeat().ended());
     let a_moment_ago = traffic.statistics().clone();
 
@@ -142,7 +148,8 @@ fn a_copy_of_the_statistics_stays_at_its_moment_so_two_copies_give_a_rate() -> a
 #[test]
 fn a_traffic_that_fell_behind_says_how_many_events_it_never_saw() -> anyhow::Result<()> {
     let mut traffic = Traffic::new(TrafficConfiguration::new());
-    let mut ingest = ClientConnection::first("order-ingest".parse()?);
+    let proxy = Proxy::new();
+    let ingest = proxy.accepts("order-ingest".parse()?);
     traffic.record(ingest.heartbeat().ended());
     assert_eq!(traffic.statistics().missed_events(), 0);
 

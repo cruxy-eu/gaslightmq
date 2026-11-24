@@ -40,6 +40,7 @@
 //! // The engine owns what the sessions of a proxy share, and registers the kinds of lies of its build.
 //! let shared = SharedBySessions::new(
 //!     ClientContexts::new(Duration::from_secs(60)),
+//!     CallIds::new(),
 //!     KnownTopics::new(),
 //!     Arc::new(Lies::of_every_build().with(Refusal).expect("a kind that is new to the set")),
 //! );
@@ -194,11 +195,13 @@
 //! What goes wrong while a call is handled is part of the record of that call.
 //! An input that names a call or a timer that the pipeline does not wait for changes nothing:
 //! the engine cannot avoid every race, such as an answer for a call whose session just closed.
-//! Only [`Input::BackendFailed`] ends the session whichever call of the connection it names.
+//! Only [`Input::BackendFailed`] ends the session whichever call it names.
 //!
 //! # What the engine does
 //!
 //! - It numbers connections, and counts the [ordinal](gaslightmq_session::ConnectionOrdinals) of each one.
+//! - It makes the [call IDs](gaslightmq_session::CallIds) of its environment, and reports what the backend says
+//!   about a call to the pipeline that forwarded its request.
 //! - It turns an [`Output::SetTimer`] into a wait on its clock. It need not cancel a timer: a stale one changes nothing.
 //! - It [expires](gaslightmq_session::ClientContexts::expire) the client contexts that no session shares any more.
 //! - It disarms a rule whose lifetime ended. The armed rules of a snapshot say so, and a call record names the rules that applied.
@@ -236,9 +239,8 @@ pub use timer::TimerId;
 /// use gaslightmq_lie::prelude::*;
 /// use gaslightmq_pipeline::prelude::*;
 ///
-/// let timer = TimerId::new("#7.3".parse()?, Stage::BeforeForwarding);
-/// assert_eq!(timer.to_string(), "#7.3 before forwarding");
-/// # Ok::<(), gaslightmq_call::CallIdError>(())
+/// let timer = TimerId::new(gaslightmq_call::CallId::FIRST, Stage::BeforeForwarding);
+/// assert_eq!(timer.to_string(), "call 1 before forwarding");
 /// ```
 pub mod prelude {
     #[doc(no_inline)]

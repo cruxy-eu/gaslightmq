@@ -2,6 +2,7 @@
 
 use gaslightmq_backend::prelude::*;
 use gaslightmq_backend_upstream::prelude::*;
+use gaslightmq_call::prelude::*;
 use gaslightmq_environment::prelude::*;
 use gaslightmq_field::prelude::*;
 use gaslightmq_test_kafka::{KafkaCluster, KafkaClusterError, unique_name};
@@ -27,7 +28,12 @@ async fn a_topic_created_through_the_backend_is_a_topic_of_the_cluster() -> anyh
         .with_timeout_ms(30_000);
     let request = Request::new(7, 1, Some("order-admin"), &create)?;
     let answer = backend
-        .call(BackendRequest::new("#1.1".parse()?, Endpoint::Bootstrap, request))
+        .call(BackendRequest::new(
+            CallId::FIRST,
+            ConnectionNumber::new(1),
+            Endpoint::Bootstrap,
+            request,
+        ))
         .await;
 
     let BackendAnswer::Truth(truth) = answer else {

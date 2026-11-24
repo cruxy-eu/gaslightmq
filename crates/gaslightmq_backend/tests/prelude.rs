@@ -102,7 +102,8 @@ mod next_to_the_others {
             .response(&gaslightmq_wire::messages::HeartbeatResponse::default())
             .unwrap();
 
-        let request: BackendRequest = BackendRequest::new("#7.3".parse().unwrap(), Endpoint::Bootstrap, heartbeat);
+        let request: BackendRequest =
+            BackendRequest::new(CallId::FIRST, ConnectionNumber::new(7), Endpoint::Bootstrap, heartbeat);
         let truth: Truth = Truth::new(response);
         let failure: BackendFailure = BackendFailure::NoSuchEndpoint {
             endpoint: request.endpoint(),
@@ -141,7 +142,7 @@ fn the_prelude_names_every_item_next_to_the_other_preludes() {
     assert!(items.iter().all(|item| !item.is_empty()));
     assert_eq!(
         items[1..4],
-        ["#7.3", "41", "the cluster takes no requests on endpoint `bootstrap`"]
+        ["1", "41", "the cluster takes no requests on endpoint `bootstrap`"]
     );
     assert_eq!(items[6], "rebalance cannot happen: the cluster has no group payments");
     assert_eq!(

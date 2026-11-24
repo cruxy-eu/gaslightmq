@@ -266,10 +266,10 @@ mod tests {
             ),
             (
                 StageFailure::BackendFailed {
-                    call: "#7.3".parse().unwrap(),
+                    call: CallId::FIRST.next().next(),
                     reason: "the connection to the cluster ended before the answer arrived".to_owned(),
                 },
-                "the backend has no answer for call #7.3: the connection to the cluster ended before the answer arrived",
+                "the backend has no answer for call 3: the connection to the cluster ended before the answer arrived",
             ),
             (
                 StageFailure::BackendClosed {

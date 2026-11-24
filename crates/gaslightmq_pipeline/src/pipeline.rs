@@ -63,9 +63,11 @@ use crate::{Input, Output, Outputs, SharedBySessions, TimerId};
 /// The engine cannot avoid every race: a backend answers a call whose session just closed,
 /// and a timer fires for a call that left.
 /// An input that names a call or a timer that the pipeline does not wait for changes nothing.
+/// A call ID names one call of the environment, so the call of another connection is one the pipeline does not wait for.
 ///
-/// A failure of the backend is the exception: [`Input::BackendFailed`] ends the session whichever call of the
-/// connection it names. A Produce without a response has left by the time its failure arrives.
+/// A failure of the backend is the exception: [`Input::BackendFailed`] ends the session whichever call it names.
+/// A Produce without a response has left by the time its failure arrives.
+/// The engine reports a failure to the pipeline that forwarded the request, and to no other.
 #[derive(Debug)]
 pub struct Pipeline {
     session: Session<CallInFlight>,
@@ -81,6 +83,7 @@ impl Pipeline {
     ///
     /// `ordinal` says which connection from its host to its endpoint this one is.
     /// `shared` are the handles of the proxy, and `snapshot` holds the rules that are armed at this moment.
+    /// Every request that arrives takes the ID of its call from the [`CallIds`] in `shared`.
     pub fn open(
         connection: Connection,
         ordinal: ConnectionOrdinal,
@@ -89,7 +92,13 @@ impl Pipeline {
         now: Instant,
     ) -> Self {
         Self {
-            session: Session::open(connection, ordinal, shared.contexts().clone(), now),
+            session: Session::open(
+                connection,
+                ordinal,
+                shared.contexts().clone(),
+                shared.call_ids().clone(),
+                now,
+            ),
             snapshot,
             shared,
             frames: FrameDecoder::new(),
@@ -160,10 +169,6 @@ impl Pipeline {
         &self.snapshot
     }
 
-    fn call_id(&self, number: CallNumber) -> CallId {
-        CallId::new(self.session.connection().number(), number)
-    }
-
     /// Stage 1: cuts the bytes of the client into requests.
     fn receive(&mut self, bytes: &[u8], now: Instant, outputs: &mut Outputs) {
         self.frames.extend(bytes);
@@ -194,15 +199,15 @@ impl Pipeline {
             // so nothing happens to it: no rule is evaluated, the session takes no identity from it,
             // and the client context learns nothing from it.
             let call = CallInFlight::parked(request, &self.session, snapshot, &self.shared, now);
-            let number = self.session.calls_mut().arrive(call, now);
-            self.emit(number, Delivered::Nothing, outputs);
+            let id = self.session.calls_mut().arrive(call, now);
+            self.emit(id, Delivered::Nothing, outputs);
             return;
         }
 
         let mut call = CallInFlight::arrived(request, &mut self.session, snapshot, &self.shared, now);
         let arrival = call.evaluate(self.session.counters_mut(), &self.shared, now);
         outputs.extend(arrival.incidents.into_iter().map(Output::Fire));
-        let number = self.session.calls_mut().arrive(call, now);
+        let id = self.session.calls_mut().arrive(call, now);
 
         if arrival.unanswerable {
             // A Produce that does not say its `acks` may get a response or not. Whichever the proxy assumed,
@@ -210,75 +215,61 @@ impl Pipeline {
             self.close(ClosedBy::Proxy, None, None, now, outputs);
         } else if arrival.silenced {
             // The call never gets an answer, and the session is stalled from now on.
-            if self.session.calls_mut().silence(number, now).is_ok() {
-                self.emit(number, Delivered::Nothing, outputs);
+            if self.session.calls_mut().silence(id, now).is_ok() {
+                self.emit(id, Delivered::Nothing, outputs);
             }
         } else if let Some(at) = deadline(now, arrival.wait) {
-            let id = TimerId::new(self.call_id(number), Stage::BeforeForwarding);
-            outputs.push(Output::SetTimer { id, at });
-        } else if self.session.calls_mut().release_request(number).is_ok() {
+            let timer = TimerId::new(id, Stage::BeforeForwarding);
+            outputs.push(Output::SetTimer { id: timer, at });
+        } else if self.session.calls_mut().release_request(id).is_ok() {
             self.advance(now, outputs);
         }
     }
 
     /// Stage 9 begins for the call that the backend answered.
     fn backend_answered(&mut self, call: CallId, response: Response, now: Instant, outputs: &mut Outputs) {
-        if call.connection() != self.session.connection().number() {
-            return;
-        }
-        let number = call.number();
         let (calls, counters) = self.session.calls_and_counters_mut();
-        let Some(in_flight) = calls.get_mut(number) else {
+        let Some(in_flight) = calls.get_mut(call) else {
             return;
         };
         let Some(settled) = in_flight.content_mut().answered(response, now, counters, &self.shared) else {
             return;
         };
-        self.settled(number, settled, now, outputs);
+        self.settled(call, settled, now, outputs);
         self.advance(now, outputs);
     }
 
     /// The backend answered a call with something that is no response.
     /// The call has no answer, and the proxy closes the connection once that would be at the head of the line.
     fn backend_answered_unreadably(&mut self, call: CallId, reason: String, now: Instant, outputs: &mut Outputs) {
-        if call.connection() != self.session.connection().number() {
-            return;
-        }
-        let number = call.number();
-        let Some(in_flight) = self.session.calls_mut().get_mut(number) else {
+        let Some(in_flight) = self.session.calls_mut().get_mut(call) else {
             return;
         };
         let Some(settled) = in_flight.content_mut().answered_unreadably(reason, now) else {
             return;
         };
-        self.settled(number, settled, now, outputs);
+        self.settled(call, settled, now, outputs);
         self.advance(now, outputs);
     }
 
-    /// The backend has no answer for a call of this connection, so the session ends.
+    /// The backend has no answer for a call that this pipeline forwarded, so the session ends.
     ///
     /// It ends whichever call the failure names: a Produce without a response has left by the time its failure arrives.
     fn backend_failed(&mut self, call: CallId, reason: String, now: Instant, outputs: &mut Outputs) {
-        if call.connection() != self.session.connection().number() {
-            return;
-        }
         let failure = StageFailure::BackendFailed { call, reason };
-        self.close(ClosedBy::Backend, Some(call.number()), Some(&failure), now, outputs);
+        self.close(ClosedBy::Backend, Some(call), Some(&failure), now, outputs);
     }
 
     /// The wait of a call ended: its request or its answer joins the line.
     fn timer_fired(&mut self, timer: TimerId, now: Instant, outputs: &mut Outputs) {
-        if timer.call().connection() != self.session.connection().number() {
-            return;
-        }
-        let number = timer.call().number();
+        let id = timer.call();
         let calls = self.session.calls_mut();
-        let Some(call) = calls.get(number).map(InFlightCall::content) else {
+        let Some(call) = calls.get(id).map(InFlightCall::content) else {
             return;
         };
         let released = match timer.stage() {
-            Stage::BeforeForwarding => call.is_held_before_forwarding() && calls.release_request(number).is_ok(),
-            Stage::AfterResponse => call.is_held_after_response() && calls.release_response(number).is_ok(),
+            Stage::BeforeForwarding => call.is_held_before_forwarding() && calls.release_request(id).is_ok(),
+            Stage::AfterResponse => call.is_held_after_response() && calls.release_response(id).is_ok(),
         };
         if released {
             self.advance(now, outputs);
@@ -292,22 +283,22 @@ impl Pipeline {
     fn advance(&mut self, now: Instant, outputs: &mut Outputs) {
         loop {
             let mut moved = false;
-            while let Some(number) = self.next_request() {
+            while let Some(id) = self.next_request() {
                 moved = true;
-                self.at_request_gate(number, now, outputs);
+                self.at_request_gate(id, now, outputs);
                 if self.session.closed().is_some() {
                     return;
                 }
             }
             while let Some(in_flight) = self.session.calls_mut().next_response() {
                 moved = true;
-                let number = in_flight.number();
+                let id = in_flight.id();
                 let mut call = in_flight.into_content();
                 let (leaving, delivered) = call.leave(now);
                 if let Leaving::Send(bytes) = &leaving {
                     outputs.push(Output::Send(bytes.clone()));
                 }
-                outputs.extend(call.record(number, delivered).map(Box::new).map(Output::Emit));
+                outputs.extend(call.record(id, delivered).map(Box::new).map(Output::Emit));
                 if let Leaving::Close(by) = leaving {
                     self.close(by, None, None, now, outputs);
                     return;
@@ -320,51 +311,50 @@ impl Pipeline {
     }
 
     /// The call whose request is at the head of the line, when the pipeline let it go.
-    fn next_request(&mut self) -> Option<CallNumber> {
-        self.session.calls_mut().next_request().map(|(number, _)| number)
+    fn next_request(&mut self) -> Option<CallId> {
+        self.session.calls_mut().next_request().map(|(id, _)| id)
     }
 
     /// Stage 8 for the request at the head of the line: the backend gets it, or the call is decided without it.
-    fn at_request_gate(&mut self, number: CallNumber, now: Instant, outputs: &mut Outputs) {
-        let id = self.call_id(number);
+    fn at_request_gate(&mut self, id: CallId, now: Instant, outputs: &mut Outputs) {
         let (calls, counters) = self.session.calls_and_counters_mut();
-        let Some(in_flight) = calls.get_mut(number) else {
+        let Some(in_flight) = calls.get_mut(id) else {
             return;
         };
         match in_flight.content_mut().at_request_gate(now, counters, &self.shared) {
             AtRequestGate::Forward(request) => outputs.push(Output::Forward { call: id, request }),
             AtRequestGate::Settled { forward, settled } => {
                 outputs.extend(forward.map(|request| Output::Forward { call: id, request }));
-                self.settled(number, settled, now, outputs);
+                self.settled(id, settled, now, outputs);
             }
-            AtRequestGate::HangUp => self.close(ClosedBy::Lie, Some(number), None, now, outputs),
+            AtRequestGate::HangUp => self.close(ClosedBy::Lie, Some(id), None, now, outputs),
             AtRequestGate::NotWaiting => {}
         }
     }
 
     /// Stage 9 ran for a call: the answer waits for its delay, or joins the line of answers.
-    fn settled(&mut self, number: CallNumber, settled: Settled, now: Instant, outputs: &mut Outputs) {
+    fn settled(&mut self, id: CallId, settled: Settled, now: Instant, outputs: &mut Outputs) {
         outputs.extend(settled.incidents.into_iter().map(Output::Fire));
         for value in settled.learned {
             value.teach(&self.session);
         }
         if settled.silenced {
-            if self.session.calls_mut().silence(number, now).is_ok() {
-                self.emit(number, Delivered::Nothing, outputs);
+            if self.session.calls_mut().silence(id, now).is_ok() {
+                self.emit(id, Delivered::Nothing, outputs);
             }
         } else if let Some(at) = deadline(now, settled.wait) {
-            let id = TimerId::new(self.call_id(number), Stage::AfterResponse);
-            outputs.push(Output::SetTimer { id, at });
+            let timer = TimerId::new(id, Stage::AfterResponse);
+            outputs.push(Output::SetTimer { id: timer, at });
         } else {
             // The call awaits its response, so this only fails for a call that is gone.
-            let _gone = self.session.calls_mut().release_response(number);
+            let _gone = self.session.calls_mut().release_response(id);
         }
     }
 
     /// Stage 11 for a call that stays in flight: a silenced call never leaves.
-    fn emit(&mut self, number: CallNumber, delivered: Delivered, outputs: &mut Outputs) {
-        let call = self.session.calls_mut().get_mut(number);
-        let record = call.and_then(|call| call.content_mut().record(number, delivered));
+    fn emit(&mut self, id: CallId, delivered: Delivered, outputs: &mut Outputs) {
+        let call = self.session.calls_mut().get_mut(id);
+        let record = call.and_then(|call| call.content_mut().record(id, delivered));
         outputs.extend(record.map(Box::new).map(Output::Emit));
     }
 
@@ -376,14 +366,14 @@ impl Pipeline {
     fn close(
         &mut self,
         by: ClosedBy,
-        answered_by_closing: Option<CallNumber>,
+        answered_by_closing: Option<CallId>,
         reason: Option<&StageFailure>,
         now: Instant,
         outputs: &mut Outputs,
     ) {
         for in_flight in self.session.close(by, now) {
-            let number = in_flight.number();
-            let delivered = if answered_by_closing == Some(number) {
+            let id = in_flight.id();
+            let delivered = if answered_by_closing == Some(id) {
                 Delivered::ConnectionClosed
             } else {
                 Delivered::Nothing
@@ -392,7 +382,7 @@ impl Pipeline {
             if let Some(reason) = reason {
                 call.failed(reason.clone());
             }
-            outputs.extend(call.record(number, delivered).map(Box::new).map(Output::Emit));
+            outputs.extend(call.record(id, delivered).map(Box::new).map(Output::Emit));
         }
         if by != ClosedBy::Client {
             outputs.push(Output::Close);

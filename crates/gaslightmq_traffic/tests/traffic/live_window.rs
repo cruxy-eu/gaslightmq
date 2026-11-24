@@ -6,14 +6,15 @@ use gaslightmq_kernel::prelude::*;
 use gaslightmq_selector::prelude::*;
 use gaslightmq_traffic::prelude::*;
 
-use crate::support::ClientConnection;
+use crate::support::Proxy;
 
 #[test]
 fn the_live_window_keeps_the_calls_in_the_order_in_which_they_were_recorded() -> anyhow::Result<()> {
     let orders_eu: TopicPartition = "orders.eu/3".parse()?;
     let mut traffic = Traffic::new(TrafficConfiguration::new());
-    let mut ingest = ClientConnection::first("order-ingest".parse()?);
-    let mut payments = ClientConnection::second("payments-svc".parse()?);
+    let proxy = Proxy::new();
+    let ingest = proxy.accepts("order-ingest".parse()?);
+    let payments = proxy.accepts("payments-svc".parse()?);
     let produce = ingest.produce(&orders_eu).ended();
     let heartbeat = payments.heartbeat().ended();
     let fetch = ingest.fetch(&orders_eu).ended();
@@ -38,7 +39,8 @@ fn a_call_that_arrives_at_a_full_window_pushes_the_oldest_one_out() -> anyhow::R
     let mut configuration = TrafficConfiguration::new();
     configuration.live_window = two_calls;
     let mut traffic = Traffic::new(configuration);
-    let mut ingest = ClientConnection::first("order-ingest".parse()?);
+    let proxy = Proxy::new();
+    let ingest = proxy.accepts("order-ingest".parse()?);
     let pushed_out = ingest.heartbeat().ended();
     let older = ingest.heartbeat().ended();
     let newer = ingest.heartbeat().ended();
@@ -57,7 +59,8 @@ fn a_call_that_arrives_at_a_full_window_pushes_the_oldest_one_out() -> anyhow::R
 #[test]
 fn the_window_hands_out_the_record_that_the_traffic_was_given() -> anyhow::Result<()> {
     let mut traffic = Traffic::new(TrafficConfiguration::new());
-    let mut ingest = ClientConnection::first("order-ingest".parse()?);
+    let proxy = Proxy::new();
+    let ingest = proxy.accepts("order-ingest".parse()?);
     let record = ingest.heartbeat().ended();
 
     traffic.record(record.clone());
@@ -71,7 +74,8 @@ fn the_window_hands_out_the_record_that_the_traffic_was_given() -> anyhow::Resul
 fn the_window_finds_the_calls_that_a_selector_matches() -> anyhow::Result<()> {
     let orders_eu: TopicPartition = "orders.eu/3".parse()?;
     let mut traffic = Traffic::new(TrafficConfiguration::new());
-    let mut ingest = ClientConnection::first("order-ingest".parse()?);
+    let proxy = Proxy::new();
+    let ingest = proxy.accepts("order-ingest".parse()?);
     let first_produce = ingest.produce(&orders_eu).ended();
     let heartbeat = ingest.heartbeat().ended();
     let second_produce = ingest.produce(&orders_eu).ended();

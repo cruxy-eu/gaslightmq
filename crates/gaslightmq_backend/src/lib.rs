@@ -6,7 +6,7 @@
 //! | Type | Is |
 //! |---|---|
 //! | [`Backend`] | The trait: answer a request, let go of a connection, report the endpoints, take the address of each listener, declare and apply incidents. |
-//! | [`BackendRequest`] | The request message: a request under the ID of its call, with the endpoint its connection is on. |
+//! | [`BackendRequest`] | The request message: a request under the ID of its call, with its connection and the endpoint that is on. |
 //! | [`BackendAnswer`] | The answer message: the truth, no response, an answer that is no response, or a failure. |
 //! | [`Truth`] | What the backend answered, and what the real cluster answered when an overlay changed it. |
 //! | [`BackendFailure`] | Why a backend has no answer for a call. |
@@ -32,6 +32,7 @@
 //!
 //! use futures::executor::block_on;
 //! use gaslightmq_backend::prelude::*;
+//! use gaslightmq_call::CallId;
 //! use gaslightmq_field::prelude::*;
 //! use gaslightmq_incident::prelude::*;
 //! use gaslightmq_kernel::prelude::*;
@@ -86,9 +87,9 @@
 //!     }
 //! }
 //!
-//! // The pipeline of connection 7 forwards its first request, which arrived on the bootstrap endpoint.
+//! // The pipeline of connection 7 forwards the first request of the proxy, which arrived on the bootstrap endpoint.
 //! let heartbeat = Request::new(4, 41, Some("order-ingest"), &HeartbeatRequest::default()).expect("a request");
-//! let request = BackendRequest::new("#7.1".parse().expect("a call ID"), Endpoint::Bootstrap, heartbeat);
+//! let request = BackendRequest::new(CallId::FIRST, ConnectionNumber::new(7), Endpoint::Bootstrap, heartbeat);
 //!
 //! // Any executor drives a backend. The engine has its runtime, and this example has the smallest one.
 //! let BackendAnswer::Truth(truth) = block_on(Calm.call(request)) else {

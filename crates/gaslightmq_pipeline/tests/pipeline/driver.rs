@@ -62,6 +62,7 @@ impl Driver {
     pub fn telling(lies: Lies, rules: impl IntoIterator<Item = Rule>) -> Self {
         let shared = SharedBySessions::new(
             ClientContexts::new(Duration::from_secs(60)),
+            CallIds::new(),
             KnownTopics::new(),
             Arc::new(lies),
         );
@@ -118,11 +119,6 @@ impl Driver {
 
     pub fn handle(&mut self, input: Input<'_>) -> Seen {
         Seen(self.pipeline.handle(input, self.clock.now()).into_iter().collect())
-    }
-
-    /// The call with that number on the connection of these tests.
-    pub fn call(number: u64) -> CallId {
-        CallId::new(ConnectionNumber::new(CONNECTION), CallNumber::new(number).unwrap())
     }
 }
 

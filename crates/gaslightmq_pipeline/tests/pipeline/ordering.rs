@@ -22,7 +22,8 @@ fn answers_leave_in_the_order_of_their_requests() {
     let answered = driver.answer(&first);
     assert_eq!(answered.kinds(), ["send", "emit", "send", "emit"]);
     let [one, two] = answered.calls().try_into().unwrap();
-    assert_eq!((one.id(), two.id()), (Driver::call(1), Driver::call(2)));
+    assert_eq!((one.id(), two.id()), (first.0, second.0));
+    assert!(one.id() < two.id(), "a later call has a higher ID");
 }
 
 #[test]
@@ -36,12 +37,13 @@ fn a_delay_after_the_response_holds_back_the_answers_behind_it_and_no_request() 
     // The Heartbeat behind it reaches the backend on time, and its answer waits for the Produce.
     let behind = driver.send(&heartbeat(42));
     assert_eq!(behind.kinds(), ["forward"]);
-    assert!(driver.answer(&behind.forwarded()).is_empty());
+    let the_heartbeat = behind.forwarded();
+    assert!(driver.answer(&the_heartbeat).is_empty());
 
     // The timer fires, and both answers leave in order.
     let fired = driver.fire(timer);
     assert_eq!(fired.kinds(), ["send", "emit", "send", "emit"]);
-    assert_eq!(fired.calls()[1].id(), Driver::call(2));
+    assert_eq!(fired.calls()[1].id(), the_heartbeat.0);
     // The Heartbeat was not delayed by a rule, and still waited a second.
     assert!(fired.calls()[1].verdict().is_pass());
 }
@@ -58,7 +60,8 @@ fn a_delay_before_forwarding_holds_back_the_requests_behind_it() {
     let fired = driver.fire(timer);
     assert_eq!(fired.kinds(), ["forward", "forward"]);
     let [first, second] = fired.forwards().try_into().unwrap();
-    assert_eq!((first.0, second.0), (Driver::call(1), Driver::call(2)));
+    let the_produce = timer.0.call();
+    assert_eq!((first.0, second.0), (the_produce, the_produce.next()));
 }
 
 #[test]
@@ -94,7 +97,7 @@ fn a_hang_up_before_forwarding_waits_for_the_requests_before_it() {
     // The Produce goes on first. Then the connection closes, and neither call gets an answer.
     let fired = driver.fire(timer);
     assert_eq!(fired.kinds(), ["forward", "emit", "emit", "close"]);
-    assert_eq!(fired.forwarded().0, Driver::call(1));
+    assert_eq!(fired.forwarded().0, timer.0.call());
     let [produce, heartbeat] = fired.calls().try_into().unwrap();
     assert_eq!(produce.delivered().to_string(), "nothing");
     assert_eq!(heartbeat.delivered().to_string(), "connection closed");

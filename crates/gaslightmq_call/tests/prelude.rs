@@ -67,14 +67,8 @@ mod next_to_std_and_every_neighbour {
         let fields = gaslightmq_field::Fields::new()
             .with(gaslightmq_field::ConnectionNumber::new(7))
             .without_truth();
-        let call = Call::new(
-            CallNumber::FIRST,
-            fields,
-            Delivered::Nothing,
-            explanation.clone(),
-            timing,
-        )
-        .expect("a call that ended");
+        let call = Call::new(CallId::FIRST, fields, Delivered::Nothing, explanation.clone(), timing)
+            .expect("a call that ended");
         let id: CallId = call.id();
         let verdict: Verdict = call.verdict();
         let response = ResponseSummary::new(Answer::Ok);
@@ -109,11 +103,7 @@ mod next_to_std_and_every_neighbour {
 
         let name = || RecordedRuleName::new("x").expect("a name");
         vec![
-            message_of(CallNumberError::Zero),
-            message_of(CallIdError::InvalidNumber {
-                input: "#7.0".to_owned(),
-                error: CallNumberError::Zero,
-            }),
+            message_of(CallIdError::Zero),
             message_of(RecordedRuleNameError::Empty),
             message_of(TriggerDecisionError::Unknown { name: "x".to_owned() }),
             message_of(DieCheckError::RollOutOfRange { ppm: 1_000_000 }),
@@ -140,7 +130,7 @@ fn the_prelude_names_every_type_next_to_std_and_every_neighbour() {
     assert_eq!(
         next_to_std_and_every_neighbour::every_item(),
         [
-            "#7.1",
+            "1",
             "ok",
             "connection closed",
             "silence",
@@ -161,8 +151,7 @@ fn the_prelude_names_the_error_of_every_type() {
     assert_eq!(
         next_to_std_and_every_neighbour::every_error(),
         [
-            "a call number is at least one",
-            "call ID `#7.0`: a call number is at least one",
+            "a call ID is at least one",
             "recorded rule name \"\" is empty",
             "no trigger decision is called \"x\"",
             "a roll of 1000000 parts per million is not below one million",

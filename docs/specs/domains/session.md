@@ -63,6 +63,8 @@ Scope selectors test them.
 
 A `connection` number only lives as long as its connection.
 A client that reconnects gets a new session and a new number.
+The environment goes on counting its calls: the first call of the new session has the next
+[call ID](../architecture/identity.md#call-id), and not the first one.
 `client.id` with `host` identifies one client instance across reconnects.
 
 ## Client context
@@ -106,6 +108,8 @@ The session's pipeline keeps this state in memory:
   See [counters](rules.md#counters).
 - **In-flight calls**: requests waiting for a response,
   so lies after the response apply to the right call.
+  Each one has its [call ID](../architecture/identity.md#call-id) from the moment its request arrives.
+  The session takes it from the one count of its environment, so it keeps no call numbers of its own.
 - **Stalled**: whether a [silence](../architecture/request-pipeline.md#ordering) stopped the connection.
 
 None of this state is persisted.

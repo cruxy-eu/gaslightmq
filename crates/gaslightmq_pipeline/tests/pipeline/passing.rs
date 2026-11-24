@@ -18,7 +18,7 @@ fn a_call_with_no_rule_goes_through_untouched() {
     let arrived = driver.send(&request);
     assert_eq!(arrived.kinds(), ["forward"]);
     let (call, forwarded) = arrived.forwarded();
-    assert_eq!(call, Driver::call(1));
+    assert_eq!(call, CallId::FIRST);
     assert_eq!(forwarded.frame(), request.frame());
 
     // The backend takes four milliseconds, and the truth goes to the client, byte for byte.
@@ -88,10 +88,11 @@ fn bytes_that_end_in_the_middle_of_a_request_wait_for_the_rest() {
 
     // The first request is whole, and the second one is not.
     let arrived = driver.handle(Input::ClientBytes(start));
-    assert_eq!(arrived.forwarded().0, Driver::call(1));
+    let the_first = arrived.forwarded().0;
+    assert_eq!(the_first, CallId::FIRST);
 
     let arrived = driver.handle(Input::ClientBytes(rest));
-    assert_eq!(arrived.forwarded().0, Driver::call(2));
+    assert_eq!(arrived.forwarded().0, the_first.next());
 }
 
 #[test]

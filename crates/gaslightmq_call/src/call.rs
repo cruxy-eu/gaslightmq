@@ -2,7 +2,7 @@
 
 use gaslightmq_field::prelude::*;
 
-use crate::{CallId, CallNumber, CallTiming, Delivered, Explanation, ResponseSummary, Verdict};
+use crate::{CallId, CallTiming, Delivered, Explanation, ResponseSummary, Verdict};
 
 /// The record of one call: one request and its response on one session, and what GaslightMQ did to it.
 ///
@@ -59,14 +59,15 @@ use crate::{CallId, CallNumber, CallTiming, Delivered, Explanation, ResponseSumm
 ///
 /// let arrived = Instant::ZERO + Duration::from_millis(250);
 /// let call = Call::new(
-///     CallNumber::FIRST,
+///     CallId::FIRST,
 ///     fields,
 ///     ResponseSummary::new(Answer::Ok).with_part(partition, ErrorCode::NOT_LEADER_OR_FOLLOWER).into(),
 ///     explanation,
 ///     CallTiming::arrived(arrived).delivered(arrived).expect("delivered no earlier than it arrived"),
 /// )?;
 ///
-/// assert_eq!(call.id().to_string(), "#7.1");
+/// assert_eq!(call.id(), CallId::FIRST);
+/// assert_eq!(call.connection(), ConnectionNumber::new(7));
 /// assert_eq!(call.verdict().to_string(), "NOT_LEADER_OR_FOLLOWER on orders.eu/3");
 /// assert!(call.explanation().applied("leader-flap"));
 ///
@@ -77,7 +78,7 @@ use crate::{CallId, CallNumber, CallTiming, Delivered, Explanation, ResponseSumm
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Call {
-    number: CallNumber,
+    id: CallId,
     connection: ConnectionNumber,
     fields: Fields,
     upstream: Option<ResponseSummary>,
@@ -87,8 +88,9 @@ pub struct Call {
 }
 
 impl Call {
-    /// The record of the call with that number on its session.
+    /// The record of the call with that ID.
     ///
+    /// `id` is the number the environment gave the call when its request arrived.
     /// `fields` are the fields of the call as the rules saw them at its end: who called, what the request asked,
     /// what the client context knew, and the truth.
     /// A call that never reached the backend has [no truth](Fields::without_truth).
@@ -99,7 +101,7 @@ impl Call {
     ///   Every call runs on one session, and a session has its connection number from the moment it opens.
     /// - [`CallError::TruthPending`] when `fields` still wait for the backend. A record is of a call that ended.
     pub fn new(
-        number: CallNumber,
+        id: CallId,
         fields: Fields,
         delivered: Delivered,
         explanation: Explanation,
@@ -120,7 +122,7 @@ impl Call {
             return Err(CallError::TruthPending);
         }
         Ok(Call {
-            number,
+            id,
             connection,
             fields,
             upstream: None,
@@ -137,17 +139,12 @@ impl Call {
         self
     }
 
-    /// Which call this is among all the calls of its engine.
+    /// Which call this is among all the calls of its environment.
     pub const fn id(&self) -> CallId {
-        CallId::new(self.connection, self.number)
+        self.id
     }
 
-    /// Which call of its session this is.
-    pub const fn number(&self) -> CallNumber {
-        self.number
-    }
-
-    /// The connection of the session the call ran on.
+    /// The connection of the session the call ran on. It is no part of the [ID](Self::id) of the call.
     pub const fn connection(&self) -> ConnectionNumber {
         self.connection
     }
@@ -217,7 +214,7 @@ mod tests {
 
     fn record(fields: Fields) -> Result<Call, CallError> {
         Call::new(
-            CallNumber::FIRST,
+            CallId::FIRST,
             fields,
             Delivered::Nothing,
             Explanation::none(),
@@ -236,9 +233,8 @@ mod tests {
     fn a_record_knows_which_call_it_is_of() {
         let call = record(answered()).unwrap();
 
+        assert_eq!(call.id(), CallId::FIRST);
         assert_eq!(call.connection(), ConnectionNumber::new(7));
-        assert_eq!(call.number(), CallNumber::FIRST);
-        assert_eq!(call.id(), "#7.1".parse().unwrap());
     }
 
     #[test]

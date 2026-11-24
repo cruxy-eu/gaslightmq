@@ -75,18 +75,13 @@ const REFUSAL: &str = r#"{"lie":"refusal","error":"NOT_LEADER_OR_FOLLOWER","targ
 const THREE: &str = r#"{"parts":["orders.eu/3"]}"#;
 
 #[test]
-fn a_call_number_is_a_number() {
-    writes(&CallNumber::new(3).unwrap(), "3");
-    rejects::<CallNumber>("0", "a call number is at least one");
-    rejects::<CallNumber>(r#""3""#, "invalid type");
-}
+fn a_call_id_is_a_number() {
+    let third = CallId::FIRST.next().next();
 
-#[test]
-fn a_call_id_is_its_text() {
-    writes(&"#7.3".parse::<CallId>().unwrap(), r##""#7.3""##);
-    reads(r#""7.3""#, &"#7.3".parse::<CallId>().unwrap());
-    rejects::<CallId>(r##""#7.0""##, "call ID `#7.0`: a call number is at least one");
-    rejects::<CallId>(r##""#7""##, "is not a connection and a call number");
+    writes(&third, "3");
+    reads("3", &third);
+    rejects::<CallId>("0", "a call ID is at least one");
+    rejects::<CallId>(r#""3""#, "invalid type");
 }
 
 #[test]
@@ -469,20 +464,15 @@ fn a_call_writes_every_part_of_its_record() {
             ErrorCode::NOT_LEADER_OR_FOLLOWER,
         )
         .with_part("orders.eu/4".parse::<Part>().unwrap(), ErrorCode::REQUEST_TIMED_OUT);
-    let call = Call::new(
-        CallNumber::new(3).unwrap(),
-        fetch(),
-        delivered.into(),
-        explanation,
-        timing,
-    )
-    .unwrap()
-    .with_upstream(ResponseSummary::new(Answer::Ok));
+    let third = CallId::FIRST.next().next();
+    let call = Call::new(third, fetch(), delivered.into(), explanation, timing)
+        .unwrap()
+        .with_upstream(ResponseSummary::new(Answer::Ok));
 
     let lie = r#"{"lie":"refusal","error":"REQUEST_TIMED_OUT","stage":"after","target":{"parts":["orders.eu/4"]}}"#;
     let json = format!(
         concat!(
-            r#"{{"number":3,"fields":{fields},"upstream":{{"answer":"ok"}},"#,
+            r#"{{"id":3,"fields":{fields},"upstream":{{"answer":"ok"}},"#,
             r#""delivered":{{"response":{{"answer":"ok","parts":{{"orders.eu/3":{{"error":"NOT_LEADER_OR_FOLLOWER"}},"orders.eu/4":{{"error":"REQUEST_TIMED_OUT"}}}}}}}},"#,
             r#""verdict":[{lie}],"#,
             r#""explanation":{{"rules":[{{"rule":"refuse-orders","priority":0,"matched":{{"parts":["orders.eu/4"]}},"trigger":{fired},"lie":{{"fired":{lie},"applied":{{"parts":["orders.eu/4"]}}}}}}]}},"#,
@@ -494,7 +484,8 @@ fn a_call_writes_every_part_of_its_record() {
     );
 
     writes(&call, &json);
-    assert_eq!(call.id().to_string(), "#7.3");
+    assert_eq!(call.id(), third);
+    assert_eq!(call.connection(), ConnectionNumber::new(7));
 }
 
 #[test]
@@ -507,7 +498,7 @@ fn a_call_that_never_reached_the_backend_reads_back_without_a_truth() {
         .with_part(TopicName::new("payments.settled").unwrap())
         .without_truth();
     let call = Call::new(
-        CallNumber::FIRST,
+        CallId::FIRST,
         fields,
         Delivered::Nothing,
         Explanation::none(),
@@ -518,7 +509,7 @@ fn a_call_that_never_reached_the_backend_reads_back_without_a_truth() {
     writes(
         &call,
         concat!(
-            r#"{"number":1,"fields":{"values":[{"connection":7},{"api":"Produce"}],"#,
+            r#"{"id":1,"fields":{"values":[{"connection":7},{"api":"Produce"}],"#,
             r#""parts":[{"part":"orders.eu/3","truth":"none"},{"part":"payments.settled"}]},"#,
             r#""delivered":"nothing","verdict":[],"explanation":{},"timing":{"arrived":0}}"#
         ),
@@ -528,8 +519,8 @@ fn a_call_that_never_reached_the_backend_reads_back_without_a_truth() {
 
 #[test]
 fn reading_a_call_takes_the_verdict_from_the_explanation() {
-    let without = r#"{"number":1,"fields":{"values":[{"connection":7}]},"delivered":"nothing","explanation":{},"timing":{"arrived":0}}"#;
-    let with_another = r#"{"number":1,"fields":{"values":[{"connection":7}]},"delivered":"nothing","verdict":[{"lie":"silence"}],"explanation":{},"timing":{"arrived":0}}"#;
+    let without = r#"{"id":1,"fields":{"values":[{"connection":7}]},"delivered":"nothing","explanation":{},"timing":{"arrived":0}}"#;
+    let with_another = r#"{"id":1,"fields":{"values":[{"connection":7}]},"delivered":"nothing","verdict":[{"lie":"silence"}],"explanation":{},"timing":{"arrived":0}}"#;
 
     let call: Call = serde_json::from_str(without).unwrap();
     assert!(call.verdict().is_pass());
@@ -539,7 +530,7 @@ fn reading_a_call_takes_the_verdict_from_the_explanation() {
 #[test]
 fn a_call_whose_fields_cannot_be_does_not_read() {
     let call = |fields: &str| {
-        format!(r#"{{"number":1,"fields":{fields},"delivered":"nothing","explanation":{{}},"timing":{{"arrived":0}}}}"#)
+        format!(r#"{{"id":1,"fields":{fields},"delivered":"nothing","explanation":{{}},"timing":{{"arrived":0}}}}"#)
     };
 
     rejects::<Call>(

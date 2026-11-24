@@ -64,7 +64,7 @@ async fn a_delayed_request_reaches_the_backend_when_the_clock_reaches_its_instan
     // The delay counts from the moment the request arrived.
     proxy.advance(TimeSpan::from_secs(45));
     assert_eq!(beat.await?, Ok(()));
-    let the_heartbeat: CallId = "#1.1".parse()?;
+    let the_heartbeat = CallId::FIRST;
     assert_eq!(proxy.backend().calls_taken_so_far(), [the_heartbeat]);
     Ok(())
 }
@@ -150,12 +150,14 @@ async fn a_hang_up_closes_the_connection_and_the_client_connects_again() -> anyh
     assert_eq!(EngineUnderTest::soon(client.closed()).await?, Ok(()));
 
     // The backend never saw the heartbeat, and it hears that the connection ended.
-    let the_metadata_call: CallId = "#1.1".parse()?;
+    let the_metadata_call = CallId::FIRST;
+    let the_heartbeat_that_hung_up = the_metadata_call.next();
     let the_first_connection: ConnectionNumber = "#1".parse()?;
     assert_eq!(proxy.backend().calls_taken_so_far(), [the_metadata_call]);
     assert_eq!(proxy.backend().connections_closed(1).await?, [the_first_connection]);
     assert_eq!(proxy.next_record().await?.id(), the_metadata_call);
     let record = proxy.next_record().await?;
+    assert_eq!(record.id(), the_heartbeat_that_hung_up);
     assert_eq!(record.verdict().to_string(), "hang-up");
     assert_eq!(record.delivered(), &Delivered::ConnectionClosed);
 
@@ -163,10 +165,15 @@ async fn a_hang_up_closes_the_connection_and_the_client_connects_again() -> anyh
     proxy.engine().rules().disarm(disconnect.name())?;
     let again = RawKafkaClient::new(proxy.address_of(Endpoint::Bootstrap)?);
     assert_eq!(again.heartbeat(group.as_str()).await, Ok(()));
-    let the_heartbeat_of_the_new_session: CallId = "#2.1".parse()?;
+    // The proxy goes on counting its calls, and the new session is on a new connection.
+    let the_heartbeat_of_the_new_session = the_heartbeat_that_hung_up.next();
     assert_eq!(
         proxy.backend().calls_taken_so_far(),
         [the_metadata_call, the_heartbeat_of_the_new_session]
+    );
+    assert_eq!(
+        proxy.backend().connections_of_the_calls_taken_so_far(),
+        [the_first_connection, ConnectionNumber::new(2)]
     );
     Ok(())
 }

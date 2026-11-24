@@ -228,6 +228,7 @@ dependencies = [
  "gaslightmq_incident",
  "gaslightmq_kernel",
  "gaslightmq_overlay",
+ "gaslightmq_session",
  "gaslightmq_test_kafka",
  "gaslightmq_wire",
  "thiserror",

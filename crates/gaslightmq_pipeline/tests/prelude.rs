@@ -60,6 +60,7 @@ mod next_to_the_others {
         let topics: KnownTopics = KnownTopics::new();
         let shared: SharedBySessions = SharedBySessions::new(
             ClientContexts::new(core::time::Duration::from_secs(60)),
+            CallIds::new(),
             topics.clone(),
             Arc::new(Lies::of_every_build()),
         );
@@ -98,7 +99,7 @@ fn the_prelude_names_every_item_next_to_the_other_preludes() {
 
     assert_eq!(items.len(), 6);
     assert!(items.iter().all(|item| !item.is_empty()));
-    assert_eq!(items[5], "#7.1 after the response");
+    assert_eq!(items[5], "call 1 after the response");
 }
 
 #[test]
@@ -109,6 +110,7 @@ fn the_prelude_is_enough_to_drive_a_pipeline() {
 
     let shared = SharedBySessions::new(
         gaslightmq_session::ClientContexts::new(core::time::Duration::from_secs(60)),
+        gaslightmq_session::CallIds::new(),
         KnownTopics::new(),
         Arc::new(gaslightmq_lie_api::Lies::of_every_build()),
     );
@@ -135,7 +137,7 @@ fn the_prelude_is_enough_to_drive_a_pipeline() {
         pipeline
             .handle(
                 Input::TimerFired(TimerId::new(
-                    "#7.1".parse().unwrap(),
+                    gaslightmq_call::CallId::FIRST,
                     gaslightmq_lie::Stage::AfterResponse
                 )),
                 now

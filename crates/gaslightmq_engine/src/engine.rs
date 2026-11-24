@@ -9,7 +9,7 @@ use gaslightmq_clock::Clock;
 use gaslightmq_field::Endpoint;
 use gaslightmq_lie_api::Lies;
 use gaslightmq_pipeline::{KnownTopics, SharedBySessions};
-use gaslightmq_session::ClientContexts;
+use gaslightmq_session::{CallIds, ClientContexts};
 use tokio::sync::watch;
 use tokio::task::JoinHandle;
 
@@ -26,7 +26,7 @@ use crate::{EngineConfiguration, EngineStartError, EveryEvent, LiveEvents, RuleS
 ///
 /// | Part | Does |
 /// |---|---|
-/// | The sessions | Wait for frames of the client, answers of the backend, timers and new snapshots, report each to their pipeline, and perform what it returns. |
+/// | The sessions | Wait for frames of the client, answers of the backend, timers and new snapshots, report each to their pipeline, and perform what it returns. They count their calls together, so a call ID names one call of the proxy. |
 /// | The [rule store](Self::rules) | Arms and disarms rules, and publishes a new snapshot to every session. |
 /// | The events | Hand over the record of every call, and every incident that a rule fired: to whoever [watches](Self::live_events), and to whoever [keeps every one](Self::every_event). |
 /// | The [clock](WaitableClock) | Tells every session the time, and ends every wait: a delay, a lifetime, the time a client context stays. |
@@ -78,6 +78,7 @@ impl<B: Backend + 'static, C: WaitableClock> Engine<B, C> {
         let clock = Arc::new(clock);
         let shared = SharedBySessions::new(
             ClientContexts::new(configuration.client_context_linger.duration()),
+            CallIds::new(),
             KnownTopics::new(),
             Arc::new(lies),
         );

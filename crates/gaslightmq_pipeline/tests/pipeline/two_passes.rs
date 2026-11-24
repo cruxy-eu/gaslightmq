@@ -135,10 +135,11 @@ fn a_call_in_flight_finishes_on_the_snapshot_it_started_with() {
     let after = driver.send(&second);
 
     // The first call finishes on its old snapshot: its response pass still has the rule.
-    let answered = driver.answer(&in_flight.forwarded());
+    let the_first_call = in_flight.forwarded();
+    let answered = driver.answer(&the_first_call);
     assert_eq!(told(&first, &answered.sent(&first)), ["orders.eu/3 REQUEST_TIMED_OUT"]);
     let record = answered.emitted();
-    assert_eq!(record.id(), Driver::call(1));
+    assert_eq!(record.id(), the_first_call.0);
     assert!(record.explanation().applied("lost-acknowledgement"));
 
     // The call that arrived after the change uses the new one.

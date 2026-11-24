@@ -30,7 +30,8 @@ The answer does not have to come at once:
 a Fetch waits for records, and a `JoinGroup` waits for the other members of the group.
 Until the answer arrives, the call stays [in flight](../domains/session.md#state) in its session.
 
-A request tells the backend which connection it arrived on, and which endpoint that connection is on.
+A [call ID](identity.md#call-id) is one number, and it does not say the connection.
+A request therefore tells the backend which connection it arrived on, and which endpoint that connection is on.
 A backend takes the requests of one connection in the order in which the engine hands them over.
 It answers them in any order.
 

@@ -8,20 +8,21 @@ use futures::FutureExt;
 use futures::executor::{LocalPool, block_on};
 use futures::task::LocalSpawnExt;
 use gaslightmq_backend::prelude::*;
+use gaslightmq_call::prelude::*;
 use gaslightmq_field::prelude::*;
 use gaslightmq_incident::prelude::*;
 use gaslightmq_kernel::prelude::*;
 use gaslightmq_wire::messages::MetadataResponse;
 
-use crate::cluster::{Cluster, broker, metadata, truth_of};
+use crate::cluster::{CONSUMER, Cluster, broker, metadata, truth_of};
 
 fn names(endpoints: &Endpoints) -> Vec<String> {
     endpoints.iter().map(|endpoint| endpoint.to_string()).collect()
 }
 
-/// The brokers that a Metadata answer of `cluster` names to a client, each with its address.
-fn told(cluster: &Cluster, call: &str) -> Vec<(i32, String)> {
-    let answer = block_on(cluster.call(metadata(call, Endpoint::Bootstrap)));
+/// The brokers that the Metadata answer of `cluster` to `call` names to a client, each with its address.
+fn told(cluster: &Cluster, call: CallId) -> Vec<(i32, String)> {
+    let answer = block_on(cluster.call(metadata(call, CONSUMER, Endpoint::Bootstrap)));
     let named: MetadataResponse = truth_of(answer).response().body().unwrap();
     let address = |broker: &gaslightmq_wire::messages::metadata_response::MetadataResponseBroker| {
         (broker.node_id.0, format!("{}:{}", broker.host, broker.port))
@@ -126,7 +127,9 @@ fn a_broker_that_went_down_and_came_back_between_two_answers_is_not_missed() {
 fn a_client_is_sent_to_the_listener_of_a_broker_once_the_engine_says_where_it_listens() {
     let cluster = Cluster::default();
     let endpoints = block_on(cluster.endpoints(&Endpoints::none()));
-    assert_eq!(told(&cluster, "#7.1"), [], "no endpoint has a listener yet");
+    let before = CallId::FIRST;
+    let after = before.next();
+    assert_eq!(told(&cluster, before), [], "no endpoint has a listener yet");
 
     // The engine opens a listener for every endpoint, each on a free port, and says which port it got.
     for (endpoint, port) in endpoints.iter().zip(50_001..) {
@@ -136,7 +139,7 @@ fn a_client_is_sent_to_the_listener_of_a_broker_once_the_engine_says_where_it_li
 
     // The bootstrap endpoint took the first port, and no answer names it.
     assert_eq!(
-        told(&cluster, "#7.2"),
+        told(&cluster, after),
         [
             (1, "gaslight.test:50002".to_owned()),
             (2, "gaslight.test:50003".to_owned()),
@@ -163,7 +166,9 @@ fn a_broker_that_came_back_is_left_out_until_its_new_listener_is_open() {
     // The engine has not closed the old listener yet, and says where it listens. Its endpoint is closed.
     block_on(cluster.listens(broker(2), "127.0.0.1:50002".parse().unwrap())).unwrap();
     block_on(cluster.apply(back)).unwrap();
-    assert_eq!(told(&cluster, "#7.1"), [(1, "gaslight.test:50001".to_owned())]);
+    let before = CallId::FIRST;
+    let after = before.next();
+    assert_eq!(told(&cluster, before), [(1, "gaslight.test:50001".to_owned())]);
 
     // The engine learns that the endpoint opened anew, and opens a listener for it, on another port.
     let endpoints = block_on(cluster.endpoints(&known));
@@ -171,7 +176,7 @@ fn a_broker_that_came_back_is_left_out_until_its_new_listener_is_open() {
     block_on(cluster.listens(broker(2), "127.0.0.1:50007".parse().unwrap())).unwrap();
 
     assert_eq!(
-        told(&cluster, "#7.2"),
+        told(&cluster, after),
         [
             (1, "gaslight.test:50001".to_owned()),
             (2, "gaslight.test:50007".to_owned())
@@ -192,5 +197,5 @@ fn a_backend_rejects_a_listener_that_clients_cannot_tell_from_another() {
         "clients cannot be told that endpoint `broker 2` listens on 10.0.4.2:19092: \
          broker 1 is advertised at gaslight.test:19092"
     );
-    assert_eq!(told(&cluster, "#7.1"), [(1, "gaslight.test:19092".to_owned())]);
+    assert_eq!(told(&cluster, CallId::FIRST), [(1, "gaslight.test:19092".to_owned())]);
 }

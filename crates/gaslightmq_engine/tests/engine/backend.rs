@@ -25,7 +25,7 @@ async fn a_failure_of_the_backend_ends_the_session() -> anyhow::Result<()> {
     assert_eq!(
         record.explanation().failure().map(Failure::message),
         Some(
-            "the backend has no answer for call #1.1: \
+            "the backend has no answer for call 1: \
              the connection to the cluster ended before the answer arrived: the broker closed it"
         )
     );

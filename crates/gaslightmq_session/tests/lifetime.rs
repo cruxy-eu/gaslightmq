@@ -20,6 +20,7 @@ const LINGER: Duration = Duration::from_secs(60);
 /// What an engine keeps for all its sessions.
 struct Proxy {
     contexts: ClientContexts,
+    call_ids: CallIds,
     ordinals: ConnectionOrdinals,
     connections: u64,
 }
@@ -28,6 +29,7 @@ impl Proxy {
     fn new() -> Self {
         Self {
             contexts: ClientContexts::new(LINGER),
+            call_ids: CallIds::new(),
             ordinals: ConnectionOrdinals::new(),
             connections: 0,
         }
@@ -43,7 +45,7 @@ impl Proxy {
             Endpoint::Broker(BrokerId::try_from(broker).unwrap()),
         );
         let ordinal = self.ordinals.assign(connection.host(), connection.endpoint());
-        Session::open(connection, ordinal, self.contexts.clone(), now)
+        Session::open(connection, ordinal, self.contexts.clone(), self.call_ids.clone(), now)
     }
 }
 
@@ -353,7 +355,7 @@ fn a_client_that_reconnects_gets_a_new_session_and_keeps_its_context() {
     session.counters_mut().count(&rule);
     session.counters_mut().count(&rule);
     rule.count();
-    session.calls_mut().arrive(join_group("analytics"), at(5));
+    let joined = session.calls_mut().arrive(join_group("analytics"), at(5));
 
     // A hang-up closes the real connection, and the session ends with it.
     let ended = session.close(ClosedBy::Lie, at(100));
@@ -370,10 +372,10 @@ fn a_client_that_reconnects_gets_a_new_session_and_keeps_its_context() {
     assert!(reconnected.calls().is_empty());
     assert_eq!(reconnected.counters().matches(&rule), 0);
     assert_eq!(reconnected.counters_mut().count(&rule).value(), 1);
-    assert_eq!(
-        reconnected.calls_mut().arrive(fetch("analytics", 1), at(600)).value(),
-        1
-    );
+    // Its first call is the next call of the environment, which goes on counting.
+    let fetched = reconnected.calls_mut().arrive(fetch("analytics", 1), at(600));
+    assert_eq!(fetched, joined.next());
+    assert_eq!(reconnected.calls().arrived(), 1);
 
     // The client context and the rule's shared counter live in the engine, so they are still there.
     reconnected.identify(&fetch("analytics", 1));

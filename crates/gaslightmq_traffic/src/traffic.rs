@@ -32,13 +32,14 @@ use crate::{LiveWindow, Statistics, SubscriptionId, TrafficConfiguration};
 /// use gaslightmq_selector::prelude::*;
 /// use gaslightmq_traffic::prelude::*;
 ///
-/// // The second call of connection #7: a Heartbeat that no rule touched.
+/// // The second call of the proxy, on connection #7: a Heartbeat that no rule touched.
+/// let second_call = CallId::FIRST.next();
 /// let fields = Fields::new()
 ///     .with(ConnectionNumber::new(7))
 ///     .with(ApiKey::HEARTBEAT)
 ///     .with(Outcome::Ok);
 /// let heartbeat = Call::new(
-///     CallNumber::FIRST.next(),
+///     second_call,
 ///     fields,
 ///     ResponseSummary::new(Answer::Ok).into(),
 ///     Explanation::none(),
@@ -55,7 +56,8 @@ use crate::{LiveWindow, Statistics, SubscriptionId, TrafficConfiguration};
 ///
 /// assert_eq!(traffic.statistics().calls_of(ApiKey::HEARTBEAT), 1);
 /// let newest = traffic.live_window().calls().next_back().expect("the window keeps the call");
-/// assert_eq!(newest.id().to_string(), "#7.2");
+/// assert_eq!(newest.id(), second_call);
+/// assert_eq!(newest.connection(), ConnectionNumber::new(7));
 /// # Ok::<(), CallError>(())
 /// ```
 #[derive(Debug, Clone)]

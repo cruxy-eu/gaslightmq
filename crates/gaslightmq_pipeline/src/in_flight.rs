@@ -514,7 +514,7 @@ impl CallInFlight {
     /// Stage 11: the record of the call, once. It settles every firing of the call.
     ///
     /// `None` when the call was recorded before. A call that was not is never left without a record.
-    pub(crate) fn record(&mut self, number: CallNumber, delivered: Delivered) -> Option<Call> {
+    pub(crate) fn record(&mut self, id: CallId, delivered: Delivered) -> Option<Call> {
         if std::mem::replace(&mut self.recorded, true) {
             return None;
         }
@@ -528,7 +528,7 @@ impl CallInFlight {
         let fields = self.settled_fields.clone();
         let fields = fields.unwrap_or_else(|| self.fields.without_truth());
         let recorded = Recorded {
-            number,
+            id,
             connection: self.connection,
             delivered,
             lines,
@@ -753,7 +753,7 @@ impl CallInFlight {
 /// What a call record holds apart from its fields and from what failed.
 #[derive(Debug)]
 struct Recorded {
-    number: CallNumber,
+    id: CallId,
     connection: ConnectionNumber,
     delivered: Delivered,
     /// The lines of the rules that the call touched.
@@ -778,7 +778,7 @@ impl Recorded {
         };
         let record = |fields: Fields, failures: &[StageFailure]| {
             Call::new(
-                self.number,
+                self.id,
                 fields,
                 self.delivered.clone(),
                 explained(failures),
@@ -877,6 +877,7 @@ mod tests {
         let lies = Lies::of_every_build().with(Refusal).unwrap();
         let shared = SharedBySessions::new(
             ClientContexts::new(Duration::from_secs(60)),
+            CallIds::new(),
             KnownTopics::new(),
             Arc::new(lies),
         );
@@ -904,7 +905,13 @@ mod tests {
             "10.0.4.27:51459".parse().unwrap(),
             Endpoint::Bootstrap,
         );
-        let mut session = Session::open(connection, ConnectionOrdinal::FIRST, shared.contexts().clone(), now);
+        let mut session = Session::open(
+            connection,
+            ConnectionOrdinal::FIRST,
+            shared.contexts().clone(),
+            shared.call_ids().clone(),
+            now,
+        );
         let mut call = CallInFlight::arrived(fetch, &mut session, snapshot, &shared, now);
 
         // Another session learns that the ID now belongs to another topic, between two stages of this call.
@@ -923,7 +930,7 @@ mod tests {
     fn a_call_whose_fields_make_no_record_still_gets_one_that_says_so() {
         let recorded = |fields: Fields| {
             let recorded = Recorded {
-                number: CallNumber::FIRST,
+                id: CallId::FIRST,
                 connection: ConnectionNumber::new(7),
                 delivered: Delivered::Nothing,
                 lines: Explanation::none(),
@@ -943,7 +950,8 @@ mod tests {
 
         // Fields that still wait for the backend make none. The call is recorded all the same.
         let record = recorded(Fields::new().with(ConnectionNumber::new(7)).with(ApiKey::FETCH));
-        assert_eq!(record.id().to_string(), "#7.1");
+        assert_eq!(record.id(), CallId::FIRST);
+        assert_eq!(record.connection(), ConnectionNumber::new(7));
         assert_eq!(
             record.explanation().failure().map(Failure::message),
             Some(

@@ -42,14 +42,8 @@ mod next_to_the_others {
             .with_part(TopicName::new("orders.eu").expect("a topic name"))
             .with_part(TopicName::new("orders.us").expect("a topic name"));
         let arrived = CallTiming::arrived(gaslightmq_clock::Instant::ZERO);
-        let call = Call::new(
-            CallNumber::FIRST,
-            fields,
-            Delivered::Nothing,
-            Explanation::none(),
-            arrived,
-        )
-        .expect("a call that ended on a connection");
+        let call = Call::new(CallId::FIRST, fields, Delivered::Nothing, Explanation::none(), arrived)
+            .expect("a call that ended on a connection");
 
         let configuration: IndexConfiguration = IndexConfiguration::new();
         let mut index: CallIndex = CallIndex::new(configuration.clone());

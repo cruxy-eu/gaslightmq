@@ -7,7 +7,7 @@
 //! | Type | Is |
 //! |---|---|
 //! | [`Call`] | The record: the fields of the call, what the client received, the explanation and the timing. |
-//! | [`CallNumber`], [`CallId`] | Which call of its session this is, and which call of its engine. |
+//! | [`CallId`] | Which call of its environment this is: one number. |
 //! | [`Answer`], [`ResponseSummary`] | A response without its payload: the answer for the call, and for each part with its own. |
 //! | [`Delivered`] | What the client actually received: a response, a response that nobody could read, nothing, or a closed connection. |
 //! | [`Verdict`] | Pass, or the lies that applied. |
@@ -111,8 +111,7 @@
 //!
 //! | Type | Error | What is wrong |
 //! |---|---|---|
-//! | [`CallNumber`] | [`CallNumberError`] | The number is zero, or the text is no number. |
-//! | [`CallId`] | [`CallIdError`] | The text is not a connection and a call number. |
+//! | [`CallId`] | [`CallIdError`] | The number is zero, or the text is no number. |
 //! | [`RecordedRuleName`] | [`RecordedRuleNameError`] | The text breaks a part of the [rule for names](RecordedRuleName#the-rule-for-names). |
 //! | [`TriggerDecision`] | [`TriggerDecisionError`] | No decision has that name. |
 //! | [`DieCheck`] | [`DieCheckError`] | The roll or the chance is more parts per million than it can be. |
@@ -135,8 +134,8 @@
 //!
 //! | Type | Form |
 //! |---|---|
-//! | [`CallNumber`] | A number. |
-//! | [`CallId`], [`RecordedRuleName`], [`TriggerDecision`], [`Failure`] | The text. |
+//! | [`CallId`] | A number. |
+//! | [`RecordedRuleName`], [`TriggerDecision`], [`Failure`] | The text. |
 //! | [`Answer`] | `ok`, or `{ error: NOT_LEADER_OR_FOLLOWER }`. |
 //! | [`ResponseSummary`] | A map with `answer`, and with `parts` when a part has its own answer: a map from the part to its answer. |
 //! | [`Delivered`] | `{ response: … }`, `unread-response`, `nothing` or `connection-closed`. |
@@ -150,7 +149,7 @@
 //! | [`RuleExplanation`] | A map with `rule` and `priority`, and the keys of how far the rule got. |
 //! | [`Explanation`] | A map with `rules` and `failure`, each when it has it. |
 //! | [`CallTiming`] | A map with `arrived`, and with `forwarded`, `answered` and `delivered` when it has them. |
-//! | [`Call`] | A map with `number`, `fields`, `delivered`, `verdict`, `explanation` and `timing`, and with `upstream` when it has it. |
+//! | [`Call`] | A map with `id`, `fields`, `delivered`, `verdict`, `explanation` and `timing`, and with `upstream` when it has it. |
 //!
 //! A line of an explanation says how far its rule got with the keys it has:
 //!
@@ -198,7 +197,7 @@ pub use explanation::{
     Explanation, ExplanationError, ExplanationStatus, Failure, LieFate, LieFateError, LostTarget, RuleExplanation,
     RuleExplanationError,
 };
-pub use id::{CallId, CallIdError, CallNumber, CallNumberError};
+pub use id::{CallId, CallIdError};
 pub use response::{Answer, Delivered, ResponseSummary};
 pub use rule::{RecordedRuleName, RecordedRuleNameError};
 pub use timing::{CallTiming, CallTimingError};
@@ -217,17 +216,17 @@ pub use verdict::Verdict;
 /// ```
 /// use gaslightmq_call::prelude::*;
 ///
-/// let number: Result<CallNumber, CallNumberError> = "3".parse();
-/// assert_eq!(number?, CallNumber::FIRST.next().next());
-/// # Ok::<(), CallNumberError>(())
+/// let third: Result<CallId, CallIdError> = CallId::new(3);
+/// assert_eq!(third?, CallId::FIRST.next().next());
+/// # Ok::<(), CallIdError>(())
 /// ```
 pub mod prelude {
     #[doc(no_inline)]
     pub use crate::{
-        Answer, BudgetCheck, BudgetCheckError, Call, CallError, CallId, CallIdError, CallNumber, CallNumberError,
-        CallTiming, CallTimingError, Delivered, DieCheck, DieCheckError, Explanation, ExplanationError,
-        ExplanationStatus, Failure, LieFate, LieFateError, LostTarget, RecordedRuleName, RecordedRuleNameError,
-        ResponseSummary, RuleExplanation, RuleExplanationError, TriggerChecks, TriggerDecision, TriggerDecisionError,
-        TriggerExplanation, TriggerExplanationError, Verdict, WindowCheck, WindowCheckError,
+        Answer, BudgetCheck, BudgetCheckError, Call, CallError, CallId, CallIdError, CallTiming, CallTimingError,
+        Delivered, DieCheck, DieCheckError, Explanation, ExplanationError, ExplanationStatus, Failure, LieFate,
+        LieFateError, LostTarget, RecordedRuleName, RecordedRuleNameError, ResponseSummary, RuleExplanation,
+        RuleExplanationError, TriggerChecks, TriggerDecision, TriggerDecisionError, TriggerExplanation,
+        TriggerExplanationError, Verdict, WindowCheck, WindowCheckError,
     };
 }

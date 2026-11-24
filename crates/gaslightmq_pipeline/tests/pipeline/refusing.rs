@@ -1,6 +1,7 @@
 //! A refusal tells the client that the request failed: the whole call, or some of its parts.
 
 use gaslightmq_call::prelude::*;
+use gaslightmq_clock::Instant;
 use gaslightmq_field::prelude::*;
 use gaslightmq_kernel::prelude::*;
 use gaslightmq_wire::messages::HeartbeatResponse;
@@ -225,9 +226,12 @@ fn an_answer_for_a_call_that_does_not_wait_changes_nothing() {
     let arrived = driver.send(&request);
     let (call, forwarded) = arrived.forwarded();
 
-    // No call has this number, and this connection has no such call.
-    assert!(driver.answer_with(Driver::call(9), truth(&forwarded)).is_empty());
-    let elsewhere = CallId::new(ConnectionNumber::new(8), call.number());
+    // No call has this ID yet.
+    assert!(driver.answer_with(call.next(), truth(&forwarded)).is_empty());
+
+    // Another connection of the proxy has a call in flight, and this connection has no such call.
+    let mut other = Driver::sharing(driver.shared.clone(), 8, snapshot([], Instant::ZERO));
+    let (elsewhere, _) = other.send(&heartbeat(41)).forwarded();
     assert!(driver.answer_with(elsewhere, truth(&forwarded)).is_empty());
 
     // The backend answers once.

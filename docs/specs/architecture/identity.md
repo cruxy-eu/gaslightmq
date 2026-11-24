@@ -224,6 +224,14 @@ That number is no part of the call's identity.
 A call ID is unique within one run of an environment,
 and within a recording.
 
+A call ID is written as the number alone, such as `42`, and a file keeps it as a number.
+It has no prefix: `#7` is the form of a connection number, and a call ID next to one must not look like it.
+A sentence that names a call says `call 42`.
+
+The engine keeps the count of its environment, and every session takes the ID of a call from it
+when the request arrives.
+A run that takes the same requests in the same order gives every call the same ID again.
+
 ### What an observed entity says about a user-defined one
 
 An observed entity can refer to a user-defined one, such as the rules in the explanation of a call.

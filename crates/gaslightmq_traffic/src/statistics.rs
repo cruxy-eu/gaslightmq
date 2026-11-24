@@ -174,7 +174,7 @@ fn api_of(call: &Call) -> Option<ApiKey> {
 
 #[cfg(test)]
 mod tests {
-    use gaslightmq_call::{CallNumber, CallTiming, Delivered, Explanation};
+    use gaslightmq_call::{CallId, CallTiming, Delivered, Explanation};
     use gaslightmq_clock::Instant;
     use gaslightmq_field::{ConnectionNumber, Fields};
 
@@ -184,7 +184,7 @@ mod tests {
     fn record(fields: Fields) -> Call {
         let fields = fields.with(ConnectionNumber::new(7)).without_truth();
         Call::new(
-            CallNumber::FIRST,
+            CallId::FIRST,
             fields,
             Delivered::Nothing,
             Explanation::none(),

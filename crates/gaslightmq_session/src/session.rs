@@ -9,8 +9,9 @@ use gaslightmq_wire::Request;
 
 use crate::identity::{client_id_of, client_software_of};
 use crate::{
-    ClientContext, ClientContexts, ClientInstance, Closed, ClosedBy, Connection, ConnectionOrdinal, Identification,
-    Identity, IdentityChange, InFlightCall, InFlightCalls, LearnedFields, Lifecycle, SessionKey, Stalled,
+    CallIds, ClientContext, ClientContexts, ClientInstance, Closed, ClosedBy, Connection, ConnectionOrdinal,
+    Identification, Identity, IdentityChange, InFlightCall, InFlightCalls, LearnedFields, Lifecycle, SessionKey,
+    Stalled,
 };
 
 /// The state of one session: everything that the pipeline of one connection keeps between two things that happen.
@@ -41,8 +42,9 @@ use crate::{
 /// use gaslightmq_wire::Request;
 /// use gaslightmq_wire::messages::MetadataRequest;
 ///
-/// // The engine shares the client contexts, and numbers the connections.
+/// // The engine shares the client contexts and the call IDs of its environment, and numbers the connections.
 /// let contexts = ClientContexts::new(Duration::from_secs(60));
+/// let call_ids = CallIds::new();
 /// let mut ordinals = ConnectionOrdinals::new();
 /// let now = Instant::ZERO;
 ///
@@ -53,7 +55,7 @@ use crate::{
 ///     Endpoint::Broker(BrokerId::from(2)),
 /// );
 /// let ordinal = ordinals.assign(connection.host(), connection.endpoint());
-/// let mut session: Session<Request> = Session::open(connection, ordinal, contexts.clone(), now);
+/// let mut session: Session<Request> = Session::open(connection, ordinal, contexts.clone(), call_ids.clone(), now);
 /// assert_eq!(session.lifecycle(), Lifecycle::Opened);
 /// assert_eq!(session.key().to_string(), "10.0.4.27 broker 2 #1");
 ///
@@ -96,7 +98,15 @@ impl<C> Session<C> {
     /// and it makes the [session key](Self::key) together with those two.
     /// `contexts` is the engine's handle to the client contexts.
     /// The session joins the context of its client instance when its first request arrives.
-    pub fn open(connection: Connection, ordinal: ConnectionOrdinal, contexts: ClientContexts, now: Instant) -> Self {
+    /// `call_ids` is the engine's handle to the call IDs of its environment.
+    /// Every request that arrives on the session takes the ID of its call from there.
+    pub fn open(
+        connection: Connection,
+        ordinal: ConnectionOrdinal,
+        contexts: ClientContexts,
+        call_ids: CallIds,
+        now: Instant,
+    ) -> Self {
         let key = SessionKey::of(&connection, ordinal);
         Self {
             identity: Identity::of(connection),
@@ -106,7 +116,7 @@ impl<C> Session<C> {
             closed: None,
             contexts,
             counters: SessionCounters::new(key.counter_key()),
-            calls: InFlightCalls::new(),
+            calls: InFlightCalls::new(call_ids),
         }
     }
 
@@ -288,7 +298,7 @@ mod tests {
             Endpoint::Broker(BrokerId::from(2)),
         );
         let ordinal = ConnectionOrdinal::new(number).unwrap();
-        Session::open(connection, ordinal, contexts.clone(), OPENED_AT)
+        Session::open(connection, ordinal, contexts.clone(), CallIds::new(), OPENED_AT)
     }
 
     fn metadata(client_id: Option<&str>) -> Request {
