@@ -570,6 +570,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "gaslightmq_surface"
+version = "0.1.0"
+dependencies = [
+ "gaslightmq_clock",
+ "gaslightmq_field",
+ "gaslightmq_incident",
+ "gaslightmq_kernel",
+ "gaslightmq_lie",
+ "gaslightmq_resource",
+ "gaslightmq_rule",
+ "gaslightmq_selector",
+ "gaslightmq_trigger",
+ "serde",
+ "serde_json",
+ "thiserror",
+]
+
+[[package]]
 name = "gaslightmq_test_kafka"
 version = "0.1.0"
 dependencies = [
