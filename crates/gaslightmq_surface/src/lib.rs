@@ -9,6 +9,7 @@
 //! |---|---|
 //! | [`PadLayout`] | A grid that maps rows to selectors, columns to presets and layers to scopes. |
 //! | [`LayoutName`], [`LayoutTitle`] | The identity of a layout, and the free text that says what it is for. |
+//! | [`LayoutUuid`] | The identity of a layout inside the workspace, which gives a layout its UUID. |
 //! | [`Layer`] | A page of the grid for one scope. It is a scope, and it has no name. |
 //! | [`Row`], [`Column`] | The place of a selector and of a preset in the grid. |
 //! | [`Pad`] | A position: a row and a column on a layer of a layout. It points at zero or one rule. |
@@ -94,6 +95,7 @@
 //! | Type | Error | What is wrong |
 //! |---|---|---|
 //! | [`LayoutName`] | [`LayoutNameError`] | The text breaks a part of the [rule for names](LayoutName#the-rule-for-names). |
+//! | [`LayoutUuid`] | [`LayoutUuidError`] | The text is no UUID of version 7. |
 //! | [`LayoutTitle`] | [`LayoutTitleError`] | The text breaks a part of the [rule for titles](LayoutTitle#the-rule-for-titles). |
 //! | [`Layer`] | [`LayerError`] | The text is no `client.id`. |
 //! | [`PadLayout`] | [`PadLayoutError`] | The layout has no layer, or it holds a layer, a selector or a preset twice. |
@@ -116,8 +118,8 @@
 //!
 //! | Type | Form |
 //! |---|---|
-//! | [`LayoutName`], [`LayoutTitle`] | The text. |
-//! | [`PadLayout`] | A map with `name`, `rows`, `columns` and `layers`, and with `title` when it has one. |
+//! | [`LayoutName`], [`LayoutUuid`], [`LayoutTitle`] | The text. |
+//! | [`PadLayout`] | A map with `name`, `rows`, `columns` and `layers`, and with `uuid` and `title` when it has them. |
 //! | [`Layer`] | `All clients`, the `client.id` of a client, or the map of a scope. |
 //! | [`Row`], [`Column`] | The index, counted from zero. |
 //! | [`Pad`] | A map with `layout`, `layer`, `row` and `column`. |
@@ -163,7 +165,7 @@ pub use intent::Intent;
 pub use layer::{Layer, LayerError};
 pub use layout::{PadLayout, PadLayoutError};
 pub use mapping::{EncoderMapping, TurnError};
-pub use name::{LayoutName, LayoutNameError, LayoutTitle, LayoutTitleError};
+pub use name::{LayoutName, LayoutNameError, LayoutTitle, LayoutTitleError, LayoutUuid, LayoutUuidError};
 pub use pad::{Column, Pad, PadState, Row};
 pub use play::{PlayMode, PlayModeError};
 pub use surface::Surface;
@@ -184,7 +186,7 @@ pub mod prelude {
     #[doc(no_inline)]
     pub use crate::{
         Column, Encoder, EncoderError, EncoderMapping, EncoderTurn, Intent, Layer, LayerError, LayoutName,
-        LayoutNameError, LayoutTitle, LayoutTitleError, Pad, PadLayout, PadLayoutError, PadState, PlayMode,
-        PlayModeError, Row, Steps, Surface, TurnError,
+        LayoutNameError, LayoutTitle, LayoutTitleError, LayoutUuid, LayoutUuidError, Pad, PadLayout, PadLayoutError,
+        PadState, PlayMode, PlayModeError, Row, Steps, Surface, TurnError,
     };
 }
