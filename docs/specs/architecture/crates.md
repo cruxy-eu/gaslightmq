@@ -295,7 +295,7 @@ Every other crate speaks in them.
 
 | Crate | Holds | Depends on |
 |---|---|---|
-| `traffic` | The live window of recent calls, subscriptions by selector, and statistics per rule and per API. | `call`, `selector` |
+| `traffic` | The live window of recent calls, subscriptions by selector, and statistics per rule and per API. It takes the record of each call and says which subscriptions it goes to, and it sends nothing itself. | `call`, `selector`, `rule`, `field`, `kernel` |
 | `index` | The [index](../domains/observation.md#index): facets, counts under the active filters, suggested patterns. | `call`, `selector` |
 | `journal` | The [journal](../domains/observation.md#journal): its entries, and the window of recent entries the engine keeps in memory. | `incident`, `clock` |
 | `recording` | The [recording](storage.md#recordings) format: append-only chunks with summaries, calls and journal entries, metadata-only mode, blanked credentials, a reader and a writer over `std::io`. | `call`, `journal`, `wire` |

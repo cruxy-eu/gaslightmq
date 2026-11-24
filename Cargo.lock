@@ -557,6 +557,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "gaslightmq_traffic"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "gaslightmq_call",
+ "gaslightmq_clock",
+ "gaslightmq_combine",
+ "gaslightmq_field",
+ "gaslightmq_incident",
+ "gaslightmq_kernel",
+ "gaslightmq_lie",
+ "gaslightmq_rule",
+ "gaslightmq_selector",
+ "gaslightmq_trigger",
+ "thiserror",
+]
+
+[[package]]
 name = "gaslightmq_trigger"
 version = "0.1.0"
 dependencies = [
