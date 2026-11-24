@@ -14,9 +14,10 @@ use serde::ser::SerializeMap;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use crate::{
-    BrokerDefinition, BrokerListeners, Environment, EnvironmentError, EnvironmentName, EnvironmentTitle, FilePath,
-    HostName, Instances, ListenAddress, Listeners, ListenersError, ProxyDefinition, RecordingMode, SchemaRegistry,
-    SchemaRegistryError, SchemaRegistryUrl, SecretRef, SecretRefError, Upstream, VariableName, WorldName,
+    BrokerDefinition, BrokerListeners, Environment, EnvironmentError, EnvironmentName, EnvironmentTitle,
+    EnvironmentUuid, FilePath, HostName, Instances, ListenAddress, Listeners, ListenersError, ProxyDefinition,
+    RecordingMode, SchemaRegistry, SchemaRegistryError, SchemaRegistryUrl, SecretRef, SecretRefError, Upstream,
+    VariableName, WorldName,
 };
 
 /// The key of a secret reference that names a file.
@@ -309,6 +310,8 @@ impl From<SchemaRegistry> for SchemaRegistryForm {
 struct EnvironmentForm {
     name: EnvironmentName,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    uuid: Option<EnvironmentUuid>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     title: Option<EnvironmentTitle>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     broker: Option<BrokerForm>,
@@ -376,6 +379,7 @@ impl From<&Environment> for EnvironmentForm {
         };
         Self {
             name: environment.name().clone(),
+            uuid: environment.uuid(),
             title: environment.title().cloned(),
             broker,
             proxy,
@@ -419,6 +423,10 @@ impl TryFrom<EnvironmentForm> for Environment {
             },
         };
         let environment = Environment::new(name, instances);
+        let environment = match form.uuid {
+            Some(uuid) => environment.with_uuid(uuid),
+            None => environment,
+        };
         let environment = match form.title {
             Some(title) => environment.with_title(title),
             None => environment,
@@ -430,7 +438,7 @@ impl TryFrom<EnvironmentForm> for Environment {
     }
 }
 
-/// Writes a map with `name`, with `title` when the environment has one,
+/// Writes a map with `name`, with `uuid` and `title` when the environment has them,
 /// and with the `broker`, `proxy` and `schema_registry` blocks that the environment has.
 impl Serialize for Environment {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
