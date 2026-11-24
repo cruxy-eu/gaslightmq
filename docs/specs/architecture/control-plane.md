@@ -18,11 +18,11 @@ It is then set up by flags and files alone.
 
 | Resource | Operations |
 |---|---|
-| `selectors` | List, get, create, update, rename, delete. Test against the current recording. |
-| `presets` | List, get, create, update, rename, delete. |
-| `rules` | List, get, create, update, rename, delete. Arm, disarm, fire. Keep a live rule. |
-| `scenarios` | List, get, create, update, rename, delete. Activate, deactivate, step. |
-| `layouts` | List, get, create, update, rename, delete. |
+| `selectors` | List, get, create, update, delete. Test against the current recording. |
+| `presets` | List, get, create, update, delete. |
+| `rules` | List, get, create, update, delete. Arm, disarm, fire. Keep a live rule. |
+| `scenarios` | List, get, create, update, delete. Activate, deactivate, step. |
+| `layouts` | List, get, create, update, delete. |
 | `sessions` | List the open sessions with their identity. Close one. |
 | `recordings` | Start, stop, list, open. Query calls with a selector, saved or [draft](#drafts). Get the index. |
 | `world` | Only for an environment with a broker. Get state, apply an incident, save as a world definition, set the clock. [Preview the records](#drafts) at an offset. |
@@ -31,6 +31,11 @@ It is then set up by flags and files alone.
 | `journal` | Query what changed: arms, disarms, parameter changes, steps and incidents. |
 | `capture` | Start, stop and save as a scenario. |
 | `quick-inject` | [Parse a ⌘K sentence](#drafts) into a rule definition, with completions. |
+
+Every operation on a definition names it by its [name](../domains/rules.md#names), and a definition has no other identifier.
+No operation renames a definition.
+An update changes everything but the name, the [title](../domains/rules.md#titles) included.
+Whoever wants another name creates a new definition and deletes the old one.
 
 Create and update operations on definitions write to the workspace files.
 Live rules are the exception.
@@ -110,7 +115,7 @@ Test libraries drive the same API:
    and assert on verdicts and explanations.
 
 Explanations make assertions precise:
-a test can check that *Refuse with NOT_LEADER* applied three times,
+a test can check that `refuse-with-not-leader` applied three times,
 not merely that the client saw some errors.
 [Budgets](../domains/rules.md#lifetime) make that count exact.
 

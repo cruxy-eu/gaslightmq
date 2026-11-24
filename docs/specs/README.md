@@ -37,8 +37,10 @@ and one process runs several proxies and brokers side by side.
   The selector that filters recorded traffic is the same selector that targets a rule.
 - **Names are the interface.**
   Users name selectors, rules and scenarios.
+  A name is a slug such as `slow-order-producers`, and it is the identity of what it names.
   Things reference each other by name.
-  There are no ticket-style identifiers.
+  There are no ticket-style identifiers, and no hidden ones either.
+  A title next to the name says the same in free text.
 - **Files are the source of truth.**
   Definitions live in a plain-text workspace that works in git and in CI.
   Live state stays in memory until someone saves it.
@@ -63,7 +65,7 @@ The first version leaves these parts out:
 |---|---|
 | Triggers that react to other rules or incidents | A [Sequence](domains/scenarios.md#sequence) step ends on calls or firings, and the next step arms the reaction. |
 | Counters per client | Counters per rule or per session. See [counters](domains/rules.md#counters). |
-| Emulating "leader moves" and "coordinator moves" on the proxy | The *Leader flap* lie preset. See [capabilities](architecture/backends.md#capabilities). |
+| Emulating "leader moves" and "coordinator moves" on the proxy | The `leader-flap` lie preset. See [capabilities](architecture/backends.md#capabilities). |
 | Capturing parameter changes on an armed rule | Capture keeps the parameters from the moment of arming. See [capture](domains/scenarios.md#capture). |
 | A pass or fail result from `gmq run` | Tests assert on recordings. See [tests](architecture/control-plane.md#tests). |
 | Transactions on the fake broker | Idempotent producers without transactions. See [Simulated](architecture/backends.md#simulated). |

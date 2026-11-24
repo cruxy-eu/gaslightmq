@@ -226,33 +226,35 @@ Use an incident when the client must keep believing it across calls and APIs:
 A preset is a named, reusable lie or incident with its parameters.
 
 ```yaml
-name: Delay 1 s
+name: delay-1s
+title: Delay 1 s
 lie: timing
 delay: 1s
 jitter: 200ms
 ```
 
 ```yaml
-name: Lost acknowledgement
+name: lost-acknowledgement
 lie: refusal
 error: REQUEST_TIMED_OUT
 stage: after
 ```
 
 ```yaml
-name: Leader flap
+name: leader-flap
 lie: refusal
 error: NOT_LEADER_OR_FOLLOWER
 ```
 
 ```yaml
-name: Leader election
+name: leader-election
 incident: leader-moves
 ```
 
 Pad grid columns, ⌘K suggestions and rule editors all offer presets.
 Rules reference presets by name, or define their action inline.
 
-A preset name is unique among presets, and it follows the rule for [rule names](rules.md#rule).
-A preset holds the keys of its lie or incident next to its name.
+A preset name is unique among presets, and it follows the rule for [rule names](rules.md#names).
+A preset can have a title, which follows the rule for [rule titles](rules.md#titles).
+A preset holds the keys of its lie or incident next to its name and its title.
 It holds either a `lie` key or an `incident` key, and not both.

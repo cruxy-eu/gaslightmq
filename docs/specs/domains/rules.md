@@ -9,18 +9,20 @@ A rule has:
 
 | Part | Meaning |
 |---|---|
-| **Name** | Unique among rules. Other things reference the rule by this name. |
+| **Name** | The identity of the rule: a slug, unique among rules. Every reference to the rule uses it. |
+| **Title** | What the rule is for, in the words of whoever wrote it. Free text, and optional. |
 | **Selector** | Which calls the rule considers. A selector name, or inline conditions. |
 | **Action** | What happens when the rule fires: a lie or an incident. A preset name, or inline. |
 | **Trigger** | When the rule fires among the calls its selector matches. |
 | **Lifetime** | How long the rule stays armed. |
 
 ```yaml
-name: Slow down order producers
-selector: Order producers
+name: slow-order-producers
+title: Slow down order producers
+selector: order-producers
 scope:
   client.id: order-ingest
-action: Delay 1 s
+action: delay-1s
 trigger:
   chance: 40%
 lifetime: until disarmed
@@ -31,14 +33,40 @@ The rule's effective selector is the selector **and** the scope.
 
 A rule needs a name, a selector and an action.
 `selector: {}` has no conditions, so it matches every call.
-`scope`, `trigger`, `lifetime` and `dice` are optional.
+`title`, `scope`, `trigger`, `lifetime` and `dice` are optional.
 
-A rule name has at least one character.
+### Names
+
+A name is the identity of a rule, and nothing else.
+It is a slug, like the name of a resource in Kubernetes.
+It holds lowercase letters from `a` to `z`, digits and `-`.
+It starts and ends with a letter or a digit, and it has at most 63 characters.
+
+Every reference to a rule uses its name:
+a file, a command, an explanation, the statistics and a pad.
+A rule has no other identifier next to its name.
+
+A rule keeps its name for as long as it exists.
+Nothing renames a rule.
+Whoever wants another name makes a new rule under that name, and deletes the old one.
+The new rule is another rule: its statistics start at zero, and whatever named the old rule does not name the new one.
+
+### Titles
+
+A title says what a rule is for, such as *Slow down order producers*.
+It is part of the rule, and never part of its name.
+Nothing references a title, so someone can change it at any time, and two rules can have the same one.
+
+A title has at least one character and at most 2000.
 It does not start or end with white space, and it holds no control character such as a line break.
 It holds no format character either, such as a zero-width space or a mark that turns the text direction.
-Nobody sees those, so two names could look the same and still differ.
-Upper and lower case differ.
-The names of presets and of selectors follow the same rule.
+
+A rule without a title shows its name wherever a surface would show the title.
+
+### Every definition has a name and a title
+
+Selectors, presets, scenarios, pad layouts, environments and world definitions follow the same two rules.
+Each has a name, which is a slug and its identity, and each can have a title.
 
 ### Where rules live
 
@@ -219,9 +247,9 @@ scenario seed
 - Each rule rolls its own die.
   Adding or removing a rule does not shift the rolls of the other rules.
 - The roll does not depend on the order in which connections open.
-- Renaming a rule in the UI writes the old name as the rule's `dice` key,
-  so a rename does not change which calls the rule hits.
-  A rule that has a `dice` key already keeps it.
+- A rule that sets `dice` rolls the die of that key, whatever its name is.
+  A new rule that takes the place of another sets `dice` to the name of the other,
+  so it hits the same calls.
 
 Without an active scenario, the workspace's default seed takes the scenario seed's place.
 

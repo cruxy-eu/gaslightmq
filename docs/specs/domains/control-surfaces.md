@@ -30,6 +30,9 @@ Names are unique per kind, so a selector and a rule can share a name.
 Wherever the UI lists several kinds together, such as in ⌘K,
 it shows the kind next to the name.
 
+A surface shows the [title](rules.md#titles) of a definition where it has one, and its name where it has none.
+A command always carries the name.
+
 The [mockups](../../../mockups/proxy-ui-v2.html) show most of these views.
 
 ## Pad layout
@@ -47,11 +50,14 @@ A rule on a client layer does not win over a rule on the all-clients layer.
 See [modes](scenarios.md#modes).
 
 ```yaml
-name: Push 2
-rows: [Order producers, Fetch, Metadata, FindCoordinator, Join and sync, Heartbeat, OffsetCommit, Transactions]
-columns: [Error retriable, Error fatal, Delay 100 ms, Delay 1 s, Delay 10 s, Blackhole, Disconnect, Throttle]
+name: push-2
+title: Push 2
+rows: [order-producers, fetch, metadata, find-coordinator, join-and-sync, heartbeat, offset-commit, transactions]
+columns: [error-retriable, error-fatal, delay-100ms, delay-1s, delay-10s, blackhole, disconnect, throttle]
 layers: [All clients, order-ingest, payments-svc, analytics-etl, kafka-ui]
 ```
+
+A layer is a scope and no definition, so `order-ingest` is the `client.id` of a client, and not a name.
 
 ### A pad is a position, not a rule
 
@@ -62,8 +68,10 @@ It points at zero or one rule.
 - Pressing a pad with an armed rule disarms the rule.
 - Pressing a pad with a disarmed rule arms it again.
 
-The rule gets a generated name, such as *Delay 1 s on Order producers for order-ingest*,
-which someone can rename.
+The rule gets a generated name, such as `delay-1s-on-order-producers-for-order-ingest`,
+and a generated title, such as *Delay 1 s on Order producers for order-ingest*.
+The name follows the [rule for names](rules.md#names): what a name cannot hold is left out, and a name that is too long is cut.
+Someone can change the title, and the name stays.
 Moving a pad never changes what a rule does.
 
 A rule that a pad creates is a [live rule](rules.md#where-rules-live).

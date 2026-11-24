@@ -285,7 +285,7 @@ The UI marks emulated incidents as emulated.
   The real brokers do not know that epoch,
   so the backend has to translate epochs in every request and response that carries one.
 
-The *Leader flap* preset covers the most common test without either:
+The `leader-flap` preset covers the most common test without either:
 a refusal with `NOT_LEADER_OR_FOLLOWER` and truthful Metadata.
 The client refreshes its metadata, finds the same leader and retries,
 as it does after an election that brought the leadership back.

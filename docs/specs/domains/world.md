@@ -194,6 +194,7 @@ Its seed and its start time make the [virtual records](#virtual-records) the sam
 
 ```yaml
 name: orders-sim
+title: The order cluster, with a hundred million orders
 seed: 7
 start: 2026-01-01T00:00:00Z
 brokers: 3
@@ -210,6 +211,9 @@ topics:
 groups:
   - name: analytics-etl
 ```
+
+The name and the title of a world definition follow the rules for the [name](rules.md#names) and the [title](rules.md#titles) of a rule.
+The names of topics and groups are Kafka's, and follow Kafka's rules.
 
 A world definition can be **seeded from a recording**.
 The recording's index already knows the topics, partition counts, groups and transactional IDs it saw.
