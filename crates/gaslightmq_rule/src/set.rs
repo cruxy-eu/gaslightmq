@@ -9,7 +9,7 @@ use crate::{Rule, RuleName};
 /// Rule names are unique among all rules, whether a scenario owns the rule or the workspace does,
 /// so whoever assembles the rules of a workspace puts all of them in one set.
 ///
-/// A set does not change, apart from a [rename](Self::rename): build a new one from the rules after an edit.
+/// A set does not change: build a new one from the rules after an edit.
 /// It keeps no order of its own, and no state.
 /// The order in which rules win a conflict comes from the live set and the scenario's mode,
 /// and a [`Snapshot`](crate::Snapshot) takes its rules in that order.
@@ -22,11 +22,14 @@ use crate::{Rule, RuleName};
 ///
 /// let metadata = Conditions::from(Condition::is(ApiKey::METADATA));
 /// let blackhole = Rule::new("Blackhole metadata".parse().expect("a rule name"), metadata, LieDefinition::Silence);
-/// let mut rules = RuleSet::new([blackhole])?;
+/// let rules = RuleSet::new([blackhole.clone()])?;
+/// assert_eq!(rules.get(blackhole.name()), Some(&blackhole));
 ///
-/// rules.rename(&"Blackhole metadata".parse().expect("a rule name"), "Silent metadata".parse().expect("a rule name"))?;
-/// let rule = rules.get(&"Silent metadata".parse().expect("a rule name")).expect("the rule has its new name");
-/// assert_eq!(rule.dice_key().as_str(), "Blackhole metadata");
+/// // A rule keeps its name, and two rules never share one.
+/// assert_eq!(
+///     RuleSet::new([blackhole.clone(), blackhole.clone()]),
+///     Err(RuleSetError::DuplicateName { name: blackhole.name().clone() })
+/// );
 /// # Ok::<(), RuleSetError>(())
 /// ```
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -76,30 +79,6 @@ impl RuleSet {
     pub fn is_empty(&self) -> bool {
         self.by_name.is_empty()
     }
-
-    /// Renames a rule, which [keeps its die](Rule::renamed).
-    ///
-    /// What references the rule from outside the set, such as a scenario or a pad, is for whoever holds it to update.
-    ///
-    /// # Errors
-    ///
-    /// [`RuleSetError::UnknownRule`] when no rule is named `from`,
-    /// and [`RuleSetError::DuplicateName`] when another rule is named `to` already.
-    pub fn rename(&mut self, from: &RuleName, to: RuleName) -> Result<(), RuleSetError> {
-        if !self.contains(from) {
-            return Err(RuleSetError::UnknownRule { name: from.clone() });
-        }
-        if *from == to {
-            return Ok(());
-        }
-        if self.contains(&to) {
-            return Err(RuleSetError::DuplicateName { name: to });
-        }
-        if let Some(rule) = self.by_name.remove(from) {
-            self.by_name.insert(to.clone(), rule.renamed(to));
-        }
-        Ok(())
-    }
 }
 
 impl<'a> IntoIterator for &'a RuleSet {
@@ -120,15 +99,12 @@ impl IntoIterator for RuleSet {
     }
 }
 
-/// Why rules are not a [`RuleSet`], or why the set does not have what it is asked for.
+/// Why rules are not a [`RuleSet`].
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum RuleSetError {
     /// Two rules have the same name.
     #[error("two rules are named {:?}", .name.as_str())]
     DuplicateName { name: RuleName },
-    /// No rule of the set has this name.
-    #[error("no rule is named {:?}", .name.as_str())]
-    UnknownRule { name: RuleName },
 }
 
 #[cfg(test)]
@@ -181,38 +157,5 @@ mod tests {
             RuleSet::new([rule("A"), rule("B"), rule("A")]),
             Err(RuleSetError::DuplicateName { name: name("A") })
         );
-    }
-
-    #[test]
-    fn renaming_a_rule_keeps_its_die() {
-        let mut set = RuleSet::new([rule("A"), rule("B")]).unwrap();
-
-        set.rename(&name("A"), name("C")).unwrap();
-
-        assert!(!set.contains(&name("A")));
-        assert_eq!(set.get(&name("C")), Some(&rule("A").renamed(name("C"))));
-        assert_eq!(set.get(&name("C")).map(Rule::dice_key), Some(rule("A").dice_key()));
-        assert_eq!(set.get(&name("B")), Some(&rule("B")));
-    }
-
-    #[test]
-    fn renaming_needs_a_rule_and_a_free_name() {
-        let mut set = RuleSet::new([rule("A"), rule("B")]).unwrap();
-        let before = set.clone();
-
-        assert_eq!(
-            set.rename(&name("X"), name("Y")),
-            Err(RuleSetError::UnknownRule { name: name("X") })
-        );
-        assert_eq!(
-            set.rename(&name("X"), name("A")),
-            Err(RuleSetError::UnknownRule { name: name("X") })
-        );
-        assert_eq!(
-            set.rename(&name("A"), name("B")),
-            Err(RuleSetError::DuplicateName { name: name("B") })
-        );
-        assert_eq!(set.rename(&name("A"), name("A")), Ok(()));
-        assert_eq!(set, before);
     }
 }

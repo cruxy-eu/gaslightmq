@@ -84,10 +84,10 @@ fn each_rule_rolls_its_own_die() {
 
 #[test]
 fn a_rule_that_keeps_its_dice_key_keeps_its_rolls() {
-    // Renaming the rule writes the old name as its `dice` key.
-    let before_rename = die(42, RULE);
-    let after_rename = Die::new(Seed::new(42), &RULE.parse::<DiceKey>().unwrap());
-    assert_eq!(first_ten(before_rename), first_ten(after_rename));
+    // A new rule that takes the place of another sets `dice` to the name of the other.
+    let of_the_name = die(42, RULE);
+    let of_the_dice_key = Die::new(Seed::new(42), &RULE.parse::<DiceKey>().unwrap());
+    assert_eq!(first_ten(of_the_name), first_ten(of_the_dice_key));
 }
 
 #[test]

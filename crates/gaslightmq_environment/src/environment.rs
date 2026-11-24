@@ -193,13 +193,6 @@ impl Instances {
             Self::BrokerAlone { listen, .. } => listen,
         }
     }
-
-    fn broker_mut(&mut self) -> Option<&mut BrokerDefinition> {
-        match self {
-            Self::ProxyInFrontOfCluster { .. } => None,
-            Self::ProxyInFrontOfBroker { broker, .. } | Self::BrokerAlone { broker, .. } => Some(broker),
-        }
-    }
 }
 
 /// Writes the shape, for a person: `a proxy in front of a real cluster`.
@@ -366,22 +359,6 @@ impl Environment {
         let registry = self.schema_registry.as_ref().and_then(SchemaRegistry::listen);
         taken.extend(registry.and_then(Taken::one));
         taken
-    }
-
-    /// Gives the environment another name.
-    pub(crate) fn rename(&mut self, name: EnvironmentName) {
-        self.name = name;
-    }
-
-    /// Names the world `to` where the broker names the world `from`. Says whether it did.
-    pub(crate) fn rename_world(&mut self, from: &WorldName, to: &WorldName) -> bool {
-        match self.instances.broker_mut() {
-            Some(broker) if broker.world == *from => {
-                broker.world = to.clone();
-                true
-            }
-            _ => false,
-        }
     }
 }
 

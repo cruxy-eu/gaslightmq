@@ -438,25 +438,19 @@ fn an_include_and_its_selector_can_test_the_same_field() {
 }
 
 #[test]
-fn things_reference_selectors_by_name_and_a_rename_updates_the_includes() {
-    let mut selectors = workspace();
-    let before = selectors.effective(&name("Order producers from ingest")).unwrap();
-
-    selectors
-        .rename(&name("Order producers"), name("Order writers"))
-        .unwrap();
+fn things_reference_selectors_by_name_and_a_name_that_no_selector_has_does_not_resolve() {
+    let selectors = workspace();
 
     assert_eq!(
         selectors
             .get(&name("Order producers from ingest"))
             .and_then(Selector::include),
-        Some(&name("Order writers"))
+        Some(&name("Order producers"))
     );
-    assert_eq!(selectors.effective(&name("Order producers from ingest")), Ok(before));
     assert_eq!(
-        selectors.resolve(&SelectorRef::Named(name("Order producers"))),
+        selectors.resolve(&SelectorRef::Named(name("Order writers"))),
         Err(SelectorSetError::UnknownSelector {
-            name: name("Order producers")
+            name: name("Order writers")
         })
     );
 }

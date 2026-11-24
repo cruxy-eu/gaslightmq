@@ -127,7 +127,7 @@
 //! | A name, a scope, a trigger and a lifetime are valid. | Their types, when they are built or read. |
 //! | The selector and the preset of one rule exist, and the rule can fire: its lie can act when its selector is decided, and a manual rule names the subject of its incident. | [`Rule::resolve`] |
 //! | The names of presets, of rules and of armed rules are unique. | [`PresetSet::new`], [`RuleSet::new`], [`Snapshot::new`] |
-//! | A scenario, a step or a pad names a rule that exists. A rename reaches every reference. | Whoever holds the whole workspace. |
+//! | A scenario, a step or a pad names a rule that exists. | Whoever holds the whole workspace. |
 //!
 //! A snapshot only holds resolved rules, so evaluating a call never looks up a name.
 //!

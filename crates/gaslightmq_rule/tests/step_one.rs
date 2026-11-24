@@ -380,9 +380,6 @@ fn the_same_seed_gives_the_same_firings_in_every_run() {
     assert_eq!(first, firings(&slow_down, SEED));
     assert_ne!(first, firings(&slow_down, Seed::new(7)));
 
-    // A rename keeps the die, so the renamed rule hits the same calls.
-    let renamed = slow_down.clone().renamed("Slow ingest".parse().unwrap());
-    assert_eq!(first, firings(&renamed, SEED));
     // A rule of another name rolls a die of its own.
     let other = Rule::new(
         "Slow ingest".parse().unwrap(),
@@ -391,4 +388,6 @@ fn the_same_seed_gives_the_same_firings_in_every_run() {
     )
     .with_trigger(slow_down.trigger());
     assert_ne!(first, firings(&other, SEED));
+    // A new rule that takes the place of another sets `dice` to the name of the other, so it hits the same calls.
+    assert_eq!(first, firings(&other.with_dice(slow_down.dice_key()), SEED));
 }

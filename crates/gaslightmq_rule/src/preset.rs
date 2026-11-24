@@ -50,13 +50,6 @@ impl Preset {
         }
     }
 
-    /// The same preset under another name.
-    /// The rules that reference the preset by its old name do not follow: whoever holds them updates them.
-    #[must_use]
-    pub fn renamed(self, name: PresetName) -> Self {
-        Self { name, ..self }
-    }
-
     /// The same preset with another action.
     #[must_use]
     pub fn with_action(self, action: impl Into<Action>) -> Self {
@@ -227,11 +220,7 @@ mod tests {
     }
 
     #[test]
-    fn a_preset_changes_one_part_at_a_time() {
-        let renamed = delay().renamed(name("Slow"));
-        assert_eq!(renamed.name(), "Slow");
-        assert_eq!(renamed.action(), delay().action());
-
+    fn a_preset_takes_another_action_and_keeps_its_name() {
         let silenced = delay().with_action(LieDefinition::Silence);
         assert_eq!(silenced.name(), delay().name());
         assert_eq!(silenced.action(), &Action::Lie(LieDefinition::Silence));

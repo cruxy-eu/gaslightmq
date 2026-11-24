@@ -54,10 +54,6 @@ fn every_error() -> Vec<(Said, &'static str)> {
             "two rules are named \"Flap\"",
         ),
         (
-            said(RuleSetError::UnknownRule { name: rule("Flap") }),
-            "no rule is named \"Flap\"",
-        ),
-        (
             said(PresetSetError::DuplicateName {
                 name: "Delay 1 s".parse().unwrap(),
             }),

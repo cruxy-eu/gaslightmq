@@ -77,15 +77,15 @@ impl Statistics {
 
     /// What the rule with that name did so far. A rule that no call touched did nothing.
     ///
-    /// A call records the name that a rule had when the call met it, and the statistics count under that name.
-    /// A rule that someone renames therefore starts again under its new name.
+    /// A call records the name of every rule it met, and the statistics count under that name.
+    /// A rule keeps its name, so a rule under another name is a new rule, and it starts at zero.
     pub fn rule(&self, name: &RuleName) -> RuleStatistics {
         self.rules.get(name.as_str()).copied().unwrap_or_default()
     }
 
-    /// Every rule that a call touched, under the name it had then, with what it did so far, in the order of the names.
+    /// Every rule that a call touched, under its name, with what it did so far, in the order of the names.
     ///
-    /// A name stays after someone renamed or deleted its rule, with the numbers it had.
+    /// A name stays after someone deleted its rule, with the numbers it had.
     pub fn rules(&self) -> impl Iterator<Item = (&RecordedRuleName, RuleStatistics)> {
         self.rules.iter().map(|(name, rule)| (name, *rule))
     }

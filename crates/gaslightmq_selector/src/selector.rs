@@ -72,14 +72,6 @@ impl Selector {
         Self { include: None, ..self }
     }
 
-    /// The same selector under another name.
-    /// What references the selector by its old name does not follow:
-    /// [`SelectorSet::rename`](crate::SelectorSet::rename) renames a selector with the selectors that include it.
-    #[must_use]
-    pub fn renamed(self, name: SelectorName) -> Self {
-        Self { name, ..self }
-    }
-
     /// The same selector with other conditions of its own.
     #[must_use]
     pub fn with_conditions(self, conditions: Conditions) -> Self {
@@ -104,10 +96,6 @@ impl Selector {
     /// The selector's own conditions, to change them in place.
     pub fn conditions_mut(&mut self) -> &mut Conditions {
         &mut self.conditions
-    }
-
-    pub(crate) fn include_mut(&mut self) -> Option<&mut SelectorName> {
-        self.include.as_mut()
     }
 }
 
@@ -208,11 +196,6 @@ mod tests {
     #[test]
     fn a_selector_changes_one_part_at_a_time() {
         let selector = Selector::new(name("Order producers"), order_producers()).including(name("Producers"));
-
-        let renamed = selector.clone().renamed(name("Order writers"));
-        assert_eq!(renamed.name(), "Order writers");
-        assert_eq!(renamed.include(), selector.include());
-        assert_eq!(renamed.conditions(), selector.conditions());
 
         let emptied = selector.clone().with_conditions(Conditions::new());
         assert_eq!(emptied.name(), selector.name());

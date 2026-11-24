@@ -47,10 +47,6 @@ use crate::{ActionRef, RuleName};
 /// assert_eq!(rule.name(), "Slow down order producers");
 /// assert_eq!(rule.lifetime(), Lifetime::UntilDisarmed);
 /// assert_eq!(rule.dice_key().as_str(), "Slow down order producers");
-///
-/// // A rename does not change which calls the rule hits: the old name stays as the dice key.
-/// let renamed = rule.renamed("Slow ingest".parse()?);
-/// assert_eq!(renamed.dice_key().as_str(), "Slow down order producers");
 /// # Ok::<(), RuleNameError>(())
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -90,23 +86,6 @@ impl Rule {
             trigger: Trigger::always(),
             lifetime: Lifetime::UntilDisarmed,
             dice: None,
-        }
-    }
-
-    /// The same rule under another name, which keeps hitting the same calls.
-    ///
-    /// A rule that sets no dice key rolls a die of its name.
-    /// The rename writes the old name as the dice key, so the die stays the same one.
-    /// A rule that has a dice key already keeps it.
-    ///
-    /// What references the rule by its old name does not follow: whoever holds those references updates them.
-    #[must_use]
-    pub fn renamed(self, name: RuleName) -> Self {
-        let dice = self.dice_key();
-        Self {
-            dice: (dice != name.dice_key()).then_some(dice),
-            name,
-            ..self
         }
     }
 
@@ -294,40 +273,5 @@ mod tests {
 
         assert_eq!(slow_down().dice_key().as_str(), "Slow down order producers");
         assert_eq!(slow_down().with_dice(dice.clone()).dice_key(), dice);
-    }
-
-    #[test]
-    fn a_rename_writes_the_old_name_as_the_dice_key() {
-        let renamed = slow_down().renamed(name("Slow ingest"));
-
-        assert_eq!(renamed.name(), "Slow ingest");
-        assert_eq!(renamed.dice().map(DiceKey::as_str), Some("Slow down order producers"));
-        assert_eq!(renamed.dice_key(), slow_down().dice_key());
-    }
-
-    #[test]
-    fn a_second_rename_keeps_the_first_name_as_the_dice_key() {
-        let renamed = slow_down().renamed(name("Slow ingest")).renamed(name("Slower ingest"));
-
-        assert_eq!(renamed.name(), "Slower ingest");
-        assert_eq!(renamed.dice_key(), slow_down().dice_key());
-    }
-
-    #[test]
-    fn a_rename_keeps_a_dice_key_the_rule_set_itself() {
-        let dice = DiceKey::new("shared die").unwrap();
-        let renamed = slow_down().with_dice(dice.clone()).renamed(name("Slow ingest"));
-
-        assert_eq!(renamed.dice(), Some(&dice));
-    }
-
-    #[test]
-    fn a_rename_back_to_the_first_name_needs_no_dice_key() {
-        let back = slow_down()
-            .renamed(name("Slow ingest"))
-            .renamed(name("Slow down order producers"));
-
-        assert_eq!(back, slow_down());
-        assert_eq!(slow_down().renamed(name("Slow down order producers")), slow_down());
     }
 }

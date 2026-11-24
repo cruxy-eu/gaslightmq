@@ -12,7 +12,7 @@ use crate::{EffectiveSelector, Selector, SelectorName, SelectorRef};
 /// - no selector includes itself, directly or through other selectors.
 ///
 /// [`new`](Self::new) checks all three, so [`resolve`](Self::resolve) only fails for a name the set does not have.
-/// A set does not change, apart from a [rename](Self::rename): build a new one from the selectors after an edit.
+/// A set does not change: build a new one from the selectors after an edit.
 ///
 /// The set knows the references between selectors.
 /// Whether a rule or a pad layout names a selector that exists is for whoever holds those to check,
@@ -124,35 +124,6 @@ impl SelectorSet {
             SelectorRef::Named(name) => self.effective(name),
             SelectorRef::Inline(conditions) => Ok(conditions.clone().into()),
         }
-    }
-
-    /// Renames a selector, and updates every selector that includes it.
-    ///
-    /// What references the selector from outside the set, such as a rule, is for whoever holds it to update.
-    ///
-    /// # Errors
-    ///
-    /// [`SelectorSetError::UnknownSelector`] when no selector is named `from`,
-    /// and [`SelectorSetError::DuplicateName`] when another selector is named `to` already.
-    pub fn rename(&mut self, from: &SelectorName, to: SelectorName) -> Result<(), SelectorSetError> {
-        if !self.contains(from) {
-            return Err(SelectorSetError::UnknownSelector { name: from.clone() });
-        }
-        if *from == to {
-            return Ok(());
-        }
-        if self.contains(&to) {
-            return Err(SelectorSetError::DuplicateName { name: to });
-        }
-        if let Some(selector) = self.by_name.remove(from) {
-            self.by_name.insert(to.clone(), selector.renamed(to.clone()));
-        }
-        for include in self.by_name.values_mut().filter_map(Selector::include_mut) {
-            if include == from {
-                *include = to.clone();
-            }
-        }
-        Ok(())
     }
 
     /// `selector`, the selector it includes, the one that one includes, and so on.
@@ -417,48 +388,5 @@ mod tests {
 
         assert_eq!(set.effective(&name("Order producers")), Err(unknown.clone()));
         assert_eq!(set.resolve(&name("Order producers").into()), Err(unknown));
-    }
-
-    #[test]
-    fn renaming_a_selector_updates_every_selector_that_includes_it() {
-        let mut set = SelectorSet::new([from_ingest(), order_producers(), produce()]).unwrap();
-
-        set.rename(&name("Order producers"), name("Order writers")).unwrap();
-
-        assert!(!set.contains(&name("Order producers")));
-        assert_eq!(
-            set.get(&name("Order writers")),
-            Some(&order_producers().renamed(name("Order writers")))
-        );
-        assert_eq!(
-            set.get(&name("Order producers from ingest"))
-                .and_then(Selector::include),
-            Some(&name("Order writers"))
-        );
-        assert_eq!(set.get(&name("Produce")), Some(&produce()));
-        assert_eq!(
-            set.effective(&name("Order producers from ingest")).unwrap().to_string(),
-            "api is Produce and topic matches orders.* and client.id is order-ingest"
-        );
-        assert_eq!(SelectorSet::new(set.clone()), Ok(set));
-    }
-
-    #[test]
-    fn renaming_needs_a_selector_and_a_free_name() {
-        let mut set = SelectorSet::new([order_producers(), produce()]).unwrap();
-        let before = set.clone();
-
-        assert_eq!(
-            set.rename(&name("Order consumers"), name("Consumers")),
-            Err(SelectorSetError::UnknownSelector {
-                name: name("Order consumers")
-            })
-        );
-        assert_eq!(
-            set.rename(&name("Order producers"), name("Produce")),
-            Err(SelectorSetError::DuplicateName { name: name("Produce") })
-        );
-        assert_eq!(set.rename(&name("Produce"), name("Produce")), Ok(()));
-        assert_eq!(set, before);
     }
 }

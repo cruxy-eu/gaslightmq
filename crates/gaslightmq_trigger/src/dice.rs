@@ -143,7 +143,7 @@ text_key! {
     /// What tells the die of one rule from the die of another.
     ///
     /// The dice key is the rule's name, unless the rule sets `dice`.
-    /// Renaming a rule writes the old name as its `dice` key, so a rename does not change which calls the rule hits.
+    /// A new rule that takes the place of another sets `dice` to the name of the other, so it hits the same calls.
     ///
     /// A [`Die`] hashes the UTF-8 bytes of the key, so two keys roll the same only when they are the same text.
     ///
