@@ -1341,7 +1341,7 @@ mod tests {
         assert_eq!(explanation.iter().count(), 4);
         assert_eq!((&explanation).into_iter().count(), 4);
         assert_eq!(explanation.rule("slow").map(RuleExplanation::fired), Some(false));
-        assert_eq!(explanation.rule("slow"), None);
+        assert_eq!(explanation.rule("nobody"), None);
         assert!(explanation.applied("leader-flap"));
         assert!(explanation.applied("move"));
         assert!(!explanation.applied("refuse-orders"));
