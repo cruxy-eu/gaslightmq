@@ -121,6 +121,13 @@ impl TriggerParts {
         self
     }
 
+    /// Takes the chance away, so the die no longer decides.
+    #[must_use]
+    pub fn without_chance(mut self) -> TriggerParts {
+        self.chance = None;
+        self
+    }
+
     /// Adds the one match to fire on: `nth: 3`.
     #[must_use]
     pub fn with_nth(mut self, nth: MatchNumber) -> TriggerParts {
@@ -132,6 +139,13 @@ impl TriggerParts {
     #[must_use]
     pub fn with_every(mut self, every: Count) -> TriggerParts {
         self.every = Some(every);
+        self
+    }
+
+    /// Takes the step between the matches away, so every match counts.
+    #[must_use]
+    pub fn without_every(mut self) -> TriggerParts {
+        self.every = None;
         self
     }
 
@@ -414,6 +428,23 @@ mod tests {
         assert_eq!(parts.window(), Some(window));
         assert_eq!(parts.per(), Per::Session);
         assert!(parts.has_count());
+    }
+
+    #[test]
+    fn the_parts_give_up_their_chance_and_their_step_and_keep_the_rest() {
+        let rest = TriggerParts::new().with_first(count(5)).with_per(Per::Session);
+        let parts = rest.with_chance(Chance::NEVER).with_every(count(10));
+
+        assert_eq!(parts.without_chance(), rest.with_every(count(10)));
+        assert_eq!(parts.without_every(), rest.with_chance(Chance::NEVER));
+        assert_eq!(parts.without_chance().without_every(), rest);
+        assert_eq!(rest.without_chance().without_every(), rest);
+        assert!(
+            TriggerParts::new()
+                .with_chance(Chance::ALWAYS)
+                .without_chance()
+                .is_always()
+        );
     }
 
     #[test]
