@@ -1,32 +1,121 @@
 # Identity: names and IDs
 
-This document lists everything GaslightMQ identifies,
-and how it identifies each one.
+This document lists every entity of GaslightMQ,
+and how GaslightMQ identifies each one.
 
-GaslightMQ knows two types of things:
+## Types of entities
 
-| Type | What it is | Examples | Identified by |
-|---|---|---|---|
-| **User-defined** | What a user writes: in a workspace file, in the UI or with ⌘K. | A selector, a preset, a rule | A name and a UUID |
-| **Recorded** | What GaslightMQ observes while it runs. Nobody defines it. | A call, a session | An ID of its own |
+| Type                   | What it is                                                     | Identified by            |
+|------------------------|----------------------------------------------------------------|--------------------------|
+| User-defined           | What a user writes: in a workspace file, in the UI or with ⌘K. | A name and a UUID        |
+| Observed               | What GaslightMQ observes while it runs. Nobody defines it.     | An ID of its own         |
+| Part of another entity | A piece of an entity, such as the trigger of a rule.           | The entity it is part of |
 
-## User-defined things
+## Entities per domain
 
-A user-defined thing is a definition.
-It has a name and a UUID, and it can have a title.
+A user-defined entity has a name, a UUID and an optional title.
+The [title](#title) is no identifier.
 
-| Kind | Name | UUID | Title |
-|---|---|---|---|
-| Selector | `SelectorName` | `SelectorUuid` | `SelectorTitle` |
-| Preset | `PresetName` | `PresetUuid` | `PresetTitle` |
-| Rule, in the workspace or live | `RuleName` | `RuleUuid` | `RuleTitle` |
-| Scenario | `ScenarioName` | `ScenarioUuid` | `ScenarioTitle` |
-| Pad layout | `LayoutName` | `LayoutUuid` | `LayoutTitle` |
-| Environment | `EnvironmentName` | `EnvironmentUuid` | `EnvironmentTitle` |
-| World | `WorldName` | `WorldUuid` | `WorldTitle` |
+### Session
 
-Each kind has a type of its own for each of them,
-so the name of a selector never stands where the name of a rule belongs.
+See [session](../domains/session.md).
+
+| Entity         | Type     | Name | ID                            | Title |
+|----------------|----------|------|-------------------------------|-------|
+| Session        | Observed | —    | Its connection number         | —     |
+| Client context | Observed | —    | Its `client.id` with its host | —     |
+
+### Targeting
+
+See [targeting](../domains/targeting.md).
+
+| Entity    | Type               | Name           | ID             | Title           |
+|-----------|--------------------|----------------|----------------|-----------------|
+| Selector  | User-defined       | `SelectorName` | `SelectorUuid` | `SelectorTitle` |
+| Condition | Part of a selector | —              | —              | —               |
+| Scope     | Part of a rule     | —              | —              | —               |
+
+### Lies and incidents
+
+See [lies and incidents](../domains/lies-and-incidents.md).
+
+| Entity   | Type                       | Name         | ID           | Title         |
+|----------|----------------------------|--------------|--------------|---------------|
+| Preset   | User-defined               | `PresetName` | `PresetUuid` | `PresetTitle` |
+| Lie      | Part of a rule or a preset | —            | —            | —             |
+| Incident | Part of a rule or a preset | —            | —            | —             |
+
+### Rules and triggers
+
+See [rules and triggers](../domains/rules.md).
+
+| Entity                 | Type           | Name       | ID         | Title       |
+|------------------------|----------------|------------|------------|-------------|
+| Rule, in the workspace | User-defined   | `RuleName` | `RuleUuid` | `RuleTitle` |
+| Live rule              | User-defined   | `RuleName` | `RuleUuid` | `RuleTitle` |
+| Trigger                | Part of a rule | —          | —          | —           |
+| Lifetime               | Part of a rule | —          | —          | —           |
+| Counter                | Part of a rule | —          | —          | —           |
+| Budget                 | Part of a rule | —          | —          | —           |
+
+### Scenarios
+
+See [scenarios](../domains/scenarios.md).
+
+| Entity   | Type                   | Name           | ID                        | Title           |
+|----------|------------------------|----------------|---------------------------|-----------------|
+| Scenario | User-defined           | `ScenarioName` | `ScenarioUuid`            | `ScenarioTitle` |
+| Step     | Part of a scenario     | —              | Its place in the scenario | —               |
+| Live set | Part of an environment | —              | Its environment           | —               |
+
+### Observation
+
+See [observation](../domains/observation.md).
+
+| Entity        | Type                | Name | ID                 | Title |
+|---------------|---------------------|------|--------------------|-------|
+| Call          | Observed            | —    | `CallId`, a number | —     |
+| Verdict       | Part of a call      | —    | —                  | —     |
+| Explanation   | Part of a call      | —    | —                  | —     |
+| Recording     | Observed            | —    | Not decided yet    | —     |
+| Journal entry | Observed            | —    | Not decided yet    | —     |
+| Index         | Part of a recording | —    | —                  | —     |
+
+### World
+
+See [world](../domains/world.md).
+
+| Entity      | Type            | Name                                | ID                             | Title        |
+|-------------|-----------------|-------------------------------------|--------------------------------|--------------|
+| World       | User-defined    | `WorldName`                         | `WorldUuid`                    | `WorldTitle` |
+| Broker node | Part of a world | —                                   | Its broker ID, as in Kafka     | —            |
+| Topic       | Part of a world | Its topic name, as in Kafka         | —                              | —            |
+| Partition   | Part of a topic | —                                   | Its topic and partition number | —            |
+| Group       | Part of a world | Its `group.id`, as in Kafka         | —                              | —            |
+| Producer    | Part of a world | —                                   | Its producer ID, as in Kafka   | —            |
+| Transaction | Part of a world | Its `transactional.id`, as in Kafka | —                              | —            |
+
+### Control surfaces
+
+See [control surfaces](../domains/control-surfaces.md).
+
+| Entity     | Type                 | Name                                  | ID                                  | Title         |
+|------------|----------------------|---------------------------------------|-------------------------------------|---------------|
+| Pad layout | User-defined         | `LayoutName`                          | `LayoutUuid`                        | `LayoutTitle` |
+| Layer      | Part of a pad layout | `LayerName`, unique within its layout | —                                   | —             |
+| Pad        | Part of a pad layout | —                                     | Its position: layer, row and column | —             |
+
+### Storage
+
+See [storage](../architecture/storage.md).
+
+| Entity      | Type                | Name              | ID                   | Title              |
+|-------------|---------------------|-------------------|----------------------|--------------------|
+| Environment | User-defined        | `EnvironmentName` | `EnvironmentUuid`    | `EnvironmentTitle` |
+| Workspace   | One per directory   | —                 | Its directory        | —                  |
+| Secret      | Part of a workspace | —                 | The path of its file | —                  |
+
+## User-defined entities
 
 ```yaml
 name: slow-order-producers
@@ -36,10 +125,13 @@ selector: order-producers
 action: delay-1s
 ```
 
+Each kind has a type of its own for its name, its UUID and its title,
+so the name of a selector never stands where the name of a rule belongs.
+
 ### Name
 
-The name is the identity of a definition between domains.
-Files, the control plane, ⌘K and explanations refer to a definition by its name.
+The name is the identity of a user-defined entity between domains.
+Files, the control plane, ⌘K and explanations refer to an entity by its name.
 
 A name is a slug, like the name of a Kubernetes object.
 
@@ -53,24 +145,24 @@ A name is a name and nothing else.
 
 ### UUID
 
-The UUID is the identity of a definition inside the workspace.
-It lets the workspace track and store definitions without one overwriting another.
+The UUID is the identity of a user-defined entity inside the workspace.
+It lets the workspace track and store entities without one overwriting another.
 
-A UUID is a UUID v7, so UUIDs sort in the order the definitions were created.
+A UUID is a UUID v7, so UUIDs sort in the order the entities were created.
 
-- GaslightMQ gives a definition its UUID when someone creates it, in the workspace or as a live rule.
+- GaslightMQ gives an entity its UUID when someone creates it, in the workspace or as a live rule.
   Nobody writes a UUID by hand.
-- The UUID is stored in the definition's file.
+- The UUID is stored in the entity's file.
   A live rule keeps it in memory, and in its file once someone keeps it.
   A file without a UUID gets one when the workspace first loads it.
-- Two definitions with the same UUID make the workspace invalid.
+- Two entities with the same UUID make the workspace invalid.
   That happens when someone copies a file.
 
 ### Title
 
 A title is no identifier.
-It is an optional, readable label of the definition itself, and nothing refers to it.
-The UI shows the title when a definition has one, and the name otherwise.
+It is an optional, readable label of the entity itself, and nothing refers to it.
+The UI shows the title when an entity has one, and the name otherwise.
 
 - It has at least 1 and at most 2000 characters.
 - It does not start or end with white space.
@@ -79,7 +171,7 @@ The UI shows the title when a definition has one, and the name otherwise.
 
 ### References
 
-Domains refer to definitions by name:
+Domains refer to user-defined entities by name:
 
 - a rule refers to its selector and its preset,
 - the explanation of a call refers to the rules that touched it,
@@ -88,24 +180,15 @@ Domains refer to definitions by name:
 
 The UUID stays inside the workspace.
 
-Creating a definition never overwrites another one:
+Creating an entity never overwrites another one:
 
 - creating fails when the name is already taken within its kind,
-- updating fails when no definition has that name.
+- updating fails when no entity has that name.
 
-A pad has no identity of its own.
-It is a position in a pad layout: its layer, row and column.
-See [a pad is a position, not a rule](../domains/control-surfaces.md#a-pad-is-a-position-not-a-rule).
+## Observed entities
 
-## Recorded things
-
-A recorded thing exists because GaslightMQ observed it.
+An observed entity exists because GaslightMQ observed it.
 It has no name, no UUID and no title.
-
-| Thing | Identified by | Lives as long as |
-|---|---|---|
-| Call | `CallId`, a number | Its environment's run, and every recording that holds it. |
-| Session | Its connection number | Its connection. A client that reconnects gets a new session and a new number. |
 
 ### Call ID
 
@@ -120,17 +203,17 @@ That number is no part of the call's identity.
 A call ID is unique within one run of an environment,
 and within a recording.
 
-### What a recorded thing says about a definition
+### What an observed entity says about a user-defined one
 
-A recorded thing can refer to a definition, such as the rules in the explanation of a call.
-It keeps the definition's name as it was at that moment: a `RecordedRuleName`.
+An observed entity can refer to a user-defined one, such as the rules in the explanation of a call.
+It keeps the entity's name as it was at that moment: a `RecordedRuleName`.
 
 A recorded name follows the rule for names,
-but nothing promises that a definition with that name still exists.
+but nothing promises that an entity with that name still exists.
 
 ## Not decided yet
 
 - How a recording and a journal entry are identified.
-- Whether a definition can be renamed and keep its UUID,
-  or whether a new name makes a new definition.
-- How two clients that update the same definition at once are kept from overwriting each other.
+- Whether an entity can be renamed and keep its UUID,
+  or whether a new name makes a new entity.
+- How two clients that update the same entity at once are kept from overwriting each other.
