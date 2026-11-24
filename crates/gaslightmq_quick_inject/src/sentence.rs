@@ -45,6 +45,7 @@ impl Sentence {
     /// The rule the sentence gives, or `None` while it does not say what happens.
     ///
     /// It is a definition and nothing else: nobody created it, and nobody armed it.
+    /// So it has no UUID, and whoever creates the rule gives it one.
     /// The words that were not read changed nothing about it,
     /// so whoever creates the rule looks at [`unread`](Self::unread) first.
     pub fn rule(&self) -> Option<&Rule> {
