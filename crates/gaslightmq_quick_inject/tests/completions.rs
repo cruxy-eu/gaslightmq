@@ -15,6 +15,9 @@ use gaslightmq_quick_inject::prelude::*;
 /// A completion as a table writes it: what it is, and the word.
 type Offered = (CompletionKind, &'static str);
 
+/// A completion as a table writes it, with the title that a surface shows next to the word.
+type Titled = (CompletionKind, &'static str, Option<&'static str>);
+
 const LIE: CompletionKind = CompletionKind::Lie;
 const PRESET: CompletionKind = CompletionKind::Preset;
 const API: CompletionKind = CompletionKind::Api;
@@ -99,7 +102,7 @@ fn a_preset_and_a_selector_complete_from_a_word_of_their_title() {
     let quick_inject = QuickInject::default();
     let known = Shop::known().with_presets([("election-storm".parse().unwrap(), None)]);
 
-    let sentences: [(&str, &[(CompletionKind, &str, Option<&str>)]); 8] = [
+    let sentences: [(&str, &[Titled]); 8] = [
         ("flap", &[(PRESET, "leader-flap", Some("Leader flap"))]),
         (
             "delay prod",
