@@ -13,7 +13,6 @@
 //! - What the [reader of manifests](crate::manifest) does not read.
 
 use std::fmt;
-use std::io;
 use std::path::PathBuf;
 
 use crate::manifest;
@@ -33,8 +32,10 @@ pub fn violations(workspace: &Workspace) -> Result<Vec<RuleViolation>, ManifestE
     let mut violations = Vec::new();
     for member in &workspace.members {
         let path = member.dir.join(MANIFEST);
-        let text = std::fs::read_to_string(workspace.root.join(&path))
-            .map_err(|error| ManifestError::Unreadable { path, error })?;
+        let text = std::fs::read_to_string(workspace.root.join(&path)).map_err(|error| ManifestError::Unreadable {
+            path,
+            reason: error.to_string(),
+        })?;
         violations.extend(of_member(member, &text));
     }
     Ok(violations)
@@ -110,8 +111,8 @@ impl fmt::Display for RuleViolation {
 /// Why a manifest could not be read.
 #[derive(Debug, thiserror::Error)]
 pub enum ManifestError {
-    #[error("{} cannot be read: {error}", .path.display())]
-    Unreadable { path: PathBuf, error: io::Error },
+    #[error("{} cannot be read: {reason}", .path.display())]
+    Unreadable { path: PathBuf, reason: String },
 }
 
 #[cfg(test)]

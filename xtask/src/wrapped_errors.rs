@@ -3,10 +3,9 @@
 //! `crates.md` says that an error says everything in one message:
 //! a variant that holds another error keeps it in a field named `error`, and `source()` returns `None`.
 //!
-//! An error type is a struct or an enum that implements `Error` in its own crate, or derives it.
+//! [`error_types`] says what an error type is.
 //! A field holds another error when its type is an error:
-//! the name of the type ends in `Error`, or a crate of the workspace implements `Error` for a type of that name,
-//! or the type is `dyn Error`.
+//! the name of the type ends in `Error`, or the type is an error type of the workspace, or it is `dyn Error`.
 //! `Box`, `Arc`, `Rc`, `Option` and a reference around such a type hold an error too.
 //!
 //! - A field that holds an error is named `error`. A field of a tuple has no name, and fails.
@@ -18,30 +17,25 @@
 //!
 //! What the check does not catch:
 //!
-//! - Whether the message writes the error it holds, and writes it once. No check reads a message.
+//! - Whether the message writes the error it holds, and writes it once. That is the check of [`error_messages`].
 //! - An error behind a type parameter, a type alias or a collection: `E`, `Failure` or `Vec<TopicNameError>`.
-//! - An error type that a macro writes, or one inside a function body. See [`source`].
-//! - Two types of one crate with the same name, of which one is an error type. The check knows a type by its name.
+//! - What no check of the error rules catches. See [`error_types`].
+//!
+//! [`error_messages`]: crate::error_messages
+//! [`error_types`]: crate::error_types
 
 use std::collections::BTreeSet;
 use std::fmt;
 use std::path::PathBuf;
 
-use syn::{
-    Attribute, Expr, Fields, GenericArgument, ImplItem, Item, ItemImpl, PathArguments, Stmt, Type, TypeParamBound,
-};
+use syn::{Attribute, Expr, Fields, ImplItem, Item, Stmt, Type};
 
+use crate::error_types::{self, Held, derives_error, implements_error, last_name};
 use crate::source::{self, SourceError, SourceFile};
 use crate::workspace::Workspace;
 
 /// The name of the field that holds another error.
 const ERROR_FIELD: &str = "error";
-
-/// The trait that makes a type an error type, by the last name of its path.
-const ERROR_TRAIT: &str = "Error";
-
-/// The types that hold what they wrap, so that a field of `Box<TopicNameError>` holds a `TopicNameError`.
-const WRAPPERS: [&str; 4] = ["Arc", "Box", "Option", "Rc"];
 
 /// The attributes with which a derived `Error` makes a field its source.
 const SOURCE_ATTRIBUTES: [&str; 2] = ["from", "source"];
@@ -67,7 +61,7 @@ pub fn violations(workspace: &Workspace) -> Result<Vec<WrappedErrorViolation>, S
 
 /// The violations in the source of several crates, one list of files per crate.
 fn in_crates(crates: &[Vec<SourceFile>]) -> Vec<WrappedErrorViolation> {
-    let error_types: Vec<BTreeSet<String>> = crates.iter().map(|files| error_types(files)).collect();
+    let error_types: Vec<BTreeSet<String>> = crates.iter().map(|files| error_types::names_in(files)).collect();
     // A field holds an error when its type is an error type of any crate of the workspace.
     let known: BTreeSet<&str> = error_types.iter().flatten().map(String::as_str).collect();
     let mut violations = Vec::new();
@@ -79,26 +73,6 @@ fn in_crates(crates: &[Vec<SourceFile>]) -> Vec<WrappedErrorViolation> {
         }
     }
     violations
-}
-
-/// The names of the types that a crate makes an error type: it implements `Error` for them, or derives it.
-fn error_types(files: &[SourceFile]) -> BTreeSet<String> {
-    let mut names = BTreeSet::new();
-    for item in files.iter().flat_map(SourceFile::items) {
-        match item {
-            Item::Impl(implementation) if implements_error(implementation) => {
-                names.extend(last_name(&implementation.self_ty));
-            }
-            Item::Enum(item) if derives_error(&item.attrs) => {
-                names.insert(item.ident.to_string());
-            }
-            Item::Struct(item) if derives_error(&item.attrs) => {
-                names.insert(item.ident.to_string());
-            }
-            _ => {}
-        }
-    }
-    names
 }
 
 fn in_item(
@@ -230,80 +204,9 @@ fn made_source(field: &syn::Field) -> Option<usize> {
 
 /// The error that a field of this type holds, as the code writes its type, with the line of that type.
 fn held_error(ty: &Type, known: &BTreeSet<&str>) -> Option<(String, usize)> {
-    match ty {
-        Type::Path(ty) if ty.qself.is_none() => {
-            let last = ty.path.segments.last()?;
-            let name = last.ident.to_string();
-            if name.ends_with(ERROR_TRAIT) || known.contains(name.as_str()) {
-                let written: Vec<String> = ty
-                    .path
-                    .segments
-                    .iter()
-                    .map(|segment| segment.ident.to_string())
-                    .collect();
-                return Some((written.join("::"), last.ident.span().start().line));
-            }
-            if !WRAPPERS.contains(&name.as_str()) {
-                return None;
-            }
-            let PathArguments::AngleBracketed(arguments) = &last.arguments else {
-                return None;
-            };
-            arguments.args.iter().find_map(|argument| match argument {
-                GenericArgument::Type(wrapped) => held_error(wrapped, known),
-                _ => None,
-            })
-        }
-        Type::TraitObject(object) => object.bounds.iter().find_map(|bound| match bound {
-            TypeParamBound::Trait(bound) => {
-                let last = bound.path.segments.last()?;
-                (last.ident == ERROR_TRAIT).then(|| (format!("dyn {ERROR_TRAIT}"), last.ident.span().start().line))
-            }
-            _ => None,
-        }),
-        Type::Reference(reference) => held_error(&reference.elem, known),
-        Type::Paren(inner) => held_error(&inner.elem, known),
-        Type::Group(inner) => held_error(&inner.elem, known),
-        _ => None,
-    }
-}
-
-/// Whether an `impl` block implements `Error`: `impl std::error::Error for TopicNameError`.
-fn implements_error(implementation: &ItemImpl) -> bool {
-    implementation
-        .trait_
-        .as_ref()
-        .and_then(|(path, _)| path.segments.last())
-        .is_some_and(|last| last.ident == ERROR_TRAIT)
-}
-
-/// Whether a type derives `Error`, as `#[derive(thiserror::Error)]` does.
-fn derives_error(attributes: &[Attribute]) -> bool {
-    attributes
-        .iter()
-        .filter(|attribute| attribute.path().is_ident("derive"))
-        .any(|attribute| {
-            let mut derives = false;
-            // A derive that does not parse is one the compiler rejects too.
-            let _ = attribute.parse_nested_meta(|derived| {
-                derives |= derived
-                    .path
-                    .segments
-                    .last()
-                    .is_some_and(|last| last.ident == ERROR_TRAIT);
-                Ok(())
-            });
-            derives
-        })
-}
-
-/// The last name of the path that a type is written as: `TopicNameError` for `crate::TopicNameError<'a>`.
-fn last_name(ty: &Type) -> Option<String> {
-    match ty {
-        Type::Path(ty) => ty.path.segments.last().map(|last| last.ident.to_string()),
-        Type::Reference(reference) => last_name(&reference.elem),
-        _ => None,
-    }
+    Held::of(ty)
+        .filter(|held| held.is_error(known))
+        .map(|held| (held.written, held.line))
 }
 
 /// Whether the body of a function is `None` and nothing else.
@@ -403,10 +306,10 @@ mod tests {
             "pub enum ClientError {{
                  Broker {{ error: ResponseError }},
                  CallTimedOut {{ error: Box<ClientError>, attempts: u32 }},
-                 Unreadable {{ error: std::io::Error }},
+                 Unreadable {{ error: WireError }},
                  RequestTimedOut,
                  UnsupportedVersion {{ api_key: i16 }},
-                 Protocol(String),
+                 ConnectionLost {{ reason: String }},
              }}
              {IMPLEMENTS}"
         );

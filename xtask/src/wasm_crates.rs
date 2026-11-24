@@ -10,7 +10,6 @@
 
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::fmt;
-use std::io;
 use std::path::Path;
 
 use crate::crate_layout::{CrateLayout, PATH};
@@ -30,7 +29,9 @@ pub struct WasmCrates {
 
 impl WasmCrates {
     pub fn load(root: &Path) -> Result<Self, WasmCratesError> {
-        let text = std::fs::read_to_string(root.join(PATH)).map_err(|error| WasmCratesError::Unreadable { error })?;
+        let text = std::fs::read_to_string(root.join(PATH)).map_err(|error| WasmCratesError::Unreadable {
+            reason: error.to_string(),
+        })?;
         Self::parse(&text)
     }
 
@@ -142,8 +143,8 @@ impl fmt::Display for WasmViolation {
 /// Why the table could not be read.
 #[derive(Debug, thiserror::Error)]
 pub enum WasmCratesError {
-    #[error("{PATH} cannot be read: {error}")]
-    Unreadable { error: io::Error },
+    #[error("{PATH} cannot be read: {reason}")]
+    Unreadable { reason: String },
     #[error("{PATH} has no table that starts with `{HEADER}`")]
     NoTable,
     #[error(
