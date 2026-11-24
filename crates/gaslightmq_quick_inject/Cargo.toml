@@ -1,0 +1,22 @@
+[package]
+name = "gaslightmq_quick_inject"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+gaslightmq_clock.workspace = true
+gaslightmq_field.workspace = true
+gaslightmq_kernel.workspace = true
+gaslightmq_lie.workspace = true
+gaslightmq_rule.workspace = true
+gaslightmq_selector.workspace = true
+gaslightmq_trigger.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+gaslightmq_rule = { workspace = true, features = ["serde"] }
+serde_json.workspace = true
