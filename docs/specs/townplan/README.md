@@ -9,7 +9,7 @@ Districts talk to each other through narrow, named contracts.
 ```mermaid
 flowchart TB
   subgraph surfaces["Control surfaces"]
-    CS["Rules list · Clients board · ⌘K · Pad grid · Capture"]
+    CS["Rules list · Clients board · ⌘K · Pad grid · Push (later) · Capture"]
   end
 
   subgraph core["Core"]
@@ -59,16 +59,19 @@ flowchart TB
 | [Lies and incidents](../domains/lies-and-incidents.md) | Core | Truth, Lie, Stage, Target, Incident, Consequence, Preset | Defines the vocabulary of everything GaslightMQ can make a client believe. |
 | [Targeting](../domains/targeting.md) | Supporting | Field, Learned field, Condition, Selector, Scope | Provides one predicate language for filtering, targeting and indexing. |
 | [Session](../domains/session.md) | Supporting | Session, Identity, Client context | Runs every connection and holds the state rules need per connection and per client. |
-| [Observation](../domains/observation.md) | Supporting | Call, Verdict, Explanation, Recording, Journal, Index | Shows what happened and why. |
+| [Observation](../domains/observation.md) | Supporting | Call, Verdict, Explanation, Recording, Journal, Index, Live traffic, Statistics | Shows what happened and why. |
 | [World](../domains/world.md) | Supporting | Cluster, Broker node, Topic, Partition, Group, Producer, Record source, Template | Holds the state of a simulated cluster. |
-| [Control surfaces](../domains/control-surfaces.md) | Supporting | View, Pad layout, Layer | Gives people fast ways to change rules and scenarios. |
+| [Control surfaces](../domains/control-surfaces.md) | Supporting | View, Pad layout, Layer, Hardware mapping (later) | Gives people fast ways to change rules and scenarios. |
 | [Backends](../architecture/backends.md) | Generic | Backend, Capability, Overlay, Emulation | Answers calls, either from a real cluster or from a broker with its World. |
 | Wire | Generic | Frame, Request, Response | Encodes and decodes the Kafka protocol. |
-| [Workspace](../architecture/storage.md) | Generic | Workspace, Environment, Secret reference, Scratch file, Recording file | Persists definitions and recordings, and configures where the engine runs. |
+| [Workspace](../architecture/storage.md) | Generic | Workspace, Environment, Secret reference, Scratch file, Recording file | Persists definitions and recordings, gives every definition its UUID, and configures where the engine runs. |
 
 The core districts are where GaslightMQ differs from every other Kafka tool.
 The supporting districts exist to serve the core.
 The generic districts solve problems that are not specific to GaslightMQ.
+
+A part marked *later* is future work.
+The hardware mapping lets a controller such as a Push 2 play the pad grid; no crate builds it yet.
 
 The engine owns the [Clock](../architecture/README.md#clock).
 Scenarios, Injection and the World all read it, and none of them owns it.
