@@ -17,6 +17,7 @@ members = [
     "crates/gaslightmq_listener",
     "crates/gaslightmq_overlay",
     "crates/gaslightmq_pipeline",
+    "crates/gaslightmq_quick_inject",
     "crates/gaslightmq_resource",
     "crates/gaslightmq_rule",
     "crates/gaslightmq_selector",
