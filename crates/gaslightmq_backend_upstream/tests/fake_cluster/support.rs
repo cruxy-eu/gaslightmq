@@ -4,7 +4,6 @@ use std::collections::BTreeMap;
 use std::future::{Future, poll_fn};
 use std::net::SocketAddr;
 use std::pin::Pin;
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::task::Poll;
 use std::time::Duration;
@@ -12,11 +11,11 @@ use std::time::Duration;
 use bytes::Bytes;
 use gaslightmq_backend::prelude::*;
 use gaslightmq_backend_upstream::prelude::*;
-use gaslightmq_call::CallId;
 use gaslightmq_clock::TimeSpan;
 use gaslightmq_environment::prelude::*;
 use gaslightmq_field::prelude::*;
 use gaslightmq_kernel::prelude::*;
+use gaslightmq_session::CallIds;
 use gaslightmq_wire::messages::api_versions_response::ApiVersion;
 use gaslightmq_wire::messages::metadata_response::MetadataResponseBroker;
 use gaslightmq_wire::messages::{
@@ -303,16 +302,24 @@ pub fn metadata(correlation_id: i32) -> Request {
     Request::new(12, correlation_id, Some("payments-api"), &MetadataRequest::default()).unwrap()
 }
 
-/// How many requests the proxy of these tests forwarded.
-///
-/// A proxy counts its calls across all its connections, and the backend takes each request under the ID of its call.
-/// The backend of these tests keeps no call ID, so the tests share the count.
-static FORWARDED: AtomicU64 = AtomicU64::new(0);
+/// The proxy in front of the backend of one test, as far as the backend sees it:
+/// it counts the calls of all its connections, and forwards each request under the ID of its call.
+#[derive(Default)]
+pub struct Proxy {
+    call_ids: CallIds,
+}
 
-/// `request` as the next call of the proxy, which arrived on connection `connection`, a connection on `endpoint`.
-pub fn on(connection: u64, endpoint: Endpoint, request: Request) -> BackendRequest {
-    let call = CallId::new(FORWARDED.fetch_add(1, Ordering::Relaxed) + 1).unwrap();
-    BackendRequest::new(call, ConnectionNumber::new(connection), endpoint, request)
+impl Proxy {
+    /// A proxy that forwarded no request yet.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// `request` as the next call of the proxy, which arrived on connection `connection`, a connection on `endpoint`.
+    pub fn forwards(&self, connection: u64, endpoint: Endpoint, request: Request) -> BackendRequest {
+        let call = self.call_ids.assign();
+        BackendRequest::new(call, ConnectionNumber::new(connection), endpoint, request)
+    }
 }
 
 /// The endpoint of broker `id`.

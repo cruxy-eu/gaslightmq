@@ -1,15 +1,17 @@
-//! What the tests of the traffic share: the connection of a client, whose calls end with a record.
+//! What the tests of the traffic share: a proxy, the connections of its clients, and their calls, which end with a record.
 //!
 //! A traffic takes the records that an engine hands over, and a test writes them the way a session does.
+//! Each test makes its own [`Proxy`], which numbers the connections it accepts and counts the calls of all of them.
 //! A [`ClientConnection`] makes its calls, and an [`EndingCall`] notes what each rule did to the call
 //! before it becomes the record.
 //!
 //! Every call reaches the backend, and the backend answers it without an error.
 //! A lie is therefore told after the response: the truth is `ok`, and the client receives something else.
 
+use std::cell::Cell;
 use std::num::NonZeroU64;
+use std::rc::Rc;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU64, Ordering};
 
 use gaslightmq_call::prelude::*;
 use gaslightmq_clock::Instant;
@@ -18,30 +20,42 @@ use gaslightmq_kernel::prelude::*;
 use gaslightmq_lie::prelude::*;
 use gaslightmq_rule::RuleName;
 
-/// The ID of the next call, across every test of the binary: a proxy counts the calls of all its connections.
-static CALLS: AtomicU64 = AtomicU64::new(1);
+/// The proxy of one test. It numbers the connections it accepts, and counts the calls of all of them together.
+pub struct Proxy {
+    /// How many connections the proxy accepted, which is the number of the last one.
+    accepted: Cell<u64>,
+    /// The ID of the next call, which every connection of the proxy takes its calls from.
+    next_call: Rc<Cell<CallId>>,
+}
 
-/// One connection of a client. Every call that the test makes on it is the next call of the proxy.
+impl Proxy {
+    /// A proxy that accepted no connection yet, and whose next call is its first.
+    pub fn new() -> Self {
+        Self {
+            accepted: Cell::new(0),
+            next_call: Rc::new(Cell::new(CallId::FIRST)),
+        }
+    }
+
+    /// The proxy accepts the next connection, of the client with that `client.id`.
+    pub fn accepts(&self, client: ClientId) -> ClientConnection {
+        self.accepted.set(self.accepted.get() + 1);
+        ClientConnection {
+            client,
+            connection: ConnectionNumber::new(self.accepted.get()),
+            next_call: Rc::clone(&self.next_call),
+        }
+    }
+}
+
+/// One connection of a client. Every call that the test makes on it is the next call of its proxy.
 pub struct ClientConnection {
     client: ClientId,
     connection: ConnectionNumber,
+    next_call: Rc<Cell<CallId>>,
 }
 
 impl ClientConnection {
-    /// The first connection that the proxy accepted, of the client with that `client.id`.
-    pub fn first(client: ClientId) -> Self {
-        Self::accepted(client, ConnectionNumber::new(1))
-    }
-
-    /// The second connection that the proxy accepted, of the client with that `client.id`.
-    pub fn second(client: ClientId) -> Self {
-        Self::accepted(client, ConnectionNumber::new(2))
-    }
-
-    fn accepted(client: ClientId, connection: ConnectionNumber) -> Self {
-        Self { client, connection }
-    }
-
     /// The next call of the connection: a Produce to that partition.
     pub fn produce(&self, partition: &TopicPartition) -> EndingCall {
         self.call(ApiKey::PRODUCE, Some(partition))
@@ -58,7 +72,8 @@ impl ClientConnection {
     }
 
     fn call(&self, api: ApiKey, partition: Option<&TopicPartition>) -> EndingCall {
-        let id = CallId::new(CALLS.fetch_add(1, Ordering::Relaxed)).expect("the count starts at one");
+        let id = self.next_call.get();
+        self.next_call.set(id.next());
         let fields = Fields::new()
             .with(self.connection)
             .with(self.client.clone())

@@ -29,5 +29,7 @@ tracing.workspace = true
 anyhow.workspace = true
 # The preludes that code imports next to this one. `tests/prelude.rs` checks that no name clashes.
 gaslightmq_call.workspace = true
+# The call IDs of a proxy, which the tests in `tests/fake_cluster` forward their requests under.
+gaslightmq_session.workspace = true
 # A real Kafka cluster for the tests in `tests/real_cluster`.
 gaslightmq_test_kafka.workspace = true
