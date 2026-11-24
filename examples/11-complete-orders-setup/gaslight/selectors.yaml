@@ -1,18 +1,21 @@
 # Which calls. Rules and filters refer to these by name.
 
 - name: order-producers
+  uuid: 01a20cc8-9199-7acc-a735-3bb8258d82c7
   title: Order producers
   match:
     api: Produce
     topic: "orders.*"
 
 - name: order-fetches
+  uuid: 01a20cc8-91a5-7aa8-ae59-f50c2db9c2d5
   title: Order fetches
   match:
     api: Fetch
     topic: "orders.*"
 
 - name: group-coordination
+  uuid: 01a20cc8-91a7-76cb-b51b-3e9e3d1412c5
   title: Group coordination
   match:
     api: [FindCoordinator, JoinGroup, SyncGroup, Heartbeat, ConsumerGroupHeartbeat]

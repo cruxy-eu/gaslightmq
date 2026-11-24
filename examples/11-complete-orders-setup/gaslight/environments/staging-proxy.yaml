@@ -1,5 +1,6 @@
 # A proxy in front of a real cluster. The same rules and scenarios apply.
 name: staging-proxy
+uuid: 01a20cc8-90b5-7ca8-a333-a3b1ccd79b4c
 
 proxy:
   upstream:

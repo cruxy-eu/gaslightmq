@@ -1,5 +1,6 @@
 # A fake cluster and a schema registry. No proxy: nothing lies.
 name: shop
+uuid: 01a20cc8-8f65-7616-9b43-8ac9dd775903
 
 broker:
   world: shop
