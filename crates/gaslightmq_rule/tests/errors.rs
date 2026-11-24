@@ -46,8 +46,8 @@ fn every_error() -> Vec<(Said, &'static str)> {
     vec![
         (said(RuleNameError::Empty), "rule name \"\" is empty"),
         (
-            said(PresetNameError::SurroundingWhiteSpace { input: " x".into() }),
-            "preset name \" x\" starts or ends with white space",
+            said(PresetNameError::SurroundingHyphen { input: "-x".into() }),
+            "preset name \"-x\" starts or ends with a hyphen",
         ),
         (
             said(RuleSetError::DuplicateName { name: rule("Flap") }),

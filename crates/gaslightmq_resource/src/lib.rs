@@ -1,23 +1,26 @@
 //! The resource vocabulary: the name of a resource, and the one rule that every name follows.
 //!
 //! A resource is a definition that someone names: a selector, a preset, a rule or an environment.
-//! Whatever references a resource does so by its name, and the control plane lists it and renames it by that name.
+//! A name is the identity of its resource, and nothing else: whatever references a resource does so by its name,
+//! and no other identifier stands next to it.
+//! A resource keeps its name for as long as it exists.
+//! Whoever wants another name makes a new resource.
 //!
 //! | Type | Is |
 //! |---|---|
-//! | [`ResourceName`] | The name of a resource: text that follows [the rule for names](ResourceName#the-rule-for-names). |
+//! | [`ResourceName`] | The name of a resource: a slug that follows [the rule for names](ResourceName#the-rule-for-names). |
 //! | [`ResourceNameError`] | Why a text is no name: the part of the rule it breaks. |
 //! | [`name!`] | The name of one kind of resource and its error, written into the crate of that kind. |
 //!
 //! ```
 //! use gaslightmq_resource::{ResourceName, ResourceNameError};
 //!
-//! let name: ResourceName = "Order producers".parse()?;
-//! assert_eq!(name, "Order producers");
+//! let name: ResourceName = "order-producers".parse()?;
+//! assert_eq!(name, "order-producers");
 //!
 //! // A form checks what someone types before it asks anything of the engine.
-//! let error = ResourceName::new("Order producers ").unwrap_err();
-//! assert_eq!(error.to_string(), "name \"Order producers \" starts or ends with white space");
+//! let error = ResourceName::new("order-producers-").unwrap_err();
+//! assert_eq!(error.to_string(), "name \"order-producers-\" starts or ends with a hyphen");
 //! # Ok::<(), ResourceNameError>(())
 //! ```
 //!
