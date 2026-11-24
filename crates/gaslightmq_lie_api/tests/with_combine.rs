@@ -62,7 +62,7 @@ impl Refusal {
     }
 
     /// The reader or the writer of a message said `reason`.
-    fn not_rewritten(reason: &gaslightmq_wire::WireError) -> LieError {
+    fn not_rewritten(reason: &impl std::fmt::Display) -> LieError {
         LieError::CallNotRewritten {
             kind: LieKind::Refusal,
             reason: reason.to_string(),

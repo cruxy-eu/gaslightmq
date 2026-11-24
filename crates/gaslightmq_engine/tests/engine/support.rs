@@ -33,7 +33,7 @@ use gaslightmq_wire::messages::{
     HeartbeatRequest, HeartbeatResponse, MetadataRequest, MetadataResponse, ProduceRequest, ProduceResponse,
 };
 use gaslightmq_wire::protocol::{Request as KafkaRequest, StrBytes};
-use gaslightmq_wire::{ApiKey as KnownApi, FrameDecoder, Record, RecordBatch, Request, Response, WireError};
+use gaslightmq_wire::{ApiKey as KnownApi, FrameDecoder, Record, RecordBatch, Request, Response};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 use tokio::sync::watch;
@@ -249,7 +249,7 @@ impl ScriptedBackend {
     }
 
     /// The answer of a cluster that could not build its response, for the reason the codec gave.
-    fn not_built(error: &WireError) -> BackendAnswer {
+    fn not_built(error: &impl std::fmt::Display) -> BackendAnswer {
         let reason = error.to_string();
         BackendFailure::ResponseNotBuilt { reason }.into()
     }

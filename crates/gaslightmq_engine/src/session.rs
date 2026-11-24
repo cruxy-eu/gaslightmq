@@ -377,10 +377,10 @@ fn answered(call: CallId, answer: BackendAnswer) -> Option<Input<'static>> {
         }),
         // The request has no response, and the pipeline expects none.
         BackendAnswer::NoResponse => None,
-        BackendAnswer::NotAResponse { reason } => Some(Input::BackendAnswerUnreadable { call, error: reason }),
+        BackendAnswer::NotAResponse { reason } => Some(Input::BackendAnswerUnreadable { call, reason }),
         BackendAnswer::Failed(failure) => Some(Input::BackendFailed {
             call,
-            failure: failure.to_string(),
+            reason: failure.to_string(),
         }),
     }
 }

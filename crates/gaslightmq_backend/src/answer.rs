@@ -38,7 +38,7 @@ use crate::BackendFailure;
 ///
 /// let BackendAnswer::Truth(truth) = answer else { unreachable!("the cluster answered") };
 /// assert_eq!(truth.response().correlation_id(), 41);
-/// # Ok::<(), gaslightmq_wire::WireError>(())
+/// # Ok::<(), gaslightmq_wire::EncodeError>(())
 /// ```
 #[derive(Debug, Clone)]
 pub enum BackendAnswer {
@@ -104,10 +104,12 @@ impl From<BackendFailure> for BackendAnswer {
 ///
 /// let truth = Truth::new(with_the_overlay).with_upstream(of_the_cluster);
 ///
-/// assert_eq!(truth.response().body::<MetadataResponse>()?.controller_id, -1);
+/// let hidden: MetadataResponse = truth.response().body().expect("a Metadata response");
+/// assert_eq!(hidden.controller_id, -1);
 /// let upstream = truth.upstream().expect("the overlay changed the answer");
-/// assert_eq!(upstream.body::<MetadataResponse>()?.controller_id, 3);
-/// # Ok::<(), gaslightmq_wire::WireError>(())
+/// let named: MetadataResponse = upstream.body().expect("a Metadata response");
+/// assert_eq!(named.controller_id, 3);
+/// # Ok::<(), gaslightmq_wire::EncodeError>(())
 /// ```
 #[derive(Debug, Clone)]
 pub struct Truth {

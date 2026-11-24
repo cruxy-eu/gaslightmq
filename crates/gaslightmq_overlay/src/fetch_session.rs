@@ -1,5 +1,5 @@
 use gaslightmq_wire::messages::{FetchRequest, FetchResponse};
-use gaslightmq_wire::{Request, WireError};
+use gaslightmq_wire::{DecodeError, EncodeError, Request};
 
 /// A Fetch request as the real cluster gets to see it: without a fetch session.
 ///
@@ -48,7 +48,9 @@ impl SessionlessFetch {
         if !Self::applies_to(version) {
             return Ok(Self::AsItArrived);
         }
-        let mut body: FetchRequest = request.body().map_err(SessionlessFetchFlaw::UnreadableRequest)?;
+        let mut body: FetchRequest = request
+            .body()
+            .map_err(|error| SessionlessFetchFlaw::UnreadableRequest { error })?;
         match (body.session_id, body.session_epoch) {
             (Self::NO_SESSION, Self::FINAL_EPOCH) => Ok(Self::AsItArrived),
             (_, Self::INITIAL_EPOCH | Self::FINAL_EPOCH) => {
@@ -56,7 +58,7 @@ impl SessionlessFetch {
                 body.session_epoch = Self::FINAL_EPOCH;
                 Request::new(version, request.correlation_id(), request.client_id(), &body)
                     .map(Self::Rewritten)
-                    .map_err(SessionlessFetchFlaw::UnwritableRequest)
+                    .map_err(|error| SessionlessFetchFlaw::UnwritableRequest { error })
             }
             _ => Ok(Self::ContinuesSession),
         }
@@ -75,9 +77,9 @@ impl SessionlessFetch {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum SessionlessFetchFlaw {
     /// The body of the request does not decode.
-    UnreadableRequest(WireError),
+    UnreadableRequest { error: DecodeError },
     /// The request without its session does not encode.
-    UnwritableRequest(WireError),
+    UnwritableRequest { error: EncodeError },
 }
 
 #[cfg(test)]
@@ -167,7 +169,7 @@ mod tests {
 
         assert!(matches!(
             SessionlessFetch::of(&request),
-            Err(SessionlessFetchFlaw::UnreadableRequest(WireError::Decode { .. }))
+            Err(SessionlessFetchFlaw::UnreadableRequest { .. })
         ));
     }
 

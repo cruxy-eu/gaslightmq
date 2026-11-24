@@ -81,12 +81,10 @@ impl<'a, B: Backend> Session<'a, B> {
                             response: truth.into_response(),
                         },
                         BackendAnswer::NoResponse => continue,
-                        BackendAnswer::NotAResponse { reason } => {
-                            Input::BackendAnswerUnreadable { call, error: reason }
-                        }
+                        BackendAnswer::NotAResponse { reason } => Input::BackendAnswerUnreadable { call, reason },
                         BackendAnswer::Failed(failure) => Input::BackendFailed {
                             call,
-                            failure: failure.to_string(),
+                            reason: failure.to_string(),
                         },
                     };
                     outputs.extend(self.pipeline.handle(input, NOW));

@@ -289,7 +289,7 @@ fn an_answer_that_the_backend_cannot_hand_over_closes_the_connection_in_its_turn
     // The cluster answered the second call with bytes that the backend cannot read as a response.
     let waiting = driver.handle(gaslightmq_pipeline::Input::BackendAnswerUnreadable {
         call: second.0,
-        error: "response header is cut short at 3 bytes".to_owned(),
+        reason: "cannot decode response header: it is cut short at 3 bytes".to_owned(),
     });
     assert!(waiting.is_empty(), "the first call still waits for its answer");
     assert_eq!(driver.pipeline.closed(), None);
@@ -302,7 +302,9 @@ fn an_answer_that_the_backend_cannot_hand_over_closes_the_connection_in_its_turn
     assert_eq!(unanswered.delivered(), &Delivered::ConnectionClosed);
     assert_eq!(
         unanswered.explanation().failure().map(Failure::message),
-        Some("the backend answered with what is no response: response header is cut short at 3 bytes")
+        Some(
+            "the backend answered with what is no response: cannot decode response header: it is cut short at 3 bytes"
+        )
     );
 
     // The proxy closed the connection, as for a response that does not answer the request.
@@ -313,7 +315,7 @@ fn an_answer_that_the_backend_cannot_hand_over_closes_the_connection_in_its_turn
     let mut driver = Driver::with([]);
     let unknown = gaslightmq_pipeline::Input::BackendAnswerUnreadable {
         call: second.0,
-        error: "response header is cut short at 3 bytes".to_owned(),
+        reason: "cannot decode response header: it is cut short at 3 bytes".to_owned(),
     };
     assert!(driver.handle(unknown).is_empty());
     assert_eq!(driver.pipeline.closed(), None);

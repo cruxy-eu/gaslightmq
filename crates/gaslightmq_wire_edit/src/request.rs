@@ -222,8 +222,8 @@ impl EditableRequest {
         self.body
             .merged(&self.request, truth, &Verdict::new(0, &part))
             .map_err(|flaw| match flaw {
-                MergeFlaw::UnreadableResponse(error) => SurgeryError::unreadable_response(api, &error),
-                MergeFlaw::UnwritableResponse(error) => SurgeryError::unwritable_response(api, &error),
+                MergeFlaw::UnreadableResponse { error } => SurgeryError::unreadable_response(api, &error),
+                MergeFlaw::UnwritableResponse { error } => SurgeryError::unwritable_response(api, &error),
             })
     }
 

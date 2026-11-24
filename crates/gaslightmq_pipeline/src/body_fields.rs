@@ -9,7 +9,7 @@ use gaslightmq_wire::messages::{
     JoinGroupResponse, LeaveGroupRequest, OffsetCommitRequest, OffsetFetchRequest, ProduceRequest, SyncGroupRequest,
     TxnOffsetCommitRequest,
 };
-use gaslightmq_wire::{Request, Response, WireError};
+use gaslightmq_wire::{DecodeError, Request, Response};
 
 /// The first version of `AddPartitionsToTxn` that names several transactions.
 const FIRST_VERSION_WITH_TRANSACTIONS: i16 = 4;
@@ -68,8 +68,8 @@ impl BodyFields {
     ///
     /// # Errors
     ///
-    /// The [`WireError`] of a body that does not decode.
-    pub(crate) fn read(request: &Request) -> Result<Self, WireError> {
+    /// The [`DecodeError`] of a body that does not decode.
+    pub(crate) fn read(request: &Request) -> Result<Self, DecodeError> {
         let mut fields = Self::default();
         let version = request.api().version;
         match request.api().known() {
@@ -248,8 +248,8 @@ fn unsigned_varint(bytes: &mut &[u8]) -> Option<u32> {
 ///
 /// # Errors
 ///
-/// The [`WireError`] of a body that does not decode.
-pub(crate) fn learned_from(truth: &Response) -> Result<Vec<Learned>, WireError> {
+/// The [`DecodeError`] of a body that does not decode.
+pub(crate) fn learned_from(truth: &Response) -> Result<Vec<Learned>, DecodeError> {
     let member = match truth.api().known() {
         Some(KnownApi::JoinGroup) => MemberId::from_wire(&truth.body::<JoinGroupResponse>()?.member_id),
         Some(KnownApi::ConsumerGroupHeartbeat) => {

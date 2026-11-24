@@ -3,7 +3,7 @@
 use gaslightmq_call::{CallError, CallId, CallTimingError};
 use gaslightmq_lie_api::{Instruction, LieError};
 use gaslightmq_session::SessionError;
-use gaslightmq_wire::{Api, WireError};
+use gaslightmq_wire::{Api, DecodeError};
 use gaslightmq_wire_edit::SurgeryError;
 
 use crate::explain::UnexplainedRule;
@@ -68,10 +68,10 @@ pub(crate) enum StageFailure {
     UnreadableRequest { error: SurgeryError },
     /// The fields of the body do not decode.
     #[error("the fields of the {api} request cannot be read: {error}")]
-    UnreadableRequestFields { api: Api, error: WireError },
+    UnreadableRequestFields { api: Api, error: DecodeError },
     /// The response of the backend cannot carry the API and the correlation ID of the client's request.
     #[error("the response of the backend does not read as a {api} response: {error}")]
-    UnrestoredResponse { api: Api, error: WireError },
+    UnrestoredResponse { api: Api, error: DecodeError },
     /// The response of the backend cannot be read, so the rules saw no truth.
     #[error("the rules saw no truth: {error}")]
     UnreadableTruth { error: SurgeryError },
@@ -80,7 +80,7 @@ pub(crate) enum StageFailure {
     UnreadableTopicNames { error: SurgeryError },
     /// The member ID that the response of the backend gives the client cannot be read.
     #[error("no member ID was learned from the {api} response: {error}")]
-    UnreadableMemberId { api: Api, error: WireError },
+    UnreadableMemberId { api: Api, error: DecodeError },
     /// The response that the client received cannot be read, so the record shows no answer.
     #[error("the record shows no answer: {error}")]
     UnreadableDelivery { error: SurgeryError },
@@ -104,11 +104,11 @@ pub(crate) enum StageFailure {
     #[error("the explanation is incomplete: {error}")]
     Unexplained { error: UnexplainedRule },
     /// The backend answered the call with something that it could not hand over as a response.
-    #[error("the backend answered with what is no response: {error}")]
-    UnreadableAnswer { error: String },
+    #[error("the backend answered with what is no response: {reason}")]
+    UnreadableAnswer { reason: String },
     /// The backend had no answer for `call`, so the session ended.
-    #[error("the backend has no answer for call {call}: {failure}")]
-    BackendFailed { call: CallId, failure: String },
+    #[error("the backend has no answer for call {call}: {reason}")]
+    BackendFailed { call: CallId, reason: String },
     /// The backend closed the session.
     #[error("the backend closed the session: {reason}")]
     BackendClosed { reason: String },
@@ -119,6 +119,8 @@ mod tests {
     use std::error::Error;
 
     use gaslightmq_lie::LieKind;
+    use gaslightmq_wire::Request;
+    use gaslightmq_wire::messages::{HeartbeatRequest, ProduceRequest};
 
     use super::*;
 
@@ -175,14 +177,13 @@ mod tests {
     }
 
     #[test]
-    fn a_stage_failure_names_what_failed_and_writes_the_cause_once() {
+    fn a_stage_failure_writes_what_the_surgery_or_the_codec_said_once() {
         let unknown = SurgeryError::UnknownApi {
             api: Api::from_wire(9999, 0),
         };
-        let wrong_api = WireError::WrongApi {
-            expected: 0,
-            actual: 12,
-        };
+        // A Heartbeat is no Produce.
+        let heartbeat = Request::new(4, 7, None, &HeartbeatRequest::default()).unwrap();
+        let of_another_api = heartbeat.body::<ProduceRequest>().unwrap_err();
         let cases = [
             (
                 StageFailure::UnreadableRequest { error: unknown.clone() },
@@ -191,16 +192,18 @@ mod tests {
             (
                 StageFailure::UnreadableRequestFields {
                     api: Api::from_wire(0, 9),
-                    error: wrong_api.clone(),
+                    error: of_another_api.clone(),
                 },
-                "the fields of the Produce v9 request cannot be read: body of api key 12 read as api key 0",
+                "the fields of the Produce v9 request cannot be read: \
+                 cannot decode request body: it is of api key 12, and it was read as api key 0",
             ),
             (
                 StageFailure::UnrestoredResponse {
                     api: Api::from_wire(0, 9),
-                    error: wrong_api,
+                    error: of_another_api.clone(),
                 },
-                "the response of the backend does not read as a Produce v9 response: body of api key 12 read as api key 0",
+                "the response of the backend does not read as a Produce v9 response: \
+                 cannot decode request body: it is of api key 12, and it was read as api key 0",
             ),
             (
                 StageFailure::UnreadableTruth { error: unknown.clone() },
@@ -210,6 +213,25 @@ mod tests {
                 StageFailure::UnreadableDelivery { error: unknown },
                 "the record shows no answer: a request of api 9999 v0 cannot be edited: its messages are unknown",
             ),
+            (
+                StageFailure::UnreadableMemberId {
+                    api: Api::from_wire(11, 9),
+                    error: of_another_api,
+                },
+                "no member ID was learned from the JoinGroup v9 response: \
+                 cannot decode request body: it is of api key 12, and it was read as api key 0",
+            ),
+        ];
+
+        for (failure, message) in cases {
+            assert_eq!(failure.to_string(), message);
+            assert!(failure.source().is_none(), "{failure}");
+        }
+    }
+
+    #[test]
+    fn a_stage_failure_names_what_failed_and_writes_the_cause_once() {
+        let cases = [
             (
                 StageFailure::ThrottleUnwritten { millis: 500 },
                 "the answer carries no throttle of 500 ms: the throttle of an answer cannot be written yet",
@@ -236,25 +258,16 @@ mod tests {
                  and its response fields still wait for the backend",
             ),
             (
-                StageFailure::UnreadableMemberId {
-                    api: Api::from_wire(11, 9),
-                    error: WireError::WrongApi {
-                        expected: 11,
-                        actual: 12,
-                    },
-                },
-                "no member ID was learned from the JoinGroup v9 response: body of api key 12 read as api key 11",
-            ),
-            (
                 StageFailure::UnreadableAnswer {
-                    error: "response header is cut short at 3 bytes".to_owned(),
+                    reason: "cannot decode response header: it is cut short at 3 bytes".to_owned(),
                 },
-                "the backend answered with what is no response: response header is cut short at 3 bytes",
+                "the backend answered with what is no response: \
+                 cannot decode response header: it is cut short at 3 bytes",
             ),
             (
                 StageFailure::BackendFailed {
                     call: "#7.3".parse().unwrap(),
-                    failure: "the connection to the cluster ended before the answer arrived".to_owned(),
+                    reason: "the connection to the cluster ended before the answer arrived".to_owned(),
                 },
                 "the backend has no answer for call #7.3: the connection to the cluster ended before the answer arrived",
             ),

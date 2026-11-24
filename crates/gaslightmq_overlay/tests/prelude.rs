@@ -42,8 +42,8 @@ mod next_to_the_others {
     use gaslightmq_overlay::prelude::*;
     use gaslightmq_wire_edit::prelude::*;
 
-    use gaslightmq_wire::messages::{FetchRequest, HeartbeatRequest, HeartbeatResponse};
-    use gaslightmq_wire::{Api, Request, Response, WireError};
+    use gaslightmq_wire::messages::{FetchRequest, HeartbeatRequest, HeartbeatResponse, MetadataRequest};
+    use gaslightmq_wire::{Api, Request, Response};
 
     /// One value of every item of the prelude, each named without a path.
     pub fn every_item() -> Vec<String> {
@@ -89,10 +89,7 @@ mod next_to_the_others {
             .unwrap()
             .error_response(&Failures::none())
             .unwrap_err();
-        let cut_short = WireError::Truncated {
-            what: "request header",
-            len: 3,
-        };
+        let of_another_api = fetch.body::<MetadataRequest>().unwrap_err();
 
         vec![
             message_of(BrokerAddressError::PortZero),
@@ -112,7 +109,7 @@ mod next_to_the_others {
             }),
             message_of(AnswerError::UnwritableTruth {
                 api: Api::from_wire(3, 12),
-                reason: cut_short.to_string(),
+                reason: of_another_api.to_string(),
             }),
         ]
     }
@@ -143,7 +140,8 @@ fn the_prelude_names_the_error_of_every_type() {
             "a request for broker 9 has nowhere to go: the cluster named no such broker",
             "the Fetch v12 request cannot be answered without the cluster: nothing that the Fetch v12 request asks failed",
             "the Heartbeat v4 response 7 does not answer the Metadata v12 request 7",
-            "the truth of the Metadata v12 response cannot be written: request header is cut short at 3 bytes",
+            "the truth of the Metadata v12 response cannot be written: \
+             cannot decode request body: it is of api key 1, and it was read as api key 3",
         ]
     );
 }

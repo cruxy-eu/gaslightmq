@@ -8,7 +8,7 @@ use gaslightmq_incident::prelude::*;
 use gaslightmq_kernel::prelude::*;
 use gaslightmq_wire::messages::produce_request::ProduceRequest;
 use gaslightmq_wire::messages::{FetchRequest, FetchResponse, HeartbeatResponse};
-use gaslightmq_wire::{Request, WireError};
+use gaslightmq_wire::{ApiKey, Request};
 use tokio::sync::Notify;
 use tokio::time::timeout;
 
@@ -124,18 +124,11 @@ async fn a_produce_without_acks_ends_once_it_is_on_its_way() {
     let cluster = FakeCluster::new();
     let only = cluster
         .broker(1, |request| async move {
-            match request.body::<ProduceRequest>() {
-                Ok(_) => Reaction::Nothing,
-                Err(
-                    WireError::WrongApi { .. }
-                    | WireError::Decode { .. }
-                    // cannot come from the body of a request
-                    | WireError::EmptyFrame
-                    | WireError::FrameTooLarge { .. }
-                    | WireError::Truncated { .. }
-                    | WireError::UnknownApi { .. }
-                    | WireError::Encode { .. },
-                ) => Reaction::Respond(calm(&request)),
+            // The Produce says that it expects no response, and every other request gets one.
+            if request.api().known() == Some(ApiKey::Produce) {
+                Reaction::Nothing
+            } else {
+                Reaction::Respond(calm(&request))
             }
         })
         .await;

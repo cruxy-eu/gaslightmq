@@ -161,18 +161,11 @@ impl RuleStore {
 
     /// Swaps in a snapshot of the rules that `stays` keeps, in their order. Returns whether a rule left.
     fn keep(published: &mut Arc<Snapshot>, stays: impl Fn(&ArmedRule) -> bool) -> bool {
-        let staying: Vec<ArmedRule> = published.iter().filter(|rule| stays(rule)).cloned().collect();
-        if staying.len() == published.len() {
+        if published.iter().all(&stays) {
             return false;
         }
-        match Snapshot::new(staying) {
-            Ok(snapshot) => {
-                *published = Arc::new(snapshot);
-                true
-            }
-            // cannot come from the rules of a snapshot: they have one name each, and so have the ones that stay.
-            Err(SnapshotError::DuplicateName { .. }) => false,
-        }
+        *published = Arc::new(published.keeping(stays));
+        true
     }
 }
 

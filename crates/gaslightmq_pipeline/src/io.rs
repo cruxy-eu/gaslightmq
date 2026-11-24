@@ -34,18 +34,18 @@ pub enum Input<'a> {
     /// The pipeline gives it the API and the correlation ID of the client's request before anything reads it.
     BackendAnswered { call: CallId, response: Response },
     /// The backend answered the request under `call` with something that it cannot hand over as a response.
-    /// `error` says why, in one line.
+    /// `reason` says why, in one line.
     ///
     /// The client must not get that answer.
     /// The proxy closes the connection once the answer would be at the head of the line, as for a
     /// [response](Self::BackendAnswered) that does not answer the request.
-    BackendAnswerUnreadable { call: CallId, error: String },
+    BackendAnswerUnreadable { call: CallId, reason: String },
     /// The backend has no answer for the request that the pipeline handed out under `call`, and none will come.
-    /// `failure` says why, in one line.
+    /// `reason` says why, in one line.
     ///
     /// The session ends, and the backend closed it.
     /// The record of every call in flight keeps the line.
-    BackendFailed { call: CallId, failure: String },
+    BackendFailed { call: CallId, reason: String },
     /// The backend closed the session: the broker of its endpoint went away.
     /// `reason` says what happened, in one line.
     ///

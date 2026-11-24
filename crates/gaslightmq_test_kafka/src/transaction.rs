@@ -17,7 +17,7 @@ use gaslightmq_wire::messages::{
     AddPartitionsToTxnRequest, EndTxnRequest, FindCoordinatorRequest, InitProducerIdRequest, ProducerId,
 };
 use gaslightmq_wire::protocol::StrBytes;
-use gaslightmq_wire::{ApiKey, Offset, Record, RecordBatch};
+use gaslightmq_wire::{ApiKey, Offset, Record, RecordBatch, ResponseError};
 
 use crate::cluster::{Broker, KafkaCluster};
 use crate::error::KafkaClusterError;
@@ -271,18 +271,11 @@ impl<'a> Transaction<'a> {
         self.cluster
             .until(waited.duration(), async || match ask().await {
                 Ok(Ok(answer)) => Some(Ok(answer)),
-                Ok(Err(error_code)) => match KafkaClusterError::refused(api, &self.about(), error_code) {
-                    Err(KafkaClusterError::Refused { error, .. }) if error.is_retriable() => None,
-                    Err(
-                        refused @ (KafkaClusterError::Refused { .. }
-                        // cannot come from an error code
-                        | KafkaClusterError::NotStarted { .. }
-                        | KafkaClusterError::InvalidTopicName { .. }
-                        | KafkaClusterError::InvalidRecords { .. }
-                        | KafkaClusterError::Unanswered { .. }
-                        | KafkaClusterError::NotSettledInTime { .. }),
-                    ) => Some(Err(refused)),
-                    Ok(()) => None,
+                Ok(Err(error_code)) => match ResponseError::try_from_code(error_code) {
+                    // An error that passes, or a code that is no error: the coordinator is asked again.
+                    Some(error) if error.is_retriable() => None,
+                    None => None,
+                    Some(error) => Some(Err(KafkaClusterError::refused_with(api, &self.about(), error))),
                 },
                 Err(unanswered) => Some(Err(unanswered)),
             })

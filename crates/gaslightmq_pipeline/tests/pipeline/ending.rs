@@ -207,7 +207,7 @@ fn a_backend_without_an_answer_ends_the_session_and_every_record_says_why() {
     let failure = "the connection to the cluster ended before the answer arrived: reset by the broker";
     let ended = driver.handle(Input::BackendFailed {
         call: second.0,
-        failure: failure.to_owned(),
+        reason: failure.to_owned(),
     });
 
     // No call gets an answer, and nothing is made up for the client: the connection closes.
@@ -243,7 +243,7 @@ fn a_failure_ends_the_session_whichever_call_of_the_connection_it_names() {
     // A failure for a call of another connection is not for this session.
     let elsewhere = driver.handle(Input::BackendFailed {
         call: "#8.1".parse().unwrap(),
-        failure: "the backend cannot reach the cluster".to_owned(),
+        reason: "the backend cannot reach the cluster".to_owned(),
     });
     assert!(elsewhere.is_empty());
     assert_eq!(driver.pipeline.closed(), None);
@@ -251,7 +251,7 @@ fn a_failure_ends_the_session_whichever_call_of_the_connection_it_names() {
     // The backend could not hand on the Produce. That call is gone, and the session ends all the same.
     let ended = driver.handle(Input::BackendFailed {
         call: no_acks.forwarded().0,
-        failure: "the backend cannot reach the cluster".to_owned(),
+        reason: "the backend cannot reach the cluster".to_owned(),
     });
     assert_eq!(ended.kinds(), ["emit", "close"]);
     let record = ended.emitted();

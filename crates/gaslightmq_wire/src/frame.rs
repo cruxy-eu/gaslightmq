@@ -1,6 +1,6 @@
 use bytes::{Buf, Bytes, BytesMut};
 
-use crate::WireError;
+use crate::FrameError;
 
 /// One Kafka message as it travels on a connection.
 ///
@@ -112,19 +112,19 @@ impl FrameDecoder {
     ///
     /// # Errors
     ///
-    /// [`WireError::EmptyFrame`] when the prefix announces zero bytes, and
-    /// [`WireError::FrameTooLarge`] when it announces more than the decoder
+    /// [`FrameError::Empty`] when the prefix announces zero bytes, and
+    /// [`FrameError::TooLarge`] when it announces more than the decoder
     /// accepts.
-    pub fn next_frame(&mut self) -> Result<Option<Frame>, WireError> {
+    pub fn next_frame(&mut self) -> Result<Option<Frame>, FrameError> {
         let Some(prefix) = self.buffer.first_chunk::<4>() else {
             return Ok(None);
         };
         let len = u32::from_be_bytes(*prefix) as usize;
         if len == 0 {
-            return Err(WireError::EmptyFrame);
+            return Err(FrameError::Empty);
         }
         if len > self.max_len {
-            return Err(WireError::FrameTooLarge { len, max: self.max_len });
+            return Err(FrameError::TooLarge { len, max: self.max_len });
         }
         if self.buffer.len() < 4 + len {
             // The room for the rest grows with the bytes that arrived, and not with the length the prefix announces:
@@ -186,7 +186,7 @@ mod tests {
     fn rejects_an_oversized_frame_before_its_payload_arrives() {
         let mut decoder = FrameDecoder::with_max_len(8);
         decoder.extend(&9u32.to_be_bytes());
-        assert_eq!(decoder.next_frame(), Err(WireError::FrameTooLarge { len: 9, max: 8 }));
+        assert_eq!(decoder.next_frame(), Err(FrameError::TooLarge { len: 9, max: 8 }));
     }
 
     #[test]
@@ -222,6 +222,6 @@ mod tests {
     fn rejects_a_zero_length_frame() {
         let mut decoder = FrameDecoder::new();
         decoder.extend(&0u32.to_be_bytes());
-        assert_eq!(decoder.next_frame(), Err(WireError::EmptyFrame));
+        assert_eq!(decoder.next_frame(), Err(FrameError::Empty));
     }
 }
