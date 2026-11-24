@@ -19,7 +19,7 @@ use tokio::sync::{mpsc, watch};
 
 use crate::events::EventBus;
 use crate::timers::Timers;
-use crate::{EngineEvent, RuleStore, WaitableClock};
+use crate::{ArmedRules, EngineEvent, WaitableClock};
 
 /// The bytes of a frame that holds nothing, which are no request.
 ///
@@ -33,7 +33,7 @@ pub(crate) struct Sessions<B, C> {
     pub backend: B,
     pub clock: Arc<C>,
     pub shared: SharedBySessions,
-    pub rules: RuleStore,
+    pub rules: ArmedRules,
     pub events: EventBus,
     /// Which connection from its host to its endpoint each connection is.
     ordinals: Mutex<ConnectionOrdinals>,
@@ -48,7 +48,7 @@ impl<B: Backend, C: WaitableClock> Sessions<B, C> {
         backend: B,
         clock: Arc<C>,
         shared: SharedBySessions,
-        rules: RuleStore,
+        rules: ArmedRules,
         events: EventBus,
     ) -> (Self, mpsc::UnboundedReceiver<Instant>) {
         let (lingering, lingered) = mpsc::unbounded_channel();
@@ -135,7 +135,7 @@ struct Session<'a, B, C> {
     ended_by_backend: &'a OnceLock<String>,
     pipeline: Pipeline,
     transport: Transport,
-    /// The snapshots of the rule store that the pipeline did not get yet.
+    /// The snapshots of the armed rules that the pipeline did not get yet.
     published: watch::Receiver<Arc<Snapshot>>,
     /// The calls that the backend did not answer yet.
     calls: FuturesUnordered<BoxFuture<'a, (CallId, BackendAnswer)>>,

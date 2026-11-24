@@ -236,7 +236,7 @@ h3.sub{color:var(--t2);font-size:13px;font-weight:600;margin:22px 0 10px}
 
         <div class="feeds-h">The rest of the engine, as the pipeline sees it</div>
         <div class="feeds">
-          <div class="feed"><b>Rule store</b><code><em>→</em> SnapshotPublished</code><code>&nbsp;</code></div>
+          <div class="feed"><b>Armed rules</b><code><em>→</em> SnapshotPublished</code><code>&nbsp;</code></div>
           <div class="feed"><b>Clock</b><code><u>←</u> SetTimer</code><code><em>→</em> TimerFired</code></div>
           <div class="feed"><b>Scenario runner</b><code><u>←</u> Fire(incident)</code><code>&nbsp;</code></div>
           <div class="feed"><b>Event bus</b><code><u>←</u> Emit(call)</code><code>recorder · indexer · UI</code></div>
@@ -369,7 +369,7 @@ const CRATES = [
   ["ui","Applications","app",1,4,"The web UI, a Dioxus application. It reaches the engine only through the control plane.",["control_api","control_client","surface"]],
 
   ["host","IO edge","io",0,4,"One process with several environments. Starts and stops proxies and brokers, and runs the task that drives each broker.",["engine","broker","listener","backend_upstream","workspace_fs","environment","quick_inject"]],
-  ["engine","IO edge","io",0,3,"The runtime of one proxy: one task per session that owns the transport and drives the pipeline, a listener for every endpoint of the backend, plus rule store, scenario runner, event bus, journal, recorder and indexer. Tasks, timers and channels; it opens no socket itself.",["pipeline","session","rule","trigger","lie_api","call","incident","field","wire","scenario","journal","recording","backend","listener","workspace","environment","clock"]],
+  ["engine","IO edge","io",0,3,"The runtime of one proxy: one task per session that owns the transport and drives the pipeline, a listener for every endpoint of the backend, plus the armed rules, scenario runner, event bus, journal, recorder and indexer. Tasks, timers and channels; it opens no socket itself.",["pipeline","session","rule","trigger","lie_api","call","incident","field","wire","scenario","journal","recording","backend","listener","workspace","environment","clock"]],
   ["listener","IO edge","io",0,3,"Kafka on a socket: accept connections, frame bytes, and run whatever handles a connection. Gives a session its transport.",["wire","field","clock"]],
   ["backend_upstream","IO edge","io",0,3,"The Upstream backend: the discovery of the brokers, and one connection to the real cluster for each connection of a client, with the overlay around them.",["backend","overlay","environment","wire","field","kernel","incident","clock"]],
   ["schema_registry","IO edge","io",0,6,"The built-in schema registry over HTTP, and a client for a real one.",["schema"]],

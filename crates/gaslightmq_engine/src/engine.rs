@@ -16,9 +16,9 @@ use tokio::task::JoinHandle;
 use crate::endpoints::{Listening, OpenEndpoints};
 use crate::events::EventBus;
 use crate::session::Sessions;
-use crate::{EngineConfiguration, EngineStartError, EveryEvent, LiveEvents, RuleStore, WaitableClock, WallClock};
+use crate::{ArmedRules, EngineConfiguration, EngineStartError, EveryEvent, LiveEvents, WaitableClock, WallClock};
 
-/// The runtime of one proxy: its sessions, its rule store, its clock and its endpoints.
+/// The runtime of one proxy: its sessions, its armed rules, its clock and its endpoints.
 ///
 /// An engine stands between the clients of a proxy and its [backend](Backend).
 /// It opens a listener for every endpoint that the backend reports, and runs every connection as a session:
@@ -27,7 +27,7 @@ use crate::{EngineConfiguration, EngineStartError, EveryEvent, LiveEvents, RuleS
 /// | Part | Does |
 /// |---|---|
 /// | The sessions | Wait for frames of the client, answers of the backend, timers and new snapshots, report each to their pipeline, and perform what it returns. They count their calls together, so a call ID names one call of the proxy. |
-/// | The [rule store](Self::rules) | Arms and disarms rules, and publishes a new snapshot to every session. |
+/// | The [armed rules](Self::rules) | Arm and disarm rules, and publish a new snapshot to every session. |
 /// | The events | Hand over the record of every call, and every incident that a rule fired: to whoever [watches](Self::live_events), and to whoever [keeps every one](Self::every_event). |
 /// | The [clock](WaitableClock) | Tells every session the time, and ends every wait: a delay, a lifetime, the time a client context stays. |
 /// | The endpoints | Follow the backend: an endpoint that closes ends its sessions, and one that opens gets a listener, whose address the backend hears. |
@@ -83,7 +83,7 @@ impl<B: Backend + 'static, C: WaitableClock> Engine<B, C> {
             Arc::new(lies),
         );
         let of_the_rules: Arc<dyn Clock + Send + Sync> = Arc::<C>::clone(&clock);
-        let rules = RuleStore::new(configuration.seed, of_the_rules);
+        let rules = ArmedRules::new(configuration.seed, of_the_rules);
         let events = EventBus::new(configuration.event_backlog);
         let (sessions, lingered) = Sessions::new(backend, clock, shared, rules, events);
         let sessions = Arc::new(sessions);
@@ -145,8 +145,8 @@ impl<B: Backend + 'static, C: WaitableClock> Engine<B, C> {
         self.listening.borrow().keys().copied().collect()
     }
 
-    /// The rule store of the proxy: it arms and disarms rules.
-    pub fn rules(&self) -> &RuleStore {
+    /// The armed rules of the proxy: the handle arms and disarms rules.
+    pub fn rules(&self) -> &ArmedRules {
         &self.sessions.rules
     }
 

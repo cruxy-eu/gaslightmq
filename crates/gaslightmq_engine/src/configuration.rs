@@ -47,7 +47,7 @@ pub struct EngineConfiguration {
     /// Ours. Default: 0.
     ///
     /// The seed of every die while no scenario is active.
-    /// A rule that the [rule store](crate::RuleStore) arms rolls its die from this seed,
+    /// A rule that the engine [arms](crate::ArmedRules::arm) rolls its die from this seed,
     /// so the same seed makes the same matching calls fire in every run.
     pub seed: Seed,
     /// Ours. Default: 60 seconds.

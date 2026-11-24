@@ -21,7 +21,7 @@ use crate::TimerId;
 /// | The backend has no answer for a call. | [`BackendFailed`](Self::BackendFailed) | The backend |
 /// | The backend closes the session. | [`BackendClosed`](Self::BackendClosed) | The backend |
 /// | A timer runs out. | [`TimerFired`](Self::TimerFired) | The engine's clock |
-/// | A rule changes. | [`SnapshotPublished`](Self::SnapshotPublished) | The rule store |
+/// | A rule changes. | [`SnapshotPublished`](Self::SnapshotPublished) | The armed rules |
 /// | The client closes the connection. | [`ClientClosed`](Self::ClientClosed) | The transport |
 #[derive(Debug, Clone)]
 pub enum Input<'a> {

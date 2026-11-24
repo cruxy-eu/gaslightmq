@@ -340,7 +340,7 @@ Transactions arrive later as `sim_txn`, next to `sim_log` and `sim_group`.
 
 | Crate | Holds | Depends on |
 |---|---|---|
-| `engine` | The runtime of one proxy: one task per session that owns the transport and drives the pipeline, a listener for every endpoint of the backend, the rule store, the scenario runner, the event bus, the journal, the recorder and the indexer. This crate does IO. | `pipeline`, `session`, `rule`, `trigger`, `lie_api`, `call`, `incident`, `field`, `wire`, `scenario`, `journal`, `recording`, `backend`, `listener`, `workspace`, `environment`, `clock` |
+| `engine` | The runtime of one proxy: one task per session that owns the transport and drives the pipeline, a listener for every endpoint of the backend, the armed rules, the scenario runner, the event bus, the journal, the recorder and the indexer. This crate does IO. | `pipeline`, `session`, `rule`, `trigger`, `lie_api`, `call`, `incident`, `field`, `wire`, `scenario`, `journal`, `recording`, `backend`, `listener`, `workspace`, `environment`, `clock` |
 | `ui` | The web UI, a Dioxus application. It reaches the engine only through the control plane. This crate does IO. | `control_api`, `control_client`, `surface` |
 | `listener` | Kafka on a socket: accept connections, frame bytes, and run whatever [handles a connection](#the-connection-handler). A proxy's pipeline and a broker alone both sit behind it. This crate does IO. | `wire`, `field`, `clock` |
 | `host` | One process with several [environments](storage.md#several-environments-in-one-process): it starts and stops proxies and brokers, runs the task that drives each broker, and shares the workspace and the control plane between them. This crate does IO. | `engine`, `broker`, `listener`, `backend_upstream`, `workspace_fs`, `environment`, `quick_inject` |
@@ -456,7 +456,7 @@ and performs every `Output` the pipeline returns.
 | The backend has no answer for a call. | `BackendFailed` | The backend |
 | The endpoint of the session closes. | `BackendClosed` | The backend |
 | A timer runs out. | `TimerFired` | The engine's clock |
-| A rule changes. | `SnapshotPublished` | The rule store |
+| A rule changes. | `SnapshotPublished` | The armed rules |
 | The client closes the connection. | `ClientClosed` | The transport |
 
 The pipeline keeps the snapshot it received last.

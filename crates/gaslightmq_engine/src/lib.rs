@@ -1,4 +1,4 @@
-//! The runtime of one proxy: one task per session, the rule store, the clock and the endpoints.
+//! The runtime of one proxy: one task per session, the armed rules, the clock and the endpoints.
 //!
 //! A proxy stands between Kafka clients and a backend, and decides for every call what the client gets to see.
 //! What it decides is the business of the pipeline, which does no IO.
@@ -8,7 +8,7 @@
 //! |---|---|
 //! | [`Engine`] | The runtime of one proxy, from the moment it starts until someone stops it. |
 //! | [`EngineConfiguration`] | What an engine is configured with: its listeners, its seed, and its waits and limits. |
-//! | [`RuleStore`] | The armed rules of the proxy. Arming and disarming publishes a snapshot to every session. |
+//! | [`ArmedRules`] | The armed rules of the proxy. Arming and disarming publishes a snapshot to every session. |
 //! | [`EngineEvent`] | What a session hands over: the record of a call, or an incident that a rule fired. |
 //! | [`LiveEvents`], [`EveryEvent`] | The events as a listener receives them: one that watches and may miss the oldest, and one that keeps every event. |
 //! | [`EventBacklog`] | How many events an engine keeps for a live listener that falls behind. |
@@ -126,7 +126,7 @@
 //!
 //! | The task waits for | And reports |
 //! |---|---|
-//! | A snapshot of the rule store | `SnapshotPublished` |
+//! | A snapshot of the armed rules | `SnapshotPublished` |
 //! | An answer of the backend | `BackendAnswered`, `BackendAnswerUnreadable` or `BackendFailed`. Nothing for a request without a response. |
 //! | A timer on the clock | `TimerFired` |
 //! | A frame of the client | `ClientBytes` |
@@ -143,7 +143,7 @@
 //! | Send bytes | Writes them to the transport, and waits until the system took them. |
 //! | Set a timer | Keeps it, and waits on the clock for the one that ends first. |
 //! | Close | Closes the transport once the outputs are performed, so the client reads what was sent before. |
-//! | Emit a call record | Hands it over as [`EngineEvent::CallRecorded`], and lets the rule store disarm a rule that the call used up. |
+//! | Emit a call record | Hands it over as [`EngineEvent::CallRecorded`], and disarms a rule that the call used up. |
 //! | Fire an incident | Hands it over as [`EngineEvent::IncidentFired`]. |
 //!
 //! The session ends when its transport closes, whoever closed it.
@@ -201,11 +201,11 @@
 //!
 //! # Rules
 //!
-//! The [`RuleStore`] holds the armed rules.
+//! [`ArmedRules`] holds the armed rules.
 //! Every change publishes a new snapshot, and every session hands it to its pipeline before its next request.
 //! A call in flight finishes on the snapshot it started with.
 //!
-//! The store disarms a rule whose lifetime ended: on the clock for a duration,
+//! It disarms a rule whose lifetime ended: on the clock for a duration,
 //! and after the call that spent the last match or firing of a budget.
 //!
 //! # Events
@@ -261,8 +261,8 @@
 //! |---|---|---|
 //! | [`Engine::start`] | [`EngineStartError`] | The listeners do not hold the brokers, or an endpoint did not open. |
 //! | Opening an endpoint, when the engine starts and when its backend opens one later | [`EndpointOpenError`] | The address did not take a listener, or the backend rejected the listener. |
-//! | [`RuleStore::arm`] | [`ArmError`] | The rule is armed already. |
-//! | [`RuleStore::disarm`] | [`DisarmError`] | The rule is not armed. |
+//! | [`ArmedRules::arm`] | [`ArmError`] | The rule is armed already. |
+//! | [`ArmedRules::disarm`] | [`DisarmError`] | The rule is not armed. |
 //! | [`LiveEvents::next`] | [`LiveEventsError`] | The listener missed events, or the engine stopped. |
 //! | [`EventBacklog`] | [`EventBacklogError`] | The number of events is zero, or more than an engine can keep. |
 //!
@@ -300,7 +300,7 @@ pub use configuration::{EngineConfiguration, EventBacklog, EventBacklogError};
 pub use engine::Engine;
 pub use error::{ArmError, DisarmError, EndpointOpenError, EngineStartError, LiveEventsError};
 pub use events::{EngineEvent, EveryEvent, LiveEvents};
-pub use rules::RuleStore;
+pub use rules::ArmedRules;
 
 /// Every item of this crate.
 ///
@@ -318,8 +318,8 @@ pub use rules::RuleStore;
 pub mod prelude {
     #[doc(no_inline)]
     pub use crate::{
-        ArmError, DisarmError, EndpointOpenError, Engine, EngineConfiguration, EngineEvent, EngineStartError,
-        EventBacklog, EventBacklogError, EveryEvent, LiveEvents, LiveEventsError, RuleStore, SteppedClock,
+        ArmError, ArmedRules, DisarmError, EndpointOpenError, Engine, EngineConfiguration, EngineEvent,
+        EngineStartError, EventBacklog, EventBacklogError, EveryEvent, LiveEvents, LiveEventsError, SteppedClock,
         WaitableClock, WallClock,
     };
 }

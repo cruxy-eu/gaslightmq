@@ -1,4 +1,4 @@
-//! The rule store publishes a snapshot to every session, and disarms a rule whose lifetime ended.
+//! Arming and disarming a rule publishes a snapshot to every session, and a rule whose lifetime ended is disarmed.
 
 use std::sync::Arc;
 
