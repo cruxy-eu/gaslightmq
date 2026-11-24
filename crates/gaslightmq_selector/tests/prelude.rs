@@ -35,6 +35,9 @@ mod next_to_the_others {
     use gaslightmq_kernel::prelude::*;
     use gaslightmq_selector::prelude::*;
 
+    /// The UUID that a workspace gave the selector `group-orders`.
+    const GROUP_ORDERS_UUID: &str = "0193b6c2-5f3e-7a41-9c2d-8e4b1f6a7d10";
+
     /// One value of every type of the prelude, each named without a path.
     pub fn every_item() -> Vec<String> {
         let pattern: Glob = Glob::new("orders.*").unwrap();
@@ -47,6 +50,7 @@ mod next_to_the_others {
         let scope: Scope = Scope::client(ClientId::new("order-ingest").unwrap());
         let name: SelectorName = SelectorName::new("group-orders").unwrap();
         let title: SelectorTitle = SelectorTitle::new("The group calls of the order services").unwrap();
+        let uuid: SelectorUuid = GROUP_ORDERS_UUID.parse().unwrap();
         let selector: Selector = Selector::new(name.clone(), conditions.clone());
         let reference: SelectorRef = SelectorRef::Named(name.clone());
         let set: SelectorSet = SelectorSet::new([selector.clone()]).unwrap();
@@ -69,6 +73,7 @@ mod next_to_the_others {
             scope.to_string(),
             name.to_string(),
             title.to_string(),
+            uuid.to_string(),
             selector.name().to_string(),
             format!("{reference:?}"),
             set.len().to_string(),
@@ -95,6 +100,9 @@ mod next_to_the_others {
             message_of(GlobError::Empty),
             message_of(SelectorNameError::Empty),
             message_of(SelectorTitleError::Empty),
+            message_of(SelectorUuidError {
+                input: "group-orders".to_owned(),
+            }),
             message_of(OperatorError::Unknown {
                 name: "isnt".to_owned(),
             }),
@@ -112,7 +120,7 @@ mod next_to_the_others {
 fn the_prelude_names_every_item_next_to_the_other_preludes() {
     let items = next_to_the_others::every_item();
 
-    assert_eq!(items.len(), 16);
+    assert_eq!(items.len(), 17);
     assert!(items.iter().all(|item| !item.is_empty()));
 }
 
@@ -124,6 +132,7 @@ fn the_prelude_names_the_error_of_every_type() {
             "a pattern is empty",
             "selector name \"\" is empty",
             "selector title \"\" is empty",
+            "selector UUID \"group-orders\" is no UUID of version 7",
             "no operator is named \"isnt\"",
             "a condition needs at least one value",
             "topic: topic name is empty",

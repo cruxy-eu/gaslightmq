@@ -34,7 +34,14 @@ fn rejects<T: DeserializeOwned + Debug>(json: &str, reason: &str) {
     assert!(error.contains(reason), "{json}: {error:?} does not hold {reason:?}");
 }
 
+/// The UUID that a workspace gave the selector `order-producers`.
+const ORDER_PRODUCERS_UUID: &str = "0193b6c2-5f3e-7a41-9c2d-8e4b1f6a7d10";
+
 fn name(text: &str) -> SelectorName {
+    text.parse().unwrap()
+}
+
+fn uuid(text: &str) -> SelectorUuid {
     text.parse().unwrap()
 }
 
@@ -580,4 +587,51 @@ fn a_title_that_breaks_the_rule_for_titles_does_not_read() {
         r#"{"name":"Whoever produces orders"}"#,
         "selector name \"Whoever produces orders\" holds 'W' at position 0",
     );
+}
+
+#[test]
+fn a_selector_writes_its_uuid_when_the_workspace_gave_it_one() {
+    // name: order-producers
+    // uuid: 0193b6c2-5f3e-7a41-9c2d-8e4b1f6a7d10
+    // title: Order producers
+    // match:
+    //   api: Produce
+    //   topic: "orders.*"
+    let selector = Selector::new(name("order-producers"), order_producers())
+        .with_uuid(uuid(ORDER_PRODUCERS_UUID))
+        .with_title("Order producers".parse().unwrap());
+
+    writes(
+        &selector,
+        &format!(
+            r#"{{"name":"order-producers","uuid":"{ORDER_PRODUCERS_UUID}","title":"Order producers","match":{{"api":"Produce","topic":"orders.*"}}}}"#
+        ),
+    );
+    writes(&uuid(ORDER_PRODUCERS_UUID), &format!(r#""{ORDER_PRODUCERS_UUID}""#));
+    // A UUID reads in upper case, and writes in lower case.
+    reads(
+        &format!(r#""{}""#, ORDER_PRODUCERS_UUID.to_uppercase()),
+        &uuid(ORDER_PRODUCERS_UUID),
+    );
+}
+
+#[test]
+fn a_selector_that_someone_wrote_by_hand_has_no_uuid() {
+    let selector: Selector = serde_json::from_str(r#"{"name":"order-producers"}"#).unwrap();
+
+    assert_eq!(selector.uuid(), None);
+}
+
+#[test]
+fn a_text_that_is_no_uuid_of_version_7_does_not_read() {
+    rejects::<SelectorUuid>(
+        r#""order-producers""#,
+        "selector UUID \"order-producers\" is no UUID of version 7",
+    );
+    // A UUID of version 4.
+    rejects::<Selector>(
+        r#"{"name":"order-producers","uuid":"550e8400-e29b-41d4-a716-446655440000"}"#,
+        "selector UUID \"550e8400-e29b-41d4-a716-446655440000\" is no UUID of version 7",
+    );
+    rejects::<Selector>(r#"{"name":"order-producers","uuid":7}"#, "expected a string");
 }
