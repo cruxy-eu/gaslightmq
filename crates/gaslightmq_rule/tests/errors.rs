@@ -49,6 +49,16 @@ fn every_error() -> Vec<(Said, &'static str)> {
             said(PresetNameError::SurroundingHyphen { input: "-x".into() }),
             "preset name \"-x\" starts or ends with a hyphen",
         ),
+        (
+            said(RuleUuidError { input: "flap".into() }),
+            "rule UUID \"flap\" is no UUID of version 7",
+        ),
+        (
+            said(PresetUuidError {
+                input: "delay-1s".into(),
+            }),
+            "preset UUID \"delay-1s\" is no UUID of version 7",
+        ),
         (said(RuleTitleError::Empty), "rule title \"\" is empty"),
         (
             said(PresetTitleError::SurroundingWhiteSpace { input: " x".into() }),

@@ -6,6 +6,7 @@
 //! | Type | Is |
 //! |---|---|
 //! | [`Environment`] | A named definition of instances that run together, with a [`SchemaRegistry`] when it has one. |
+//! | [`EnvironmentUuid`] | The identity of an environment inside the workspace, which gives an environment its UUID. |
 //! | [`Instances`] | The shape of an environment: a proxy in front of a real cluster, a proxy in front of a broker, or a broker alone. |
 //! | [`ProxyDefinition`], [`BrokerDefinition`] | What an environment says about its proxy and about its broker. |
 //! | [`Upstream`] | The real cluster behind a proxy: its bootstrap [`ServerAddress`], [`Tls`] and [`Sasl`]. |
@@ -99,7 +100,7 @@
 //!
 //! | Type | Form |
 //! |---|---|
-//! | A name, an [`EnvironmentTitle`], a [`HostName`], an address, a [`PortRange`], a [`SchemaRegistryUrl`], a [`FilePath`], a [`VariableName`] | The text. |
+//! | A name, an [`EnvironmentUuid`], an [`EnvironmentTitle`], a [`HostName`], an address, a [`PortRange`], a [`SchemaRegistryUrl`], a [`FilePath`], a [`VariableName`] | The text. |
 //! | [`RecordingMode`], [`SaslMechanism`], [`SettingSource`] | The name. |
 //! | [`SecretRef`] | A map with one entry: `file` and the path, or `env` and the name of the variable. |
 //! | [`BrokerListeners`] | The text of a range, or a map from broker IDs to addresses. |
@@ -136,6 +137,7 @@
 //! | Type | Error | What is wrong |
 //! |---|---|---|
 //! | [`EnvironmentName`], [`WorldName`] | [`EnvironmentNameError`], [`WorldNameError`] | The text breaks a part of the [rule for names](EnvironmentName#the-rule-for-names). |
+//! | [`EnvironmentUuid`] | [`EnvironmentUuidError`] | The text is no UUID of version 7. |
 //! | [`EnvironmentTitle`] | [`EnvironmentTitleError`] | The text breaks a part of the [rule for titles](EnvironmentTitle#the-rule-for-titles). |
 //! | [`HostName`] | [`HostNameError`] | The text is no IP address and no name of a host. |
 //! | [`ServerAddress`] | [`ServerAddressError`] | The host or the port is missing or wrong. |
@@ -177,6 +179,7 @@ mod setting;
 mod text;
 mod title;
 mod upstream;
+mod uuid;
 
 pub use address::{ListenAddress, ListenAddressError, ServerAddress, ServerAddressError};
 pub use environment::{BrokerDefinition, Environment, EnvironmentError, Instances, ProxyDefinition};
@@ -191,6 +194,7 @@ pub use set::{EnvironmentSet, EnvironmentSetError};
 pub use setting::{EffectiveSetting, Setting, SettingSource, SettingSourceError};
 pub use title::{EnvironmentTitle, EnvironmentTitleError};
 pub use upstream::{Sasl, SaslMechanism, SaslMechanismError, SaslUsername, SaslUsernameError, Tls, Upstream};
+pub use uuid::{EnvironmentUuid, EnvironmentUuidError};
 
 /// Every item of this crate.
 ///
@@ -212,11 +216,11 @@ pub mod prelude {
     pub use crate::{
         BrokerDefinition, BrokerListeners, BrokerListenersError, EffectiveSetting, Environment, EnvironmentError,
         EnvironmentName, EnvironmentNameError, EnvironmentSet, EnvironmentSetError, EnvironmentTitle,
-        EnvironmentTitleError, FilePath, FilePathError, HostName, HostNameError, Instances, ListenAddress,
-        ListenAddressError, Listeners, ListenersError, PortRange, PortRangeError, ProxyDefinition, RecordingMode,
-        RecordingModeError, Sasl, SaslMechanism, SaslMechanismError, SaslUsername, SaslUsernameError, SchemaRegistry,
-        SchemaRegistryError, SchemaRegistryUrl, SchemaRegistryUrlError, SecretRef, SecretRefError, ServerAddress,
-        ServerAddressError, Setting, SettingSource, SettingSourceError, Tls, Upstream, VariableName, VariableNameError,
-        WorldName, WorldNameError,
+        EnvironmentTitleError, EnvironmentUuid, EnvironmentUuidError, FilePath, FilePathError, HostName, HostNameError,
+        Instances, ListenAddress, ListenAddressError, Listeners, ListenersError, PortRange, PortRangeError,
+        ProxyDefinition, RecordingMode, RecordingModeError, Sasl, SaslMechanism, SaslMechanismError, SaslUsername,
+        SaslUsernameError, SchemaRegistry, SchemaRegistryError, SchemaRegistryUrl, SchemaRegistryUrlError, SecretRef,
+        SecretRefError, ServerAddress, ServerAddressError, Setting, SettingSource, SettingSourceError, Tls, Upstream,
+        VariableName, VariableNameError, WorldName, WorldNameError,
     };
 }

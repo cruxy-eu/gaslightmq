@@ -1,13 +1,14 @@
 use gaslightmq_selector::{Scope, SelectorRef};
 use gaslightmq_trigger::{DiceKey, Lifetime, Trigger};
 
-use crate::{ActionRef, RuleName, RuleTitle};
+use crate::{ActionRef, RuleName, RuleTitle, RuleUuid};
 
 /// A rule as a file, a scenario or the UI writes it: what happens to which calls, when, and for how long.
 ///
 /// | Part | Meaning | When left out |
 /// |---|---|---|
 /// | Name | The identity of the rule: a slug, unique among rules. Other things reference the rule by it. | |
+/// | UUID | The identity of the rule inside the workspace. Nobody writes it, and nothing else references it. | No UUID, until the workspace or the engine gives the rule one. |
 /// | Title | What the rule is for, in free text. | No title. |
 /// | Selector | Which calls the rule considers: a selector name, or inline conditions. | |
 /// | Scope | Extra conditions over connection fields: who the rule applies to. | All clients. |
@@ -26,6 +27,16 @@ use crate::{ActionRef, RuleName, RuleTitle};
 /// trigger:
 ///   chance: 40%
 /// lifetime: until disarmed
+/// ```
+///
+/// A rule that a workspace holds also has a `uuid` in its file, which the workspace wrote there:
+///
+/// ```yaml
+/// name: slow-order-producers
+/// uuid: 0193b6c2-5f3e-7a41-9c2d-8e4b1f6a7d10
+/// title: Slow down order producers
+/// selector: order-producers
+/// action: delay-1s
 /// ```
 ///
 /// A rule is a definition, and every value of it is a valid one.
@@ -63,6 +74,8 @@ use crate::{ActionRef, RuleName, RuleTitle};
 pub struct Rule {
     name: RuleName,
     #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Option::is_none"))]
+    uuid: Option<RuleUuid>,
+    #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Option::is_none"))]
     title: Option<RuleTitle>,
     selector: SelectorRef,
     #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Scope::is_all"))]
@@ -83,10 +96,12 @@ fn until_disarmed(lifetime: &Lifetime) -> bool {
 }
 
 impl Rule {
-    /// A rule for all clients that fires on every matching call, and stays armed until disarmed. It has no title.
+    /// A rule for all clients that fires on every matching call, and stays armed until disarmed.
+    /// It has no UUID and no title.
     pub fn new(name: RuleName, selector: impl Into<SelectorRef>, action: impl Into<ActionRef>) -> Self {
         Self {
             name,
+            uuid: None,
             title: None,
             selector: selector.into(),
             scope: Scope::all(),
@@ -95,6 +110,22 @@ impl Rule {
             lifetime: Lifetime::UntilDisarmed,
             dice: None,
         }
+    }
+
+    /// The same rule with the UUID that the workspace or the engine gives it.
+    /// It replaces the UUID the rule had before.
+    #[must_use]
+    pub fn with_uuid(self, uuid: RuleUuid) -> Self {
+        Self {
+            uuid: Some(uuid),
+            ..self
+        }
+    }
+
+    /// The same rule without a UUID: a rule that nothing holds yet, such as the copy of one.
+    #[must_use]
+    pub fn without_uuid(self) -> Self {
+        Self { uuid: None, ..self }
     }
 
     /// The same rule with a title, which says what the rule is for.
@@ -173,6 +204,11 @@ impl Rule {
         &self.name
     }
 
+    /// The identity of the rule inside the workspace, once the workspace or the engine gave it one.
+    pub fn uuid(&self) -> Option<RuleUuid> {
+        self.uuid
+    }
+
     /// What the rule is for, in free text, when someone wrote it down.
     pub fn title(&self) -> Option<&RuleTitle> {
         self.title.as_ref()
@@ -225,7 +261,15 @@ mod tests {
     use super::*;
     use crate::PresetName;
 
+    /// The UUID that a workspace gave the rule `slow-order-producers`, and the one of another rule.
+    const SLOW_ORDER_PRODUCERS_UUID: &str = "0193b6c2-5f3e-7a41-9c2d-8e4b1f6a7d10";
+    const ANOTHER_UUID: &str = "0193b6c2-6b07-7d52-8a1e-3c5f7a9b0d24";
+
     fn name(text: &str) -> RuleName {
+        text.parse().unwrap()
+    }
+
+    fn uuid(text: &str) -> RuleUuid {
         text.parse().unwrap()
     }
 
@@ -252,6 +296,8 @@ mod tests {
         assert!(rule.trigger().is_always());
         assert_eq!(rule.lifetime(), Lifetime::UntilDisarmed);
         assert_eq!(rule.dice(), None);
+        assert_eq!(rule.uuid(), None);
+        assert_eq!(rule.title(), None);
     }
 
     #[test]
@@ -324,5 +370,36 @@ mod tests {
 
         assert_eq!(titled.name(), slow_down().name());
         assert_eq!(titled.dice_key(), slow_down().dice_key());
+    }
+
+    #[test]
+    fn a_rule_has_a_uuid_when_the_workspace_or_the_engine_gives_it_one() {
+        let stored = slow_down().with_uuid(uuid(SLOW_ORDER_PRODUCERS_UUID));
+
+        assert_eq!(slow_down().uuid(), None);
+        assert_eq!(stored.uuid(), Some(uuid(SLOW_ORDER_PRODUCERS_UUID)));
+        assert_eq!(
+            stored.clone().with_uuid(uuid(ANOTHER_UUID)).uuid(),
+            Some(uuid(ANOTHER_UUID))
+        );
+        assert_eq!(stored.without_uuid(), slow_down());
+    }
+
+    #[test]
+    fn a_uuid_changes_nothing_of_what_a_rule_does() {
+        let stored = slow_down().with_uuid(uuid(SLOW_ORDER_PRODUCERS_UUID));
+
+        assert_eq!(stored.name(), slow_down().name());
+        assert_eq!(stored.selector(), slow_down().selector());
+        assert_eq!(stored.action(), slow_down().action());
+        assert_eq!(stored.dice_key(), slow_down().dice_key());
+    }
+
+    #[test]
+    fn two_rules_with_one_name_differ_by_their_uuid() {
+        assert_ne!(
+            slow_down().with_uuid(uuid(SLOW_ORDER_PRODUCERS_UUID)),
+            slow_down().with_uuid(uuid(ANOTHER_UUID))
+        );
     }
 }

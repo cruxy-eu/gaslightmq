@@ -11,13 +11,15 @@ use serde::de::value::MapAccessDeserializer;
 use serde::de::{self, Deserialize, Deserializer, MapAccess, Visitor};
 use serde::ser::{Serialize, Serializer};
 
-use crate::{Encoder, Layer, LayoutName, LayoutTitle, PadLayout, PadLayoutError, PlayMode};
+use crate::{Encoder, Layer, LayoutName, LayoutTitle, LayoutUuid, PadLayout, PadLayoutError, PlayMode};
 
 /// A layout as a file writes it, before anyone checked that every layer and every name stands in it once.
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct LayoutMap {
     name: LayoutName,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    uuid: Option<LayoutUuid>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     title: Option<LayoutTitle>,
     rows: Vec<SelectorName>,
@@ -30,6 +32,10 @@ impl TryFrom<LayoutMap> for PadLayout {
 
     fn try_from(map: LayoutMap) -> Result<Self, Self::Error> {
         let layout = PadLayout::new(map.name, map.rows, map.columns, map.layers)?;
+        let layout = match map.uuid {
+            Some(uuid) => layout.with_uuid(uuid),
+            None => layout,
+        };
         Ok(match map.title {
             Some(title) => layout.with_title(title),
             None => layout,
@@ -39,9 +45,11 @@ impl TryFrom<LayoutMap> for PadLayout {
 
 impl From<PadLayout> for LayoutMap {
     fn from(layout: PadLayout) -> Self {
+        let uuid = layout.uuid();
         let (name, title, rows, columns, layers) = layout.into_parts();
         Self {
             name,
+            uuid,
             title,
             rows,
             columns,

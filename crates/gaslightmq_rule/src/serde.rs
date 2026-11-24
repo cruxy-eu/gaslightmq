@@ -279,7 +279,13 @@ mod tests {
     use serde_json::{Value, json};
 
     use super::*;
-    use crate::{Preset, Rule};
+    use crate::{Preset, PresetUuid, Rule, RuleUuid};
+
+    /// The UUID that a workspace gave the rule `blackhole-metadata`, and the one it gave the preset `blackhole`.
+    const BLACKHOLE_METADATA_UUID: &str = "0193b6c2-5f3e-7a41-9c2d-8e4b1f6a7d10";
+    const BLACKHOLE_UUID: &str = "0193b6c2-6b07-7d52-8a1e-3c5f7a9b0d24";
+    /// A UUID of version 4, which is no UUID of a rule or of a preset.
+    const VERSION_4_UUID: &str = "550e8400-e29b-41d4-a716-446655440000";
 
     fn read<T: serde::de::DeserializeOwned>(value: Value) -> T {
         serde_json::from_value(value).unwrap()
@@ -653,6 +659,69 @@ mod tests {
         assert_eq!(
             error::<Preset>(json!({ "name": "No answer at all", "lie": "silence" })),
             "preset name \"No answer at all\" holds 'N' at position 0, which is no lowercase letter, digit or hyphen"
+        );
+    }
+
+    #[test]
+    fn a_rule_writes_its_uuid_when_it_has_one() {
+        let blackhole = Rule::new(
+            "blackhole-metadata".parse().unwrap(),
+            Conditions::from(Condition::is(ApiKey::METADATA)),
+            LieDefinition::Silence,
+        );
+        let stored = blackhole
+            .clone()
+            .with_uuid(BLACKHOLE_METADATA_UUID.parse().unwrap())
+            .with_title("No answer to Metadata".parse().unwrap());
+        let form = json!({
+            "name": "blackhole-metadata",
+            "selector": { "api": "Metadata" },
+            "action": { "lie": "silence" },
+        });
+        let stored_form = json!({
+            "name": "blackhole-metadata",
+            "uuid": BLACKHOLE_METADATA_UUID,
+            "title": "No answer to Metadata",
+            "selector": { "api": "Metadata" },
+            "action": { "lie": "silence" },
+        });
+
+        assert_eq!(read::<Rule>(form).uuid(), None);
+        assert_eq!(write(&stored), stored_form);
+        assert_eq!(read::<Rule>(stored_form), stored);
+        assert_eq!(
+            write(&BLACKHOLE_METADATA_UUID.parse::<RuleUuid>().unwrap()),
+            json!(BLACKHOLE_METADATA_UUID)
+        );
+    }
+
+    #[test]
+    fn a_preset_writes_its_uuid_when_it_has_one() {
+        let blackhole = Preset::new("blackhole".parse().unwrap(), LieDefinition::Silence);
+        let stored = blackhole.clone().with_uuid(BLACKHOLE_UUID.parse().unwrap());
+        let form = json!({ "name": "blackhole", "lie": "silence" });
+        let stored_form = json!({ "name": "blackhole", "uuid": BLACKHOLE_UUID, "lie": "silence" });
+
+        assert_eq!(read::<Preset>(form).uuid(), None);
+        assert_eq!(write(&stored), stored_form);
+        assert_eq!(read::<Preset>(stored_form), stored);
+        assert_eq!(
+            write(&BLACKHOLE_UUID.parse::<PresetUuid>().unwrap()),
+            json!(BLACKHOLE_UUID)
+        );
+    }
+
+    #[test]
+    fn a_text_that_is_no_uuid_of_version_7_does_not_read() {
+        assert_eq!(
+            error::<Rule>(
+                json!({ "name": "blackhole", "uuid": "blackhole", "selector": {}, "action": { "lie": "silence" } })
+            ),
+            "rule UUID \"blackhole\" is no UUID of version 7"
+        );
+        assert_eq!(
+            error::<Preset>(json!({ "name": "blackhole", "uuid": VERSION_4_UUID, "lie": "silence" })),
+            format!("preset UUID \"{VERSION_4_UUID}\" is no UUID of version 7")
         );
     }
 

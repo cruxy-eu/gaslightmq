@@ -141,6 +141,9 @@ The message after it comes from the type of the value, which knows nothing about
   The name inside the file is authoritative.
 - A definition can have a `title`, which is free text.
   See [titles](../domains/rules.md#titles).
+- A definition also has a `uuid`, which the engine writes into its file.
+  Nobody writes it by hand, and no definition references another by it.
+  See [UUID](identity.md#uuid).
 - Nothing renames a definition, so no change rewrites references.
   A definition under another name is a new definition.
   A reference to a name that no definition has is an error, as on every [validation](#validation).
@@ -159,6 +162,7 @@ See [secrets](#secrets).
 The engine validates the whole workspace on load and on every change:
 
 - every reference resolves,
+- no two definitions have the same [UUID](identity.md#uuid),
 - every selector uses known fields,
 - every scenario's incidents are supported by the current backend,
 - every secret is a reference, not a value.

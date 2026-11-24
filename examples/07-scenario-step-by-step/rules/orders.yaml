@@ -1,4 +1,5 @@
 - name: refuse-with-not-leader
+  uuid: 01a20cc8-8fa0-75ad-95ee-f9b191cdb277
   title: Refuse with NOT_LEADER
   selector: order-fetches
   action:

@@ -148,7 +148,9 @@ A name is a name and nothing else.
 The UUID is the identity of a user-defined entity inside the workspace.
 It lets the workspace track and store entities without one overwriting another.
 
-A UUID is a UUID v7, so UUIDs sort in the order the entities were created.
+A UUID is a UUID v7, so UUIDs sort in the order the entities were created, to the millisecond.
+A file holds it as text, in lower case and with hyphens.
+A `uuid` that is no UUID v7 is a [reading error](storage.md#reading).
 
 - GaslightMQ gives an entity its UUID when someone creates it, in the workspace or as a live rule.
   Nobody writes a UUID by hand.
@@ -157,6 +159,25 @@ A UUID is a UUID v7, so UUIDs sort in the order the entities were created.
   A file without a UUID gets one when the workspace first loads it.
 - Two entities with the same UUID make the workspace invalid.
   That happens when someone copies a file.
+  The `workspace` crate checks it, with the rest of the [validation](storage.md#validation).
+
+#### Making a UUID
+
+A UUID v7 is made of the current time and of random bits.
+The crates that hold the definitions are [sans-IO](crates.md#sans-io-code), so they read neither.
+The IO edge reads the clock and the randomness of the system, and hands both in:
+
+```rust
+let uuid = RuleUuid::new(unix_millis, random);
+let rule = rule.with_uuid(uuid);
+```
+
+The same time and the same bits make the same UUID, so a test writes its UUIDs down.
+
+A definition therefore has no UUID until GaslightMQ gave it one.
+A file that someone wrote by hand has none, and neither has the rule that a pad or ⌘K drafts.
+Each definition type holds its UUID as an optional part.
+The workspace holds no entity without one, and neither does the live set.
 
 ### Title
 
@@ -217,3 +238,5 @@ but nothing promises that an entity with that name still exists.
 - Whether an entity can be renamed and keep its UUID,
   or whether a new name makes a new entity.
 - How two clients that update the same entity at once are kept from overwriting each other.
+- Which UUID a file without one gets in a [read-only workspace](storage.md#read-only-workspaces),
+  where the engine never writes one back.

@@ -1,5 +1,6 @@
 # The fake cluster: its broker nodes, its topics and where their records come from.
 name: orders-sim
+uuid: 01a20cc8-91ba-72cf-a500-4c3bb6cebccd
 
 # The seed and the start time make the data the same in every run.
 seed: 7

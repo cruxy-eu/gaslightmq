@@ -1,4 +1,5 @@
 name: shop
+uuid: 01a20cc8-90a0-780c-af9d-eebe872329e7
 seed: 7
 start: 2026-01-01T00:00:00Z
 brokers: 3

@@ -40,9 +40,13 @@ mod next_to_the_others {
     use gaslightmq_surface::prelude::*;
     use gaslightmq_trigger::prelude::*;
 
+    /// The UUID that a workspace gave the layout `order-desk`.
+    const ORDER_DESK_UUID: &str = "0193b6c2-5f3e-7a41-9c2d-8e4b1f6a7d10";
+
     /// One value of every type of the prelude, each named without a path.
     pub fn every_item() -> Vec<String> {
         let layout_name: LayoutName = LayoutName::new("order-desk").unwrap();
+        let layout_uuid: LayoutUuid = ORDER_DESK_UUID.parse().unwrap();
         let layout_title: LayoutTitle = LayoutTitle::new("Order desk").unwrap();
         let layer: Layer = Layer::client(ClientId::new("order-ingest").unwrap());
         let row: Row = Row::from_index(0);
@@ -54,6 +58,7 @@ mod next_to_the_others {
             [layer.clone()],
         )
         .unwrap()
+        .with_uuid(layout_uuid)
         .with_title(layout_title.clone());
         let pad: Pad = layout.pad(&layer, row, column).unwrap();
         let shows: PadState = PadState::of(None);
@@ -68,6 +73,7 @@ mod next_to_the_others {
 
         vec![
             layout_name.to_string(),
+            layout_uuid.to_string(),
             layout_title.to_string(),
             layer.to_string(),
             row.to_string(),
@@ -101,6 +107,9 @@ mod next_to_the_others {
         vec![
             message_of(LayoutNameError::SurroundingHyphen {
                 input: "order-desk-".to_owned(),
+            }),
+            message_of(LayoutUuidError {
+                input: "order-desk".to_owned(),
             }),
             message_of(LayoutTitleError::Empty),
             message_of(LayerError::InvalidClient {
@@ -144,7 +153,7 @@ mod next_to_the_others {
 fn the_prelude_names_every_item_next_to_the_other_preludes() {
     let items = next_to_the_others::every_item();
 
-    assert_eq!(items.len(), 16);
+    assert_eq!(items.len(), 17);
     assert!(items.iter().all(|item| !item.is_empty()));
 }
 
@@ -154,6 +163,7 @@ fn the_prelude_names_the_error_of_every_type() {
         next_to_the_others::every_error(),
         [
             "layout name \"order-desk-\" starts or ends with a hyphen",
+            "layout UUID \"order-desk\" is no UUID of version 7",
             "layout title \"\" is empty",
             "the layer of one client: client ID of 32768 bytes exceeds the limit of 32767",
             "layout \"order-desk\" has no layer",

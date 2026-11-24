@@ -10,6 +10,7 @@
 //! | [`Conditions`] | Conditions that combine with **and**, one per field: the `match` of a selector. |
 //! | [`Scope`] | Conditions that only test connection fields: *who* something applies to. |
 //! | [`Selector`] | A named set of conditions, which can include another selector by its [`SelectorName`]. |
+//! | [`SelectorUuid`] | The identity of a selector inside the workspace, which gives a selector its UUID. |
 //! | [`SelectorRef`] | How a rule says which calls it considers: a selector name, or inline conditions. |
 //! | [`SelectorSet`] | The selectors by name. It resolves includes, and refuses a circle of them. |
 //! | [`EffectiveSelector`] | Every condition that applies, after includes and scope. It matches calls. |
@@ -91,10 +92,10 @@
 //!
 //! | Type | Form |
 //! |---|---|
-//! | [`SelectorName`], [`SelectorTitle`], [`Glob`] | The text. |
+//! | [`SelectorName`], [`SelectorUuid`], [`SelectorTitle`], [`Glob`] | The text. |
 //! | [`Conditions`], [`Scope`] | A map with one entry per condition: the field, and the form of the condition. |
 //! | [`Condition`] | The same map with one entry. |
-//! | [`Selector`] | A map with `name`, and with `include` and `match` when it has them. |
+//! | [`Selector`] | A map with `name`, and with `uuid`, `title`, `include` and `match` when it has them. |
 //! | [`SelectorRef`] | The name as text, or the map of inline conditions. |
 //!
 //! Under the key of its field, a condition has one of these forms.
@@ -133,6 +134,7 @@
 //! |---|---|---|
 //! | [`Glob`] | [`GlobError`] | The pattern is empty. |
 //! | [`SelectorName`] | [`SelectorNameError`] | The text breaks a part of the [rule for names](SelectorName#the-rule-for-names). |
+//! | [`SelectorUuid`] | [`SelectorUuidError`] | The text is no UUID of version 7. |
 //! | [`SelectorTitle`] | [`SelectorTitleError`] | The text breaks a part of the [rule for titles](SelectorTitle#the-rule-for-titles). |
 //! | [`Operator`] | [`OperatorError`] | No operator has this name. |
 //! | [`ValueSet`] | [`ValueSetError`] | There is no value, the values belong to different fields, or a list holds a pattern. |
@@ -161,6 +163,7 @@ mod serde;
 mod set;
 mod text;
 mod title;
+mod uuid;
 
 pub use condition::{Condition, ConditionError, Operator, OperatorError, ValueSet, ValueSetError};
 pub use conditions::{Conditions, Scope, ScopeError};
@@ -171,6 +174,7 @@ pub use name::{SelectorName, SelectorNameError};
 pub use selector::{Selector, SelectorRef};
 pub use set::{SelectorSet, SelectorSetError};
 pub use title::{SelectorTitle, SelectorTitleError};
+pub use uuid::{SelectorUuid, SelectorUuidError};
 
 /// Every item of this crate.
 ///
@@ -191,6 +195,6 @@ pub mod prelude {
     pub use crate::{
         ApiIndex, Apis, Condition, ConditionError, Conditions, EffectiveSelector, Glob, GlobError, Match, Operator,
         OperatorError, Pass, Scope, ScopeError, Selector, SelectorName, SelectorNameError, SelectorRef, SelectorSet,
-        SelectorSetError, SelectorTitle, SelectorTitleError, ValueSet, ValueSetError,
+        SelectorSetError, SelectorTitle, SelectorTitleError, SelectorUuid, SelectorUuidError, ValueSet, ValueSetError,
     };
 }
