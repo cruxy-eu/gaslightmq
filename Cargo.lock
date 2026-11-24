@@ -361,6 +361,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "gaslightmq_index"
+version = "0.1.0"
+dependencies = [
+ "gaslightmq_call",
+ "gaslightmq_clock",
+ "gaslightmq_field",
+ "gaslightmq_kernel",
+ "gaslightmq_selector",
+]
+
+[[package]]
 name = "gaslightmq_kafka_client_api"
 version = "0.1.0"
 dependencies = [

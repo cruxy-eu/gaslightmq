@@ -1,0 +1,18 @@
+[package]
+name = "gaslightmq_index"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+gaslightmq_call.workspace = true
+gaslightmq_field.workspace = true
+gaslightmq_selector.workspace = true
+
+[dev-dependencies]
+# What a test writes a call record down with: a moment, and the value objects of Kafka.
+gaslightmq_clock.workspace = true
+gaslightmq_kernel.workspace = true

@@ -9,6 +9,7 @@ members = [
     "crates/gaslightmq_environment",
     "crates/gaslightmq_field",
     "crates/gaslightmq_incident",
+    "crates/gaslightmq_index",
     "crates/gaslightmq_kernel",
     "crates/gaslightmq_lie",
     "crates/gaslightmq_lie_api",
