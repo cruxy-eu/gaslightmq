@@ -5,7 +5,11 @@
 //!
 //! `cargo xtask --wasm-packages` runs no check.
 //! It prints the crates that compile to WebAssembly, as the `--package` arguments of a cargo command.
+//!
+//! `cargo xtask --list` runs no check either.
+//! It prints every check as a JSON array of `{"name": …, "title": …}`, from which CI makes a job per check.
 
+mod ci_parity;
 mod crate_layout;
 mod crate_names;
 mod dyn_errors;
@@ -33,6 +37,9 @@ use crate::workspace::Workspace;
 
 /// The argument that asks for the crates that compile to WebAssembly, instead of a check.
 const WASM_PACKAGES: &str = "--wasm-packages";
+
+/// The argument that asks for the list of checks, instead of a check.
+const LIST: &str = "--list";
 
 /// One check, by the name it has on the command line.
 #[derive(Clone, Copy)]
@@ -63,10 +70,12 @@ enum Check {
     ErrorConversions,
     /// No crate that ships builds with a test-support crate, and every test-support crate declares itself.
     TestSupport,
+    /// CI runs every check and every recipe of `just ci`, and each of its jobs blocks a merge.
+    CiParity,
 }
 
 impl Check {
-    const ALL: [Check; 13] = [
+    const ALL: [Check; 14] = [
         Check::Dependencies,
         Check::CrateNames,
         Check::WasmBoundary,
@@ -80,6 +89,7 @@ impl Check {
         Check::ErrorMessages,
         Check::ErrorConversions,
         Check::TestSupport,
+        Check::CiParity,
     ];
 
     fn name(self) -> &'static str {
@@ -97,6 +107,27 @@ impl Check {
             Check::ErrorMessages => "error-messages",
             Check::ErrorConversions => "error-conversions",
             Check::TestSupport => "test-support",
+            Check::CiParity => "ci-parity",
+        }
+    }
+
+    /// What the check holds the workspace to, short enough for the name of a CI job.
+    fn title(self) -> &'static str {
+        match self {
+            Check::Dependencies => "every crate depends on what its row lists",
+            Check::CrateNames => "crate names start with gaslightmq_",
+            Check::WasmBoundary => "no WebAssembly crate reaches the Kafka codec",
+            Check::WorkspaceRules => "edition 2024 and workspace dependencies",
+            Check::SansIo => "sans-IO code does no IO",
+            Check::WrappedErrors => "a held error is in a field error",
+            Check::InternalCrates => "no crate shows an internal crate",
+            Check::DynErrors => "no dyn Error",
+            Check::ExhaustiveErrors => "no non_exhaustive error",
+            Check::ErrorFields => "error fields have names",
+            Check::ErrorMessages => "an error writes its error and reason once",
+            Check::ErrorConversions => "no From from the error of a library",
+            Check::TestSupport => "nothing that ships builds with test support",
+            Check::CiParity => "CI runs every check and recipe of just ci",
         }
     }
 
@@ -155,6 +186,11 @@ impl Check {
                 Ok(lines(&violations))
             }
             Check::TestSupport => Ok(lines(&test_support::violations(workspace))),
+            Check::CiParity => {
+                let checks = Check::ALL.map(Check::name);
+                let violations = ci_parity::violations(&workspace.root, &checks).map_err(|error| error.to_string())?;
+                Ok(lines(&violations))
+            }
         }
     }
 }
@@ -177,6 +213,14 @@ fn wasm_packages() -> Result<Vec<String>, String> {
         .collect())
 }
 
+/// Every check, as a JSON array of its name and its title.
+fn list() -> serde_json::Value {
+    Check::ALL
+        .iter()
+        .map(|check| serde_json::json!({ "name": check.name(), "title": check.title() }))
+        .collect()
+}
+
 fn lines(violations: &[impl ToString]) -> Vec<String> {
     violations.iter().map(ToString::to_string).collect()
 }
@@ -188,6 +232,10 @@ fn lines(violations: &[impl ToString]) -> Vec<String> {
 )]
 fn main() -> ExitCode {
     let arguments: Vec<String> = std::env::args().skip(1).collect();
+    if arguments == [LIST] {
+        println!("{}", list());
+        return ExitCode::SUCCESS;
+    }
     if arguments == [WASM_PACKAGES] {
         return match wasm_packages() {
             Ok(packages) => {

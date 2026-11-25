@@ -1,7 +1,10 @@
 name: CI
 
 # Each job runs one recipe of the justfile, so CI and `just ci` run the same commands.
+# The `checks` recipe is split: the `xtask` job builds the checks once and lists them,
+# and the `check` job runs that binary once per check, as `cargo xtask <name>` does.
 # Branch protection requires the `CI` job alone, which passes only when every other job passed.
+# The `ci-parity` check fails when a check or a recipe of `just ci` has no job here, or `CI` does not need a job.
 on:
   pull_request:
   push:
@@ -28,16 +31,53 @@ jobs:
       - uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4
       - run: just fmt-check
 
-  checks:
+  # The checks read the sources and `cargo metadata`, and compile nothing, so one build serves them all.
+  xtask:
     runs-on: ubuntu-latest
+    outputs:
+      checks: ${{ steps.list.outputs.checks }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - run: rustup toolchain install
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
-      - uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4
-      - run: just checks
+      - run: cargo build --release --package gaslightmq_checks
+      # The list comes from the checks themselves, so a new check gets its job without a change here.
+      - id: list
+        run: echo "checks=$(target/release/gaslightmq_checks --list)" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: xtask
+          path: target/release/gaslightmq_checks
+          if-no-files-found: error
+          retention-days: 1
+
+  # One job per check, so the list of checks on a pull request names the rule that failed.
+  check:
+    name: "Check: ${{ matrix.check.title }}"
+    needs: xtask
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        check: ${{ fromJSON(needs.xtask.outputs.checks) }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # `cargo metadata` needs cargo, and nothing is compiled.
+      - run: rustup toolchain install
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: xtask
+          path: ${{ runner.temp }}/xtask
+      # An artifact loses the mode of its files.
+      - run: chmod +x "$RUNNER_TEMP/xtask/gaslightmq_checks"
+      - env:
+          CHECK: ${{ matrix.check.name }}
+        run: |
+          "$RUNNER_TEMP/xtask/gaslightmq_checks" "$CHECK"
 
   wasm:
     runs-on: ubuntu-latest
@@ -88,7 +128,7 @@ jobs:
   ci-success:
     name: CI
     if: always()
-    needs: [fmt, checks, wasm, clippy, test, doc]
+    needs: [fmt, xtask, check, wasm, clippy, test, doc]
     runs-on: ubuntu-latest
     steps:
       - name: Every job passed

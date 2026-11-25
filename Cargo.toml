@@ -86,6 +86,8 @@ kafka-protocol = "0.17"
 proc-macro2 = { version = "1", default-features = false, features = ["span-locations"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+# Reads YAML into serde types. The `ci-parity` check in `xtask/` reads the CI workflow with it.
+serde-saphyr = { version = "2", default-features = false, features = ["deserialize"] }
 serde_test = "1"
 syn = { version = "3", default-features = false, features = ["full", "parsing", "visit"] }
 # Only error types use it: it derives `Error` and the message. No error has a source, see the `wrapped-errors` check.

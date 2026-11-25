@@ -147,7 +147,8 @@ Rust edition 2024, native async traits and workspace dependency versions.
 
 `cargo xtask` checks the rules of this document that a machine can decide and the compiler cannot see.
 `cargo xtask sans-io` runs one check alone.
-`just checks` and CI run them all.
+`just checks` runs them all.
+CI builds the checks once, reads their list from `cargo xtask --list`, and runs each check as a job of its own, so a pull request names the check that failed.
 
 | Check | Fails when |
 |---|---|
@@ -164,6 +165,7 @@ Rust edition 2024, native async traits and workspace dependency versions.
 | `error-messages` | The message that an error type derives leaves out its `error` or its `reason`, or writes it more than once. |
 | `error-conversions` | A `From` makes an error type from an error of a library or of the system. |
 | `test-support` | A crate that is no [test support](#test-support-crates) builds with a test-support crate, through a dependency or a build dependency of its own or of a crate it builds with. Or a crate with the name of test support does not declare itself. |
+| `ci-parity` | The CI workflow leaves a check without a job, because no matrix takes its entries from `cargo xtask --list`, or it has no job that runs a recipe of `just ci`, or the job `ci-success` does not need one of the other jobs, so a failure of that job does not block a merge. |
 
 A check reads the names in the code, and not what the code does.
 The documentation of each check, in `xtask/src/`, says what it does not catch.
