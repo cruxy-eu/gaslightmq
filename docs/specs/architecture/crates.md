@@ -147,7 +147,8 @@ Rust edition 2024, native async traits and workspace dependency versions.
 
 `cargo xtask` checks the rules of this document that a machine can decide and the compiler cannot see.
 `cargo xtask sans-io` runs one check alone.
-`just checks` and CI run them all.
+`just checks` runs them all.
+CI builds the checks once, reads their list from `cargo xtask --list`, and runs each check as a job of its own, so a pull request names the check that failed.
 
 | Check | Fails when |
 |---|---|
