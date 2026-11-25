@@ -720,6 +720,7 @@ dependencies = [
  "futures",
  "gaslightmq_backend",
  "gaslightmq_backend_upstream",
+ "gaslightmq_call",
  "gaslightmq_clock",
  "gaslightmq_clock_waitable",
  "gaslightmq_definition_api",

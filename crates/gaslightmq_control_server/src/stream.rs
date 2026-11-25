@@ -8,8 +8,7 @@ use futures::{SinkExt, StreamExt};
 use gaslightmq_control_api::call::Call;
 use gaslightmq_control_api::environment::EnvironmentName;
 use gaslightmq_control_api::prelude::*;
-use gaslightmq_control_api::selector::{EffectiveSelector, Match};
-use gaslightmq_engine::{EngineEvent, LiveEvents, LiveEventsError};
+use gaslightmq_host::CallSubscription;
 use gaslightmq_workspace::WorkspaceContext;
 use tokio::sync::broadcast::error::RecvError;
 use tokio::sync::watch;
@@ -20,28 +19,18 @@ use crate::server::stopped;
 /// The calls that one client follows: those of one environment that one selector matches.
 struct Following {
     environment: EnvironmentName,
-    selector: EffectiveSelector,
-    events: LiveEvents,
+    calls: CallSubscription,
 }
 
 impl Following {
     /// The next call that the selector matches, as a message, or `None` once the environment stopped.
+    /// A client that falls behind the calls misses the oldest of them, and follows on from there.
     async fn next(&mut self) -> Option<StreamMessage> {
-        loop {
-            match self.events.next().await {
-                Ok(EngineEvent::CallRecorded(call)) => {
-                    if let Match::Matched(_) = self.selector.evaluate(&*call) {
-                        return Some(StreamMessage::Call {
-                            environment: self.environment.clone(),
-                            call: Call::clone(&call),
-                        });
-                    }
-                }
-                // A client that falls behind the calls misses the oldest of them, and follows on from there.
-                Ok(_) | Err(LiveEventsError::Missed { .. }) => {}
-                Err(LiveEventsError::EngineStopped) => return None,
-            }
-        }
+        let call = self.calls.next().await?;
+        Some(StreamMessage::Call {
+            environment: self.environment.clone(),
+            call: Call::clone(&call),
+        })
     }
 }
 
@@ -177,19 +166,8 @@ impl<C: WorkspaceContext + 'static> ClientStream<C> {
 
     /// What the client follows from now on, or why it cannot follow it.
     async fn follow(&self, subscription: Subscription) -> Result<Option<Following>, String> {
-        let Some((environment, selector)) = self.plane.follow(subscription).await? else {
-            return Ok(None);
-        };
-        let events = self
-            .plane
-            .host()
-            .live_events(&environment)
-            .map_err(|error| error.to_string())?;
-        Ok(Some(Following {
-            environment,
-            selector,
-            events,
-        }))
+        let followed = self.plane.follow(subscription).await?;
+        Ok(followed.map(|(environment, calls)| Following { environment, calls }))
     }
 }
 

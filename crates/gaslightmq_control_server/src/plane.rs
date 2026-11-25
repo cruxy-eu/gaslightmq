@@ -7,12 +7,12 @@ use gaslightmq_control_api::environment::{Environment, EnvironmentName, ListenAd
 use gaslightmq_control_api::field::ConnectionNumber;
 use gaslightmq_control_api::prelude::*;
 use gaslightmq_control_api::rule::{Preset, Rule, RuleName};
-use gaslightmq_control_api::selector::{EffectiveSelector, Selector, SelectorSet};
+use gaslightmq_control_api::selector::Selector;
 use gaslightmq_control_api::surface::{Intent, PadLayout};
 use gaslightmq_engine::OpenSession;
 use gaslightmq_host::{
-    ArmRuleError, EnvironmentConfiguration, EnvironmentConfigurationError, EnvironmentRule, EnvironmentRulesError,
-    EnvironmentStartError, FireRuleError, Host, ReadSentenceError,
+    ArmRuleError, CallSubscription, EnvironmentConfiguration, EnvironmentConfigurationError, EnvironmentRule,
+    EnvironmentRulesError, EnvironmentStartError, FireRuleError, Host, ReadSentenceError,
 };
 use gaslightmq_quick_inject::{CompletionKind, Sentence};
 use gaslightmq_workspace::{CreateError, WorkspaceContext};
@@ -540,25 +540,23 @@ impl<C: WorkspaceContext + 'static> ControlPlane<C> {
         })
     }
 
-    /// The calls that a subscription follows: the environment, and the selector that its calls have to match.
+    /// The calls that a subscription follows, or `None` for a subscription to nothing.
     ///
     /// # Errors
     ///
-    /// Why the subscription cannot be followed: the environment does not run, or the selector does not resolve.
+    /// Why the subscription cannot be followed: the environment does not run, the selectors could not be read,
+    /// or the selector does not resolve.
     pub(crate) async fn follow(
         &self,
         subscription: Subscription,
-    ) -> Result<Option<(EnvironmentName, EffectiveSelector)>, String> {
+    ) -> Result<Option<(EnvironmentName, CallSubscription)>, String> {
         let Subscription::Calls { environment, selector } = subscription else {
             return Ok(None);
         };
-        if !self.host.running().contains(&environment) {
-            return Err(EnvironmentNotRunning { environment }.to_string());
+        match self.host.follow_calls(&environment, &selector).await {
+            Ok(calls) => Ok(Some((environment, calls))),
+            Err(error) => Err(error.to_string()),
         }
-        let selectors = definitions::list::<Selector, C>(&*self.host.workspace().await).await?;
-        let selectors = SelectorSet::new(selectors).map_err(|error| error.to_string())?;
-        let selector = selectors.resolve(&selector).map_err(|error| error.to_string())?;
-        Ok(Some((environment, selector)))
     }
 }
 

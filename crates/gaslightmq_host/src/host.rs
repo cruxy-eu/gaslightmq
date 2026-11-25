@@ -19,7 +19,7 @@ use gaslightmq_incident::IncidentSupport;
 use gaslightmq_lie_api::Lies;
 use gaslightmq_quick_inject::{KnownNames, QuickInject, Sentence};
 use gaslightmq_rule::{ArmedRule, HandFiring, Preset, PresetSet, ResolvedRule, Rule, RuleError, RuleName};
-use gaslightmq_selector::{Selector, SelectorSet};
+use gaslightmq_selector::{Selector, SelectorRef, SelectorSet};
 use gaslightmq_surface::EncoderMapping;
 use gaslightmq_traffic::{Statistics, Traffic, TrafficConfiguration};
 use gaslightmq_workspace::{
@@ -28,9 +28,10 @@ use gaslightmq_workspace::{
 use tokio::sync::broadcast;
 use tokio::task::JoinHandle;
 
+use crate::calls::{Watched, lock};
 use crate::{
-    ArmRuleError, CloseSessionError, EnvironmentConfiguration, EnvironmentStartError, FireRuleError, HostChange,
-    HostChanges, HostConfiguration, NotRunningError, ReadSentenceError,
+    ArmRuleError, CallBacklog, CallSubscription, CloseSessionError, EnvironmentConfiguration, EnvironmentStartError,
+    FireRuleError, FollowCallsError, HostChange, HostChanges, HostConfiguration, NotRunningError, ReadSentenceError,
 };
 
 mod live;
@@ -103,6 +104,8 @@ pub struct Host<C: WorkspaceContext> {
     encoders: EncoderMapping,
     /// What the traffic of every environment keeps.
     traffic: TrafficConfiguration,
+    /// How many calls a follower of the calls of an environment may fall behind.
+    call_backlog: CallBacklog,
 }
 
 /// One environment that runs: its proxy, the backend behind it, the listeners it was started with, and what lives in
@@ -114,8 +117,8 @@ struct Running {
     listeners: Listeners,
     /// The live rules, by name. They stay in memory until someone keeps or deletes them, or the environment stops.
     live: BTreeMap<RuleName, Rule>,
-    /// The calls of the environment, as the task that watches it counts them.
-    traffic: Arc<Mutex<Traffic>>,
+    /// The calls of the environment, as the task that watches it counts them and hands them to their followers.
+    traffic: Arc<Mutex<Watched>>,
     /// The task that watches the environment, which ends a moment after its proxy stopped.
     watching: JoinHandle<()>,
 }
@@ -134,6 +137,7 @@ impl<C: WorkspaceContext> Host<C> {
             changes: broadcast::channel(configuration.change_backlog.changes()).0,
             encoders: configuration.encoders,
             traffic: configuration.traffic,
+            call_backlog: configuration.call_backlog,
         }
     }
 
@@ -229,7 +233,7 @@ impl<C: WorkspaceContext> Host<C> {
             Ok(engine) => engine,
             Err(error) => return Err(EnvironmentStartError::ProxyNotStarted { name, error }),
         };
-        let traffic = Arc::new(Mutex::new(Traffic::new(self.traffic.clone())));
+        let traffic = Arc::new(Mutex::new(Watched::new(Traffic::new(self.traffic.clone()))));
         let watching = tokio::spawn(watch::watch(
             name.clone(),
             engine.every_event(),
@@ -549,14 +553,45 @@ impl<C: WorkspaceContext> Host<C> {
     ///
     /// [`NotRunningError`] when no environment of that name runs.
     pub fn statistics(&self, name: &EnvironmentName) -> Result<Statistics, NotRunningError> {
-        self.with_running(name, |running| {
-            running
-                .traffic
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner)
-                .statistics()
-                .clone()
-        })
+        self.with_running(name, |running| lock(&running.traffic).traffic().statistics().clone())
+    }
+
+    /// The calls of an environment that `selector` matches, from now on: a selector of the workspace by its name,
+    /// or conditions of the caller's own.
+    ///
+    /// The calls come as the task that watches the environment takes them, and the subscription ends when the caller
+    /// lets go of it, or the environment stops. The traffic of the environment matches the calls against the selector.
+    ///
+    /// # Errors
+    ///
+    /// - [`FollowCallsError::NotRunning`] when no environment of that name runs.
+    /// - [`FollowCallsError::StoreFailed`] when the store of the selectors could not be read.
+    /// - [`FollowCallsError::Unresolved`] when the selector does not resolve against the selectors of the workspace.
+    pub async fn follow_calls(
+        &self,
+        environment: &EnvironmentName,
+        selector: &SelectorRef,
+    ) -> Result<CallSubscription, FollowCallsError> {
+        let not_running = || FollowCallsError::NotRunning {
+            environment: environment.clone(),
+        };
+        if !self.environments().contains_key(environment) {
+            return Err(not_running());
+        }
+        let selectors = {
+            let workspace = self.workspace.lock().await;
+            workspace.stores().selectors().list().await
+        };
+        let selectors = selectors.map_err(|error| FollowCallsError::StoreFailed {
+            reason: unread::<Selector>(error),
+        })?;
+        let unresolved = |error| FollowCallsError::Unresolved { error };
+        let selector = SelectorSet::new(selectors)
+            .and_then(|selectors| selectors.resolve(selector))
+            .map_err(unresolved)?;
+        let traffic = self.with_running(environment, |running| Arc::clone(&running.traffic));
+        let traffic = traffic.map_err(|_| not_running())?;
+        Ok(CallSubscription::new(traffic, selector, self.call_backlog))
     }
 
     /// Resolves `rule` against the selectors and the presets of the workspace.

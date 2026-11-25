@@ -260,6 +260,14 @@ async fn live_rules_pads_and_sessions_need_an_environment_that_runs() -> anyhow:
             environment: staging.clone()
         })
     );
+    assert_eq!(
+        host.follow_calls(&staging, &SelectorRef::Inline(Conditions::new()))
+            .await
+            .map(|_| ()),
+        Err(FollowCallsError::NotRunning {
+            environment: staging.clone()
+        })
+    );
     assert_eq!(host.sessions(&staging), Err(NotRunningError { name: staging.clone() }));
     assert_eq!(
         host.statistics(&staging).map(|_| ()),

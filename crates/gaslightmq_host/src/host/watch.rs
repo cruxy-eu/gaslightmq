@@ -1,21 +1,21 @@
 //! The task that watches one environment: it counts its calls, and tells the changes of its sessions and its rules.
 
 use std::collections::BTreeSet;
-use std::sync::{Arc, Mutex, PoisonError};
+use std::sync::{Arc, Mutex};
 
 use gaslightmq_engine::{EngineEvent, EveryEvent, RuleChanges};
 use gaslightmq_environment::EnvironmentName;
 use gaslightmq_rule::{RuleName, Snapshot};
-use gaslightmq_traffic::Traffic;
 use tokio::sync::broadcast;
 
 use crate::HostChange;
+use crate::calls::{Watched, lock};
 
 /// Watches the environment `environment` until its proxy stopped and every event of it is taken.
 ///
 /// | It takes | And |
 /// |---|---|
-/// | The record of a call | Counts it in `traffic`. |
+/// | The record of a call | Counts it in `traffic`, which hands it to the followers of the calls its selectors match. |
 /// | What happened to a session | Tells it as a [`HostChange::Session`]. |
 /// | A snapshot of the armed rules | Tells a [`HostChange::RuleChanged`] for every rule that armed or disarmed since the one before. |
 ///
@@ -25,7 +25,7 @@ pub(super) async fn watch(
     environment: EnvironmentName,
     mut events: EveryEvent,
     rules: RuleChanges,
-    traffic: Arc<Mutex<Traffic>>,
+    traffic: Arc<Mutex<Watched>>,
     changes: broadcast::Sender<HostChange>,
 ) {
     let tell = |change: HostChange| {
@@ -37,17 +37,18 @@ pub(super) async fn watch(
     loop {
         tokio::select! {
             event = events.next() => match event {
-                Some(EngineEvent::CallRecorded(call)) => {
-                    traffic.lock().unwrap_or_else(PoisonError::into_inner).record(call);
-                }
+                Some(EngineEvent::CallRecorded(call)) => lock(&traffic).record(&call),
                 Some(EngineEvent::Session(event)) => tell(HostChange::Session {
                     environment: environment.clone(),
                     event,
                 }),
                 // Whoever runs a scenario applies an incident, and no scenario runs yet.
                 Some(_) => {}
-                // The proxy stopped, and every event is taken.
-                None => return,
+                // The proxy stopped, and every event is taken: the followers of its calls get no more.
+                None => {
+                    lock(&traffic).end();
+                    return;
+                }
             },
             snapshot = next_snapshot(&mut rules) => match snapshot {
                 Some(snapshot) => {

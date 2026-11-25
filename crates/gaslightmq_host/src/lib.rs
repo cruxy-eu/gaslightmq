@@ -13,9 +13,10 @@
 //! | [`EnvironmentConfigurationError`] | Why an environment has no configuration that a host can start. |
 //! | [`EnvironmentRule`] | A rule of an environment, and its state there: a rule of the workspace, or a live rule. |
 //! | [`HostChange`], [`HostChanges`] | One change of the host, whoever made it, and the changes for one follower. |
-//! | [`ChangeBacklog`] | How many changes a host keeps for a follower that falls behind. |
+//! | [`ChangeBacklog`], [`CallBacklog`] | How many changes, and how many calls, a host keeps for a follower that falls behind. |
+//! | [`CallSubscription`] | The calls of one environment that one selector matches, as its traffic matches them. |
 //! | [`CreateLiveRuleError`], [`UpdateLiveRuleError`], [`DeleteLiveRuleError`], [`KeepRuleError`] | Why a live rule was not made, changed, removed or kept. |
-//! | [`EnvironmentRulesError`], [`IntentError`], [`CloseSessionError`], [`HostChangesError`] | Why the rules of an environment were not read, a pad was not acted on, a session was not closed, and a follower has no next change. |
+//! | [`EnvironmentRulesError`], [`IntentError`], [`CloseSessionError`], [`HostChangesError`], [`FollowCallsError`] | Why the rules of an environment were not read, a pad was not acted on, a session was not closed, a follower has no next change, and the calls of an environment were not followed. |
 //!
 //! The [`prelude`] holds all of them.
 //!
@@ -111,6 +112,8 @@
 //! | [`Host::keep`] | [`KeepRuleError`] | The environment does not run, it has no live rule of the name, or the workspace did not take it. |
 //! | [`Host::send_intent`] | [`IntentError`] | The environment does not run, the layout does not exist, a store could not read, or the intent changed nothing. |
 //! | [`Host::close_session`] | [`CloseSessionError`] | The environment does not run, or no session is open on the connection. |
+//! | [`Host::follow_calls`] | [`FollowCallsError`] | The environment does not run, the selectors could not be read, or the selector does not resolve. |
+//! | [`CallBacklog::new`] | [`CallBacklogError`] | The backlog is zero, or larger than the largest. |
 //! | [`HostChanges::next`] | [`HostChangesError`] | The follower fell behind, or the host is gone. |
 //! | [`ChangeBacklog::new`] | [`ChangeBacklogError`] | The backlog is zero, or larger than the largest. |
 //!
@@ -127,20 +130,23 @@
 //! environment. Each engine and each backend runs its tasks there too.
 //! The configuration and the errors are plain values that never wait.
 
+mod calls;
 mod changes;
 mod configuration;
 mod error;
 mod host;
 mod rules;
 
+pub use calls::CallSubscription;
 pub use changes::{HostChange, HostChanges, HostChangesError};
 pub use configuration::{
-    ChangeBacklog, ChangeBacklogError, EnvironmentConfiguration, EnvironmentConfigurationError, HostConfiguration,
+    CallBacklog, CallBacklogError, ChangeBacklog, ChangeBacklogError, EnvironmentConfiguration,
+    EnvironmentConfigurationError, HostConfiguration,
 };
 pub use error::{
     ArmRuleError, CloseSessionError, CreateLiveRuleError, DeleteLiveRuleError, EnvironmentRulesError,
-    EnvironmentStartError, FireRuleError, IntentError, KeepRuleError, NotRunningError, ReadSentenceError,
-    UpdateLiveRuleError,
+    EnvironmentStartError, FireRuleError, FollowCallsError, IntentError, KeepRuleError, NotRunningError,
+    ReadSentenceError, UpdateLiveRuleError,
 };
 pub use host::Host;
 pub use rules::EnvironmentRule;
@@ -162,9 +168,10 @@ pub use rules::EnvironmentRule;
 pub mod prelude {
     #[doc(no_inline)]
     pub use crate::{
-        ArmRuleError, ChangeBacklog, ChangeBacklogError, CloseSessionError, CreateLiveRuleError, DeleteLiveRuleError,
-        EnvironmentConfiguration, EnvironmentConfigurationError, EnvironmentRule, EnvironmentRulesError,
-        EnvironmentStartError, FireRuleError, Host, HostChange, HostChanges, HostChangesError, HostConfiguration,
-        IntentError, KeepRuleError, NotRunningError, ReadSentenceError, UpdateLiveRuleError,
+        ArmRuleError, CallBacklog, CallBacklogError, CallSubscription, ChangeBacklog, ChangeBacklogError,
+        CloseSessionError, CreateLiveRuleError, DeleteLiveRuleError, EnvironmentConfiguration,
+        EnvironmentConfigurationError, EnvironmentRule, EnvironmentRulesError, EnvironmentStartError, FireRuleError,
+        FollowCallsError, Host, HostChange, HostChanges, HostChangesError, HostConfiguration, IntentError,
+        KeepRuleError, NotRunningError, ReadSentenceError, UpdateLiveRuleError,
     };
 }

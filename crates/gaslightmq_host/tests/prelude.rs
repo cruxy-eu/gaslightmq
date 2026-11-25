@@ -113,6 +113,10 @@ mod next_to_the_others {
         let unclosed: CloseSessionError = CloseSessionError::NotRunning { environment: staging };
         let missed: HostChangesError = HostChangesError::Missed { changes: 3 };
         let backlog: ChangeBacklogError = ChangeBacklogError::Zero;
+        let calls: CallBacklogError = CallBacklogError::Zero;
+        let followed: FollowCallsError = FollowCallsError::StoreFailed {
+            reason: "the selector store could not be read: disk full".to_owned(),
+        };
         let unread: ReadSentenceError = ReadSentenceError::StoreFailed {
             reason: "the preset store could not be read: disk full".to_owned(),
         };
@@ -132,6 +136,8 @@ mod next_to_the_others {
         assert!(std::error::Error::source(&unclosed).is_none());
         assert!(std::error::Error::source(&missed).is_none());
         assert!(std::error::Error::source(&backlog).is_none());
+        assert!(std::error::Error::source(&calls).is_none());
+        assert!(std::error::Error::source(&followed).is_none());
         vec![
             unsupported.to_string(),
             running.to_string(),
@@ -148,6 +154,8 @@ mod next_to_the_others {
             unclosed.to_string(),
             missed.to_string(),
             backlog.to_string(),
+            calls.to_string(),
+            followed.to_string(),
         ]
     }
 }
@@ -181,6 +189,8 @@ fn the_prelude_names_the_error_of_every_type() {
             "environment \"staging-proxy\" does not run",
             "the follower fell behind, and missed 3 changes of the host",
             "a change backlog holds at least one change",
+            "a call backlog holds at least one call",
+            "the calls were not followed: the selector store could not be read: disk full",
         ]
     );
 }

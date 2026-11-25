@@ -6,6 +6,7 @@ use gaslightmq_engine::EngineStartError;
 use gaslightmq_environment::{EnvironmentName, ListenAddress};
 use gaslightmq_field::ConnectionNumber;
 use gaslightmq_rule::{RuleError, RuleName};
+use gaslightmq_selector::SelectorSetError;
 use gaslightmq_surface::LayoutName;
 use gaslightmq_workspace::CreateError;
 
@@ -369,4 +370,26 @@ pub enum CloseSessionError {
         environment: EnvironmentName,
         connection: ConnectionNumber,
     },
+}
+
+/// Why a host did not [follow the calls](crate::Host::follow_calls) of an environment.
+///
+/// ```
+/// use gaslightmq_host::prelude::*;
+///
+/// let error = FollowCallsError::NotRunning { environment: "staging-proxy".parse().expect("an environment name") };
+/// assert_eq!(error.to_string(), "environment \"staging-proxy\" does not run");
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum FollowCallsError {
+    /// No environment of this name runs.
+    #[error("environment {:?} does not run", .environment.as_str())]
+    NotRunning { environment: EnvironmentName },
+    /// The store of the selectors could not be read. `reason` says what it said.
+    #[error("the calls were not followed: {reason}")]
+    StoreFailed { reason: String },
+    /// The selector does not resolve against the selectors of the workspace: it names one that does not exist,
+    /// or the selectors include each other in a circle. Its error says which.
+    #[error("{error}")]
+    Unresolved { error: SelectorSetError },
 }

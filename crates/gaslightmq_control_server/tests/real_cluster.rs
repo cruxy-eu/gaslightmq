@@ -301,7 +301,102 @@ async fn a_rule_of_the_workspace_arms_and_fires_in_the_environment_that_runs() -
 }
 
 #[tokio::test]
-async fn a_pad_press_makes_a_live_rule_and_a_turn_changes_it() -> anyhow::Result<()> {
+async fn a_press_of_an_empty_pad_makes_its_live_rule_and_arms_it() -> anyhow::Result<()> {
+    let cluster = KafkaCluster::plaintext().with_brokers(3).start().await?;
+    let host = Arc::new(Host::new(
+        HostConfiguration::default(),
+        MemoryContext::new(),
+        Lies::of_every_build(),
+    ));
+    let any = ListenAddress::new(LOCALHOST, ANY_PORT);
+    let brokers = BrokerListeners::pinned(cluster.brokers().iter().map(|broker| (broker.id(), any)))?;
+    let staging = Environment::new(
+        "staging-proxy".parse()?,
+        Instances::ProxyInFrontOfCluster {
+            proxy: ProxyDefinition::new(Listeners::new(any, brokers, LOCALHOST.into())?),
+            upstream: Upstream::new(cluster.brokers()[0].address().to_string().parse()?),
+        },
+    );
+    host.create(staging.clone()).await?;
+    let mut configuration = ControlServerConfiguration::default();
+    configuration.listen = SocketAddr::new(LOCALHOST, ANY_PORT);
+    configuration.stats_interval = StatsInterval::new(QUIET)?;
+    let server = ControlServer::start(configuration, Arc::clone(&host)).await?;
+    let client = ControlClient::new(ControlClientConfiguration::new(server.address().into()));
+    // A desk with one pad: a delay of 20 ms on the order producers, for every client.
+    let order_producers = Selector::new(
+        "order-producers".parse()?,
+        Conditions::from(Condition::is(ApiKey::PRODUCE)),
+    );
+    let delay = Preset::new(
+        "delay-20ms".parse()?,
+        TimingLie::new().with_delay(TimeSpan::from_millis(20)),
+    );
+    let desk = PadLayout::new(
+        "order-desk".parse()?,
+        [order_producers.name().clone()],
+        [delay.name().clone()],
+        [Layer::all_clients()],
+    )?;
+    client
+        .send(CreateDefinition {
+            definition: order_producers.clone(),
+        })
+        .await??;
+    client
+        .send(CreateDefinition {
+            definition: delay.clone(),
+        })
+        .await??;
+    client
+        .send(CreateDefinition {
+            definition: desk.clone(),
+        })
+        .await??;
+    client
+        .send(StartEnvironment {
+            environment: staging.name().clone(),
+        })
+        .await??;
+    let mut stream = Watched {
+        stream: client.live_stream().await?,
+    };
+    let first = stream.next_change().await?;
+    assert!(matches!(first, StreamMessage::Snapshot(_)), "{first:?}");
+    let selectors = SelectorSet::new([order_producers])?;
+    let presets = PresetSet::new([delay])?;
+    let pad = desk
+        .pad(&Layer::all_clients(), Row::from_index(0), Column::from_index(0))
+        .context("the desk has a pad at its first row and column")?;
+    let made = desk
+        .rule(&pad, &selectors, &presets)
+        .context("the pad stands on a selector and a preset of the workspace")?;
+    let armed = |rule: &Rule| StreamMessage::RuleChanged {
+        environment: staging.name().clone(),
+        rule: RuleStatus {
+            rule: rule.clone(),
+            live: true,
+            state: RuleState::Armed,
+        },
+    };
+
+    // Someone presses the empty pad: the environment makes its live rule, and arms it.
+    let pressed = client
+        .send(SendIntent {
+            environment: staging.name().clone(),
+            intent: Intent::Arm { pad },
+        })
+        .await?;
+    stream.next_where(|message| *message == armed(&made)).await?;
+    assert_eq!(pressed, Ok(()));
+
+    server.stop().await;
+    host.stop_all().await;
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_turn_changes_the_live_rule_of_a_pad_and_it_stays_armed() -> anyhow::Result<()> {
     let cluster = KafkaCluster::plaintext().with_brokers(3).start().await?;
     let host = Arc::new(Host::new(
         HostConfiguration::default(),
@@ -382,15 +477,14 @@ async fn a_pad_press_makes_a_live_rule_and_a_turn_changes_it() -> anyhow::Result
         },
     };
 
-    // Someone presses the empty pad: the environment makes its live rule, and arms it.
-    let pressed = client
+    // Someone presses the empty pad, which makes its live rule and arms it.
+    client
         .send(SendIntent {
             environment: staging.name().clone(),
             intent: Intent::Arm { pad: pad.clone() },
         })
-        .await?;
+        .await??;
     stream.next_where(|message| *message == armed(&made)).await?;
-    assert_eq!(pressed, Ok(()));
 
     // Someone turns the delay encoder two steps up: the live rule changes, and stays armed.
     let turning = client
