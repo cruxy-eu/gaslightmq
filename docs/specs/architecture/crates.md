@@ -185,9 +185,13 @@ A trait of a sans-IO crate may declare an async method, because a declaration ru
 The return type of such a method may name the future it returns, where the trait declares the method and where a type implements it.
 Nothing else in sans-IO code names a future, and no sans-IO code has an async block.
 
-Three sans-IO crates await a store: `definition_memory`, `definition_conformance` and `workspace`.
-The check lets them have async functions with a body and await, and no other async code.
-They make no future of their own, and they name no task and no runtime, so they start nothing, wait for no timer and never block.
+Some sans-IO code awaits a store: the crates `definition_memory`, `definition_conformance` and `workspace`, and two modules of the crate of a definition.
+The module `store` holds its store trait, whose methods with a body read what the store lists.
+The module `conformance` holds the check of that trait.
+The check lets this code have async functions with a body and await, and no other async code.
+A method of a trait whose whole body is one async block counts as such a function: it is written out so that its signature can say that its future is `Send`.
+This code makes no other future, and it names no task and no runtime, so it starts nothing, waits for no timer and never blocks.
+Everything else in the crate of a definition is held to the rule of every sans-IO crate.
 
 ### Internal crates
 
@@ -210,13 +214,13 @@ No doc comment names them either, and no example in one.
 
 ```mermaid
 flowchart BT
-  V["Vocabulary<br/>kernel · resource · field · clock · wire · lie · incident · call · definition_api"]
+  V["Vocabulary<br/>kernel · resource · field · clock · wire · lie · incident · call · definition_*"]
   T["Targeting and injection<br/>selector · trigger · rule · combine · wire_edit · lie_*"]
   P["Session and pipeline<br/>session · pipeline"]
   S["Scenarios<br/>scenario"]
   O["Observation<br/>journal · traffic · index · recording"]
   W["World and backends<br/>backend · virtual_log · world · sim_* · broker · overlay"]
-  F["Workspace<br/>environment · definition_memory · definition_conformance · workspace"]
+  F["Workspace<br/>environment · workspace"]
   C["Control<br/>surface · quick_inject · control_api"]
   IO["IO edge<br/>listener · engine · host · backend_upstream · schema_registry<br/>workspace_fs · control_server · control_client"]
   A["Applications<br/>gmq · ui · test · testcontainers · kafka_client_* · test_kafka"]
@@ -268,14 +272,16 @@ Every other crate speaks in them.
 | `incident` | The [incident](../domains/lies-and-incidents.md#incidents) vocabulary, the expansion into consequences, and the support a backend declares for each kind of incident. | `kernel` |
 | `call` | The [call](../domains/observation.md#call) record: identity, request summary, truth, delivered response, verdict, explanation and timing. | `field`, `lie`, `incident`, `kernel`, `resource`, `clock` |
 | `definition_api` | The [store contract](#the-store-seam): the one async trait through which the definitions of one kind are listed, read, created, updated and deleted, and the errors of each. A definition is whatever someone defined under a name, and the crate knows no kind of definition. It holds no logic and needs no runtime. | — |
+| `definition_memory` | The store that keeps the definitions of one kind in memory, for any kind: for tests, and for an engine that runs [without a workspace](storage.md#without-a-workspace). It knows no kind of definition. | `definition_api` |
+| `definition_conformance` | What every store does, as one check that the tests of any store run. Whoever runs it hands in the definitions that it stores, so it knows no kind of definition. | `definition_api` |
 
 ### Targeting and injection
 
 | Crate | Holds | Depends on |
 |---|---|---|
-| `selector` | Conditions, selectors, includes and scope. The set of selectors, which resolves includes into effective selectors. Matching against a `FieldSource`, with the [target](../domains/lies-and-incidents.md#target) a match yields and the evaluation pass that decides it. An index of selectors by API. Also the [store trait](#the-store-seam) of the selectors. | `field`, `kernel`, `resource`, `definition_api` |
+| `selector` | Conditions, selectors, includes and scope. The set of selectors, which resolves includes into effective selectors. Matching against a `FieldSource`, with the [target](../domains/lies-and-incidents.md#target) a match yields and the evaluation pass that decides it. An index of selectors by API. Also the [store trait](#the-store-seam) of the selectors, with the store in memory and the check of a store behind features. | `field`, `kernel`, `resource`, `definition_api`, `definition_memory`, `definition_conformance` |
 | `trigger` | [Triggers](../domains/rules.md#trigger), counters, dice, budgets and lifetimes. | `clock` |
-| `rule` | The rule definition, the [preset](../domains/lies-and-incidents.md#presets), the rule's state, and the immutable snapshot of armed rules in priority order. The snapshot [evaluates a call](../domains/rules.md#evaluating-one-call): for each pass and each matching rule, the target, what the trigger rolled, and the lie or the incidents it fired. Also the [store traits](#the-store-seam) of the rules and of the presets. | `selector`, `lie`, `incident`, `trigger`, `field`, `kernel`, `resource`, `clock`, `definition_api` |
+| `rule` | The rule definition, the [preset](../domains/lies-and-incidents.md#presets), the rule's state, and the immutable snapshot of armed rules in priority order. The snapshot [evaluates a call](../domains/rules.md#evaluating-one-call): for each pass and each matching rule, the target, what the trigger rolled, and the lie or the incidents it fired. Also the [store traits](#the-store-seam) of the rules and of the presets, with the stores in memory and the checks of a store behind features. | `selector`, `lie`, `incident`, `trigger`, `field`, `kernel`, `resource`, `clock`, `definition_api`, `definition_memory`, `definition_conformance` |
 | `combine` | [How lies combine](../domains/lies-and-incidents.md#how-lies-combine): which lies conflict, which win by priority, which are shadowed or pre-empted, across [both evaluation passes](request-pipeline.md#two-evaluation-passes). Also what the lies that apply do to the call at each stage: the refusals and rewrites per target, the summed delay and the maximum throttle. | `lie`, `field`, `clock` |
 | `wire_edit` | Surgery on requests and responses: remove partitions, merge responses, synthesize an error response for any API, map topic IDs to names. It also reads what a response says about each [part](../domains/lies-and-incidents.md#target) of its request, and the error code of the response itself. | `wire`, `field`, `kernel` |
 | `lie_api` | The contract between the pipeline and a lie kind: the `Lie` trait, and the effect that one lie asks the pipeline for. A lie gets the request decoded, with its parts named. Also the behaviour of timing, silence and hang-up. See [lies as crates](#lies-as-crates). | `lie`, `wire`, `wire_edit`, `field` |
@@ -329,17 +335,15 @@ Transactions arrive later as `sim_txn`, next to `sim_log` and `sim_group`.
 
 | Crate | Holds | Depends on |
 |---|---|---|
-| `environment` | [Environments](storage.md#environments), [secret references](storage.md#secrets), and the order in which flags, variables and files set a value. It never reads a secret. Also the [store trait](#the-store-seam) of the environments. | `kernel`, `resource`, `definition_api` |
-| `definition_memory` | Definitions kept in memory: one store that keeps the store contract for every kind and the store trait of each kind, the stores of a workspace, and the context of a workspace over them. A test takes its context from here, with UUIDs that it knows before they are made. An engine that runs [without a workspace](storage.md#without-a-workspace) takes its stores from here. | `definition_api`, `workspace`, `selector`, `rule`, `surface`, `environment` |
-| `definition_conformance` | What every store does, as checks that the tests of any store run: the store contract for any kind of definition, and what the store trait of each kind asks on top. | `definition_api`, `selector`, `rule`, `surface`, `environment`, `lie`, `kernel` |
-| `workspace` | The whole set of definitions as one model, over a store for each kind: cross-reference validation, the [UUID](identity.md#uuid) that every definition gets when someone creates it, and the check that no two definitions share one. It names the stores of every kind and the source of its UUIDs as one context, and it knows no files. See [the store seam](#the-store-seam). | `definition_api`, `selector`, `rule`, `scenario`, `surface`, `world`, `environment` |
+| `environment` | [Environments](storage.md#environments), [secret references](storage.md#secrets), and the order in which flags, variables and files set a value. It never reads a secret. Also the [store trait](#the-store-seam) of the environments, with the store in memory and the check of a store behind features. | `kernel`, `resource`, `definition_api`, `definition_memory`, `definition_conformance` |
+| `workspace` | The whole set of definitions as one model, over a store for each kind: cross-reference validation, the [UUID](identity.md#uuid) that every definition gets when someone creates it, and the check that no two definitions share one. It names the stores of every kind and the source of its UUIDs as one context, and it knows no files. Behind a feature, it has the stores of a workspace in memory, the context over them, and UUIDs that a test knows before they are made. See [the store seam](#the-store-seam). | `definition_api`, `definition_memory`, `selector`, `rule`, `scenario`, `surface`, `world`, `environment` |
 | `workspace_fs` | The stores that keep definitions in the files of a [workspace](storage.md#workspace): the YAML layout, loading, watching and writing back. A [reading error](storage.md#reading) names the file and the path of the key that failed. Also the scratch file, and reading the files that secret references name. This crate does IO. | `definition_api`, `workspace`, `selector`, `rule`, `surface`, `environment` |
 
 ### Control
 
 | Crate | Holds | Depends on |
 |---|---|---|
-| `surface` | [Pad layouts](../domains/control-surfaces.md#pad-layout), layers, pads as positions, the encoder mapping, and the intents a surface sends. Also the state of one surface: the layer it shows, its mode of play and its focus, and the [store trait](#the-store-seam) of the pad layouts. | `rule`, `selector`, `trigger`, `lie`, `field`, `kernel`, `resource`, `clock`, `definition_api` |
+| `surface` | [Pad layouts](../domains/control-surfaces.md#pad-layout), layers, pads as positions, the encoder mapping, and the intents a surface sends. Also the state of one surface: the layer it shows, its mode of play and its focus, and the [store trait](#the-store-seam) of the pad layouts, with the store in memory and the check of a store behind features. | `rule`, `selector`, `trigger`, `lie`, `field`, `kernel`, `resource`, `clock`, `definition_api`, `definition_memory`, `definition_conformance` |
 | `quick_inject` | The ⌘K sentence parser: text to a rule definition, with completions for the word that is being typed, and the words it could not read. Whoever reads a sentence hands over the names the system knows. The host runs it behind the [control plane](control-plane.md#drafts). | `selector`, `lie`, `rule`, `trigger`, `field`, `kernel`, `clock` |
 | `control_api` | The [control plane](control-plane.md) as types: resources, commands and stream messages. It re-exports the definition types its messages carry, and it holds its own view of the World's state. | `call`, `journal`, `rule`, `scenario`, `selector`, `surface`, `incident`, `environment` |
 | `control_client` | A client for the control plane, for native targets and for WebAssembly. This crate does IO. | `control_api` |
@@ -353,13 +357,13 @@ Transactions arrive later as `sim_txn`, next to `sim_log` and `sim_group`.
 | `ui` | The web UI, a Dioxus application. It reaches the engine only through the control plane. This crate does IO. | `control_api`, `control_client`, `surface` |
 | `listener` | Kafka on a socket: accept connections, frame bytes, and run whatever [handles a connection](#the-connection-handler). A proxy's pipeline and a broker alone both sit behind it. This crate does IO. | `wire`, `field`, `clock` |
 | `host` | One process with several [environments](storage.md#several-environments-in-one-process): it starts and stops proxies and brokers, runs the task that drives each broker, and shares the workspace and the control plane between them. It holds the workspace over the context it is handed, whichever stores that names. This crate does IO. | `engine`, `broker`, `listener`, `backend_upstream`, `workspace`, `environment`, `quick_inject` |
-| `test` | The test library: it starts a proxy, a broker, or a proxy in front of a broker inside the test's own process, on free ports, and hands the test the addresses its clients connect to. The test then activates a scenario and asserts on the recording. This crate does IO. See [instances in a test](#instances-in-a-test). | `host`, `control_client`, `definition_memory` |
+| `test` | The test library: it starts a proxy, a broker, or a proxy in front of a broker inside the test's own process, on free ports, and hands the test the addresses its clients connect to. The test then activates a scenario and asserts on the recording. This crate does IO. See [instances in a test](#instances-in-a-test). | `host`, `control_client`, `workspace` |
 | `testcontainers` | A container module: it starts the GaslightMQ image next to a test, with the workspace the test hands over, waits until the instance is ready, and hands the test the addresses its clients connect to. This crate does IO. See [instances in a test](#instances-in-a-test). | `control_client` |
 | `kafka_client_api` | What a Kafka client offers to a test, whichever client it is: the producer, consumer and admin traits, one trait per protocol API, and a raw client that sends one request at a fixed version. Every call of a client returns one error, `ClientError`. A broker that refuses a call is the variant that holds the broker's error code, and a failure of the client holds no error code, so a test never takes one for the other. This crate does IO. | `wire`, `kernel` |
 | `kafka_client_native` | Our own Kafka client behind those traits, as three types: a producer, a consumer and an admin. Every instance has its own connections, its own view of the cluster, its own configuration and its own `client.id`, so a fault or a lie reaches one role alone. The consumer is one member of each group it joins, and everything it says about a group travels on connections of its own, so a Fetch that waits never delays a Heartbeat. Each role follows partition leaders, negotiates API versions on every connection, and reports every failure as the `ClientError` of `kafka_client_api`. What a role decides is sans-IO code inside the crate, and the async part only owns sockets and timers. This crate does IO. | `kafka_client_api`, `wire`, `kernel`, `clock` |
 | `test_kafka` | A real Kafka cluster for the tests of this workspace: brokers of the version the workspace tests against, each with an address for the clients of a test. Its own handles create topics, write records, read them back and open transactions, with one request at a fixed version each. They share the codec with the client a test is about, and no decision of a client. It starts no GaslightMQ. This crate does IO. See [a real cluster in a test](#a-real-cluster-in-a-test). | `wire`, `kernel`, `clock` |
 | `gaslightmq` | The facade crate: `Proxy`, `Broker` and `Host`, and re-exports of what library users need. This crate does IO. | The public crates |
-| `gmq` | The binary: `gmq proxy`, `gmq broker`, `gmq start` and `gmq run`. It writes the context of the workspace, and picks its stores there: files, or memory when there are none. This crate does IO. | `host`, `control_server`, `workspace_fs`, `definition_memory` |
+| `gmq` | The binary: `gmq proxy`, `gmq broker`, `gmq start` and `gmq run`. It writes the context of the workspace, and picks its stores there: files, or memory when there are none. This crate does IO. | `host`, `control_server`, `workspace_fs`, `workspace` |
 
 ## The pipeline is sans-IO
 
@@ -588,15 +592,17 @@ The listener then stands in front of the broker, without an engine.
 
 The workspace is not tied to files.
 Each kind of definition has a store, and every store keeps one contract.
-Three places hold the seam, and each knows only what it needs.
+Every crate of the seam knows only what it needs.
 
 | Crate | Holds | Knows |
 |---|---|---|
 | `definition_api` | The contract of every store, as one async trait, and its errors. | No kind of definition. A definition is whatever has a name. |
-| `selector`, `rule`, `surface`, `environment` | The store trait of each kind they define: selectors, rules, presets, pad layouts and environments. It is the contract for that kind, with what only a store of that kind is asked. | Their own kinds. |
-| `workspace` | The stores of every kind as one trait, and the context of a workspace: its stores, and the source of its UUIDs. | Every kind. |
+| `definition_memory` | The store in memory, which keeps the contract for any kind. | No kind of definition. |
+| `definition_conformance` | The check of the contract, for any kind. Whoever runs it hands in the definitions that it stores. | No kind of definition. |
+| `selector`, `rule`, `surface`, `environment` | Everything about the store of each kind they define: selectors, rules, presets, pad layouts and environments. The store trait is the contract for that kind, with what only a store of that kind is asked. Behind one feature, the store in memory is a store of that kind. Behind another, the crate has the check of its store trait, with the definitions that the check stores. | Their own kinds. |
+| `workspace` | The stores of every kind as one trait, and the context of a workspace: its stores, and the source of its UUIDs. Behind a feature, the stores and the context of a workspace in memory. | Every kind. |
 
-The crate of a definition depends on the contract, and never the other way round.
+The crate of a definition depends on the three crates above, and never the other way round.
 
 | A store | Keeps to |
 |---|---|
@@ -608,7 +614,7 @@ The crate of a definition depends on the contract, and never the other way round
 Nothing overwrites another definition.
 An error of a store names no definition and no kind, because whoever asked knows both.
 
-A store also answers what only it can answer without reading every definition.
+The store trait of a kind also asks what only a store of that kind is asked.
 
 | The store of the | Also says |
 |---|---|
@@ -618,6 +624,8 @@ A store also answers what only it can answer without reading every definition.
 | Presets, environments | Nothing more. |
 
 The workspace asks these before it deletes a selector or a preset.
+The store trait answers each of them for every store, over the definitions that the store lists.
+A store that knows a shorter way, such as an index, answers it itself.
 A store trait gets such a question when the workspace needs the answer, and not before.
 
 A store knows one kind, so it checks nothing between definitions.
@@ -634,21 +642,23 @@ Only what puts a process together writes a context and names a store there: `gmq
 
 The traits are async, because a store of files waits for the file system, and a store can be a service somewhere else.
 A blocking trait would make the edge block, and the edge [has no blocking variant](#the-io-edge-is-async).
-A trait is a signature without logic, so the crates that hold one need no runtime and stay outside the IO edge.
-They still compile to WebAssembly.
+A trait awaits nothing but the store itself, so the crates that hold one need no runtime and stay outside the IO edge.
+They still compile to WebAssembly, with every feature: the store in memory and the check of a store bring no runtime either.
 `workspace` awaits the stores it is handed, and does nothing else that is async.
 Its rules are plain functions over the definitions that the stores gave it.
 
 | Stores | Behind the traits |
 |---|---|
 | Files | `workspace_fs`: the YAML files of a [workspace](storage.md#workspace). |
-| Memory | `definition_memory`: one store for every kind, for tests, and for an engine that runs without a workspace. |
+| Memory | `definition_memory` has the store, the crate of each kind makes it a store of its kind, and `workspace` has the five as the stores of a workspace. For tests, and for an engine that runs without a workspace. |
 
 A UUID is made of the time and of random bits, and `workspace` reads neither.
 Its context hands it a source of both, and the IO edge has the one that reads the system.
 The context of a test has a source whose UUIDs the test knows before they are made.
+`workspace` has that context behind a feature, over its stores in memory, and a test turns the feature on.
 
-`definition_conformance` holds the behaviour of the contract and of each store trait once, as checks.
+`definition_conformance` holds the behaviour of the contract once, as a check.
+The crate of each kind holds the check of its store trait on top of it.
 The tests of every store run them, so a store of files is held to what a store in memory does.
 
 ## Lies as crates

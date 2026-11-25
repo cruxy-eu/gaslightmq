@@ -125,7 +125,7 @@ The engine reaches definitions through a store, and each kind of definition has 
 The files of a workspace are one store of the definitions.
 Memory is another: the engine keeps its definitions there [without a workspace](#without-a-workspace), and so do tests.
 Every store keeps the same contract, so nothing else can tell which one it works with.
-A store also says who uses a selector or a preset, so a delete reads no definition that it does not need.
+A store also says who uses a selector or a preset, and the engine asks that before a delete.
 [Names](#names) and [validation](#validation) are the same for every store.
 The layout above and [reading](#reading) are about files alone.
 See [the store seam](crates.md#the-store-seam).
