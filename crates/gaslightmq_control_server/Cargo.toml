@@ -17,6 +17,7 @@ gaslightmq_definition_api.workspace = true
 gaslightmq_engine.workspace = true
 gaslightmq_host.workspace = true
 gaslightmq_quick_inject.workspace = true
+gaslightmq_session.workspace = true
 gaslightmq_workspace.workspace = true
 axum.workspace = true
 futures.workspace = true
@@ -37,4 +38,4 @@ gaslightmq_lie_api.workspace = true
 gaslightmq_kafka_client_native.workspace = true
 gaslightmq_test_kafka.workspace = true
 gaslightmq_wire.workspace = true
-tokio = { workspace = true, features = ["rt", "rt-multi-thread", "macros", "net", "time"] }
+tokio = { workspace = true, features = ["rt", "rt-multi-thread", "macros", "net", "time", "io-util"] }

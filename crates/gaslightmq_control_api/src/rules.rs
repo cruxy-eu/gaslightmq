@@ -181,6 +181,10 @@ pub enum CreateLiveRuleError {
     /// work. `reason` says what is wrong.
     #[error("rule {:?} does not fit the workspace: {reason}", .rule.as_str())]
     DoesNotFit { rule: RuleName, reason: String },
+    /// A store of the workspace could not read what the rule is checked against. `reason` says which store, and what
+    /// it said.
+    #[error("rule {:?} was not checked: {reason}", .rule.as_str())]
+    StoreFailed { rule: RuleName, reason: String },
 }
 
 /// Why an environment did not [replace a live rule](UpdateLiveRule).
@@ -200,6 +204,10 @@ pub enum UpdateLiveRuleError {
     /// work. `reason` says what is wrong.
     #[error("rule {:?} does not fit the workspace: {reason}", .rule.as_str())]
     DoesNotFit { rule: RuleName, reason: String },
+    /// A store of the workspace could not read what the rule is checked against. `reason` says which store, and what
+    /// it said.
+    #[error("rule {:?} was not checked: {reason}", .rule.as_str())]
+    StoreFailed { rule: RuleName, reason: String },
 }
 
 /// Why an environment did not [remove a live rule](DeleteLiveRule).

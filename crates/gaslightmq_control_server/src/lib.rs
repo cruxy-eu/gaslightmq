@@ -8,7 +8,7 @@
 //! |---|---|
 //! | [`ControlServer`] | The server, from the moment it listens until someone stops it. |
 //! | [`ControlServerConfiguration`] | Where it listens, and its limits and waits. |
-//! | [`RequestSizeLimit`], [`StreamBacklog`] | The largest request it reads, and how many changes it keeps for a client of the stream. |
+//! | [`RequestSizeLimit`], [`StreamBacklog`], [`StatsInterval`] | The largest request it reads, how many changes it keeps for a client of the stream, and how often the statistics come. |
 //! | [`ControlServerError`] | Why it did not start. |
 //!
 //! The [`prelude`] holds all of them, with the errors of the values.
@@ -42,32 +42,30 @@
 //!
 //! | Request | Answer |
 //! |---|---|
-//! | `POST /api/operations` with an `AnyOperation` | `200` with its answer, `422` with its error, `501` or `400` with a `RequestError`. |
+//! | `POST /api/operations` with an `AnyOperation` | `200` with its answer, `422` with its error, `400` with a `RequestError`. |
 //! | `GET /api/stream`, a WebSocket | A `StreamMessage` per text frame, the snapshot first. The client sends a `Subscription` per text frame. |
 //!
 //! Every body and every frame is the JSON form of a type of `gaslightmq_control_api`.
 //!
 //! # What the server answers
 //!
-//! The server answers each operation with the host, and each one that changes something sends a message
-//! to every client of the live stream: a definition changed or deleted, a rule armed or disarmed,
-//! an environment started or stopped.
+//! The server answers every operation of `gaslightmq_control_api` with the host.
 //!
-//! - **Definitions** change in the workspace of the host, which checks them first.
+//! - **Definitions** change in the workspace, through the host, which checks them first.
 //! - **An environment starts by its name.** The server reads it from the workspace, makes its
 //!   configuration as the environment says, and hands that to the host.
-//! - **A rule is a rule of the workspace.** It resolves against the workspace when it is armed,
-//!   in the environment that the command names alone.
+//! - **A rule of an environment** is a rule of the workspace or a live rule of that environment.
+//!   Pads, live rules, keeping one and the sessions of an environment are the host's.
 //!
-//! # What the server does not serve yet
+//! # The live stream follows the host
 //!
-//! The host has no live rules, no sessions and no pads yet. The server answers their operations with
-//! `RequestError::NotServed`: live rules and keeping one, intents, listing and closing sessions.
-//! The sessions of an environment in a snapshot are empty.
-//!
-//! The live stream carries the changes that go through the server. A rule that its lifetime disarms,
-//! an environment that someone starts on the host itself and a store that changes behind the workspace send no
-//! message yet: the next snapshot holds them. No statistics travel yet.
+//! The server follows every change of the host, whoever makes it, and sends each one to every client with the state
+//! that its subject has then: a definition changed or deleted, a rule armed, disarmed, changed or removed, a session
+//! that opened, said who its client is or closed, and an environment that started or stopped.
+//! The statistics of every environment that runs come at the
+//! [interval](ControlServerConfiguration::stats_interval) of the configuration.
+//! A server that falls behind the host sends every client a new snapshot.
+//! A store that changes behind the workspace, as a file that someone edits, sends nothing yet.
 //!
 //! # Errors
 //!
@@ -76,6 +74,7 @@
 //! | [`ControlServer::start`] | [`ControlServerError`] | The server cannot listen on its address. |
 //! | [`RequestSizeLimit::new`] | [`RequestSizeLimitError`] | The limit is zero. |
 //! | [`StreamBacklog::new`] | [`StreamBacklogError`] | The backlog is zero, or larger than the largest. |
+//! | [`StatsInterval::new`] | [`StatsIntervalError`] | The interval is no time at all. |
 //!
 //! What a request asks fails with the errors of `gaslightmq_control_api`, and travels to the client.
 //! The message of every error is complete, so no error has a [`source`](std::error::Error::source).
@@ -88,12 +87,13 @@
 mod configuration;
 mod definitions;
 mod error;
+mod feed;
 mod plane;
 mod server;
 mod stream;
 
-pub use configuration::{ControlServerConfiguration, RequestSizeLimit, StreamBacklog};
-pub use error::{ControlServerError, RequestSizeLimitError, StreamBacklogError};
+pub use configuration::{ControlServerConfiguration, RequestSizeLimit, StatsInterval, StreamBacklog};
+pub use error::{ControlServerError, RequestSizeLimitError, StatsIntervalError, StreamBacklogError};
 pub use server::ControlServer;
 
 /// Every item of this crate.
@@ -111,6 +111,6 @@ pub mod prelude {
     #[doc(no_inline)]
     pub use crate::{
         ControlServer, ControlServerConfiguration, ControlServerError, RequestSizeLimit, RequestSizeLimitError,
-        StreamBacklog, StreamBacklogError,
+        StatsInterval, StatsIntervalError, StreamBacklog, StreamBacklogError,
     };
 }

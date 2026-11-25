@@ -4,7 +4,10 @@ use gaslightmq_backend::IncidentRejection;
 use gaslightmq_backend_upstream::UpstreamBackendError;
 use gaslightmq_engine::EngineStartError;
 use gaslightmq_environment::{EnvironmentName, ListenAddress};
+use gaslightmq_field::ConnectionNumber;
 use gaslightmq_rule::{RuleError, RuleName};
+use gaslightmq_surface::LayoutName;
+use gaslightmq_workspace::CreateError;
 
 /// Why a host did not [start](crate::Host::start) an environment.
 ///
@@ -205,4 +208,165 @@ pub enum ReadSentenceError {
     /// `reason` says which store, and what it said.
     #[error("the names of the workspace could not be read: {reason}")]
     StoreFailed { reason: String },
+}
+
+/// Why a host did not list the [rules of an environment](crate::Host::rules_of).
+///
+/// ```
+/// use gaslightmq_host::prelude::*;
+///
+/// let error = EnvironmentRulesError::StoreFailed {
+///     environment: "staging-proxy".parse().expect("an environment name"),
+///     reason: "the rule store could not be read: disk full".to_owned(),
+/// };
+/// assert_eq!(
+///     error.to_string(),
+///     "the rules of environment \"staging-proxy\" were not read: the rule store could not be read: disk full"
+/// );
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum EnvironmentRulesError {
+    /// No environment of this name runs.
+    #[error("environment {:?} does not run", .environment.as_str())]
+    NotRunning { environment: EnvironmentName },
+    /// The store of the rules of the workspace could not be read. `reason` says what it said.
+    #[error("the rules of environment {:?} were not read: {reason}", .environment.as_str())]
+    StoreFailed {
+        environment: EnvironmentName,
+        reason: String,
+    },
+}
+
+/// Why a host did not [add a live rule](crate::Host::create_live_rule) to an environment.
+///
+/// A rule that was not added changed nothing.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum CreateLiveRuleError {
+    /// No environment of this name runs.
+    #[error("environment {:?} does not run", .environment.as_str())]
+    NotRunning { environment: EnvironmentName },
+    /// A rule of the workspace or a live rule of the environment has the name already.
+    #[error("environment {:?} has a rule {:?} already", .environment.as_str(), .rule.as_str())]
+    NameTaken {
+        environment: EnvironmentName,
+        rule: RuleName,
+    },
+    /// A store of the workspace could not be read. `reason` says which store, and what it said.
+    #[error("rule {:?} was not added: {reason}", .rule.as_str())]
+    StoreFailed { rule: RuleName, reason: String },
+    /// The selectors or the presets of the workspace do not hold together, so no rule resolves against them.
+    #[error("rule {:?} was not added, because the workspace is not valid: {reason}", .rule.as_str())]
+    WorkspaceInvalid { rule: RuleName, reason: String },
+    /// The rule does not resolve against the workspace. Its error names the rule.
+    #[error("{error}")]
+    Unresolved { error: RuleError },
+}
+
+/// Why a host did not [replace a live rule](crate::Host::update_live_rule) of an environment.
+///
+/// A rule that was not replaced changed nothing.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum UpdateLiveRuleError {
+    /// No environment of this name runs.
+    #[error("environment {:?} does not run", .environment.as_str())]
+    NotRunning { environment: EnvironmentName },
+    /// No live rule of the environment has the name. A rule of the workspace changes in the workspace.
+    #[error("environment {:?} has no live rule {:?}", .environment.as_str(), .rule.as_str())]
+    NotFound {
+        environment: EnvironmentName,
+        rule: RuleName,
+    },
+    /// A store of the workspace could not be read. `reason` says which store, and what it said.
+    #[error("rule {:?} was not replaced: {reason}", .rule.as_str())]
+    StoreFailed { rule: RuleName, reason: String },
+    /// The selectors or the presets of the workspace do not hold together, so no rule resolves against them.
+    #[error("rule {:?} was not replaced, because the workspace is not valid: {reason}", .rule.as_str())]
+    WorkspaceInvalid { rule: RuleName, reason: String },
+    /// The rule does not resolve against the workspace. Its error names the rule.
+    #[error("{error}")]
+    Unresolved { error: RuleError },
+}
+
+/// Why a host did not [remove a live rule](crate::Host::delete_live_rule) from an environment.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum DeleteLiveRuleError {
+    /// No environment of this name runs.
+    #[error("environment {:?} does not run", .environment.as_str())]
+    NotRunning { environment: EnvironmentName },
+    /// No live rule of the environment has the name. A rule of the workspace is deleted in the workspace.
+    #[error("environment {:?} has no live rule {:?}", .environment.as_str(), .rule.as_str())]
+    NotFound {
+        environment: EnvironmentName,
+        rule: RuleName,
+    },
+}
+
+/// Why a host did not [keep a live rule](crate::Host::keep) in the workspace.
+///
+/// A keep that failed changed nothing: the live rule is still there.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum KeepRuleError {
+    /// No environment of this name runs.
+    #[error("environment {:?} does not run", .environment.as_str())]
+    NotRunning { environment: EnvironmentName },
+    /// No live rule of the environment has the name.
+    #[error("environment {:?} has no live rule {:?}", .environment.as_str(), .rule.as_str())]
+    NotFound {
+        environment: EnvironmentName,
+        rule: RuleName,
+    },
+    /// The workspace did not take the rule. Its error says why: a rule of the workspace has the name,
+    /// the rule does not fit the workspace, or a store failed.
+    #[error("rule {:?} was not kept: {error}", .rule.as_str())]
+    NotKept { rule: RuleName, error: CreateError },
+}
+
+/// Why a host did not act on what someone did at a pad: see [`send_intent`](crate::Host::send_intent).
+///
+/// ```
+/// use gaslightmq_host::prelude::*;
+///
+/// let error = IntentError::UnknownLayout { layout: "order-desk".parse().expect("a layout name") };
+/// assert_eq!(error.to_string(), "layout \"order-desk\" does not exist");
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum IntentError {
+    /// No environment of this name runs.
+    #[error("environment {:?} does not run", .environment.as_str())]
+    NotRunning { environment: EnvironmentName },
+    /// The pad belongs to a layout that the workspace does not have.
+    #[error("layout {:?} does not exist", .layout.as_str())]
+    UnknownLayout { layout: LayoutName },
+    /// A store of the workspace could not be read. `reason` says which store, and what it said.
+    #[error("the intent was not acted on: {reason}")]
+    StoreFailed { reason: String },
+    /// The intent changed nothing: the pad lies outside its layout, it has no rule to disarm or to turn,
+    /// its rule cannot be made, armed or disarmed, or the turn has nothing to change. `reason` says which.
+    #[error("the intent changed nothing: {reason}")]
+    Refused { reason: String },
+}
+
+/// Why a host did not [close a session](crate::Host::close_session) of an environment.
+///
+/// ```
+/// use gaslightmq_field::prelude::*;
+/// use gaslightmq_host::prelude::*;
+///
+/// let error = CloseSessionError::NotOpen {
+///     environment: "staging-proxy".parse().expect("an environment name"),
+///     connection: ConnectionNumber::new(7),
+/// };
+/// assert_eq!(error.to_string(), "environment \"staging-proxy\" has no open session on connection #7");
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum CloseSessionError {
+    /// No environment of this name runs.
+    #[error("environment {:?} does not run", .environment.as_str())]
+    NotRunning { environment: EnvironmentName },
+    /// No session of the environment is open on the connection: it closed already, or it never opened.
+    #[error("environment {:?} has no open session on connection {connection}", .environment.as_str())]
+    NotOpen {
+        environment: EnvironmentName,
+        connection: ConnectionNumber,
+    },
 }

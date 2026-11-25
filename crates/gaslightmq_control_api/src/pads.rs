@@ -61,4 +61,8 @@ pub enum IntentError {
     /// or the rule has nothing for the encoder to change. `reason` says which.
     #[error("the intent changed nothing: {reason}")]
     Refused { reason: String },
+    /// A store of the workspace could not read the layout, or what the rule of the pad is made of.
+    /// `reason` says which store, and what it said.
+    #[error("the intent was not acted on: {reason}")]
+    StoreFailed { reason: String },
 }

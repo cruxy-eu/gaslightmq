@@ -14,7 +14,8 @@ use gaslightmq_workspace::WorkspaceContext;
 use tokio::sync::broadcast::error::RecvError;
 use tokio::sync::watch;
 
-use crate::plane::{ControlPlane, form};
+use crate::plane::{Change, ControlPlane, form};
+use crate::server::stopped;
 
 /// The calls that one client follows: those of one environment that one selector matches.
 struct Following {
@@ -98,9 +99,15 @@ impl<C: WorkspaceContext + 'static> ClientStream<C> {
             tokio::select! {
                 () = stopped(&mut stopping) => return End::Stopping,
                 change = changes.recv() => match change {
-                    Ok(message) => {
+                    Ok(Change::Message(message)) => {
                         if send(sender, &message).await.is_err() {
                             return End::Client;
+                        }
+                    }
+                    // The server missed changes of the host, so the client gets the whole state again.
+                    Ok(Change::Resync) => {
+                        if let Err(end) = self.snapshot(sender).await {
+                            return end;
                         }
                     }
                     // The client missed changes, so it gets the whole state again, and the changes after it.
@@ -184,11 +191,6 @@ impl<C: WorkspaceContext + 'static> ClientStream<C> {
             events,
         }))
     }
-}
-
-/// Waits until the server stops. A server whose stop signal went away stops too.
-async fn stopped(stopping: &mut watch::Receiver<bool>) {
-    let _ = stopping.wait_for(|stopping| *stopping).await;
 }
 
 /// The next call that the client follows, or `None` once its environment stopped.

@@ -7,7 +7,7 @@ use std::net::{Ipv4Addr, SocketAddr};
 
 use gaslightmq_control_api::clock::TimeSpan;
 
-use crate::error::{RequestSizeLimitError, StreamBacklogError};
+use crate::error::{RequestSizeLimitError, StatsIntervalError, StreamBacklogError};
 
 /// What a [`ControlServer`](crate::ControlServer) is configured with.
 ///
@@ -40,6 +40,10 @@ pub struct ControlServerConfiguration {
     /// How many changes the server keeps for a client of the live stream that falls behind.
     /// A client that falls further behind gets a new snapshot instead of the changes it missed.
     pub stream_backlog: StreamBacklog,
+    /// Ours. Default: 1 second.
+    ///
+    /// How often every client of the live stream gets the statistics of every environment that runs.
+    pub stats_interval: StatsInterval,
     /// Ours. Default: 5 seconds.
     ///
     /// How long [`stop`](crate::ControlServer::stop) waits for the requests that are being answered.
@@ -53,6 +57,7 @@ impl Default for ControlServerConfiguration {
             listen: SocketAddr::from((Ipv4Addr::LOCALHOST, 8080)),
             request_limit: RequestSizeLimit::DEFAULT,
             stream_backlog: StreamBacklog::DEFAULT,
+            stats_interval: StatsInterval::DEFAULT,
             stop_timeout: TimeSpan::from_secs(5),
         }
     }
@@ -151,6 +156,42 @@ impl StreamBacklog {
 impl fmt::Display for StreamBacklog {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{} messages", self.0)
+    }
+}
+
+/// How often a control server sends the statistics of every environment that runs: longer than no time at all.
+///
+/// ```
+/// use gaslightmq_control_api::clock::TimeSpan;
+/// use gaslightmq_control_server::prelude::*;
+///
+/// let interval = StatsInterval::new(TimeSpan::from_millis(250))?;
+/// assert_eq!(interval.span(), TimeSpan::from_millis(250));
+/// assert_eq!(StatsInterval::new(TimeSpan::ZERO), Err(StatsIntervalError::Zero));
+/// # Ok::<(), StatsIntervalError>(())
+/// ```
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct StatsInterval(TimeSpan);
+
+impl StatsInterval {
+    /// The default interval: one second, which a person reads a rate at.
+    pub const DEFAULT: Self = Self(TimeSpan::from_secs(1));
+
+    /// Check that `span` is longer than no time at all, and keep it.
+    ///
+    /// # Errors
+    ///
+    /// [`StatsIntervalError::Zero`] when `span` is no time at all.
+    pub fn new(span: TimeSpan) -> Result<Self, StatsIntervalError> {
+        if span == TimeSpan::ZERO {
+            return Err(StatsIntervalError::Zero);
+        }
+        Ok(Self(span))
+    }
+
+    /// The interval as a time span.
+    pub const fn span(self) -> TimeSpan {
+        self.0
     }
 }
 

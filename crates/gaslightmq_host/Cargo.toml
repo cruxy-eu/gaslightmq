@@ -25,10 +25,12 @@ gaslightmq_lie_api.workspace = true
 gaslightmq_quick_inject.workspace = true
 gaslightmq_rule.workspace = true
 gaslightmq_selector.workspace = true
+gaslightmq_surface.workspace = true
+gaslightmq_traffic.workspace = true
 gaslightmq_workspace.workspace = true
 futures.workspace = true
 thiserror.workspace = true
-tokio = { workspace = true, features = ["sync"] }
+tokio = { workspace = true, features = ["sync", "rt", "macros"] }
 
 [dev-dependencies]
 anyhow.workspace = true

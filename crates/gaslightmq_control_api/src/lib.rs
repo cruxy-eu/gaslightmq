@@ -81,12 +81,12 @@
 //! | [`StartEnvironment`] | [`StartEnvironmentError`] | No environment has the name, it runs already, or it did not come up. |
 //! | [`StopEnvironment`], [`ListSessions`], [`GetBackend`] | [`EnvironmentNotRunning`] | The environment does not run. |
 //! | [`ListEnvironmentRules`], [`ParseSentence`] | [`EnvironmentReadError`] | The environment does not run, or a store could not read. |
-//! | [`CreateLiveRule`] | [`CreateLiveRuleError`] | The environment does not run, a rule has the name, or the rule does not fit the workspace. |
-//! | [`UpdateLiveRule`] | [`UpdateLiveRuleError`] | The environment does not run, no live rule has the name, or the rule does not fit the workspace. |
+//! | [`CreateLiveRule`] | [`CreateLiveRuleError`] | The environment does not run, a rule has the name, the rule does not fit the workspace, or a store could not read. |
+//! | [`UpdateLiveRule`] | [`UpdateLiveRuleError`] | The environment does not run, no live rule has the name, the rule does not fit the workspace, or a store could not read. |
 //! | [`DeleteLiveRule`] | [`DeleteLiveRuleError`] | The environment does not run, or no live rule has the name. |
 //! | [`KeepRule`] | [`KeepRuleError`] | The environment does not run, no live rule has the name, the workspace has a rule of that name, the rule does not fit the workspace, or a store failed. |
 //! | [`ArmRule`], [`DisarmRule`], [`FireRule`] | [`RuleCommandError`] | The environment does not run, no rule has the name, the rule cannot do this from where it stands, or a store could not read. |
-//! | [`SendIntent`] | [`IntentError`] | The environment does not run, the layout does not exist, or the intent changed nothing. |
+//! | [`SendIntent`] | [`IntentError`] | The environment does not run, the layout does not exist, the intent changed nothing, or a store could not read. |
 //! | [`CloseSession`] | [`CloseSessionError`] | The environment does not run, or no session is open on the connection. |
 //!
 //! A request can also fail before its operation runs, in the same way for every operation:

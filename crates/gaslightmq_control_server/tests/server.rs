@@ -13,14 +13,16 @@ use gaslightmq_control_api::clock::Duration;
 use gaslightmq_control_api::environment::{
     BrokerDefinition, Environment, EnvironmentName, Instances, Listeners, ProxyDefinition,
 };
+use gaslightmq_control_api::field::ConnectionNumber;
 use gaslightmq_control_api::kernel::ApiKey;
 use gaslightmq_control_api::lie::TimingLie;
 use gaslightmq_control_api::prelude::*;
 use gaslightmq_control_api::rule::{Preset, PresetName, Rule};
 use gaslightmq_control_api::selector::{Condition, Conditions, Selector, SelectorRef};
-use gaslightmq_control_client::{ControlClient, ControlClientConfiguration, SendError, StreamError};
+use gaslightmq_control_api::surface::{Column, Intent, Layer, Pad, Row};
+use gaslightmq_control_client::{ControlClient, ControlClientConfiguration, StreamError};
 use gaslightmq_control_server::prelude::*;
-use gaslightmq_host::prelude::*;
+use gaslightmq_host::{Host, HostConfiguration};
 use gaslightmq_lie_api::prelude::*;
 use gaslightmq_workspace::prelude::*;
 
@@ -130,16 +132,18 @@ async fn a_definition_changes_in_the_workspace_and_every_client_of_the_stream_he
         .await?;
     assert_eq!(deleted, Ok(()));
     // The stream heard of the preset and the rule, and then of the rule that went.
-    let mut later = Vec::new();
-    while later.len() < 3 {
-        later.push(tokio::time::timeout(PATIENCE, stream.next()).await??);
-    }
-    assert_eq!(
-        later[2],
-        StreamMessage::DefinitionDeleted {
-            name: slow.name().clone().into()
+    // A change tells the state of what it names when it travels, so the rule that went may have no change of its
+    // own by then. The deletion comes last, whatever came before it.
+    let deleted = StreamMessage::DefinitionDeleted {
+        name: slow.name().clone().into(),
+    };
+    let last = loop {
+        let message = tokio::time::timeout(PATIENCE, stream.next()).await??;
+        if message == deleted || !matches!(message, StreamMessage::DefinitionChanged { .. }) {
+            break message;
         }
-    );
+    };
+    assert_eq!(last, deleted);
     server.stop().await;
     Ok(())
 }
@@ -227,7 +231,7 @@ async fn an_environment_that_the_workspace_does_not_have_or_that_runs_a_broker_d
             broker: BrokerDefinition::new("orders-sim".parse()?),
         },
     );
-    host.workspace().await.create(orders.clone()).await?;
+    host.create(orders.clone()).await?;
     let staging: EnvironmentName = "staging-proxy".parse()?;
 
     let unknown = client
@@ -264,7 +268,7 @@ async fn an_environment_that_the_workspace_does_not_have_or_that_runs_a_broker_d
 }
 
 #[tokio::test]
-async fn an_operation_that_the_host_cannot_answer_yet_is_not_served() -> anyhow::Result<()> {
+async fn live_rules_pads_and_sessions_need_an_environment_that_runs() -> anyhow::Result<()> {
     let host = Arc::new(Host::new(
         HostConfiguration::default(),
         MemoryContext::new(),
@@ -275,31 +279,73 @@ async fn an_operation_that_the_host_cannot_answer_yet_is_not_served() -> anyhow:
     let server = ControlServer::start(configuration, Arc::clone(&host)).await?;
     let client = ControlClient::new(ControlClientConfiguration::new(server.address().into()));
     let staging: EnvironmentName = "staging-proxy".parse()?;
+    let hold = Rule::new(
+        "hold-order-producers".parse()?,
+        Conditions::from(Condition::is(ApiKey::PRODUCE)),
+        TimingLie::new().with_delay("20ms".parse()?),
+    );
+    let pad = Pad::new(
+        "order-desk".parse()?,
+        Layer::all_clients(),
+        Row::from_index(0),
+        Column::from_index(0),
+    );
 
+    let created = client
+        .send(CreateLiveRule {
+            environment: staging.clone(),
+            rule: hold.clone(),
+        })
+        .await?;
     let kept = client
         .send(KeepRule {
             environment: staging.clone(),
-            rule: "slow-order-producers".parse()?,
+            rule: hold.name().clone(),
         })
-        .await;
-    let sessions = client.send(ListSessions { environment: staging }).await;
+        .await?;
+    let pressed = client
+        .send(SendIntent {
+            environment: staging.clone(),
+            intent: Intent::Arm { pad },
+        })
+        .await?;
+    let sessions = client
+        .send(ListSessions {
+            environment: staging.clone(),
+        })
+        .await?;
+    let closed = client
+        .send(CloseSession {
+            environment: staging.clone(),
+            connection: ConnectionNumber::new(7),
+        })
+        .await?;
 
     assert_eq!(
+        created,
+        Err(CreateLiveRuleError::NotRunning {
+            environment: staging.clone()
+        })
+    );
+    assert_eq!(
         kept,
-        Err(SendError::Rejected {
-            error: RequestError::NotServed {
-                operation: "keep-rule".to_owned()
-            }
+        Err(KeepRuleError::NotRunning {
+            environment: staging.clone()
+        })
+    );
+    assert_eq!(
+        pressed,
+        Err(IntentError::NotRunning {
+            environment: staging.clone()
         })
     );
     assert_eq!(
         sessions,
-        Err(SendError::Rejected {
-            error: RequestError::NotServed {
-                operation: "list-sessions".to_owned()
-            }
+        Err(EnvironmentNotRunning {
+            environment: staging.clone()
         })
     );
+    assert_eq!(closed, Err(CloseSessionError::NotRunning { environment: staging }));
     server.stop().await;
     Ok(())
 }

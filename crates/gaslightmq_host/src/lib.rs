@@ -11,6 +11,11 @@
 //! | [`EnvironmentStartError`], [`NotRunningError`] | Why an environment did not start, and that an environment does not run. |
 //! | [`ArmRuleError`], [`FireRuleError`], [`ReadSentenceError`] | Why a rule was not armed or fired, and why a sentence was not read. |
 //! | [`EnvironmentConfigurationError`] | Why an environment has no configuration that a host can start. |
+//! | [`EnvironmentRule`] | A rule of an environment, and its state there: a rule of the workspace, or a live rule. |
+//! | [`HostChange`], [`HostChanges`] | One change of the host, whoever made it, and the changes for one follower. |
+//! | [`ChangeBacklog`] | How many changes a host keeps for a follower that falls behind. |
+//! | [`CreateLiveRuleError`], [`UpdateLiveRuleError`], [`DeleteLiveRuleError`], [`KeepRuleError`] | Why a live rule was not made, changed, removed or kept. |
+//! | [`EnvironmentRulesError`], [`IntentError`], [`CloseSessionError`], [`HostChangesError`] | Why the rules of an environment were not read, a pad was not acted on, a session was not closed, and a follower has no next change. |
 //!
 //! The [`prelude`] holds all of them.
 //!
@@ -82,9 +87,9 @@
 //!   see [`EnvironmentConfigurationError::UnsupportedBroker`]. The broker and its task arrive with the crate `broker`.
 //! - **What a process configures.** No workspace setting reaches an environment by itself:
 //!   whoever starts one sets its seed and its other properties in its [`EnvironmentConfiguration`].
-//! - **The live set, scenarios, the journal, the traffic and recordings** arrive with their crates.
+//! - **The live set, scenarios, the journal and recordings** arrive with their crates.
 //!   Until then the armed rules of an environment are its live set, and a ⌘K sentence knows the names of the
-//!   workspace alone.
+//!   workspace alone, although the traffic of every environment is counted.
 //! - **The control plane** stands in front of the host, in the crate `gaslightmq_control_server`.
 //!
 //! # Errors
@@ -99,6 +104,15 @@
 //! | [`Host::arm`] | [`ArmRuleError`] | The environment does not run, the workspace could not be read or is not valid, the rule does not resolve, or it is armed already. |
 //! | [`Host::fire`] | [`FireRuleError`] | The environment does not run, the rule is not armed or fires no more, its incident needs a call, or the backend rejects it. |
 //! | [`Host::read_sentence`] | [`ReadSentenceError`] | The workspace could not be read. |
+//! | [`Host::rules_of`], [`Host::rule_of`] | [`EnvironmentRulesError`] | The environment does not run, or the rules could not be read. |
+//! | [`Host::create_live_rule`] | [`CreateLiveRuleError`] | The environment does not run, a rule has the name, or the rule does not resolve. |
+//! | [`Host::update_live_rule`] | [`UpdateLiveRuleError`] | The environment does not run, it has no live rule of the name, or the rule does not resolve. |
+//! | [`Host::delete_live_rule`] | [`DeleteLiveRuleError`] | The environment does not run, or it has no live rule of the name. |
+//! | [`Host::keep`] | [`KeepRuleError`] | The environment does not run, it has no live rule of the name, or the workspace did not take it. |
+//! | [`Host::send_intent`] | [`IntentError`] | The environment does not run, the layout does not exist, a store could not read, or the intent changed nothing. |
+//! | [`Host::close_session`] | [`CloseSessionError`] | The environment does not run, or no session is open on the connection. |
+//! | [`HostChanges::next`] | [`HostChangesError`] | The follower fell behind, or the host is gone. |
+//! | [`ChangeBacklog::new`] | [`ChangeBacklogError`] | The backlog is zero, or larger than the largest. |
 //!
 //! A variant is something its caller decides on, and the rest is text.
 //! The error of the backend, of the proxy and of a rule is kept as it is, in a field `error`,
@@ -109,16 +123,27 @@
 //! # IO
 //!
 //! This crate is part of the IO edge: it is async, and it runs on Tokio.
-//! It starts no task of its own: each engine and each backend runs its tasks on the runtime of whoever starts it.
+//! It starts one task of its own for each environment, which watches it, on the runtime of whoever starts the
+//! environment. Each engine and each backend runs its tasks there too.
 //! The configuration and the errors are plain values that never wait.
 
+mod changes;
 mod configuration;
 mod error;
 mod host;
+mod rules;
 
-pub use configuration::{EnvironmentConfiguration, EnvironmentConfigurationError, HostConfiguration};
-pub use error::{ArmRuleError, EnvironmentStartError, FireRuleError, NotRunningError, ReadSentenceError};
+pub use changes::{HostChange, HostChanges, HostChangesError};
+pub use configuration::{
+    ChangeBacklog, ChangeBacklogError, EnvironmentConfiguration, EnvironmentConfigurationError, HostConfiguration,
+};
+pub use error::{
+    ArmRuleError, CloseSessionError, CreateLiveRuleError, DeleteLiveRuleError, EnvironmentRulesError,
+    EnvironmentStartError, FireRuleError, IntentError, KeepRuleError, NotRunningError, ReadSentenceError,
+    UpdateLiveRuleError,
+};
 pub use host::Host;
+pub use rules::EnvironmentRule;
 
 /// Every item of this crate.
 ///
@@ -137,7 +162,9 @@ pub use host::Host;
 pub mod prelude {
     #[doc(no_inline)]
     pub use crate::{
-        ArmRuleError, EnvironmentConfiguration, EnvironmentConfigurationError, EnvironmentStartError, FireRuleError,
-        Host, HostConfiguration, NotRunningError, ReadSentenceError,
+        ArmRuleError, ChangeBacklog, ChangeBacklogError, CloseSessionError, CreateLiveRuleError, DeleteLiveRuleError,
+        EnvironmentConfiguration, EnvironmentConfigurationError, EnvironmentRule, EnvironmentRulesError,
+        EnvironmentStartError, FireRuleError, Host, HostChange, HostChanges, HostChangesError, HostConfiguration,
+        IntentError, KeepRuleError, NotRunningError, ReadSentenceError, UpdateLiveRuleError,
     };
 }

@@ -3,7 +3,7 @@
 use std::collections::BTreeMap;
 use std::fmt;
 use std::net::SocketAddr;
-use std::ops::DerefMut;
+use std::ops::Deref;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use futures::future::join_all;
@@ -12,20 +12,30 @@ use gaslightmq_backend_upstream::UpstreamBackend;
 use gaslightmq_clock::Clock;
 use gaslightmq_clock_waitable::WallClock;
 use gaslightmq_definition_api::{Definition, Store, StoreReadError};
-use gaslightmq_engine::{ArmError, ArmedRules, Engine, EveryEvent, LiveEvents};
+use gaslightmq_engine::{ArmError, ArmedRules, Engine, EveryEvent, LiveEvents, NotOpenError, OpenSession};
 use gaslightmq_environment::{EnvironmentName, Listeners};
-use gaslightmq_field::Endpoint;
+use gaslightmq_field::{ConnectionNumber, Endpoint};
 use gaslightmq_incident::IncidentSupport;
 use gaslightmq_lie_api::Lies;
 use gaslightmq_quick_inject::{KnownNames, QuickInject, Sentence};
-use gaslightmq_rule::{ArmedRule, HandFiring, Preset, PresetSet, Rule, RuleName};
+use gaslightmq_rule::{ArmedRule, HandFiring, Preset, PresetSet, ResolvedRule, Rule, RuleError, RuleName};
 use gaslightmq_selector::{Selector, SelectorSet};
-use gaslightmq_workspace::{Stores, Workspace, WorkspaceContext};
+use gaslightmq_surface::EncoderMapping;
+use gaslightmq_traffic::{Statistics, Traffic, TrafficConfiguration};
+use gaslightmq_workspace::{
+    CreateError, DefinitionName, DeleteError, Stores, UpdateError, Workspace, WorkspaceContext, WorkspaceDefinition,
+};
+use tokio::sync::broadcast;
+use tokio::task::JoinHandle;
 
 use crate::{
-    ArmRuleError, EnvironmentConfiguration, EnvironmentStartError, FireRuleError, HostConfiguration, NotRunningError,
-    ReadSentenceError,
+    ArmRuleError, CloseSessionError, EnvironmentConfiguration, EnvironmentStartError, FireRuleError, HostChange,
+    HostChanges, HostConfiguration, NotRunningError, ReadSentenceError,
 };
+
+mod live;
+mod pads;
+mod watch;
 
 /// One process with several environments: it runs the proxy of each, and shares the workspace between them.
 ///
@@ -68,7 +78,7 @@ use crate::{
 /// # async fn main() -> Result<(), ReadSentenceError> {
 /// let host = Host::new(HostConfiguration::default(), MemoryContext::new(), Lies::of_every_build());
 /// let quiet = Preset::new("quiet-orders".parse().expect("a preset name"), LieDefinition::Silence);
-/// host.workspace().await.create(quiet).await.expect("a workspace in memory keeps it");
+/// host.create(quiet).await.expect("a workspace in memory keeps it");
 ///
 /// // Someone types in the ⌘K palette, and the sentence knows the presets of the workspace.
 /// let sentence = host.read_sentence("quiet-orders for 3 firings").await?;
@@ -87,14 +97,27 @@ pub struct Host<C: WorkspaceContext> {
     environments: Mutex<BTreeMap<EnvironmentName, Running>>,
     /// Held by a start or a stop, from the check of the listeners until the environment runs or stopped.
     changing: tokio::sync::Mutex<()>,
+    /// Every change, for whoever follows the host.
+    changes: broadcast::Sender<HostChange>,
+    /// What a turn of an encoder is worth.
+    encoders: EncoderMapping,
+    /// What the traffic of every environment keeps.
+    traffic: TrafficConfiguration,
 }
 
-/// One environment that runs: its proxy, the backend behind it, and the listeners it was started with.
+/// One environment that runs: its proxy, the backend behind it, the listeners it was started with, and what lives in
+/// it alone.
 struct Running {
     engine: Engine<Arc<UpstreamBackend>, WallClock>,
     /// The backend that the engine holds too, to apply what a rule fires by hand without holding the environments.
     backend: Arc<UpstreamBackend>,
     listeners: Listeners,
+    /// The live rules, by name. They stay in memory until someone keeps or deletes them, or the environment stops.
+    live: BTreeMap<RuleName, Rule>,
+    /// The calls of the environment, as the task that watches it counts them.
+    traffic: Arc<Mutex<Traffic>>,
+    /// The task that watches the environment, which ends a moment after its proxy stopped.
+    watching: JoinHandle<()>,
 }
 
 impl<C: WorkspaceContext> Host<C> {
@@ -108,15 +131,68 @@ impl<C: WorkspaceContext> Host<C> {
             lies: Arc::new(lies),
             environments: Mutex::new(BTreeMap::new()),
             changing: tokio::sync::Mutex::new(()),
+            changes: broadcast::channel(configuration.change_backlog.changes()).0,
+            encoders: configuration.encoders,
+            traffic: configuration.traffic,
         }
     }
 
-    /// The workspace, to read and to change.
+    /// The workspace, to read.
     ///
-    /// Every environment shares it. A change takes it exclusively,
-    /// so the workspace waits for whoever holds it, and holding it across a wait for something else holds up the rest.
-    pub async fn workspace(&self) -> impl DerefMut<Target = Workspace<C>> {
+    /// Every environment shares it. A change goes through the host, which tells whoever follows it:
+    /// see [`create`](Self::create), [`update`](Self::update) and [`delete`](Self::delete).
+    /// Reading takes the workspace as a change does, so holding it across a wait for something else holds up the rest.
+    pub async fn workspace(&self) -> impl Deref<Target = Workspace<C>> {
         self.workspace.lock().await
+    }
+
+    /// Every change of the host from now on, whoever makes it: see [`HostChange`].
+    pub fn changes(&self) -> HostChanges {
+        HostChanges::new(self.changes.subscribe())
+    }
+
+    /// Adds a definition to the workspace, and returns it with the UUID it got. See [`Workspace::create`].
+    ///
+    /// Whoever follows the host learns of it.
+    ///
+    /// # Errors
+    ///
+    /// The [`CreateError`] of the workspace.
+    pub async fn create<D: WorkspaceDefinition>(&self, definition: D) -> Result<D, CreateError> {
+        let created = self.workspace.lock().await.create(definition).await?;
+        self.publish(HostChange::DefinitionChanged {
+            name: created.name().clone().into(),
+        });
+        Ok(created)
+    }
+
+    /// Replaces a definition of the workspace, and returns it with the UUID it keeps. See [`Workspace::update`].
+    ///
+    /// Whoever follows the host learns of it.
+    ///
+    /// # Errors
+    ///
+    /// The [`UpdateError`] of the workspace.
+    pub async fn update<D: WorkspaceDefinition>(&self, definition: D) -> Result<D, UpdateError> {
+        let updated = self.workspace.lock().await.update(definition).await?;
+        self.publish(HostChange::DefinitionChanged {
+            name: updated.name().clone().into(),
+        });
+        Ok(updated)
+    }
+
+    /// Removes a definition from the workspace. See [`Workspace::delete`].
+    ///
+    /// Whoever follows the host learns of it.
+    ///
+    /// # Errors
+    ///
+    /// The [`DeleteError`] of the workspace.
+    pub async fn delete(&self, name: impl Into<DefinitionName>) -> Result<(), DeleteError> {
+        let name = name.into();
+        self.workspace.lock().await.delete(name.clone()).await?;
+        self.publish(HostChange::DefinitionDeleted { name });
+        Ok(())
     }
 
     /// Starts an environment: its backend in front of the real cluster, and its proxy in front of the backend.
@@ -153,14 +229,26 @@ impl<C: WorkspaceContext> Host<C> {
             Ok(engine) => engine,
             Err(error) => return Err(EnvironmentStartError::ProxyNotStarted { name, error }),
         };
+        let traffic = Arc::new(Mutex::new(Traffic::new(self.traffic.clone())));
+        let watching = tokio::spawn(watch::watch(
+            name.clone(),
+            engine.every_event(),
+            engine.rules().changes(),
+            Arc::clone(&traffic),
+            self.changes.clone(),
+        ));
         self.environments().insert(
-            name,
+            name.clone(),
             Running {
                 engine,
                 backend,
                 listeners,
+                live: BTreeMap::new(),
+                traffic,
+                watching,
             },
         );
+        self.publish(HostChange::EnvironmentStarted { environment: name });
         Ok(())
     }
 
@@ -180,8 +268,18 @@ impl<C: WorkspaceContext> Host<C> {
         let Some(running) = running else {
             return Err(NotRunningError { name: name.clone() });
         };
-        running.engine.stop().await;
+        self.end(name.clone(), running).await;
         Ok(())
+    }
+
+    /// Stops the proxy of an environment that left the environments, waits until the task that watches it told every
+    /// change of its sessions, and tells that the environment stopped.
+    async fn end(&self, name: EnvironmentName, running: Running) {
+        let Running { engine, watching, .. } = running;
+        engine.stop().await;
+        // The task ends once it took the last event of the proxy. A task that panicked has nothing more to tell.
+        let _ = watching.await;
+        self.publish(HostChange::EnvironmentStopped { environment: name });
     }
 
     /// Stops every environment, and waits until each one has stopped.
@@ -190,7 +288,7 @@ impl<C: WorkspaceContext> Host<C> {
     pub async fn stop_all(&self) {
         let _changing = self.changing.lock().await;
         let running = std::mem::take(&mut *self.environments());
-        join_all(running.into_values().map(|running| running.engine.stop())).await;
+        join_all(running.into_iter().map(|(name, running)| self.end(name, running))).await;
     }
 
     /// The names of the environments that run, in the order of their names.
@@ -286,37 +384,17 @@ impl<C: WorkspaceContext> Host<C> {
     /// - [`ArmRuleError::NotRunning`] when no environment of that name runs.
     /// - [`ArmRuleError::AlreadyArmed`] when a rule of that name is armed in the environment.
     pub async fn arm(&self, environment: &EnvironmentName, rule: &Rule) -> Result<ArmedRule, ArmRuleError> {
-        let name = rule.name();
-        let (selectors, presets) = {
-            let workspace = self.workspace.lock().await;
-            let stores = workspace.stores();
-            let selectors = stores
-                .selectors()
-                .list()
-                .await
-                .map_err(|error| ArmRuleError::StoreFailed {
-                    rule: name.clone(),
-                    reason: unread::<Selector>(error),
-                })?;
-            let presets = stores
-                .presets()
-                .list()
-                .await
-                .map_err(|error| ArmRuleError::StoreFailed {
-                    rule: name.clone(),
-                    reason: unread::<Preset>(error),
-                })?;
-            (selectors, presets)
-        };
-        let invalid = |reason: String| ArmRuleError::WorkspaceInvalid {
-            rule: name.clone(),
-            reason,
-        };
-        let selectors = SelectorSet::new(selectors).map_err(|error| invalid(error.to_string()))?;
-        let presets = PresetSet::new(presets).map_err(|error| invalid(error.to_string()))?;
-        let resolved = rule
-            .resolve(&selectors, &presets)
-            .map_err(|error| ArmRuleError::Unresolved { error })?;
+        let resolved = self.resolve(rule).await.map_err(|unresolvable| match unresolvable {
+            Unresolvable::StoreFailed { reason } => ArmRuleError::StoreFailed {
+                rule: rule.name().clone(),
+                reason,
+            },
+            Unresolvable::WorkspaceInvalid { reason } => ArmRuleError::WorkspaceInvalid {
+                rule: rule.name().clone(),
+                reason,
+            },
+            Unresolvable::Unresolved { error } => ArmRuleError::Unresolved { error },
+        })?;
 
         let environments = self.environments();
         let Some(running) = environments.get(environment) else {
@@ -435,6 +513,85 @@ impl<C: WorkspaceContext> Host<C> {
         Ok(self.quick_inject.read(text, &known))
     }
 
+    /// The sessions of an environment that are open, in the order of their connection numbers.
+    ///
+    /// # Errors
+    ///
+    /// [`NotRunningError`] when no environment of that name runs.
+    pub fn sessions(&self, name: &EnvironmentName) -> Result<Vec<OpenSession>, NotRunningError> {
+        self.with_running(name, |running| running.engine.sessions())
+    }
+
+    /// Closes a session of an environment as its proxy closes it. The client finds its connection closed, and
+    /// whoever follows the host learns that the proxy closed the session, a moment after the call returns.
+    ///
+    /// # Errors
+    ///
+    /// - [`CloseSessionError::NotRunning`] when no environment of that name runs.
+    /// - [`CloseSessionError::NotOpen`] when no session of the environment is open on the connection.
+    pub fn close_session(&self, name: &EnvironmentName, connection: ConnectionNumber) -> Result<(), CloseSessionError> {
+        let closed = self.with_running(name, |running| running.engine.close_session(connection));
+        match closed {
+            Ok(Ok(())) => Ok(()),
+            Ok(Err(NotOpenError { connection })) => Err(CloseSessionError::NotOpen {
+                environment: name.clone(),
+                connection,
+            }),
+            Err(NotRunningError { name }) => Err(CloseSessionError::NotRunning { environment: name }),
+        }
+    }
+
+    /// What an environment counted since it started: its calls by API, and what each rule did.
+    ///
+    /// The numbers come from the calls that the task watching the environment took so far, a moment behind.
+    ///
+    /// # Errors
+    ///
+    /// [`NotRunningError`] when no environment of that name runs.
+    pub fn statistics(&self, name: &EnvironmentName) -> Result<Statistics, NotRunningError> {
+        self.with_running(name, |running| {
+            running
+                .traffic
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .statistics()
+                .clone()
+        })
+    }
+
+    /// Resolves `rule` against the selectors and the presets of the workspace.
+    async fn resolve(&self, rule: &Rule) -> Result<ResolvedRule, Unresolvable> {
+        let (selectors, presets) = {
+            let workspace = self.workspace.lock().await;
+            let stores = workspace.stores();
+            let selectors = stores
+                .selectors()
+                .list()
+                .await
+                .map_err(|error| Unresolvable::StoreFailed {
+                    reason: unread::<Selector>(error),
+                })?;
+            let presets = stores
+                .presets()
+                .list()
+                .await
+                .map_err(|error| Unresolvable::StoreFailed {
+                    reason: unread::<Preset>(error),
+                })?;
+            (selectors, presets)
+        };
+        let invalid = |reason: String| Unresolvable::WorkspaceInvalid { reason };
+        let selectors = SelectorSet::new(selectors).map_err(|error| invalid(error.to_string()))?;
+        let presets = PresetSet::new(presets).map_err(|error| invalid(error.to_string()))?;
+        rule.resolve(&selectors, &presets)
+            .map_err(|error| Unresolvable::Unresolved { error })
+    }
+
+    /// Tells whoever follows the host. A change that nobody follows is gone.
+    fn publish(&self, change: HostChange) {
+        let _ = self.changes.send(change);
+    }
+
     /// Refuses listeners that meet those of an environment that runs, and a name that runs already.
     fn check_listeners(&self, name: &EnvironmentName, listeners: &Listeners) -> Result<(), EnvironmentStartError> {
         let environments = self.environments();
@@ -479,6 +636,16 @@ impl<C: WorkspaceContext> fmt::Debug for Host<C> {
             .field("running", &self.running())
             .finish_non_exhaustive()
     }
+}
+
+/// Why a rule does not resolve against the workspace.
+enum Unresolvable {
+    /// A store could not read. `reason` says which store, and what it said.
+    StoreFailed { reason: String },
+    /// The selectors or the presets do not hold together.
+    WorkspaceInvalid { reason: String },
+    /// The rule names what the workspace does not have, or it could never fire.
+    Unresolved { error: RuleError },
 }
 
 /// What the store of the definitions `D` said when it could not read, with the word for its kind before it.
