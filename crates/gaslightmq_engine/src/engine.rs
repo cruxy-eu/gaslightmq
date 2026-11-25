@@ -6,6 +6,7 @@ use std::sync::Arc;
 
 use gaslightmq_backend::Backend;
 use gaslightmq_clock::Clock;
+use gaslightmq_clock_waitable::{WaitableClock, WallClock};
 use gaslightmq_field::Endpoint;
 use gaslightmq_lie_api::Lies;
 use gaslightmq_pipeline::{KnownTopics, SharedBySessions};
@@ -16,7 +17,7 @@ use tokio::task::JoinHandle;
 use crate::endpoints::{Listening, OpenEndpoints};
 use crate::events::EventBus;
 use crate::session::Sessions;
-use crate::{ArmedRules, EngineConfiguration, EngineStartError, EveryEvent, LiveEvents, WaitableClock, WallClock};
+use crate::{ArmedRules, EngineConfiguration, EngineStartError, EveryEvent, LiveEvents};
 
 /// The runtime of one proxy: its sessions, its armed rules, its clock and its endpoints.
 ///

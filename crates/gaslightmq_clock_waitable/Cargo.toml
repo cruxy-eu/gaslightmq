@@ -1,0 +1,16 @@
+[package]
+name = "gaslightmq_clock_waitable"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+gaslightmq_clock.workspace = true
+tokio = { workspace = true, features = ["sync", "time"] }
+
+[dev-dependencies]
+futures.workspace = true
+tokio = { workspace = true, features = ["rt", "macros"] }

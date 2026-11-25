@@ -4,6 +4,7 @@ members = [
     "crates/gaslightmq_backend_upstream",
     "crates/gaslightmq_call",
     "crates/gaslightmq_clock",
+    "crates/gaslightmq_clock_waitable",
     "crates/gaslightmq_combine",
     "crates/gaslightmq_engine",
     "crates/gaslightmq_environment",
@@ -49,6 +50,7 @@ gaslightmq_backend = { path = "crates/gaslightmq_backend" }
 gaslightmq_backend_upstream = { path = "crates/gaslightmq_backend_upstream" }
 gaslightmq_call = { path = "crates/gaslightmq_call" }
 gaslightmq_clock = { path = "crates/gaslightmq_clock" }
+gaslightmq_clock_waitable = { path = "crates/gaslightmq_clock_waitable" }
 gaslightmq_combine = { path = "crates/gaslightmq_combine" }
 gaslightmq_definition_api = { path = "crates/gaslightmq_definition/api" }
 gaslightmq_definition_conformance = { path = "crates/gaslightmq_definition/conformance" }

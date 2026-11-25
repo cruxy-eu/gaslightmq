@@ -256,7 +256,7 @@ flowchart BT
   W["World and backends<br/>backend · virtual_log · world · sim_* · broker · overlay"]
   F["Workspace<br/>environment · environment_conformance · workspace"]
   C["Control<br/>surface · surface_conformance · quick_inject · control_api"]
-  IO["IO edge<br/>listener · engine · host · backend_upstream · schema_registry<br/>workspace_fs · control_server · control_client"]
+  IO["IO edge<br/>clock_waitable · listener · engine · host · backend_upstream · schema_registry<br/>workspace_fs · control_server · control_client"]
   A["Applications<br/>gmq · ui · test · testcontainers · kafka_client_* · test_kafka"]
 
   T --> V
@@ -301,6 +301,7 @@ Every other crate speaks in them.
 | `resource` | The [resource](control-plane.md#resources) vocabulary: the name, the UUID and the title of a resource, with the one rule that each of them follows. They are the rules of the [name](../domains/rules.md#names) and the [title](../domains/rules.md#titles) of a rule, and of the [UUID](identity.md#uuid) of an entity. Each kind of resource has a name, a UUID and a title of its own that wrap them, so the name of a selector never stands where the name of a rule belongs. It [makes a UUID](identity.md#making-a-uuid) from the time and the random bits that its caller hands in. This crate is [internal](#internal-crates). | — |
 | `field` | The [field vocabulary](../domains/targeting.md#fields): field names, their typed values, and the `FieldSource` trait that a live call and a recorded call both implement. Also the parts of a call, and the [target](../domains/lies-and-incidents.md#target) that a match yields. Every district of the town plan [shares this vocabulary](../townplan/README.md#targeting-is-a-shared-kernel). | `kernel`, `clock` |
 | `clock` | The [clock](README.md#clock): a `Clock` trait, the virtual clock, and instants that do not come from the system. | — |
+| `clock_waitable` | The clocks that a task waits on: a `WaitableClock` trait, which says when a clock reaches an instant, the wall clock, and a clock that moves when its owner moves it, which is the virtual clock behind a handle. An engine waits on the clock that whoever starts it hands over. This crate does IO. | `clock` |
 | `wire` | The Kafka codec: frames, headers, lazily decoded bodies and record batches. | — |
 | `lie` | The [lie](../domains/lies-and-incidents.md#lies) vocabulary: kind, stage, combination class, aspect and priority, the definition of every lie kind as data, and a lie with the [target](../domains/lies-and-incidents.md#target) it applies to. It holds no behaviour. See [lies as crates](#lies-as-crates). | `field`, `kernel`, `clock` |
 | `incident` | The [incident](../domains/lies-and-incidents.md#incidents) vocabulary, the expansion into consequences, and the support a backend declares for each kind of incident. | `kernel` |
@@ -391,7 +392,7 @@ Transactions arrive later as `sim_txn`, next to `sim_log` and `sim_group`.
 
 | Crate | Holds | Depends on |
 |---|---|---|
-| `engine` | The runtime of one proxy: one task per session that owns the transport and drives the pipeline, a listener for every endpoint of the backend, the armed rules, the scenario runner, the event bus, the journal, the recorder and the indexer. This crate does IO. | `pipeline`, `session`, `rule`, `trigger`, `lie_api`, `call`, `incident`, `field`, `wire`, `scenario`, `journal`, `recording`, `backend`, `listener`, `environment`, `clock` |
+| `engine` | The runtime of one proxy: one task per session that owns the transport and drives the pipeline, a listener for every endpoint of the backend, the armed rules, the scenario runner, the event bus, the journal, the recorder and the indexer. This crate does IO. | `pipeline`, `session`, `rule`, `trigger`, `lie_api`, `call`, `incident`, `field`, `wire`, `scenario`, `journal`, `recording`, `backend`, `listener`, `environment`, `clock`, `clock_waitable` |
 | `ui` | The web UI, a Dioxus application. It reaches the engine only through the control plane. This crate does IO. | `control_api`, `control_client`, `surface` |
 | `listener` | Kafka on a socket: accept connections, frame bytes, and run whatever [handles a connection](#the-connection-handler). A proxy's pipeline and a broker alone both sit behind it. This crate does IO. | `wire`, `field`, `clock` |
 | `host` | One process with several [environments](storage.md#several-environments-in-one-process): it starts and stops proxies and brokers, runs the task that drives each broker, and shares the workspace and the control plane between them. It holds the workspace over the context it is handed, whichever stores that names. This crate does IO. | `engine`, `broker`, `listener`, `backend_upstream`, `workspace`, `environment`, `quick_inject` |
@@ -543,6 +544,7 @@ On a native target they run on Tokio.
 
 | Crate | The IO it does |
 |---|---|
+| `clock_waitable` | The time of the system, and timers. |
 | `listener` | Client sockets. |
 | `backend_upstream` | Sockets to the real cluster. |
 | `schema_registry` | The HTTP interface of the built-in registry, and requests to a real one. |
@@ -875,7 +877,7 @@ The crates arrive in the order the [first version](../README.md#first-version) n
 |---|---|---|
 | 1 | `kernel`, `resource`, `field`, `clock`, `wire`, `selector`, `lie`, `incident`, `trigger`, `rule`, `combine` | Rules evaluate against hand-written calls in tests. |
 | 2 | `wire_edit`, `lie_api`, `lie_refusal`, `session`, `call`, `pipeline` | The pipeline runs in tests, with partial refusals and explanations. |
-| 3 | `environment`, `backend`, `overlay`, `backend_upstream`, `listener`, `engine` | A proxy that lies. |
+| 3 | `environment`, `backend`, `overlay`, `backend_upstream`, `listener`, `clock_waitable`, `engine` | A proxy that lies. |
 | 4 | `host`, `control_api`, `control_server`, `control_client`, `traffic`, `index`, `surface`, `quick_inject`, `definition_api`, `definition_memory`, `definition_conformance`, `selector_conformance`, `rule_conformance`, `surface_conformance`, `environment_conformance`, `workspace`, `ui` | The UI with live traffic, rules, pads and ⌘K. Definitions live in stores in memory. |
 | 5 | `journal`, `scenario`, `workspace_fs`, `recording`, `test`, `testcontainers`, `gmq` | Definitions and scenarios in files, recordings, and tests in CI. |
 | 6 | `schema`, `schema_registry`, `virtual_log`, `world`, `sim_log`, `sim_group`, `broker`, `world_seed` | The broker, alone and behind a proxy. |

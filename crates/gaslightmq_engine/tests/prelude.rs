@@ -34,6 +34,7 @@ mod next_to_the_others {
 
     use gaslightmq_backend::prelude::*;
     use gaslightmq_call::prelude::*;
+    use gaslightmq_clock_waitable::SteppedClock;
     use gaslightmq_combine::prelude::*;
     use gaslightmq_engine::prelude::*;
     use gaslightmq_environment::prelude::*;
@@ -90,11 +91,6 @@ mod next_to_the_others {
         }
     }
 
-    /// A clock that someone wrote next to the two of the crate.
-    pub fn told_by(clock: &impl WaitableClock) -> gaslightmq_clock::Instant {
-        gaslightmq_clock::Clock::now(clock)
-    }
-
     /// One value of every item of the prelude, each named without a path.
     pub async fn every_item() -> Vec<String> {
         let any: ListenAddress = "127.0.0.1:0".parse().unwrap();
@@ -106,11 +102,9 @@ mod next_to_the_others {
         let mut configuration: EngineConfiguration = EngineConfiguration::new(listeners.unwrap());
         let backlog: EventBacklog = EventBacklog::new(16).unwrap();
         configuration.event_backlog = backlog;
-        let stepped: SteppedClock = SteppedClock::new();
-        let wall: WallClock = WallClock::new();
 
         let engine: Engine<Mute, SteppedClock> =
-            Engine::start(configuration.clone(), Mute, stepped.clone(), Lies::of_every_build())
+            Engine::start(configuration.clone(), Mute, SteppedClock::new(), Lies::of_every_build())
                 .await
                 .unwrap();
         let rules: &ArmedRules = engine.rules();
@@ -125,7 +119,6 @@ mod next_to_the_others {
         let items = vec![
             format!("{configuration:?}"),
             backlog.to_string(),
-            format!("{:?} {:?}", told_by(&stepped), told_by(&wall) >= told_by(&stepped)),
             format!("{engine:?}"),
             format!("{rules:?}"),
             armed.name().to_string(),
@@ -175,10 +168,10 @@ mod next_to_the_others {
 async fn the_prelude_names_every_item_next_to_the_other_preludes() {
     let items = next_to_the_others::every_item().await;
 
-    assert_eq!(items.len(), 8);
+    assert_eq!(items.len(), 7);
     assert!(items.iter().all(|item| !item.is_empty()));
     assert_eq!(items[1], "16 events");
-    assert_eq!(items[5], "blackhole");
+    assert_eq!(items[4], "blackhole");
 }
 
 #[test]
@@ -209,8 +202,4 @@ async fn the_prelude_is_enough_to_configure_an_engine() {
     configuration.event_backlog = EventBacklog::new(64).unwrap();
 
     assert_eq!(configuration.event_backlog.events(), 64);
-    assert_eq!(
-        gaslightmq_clock::Clock::now(&SteppedClock::new()),
-        gaslightmq_clock::Instant::ZERO
-    );
 }

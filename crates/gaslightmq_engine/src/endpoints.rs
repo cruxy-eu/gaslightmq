@@ -8,6 +8,7 @@ use std::sync::{Arc, OnceLock};
 use futures::future::join_all;
 use gaslightmq_backend::{Backend, Endpoints};
 use gaslightmq_clock::{Clock, Instant, TimeSpan};
+use gaslightmq_clock_waitable::WaitableClock;
 use gaslightmq_environment::BrokerListenersError;
 use gaslightmq_field::Endpoint;
 use gaslightmq_listener::{ConnectionNumbers, Listener};
@@ -16,7 +17,7 @@ use tracing::error;
 
 use crate::engine::Stopping;
 use crate::session::{EndpointSessions, Sessions};
-use crate::{EndpointOpenError, EngineConfiguration, EngineStartError, WaitableClock};
+use crate::{EndpointOpenError, EngineConfiguration, EngineStartError};
 
 /// Where each endpoint of a proxy listens at this moment.
 pub(crate) type Listening = BTreeMap<Endpoint, SocketAddr>;

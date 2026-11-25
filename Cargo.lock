@@ -335,6 +335,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "gaslightmq_clock_waitable"
+version = "0.1.0"
+dependencies = [
+ "futures",
+ "gaslightmq_clock",
+ "tokio",
+]
+
+[[package]]
 name = "gaslightmq_combine"
 version = "0.1.0"
 dependencies = [
@@ -380,6 +389,7 @@ dependencies = [
  "gaslightmq_backend_upstream",
  "gaslightmq_call",
  "gaslightmq_clock",
+ "gaslightmq_clock_waitable",
  "gaslightmq_combine",
  "gaslightmq_environment",
  "gaslightmq_field",

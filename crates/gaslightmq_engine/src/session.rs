@@ -10,6 +10,7 @@ use futures::stream::FuturesUnordered;
 use gaslightmq_backend::{Backend, BackendAnswer, BackendRequest};
 use gaslightmq_call::CallId;
 use gaslightmq_clock::Instant;
+use gaslightmq_clock_waitable::WaitableClock;
 use gaslightmq_listener::{ConnectionHandler, ReceiveError, SendError, Transport};
 use gaslightmq_pipeline::{Input, Output, Outputs, Pipeline, SharedBySessions};
 use gaslightmq_rule::Snapshot;
@@ -19,7 +20,7 @@ use tokio::sync::{mpsc, watch};
 
 use crate::events::EventBus;
 use crate::timers::Timers;
-use crate::{ArmedRules, EngineEvent, WaitableClock};
+use crate::{ArmedRules, EngineEvent};
 
 /// The bytes of a frame that holds nothing, which are no request.
 ///

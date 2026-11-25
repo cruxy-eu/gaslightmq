@@ -4,11 +4,12 @@ use std::fmt;
 use std::sync::Arc;
 
 use gaslightmq_clock::{Clock, Instant};
+use gaslightmq_clock_waitable::WaitableClock;
 use gaslightmq_rule::{ArmedRule, ResolvedRule, RuleName, Snapshot, SnapshotError};
 use gaslightmq_trigger::Seed;
 use tokio::sync::watch;
 
-use crate::{ArmError, DisarmError, WaitableClock};
+use crate::{ArmError, DisarmError};
 
 /// The armed rules of one proxy, in the order in which they win a conflict.
 ///
@@ -190,7 +191,7 @@ mod tests {
     use gaslightmq_trigger::{Count, CounterKey, Lifetime, SessionCounters};
 
     use super::*;
-    use crate::SteppedClock;
+    use gaslightmq_clock_waitable::SteppedClock;
 
     fn armed_rules(clock: &SteppedClock) -> ArmedRules {
         ArmedRules::new(Seed::new(42), Arc::new(clock.clone()))

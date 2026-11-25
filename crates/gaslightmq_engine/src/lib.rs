@@ -12,8 +12,6 @@
 //! | [`EngineEvent`] | What a session hands over: the record of a call, or an incident that a rule fired. |
 //! | [`LiveEvents`], [`EveryEvent`] | The events as a listener receives them: one that watches and may miss the oldest, and one that keeps every event. |
 //! | [`EventBacklog`] | How many events an engine keeps for a live listener that falls behind. |
-//! | [`WaitableClock`] | A clock that a task waits on: it tells the time, and it says when it reaches an instant. |
-//! | [`WallClock`], [`SteppedClock`] | Real time, and a clock that moves when its owner moves it. |
 //! | [`EngineStartError`], [`EndpointOpenError`] | Why an engine did not start, and why an endpoint has no listener. |
 //! | [`ArmError`], [`DisarmError`], [`LiveEventsError`] | Why a rule was not armed or disarmed, and why a live listener has no next event. |
 //!
@@ -24,6 +22,7 @@
 //!
 //! use gaslightmq_backend::prelude::*;
 //! use gaslightmq_clock::{Duration, TimeSpan};
+//! use gaslightmq_clock_waitable::WallClock;
 //! use gaslightmq_engine::prelude::*;
 //! use gaslightmq_environment::prelude::*;
 //! use gaslightmq_field::prelude::*;
@@ -225,15 +224,11 @@
 //!
 //! # Time
 //!
-//! An engine has one [`WaitableClock`].
+//! An engine has one [`WaitableClock`](gaslightmq_clock_waitable::WaitableClock), which whoever starts it hands over.
 //! Every instant that a pipeline sees comes from it, and every wait is a wait on it:
 //! a delay, the lifetime of a rule, the time a client context stays after its last session,
 //! and the time before an endpoint without a listener is tried again.
-//! With a [`SteppedClock`] none of them takes real time.
-//!
-//! The clocks build on `gaslightmq_clock`: each is a [`Clock`](gaslightmq_clock::Clock),
-//! and the stepped one is its [`VirtualClock`](gaslightmq_clock::VirtualClock) behind a handle.
-//! That crate is sans-IO, so the wait until an instant, which is a future, is what this crate adds.
+//! With a [`SteppedClock`](gaslightmq_clock_waitable::SteppedClock) none of them takes real time.
 //!
 //! Three waits are real time on every clock, because they belong to the sockets and to stopping:
 //! the [wait after a failed accept](EngineConfiguration::accept_retry_backoff),
@@ -285,7 +280,6 @@
 //! [`Engine::start`] starts tasks, so it runs inside the runtime.
 //! The configuration, the error and the timers of a session are plain code that never waits.
 
-mod clock;
 mod configuration;
 mod endpoints;
 mod engine;
@@ -295,7 +289,6 @@ mod rules;
 mod session;
 mod timers;
 
-pub use clock::{SteppedClock, WaitableClock, WallClock};
 pub use configuration::{EngineConfiguration, EventBacklog, EventBacklogError};
 pub use engine::Engine;
 pub use error::{ArmError, DisarmError, EndpointOpenError, EngineStartError, LiveEventsError};
@@ -319,7 +312,6 @@ pub mod prelude {
     #[doc(no_inline)]
     pub use crate::{
         ArmError, ArmedRules, DisarmError, EndpointOpenError, Engine, EngineConfiguration, EngineEvent,
-        EngineStartError, EventBacklog, EventBacklogError, EveryEvent, LiveEvents, LiveEventsError, SteppedClock,
-        WaitableClock, WallClock,
+        EngineStartError, EventBacklog, EventBacklogError, EveryEvent, LiveEvents, LiveEventsError,
     };
 }
