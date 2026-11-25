@@ -8,10 +8,10 @@ use std::net::SocketAddr;
 /// use gaslightmq_control_server::prelude::*;
 ///
 /// let error = ControlServerError::ListenerNotOpened {
-///     address: "127.0.0.1:8080".parse().expect("a socket address"),
+///     address: "127.0.0.1:7092".parse().expect("a socket address"),
 ///     reason: "address in use".to_owned(),
 /// };
-/// assert_eq!(error.to_string(), "the control plane cannot listen on 127.0.0.1:8080: address in use");
+/// assert_eq!(error.to_string(), "the control plane cannot listen on 127.0.0.1:7092: address in use");
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum ControlServerError {

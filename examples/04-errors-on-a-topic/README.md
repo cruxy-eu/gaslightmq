@@ -26,7 +26,7 @@ echo "hello" | kcat -b localhost:9092 -P -t orders
 - The broker stores the records. It never lies.
 - The proxy in front of it refuses one in five Produce calls.
   A refused call never reaches the broker, so nothing is written for it.
-- The UI at `http://localhost:8080` shows every call, with the rule that refused it.
+- The UI at `http://localhost:7092` shows every call, with the rule that refused it.
 - Nothing is armed unless the command names a scenario.
   Without `--scenario`, the cluster answers truthfully.
 

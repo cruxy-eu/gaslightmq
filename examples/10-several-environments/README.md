@@ -26,7 +26,7 @@ gmq start
 - One process listens on both sets of ports.
   A client on `localhost:29092` talks to the fake cluster,
   and a client on `localhost:9092` talks to the real one.
-- The UI at `http://localhost:8080` has an environment switcher.
+- The UI at `http://localhost:7092` has an environment switcher.
   Switching changes what you look at. Nothing restarts.
 - The rule and the scenario exist once, and both environments can use them.
 - Each environment has its own state.

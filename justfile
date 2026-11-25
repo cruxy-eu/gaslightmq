@@ -70,12 +70,24 @@ image:
 container:
     docker run --rm -p 9092:9092 ghcr.io/cruxy-eu/gaslightmq:latest
 
-# Build the proxy web UI into crates/gaslightmq-proxy/ui-dist/ (needs `dx`).
-ui:
-    dx build --release --platform web -p gaslightmq-proxy-ui
-    rm -rf crates/gaslightmq-proxy/ui-dist
-    cp -R target/dx/gaslightmq-proxy-ui/release/web/public crates/gaslightmq-proxy/ui-dist
+# The version of dx that builds the UI. It pins the Tailwind that builds the stylesheet: 4.1.5 for dx 0.7.10.
+dx-version:
+    @echo 0.7.10
 
-# Build gmq with the web UI embedded. Run `just ui` first.
-proxy-ui:
-    cargo build -p gmq --features proxy-ui
+# Build the web UI into crates/gaslightmq_control_server/ui/, which the control server serves.
+# Needs `dx` at the version of `just dx-version` (`cargo binstall dioxus-cli@0.7.10`), which downloads its Tailwind on
+# its first run, and the wasm32-unknown-unknown target of rust-toolchain.toml.
+# A debug build of the server reads the folder while it runs, and a release build holds the files.
+ui:
+    dx --version | grep -q "dioxus $(just dx-version)" || { echo "just ui needs dx $(just dx-version)" >&2; exit 1; }
+    rm -rf target/dx/gaslightmq_ui/release/web/public
+    dx build --release --platform web -p gaslightmq_ui
+    test -s crates/gaslightmq_ui/public/ui.css || { echo "Tailwind wrote no stylesheet" >&2; exit 1; }
+    cp crates/gaslightmq_ui/public/ui.css target/dx/gaslightmq_ui/release/web/public/ui.css
+    rm -rf crates/gaslightmq_control_server/ui
+    cp -R target/dx/gaslightmq_ui/release/web/public crates/gaslightmq_control_server/ui
+
+# The UI in front of live traffic on http://127.0.0.1:7092, or on the address given: a proxy, a real cluster and busy
+# clients. Needs Docker.
+demo *address: ui
+    cargo run -p gaslightmq_control_server --example demo -- {{address}}

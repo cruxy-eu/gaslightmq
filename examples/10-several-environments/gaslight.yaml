@@ -2,4 +2,4 @@
 environments: [shop, staging]
 
 control:
-  listen: 0.0.0.0:8080
+  listen: 0.0.0.0:7092

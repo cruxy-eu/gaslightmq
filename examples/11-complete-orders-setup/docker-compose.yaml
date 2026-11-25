@@ -13,7 +13,7 @@ services:
       - "9092:9092"                 # Kafka bootstrap
       - "19092-19094:19092-19094"   # one port per broker node
       - "8081:8081"                 # schema registry
-      - "8080:8080"                 # UI and control plane
+      - "7092:7092"                 # UI and control plane
 
   # Your application. It needs no producer and no real Kafka.
   order-consumer:

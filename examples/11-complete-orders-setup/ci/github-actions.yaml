@@ -13,7 +13,7 @@ jobs:
         run: |
           docker run -d --name gaslightmq \
             -v "$PWD/examples/11-complete-orders-setup/gaslight:/workspace:ro" \
-            -p 9092:9092 -p 19092-19094:19092-19094 -p 8081:8081 -p 8080:8080 \
+            -p 9092:9092 -p 19092-19094:19092-19094 -p 8081:8081 -p 7092:7092 \
             ghcr.io/cruxy-eu/gaslightmq:latest \
             start --workspace=/workspace --env=orders-sim \
             --scenario=consumer-survives-leader-churn \

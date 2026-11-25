@@ -26,7 +26,7 @@
 //! // The binary makes the host, starts what its flags say, and puts the control plane in front of it.
 //! let host = Arc::new(Host::new(HostConfiguration::default(), MemoryContext::new(), Lies::of_every_build()));
 //! let server = ControlServer::start(ControlServerConfiguration::default(), Arc::clone(&host)).await?;
-//! assert_eq!(server.address(), "127.0.0.1:8080".parse().expect("a socket address"));
+//! assert_eq!(server.address(), "127.0.0.1:7092".parse().expect("a socket address"));
 //!
 //! // On the way out, the control plane stops first, so nobody starts an environment that is about to stop.
 //! server.stop().await;
@@ -44,8 +44,11 @@
 //! |---|---|
 //! | `POST /api/operations` with an `AnyOperation` | `200` with its answer, `422` with its error, `400` with a `RequestError`. |
 //! | `GET /api/stream`, a WebSocket | A `StreamMessage` per text frame, the snapshot first. The client sends a `Subscription` per text frame. |
+//! | `GET` of any other path | A file of the web UI, or the page of the UI, which opens the view of the path. |
 //!
 //! Every body and every frame is the JSON form of a type of `gaslightmq_control_api`.
+//! The UI and the control plane share one origin: `just ui` builds the files of the UI into the folder `ui/` of this
+//! crate, a release build holds them, and a debug build reads them from the folder while it runs.
 //!
 //! # What the server answers
 //!
@@ -91,6 +94,7 @@ mod feed;
 mod plane;
 mod server;
 mod stream;
+mod ui;
 
 pub use configuration::{ControlServerConfiguration, RequestSizeLimit, StatsInterval, StreamBacklog};
 pub use error::{ControlServerError, RequestSizeLimitError, StatsIntervalError, StreamBacklogError};

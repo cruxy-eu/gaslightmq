@@ -1,0 +1,14 @@
+[application]
+name = "gaslightmq_ui"
+# The theme and the utilities of the UI. dx runs the Tailwind it pins (v4.1.5 for dx 0.7.10) before it bundles,
+# and copies `public/` to the root of the bundle, so the page links `/ui.css`.
+tailwind_input = "tailwind.css"
+tailwind_output = "public/ui.css"
+
+[web.app]
+title = "GaslightMQ"
+
+# `dx serve` forwards the control plane to a control server on its default address, so the UI reloads as it changes
+# while the server runs beside it.
+[[web.proxy]]
+backend = "http://127.0.0.1:7092/api/"

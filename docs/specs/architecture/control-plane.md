@@ -125,7 +125,7 @@ Every other message reaches every client, except the answer to a subscription, w
 ## Over the network
 
 `control_server` serves the control plane, and `control_client` speaks to it.
-The server listens on one address: `127.0.0.1:8080`, until its configuration names another.
+The server listens on one address: `127.0.0.1:7092`, until its configuration names another.
 Every body and every frame is JSON, and it is the `serde` form of a type of `control_api`.
 No other form exists, so a client in the browser and one on a native target send the same bytes.
 
@@ -134,7 +134,17 @@ No other form exists, so a client in the browser and one on a native target send
 | An operation | `POST /api/operations` |
 | The live stream | `GET /api/stream`, which upgrades to a WebSocket |
 
-The other paths stay free for the UI.
+The server serves the [UI](crates.md#what-compiles-to-webassembly) on the other paths, so the page and the control plane share one origin.
+
+| A `GET` of | Gets |
+|---|---|
+| A path that names a file of the UI | The file, with a tag of its content, so a browser that holds it gets `304 Not Modified`. |
+| Any other path | The page of the UI, which opens the view of that path, such as `/rules`. |
+| A path below `/api` that the control plane does not serve | `404 Not Found`. |
+
+Every other method on those paths is `405 Method Not Allowed`.
+A release build of the server holds the files of the UI, so the UI ships with the binary.
+A build without them serves a page that says how to build them.
 
 ### Operations
 

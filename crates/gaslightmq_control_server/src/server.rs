@@ -22,6 +22,7 @@ use tokio::task::JoinHandle;
 use crate::feed::Feed;
 use crate::plane::{ControlPlane, Reply, form};
 use crate::stream::ClientStream;
+use crate::ui;
 use crate::{ControlServerConfiguration, ControlServerError, RequestSizeLimit};
 
 /// The path of the operations.
@@ -95,6 +96,7 @@ impl ControlServer {
         let routes = Router::new()
             .route(OPERATIONS, post(operation::<C>))
             .route(STREAM, get(stream::<C>))
+            .fallback(ui::serve)
             .with_state(shared);
         let mut until_stopped = stopped;
         let serving = tokio::spawn(async move {

@@ -69,7 +69,7 @@ with another advertised host than its file names.
 environments: [staging-proxy, orders-sim]   # the environments to start by default
 seed: 1337                      # the seed when no scenario is active
 control:
-  listen: 127.0.0.1:8080
+  listen: 127.0.0.1:7092
   token: { file: secrets/control-token }
 recordings:
   directory: recordings

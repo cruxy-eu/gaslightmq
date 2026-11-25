@@ -1,0 +1,167 @@
+/*
+ * The theme of the UI: every design token, by its role, in OKLCH.
+ *
+ * `@theme` holds the dark values, which the mockups in `mockups/` give. The block for `data-theme="light"` holds the
+ * light value of every colour token: the same roles and the same hues, with another lightness and chroma.
+ * Components only name these tokens (`bg-panel`, `text-muted`, `border-edge`), so they carry no theme of their own.
+ * `cargo xtask ui-theme` checks this file, and `cargo xtask ui-tokens` checks that the components name tokens only.
+ *
+ * dx builds it with the Tailwind it pins, into `public/ui.css`, which the page links.
+ */
+@import "tailwindcss";
+
+@theme {
+  /* Only the roles below are colours: no palette of Tailwind's own. */
+  --color-*: initial;
+
+  /* Surfaces, from the back to the front. */
+  --color-canvas: oklch(0 0 0);
+  --color-app: oklch(0.139 0.003 246.3);
+  --color-panel: oklch(0.173 0.004 264.5);
+  --color-inset: oklch(0.159 0.005 264.4);
+  --color-band: oklch(0.187 0.006 271.1);
+  --color-raised: oklch(0.205 0.006 271.1);
+  --color-raised-hover: oklch(0.231 0.008 274.6);
+  --color-popover: oklch(0.227 0.008 274.6);
+  --color-control: oklch(0.266 0.009 276.7);
+  --color-track: oklch(0.27 0.009 276.8);
+  --color-hover: oklch(1 0 0 / 0.035);
+  --color-selected: oklch(1 0 0 / 0.06);
+  --color-scrim: oklch(0 0 0 / 0.55);
+
+  /* Edges, from a hairline to an outline. */
+  --color-edge: oklch(1 0 0 / 0.065);
+  --color-edge-strong: oklch(1 0 0 / 0.1);
+  --color-edge-bold: oklch(1 0 0 / 0.17);
+
+  /* Text, from a title to what barely shows. */
+  --color-strong: oklch(0.978 0 0);
+  --color-body: oklch(0.874 0.015 260.7);
+  --color-muted: oklch(0.649 0.015 262.4);
+  --color-subtle: oklch(0.509 0.012 261.8);
+  --color-faint: oklch(0.375 0.011 264.4);
+
+  /* What someone acts on. */
+  --color-accent: oklch(0.623 0.207 278.8);
+  --color-accent-text: oklch(0.839 0.083 285.2);
+  --color-primary: oklch(0.567 0.159 275.2);
+  --color-primary-hover: oklch(0.603 0.168 276.3);
+  --color-on-primary: oklch(1 0 0);
+
+  /* States. */
+  --color-armed: oklch(0.703 0.127 158.9);
+  --color-danger: oklch(0.653 0.183 23.7);
+  --color-warning: oklch(0.76 0.142 59.5);
+  --color-pending: oklch(0.85 0.146 90.5);
+
+  /* The kinds of lie. */
+  --color-lie-refusal: oklch(0.653 0.183 23.7);
+  --color-lie-delay: oklch(0.76 0.142 59.5);
+  --color-lie-throttle: oklch(0.785 0.133 181.9);
+  --color-lie-silence: oklch(0.709 0.159 293.5);
+  --color-lie-hangup: oklch(0.712 0.151 249.9);
+  --color-lie-other: oklch(0.714 0.019 261.3);
+
+  /* What an API is for. */
+  --color-api-produce: oklch(0.703 0.127 158.9);
+  --color-api-fetch: oklch(0.712 0.151 249.9);
+  --color-api-metadata: oklch(0.649 0.015 262.4);
+  --color-api-group: oklch(0.85 0.146 90.5);
+  --color-api-transaction: oklch(0.722 0.177 305.5);
+  --color-api-admin: oklch(0.714 0.145 355.8);
+
+  /* The mark of the product. */
+  --color-brand-from: oklch(0.623 0.207 278.8);
+  --color-brand-via: oklch(0.722 0.177 305.5);
+  --color-brand-to: oklch(0.76 0.142 59.5);
+
+  /* Type: small Inter, and a monospace for values. */
+  --font-sans: "Inter var", Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-mono: "JetBrains Mono", "SF Mono", ui-monospace, Menlo, monospace;
+  --text-micro: 10.5px;
+  --text-tiny: 11px;
+  --text-caption: 11.5px;
+  --text-small: 12px;
+  --text-compact: 12.5px;
+  --text-regular: 13px;
+  --text-input: 16px;
+  --text-title: 18px;
+}
+
+/* The light theme: the light value of every colour token. */
+:root[data-theme="light"] {
+  --color-canvas: oklch(0.93 0.004 264);
+  --color-app: oklch(0.965 0.003 264);
+  --color-panel: oklch(0.99 0.002 264);
+  --color-inset: oklch(0.975 0.003 264);
+  --color-band: oklch(0.955 0.004 271);
+  --color-raised: oklch(1 0 0);
+  --color-raised-hover: oklch(0.965 0.004 274.6);
+  --color-popover: oklch(1 0 0);
+  --color-control: oklch(0.925 0.006 276.7);
+  --color-track: oklch(0.9 0.008 276.8);
+  --color-hover: oklch(0 0 0 / 0.035);
+  --color-selected: oklch(0 0 0 / 0.06);
+  --color-scrim: oklch(0 0 0 / 0.25);
+
+  --color-edge: oklch(0 0 0 / 0.08);
+  --color-edge-strong: oklch(0 0 0 / 0.12);
+  --color-edge-bold: oklch(0 0 0 / 0.2);
+
+  --color-strong: oklch(0.2 0.005 264);
+  --color-body: oklch(0.33 0.012 260.7);
+  --color-muted: oklch(0.5 0.014 262.4);
+  --color-subtle: oklch(0.6 0.012 261.8);
+  --color-faint: oklch(0.75 0.01 264.4);
+
+  --color-accent: oklch(0.55 0.207 278.8);
+  --color-accent-text: oklch(0.5 0.16 285.2);
+  --color-primary: oklch(0.52 0.17 275.2);
+  --color-primary-hover: oklch(0.47 0.17 276.3);
+  --color-on-primary: oklch(1 0 0);
+
+  --color-armed: oklch(0.58 0.13 158.9);
+  --color-danger: oklch(0.57 0.19 23.7);
+  --color-warning: oklch(0.64 0.15 59.5);
+  --color-pending: oklch(0.7 0.15 90.5);
+
+  --color-lie-refusal: oklch(0.57 0.19 23.7);
+  --color-lie-delay: oklch(0.64 0.15 59.5);
+  --color-lie-throttle: oklch(0.6 0.12 181.9);
+  --color-lie-silence: oklch(0.56 0.18 293.5);
+  --color-lie-hangup: oklch(0.56 0.16 249.9);
+  --color-lie-other: oklch(0.55 0.02 261.3);
+
+  --color-api-produce: oklch(0.58 0.13 158.9);
+  --color-api-fetch: oklch(0.56 0.16 249.9);
+  --color-api-metadata: oklch(0.55 0.015 262.4);
+  --color-api-group: oklch(0.66 0.15 90.5);
+  --color-api-transaction: oklch(0.56 0.2 305.5);
+  --color-api-admin: oklch(0.58 0.17 355.8);
+
+  --color-brand-from: oklch(0.55 0.207 278.8);
+  --color-brand-via: oklch(0.6 0.2 305.5);
+  --color-brand-to: oklch(0.66 0.15 59.5);
+}
+
+@layer base {
+  html,
+  body {
+    height: 100%;
+    overflow: hidden;
+    background: var(--color-canvas);
+    color: var(--color-body);
+    font-family: var(--font-sans);
+    font-size: var(--text-regular);
+    line-height: 1.45;
+    -webkit-font-smoothing: antialiased;
+    font-feature-settings: "cv01", "cv11", "ss03";
+  }
+  #main {
+    height: 100%;
+    padding: calc(var(--spacing) * 2);
+  }
+  * {
+    scrollbar-color: var(--color-track) transparent;
+  }
+}
