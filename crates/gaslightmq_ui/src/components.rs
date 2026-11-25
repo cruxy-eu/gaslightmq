@@ -24,6 +24,7 @@ pub enum Shape {
     Play,
     Pause,
     Chevron,
+    Search,
 }
 
 impl Shape {
@@ -47,6 +48,7 @@ impl Shape {
             Shape::Play => r#"<path d="M5.5 3.8v8.4l6.5-4.2z"/>"#,
             Shape::Pause => r#"<path d="M6 4v8M10 4v8"/>"#,
             Shape::Chevron => r#"<path d="m4.5 6.5 3.5 3.5 3.5-3.5"/>"#,
+            Shape::Search => r#"<circle cx="7" cy="7" r="4.5"/><path d="m10.5 10.5 3 3"/>"#,
         }
     }
 }

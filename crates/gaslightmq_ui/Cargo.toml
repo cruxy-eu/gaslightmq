@@ -10,7 +10,7 @@ workspace = true
 # What the UI knows and decides, apart from the browser: `cargo xtask sans-io` holds these modules to that,
 # and the tests drive them with plain calls. The components and the connection around them do the IO.
 [package.metadata.gaslightmq]
-sans_io_modules = ["configuration", "filter", "following", "live", "pads", "process", "rules", "text", "theme", "traffic"]
+sans_io_modules = ["configuration", "filter", "following", "live", "pads", "palette", "process", "rules", "text", "theme", "traffic"]
 
 [dependencies]
 gaslightmq_control_api.workspace = true

@@ -66,3 +66,21 @@ pub async fn theme(pick: Option<ThemeChoice>) -> ThemeChoice {
         .await
         .map_or(ThemeChoice::System, |name| ThemeChoice::named(&name))
 }
+
+/// Waits until someone presses ⌘K, or Ctrl-K, anywhere on the page. The browser does not see the key itself.
+pub async fn quick_inject_pressed(script: &mut dioxus::document::Eval) -> bool {
+    script.recv::<bool>().await.unwrap_or(false)
+}
+
+/// Listens for ⌘K and Ctrl-K on the whole page, for as long as the returned script runs.
+pub fn listen_for_quick_inject() -> dioxus::document::Eval {
+    dioxus::document::eval(
+        "window.addEventListener('keydown', (event) => {
+            if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
+                event.preventDefault();
+                dioxus.send(true);
+            }
+        });
+        await new Promise(() => {});",
+    )
+}

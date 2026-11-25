@@ -401,7 +401,7 @@ fn LifetimeButton(environment: EnvironmentName, status: RuleStatus, lifetime: Li
 }
 
 /// What a selector targets, in a few words: the title or the name of a selector of the workspace, or its conditions.
-fn selector_label(process: &Process, selector: &SelectorRef) -> String {
+pub(crate) fn selector_label(process: &Process, selector: &SelectorRef) -> String {
     match selector {
         SelectorRef::Named(name) => process
             .definitions()
@@ -430,7 +430,7 @@ fn conditions_of(process: &Process, selector: &SelectorRef) -> Vec<Condition> {
 }
 
 /// What an action does, in a few words, with the color of its lie: a preset by its title, or the lie itself.
-fn action_label(process: &Process, action: &ActionRef) -> (Tone, String) {
+pub(crate) fn action_label(process: &Process, action: &ActionRef) -> (Tone, String) {
     let (preset, action) = match action {
         ActionRef::Preset(name) => {
             let preset = process.definitions().presets.iter().find(|held| held.name() == name);

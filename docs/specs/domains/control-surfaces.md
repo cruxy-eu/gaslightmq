@@ -35,6 +35,22 @@ A command always carries the name.
 
 The [mockups](../../../mockups/proxy-ui-v2.html) show most of these views.
 
+## Quick inject
+
+⌘K, or Ctrl-K, opens a palette over every view.
+The control plane reads the sentence while someone types,
+once they paused for the interval of the UI's configuration, and only its answer to the latest sentence counts.
+The palette shows the rule the sentence gives, part by part, and the words it could not read with the reason.
+
+| Key | Does |
+|---|---|
+| Up, down | Move through the rule, the completions of the word at the end, and the views. |
+| Tab | Put the highlighted completion, or the first one, in place of the word at the end. |
+| Enter | On the rule: create it as a live rule of the environment shown, and arm it. On a completion or a view: take it. |
+| Esc | Close the palette. |
+
+A sentence with a word that the control plane could not read creates nothing, so a typo never becomes a rule that does less than it says.
+
 ## Pad layout
 
 A pad layout maps a grid to names.

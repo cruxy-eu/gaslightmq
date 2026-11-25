@@ -41,9 +41,18 @@ pub struct Ui {
     pub notices: Signal<Vec<Notice>>,
     /// The pads someone plays, once the workspace has a layout. It keeps its layer, mode and focus between views.
     pub desk: Signal<Option<Desk>>,
+    /// Whether ⌘K is open.
+    pub quick_inject: Signal<bool>,
     /// Tells the live stream that the UI shows something else.
     changes: Coroutine<Changed>,
     configuration: UiConfiguration,
+}
+
+impl Ui {
+    /// What the UI is configured with.
+    pub fn configuration(&self) -> &UiConfiguration {
+        &self.configuration
+    }
 }
 
 /// A line on the screen that says what happened to what someone did.
@@ -114,6 +123,7 @@ pub fn App() -> Element {
     let live = use_signal(|| Live::new(&configuration));
     let notices = use_signal(Vec::new);
     let desk = use_signal(|| None);
+    let quick_inject = use_signal(|| false);
     let changes = use_coroutine({
         let client = client.clone();
         let configuration = configuration.clone();
@@ -124,6 +134,7 @@ pub fn App() -> Element {
         client,
         notices,
         desk,
+        quick_inject,
         changes,
         configuration,
     });

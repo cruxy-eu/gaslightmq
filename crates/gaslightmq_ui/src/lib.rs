@@ -29,6 +29,7 @@
 //!
 //! The module [`pads`] holds the [`Desk`](pads::Desk): the surface someone plays, which turns presses and turns into
 //! intents against the rules of the environment shown.
+//! The module [`palette`] holds ⌘K: the sentence, the answer of the control plane to it, and the live rule it gives.
 //! The module [`rules`] holds what the Rules view decides: which rules a tab lists, what someone can do with a rule,
 //! and which operation carries it out. The module [`text`] writes times and the values of a call.
 //!
@@ -45,6 +46,7 @@ mod filter;
 mod following;
 mod live;
 pub mod pads;
+pub mod palette;
 mod process;
 pub mod rules;
 pub mod text;

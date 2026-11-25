@@ -9,8 +9,9 @@ use crate::app::{Route, Ui};
 use crate::browser;
 use crate::components::{Icon, Notices, Shape};
 use crate::live::Link as StreamLink;
-use crate::style::{BUTTON_GHOST, MENU, MENU_ITEM, MENU_SECTION, SEGMENT, SEGMENT_ON, SEGMENTS};
+use crate::style::{BUTTON_GHOST, ICON_BUTTON, MENU, MENU_ITEM, MENU_SECTION, SEGMENT, SEGMENT_ON, SEGMENTS};
 use crate::theme::ThemeChoice;
+use crate::views::QuickInject;
 
 /// An entry of the navigation, while its view is not shown.
 const NAV: &str =
@@ -23,12 +24,21 @@ const NAV_ON: &str =
 /// The sidebar and the view of the path.
 #[component]
 pub fn Shell() -> Element {
+    let ui = use_context::<Ui>();
+    let mut open = ui.quick_inject;
+    use_future(move || async move {
+        let mut script = browser::listen_for_quick_inject();
+        while browser::quick_inject_pressed(&mut script).await {
+            open.set(true);
+        }
+    });
     rsx! {
         div { class: "relative flex h-full overflow-hidden rounded-xl border border-edge bg-app",
             Sidebar {}
             main { class: "relative my-2 mr-2 flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-lg border border-edge bg-panel",
                 Outlet::<Route> {}
             }
+            QuickInject {}
             Notices {}
         }
     }
@@ -38,6 +48,7 @@ pub fn Shell() -> Element {
 #[component]
 fn Sidebar() -> Element {
     let ui = use_context::<Ui>();
+    let mut quick_inject = ui.quick_inject;
     let route = use_route::<Route>();
     let live = ui.live.read();
     let shown = live.shown_running();
@@ -56,6 +67,13 @@ fn Sidebar() -> Element {
             div { class: "mb-2.5 flex h-8 items-center gap-2 pr-1 pl-1.5",
                 div { class: "size-5 shrink-0 rounded-md bg-linear-135 from-brand-from via-brand-via to-brand-to" }
                 b { class: "font-semibold text-strong", "gaslightmq" }
+                span { class: "flex-1" }
+                button {
+                    class: ICON_BUTTON,
+                    title: "Quick inject ⌘K",
+                    onclick: move |_| quick_inject.set(true),
+                    Icon { shape: Shape::Search }
+                }
             }
             NavLink { to: Route::Record {}, on: matches!(route, Route::Record {}), shape: Shape::Record, label: "Live traffic", count: calls.map(|calls| calls.to_string()) }
             NavLink { to: Route::Rules {}, on: matches!(route, Route::Rules {}), shape: Shape::Zap, label: "Rules", count: armed.map(|armed| format!("{armed} armed")) }

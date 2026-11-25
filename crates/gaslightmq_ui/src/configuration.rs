@@ -37,6 +37,11 @@ pub struct UiConfiguration {
     /// How often the UI shows what the live stream sent since it showed last.
     /// The messages in between apply together, so a busy environment does not draw every call on its own.
     pub refresh_interval: TimeSpan,
+    /// Ours. Default: 150 milliseconds.
+    ///
+    /// How long ⌘K waits after the last key before it asks the control plane to read the sentence,
+    /// so a fast typist sends one question and not one per key.
+    pub parse_after: TimeSpan,
     /// Ours. Default: 5 seconds.
     ///
     /// How long a notice stays on the screen, such as the error of an operation that someone started.
@@ -51,6 +56,7 @@ impl Default for UiConfiguration {
             reconnect_after: TimeSpan::from_secs(1),
             refresh_interval: TimeSpan::from_millis(100),
             notice_for: TimeSpan::from_secs(5),
+            parse_after: TimeSpan::from_millis(150),
         }
     }
 }
