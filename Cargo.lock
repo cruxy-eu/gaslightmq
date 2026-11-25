@@ -355,6 +355,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "gaslightmq_control_api"
+version = "0.1.0"
+dependencies = [
+ "gaslightmq_call",
+ "gaslightmq_clock",
+ "gaslightmq_environment",
+ "gaslightmq_field",
+ "gaslightmq_incident",
+ "gaslightmq_kernel",
+ "gaslightmq_lie",
+ "gaslightmq_rule",
+ "gaslightmq_selector",
+ "gaslightmq_surface",
+ "gaslightmq_trigger",
+ "serde",
+ "serde_json",
+ "thiserror",
+]
+
+[[package]]
 name = "gaslightmq_definition_api"
 version = "0.1.0"
 dependencies = [
