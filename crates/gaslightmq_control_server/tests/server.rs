@@ -396,3 +396,50 @@ async fn a_subscription_is_answered_and_a_stop_of_the_server_ends_the_stream() -
     assert!(matches!(ended, Err(StreamError::Unreachable { .. })), "{ended:?}");
     Ok(())
 }
+
+/// The first line and the headers of what the server answers to `request`, sent as it is on a new connection.
+async fn exchange(server: SocketAddr, request: &str) -> anyhow::Result<String> {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    let mut connection = tokio::net::TcpStream::connect(server).await?;
+    connection.write_all(request.as_bytes()).await?;
+    let mut answer = Vec::new();
+    tokio::time::timeout(PATIENCE, connection.read_to_end(&mut answer)).await??;
+    let answer = String::from_utf8_lossy(&answer).into_owned();
+    Ok(answer.split("\r\n\r\n").next().unwrap_or_default().to_lowercase())
+}
+
+#[tokio::test]
+async fn every_path_that_the_control_plane_leaves_free_serves_the_page_of_the_ui() -> anyhow::Result<()> {
+    let host = Arc::new(Host::new(
+        HostConfiguration::default(),
+        MemoryContext::new(),
+        Lies::of_every_build(),
+    ));
+    let mut configuration = ControlServerConfiguration::default();
+    configuration.listen = SocketAddr::new(LOCALHOST, ANY_PORT);
+    let server = ControlServer::start(configuration, Arc::clone(&host)).await?;
+
+    // A view of the UI opens at its own address. A build without the files of the UI says how to build them, on a
+    // page of its own.
+    let view = exchange(
+        server.address(),
+        "GET /rules HTTP/1.1\r\nhost: localhost\r\nconnection: close\r\n\r\n",
+    )
+    .await?;
+    let elsewhere = exchange(
+        server.address(),
+        "GET /api/recordings HTTP/1.1\r\nhost: localhost\r\nconnection: close\r\n\r\n",
+    )
+    .await?;
+    let posted = exchange(
+        server.address(),
+        "POST /rules HTTP/1.1\r\nhost: localhost\r\ncontent-length: 0\r\nconnection: close\r\n\r\n",
+    )
+    .await?;
+
+    assert!(view.contains("content-type: text/html"), "{view}");
+    assert!(elsewhere.starts_with("http/1.1 404"), "{elsewhere}");
+    assert!(posted.starts_with("http/1.1 405"), "{posted}");
+    server.stop().await;
+    Ok(())
+}

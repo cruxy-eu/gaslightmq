@@ -1,0 +1,10 @@
+[application]
+name = "gaslightmq_ui"
+
+[web.app]
+title = "GaslightMQ"
+
+# `dx serve` forwards the control plane to a control server on its default address, so the UI reloads as it changes
+# while the server runs beside it.
+[[web.proxy]]
+backend = "http://127.0.0.1:8080/api/"

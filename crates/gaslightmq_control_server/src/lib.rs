@@ -44,8 +44,11 @@
 //! |---|---|
 //! | `POST /api/operations` with an `AnyOperation` | `200` with its answer, `422` with its error, `400` with a `RequestError`. |
 //! | `GET /api/stream`, a WebSocket | A `StreamMessage` per text frame, the snapshot first. The client sends a `Subscription` per text frame. |
+//! | `GET` of any other path | A file of the web UI, or the page of the UI, which opens the view of the path. |
 //!
 //! Every body and every frame is the JSON form of a type of `gaslightmq_control_api`.
+//! The UI and the control plane share one origin: `just ui` builds the files of the UI into the folder `ui/` of this
+//! crate, a release build holds them, and a debug build reads them from the folder while it runs.
 //!
 //! # What the server answers
 //!
@@ -91,6 +94,7 @@ mod feed;
 mod plane;
 mod server;
 mod stream;
+mod ui;
 
 pub use configuration::{ControlServerConfiguration, RequestSizeLimit, StatsInterval, StreamBacklog};
 pub use error::{ControlServerError, RequestSizeLimitError, StatsIntervalError, StreamBacklogError};

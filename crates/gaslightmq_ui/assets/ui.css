@@ -1,0 +1,195 @@
+/* GaslightMQ: dark inset panels, thin borders, small Inter type. The mockups in `mockups/` are the reference. */
+:root {
+  --bg: #08090a; --bg2: #0c0d0f; --panel: #0f1012; --surface: #16171a; --surface2: #1c1d21; --surface3: #24252a;
+  --hover: rgba(255,255,255,.035); --sel: rgba(255,255,255,.06);
+  --border: rgba(255,255,255,.065); --border2: rgba(255,255,255,.1); --border3: rgba(255,255,255,.17);
+  --t1: #f7f8f8; --t2: #d0d6e0; --t3: #8a8f98; --t4: #62666d; --t5: #3e4147;
+  --accent: #7170ff; --accent2: #5e6ad2;
+  --red: #eb5757; --orange: #f2994a; --violet: #a78bfa; --blue: #4ea7fc; --green: #4cb782; --yellow: #f2c94c; --teal: #2dd4bf;
+  --mono: "JetBrains Mono", "SF Mono", ui-monospace, Menlo, monospace;
+}
+* { box-sizing: border-box; margin: 0; padding: 0 }
+html, body { height: 100%; background: #000; color: var(--t2); overflow: hidden;
+  font: 13px/1.45 "Inter var", Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  -webkit-font-smoothing: antialiased; font-feature-settings: "cv01", "cv11", "ss03" }
+#main { height: 100%; padding: 8px }
+button { font: inherit; color: inherit; background: none; border: 0; cursor: pointer }
+input, select { font: inherit; color: inherit; background: none; border: 0; outline: 0 }
+a { color: inherit; text-decoration: none }
+.i { flex: none; display: block }
+.mono { font-family: var(--mono); font-size: 11.5px; letter-spacing: 0 }
+.t1 { color: var(--t1) } .t2 { color: var(--t2) } .t3 { color: var(--t3) } .t4 { color: var(--t4) } .t5 { color: var(--t5) }
+.small { font-size: 12px }
+.light { font-weight: 400 }
+.sp { flex: 1 }
+.right { text-align: right }
+.ellipsis { overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
+::-webkit-scrollbar { width: 10px; height: 10px }
+::-webkit-scrollbar-thumb { background: #26272b; border-radius: 10px; border: 3px solid transparent; background-clip: padding-box }
+::-webkit-scrollbar-corner { background: transparent }
+.fatal { color: var(--red); padding: 3em }
+
+/* ── shell ── */
+.app { height: 100%; display: grid; grid-template-columns: 226px minmax(0,1fr); background: var(--bg); border: 1px solid #17181a; border-radius: 10px; overflow: hidden; position: relative }
+.side { display: flex; flex-direction: column; padding: 10px 8px; min-height: 0; overflow: visible }
+.ws { display: flex; align-items: center; gap: 8px; padding: 2px 4px 2px 6px; height: 32px; margin-bottom: 10px }
+.logo { width: 20px; height: 20px; border-radius: 5px; background: linear-gradient(135deg,#7170ff,#c084fc 55%,#f2994a); flex: none }
+.ws b { color: var(--t1); font-weight: 600; font-size: 13px }
+.ib { width: 26px; height: 26px; display: grid; place-items: center; border-radius: 6px; color: var(--t3); flex: none }
+.ib:hover { background: var(--hover); color: var(--t1) }
+.nav { display: flex; align-items: center; gap: 9px; height: 28px; padding: 0 8px; border-radius: 6px; color: var(--t2); cursor: pointer; white-space: nowrap }
+.nav:hover { background: var(--hover) }
+.nav.on { background: var(--sel); color: var(--t1) }
+.nav .i { color: var(--t3) } .nav.on .i { color: var(--t1) }
+.nav .cnt { margin-left: auto; font-size: 11.5px; color: var(--t4) }
+.nav.off { color: var(--t5); cursor: default }
+.nav.off:hover { background: none }
+.nav.off .i { color: var(--t5) }
+.sec { font-size: 11.5px; font-weight: 500; color: var(--t4); padding: 16px 8px 5px; display: flex; align-items: center; gap: 6px }
+.sfoot { margin-top: auto; padding: 14px 2px 2px; display: flex; flex-direction: column; gap: 8px }
+.link { display: flex; align-items: center; gap: 7px; font: 11px var(--mono); color: var(--t4); padding: 0 8px; min-width: 0 }
+.link span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
+.link i { width: 6px; height: 6px; border-radius: 50%; background: var(--t4); flex: none }
+.link.open i { background: var(--green) }
+.link.opening i { background: var(--yellow) }
+.link.lost i { background: var(--red) }
+.switcher { position: relative }
+.envbtn { width: 100%; display: flex; align-items: center; gap: 8px; height: 32px; padding: 0 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--bg2); color: var(--t2); font-size: 12.5px }
+.envbtn:hover { border-color: var(--border2) }
+.envbtn .nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; text-align: left }
+.envbtn .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--t4); flex: none }
+.envbtn .dot.on { background: var(--green); box-shadow: 0 0 0 3px rgba(76,183,130,.15) }
+
+.main { margin: 8px 8px 8px 0; background: var(--panel); border: 1px solid var(--border); border-radius: 8px; display: flex; flex-direction: column; min-width: 0; min-height: 0; overflow: hidden; position: relative }
+.hdr { height: 44px; flex: none; display: flex; align-items: center; gap: 8px; padding: 0 12px 0 16px; border-bottom: 1px solid var(--border) }
+.crumb { display: flex; align-items: center; gap: 7px; color: var(--t1); font-weight: 500; white-space: nowrap }
+.crumb .i { color: var(--t3) }
+.empty { padding: 48px 24px; color: var(--t3); text-align: center; display: flex; flex-direction: column; align-items: center; gap: 14px }
+.note { font-size: 11.5px; color: var(--t4); line-height: 1.5 }
+.note b { color: var(--t2); font-weight: 500 }
+.note.pad { padding: 10px 14px }
+.note.failed, .refused { color: var(--red) }
+.refused { font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 40% }
+
+.btn { height: 26px; padding: 0 9px; border-radius: 6px; border: 1px solid var(--border2); background: var(--surface); color: var(--t2); font-size: 12px; font-weight: 500; display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; flex: none }
+.btn:hover { background: var(--surface2); color: var(--t1) }
+.btn:disabled { opacity: .4; cursor: default }
+.btn.primary { background: var(--accent2); border-color: rgba(255,255,255,.1); color: #fff }
+.btn.primary:hover { background: #6973e3 }
+.btn.ghost { border-color: transparent; background: transparent; color: var(--t3) }
+.btn.ghost:hover { background: var(--hover); color: var(--t1) }
+.btn.tiny { height: 20px; padding: 0 6px; font-size: 11px }
+.btn.danger:hover { color: var(--red) }
+.kbd { font: 500 10.5px var(--mono); color: var(--t3); border: 1px solid var(--border2); border-radius: 4px; padding: 0 4px; height: 17px; display: inline-flex; align-items: center; background: rgba(255,255,255,.02) }
+.btn.primary .kbd { color: rgba(255,255,255,.7); border-color: rgba(255,255,255,.25) }
+.seg { display: inline-flex; background: var(--bg2); border: 1px solid var(--border); border-radius: 7px; padding: 2px; gap: 2px; flex: none }
+.seg button { height: 22px; padding: 0 9px; border-radius: 5px; font-size: 12px; color: var(--t3); display: inline-flex; align-items: center; gap: 6px; white-space: nowrap }
+.seg button:hover { color: var(--t1) }
+.seg button.on { background: var(--surface3); color: var(--t1); box-shadow: 0 0 0 1px var(--border) inset }
+
+.api { display: inline-flex; align-items: center; gap: 6px; height: 20px; padding: 0 7px 0 6px; border-radius: 5px; border: 1px solid var(--border); background: rgba(255,255,255,.025); font-size: 11.5px; color: var(--t2); white-space: nowrap; font-weight: 500; flex: none }
+.api i { width: 6px; height: 6px; border-radius: 2px; background: var(--c) }
+.api .v { color: var(--t4); font-weight: 400; font-family: var(--mono); font-size: 10.5px }
+.tag { display: inline-flex; align-items: center; gap: 5px; height: 20px; padding: 0 7px; border-radius: 5px; background: rgba(255,255,255,.045); font-size: 11.5px; color: var(--t2); white-space: nowrap; flex: none }
+.fault { display: inline-flex; align-items: center; gap: 6px; height: 20px; padding: 0 7px; border-radius: 5px; font-size: 11.5px; font-weight: 500; color: var(--c); background: color-mix(in srgb,var(--c) 13%,transparent); white-space: nowrap; flex: none; max-width: 100%; overflow: hidden; text-overflow: ellipsis }
+.fault::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--c); flex: none }
+.sdot { width: 8px; height: 8px; border-radius: 50%; flex: none; display: inline-block; background: var(--t4) }
+.sdot.pass { background: var(--green) }
+.sdot.lied { background: var(--orange) }
+
+.chip { display: inline-flex; align-items: stretch; height: 24px; border: 1px solid var(--border2); border-radius: 6px; background: var(--surface); font-size: 12px; overflow: hidden; flex: none }
+.chip > span { display: flex; align-items: center; padding: 0 7px; border-right: 1px solid var(--border); white-space: nowrap }
+.chip .f { color: var(--t2); font-family: var(--mono); font-size: 11.5px }
+.chip .o { color: var(--t4) }
+.chip .v { color: var(--t1) }
+.chip .x { padding: 0 5px; color: var(--t4); border-right: 0; cursor: pointer }
+.chip .x:hover { color: var(--t1); background: var(--hover) }
+
+.menu { position: absolute; z-index: 60; min-width: 260px; background: #1b1c20; border: 1px solid var(--border2); border-radius: 9px; box-shadow: 0 16px 40px rgba(0,0,0,.55); padding: 4px; animation: tin .12s ease-out }
+.menu.up { bottom: calc(100% + 6px); left: 0 }
+.menu .mi { display: flex; align-items: center; gap: 9px; min-height: 30px; padding: 4px 9px; border-radius: 6px; color: var(--t2); font-size: 12.5px; cursor: pointer }
+.menu .mi:hover { background: rgba(255,255,255,.06); color: var(--t1) }
+.menu .mi.off { cursor: default; color: var(--t4) }
+.menu .mi .ck { width: 14px; flex: none; color: var(--t1) }
+.menu .mi .two { display: flex; flex-direction: column; min-width: 0 }
+.menu .mi .two span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 11.5px }
+.menu .mi .two .t1 { font-size: 12.5px }
+.menu .mi .runs { color: var(--green); font-size: 11px }
+.menu .ms { font-size: 11px; color: var(--t4); padding: 6px 9px 3px }
+.toasts { position: fixed; right: 22px; bottom: 22px; display: flex; flex-direction: column; gap: 8px; z-index: 100 }
+.toast { background: #1c1d21; border: 1px solid var(--border2); border-radius: 9px; padding: 10px 14px; color: var(--t1); font-size: 12.5px; box-shadow: 0 10px 30px rgba(0,0,0,.5); display: flex; align-items: center; gap: 10px; animation: tin .2s ease-out; max-width: 460px }
+.toast .i { color: var(--green) }
+.toast.failed .i { color: var(--red) }
+@keyframes tin { from { opacity: 0; transform: translateY(6px) } }
+
+/* ── record ── */
+.fbar { min-height: 42px; flex: none; display: flex; align-items: center; gap: 6px; padding: 8px 12px 8px 16px; border-bottom: 1px solid var(--border); flex-wrap: wrap }
+.fbar .hint { color: var(--t4); font-size: 12px }
+.rgrid { flex: 1; min-height: 0; display: grid; grid-template-columns: 210px minmax(0,1fr) 270px }
+.rgrid.sel { grid-template-columns: 210px minmax(0,1fr) 420px }
+.pane { min-height: 0; overflow: auto; border-right: 1px solid var(--border); position: relative }
+.pane:last-child { border-right: 0 }
+.side-pane { background: var(--bg2) }
+.ph { position: sticky; top: 0; z-index: 3; background: var(--panel); height: 34px; display: flex; align-items: center; gap: 8px; padding: 0 14px; font-size: 12px; color: var(--t3); font-weight: 500; border-bottom: 1px solid var(--border); white-space: nowrap }
+.side-pane .ph { background: var(--bg2) }
+.ph .t4 { font-weight: 400; margin-left: auto }
+.ph.static { position: static; margin-top: 10px }
+.tree .group { padding-bottom: 4px }
+.tree .cl { display: flex; align-items: center; gap: 8px; height: 30px; padding: 0 12px 0 14px; color: var(--t1); font-weight: 500; margin-top: 4px }
+.tree .sub { font: 10.5px var(--mono); color: var(--t4); padding: 0 14px 4px 30px; margin-top: -2px }
+.tree .cn { display: grid; grid-template-columns: 34px 1fr auto; align-items: center; gap: 6px; height: 25px; padding: 0 12px 0 30px; color: var(--t3); font-size: 12px }
+.tree .cn:hover { background: var(--hover) }
+.tree .cn .mono { font-size: 11px }
+.tree .cn .n { text-align: right; color: var(--t4); font: 11px var(--mono) }
+.tree .cn.endpoint { grid-template-columns: 70px 1fr; padding-left: 14px }
+.srow { display: grid; grid-template-columns: 76px 132px 34px 118px minmax(100px,1fr) 56px 150px; align-items: center; gap: 8px; height: 32px; padding: 0 12px; border-bottom: 1px solid rgba(255,255,255,.03); font-size: 12px; cursor: pointer; position: relative }
+.srow:hover { background: var(--hover) }
+.srow.selected { background: rgba(113,112,255,.12) !important; box-shadow: inset 2px 0 0 var(--accent) }
+.srow.thead { position: sticky; top: 0; z-index: 2; background: var(--panel); height: 32px; border-bottom: 1px solid var(--border); color: var(--t4); font-size: 11.5px; cursor: default }
+.srow.thead:hover { background: var(--panel) }
+.who { display: flex; align-items: center; gap: 7px; min-width: 0; color: var(--t2) }
+.who .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
+.who .mono { flex: none }
+.det { display: flex; align-items: center; gap: 6px; min-width: 0; overflow: hidden; white-space: nowrap; color: var(--t3) }
+.det .tp { color: var(--t2) }
+.det .pp { color: var(--t4); font-family: var(--mono); font-size: 10.5px }
+.ff { cursor: pointer; border-radius: 4px }
+.ff:hover { color: var(--t1); text-decoration: underline; text-decoration-color: var(--t4); text-underline-offset: 3px }
+.ff.on { color: #c4c3ff }
+.lat { font-family: var(--mono); font-size: 11px; color: var(--t3); text-align: right }
+.out { display: flex; align-items: center; gap: 6px; font-size: 11.5px; white-space: nowrap; overflow: hidden; min-width: 0 }
+.out .ok { color: var(--t5); font-family: var(--mono); font-size: 11px }
+.out .err { color: var(--red); font-family: var(--mono); font-size: 11px; overflow: hidden; text-overflow: ellipsis }
+.facet { padding: 8px 14px }
+.fv { position: relative; display: flex; align-items: center; gap: 8px; height: 24px; padding: 0 6px; margin: 0 -6px; border-radius: 5px; font-size: 12px; color: var(--t2); cursor: pointer }
+.fv:hover { background: var(--hover) }
+.fv .bar { position: absolute; left: 0; top: 3px; bottom: 3px; border-radius: 4px; background: rgba(255,255,255,.04); z-index: 0 }
+.fv > * { position: relative; z-index: 1 }
+.fv .nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
+.fv .c { margin-left: auto; font-family: var(--mono); font-size: 11px; color: var(--t4) }
+.fv .sq { width: 6px; height: 6px; border-radius: 2px; flex: none }
+.fv.on { color: var(--t1) }
+.fv.on .bar { background: rgba(113,112,255,.2) }
+.fv .ck { width: 12px; height: 12px; border-radius: 3px; border: 1px solid var(--border3); display: grid; place-items: center; flex: none; color: #fff }
+.fv.on .ck { background: var(--accent2); border-color: var(--accent2) }
+
+/* the inspector of a call */
+.sh-h { padding: 14px 16px 12px; border-bottom: 1px solid var(--border) }
+.sh-h .row { display: flex; gap: 8px; align-items: center }
+.sh-h .meta { font-size: 11px; margin-top: 8px }
+.vcard { margin: 14px 16px 4px; border: 1px solid var(--border2); border-radius: 10px; background: var(--surface); padding: 12px 14px; display: flex; flex-direction: column; gap: 10px }
+.vcard h5 { font-size: 12.5px; font-weight: 500; color: var(--t1); display: flex; align-items: center; gap: 8px }
+.vcard h5 .t4 { overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
+.tv { display: grid; grid-template-columns: 62px minmax(0,1fr); gap: 4px 10px; font-size: 12px; color: var(--t3) }
+.tv .mono { color: var(--t2); white-space: normal; overflow-wrap: anywhere }
+.ex { border-top: 1px solid var(--border); padding-top: 9px; display: flex; flex-direction: column; gap: 6px }
+.ex .nm { display: flex; align-items: center; gap: 7px; color: var(--t1); font-weight: 500; font-size: 12.5px; min-width: 0 }
+.ex .steps { display: flex; flex-wrap: wrap; gap: 4px 5px; font-size: 11.5px; color: var(--t3); align-items: center }
+.ex .line { font-size: 10.5px; line-height: 1.5; overflow-wrap: anywhere }
+.st { display: inline-flex; align-items: center; gap: 5px; min-height: 19px; padding: 0 6px; border-radius: 4px; background: rgba(255,255,255,.045) }
+.st.ok { color: var(--green); background: rgba(76,183,130,.12) }
+.st.sh { color: var(--orange); background: rgba(242,153,74,.12) }
+.fgrp { font-size: 11px; color: var(--t4); padding: 14px 16px 4px; font-weight: 500 }
+.fld { display: grid; grid-template-columns: 120px minmax(0,1fr); align-items: center; gap: 10px; min-height: 26px; padding: 2px 16px }
+.fld .k { font-family: var(--mono); font-size: 11.5px; color: var(--t3) }
+.fld .val { font-family: var(--mono); font-size: 11.5px; color: var(--t2); overflow-wrap: anywhere }

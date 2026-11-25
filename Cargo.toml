@@ -35,6 +35,7 @@ members = [
     "crates/gaslightmq_test_kafka",
     "crates/gaslightmq_traffic",
     "crates/gaslightmq_trigger",
+    "crates/gaslightmq_ui",
     "crates/gaslightmq_wire",
     "crates/gaslightmq_wire_edit",
     "crates/gaslightmq_workspace",
@@ -87,14 +88,17 @@ gaslightmq_trigger = { path = "crates/gaslightmq_trigger" }
 gaslightmq_wire = { path = "crates/gaslightmq_wire" }
 gaslightmq_wire_edit = { path = "crates/gaslightmq_wire_edit" }
 gaslightmq_workspace = { path = "crates/gaslightmq_workspace" }
-# Only tests use it: a test returns `anyhow::Result<()>`. No crate names it in its API or outside its tests.
+# Only tests and examples use it: they return `anyhow::Result<()>`. No crate names it in its API or outside them.
 anyhow = "1"
 arc-swap = "1"
 # Only `gaslightmq_control_server` names it: the HTTP and WebSocket server of the control plane.
 axum = { version = "0.8", default-features = false, features = ["http1", "tokio", "ws"] }
 bytes = "1"
+# Only `gaslightmq_ui` names it: the web UI, a Dioxus application. The renderer of the browser comes on wasm32 alone.
+dioxus = { version = "0.7", default-features = false, features = ["lib", "launch", "router"] }
 futures = "0.3"
-# Only `gaslightmq_control_client` names them, for the browser's own fetch, WebSocket and timers.
+# Only `gaslightmq_control_client` names `gloo-net`, for the browser's own fetch and WebSocket.
+# It and `gaslightmq_ui` name `gloo-timers`, for the timers of the browser.
 gloo-net = { version = "0.8", default-features = false, features = ["http", "websocket"] }
 gloo-timers = { version = "0.4", features = ["futures"] }
 indexmap = "2"
@@ -103,6 +107,10 @@ kafka-protocol = "0.17"
 proc-macro2 = { version = "1", default-features = false, features = ["span-locations"] }
 # Only `gaslightmq_control_client` names it, for HTTP from a native target. Plain HTTP: no TLS, no proxy.
 reqwest = { version = "0.13", default-features = false }
+# Only `gaslightmq_control_server` names it, for the files of the UI that it serves. A build without the files of the UI
+# serves a page that says how to build them. In a debug build the files are read from the folder, in a release build
+# they ship inside the binary.
+rust-embed = { version = "8", features = ["mime-guess"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 # Reads YAML into serde types. The `ci-parity` check in `xtask/` reads the CI workflow with it.
@@ -120,6 +128,8 @@ url = "2"
 # Only `gaslightmq_resource` names it, for the text and the bits of a UUID. Without its features it makes no UUID by
 # itself: it reads no clock and has no randomness, so the crate that uses it stays sans-IO and compiles to WebAssembly.
 uuid = { version = "1", default-features = false }
+# Only `gaslightmq_ui` names it, on wasm32, for the address of the page that the browser shows.
+web-sys = { version = "0.3", features = ["Location", "Window"] }
 
 [workspace.lints.clippy]
 pedantic = { level = "warn", priority = -1 }

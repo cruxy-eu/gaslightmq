@@ -70,12 +70,13 @@ image:
 container:
     docker run --rm -p 9092:9092 ghcr.io/cruxy-eu/gaslightmq:latest
 
-# Build the proxy web UI into crates/gaslightmq-proxy/ui-dist/ (needs `dx`).
+# Build the web UI into crates/gaslightmq_control_server/ui/, which the control server serves (needs `dx`).
+# A debug build of the server reads the folder while it runs, and a release build holds the files.
 ui:
-    dx build --release --platform web -p gaslightmq-proxy-ui
-    rm -rf crates/gaslightmq-proxy/ui-dist
-    cp -R target/dx/gaslightmq-proxy-ui/release/web/public crates/gaslightmq-proxy/ui-dist
+    dx build --release --platform web -p gaslightmq_ui
+    rm -rf crates/gaslightmq_control_server/ui
+    cp -R target/dx/gaslightmq_ui/release/web/public crates/gaslightmq_control_server/ui
 
-# Build gmq with the web UI embedded. Run `just ui` first.
-proxy-ui:
-    cargo build -p gmq --features proxy-ui
+# The UI in front of live traffic on http://127.0.0.1:8080: a proxy, a real cluster and busy clients. Needs Docker.
+demo: ui
+    cargo run -p gaslightmq_control_server --example demo

@@ -1,0 +1,28 @@
+[package]
+name = "gaslightmq_ui"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lints]
+workspace = true
+
+# What the UI knows and decides, apart from the browser: `cargo xtask sans-io` holds these modules to that,
+# and the tests drive them with plain calls. The components and the connection around them do the IO.
+[package.metadata.gaslightmq]
+sans_io_modules = ["configuration", "filter", "following", "live", "process", "text", "traffic"]
+
+[dependencies]
+gaslightmq_control_api.workspace = true
+# Each transport takes effect on its own target: the browser's own fetch and WebSocket on wasm32,
+# and Tokio on a native target, where the tests of the UI run.
+gaslightmq_control_client = { workspace = true, features = ["wasm"] }
+gaslightmq_surface.workspace = true
+dioxus.workspace = true
+futures.workspace = true
+
+# The renderer of the browser, the address of the page and its timers exist in the browser alone.
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+dioxus = { workspace = true, features = ["web"] }
+gloo-timers.workspace = true
+web-sys.workspace = true

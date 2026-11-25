@@ -134,7 +134,17 @@ No other form exists, so a client in the browser and one on a native target send
 | An operation | `POST /api/operations` |
 | The live stream | `GET /api/stream`, which upgrades to a WebSocket |
 
-The other paths stay free for the UI.
+The server serves the [UI](crates.md#what-compiles-to-webassembly) on the other paths, so the page and the control plane share one origin.
+
+| A `GET` of | Gets |
+|---|---|
+| A path that names a file of the UI | The file, with a tag of its content, so a browser that holds it gets `304 Not Modified`. |
+| Any other path | The page of the UI, which opens the view of that path, such as `/rules`. |
+| A path below `/api` that the control plane does not serve | `404 Not Found`. |
+
+Every other method on those paths is `405 Method Not Allowed`.
+A release build of the server holds the files of the UI, so the UI ships with the binary.
+A build without them serves a page that says how to build them.
 
 ### Operations
 
