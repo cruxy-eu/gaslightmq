@@ -13,7 +13,7 @@ use gaslightmq_workspace::{UuidSeed, UuidSource};
 /// two processes would make the same ones.
 ///
 /// ```
-/// use gaslightmq_definition_store_memory::KnownUuids;
+/// use gaslightmq_definition_memory::KnownUuids;
 /// use gaslightmq_workspace::prelude::*;
 ///
 /// let mut uuids = KnownUuids::new();

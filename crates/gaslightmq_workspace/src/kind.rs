@@ -1,6 +1,6 @@
 //! The kinds of definitions that a workspace holds, and what it needs of each.
 
-use gaslightmq_definition_store_api::Definition;
+use gaslightmq_definition_api::Definition;
 use gaslightmq_environment::{Environment, EnvironmentUuid};
 use gaslightmq_rule::{Preset, PresetUuid, Rule, RuleUuid};
 use gaslightmq_selector::{Selector, SelectorUuid};

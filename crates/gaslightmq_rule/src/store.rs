@@ -1,6 +1,6 @@
 //! Where rules and presets are kept: the store of each, and what only the store of the rules is asked.
 
-use gaslightmq_definition_store_api::{Definition, Store, StoreReadError};
+use gaslightmq_definition_api::{Definition, Store, StoreReadError};
 use gaslightmq_selector::SelectorName;
 
 use crate::{Preset, PresetName, Rule, RuleName};
@@ -32,7 +32,7 @@ impl Definition for Preset {
 /// A store of presets keeps the [store contract](Store), and nothing asks it more than that.
 ///
 /// ```
-/// use gaslightmq_definition_store_api::prelude::*;
+/// use gaslightmq_definition_api::prelude::*;
 /// use gaslightmq_rule::prelude::*;
 ///
 /// /// The titles of the presets, for a list that someone picks from.
@@ -50,7 +50,7 @@ pub trait PresetStore: Store<Preset> {}
 /// without reading every rule.
 ///
 /// ```
-/// use gaslightmq_definition_store_api::prelude::*;
+/// use gaslightmq_definition_api::prelude::*;
 /// use gaslightmq_rule::prelude::*;
 /// use gaslightmq_selector::prelude::*;
 ///

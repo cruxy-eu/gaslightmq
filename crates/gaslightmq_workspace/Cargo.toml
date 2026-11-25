@@ -8,7 +8,7 @@ license.workspace = true
 workspace = true
 
 [dependencies]
-gaslightmq_definition_store_api.workspace = true
+gaslightmq_definition_api.workspace = true
 gaslightmq_environment.workspace = true
 gaslightmq_rule.workspace = true
 gaslightmq_selector.workspace = true
@@ -20,7 +20,7 @@ anyhow.workspace = true
 # The executor that drives the workspace in the tests and the examples. The crate itself needs no runtime.
 futures.workspace = true
 # The context of the tests and the examples: stores in memory, and UUIDs that a test knows.
-gaslightmq_definition_store_memory.workspace = true
+gaslightmq_definition_memory.workspace = true
 # What the definitions of the tests are made of.
 gaslightmq_clock.workspace = true
 gaslightmq_field.workspace = true

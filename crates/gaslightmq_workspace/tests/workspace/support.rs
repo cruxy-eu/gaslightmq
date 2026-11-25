@@ -3,8 +3,8 @@
 use std::future::ready;
 
 use gaslightmq_clock::TimeSpan;
-use gaslightmq_definition_store_api::prelude::*;
-use gaslightmq_definition_store_memory::{KnownUuids, MemoryStore};
+use gaslightmq_definition_api::prelude::*;
+use gaslightmq_definition_memory::{KnownUuids, MemoryStore};
 use gaslightmq_environment::prelude::*;
 use gaslightmq_field::prelude::*;
 use gaslightmq_kernel::prelude::*;

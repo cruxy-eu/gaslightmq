@@ -154,7 +154,7 @@
 //! # Stores
 //!
 //! A [`Rule`] and a [`Preset`] are definitions that a store holds under their names.
-//! A [`RuleStore`] and a [`PresetStore`] are the store contract of `gaslightmq_definition_store_api`
+//! A [`RuleStore`] and a [`PresetStore`] are the store contract of `gaslightmq_definition_api`
 //! for rules and for presets.
 //! A store of rules also answers what only it can answer without reading every rule:
 //! which rules use a selector, and which use a preset.

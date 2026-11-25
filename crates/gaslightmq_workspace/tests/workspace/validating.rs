@@ -1,8 +1,8 @@
 //! Validating: what the stores hold fits together, or the error says everything that does not.
 
 use futures::executor::block_on;
-use gaslightmq_definition_store_api::prelude::*;
-use gaslightmq_definition_store_memory::{KnownUuids, MemoryContext};
+use gaslightmq_definition_api::prelude::*;
+use gaslightmq_definition_memory::{KnownUuids, MemoryContext};
 use gaslightmq_lie::prelude::*;
 use gaslightmq_rule::prelude::*;
 use gaslightmq_selector::prelude::*;

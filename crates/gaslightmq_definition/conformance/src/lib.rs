@@ -1,6 +1,6 @@
 //! What every store of definitions does, as checks that the tests of any store run.
 //!
-//! The [store contract](gaslightmq_definition_store_api::Store) says what a store keeps to, whatever stands
+//! The [store contract](gaslightmq_definition_api::Store) says what a store keeps to, whatever stands
 //! behind it, and the store trait of each kind says what only a store of that kind is asked.
 //! This crate holds that behaviour once.
 //! A check takes a way to make an empty store, and fails when the store does not do what its trait asks.
@@ -21,8 +21,8 @@
 //! use std::sync::Mutex;
 //!
 //! use futures::executor::block_on;
-//! use gaslightmq_definition_store_api::prelude::*;
-//! use gaslightmq_definition_store_conformance::assert_preset_store;
+//! use gaslightmq_definition_api::prelude::*;
+//! use gaslightmq_definition_conformance::assert_preset_store;
 //! use gaslightmq_rule::prelude::*;
 //!
 //! /// A store of presets that someone wrote for a test.

@@ -1,10 +1,10 @@
 //! A store in memory does what the store trait of each kind asks.
 
 use futures::executor::block_on;
-use gaslightmq_definition_store_conformance::{
+use gaslightmq_definition_conformance::{
     assert_environment_store, assert_layout_store, assert_preset_store, assert_rule_store, assert_selector_store,
 };
-use gaslightmq_definition_store_memory::MemoryStore;
+use gaslightmq_definition_memory::MemoryStore;
 
 #[test]
 fn a_store_of_selectors_keeps_the_contract_and_says_who_includes_a_selector() {

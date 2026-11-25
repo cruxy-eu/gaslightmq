@@ -31,7 +31,7 @@ mod next_to_the_others {
     use std::sync::*;
     use std::time::*;
 
-    use gaslightmq_definition_store_api::prelude::*;
+    use gaslightmq_definition_api::prelude::*;
     use gaslightmq_field::prelude::*;
     use gaslightmq_incident::prelude::*;
     use gaslightmq_kernel::prelude::*;

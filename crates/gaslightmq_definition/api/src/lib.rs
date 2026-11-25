@@ -30,7 +30,7 @@
 //!
 //! ```
 //! use futures::executor::block_on;
-//! use gaslightmq_definition_store_api::prelude::*;
+//! use gaslightmq_definition_api::prelude::*;
 //!
 //! /// What a team says when it starts its day, under a name.
 //! #[derive(Debug, Clone, PartialEq)]
@@ -143,7 +143,7 @@ pub use store::Store;
 /// No name in it is a name of those preludes or of the standard one, so the import shadows nothing.
 ///
 /// ```
-/// use gaslightmq_definition_store_api::prelude::*;
+/// use gaslightmq_definition_api::prelude::*;
 ///
 /// let error = StoreReadError::Failed { reason: "permission denied".to_owned() };
 /// assert_eq!(error.to_string(), "the store could not read its definitions: permission denied");

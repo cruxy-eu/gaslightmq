@@ -17,7 +17,7 @@ use gaslightmq_surface::LayoutStore;
 /// Whoever holds the stores shares them between its tasks, so they are `Send` and `Sync`.
 ///
 /// ```
-/// use gaslightmq_definition_store_api::prelude::*;
+/// use gaslightmq_definition_api::prelude::*;
 /// use gaslightmq_rule::prelude::*;
 /// use gaslightmq_workspace::prelude::*;
 ///

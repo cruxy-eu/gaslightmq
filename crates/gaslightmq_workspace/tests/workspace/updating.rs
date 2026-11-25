@@ -1,8 +1,8 @@
 //! Updating: a definition changes in everything but its name, keeps its UUID, and still fits the others.
 
 use futures::executor::block_on;
-use gaslightmq_definition_store_api::prelude::*;
-use gaslightmq_definition_store_memory::{KnownUuids, MemoryContext, MemoryStore};
+use gaslightmq_definition_api::prelude::*;
+use gaslightmq_definition_memory::{KnownUuids, MemoryContext, MemoryStore};
 use gaslightmq_lie::prelude::*;
 use gaslightmq_rule::prelude::*;
 use gaslightmq_selector::prelude::*;

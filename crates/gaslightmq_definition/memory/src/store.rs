@@ -4,7 +4,7 @@ use std::collections::BTreeMap;
 use std::fmt;
 use std::sync::{Mutex, MutexGuard, PoisonError};
 
-use gaslightmq_definition_store_api::{Definition, Store, StoreChangeError, StoreCreateError, StoreReadError};
+use gaslightmq_definition_api::{Definition, Store, StoreChangeError, StoreCreateError, StoreReadError};
 use gaslightmq_environment::{Environment, EnvironmentStore};
 use gaslightmq_rule::{Preset, PresetName, PresetStore, Rule, RuleStore};
 use gaslightmq_selector::{Selector, SelectorName, SelectorStore};
@@ -22,8 +22,8 @@ use gaslightmq_surface::{LayoutStore, PadLayout};
 ///
 /// ```
 /// use futures::executor::block_on;
-/// use gaslightmq_definition_store_api::prelude::*;
-/// use gaslightmq_definition_store_memory::MemoryStore;
+/// use gaslightmq_definition_api::prelude::*;
+/// use gaslightmq_definition_memory::MemoryStore;
 /// use gaslightmq_selector::prelude::*;
 ///
 /// let selectors = MemoryStore::new();

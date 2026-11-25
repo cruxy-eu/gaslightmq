@@ -89,7 +89,7 @@
 //! # A store
 //!
 //! A [`Selector`] is a definition that a store holds under its name.
-//! A [`SelectorStore`] is the store contract of `gaslightmq_definition_store_api` for selectors,
+//! A [`SelectorStore`] is the store contract of `gaslightmq_definition_api` for selectors,
 //! with the one question that only a store of selectors answers: which selectors include this one.
 //! The crate holds the trait, and no store.
 //!
@@ -157,7 +157,7 @@
 //!
 //! The crate depends on `gaslightmq_field` for the field vocabulary,
 //! on `gaslightmq_kernel` for the API key that the index is built on,
-//! and on `gaslightmq_definition_store_api` for the store contract.
+//! and on `gaslightmq_definition_api` for the store contract.
 //! It has no IO, no system clock and no randomness, and it compiles to WebAssembly.
 //! Its only async code is the signature of [`SelectorStore`]: the crate awaits nothing.
 

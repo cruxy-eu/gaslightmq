@@ -2,7 +2,7 @@
 
 use std::fmt;
 
-use gaslightmq_definition_store_api::Definition;
+use gaslightmq_definition_api::Definition;
 use gaslightmq_environment::{Environment, EnvironmentName};
 use gaslightmq_rule::{Preset, PresetName, Rule, RuleName};
 use gaslightmq_selector::{Selector, SelectorName};

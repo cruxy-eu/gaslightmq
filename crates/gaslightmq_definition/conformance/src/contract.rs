@@ -2,7 +2,7 @@
 
 use std::fmt;
 
-use gaslightmq_definition_store_api::{Definition, Store, StoreChangeError, StoreCreateError};
+use gaslightmq_definition_api::{Definition, Store, StoreChangeError, StoreCreateError};
 
 use crate::Samples;
 

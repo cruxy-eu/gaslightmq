@@ -29,7 +29,7 @@ members = [
     "crates/gaslightmq_wire",
     "crates/gaslightmq_wire_edit",
     "crates/gaslightmq_workspace",
-    "crates/gaslightmq_definition_store/*",
+    "crates/gaslightmq_definition/*",
     "crates/gaslightmq_kafka_client/*",
     "xtask",
 ]
@@ -46,9 +46,9 @@ gaslightmq_backend_upstream = { path = "crates/gaslightmq_backend_upstream" }
 gaslightmq_call = { path = "crates/gaslightmq_call" }
 gaslightmq_clock = { path = "crates/gaslightmq_clock" }
 gaslightmq_combine = { path = "crates/gaslightmq_combine" }
-gaslightmq_definition_store_api = { path = "crates/gaslightmq_definition_store/api" }
-gaslightmq_definition_store_conformance = { path = "crates/gaslightmq_definition_store/conformance" }
-gaslightmq_definition_store_memory = { path = "crates/gaslightmq_definition_store/memory" }
+gaslightmq_definition_api = { path = "crates/gaslightmq_definition/api" }
+gaslightmq_definition_conformance = { path = "crates/gaslightmq_definition/conformance" }
+gaslightmq_definition_memory = { path = "crates/gaslightmq_definition/memory" }
 gaslightmq_environment = { path = "crates/gaslightmq_environment" }
 gaslightmq_field = { path = "crates/gaslightmq_field" }
 gaslightmq_incident = { path = "crates/gaslightmq_incident" }

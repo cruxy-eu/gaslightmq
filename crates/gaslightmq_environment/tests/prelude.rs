@@ -34,7 +34,7 @@ mod next_to_the_others {
 
     use gaslightmq_call::prelude::*;
     use gaslightmq_combine::prelude::*;
-    use gaslightmq_definition_store_api::prelude::*;
+    use gaslightmq_definition_api::prelude::*;
     use gaslightmq_environment::prelude::*;
     use gaslightmq_field::prelude::*;
     use gaslightmq_incident::prelude::*;

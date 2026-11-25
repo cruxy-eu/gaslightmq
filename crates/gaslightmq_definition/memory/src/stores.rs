@@ -14,8 +14,8 @@ use crate::MemoryStore;
 ///
 /// ```
 /// use futures::executor::block_on;
-/// use gaslightmq_definition_store_api::prelude::*;
-/// use gaslightmq_definition_store_memory::MemoryStores;
+/// use gaslightmq_definition_api::prelude::*;
+/// use gaslightmq_definition_memory::MemoryStores;
 /// use gaslightmq_lie::prelude::*;
 /// use gaslightmq_rule::prelude::*;
 /// use gaslightmq_workspace::prelude::*;

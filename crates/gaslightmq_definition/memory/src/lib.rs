@@ -12,8 +12,8 @@
 //!
 //! ```
 //! use futures::executor::block_on;
-//! use gaslightmq_definition_store_api::prelude::*;
-//! use gaslightmq_definition_store_memory::{KnownUuids, MemoryContext};
+//! use gaslightmq_definition_api::prelude::*;
+//! use gaslightmq_definition_memory::{KnownUuids, MemoryContext};
 //! use gaslightmq_kernel::prelude::*;
 //! use gaslightmq_lie::prelude::*;
 //! use gaslightmq_rule::prelude::*;
@@ -42,7 +42,7 @@
 //!
 //! # One store, for every kind
 //!
-//! [`MemoryStore`] implements the store contract of `gaslightmq_definition_store_api` once, for any definition.
+//! [`MemoryStore`] implements the store contract of `gaslightmq_definition_api` once, for any definition.
 //! The store trait of a kind comes on top: a trait that asks nothing more is one line,
 //! and a trait with questions of its own answers them over the definitions it holds.
 //!

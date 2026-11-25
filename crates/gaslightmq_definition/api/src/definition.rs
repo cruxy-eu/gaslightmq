@@ -10,7 +10,7 @@
 /// This crate knows none of them.
 ///
 /// ```
-/// use gaslightmq_definition_store_api::prelude::*;
+/// use gaslightmq_definition_api::prelude::*;
 ///
 /// /// What a team says when it starts its day, under a name.
 /// #[derive(Clone)]

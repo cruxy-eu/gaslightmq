@@ -1,6 +1,6 @@
 //! Where pad layouts are kept: the store of the layouts, and what only it is asked.
 
-use gaslightmq_definition_store_api::{Definition, Store, StoreReadError};
+use gaslightmq_definition_api::{Definition, Store, StoreReadError};
 use gaslightmq_rule::PresetName;
 use gaslightmq_selector::SelectorName;
 
@@ -24,7 +24,7 @@ impl Definition for PadLayout {
 /// without reading every layout.
 ///
 /// ```
-/// use gaslightmq_definition_store_api::prelude::*;
+/// use gaslightmq_definition_api::prelude::*;
 /// use gaslightmq_rule::prelude::*;
 /// use gaslightmq_surface::prelude::*;
 ///

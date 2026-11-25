@@ -5,7 +5,7 @@
     reason = "a sample is made of fixed texts that are valid, so making one never panics"
 )]
 
-use gaslightmq_definition_store_api::Definition;
+use gaslightmq_definition_api::Definition;
 use gaslightmq_environment::{
     Environment, EnvironmentName, EnvironmentUuid, Instances, Listeners, ProxyDefinition, Upstream,
 };
@@ -32,8 +32,8 @@ const RANDOM: [u8; 10] = [0x0a, 0x41, 0x1c, 0x2d, 0x8e, 0x4b, 0x1f, 0x6a, 0x7d, 
 /// Every kind has samples of its own, and [`new`](Self::new) takes the samples of a test.
 ///
 /// ```
-/// use gaslightmq_definition_store_api::prelude::*;
-/// use gaslightmq_definition_store_conformance::Samples;
+/// use gaslightmq_definition_api::prelude::*;
+/// use gaslightmq_definition_conformance::Samples;
 ///
 /// let rules = Samples::rules();
 /// assert_eq!(rules.definition().name(), rules.changed().name());

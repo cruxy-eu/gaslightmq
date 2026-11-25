@@ -1,6 +1,6 @@
 //! Where selectors are kept: the store of the selectors, and what only it is asked.
 
-use gaslightmq_definition_store_api::{Definition, Store, StoreReadError};
+use gaslightmq_definition_api::{Definition, Store, StoreReadError};
 
 use crate::{Selector, SelectorName};
 
@@ -22,7 +22,7 @@ impl Definition for Selector {
 /// without reading every selector.
 ///
 /// ```
-/// use gaslightmq_definition_store_api::prelude::*;
+/// use gaslightmq_definition_api::prelude::*;
 /// use gaslightmq_selector::prelude::*;
 ///
 /// /// The names of the selectors that would include nothing without `selector`.

@@ -1,8 +1,8 @@
 //! Deleting: a definition that another one uses stays, and the error says who uses it.
 
 use futures::executor::block_on;
-use gaslightmq_definition_store_api::prelude::*;
-use gaslightmq_definition_store_memory::{MemoryContext, MemoryStore};
+use gaslightmq_definition_api::prelude::*;
+use gaslightmq_definition_memory::{MemoryContext, MemoryStore};
 use gaslightmq_lie::prelude::*;
 use gaslightmq_rule::prelude::*;
 use gaslightmq_selector::prelude::*;

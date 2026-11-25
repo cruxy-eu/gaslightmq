@@ -1,6 +1,6 @@
 //! Where environments are kept: the store of the environments.
 
-use gaslightmq_definition_store_api::{Definition, Store};
+use gaslightmq_definition_api::{Definition, Store};
 
 use crate::{Environment, EnvironmentName};
 
@@ -20,7 +20,7 @@ impl Definition for Environment {
 /// A store of environments keeps the [store contract](Store), and nothing asks it more than that.
 ///
 /// ```
-/// use gaslightmq_definition_store_api::prelude::*;
+/// use gaslightmq_definition_api::prelude::*;
 /// use gaslightmq_environment::prelude::*;
 ///
 /// /// Whether someone defined an environment of this name.

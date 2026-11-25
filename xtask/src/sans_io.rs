@@ -125,8 +125,8 @@ const PATHS: [(&[&str], Reach); 6] = [
 /// it makes no future of its own, and it names no task and no runtime, so it cannot start anything,
 /// wait for a timer or block.
 const AWAITS_STORES: [&str; 3] = [
-    "gaslightmq_definition_store_conformance",
-    "gaslightmq_definition_store_memory",
+    "gaslightmq_definition_conformance",
+    "gaslightmq_definition_memory",
     "gaslightmq_workspace",
 ];
 
@@ -1192,7 +1192,7 @@ mod tests {
         // The contract of the backends, the contract of the stores, a crate of definitions, and any other crate.
         for name in [
             "gaslightmq_backend",
-            "gaslightmq_definition_store_api",
+            "gaslightmq_definition_api",
             "gaslightmq_rule",
             "gaslightmq_trigger",
         ] {

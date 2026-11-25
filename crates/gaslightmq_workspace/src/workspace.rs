@@ -1,6 +1,6 @@
 //! The workspace: the stores of every kind, and the rules that span them.
 
-use gaslightmq_definition_store_api::{Definition, Store, StoreChangeError, StoreCreateError, StoreReadError};
+use gaslightmq_definition_api::{Definition, Store, StoreChangeError, StoreCreateError, StoreReadError};
 use gaslightmq_environment::Environment;
 use gaslightmq_rule::{Preset, Rule, RuleStore};
 use gaslightmq_selector::{Selector, SelectorStore};
@@ -48,7 +48,7 @@ use crate::{
 ///
 /// ```
 /// use futures::executor::block_on;
-/// use gaslightmq_definition_store_memory::{KnownUuids, MemoryContext};
+/// use gaslightmq_definition_memory::{KnownUuids, MemoryContext};
 /// use gaslightmq_kernel::prelude::*;
 /// use gaslightmq_lie::prelude::*;
 /// use gaslightmq_rule::prelude::*;

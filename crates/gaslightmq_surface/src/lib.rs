@@ -144,7 +144,7 @@
 //! # A store
 //!
 //! A [`PadLayout`] is a definition that a store holds under its name.
-//! A [`LayoutStore`] is the store contract of `gaslightmq_definition_store_api` for pad layouts.
+//! A [`LayoutStore`] is the store contract of `gaslightmq_definition_api` for pad layouts.
 //! It also answers what only it can answer without reading every layout:
 //! which layouts have a row for a selector, and which have a column for a preset.
 //! The crate holds the trait, and no store.

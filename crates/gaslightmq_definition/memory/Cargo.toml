@@ -1,5 +1,5 @@
 [package]
-name = "gaslightmq_definition_store_memory"
+name = "gaslightmq_definition_memory"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -8,7 +8,7 @@ license.workspace = true
 workspace = true
 
 [dependencies]
-gaslightmq_definition_store_api.workspace = true
+gaslightmq_definition_api.workspace = true
 # The definitions that the stores hold, and the store trait of each kind.
 gaslightmq_environment.workspace = true
 gaslightmq_rule.workspace = true
@@ -21,7 +21,7 @@ gaslightmq_workspace.workspace = true
 # The executor that drives the stores in the tests and the examples. The crate itself needs no runtime.
 futures.workspace = true
 # What every store does, which the tests hold these to.
-gaslightmq_definition_store_conformance.workspace = true
+gaslightmq_definition_conformance.workspace = true
 # What the definitions of the tests and the examples are made of.
 gaslightmq_kernel.workspace = true
 gaslightmq_lie.workspace = true

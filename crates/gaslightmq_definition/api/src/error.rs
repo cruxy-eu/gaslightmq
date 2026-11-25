@@ -7,7 +7,7 @@
 /// This error is for a store that could not look.
 ///
 /// ```
-/// use gaslightmq_definition_store_api::prelude::*;
+/// use gaslightmq_definition_api::prelude::*;
 ///
 /// let error = StoreReadError::Failed {
 ///     reason: "rules/slow.yaml: trigger.every: a count is at least one".to_owned(),
@@ -31,7 +31,7 @@ pub enum StoreReadError {
 /// Whoever asked knows which definition it handed over, so the error does not name it.
 ///
 /// ```
-/// use gaslightmq_definition_store_api::prelude::*;
+/// use gaslightmq_definition_api::prelude::*;
 ///
 /// let error = StoreCreateError::Failed { reason: "the directory is read-only".to_owned() };
 /// assert_eq!(error.to_string(), "the store could not keep the definition: the directory is read-only");
@@ -53,7 +53,7 @@ pub enum StoreCreateError {
 /// Whoever asked knows which name it handed over, so the error does not name it.
 ///
 /// ```
-/// use gaslightmq_definition_store_api::prelude::*;
+/// use gaslightmq_definition_api::prelude::*;
 ///
 /// let error = StoreChangeError::NotFound;
 /// assert_eq!(error.to_string(), "the store holds no definition of that name");

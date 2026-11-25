@@ -1,5 +1,5 @@
 [package]
-name = "gaslightmq_definition_store_api"
+name = "gaslightmq_definition_api"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

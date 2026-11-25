@@ -161,13 +161,13 @@
 //! # A store
 //!
 //! An [`Environment`] is a definition that a store holds under its name.
-//! An [`EnvironmentStore`] is the store contract of `gaslightmq_definition_store_api` for environments.
+//! An [`EnvironmentStore`] is the store contract of `gaslightmq_definition_api` for environments.
 //! The crate holds the trait, and no store.
 //!
 //! # No IO
 //!
 //! The crate depends on `gaslightmq_kernel` for the broker ID that a broker listener belongs to,
-//! and on `gaslightmq_definition_store_api` for the store contract.
+//! and on `gaslightmq_definition_api` for the store contract.
 //! It has no async code of its own, no IO, no system clock and no randomness, and it compiles to WebAssembly.
 //! An address is a value here: nothing listens, connects or resolves a name.
 
