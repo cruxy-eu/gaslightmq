@@ -75,6 +75,10 @@ pub enum StreamMessage {
     /// The definitions of the workspace do not fit each other, or a file did not read.
     /// The workspace keeps the last definitions that did. `reason` says what is wrong.
     WorkspaceInvalid { reason: String },
+    /// The last [subscription](Subscription) of this client is in force: from this message on, the client gets every
+    /// call that it names, and none before. A subscription to [nothing](Subscription::Nothing) gets one too.
+    /// Only the client whose subscription it is gets this message.
+    Following { subscription: Subscription },
     /// The last [subscription](Subscription) of this client cannot be followed, and the client follows no calls.
     /// `reason` says what was wrong: the environment does not run, the selector does not exist,
     /// or the client sent no subscription. Only the client whose subscription it was gets this message.

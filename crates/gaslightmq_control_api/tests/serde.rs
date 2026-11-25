@@ -524,6 +524,24 @@ fn an_error_of_another_operation_does_not_read() {
 // The live stream
 
 #[test]
+fn an_accepted_subscription_says_what_the_client_follows() {
+    Form(StreamMessage::Following {
+        subscription: Subscription::Calls {
+            environment: "orders-sim".parse().unwrap(),
+            selector: SelectorRef::Named("order-producers".parse().unwrap()),
+        },
+    })
+    .writes(json!({
+        "message": "following",
+        "subscription": { "follow": "calls", "environment": "orders-sim", "selector": "order-producers" },
+    }));
+    Form(StreamMessage::Following {
+        subscription: Subscription::Nothing,
+    })
+    .writes(json!({ "message": "following", "subscription": { "follow": "nothing" } }));
+}
+
+#[test]
 fn a_refused_subscription_says_why() {
     Form(StreamMessage::SubscriptionRefused {
         reason: "environment \"orders-sim\" does not run".to_owned(),
