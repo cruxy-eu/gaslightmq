@@ -52,6 +52,7 @@ impl<B: Backend + 'static, C: WaitableClock> Engine<B, C> {
     /// and tells it where each one listens.
     ///
     /// The sessions tell the time on `clock`, and tell the `lies` of this build.
+    /// Several engines of one process can share one set of lies.
     /// The engine runs its tasks on the runtime that the caller runs on.
     ///
     /// The call waits until the backend knows its endpoints, for as long as that takes.
@@ -74,14 +75,14 @@ impl<B: Backend + 'static, C: WaitableClock> Engine<B, C> {
         configuration: EngineConfiguration,
         backend: B,
         clock: C,
-        lies: Lies,
+        lies: impl Into<Arc<Lies>>,
     ) -> Result<Self, EngineStartError> {
         let clock = Arc::new(clock);
         let shared = SharedBySessions::new(
             ClientContexts::new(configuration.client_context_linger.duration()),
             CallIds::new(),
             KnownTopics::new(),
-            Arc::new(lies),
+            lies.into(),
         );
         let of_the_rules: Arc<dyn Clock + Send + Sync> = Arc::<C>::clone(&clock);
         let rules = ArmedRules::new(configuration.seed, of_the_rules);
