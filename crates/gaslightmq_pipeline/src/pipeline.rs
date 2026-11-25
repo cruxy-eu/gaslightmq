@@ -50,6 +50,7 @@ use crate::{Input, Output, Outputs, SharedBySessions, TimerId};
 /// | A hang-up acts. | A lie | The record of every call in flight, and [`Output::Close`]. |
 /// | The bytes of the client are no request, a Produce does not say whether it expects a response, or the backend sends something that is no response to the request. | The proxy | The same. |
 /// | [`Input::BackendFailed`] or [`Input::BackendClosed`] arrives. | The backend | The same. Every record says why the backend ended the session. |
+/// | [`Input::ProxyClosed`] arrives: someone closed the session through the control plane. | The proxy | The record of every call in flight, and [`Output::Close`]. |
 ///
 /// An answer of the backend that is no response is a [`Response`] that does not answer the request,
 /// or [`Input::BackendAnswerUnreadable`].
@@ -125,6 +126,7 @@ impl Pipeline {
             Input::TimerFired(timer) => self.timer_fired(timer, now, &mut outputs),
             Input::SnapshotPublished(snapshot) => self.snapshot = snapshot,
             Input::ClientClosed => self.close(ClosedBy::Client, None, None, now, &mut outputs),
+            Input::ProxyClosed => self.close(ClosedBy::Proxy, None, None, now, &mut outputs),
         }
         outputs
     }

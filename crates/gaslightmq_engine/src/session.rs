@@ -14,13 +14,14 @@ use gaslightmq_clock_waitable::WaitableClock;
 use gaslightmq_listener::{ConnectionHandler, ReceiveError, SendError, Transport};
 use gaslightmq_pipeline::{Input, Output, Outputs, Pipeline, SharedBySessions};
 use gaslightmq_rule::Snapshot;
-use gaslightmq_session::{Connection, ConnectionOrdinal, ConnectionOrdinals};
+use gaslightmq_session::{ClosedBy, Connection, ConnectionOrdinal, ConnectionOrdinals, Lifecycle};
 use gaslightmq_wire::{Frame, Request};
-use tokio::sync::{mpsc, watch};
+use tokio::sync::{Notify, mpsc, watch};
 
 use crate::events::EventBus;
+use crate::open_sessions::OpenSessions;
 use crate::timers::Timers;
-use crate::{ArmedRules, EngineEvent};
+use crate::{ArmedRules, EngineEvent, SessionEvent};
 
 /// The bytes of a frame that holds nothing, which are no request.
 ///
@@ -36,6 +37,8 @@ pub(crate) struct Sessions<B, C> {
     pub shared: SharedBySessions,
     pub rules: ArmedRules,
     pub events: EventBus,
+    /// The sessions that are open, each with the way to ask it to close.
+    pub open: OpenSessions,
     /// Which connection from its host to its endpoint each connection is.
     ordinals: Mutex<ConnectionOrdinals>,
     /// The instants at which a client context may end, because a session closed a while before.
@@ -59,6 +62,7 @@ impl<B: Backend, C: WaitableClock> Sessions<B, C> {
             shared,
             rules,
             events,
+            open: OpenSessions::default(),
             ordinals: Mutex::default(),
             lingering,
         };
@@ -143,6 +147,17 @@ struct Session<'a, B, C> {
     timers: Timers,
     /// Whether the backend got a request of this connection, so it has something to let go of.
     forwarded: bool,
+    /// Rings when someone asks the session to close, through the control plane.
+    close: Arc<Notify>,
+    /// What the events of the session said about its client so far.
+    told: Told,
+}
+
+/// What the events of one session said about its client so far.
+#[derive(Debug, Default)]
+struct Told {
+    identified: bool,
+    software: bool,
 }
 
 /// What a session waited for.
@@ -151,6 +166,7 @@ enum Happened {
     Answered(CallId, BackendAnswer),
     TimersDue,
     Received(Result<Frame, ReceiveError>),
+    CloseAsked,
 }
 
 /// How a session ends.
@@ -171,7 +187,10 @@ impl<'a, B: Backend, C: WaitableClock> Session<'a, B, C> {
         let ordinal = of.ordinal(&connection);
         let mut published = of.rules.published();
         let snapshot = Arc::clone(&published.borrow_and_update());
-        let pipeline = Pipeline::open(connection, ordinal, of.shared.clone(), snapshot, of.clock.now());
+        let opened = of.clock.now();
+        let pipeline = Pipeline::open(connection, ordinal, of.shared.clone(), snapshot, opened);
+        let (session, close) = of.open.open(connection, opened);
+        of.events.publish(EngineEvent::Session(SessionEvent::Opened(session)));
         Self {
             of,
             ended_by_backend,
@@ -181,6 +200,8 @@ impl<'a, B: Backend, C: WaitableClock> Session<'a, B, C> {
             calls: FuturesUnordered::new(),
             timers: Timers::default(),
             forwarded: false,
+            close,
+            told: Told::default(),
         }
     }
 
@@ -212,6 +233,7 @@ impl<'a, B: Backend, C: WaitableClock> Session<'a, B, C> {
         tokio::select! {
             biased;
             Ok(()) = self.published.changed() => Happened::Published(Arc::clone(&self.published.borrow_and_update())),
+            () = self.close.notified() => Happened::CloseAsked,
             Some((call, answer)) = self.calls.next(), if !self.calls.is_empty() => Happened::Answered(call, answer),
             () = timer_is_due => Happened::TimersDue,
             received = self.transport.receive() => Happened::Received(received),
@@ -222,6 +244,7 @@ impl<'a, B: Backend, C: WaitableClock> Session<'a, B, C> {
     async fn react(&mut self, happened: Happened) -> Option<Ending> {
         match happened {
             Happened::Published(snapshot) => self.report(Input::SnapshotPublished(snapshot)).await,
+            Happened::CloseAsked => self.report(Input::ProxyClosed).await.or(Some(Ending::Closed)),
             Happened::Answered(call, answer) => match answered(call, answer) {
                 Some(input) => self.report(input).await,
                 None => None,
@@ -304,9 +327,41 @@ impl<'a, B: Backend, C: WaitableClock> Session<'a, B, C> {
         ending
     }
 
-    /// Hands one input to the pipeline, with the instant of the clock.
+    /// Hands one input to the pipeline, with the instant of the clock, and tells what the input said about the client.
     fn handle(&mut self, input: Input<'_>) -> Outputs {
-        self.pipeline.handle(input, self.of.clock.now())
+        let outputs = self.pipeline.handle(input, self.of.clock.now());
+        self.tell_identity();
+        outputs
+    }
+
+    /// Hands over what the session learned about its client since the last event: that it is identified,
+    /// and the library of the client.
+    fn tell_identity(&mut self) {
+        let identity = self.pipeline.identity();
+        let connection = identity.connection().number();
+        let software = identity.client_software().cloned();
+        if !self.told.identified {
+            if self.pipeline.lifecycle() != Lifecycle::Identified {
+                return;
+            }
+            let client = identity.client_id().cloned();
+            self.told.identified = true;
+            self.told.software = software.is_some();
+            self.of.open.identified(connection, client.clone(), software.clone());
+            let identified = SessionEvent::Identified {
+                connection,
+                client,
+                software,
+            };
+            self.of.events.publish(EngineEvent::Session(identified));
+            return;
+        }
+        if let (false, Some(software)) = (self.told.software, software) {
+            self.told.software = true;
+            self.of.open.software_named(connection, software.clone());
+            let named = SessionEvent::SoftwareNamed { connection, software };
+            self.of.events.publish(EngineEvent::Session(named));
+        }
     }
 
     /// Starts the call of `request` on the backend, and goes on without its answer.
@@ -350,6 +405,8 @@ impl<'a, B: Backend, C: WaitableClock> Session<'a, B, C> {
         // Nobody waits for the answers any more, so the backend owes none.
         drop(calls);
         let connection = transport.number();
+        // A session that the engine stops has no word of the pipeline for it, and the proxy ended it.
+        let by = pipeline.closed().map_or(ClosedBy::Proxy, |closed| closed.by());
         let leave_the_client = async {
             match ending {
                 Ending::ClientLeft => drop(transport),
@@ -365,6 +422,9 @@ impl<'a, B: Backend, C: WaitableClock> Session<'a, B, C> {
         tokio::join!(leave_the_client, leave_the_backend);
         // The state of the session goes with its task. A client that reconnects gets a new pipeline.
         drop(pipeline);
+        of.open.closed(connection);
+        of.events
+            .publish(EngineEvent::Session(SessionEvent::Closed { connection, by }));
         of.session_closed();
     }
 }

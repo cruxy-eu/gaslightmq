@@ -8,7 +8,7 @@ use tokio::sync::broadcast;
 use tokio::sync::broadcast::error::RecvError;
 use tokio::sync::mpsc;
 
-use crate::{EventBacklog, LiveEventsError};
+use crate::{EventBacklog, LiveEventsError, SessionEvent};
 
 /// Something that a session of an engine handed over.
 ///
@@ -24,6 +24,8 @@ pub enum EngineEvent {
     ///
     /// The engine hands it over, and applies nothing: whoever runs the scenario passes it to the backend.
     IncidentFired(Incident),
+    /// A session opened, said who its client is, or closed.
+    Session(SessionEvent),
 }
 
 /// The events of an engine as they happen, for a listener that watches: a traffic view, a UI.

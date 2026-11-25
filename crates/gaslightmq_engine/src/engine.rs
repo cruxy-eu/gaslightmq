@@ -7,7 +7,7 @@ use std::sync::Arc;
 use gaslightmq_backend::Backend;
 use gaslightmq_clock::Clock;
 use gaslightmq_clock_waitable::{WaitableClock, WallClock};
-use gaslightmq_field::Endpoint;
+use gaslightmq_field::{ConnectionNumber, Endpoint};
 use gaslightmq_lie_api::Lies;
 use gaslightmq_pipeline::{KnownTopics, SharedBySessions};
 use gaslightmq_session::{CallIds, ClientContexts};
@@ -17,7 +17,7 @@ use tokio::task::JoinHandle;
 use crate::endpoints::{Listening, OpenEndpoints};
 use crate::events::EventBus;
 use crate::session::Sessions;
-use crate::{ArmedRules, EngineConfiguration, EngineStartError, EveryEvent, LiveEvents};
+use crate::{ArmedRules, EngineConfiguration, EngineStartError, EveryEvent, LiveEvents, NotOpenError, OpenSession};
 
 /// The runtime of one proxy: its sessions, its armed rules, its clock and its endpoints.
 ///
@@ -171,6 +171,28 @@ impl<B: Backend + 'static, C: WaitableClock> Engine<B, C> {
     /// until the process has no memory left. Whoever asks for one takes its events, or lets go of it.
     pub fn every_event(&self) -> EveryEvent {
         self.sessions.events.listen_to_every_event()
+    }
+
+    /// The sessions that are open, in the order of their connection numbers.
+    pub fn sessions(&self) -> Vec<OpenSession> {
+        self.sessions.open.list()
+    }
+
+    /// Closes the session on `connection` as the proxy closes it: the calls in flight end without an answer,
+    /// the client reads what was sent before, and finds its connection closed.
+    ///
+    /// The call returns at once. The session ends a moment later, and its
+    /// [`SessionEvent::Closed`](crate::SessionEvent::Closed) says that the proxy closed it.
+    ///
+    /// # Errors
+    ///
+    /// [`NotOpenError`] when no session is open on the connection.
+    pub fn close_session(&self, connection: ConnectionNumber) -> Result<(), NotOpenError> {
+        if self.sessions.open.close(connection) {
+            Ok(())
+        } else {
+            Err(NotOpenError { connection })
+        }
     }
 
     /// What the sessions of the proxy share: the client contexts, the topics they know by ID, and the lies of the build.
