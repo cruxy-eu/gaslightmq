@@ -1,0 +1,44 @@
+[package]
+name = "gaslightmq_control_client"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lints]
+workspace = true
+
+# The modules that hold values and decide, and never wait: `cargo xtask sans-io` holds them to that.
+[package.metadata.gaslightmq]
+sans_io_modules = ["address", "configuration", "error", "exchange"]
+
+# One feature per transport. A feature takes effect on its own target alone,
+# so a build with every feature has the transport of the target it builds for.
+[features]
+default = ["native"]
+# HTTP and WebSocket from a native target, on Tokio.
+native = ["dep:reqwest", "dep:tokio", "dep:tokio-tungstenite"]
+# The browser's own fetch and WebSocket, from WebAssembly.
+wasm = ["dep:gloo-net", "dep:gloo-timers"]
+
+[dependencies]
+gaslightmq_control_api.workspace = true
+futures.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+url.workspace = true
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+reqwest = { workspace = true, optional = true }
+tokio = { workspace = true, optional = true, features = ["time"] }
+tokio-tungstenite = { workspace = true, optional = true }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+gloo-net = { workspace = true, optional = true }
+gloo-timers = { workspace = true, optional = true }
+
+[dev-dependencies]
+anyhow.workspace = true
+futures.workspace = true
+tokio = { workspace = true, features = ["rt", "macros", "net", "io-util", "time"] }
+tokio-tungstenite.workspace = true
