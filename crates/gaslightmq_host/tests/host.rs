@@ -80,6 +80,13 @@ async fn an_environment_that_does_not_run_has_no_listeners_events_or_rules() -> 
     assert!(host.live_events(&staging).is_err());
     assert!(host.every_event(&staging).is_err());
     assert!(host.rules(&staging).is_err());
+    assert_eq!(host.incident_support(&staging), Err(not_running.clone()));
+    assert_eq!(
+        host.fire(&staging, &"leader-flap".parse()?).await,
+        Err(FireRuleError::NotRunning {
+            environment: staging.clone()
+        })
+    );
     assert_eq!(host.stop(&staging).await, Err(not_running));
     Ok(())
 }

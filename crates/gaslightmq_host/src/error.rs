@@ -1,5 +1,6 @@
 //! Why a host could not do what it was asked to do: one error for each thing that fails in its own way.
 
+use gaslightmq_backend::IncidentRejection;
 use gaslightmq_backend_upstream::UpstreamBackendError;
 use gaslightmq_engine::EngineStartError;
 use gaslightmq_environment::{EnvironmentName, ListenAddress};
@@ -131,6 +132,56 @@ pub enum ArmRuleError {
         environment: EnvironmentName,
         rule: RuleName,
     },
+}
+
+/// Why a host did not [fire a rule by hand](crate::Host::fire).
+///
+/// | Variant | What is wrong |
+/// |---|---|
+/// | [`NotRunning`](Self::NotRunning) | No environment of that name runs. |
+/// | [`NotArmed`](Self::NotArmed) | No rule of that name is armed in the environment. |
+/// | [`NotFired`](Self::NotFired) | The lifetime of the rule has ended, or its budget has no firing free. |
+/// | [`NeedsCall`](Self::NeedsCall) | The incident of the rule takes its subject from a call, and a firing by hand has none. |
+/// | [`IncidentRejected`](Self::IncidentRejected) | The backend cannot apply the incident. |
+///
+/// A rule that did not fire spent nothing of its budget.
+///
+/// ```
+/// use gaslightmq_host::prelude::*;
+///
+/// let error = FireRuleError::NotArmed {
+///     environment: "staging-proxy".parse().expect("an environment name"),
+///     rule: "leader-flap".parse().expect("a rule name"),
+/// };
+/// assert_eq!(
+///     error.to_string(),
+///     "rule \"leader-flap\" is not armed in environment \"staging-proxy\""
+/// );
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum FireRuleError {
+    /// No environment of this name runs.
+    #[error("environment {:?} does not run", .environment.as_str())]
+    NotRunning { environment: EnvironmentName },
+    /// No rule of this name is armed in the environment, so it has nothing to fire.
+    #[error("rule {:?} is not armed in environment {:?}", .rule.as_str(), .environment.as_str())]
+    NotArmed {
+        environment: EnvironmentName,
+        rule: RuleName,
+    },
+    /// The rule is armed, and fires no more: its lifetime has ended, or its budget has no firing free.
+    #[error("rule {:?} fires no more in environment {:?}", .rule.as_str(), .environment.as_str())]
+    NotFired {
+        environment: EnvironmentName,
+        rule: RuleName,
+    },
+    /// The incident of the rule takes its subject from the call it fires on, and a firing by hand has no call.
+    /// Its error names the rule.
+    #[error("{error}")]
+    NeedsCall { error: RuleError },
+    /// The backend of the environment cannot apply the incident that the rule fired. Its error says why.
+    #[error("rule {:?} did not fire: {error}", .rule.as_str())]
+    IncidentRejected { rule: RuleName, error: IncidentRejection },
 }
 
 /// Why a host could not [read a sentence](crate::Host::read_sentence).
