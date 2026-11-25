@@ -119,3 +119,32 @@ pub struct EnvironmentNotRunning {
     /// The name that the command gave.
     pub environment: EnvironmentName,
 }
+
+/// Why an environment did not answer a question that reads the workspace too:
+/// [the rules of the environment](crate::ListEnvironmentRules), or [a sentence](crate::ParseSentence).
+///
+/// ```
+/// use gaslightmq_control_api::prelude::*;
+///
+/// let error = EnvironmentReadError::StoreFailed {
+///     environment: "orders-sim".parse().expect("an environment name"),
+///     reason: "the rule store could not be read: permission denied".to_owned(),
+/// };
+/// assert_eq!(
+///     error.to_string(),
+///     "environment \"orders-sim\" did not answer: the rule store could not be read: permission denied",
+/// );
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error, Serialize, Deserialize)]
+#[serde(tag = "error", rename_all = "kebab-case", deny_unknown_fields)]
+pub enum EnvironmentReadError {
+    /// The environment does not run.
+    #[error("environment {:?} does not run", .environment.as_str())]
+    NotRunning { environment: EnvironmentName },
+    /// A store of the workspace could not read its definitions. `reason` says which store, and what it said.
+    #[error("environment {:?} did not answer: {reason}", .environment.as_str())]
+    StoreFailed {
+        environment: EnvironmentName,
+        reason: String,
+    },
+}

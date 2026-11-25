@@ -131,6 +131,84 @@ pub enum AnyOperation {
     ParseSentence(ParseSentence),
 }
 
+impl AnyOperation {
+    /// The name of the operation, as the `operation` key of its `serde` form says it: `arm-rule`, `create-selector`.
+    ///
+    /// ```
+    /// use gaslightmq_control_api::prelude::*;
+    ///
+    /// let stop = StopEnvironment { environment: "orders-sim".parse().expect("an environment name") };
+    /// assert_eq!(AnyOperation::from(stop).name(), "stop-environment");
+    /// ```
+    pub const fn name(&self) -> &'static str {
+        match self {
+            AnyOperation::ListSelectors(_) => "list-selectors",
+            AnyOperation::GetSelector(_) => "get-selector",
+            AnyOperation::CreateSelector(_) => "create-selector",
+            AnyOperation::UpdateSelector(_) => "update-selector",
+            AnyOperation::DeleteSelector(_) => "delete-selector",
+            AnyOperation::ListPresets(_) => "list-presets",
+            AnyOperation::GetPreset(_) => "get-preset",
+            AnyOperation::CreatePreset(_) => "create-preset",
+            AnyOperation::UpdatePreset(_) => "update-preset",
+            AnyOperation::DeletePreset(_) => "delete-preset",
+            AnyOperation::ListRules(_) => "list-rules",
+            AnyOperation::GetRule(_) => "get-rule",
+            AnyOperation::CreateRule(_) => "create-rule",
+            AnyOperation::UpdateRule(_) => "update-rule",
+            AnyOperation::DeleteRule(_) => "delete-rule",
+            AnyOperation::ListLayouts(_) => "list-layouts",
+            AnyOperation::GetLayout(_) => "get-layout",
+            AnyOperation::CreateLayout(_) => "create-layout",
+            AnyOperation::UpdateLayout(_) => "update-layout",
+            AnyOperation::DeleteLayout(_) => "delete-layout",
+            AnyOperation::ListEnvironments(_) => "list-environments",
+            AnyOperation::GetEnvironment(_) => "get-environment",
+            AnyOperation::StartEnvironment(_) => "start-environment",
+            AnyOperation::StopEnvironment(_) => "stop-environment",
+            AnyOperation::ListEnvironmentRules(_) => "list-environment-rules",
+            AnyOperation::CreateLiveRule(_) => "create-live-rule",
+            AnyOperation::UpdateLiveRule(_) => "update-live-rule",
+            AnyOperation::DeleteLiveRule(_) => "delete-live-rule",
+            AnyOperation::KeepRule(_) => "keep-rule",
+            AnyOperation::ArmRule(_) => "arm-rule",
+            AnyOperation::DisarmRule(_) => "disarm-rule",
+            AnyOperation::FireRule(_) => "fire-rule",
+            AnyOperation::SendIntent(_) => "send-intent",
+            AnyOperation::ListSessions(_) => "list-sessions",
+            AnyOperation::CloseSession(_) => "close-session",
+            AnyOperation::GetBackend(_) => "get-backend",
+            AnyOperation::ParseSentence(_) => "parse-sentence",
+        }
+    }
+}
+
+/// Why the control plane answered a request with neither the answer nor the error of its operation.
+///
+/// It is the same for every operation: whatever the request asks, the server may not serve it yet,
+/// or read no operation in it.
+///
+/// With `serde`, it is a map with an `error` key that names the variant:
+/// `{ "error": "not-served", "operation": "keep-rule" }`.
+///
+/// ```
+/// use gaslightmq_control_api::prelude::*;
+///
+/// let error = RequestError::NotServed { operation: "keep-rule".to_owned() };
+/// assert_eq!(error.to_string(), "the process does not serve the operation `keep-rule` yet");
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error, Serialize, Deserialize)]
+#[serde(tag = "error", rename_all = "kebab-case", deny_unknown_fields)]
+pub enum RequestError {
+    /// The process knows the operation, and does not serve it yet. `operation` is its [name](AnyOperation::name).
+    #[error("the process does not serve the operation `{operation}` yet")]
+    NotServed { operation: String },
+    /// The request holds no operation that the process knows, or it is larger than the process takes.
+    /// `reason` says what was wrong with it.
+    #[error("the request was not read: {reason}")]
+    Unreadable { reason: String },
+}
+
 /// Converts each operation into the variant of [`AnyOperation`] that holds it.
 macro_rules! requests {
     ($($operation:ty => $variant:ident;)*) => {
