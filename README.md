@@ -102,7 +102,8 @@ You need [Rust](https://rustup.rs) and [just](https://github.com/casey/just).
 | `just pre-commit` | Formatting, the workspace checks and clippy. Run it before every commit. |
 | `just test` | Every test. |
 | `just test-kafka` | Only the tests against real Kafka brokers. They need Docker. |
-| `just ui` | Builds the web UI and starts a local instance on `127.0.0.1:8080`. |
+| `just ui` | Builds the web UI. It needs `dx`. |
+| `just demo` | Runs the UI on http://127.0.0.1:7092, in front of a proxy, a real Kafka cluster in Docker and busy clients. It needs Docker and `dx`. |
 | `just ci` | Everything CI runs. |
 
 [`CLAUDE.md`](CLAUDE.md) holds the rules of the codebase,
