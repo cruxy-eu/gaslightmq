@@ -153,7 +153,6 @@
 //! | Feature | Adds |
 //! |---|---|
 //! | `memory` | The store of pad layouts in memory: [`LayoutStore`] for the `MemoryStore` of `gaslightmq_definition_memory`. |
-//! | `conformance` | The module `conformance`, with the check that the tests of any store of pad layouts run. |
 //!
 //! # No IO
 //!
@@ -162,11 +161,8 @@
 //! client IDs, error codes and time spans.
 //! It does not depend on the Kafka codec.
 //! It has no IO, no system clock and no randomness, and it compiles to WebAssembly.
-//! Its only async code is around [`LayoutStore`]: the trait and its check await the store they are handed,
-//! and nothing else.
+//! Its only async code is in [`LayoutStore`]: the trait awaits the store it is handed, and nothing else.
 
-#[cfg(feature = "conformance")]
-pub mod conformance;
 mod encoder;
 mod intent;
 mod layer;

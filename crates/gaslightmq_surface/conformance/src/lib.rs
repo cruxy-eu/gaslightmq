@@ -1,12 +1,35 @@
 //! What a store of pad layouts does, as a check that the tests of any store of layouts run.
 //!
-//! The check is for the tests of a store, so it is behind the `conformance` feature.
+//! [`LayoutStore`] says what a store of pad layouts is asked.
+//! This crate holds that behaviour once: [`assert_layout_store`] takes a way to make an empty store,
+//! and fails when the store does not do what the trait asks.
+//! It runs the check of every store, [`assert_store_contract`], with pad layouts of its own,
+//! and then asks which layouts use a selector or a preset.
+//!
+//! ```
+//! use futures::executor::block_on;
+//! use gaslightmq_definition_memory::MemoryStore;
+//! use gaslightmq_surface_conformance::assert_layout_store;
+//!
+//! // The test of a store hands the check a way to make an empty one, and drives it with the executor it has.
+//! block_on(assert_layout_store(MemoryStore::new));
+//! ```
+//!
+//! # Test support
+//!
+//! The crate is test support: only the tests of a crate depend on it, as a dev-dependency.
+//! `cargo xtask test-support` holds every crate to that.
+//!
+//! # No IO
+//!
+//! The crate depends on the pad layouts, on the check of every store, and on `gaslightmq_selector` and
+//! `gaslightmq_rule` for the names that its layouts have rows and columns for.
+//! It awaits the store it is handed, and nothing else: it has no executor, no IO, no clock and no randomness.
 
 use gaslightmq_definition_conformance::{Samples, assert_store_contract};
 use gaslightmq_rule::PresetName;
 use gaslightmq_selector::SelectorName;
-
-use crate::{Layer, LayoutStore, LayoutUuid, PadLayout};
+use gaslightmq_surface::{Layer, LayoutStore, LayoutUuid, PadLayout};
 
 /// Fails when a store of pad layouts does not do what a [`LayoutStore`] does.
 ///
@@ -20,17 +43,6 @@ use crate::{Layer, LayoutStore, LayoutUuid, PadLayout};
 /// | It gives the layouts with a column for a preset. | In the order of their names, and none without such a column. |
 /// | A selector and a preset of one name are two things. | A layout with a row for the one is not given for the other. |
 /// | The answers follow every change. | An update and a delete change who uses a selector and a preset. |
-///
-/// ```
-/// use gaslightmq_definition_api::prelude::*;
-/// use gaslightmq_surface::conformance::assert_layout_store;
-/// use gaslightmq_surface::prelude::*;
-///
-/// /// The test of a store of layouts: it hands the check a way to make an empty one.
-/// async fn a_store_of_layouts_does_what_the_trait_asks<S: LayoutStore + Default>() {
-///     assert_layout_store(S::default).await;
-/// }
-/// ```
 ///
 /// # Panics
 ///

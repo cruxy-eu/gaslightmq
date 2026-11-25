@@ -41,6 +41,10 @@ pub struct Member {
     ///
     /// The manifest says `internal = true` under `[package.metadata.gaslightmq]`.
     pub internal: bool,
+    /// Whether it declares itself test support in its manifest: only the tests of a crate depend on it.
+    ///
+    /// The manifest says `test_support = true` under `[package.metadata.gaslightmq]`.
+    pub test_support: bool,
 }
 
 impl Member {
@@ -104,6 +108,7 @@ impl Workspace {
                     edition: package.edition.clone(),
                     sans_io_modules: declared.map_or_else(Vec::new, |declared| declared.sans_io_modules.clone()),
                     internal: declared.is_some_and(|declared| declared.internal),
+                    test_support: declared.is_some_and(|declared| declared.test_support),
                 }
             })
             .collect();
@@ -146,6 +151,8 @@ struct Declared {
     sans_io_modules: Vec<String>,
     #[serde(default)]
     internal: bool,
+    #[serde(default)]
+    test_support: bool,
 }
 
 #[derive(Deserialize)]
@@ -179,6 +186,7 @@ impl Member {
             edition: "2024".to_owned(),
             sans_io_modules: Vec::new(),
             internal: false,
+            test_support: false,
         }
     }
 }
@@ -224,6 +232,15 @@ mod tests {
                 "manifest_path": "/repo/crates/gaslightmq_selector/Cargo.toml",
                 "edition": "2024",
                 "dependencies": []
+            },
+            {
+                "name": "gaslightmq_selector_conformance",
+                "manifest_path": "/repo/crates/gaslightmq_selector/conformance/Cargo.toml",
+                "edition": "2024",
+                "metadata": { "gaslightmq": { "test_support": true } },
+                "dependencies": [
+                    { "name": "gaslightmq_selector", "kind": null }
+                ]
             }
         ]
     }"#;
@@ -234,6 +251,10 @@ mod tests {
 
         assert_eq!(workspace.root, PathBuf::from("/repo"));
         assert_eq!(workspace.members[1].dir, PathBuf::from("crates/gaslightmq_field"));
+        assert_eq!(
+            workspace.members[4].dir,
+            PathBuf::from("crates/gaslightmq_selector/conformance")
+        );
     }
 
     #[test]
@@ -291,7 +312,15 @@ mod tests {
         let workspace = Workspace::from_metadata(METADATA).unwrap();
 
         let internal: Vec<bool> = workspace.members.iter().map(|member| member.internal).collect();
-        assert_eq!(internal, [false, false, true, false]);
+        assert_eq!(internal, [false, false, true, false, false]);
+    }
+
+    #[test]
+    fn a_member_declares_in_its_manifest_that_it_is_test_support() {
+        let workspace = Workspace::from_metadata(METADATA).unwrap();
+
+        let test_support: Vec<bool> = workspace.members.iter().map(|member| member.test_support).collect();
+        assert_eq!(test_support, [false, false, false, false, true]);
     }
 
     #[test]

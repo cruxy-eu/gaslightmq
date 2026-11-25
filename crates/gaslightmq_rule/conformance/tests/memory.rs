@@ -2,7 +2,7 @@
 
 use futures::executor::block_on;
 use gaslightmq_definition_memory::MemoryStore;
-use gaslightmq_rule::conformance::{assert_preset_store, assert_rule_store};
+use gaslightmq_rule_conformance::{assert_preset_store, assert_rule_store};
 
 #[test]
 fn a_store_of_presets_in_memory_keeps_the_contract() {

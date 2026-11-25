@@ -5,7 +5,8 @@
 - Rust edition 2024.
 - Use native async traits, not `async-trait`.
 - Use workspace dependency versions (`dep.workspace = true`), not inline versions.
-- Crate names start with `gaslightmq_` and use underscores, never hyphens. The directory carries the crate's name: `crates/gaslightmq_wire`. A family of crates shares a directory: `crates/gaslightmq_kafka_client/api` is the crate `gaslightmq_kafka_client_api`.
+- Crate names start with `gaslightmq_` and use underscores, never hyphens. The directory carries the crate's name: `crates/gaslightmq_wire`. A family of crates shares a directory: `crates/gaslightmq_kafka_client/api` is the crate `gaslightmq_kafka_client_api`. A crate's directory may hold its conformance crate: `crates/gaslightmq_rule/conformance` is the crate `gaslightmq_rule_conformance`.
+- A test-support crate, such as a `_conformance` crate, says `test_support = true` under `[package.metadata.gaslightmq]`, and only a dev-dependency names it.
 - Tooling that is not product code, such as the workspace checks, lives in `xtask/` and has no row in `crates.md`. `cargo xtask` runs the checks.
 - A name says what a thing means, never which crate, module or type it came from, or how it is built:
   `InvalidPartition`, not `Kernel`.

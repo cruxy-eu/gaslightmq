@@ -11,7 +11,8 @@
 //! | [`Samples`] | The definitions that the check stores. Whoever runs the check hands them in. |
 //!
 //! The crate knows no kind of definition.
-//! The crate of a kind holds the samples of its kind, and the check of its store trait on top of this one.
+//! Each kind has a conformance crate of its own, with the samples of its kind and the check of its store trait
+//! on top of this one.
 //!
 //! ```
 //! use std::collections::BTreeMap;
@@ -83,6 +84,11 @@
 //! // The check is a future, and the test of a store drives it with the executor it has.
 //! block_on(assert_store_contract(Greetings::default, &greetings));
 //! ```
+//!
+//! # Test support
+//!
+//! The crate is test support: only the tests of a crate depend on it, as a dev-dependency.
+//! `cargo xtask test-support` holds every crate to that.
 //!
 //! # No IO
 //!

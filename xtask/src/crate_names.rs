@@ -4,8 +4,11 @@
 //! The facade `gaslightmq` and the binary `gmq` stand apart, as `crates.md` says, and need no prefix.
 //! The directory carries the name: `crates/gaslightmq_wire` holds `gaslightmq_wire`,
 //! and a family shares a directory, so `crates/gaslightmq_kafka_client/api` holds `gaslightmq_kafka_client_api`.
+//! A crate's directory may hold its conformance crate, and no other crate:
+//! `crates/gaslightmq_selector/conformance` holds `gaslightmq_selector_conformance`.
 //! The tooling in `xtask/` is the one exception to where a crate lives, and not to its name.
 
+use std::collections::BTreeSet;
 use std::fmt;
 use std::path::{Component, Path, PathBuf};
 
@@ -29,8 +32,12 @@ pub fn full_name(name: &str) -> String {
 /// The directory that holds every crate.
 const CRATES: &str = "crates";
 
+/// The one directory in a crate's directory that may hold a crate: its conformance crate.
+const CONFORMANCE: &str = "conformance";
+
 /// Every crate whose name or directory breaks the rules.
 pub fn violations(workspace: &Workspace) -> Vec<NameViolation> {
+    let crate_dirs: BTreeSet<&Path> = workspace.members.iter().map(|member| member.dir.as_path()).collect();
     let mut violations = Vec::new();
     for member in &workspace.members {
         let name = &member.name;
@@ -47,6 +54,15 @@ pub fn violations(workspace: &Workspace) -> Vec<NameViolation> {
             violations.push(NameViolation::Elsewhere {
                 name: name.clone(),
                 dir: member.dir.clone(),
+            });
+        }
+        if let Some(outer) = member.dir.parent().filter(|outer| crate_dirs.contains(outer))
+            && member.dir.file_name().and_then(|own| own.to_str()) != Some(CONFORMANCE)
+        {
+            violations.push(NameViolation::InsideCrate {
+                name: name.clone(),
+                dir: member.dir.clone(),
+                outer: outer.to_path_buf(),
             });
         }
     }
@@ -82,6 +98,12 @@ pub enum NameViolation {
         name: String,
         dir: PathBuf,
     },
+    /// The crate lives in the directory of another crate, and is not its conformance crate.
+    InsideCrate {
+        name: String,
+        dir: PathBuf,
+        outer: PathBuf,
+    },
 }
 
 impl fmt::Display for NameViolation {
@@ -96,6 +118,13 @@ impl fmt::Display for NameViolation {
                 f,
                 "`{name}` lives in `{}`, and not in `{CRATES}/{name}` or a family directory that spells its name",
                 dir.display()
+            ),
+            Self::InsideCrate { name, dir, outer } => write!(
+                f,
+                "`{name}` lives in `{}`, in the directory of the crate in `{}`, \
+                 which may hold its `{CONFORMANCE}` crate and no other",
+                dir.display(),
+                outer.display()
             ),
         }
     }
@@ -132,6 +161,49 @@ mod tests {
         let workspace = workspace(&[("gaslightmq_kafka_client_api", "crates/gaslightmq_kafka_client/api")]);
 
         assert_eq!(violations(&workspace), []);
+    }
+
+    #[test]
+    fn a_crate_directory_may_hold_its_conformance_crate() {
+        let workspace = workspace(&[
+            ("gaslightmq_selector", "crates/gaslightmq_selector"),
+            (
+                "gaslightmq_selector_conformance",
+                "crates/gaslightmq_selector/conformance",
+            ),
+        ]);
+
+        assert_eq!(violations(&workspace), []);
+    }
+
+    #[test]
+    fn a_crate_directory_that_holds_another_crate_fails() {
+        let dir = "crates/gaslightmq_selector/memory";
+
+        assert_eq!(
+            violations(&workspace(&[
+                ("gaslightmq_selector", "crates/gaslightmq_selector"),
+                ("gaslightmq_selector_memory", dir),
+            ])),
+            [NameViolation::InsideCrate {
+                name: "gaslightmq_selector_memory".to_owned(),
+                dir: PathBuf::from(dir),
+                outer: PathBuf::from("crates/gaslightmq_selector"),
+            }]
+        );
+    }
+
+    #[test]
+    fn a_crate_under_its_own_name_in_its_family_directory_fails() {
+        let dir = "crates/gaslightmq_selector/gaslightmq_selector";
+
+        assert_eq!(
+            violations(&workspace(&[("gaslightmq_selector", dir)])),
+            [NameViolation::Elsewhere {
+                name: "gaslightmq_selector".to_owned(),
+                dir: PathBuf::from(dir)
+            }]
+        );
     }
 
     #[test]

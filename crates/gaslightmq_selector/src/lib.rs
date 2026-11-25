@@ -97,7 +97,6 @@
 //! | Feature | Adds |
 //! |---|---|
 //! | `memory` | The store of selectors in memory: [`SelectorStore`] for the `MemoryStore` of `gaslightmq_definition_memory`. |
-//! | `conformance` | The module `conformance`, with the check that the tests of any store of selectors run. |
 //!
 //! # The `serde` feature
 //!
@@ -165,13 +164,10 @@
 //! on `gaslightmq_kernel` for the API key that the index is built on,
 //! and on `gaslightmq_definition_api` for the store contract.
 //! It has no IO, no system clock and no randomness, and it compiles to WebAssembly.
-//! Its only async code is around [`SelectorStore`]: the trait and its check await the store they are handed,
-//! and nothing else.
+//! Its only async code is in [`SelectorStore`]: the trait awaits the store it is handed, and nothing else.
 
 mod condition;
 mod conditions;
-#[cfg(feature = "conformance")]
-pub mod conformance;
 mod effective;
 mod glob;
 mod index;

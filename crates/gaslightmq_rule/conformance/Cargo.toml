@@ -1,0 +1,27 @@
+[package]
+name = "gaslightmq_rule_conformance"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lints]
+workspace = true
+
+# Only the tests of a crate depend on this one: `cargo xtask test-support` holds every crate to that.
+[package.metadata.gaslightmq]
+test_support = true
+
+[dependencies]
+gaslightmq_definition_conformance.workspace = true
+gaslightmq_rule.workspace = true
+# What the rules and the presets of the checks are made of.
+gaslightmq_kernel.workspace = true
+gaslightmq_lie.workspace = true
+gaslightmq_selector.workspace = true
+
+[dev-dependencies]
+# The executor that drives the check in the tests and the example. The crate itself needs no runtime.
+futures.workspace = true
+# The store in memory, which the tests and the example hold to the check.
+gaslightmq_definition_memory.workspace = true
+gaslightmq_rule = { workspace = true, features = ["memory"] }

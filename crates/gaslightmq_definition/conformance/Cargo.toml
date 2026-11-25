@@ -7,6 +7,10 @@ license.workspace = true
 [lints]
 workspace = true
 
+# Only the tests of a crate depend on this one: `cargo xtask test-support` holds every crate to that.
+[package.metadata.gaslightmq]
+test_support = true
+
 [dependencies]
 gaslightmq_definition_api.workspace = true
 

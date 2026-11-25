@@ -7,9 +7,11 @@ license.workspace = true
 [lints]
 workspace = true
 
-# The modules that hold values and never wait: `cargo xtask sans-io` holds them to that.
 [package.metadata.gaslightmq]
+# The modules that hold values and never wait: `cargo xtask sans-io` holds them to that.
 sans_io_modules = ["configuration", "image", "properties"]
+# Only the tests of a crate depend on this one: `cargo xtask test-support` holds every crate to that.
+test_support = true
 
 [dependencies]
 gaslightmq_clock.workspace = true

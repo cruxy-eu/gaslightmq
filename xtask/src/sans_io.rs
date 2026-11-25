@@ -131,16 +131,19 @@ const PATHS: [(&[&str], Reach); 6] = [
 /// it makes no other future, and it names no task and no runtime, so it cannot start anything,
 /// wait for a timer or block.
 ///
-/// The crate of a definition awaits in two modules: `store` holds its store trait, whose methods with a body
-/// read what the store lists, and `conformance` holds the check of that trait.
-/// Everything else in such a crate is held to the rule of every sans-IO crate.
-const AWAITS_STORES: [(&str, &[&str]); 7] = [
+/// The crate of a definition awaits in one module: `store` holds its store trait, whose methods with a body
+/// read what the store lists. Everything else in such a crate is held to the rule of every sans-IO crate.
+/// The check of that trait is a crate of its own, in its directory.
+const AWAITS_STORES: [(&str, &[&str]); 10] = [
     ("gaslightmq_definition_conformance", &[]),
     ("gaslightmq_definition_memory", &[]),
-    ("gaslightmq_environment", &["conformance"]),
-    ("gaslightmq_rule", &["conformance", "store"]),
-    ("gaslightmq_selector", &["conformance", "store"]),
-    ("gaslightmq_surface", &["conformance", "store"]),
+    ("gaslightmq_environment_conformance", &[]),
+    ("gaslightmq_rule", &["store"]),
+    ("gaslightmq_rule_conformance", &[]),
+    ("gaslightmq_selector", &["store"]),
+    ("gaslightmq_selector_conformance", &[]),
+    ("gaslightmq_surface", &["store"]),
+    ("gaslightmq_surface_conformance", &[]),
     ("gaslightmq_workspace", &[]),
 ];
 
@@ -1313,11 +1316,13 @@ mod tests {
         }
         // The same code in any other sans-IO crate: four async functions and four awaits more.
         assert_eq!(found_in_file("gaslightmq_trigger", "lib.rs").len(), 12);
-        // The crate of a definition awaits in the modules of its store trait, and nowhere else.
+        // The crate of a definition awaits in the module of its store trait, and nowhere else.
         assert_eq!(found_in_file("gaslightmq_rule", "store.rs").len(), 4);
-        assert_eq!(found_in_file("gaslightmq_rule", "conformance.rs").len(), 4);
         assert_eq!(found_in_file("gaslightmq_rule", "snapshot.rs").len(), 12);
+        // A store of environments is asked nothing more than the contract, so their crate awaits nowhere.
         assert_eq!(found_in_file("gaslightmq_environment", "store.rs").len(), 12);
+        // The check of a store trait is a crate of its own, and awaits wherever it likes.
+        assert_eq!(found_in_file("gaslightmq_rule_conformance", "samples.rs").len(), 4);
     }
 
     #[test]

@@ -1,10 +1,34 @@
 //! What a store of environments does, as a check that the tests of any store of environments run.
 //!
-//! The check is for the tests of a store, so it is behind the `conformance` feature.
+//! [`EnvironmentStore`] says what a store of environments is asked.
+//! This crate holds that behaviour once: [`assert_environment_store`] takes a way to make an empty store,
+//! and fails when the store does not do what the trait asks.
+//! It runs the check of every store, [`assert_store_contract`], with environments of its own,
+//! and asks nothing more, because nothing asks a store of environments more.
+//!
+//! ```
+//! use futures::executor::block_on;
+//! use gaslightmq_definition_memory::MemoryStore;
+//! use gaslightmq_environment_conformance::assert_environment_store;
+//!
+//! // The test of a store hands the check a way to make an empty one, and drives it with the executor it has.
+//! block_on(assert_environment_store(MemoryStore::new));
+//! ```
+//!
+//! # Test support
+//!
+//! The crate is test support: only the tests of a crate depend on it, as a dev-dependency.
+//! `cargo xtask test-support` holds every crate to that.
+//!
+//! # No IO
+//!
+//! The crate depends on the environments, and on the check of every store.
+//! It awaits the store it is handed, and nothing else: it has no executor, no IO, no clock and no randomness.
 
 use gaslightmq_definition_conformance::{Samples, assert_store_contract};
-
-use crate::{Environment, EnvironmentStore, EnvironmentUuid, Instances, Listeners, ProxyDefinition, Upstream};
+use gaslightmq_environment::{
+    Environment, EnvironmentStore, EnvironmentUuid, Instances, Listeners, ProxyDefinition, Upstream,
+};
 
 /// Fails when a store of environments does not do what an [`EnvironmentStore`] does.
 ///
@@ -12,17 +36,6 @@ use crate::{Environment, EnvironmentStore, EnvironmentUuid, Instances, Listeners
 /// A store of files hands out a new directory each time.
 /// A store of environments is asked nothing but the contract of every store,
 /// so this is [`assert_store_contract`] with environments.
-///
-/// ```
-/// use gaslightmq_definition_api::prelude::*;
-/// use gaslightmq_environment::conformance::assert_environment_store;
-/// use gaslightmq_environment::prelude::*;
-///
-/// /// The test of a store of environments: it hands the check a way to make an empty one.
-/// async fn a_store_of_environments_does_what_the_trait_asks<S: EnvironmentStore + Default>() {
-///     assert_environment_store(S::default).await;
-/// }
-/// ```
 ///
 /// # Panics
 ///

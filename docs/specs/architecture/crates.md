@@ -9,6 +9,10 @@ Moving the current crates to it is a separate plan.
 Every crate name starts with `gaslightmq_` and uses underscores, never hyphens.
 The name in `Cargo.toml`, the directory and the path in code are then one string,
 so one search finds all three.
+A family of crates shares a directory, and the path below `crates/` spells the name:
+`crates/gaslightmq_definition/api` holds `gaslightmq_definition_api`.
+A crate's directory may hold its conformance crate, and no other crate:
+`crates/gaslightmq_selector/conformance` holds `gaslightmq_selector_conformance`.
 The tables leave the prefix out: `selector` is the crate `gaslightmq_selector`.
 Two crates stand apart: the facade is plain `gaslightmq`, and the binary is `gmq`.
 The workspace's own checks are tooling, and not product code: they live in `xtask/`, outside these tables.
@@ -148,7 +152,7 @@ Rust edition 2024, native async traits and workspace dependency versions.
 | Check | Fails when |
 |---|---|
 | `dependencies` | A crate depends on a workspace crate that its row does not list, or its row lists one that it does not depend on. A listed crate that does not exist yet is a plan, and passes. |
-| `crate-names` | A crate name does not start with `gaslightmq_` or holds a hyphen, or the crate's directory does not carry the name. |
+| `crate-names` | A crate name does not start with `gaslightmq_` or holds a hyphen, or the crate's directory does not carry the name, or a crate's directory holds a crate other than its conformance crate. |
 | `wasm-boundary` | A crate that [compiles to WebAssembly](#what-compiles-to-webassembly) reaches `kafka-protocol`. |
 | `workspace-rules` | A crate builds with another edition than 2024, depends on `async-trait`, or names a dependency without `workspace = true`. |
 | `sans-io` | [Sans-IO code](#sans-io-code) is async, or it names a runtime, a socket, the file system, the system clock, the process or global randomness. |
@@ -159,6 +163,7 @@ Rust edition 2024, native async traits and workspace dependency versions.
 | `error-fields` | An error type has a field without a name, or its field `error` holds something else than an error of a crate of the workspace: an error of a library or of the system, or text. |
 | `error-messages` | The message that an error type derives leaves out its `error` or its `reason`, or writes it more than once. |
 | `error-conversions` | A `From` makes an error type from an error of a library or of the system. |
+| `test-support` | A crate that is no [test support](#test-support-crates) builds with a test-support crate, through a dependency or a build dependency of its own or of a crate it builds with. Or a crate with the name of test support does not declare itself. |
 
 A check reads the names in the code, and not what the code does.
 The documentation of each check, in `xtask/src/`, says what it does not catch.
@@ -185,9 +190,8 @@ A trait of a sans-IO crate may declare an async method, because a declaration ru
 The return type of such a method may name the future it returns, where the trait declares the method and where a type implements it.
 Nothing else in sans-IO code names a future, and no sans-IO code has an async block.
 
-Some sans-IO code awaits a store: the crates `definition_memory`, `definition_conformance` and `workspace`, and two modules of the crate of a definition.
-The module `store` holds its store trait, whose methods with a body read what the store lists.
-The module `conformance` holds the check of that trait.
+Some sans-IO code awaits a store: the crates `definition_memory` and `workspace`, the conformance crates, and one module of the crate of a definition.
+That module, `store`, holds its store trait, whose methods with a body read what the store lists.
 The check lets this code have async functions with a body and await, and no other async code.
 A method of a trait whose whole body is one async block counts as such a function: it is written out so that its signature can say that its future is `Send`.
 This code makes no other future, and it names no task and no runtime, so it starts nothing, waits for no timer and never blocks.
@@ -210,18 +214,46 @@ A public function, field, type alias or trait does not name them,
 and neither does an implementation of a trait or a re-export.
 No doc comment names them either, and no example in one.
 
+### Test-support crates
+
+A test-support crate is for the tests of other crates.
+It holds what several of them test with: the check of a contract, or a cluster of real brokers.
+It never ships, so only a dev-dependency names it.
+
+A crate declares itself test support in its `Cargo.toml`:
+
+```toml
+[package.metadata.gaslightmq]
+test_support = true
+```
+
+Its row says "This crate is test support".
+The `test-support` check reads the dependencies and the build dependencies of every crate that does not declare itself,
+and follows them through the workspace.
+None of them leads to a test-support crate.
+A test-support crate may build with another one: the check of a store of selectors builds on the check of every store.
+
+A crate whose name ends in `_conformance` is test support, and so is `test_kafka`.
+The check fails when such a crate does not declare itself, because it would then pass as a crate that ships.
+
+| Test support | For the tests of |
+|---|---|
+| `definition_conformance` | Any store of definitions. |
+| `selector_conformance`, `rule_conformance`, `surface_conformance`, `environment_conformance` | A store of the kinds that the crate before the `_conformance` defines. |
+| `test_kafka` | The crates that speak to a real Kafka cluster. |
+
 ## Layers
 
 ```mermaid
 flowchart BT
   V["Vocabulary<br/>kernel · resource · field · clock · wire · lie · incident · call · definition_*"]
-  T["Targeting and injection<br/>selector · trigger · rule · combine · wire_edit · lie_*"]
+  T["Targeting and injection<br/>selector · selector_conformance · trigger · rule · rule_conformance · combine · wire_edit · lie_*"]
   P["Session and pipeline<br/>session · pipeline"]
   S["Scenarios<br/>scenario"]
   O["Observation<br/>journal · traffic · index · recording"]
   W["World and backends<br/>backend · virtual_log · world · sim_* · broker · overlay"]
-  F["Workspace<br/>environment · workspace"]
-  C["Control<br/>surface · quick_inject · control_api"]
+  F["Workspace<br/>environment · environment_conformance · workspace"]
+  C["Control<br/>surface · surface_conformance · quick_inject · control_api"]
   IO["IO edge<br/>listener · engine · host · backend_upstream · schema_registry<br/>workspace_fs · control_server · control_client"]
   A["Applications<br/>gmq · ui · test · testcontainers · kafka_client_* · test_kafka"]
 
@@ -273,15 +305,17 @@ Every other crate speaks in them.
 | `call` | The [call](../domains/observation.md#call) record: identity, request summary, truth, delivered response, verdict, explanation and timing. | `field`, `lie`, `incident`, `kernel`, `resource`, `clock` |
 | `definition_api` | The [store contract](#the-store-seam): the one async trait through which the definitions of one kind are listed, read, created, updated and deleted, and the errors of each. A definition is whatever someone defined under a name, and the crate knows no kind of definition. It holds no logic and needs no runtime. | — |
 | `definition_memory` | The store that keeps the definitions of one kind in memory, for any kind: for tests, and for an engine that runs [without a workspace](storage.md#without-a-workspace). It knows no kind of definition. | `definition_api` |
-| `definition_conformance` | What every store does, as one check that the tests of any store run. Whoever runs it hands in the definitions that it stores, so it knows no kind of definition. | `definition_api` |
+| `definition_conformance` | What every store does, as one check that the tests of any store run. Whoever runs it hands in the definitions that it stores, so it knows no kind of definition. This crate is [test support](#test-support-crates). | `definition_api` |
 
 ### Targeting and injection
 
 | Crate | Holds | Depends on |
 |---|---|---|
-| `selector` | Conditions, selectors, includes and scope. The set of selectors, which resolves includes into effective selectors. Matching against a `FieldSource`, with the [target](../domains/lies-and-incidents.md#target) a match yields and the evaluation pass that decides it. An index of selectors by API. Also the [store trait](#the-store-seam) of the selectors, with the store in memory and the check of a store behind features. | `field`, `kernel`, `resource`, `definition_api`, `definition_memory`, `definition_conformance` |
+| `selector` | Conditions, selectors, includes and scope. The set of selectors, which resolves includes into effective selectors. Matching against a `FieldSource`, with the [target](../domains/lies-and-incidents.md#target) a match yields and the evaluation pass that decides it. An index of selectors by API. Also the [store trait](#the-store-seam) of the selectors, with the store in memory behind a feature. | `field`, `kernel`, `resource`, `definition_api`, `definition_memory` |
+| `selector_conformance` | What a store of selectors does, as a check that the tests of any store of selectors run: the store contract with selectors, and who includes a selector. This crate is [test support](#test-support-crates). | `selector`, `definition_conformance`, `kernel` |
 | `trigger` | [Triggers](../domains/rules.md#trigger), counters, dice, budgets and lifetimes. | `clock` |
-| `rule` | The rule definition, the [preset](../domains/lies-and-incidents.md#presets), the rule's state, and the immutable snapshot of armed rules in priority order. The snapshot [evaluates a call](../domains/rules.md#evaluating-one-call): for each pass and each matching rule, the target, what the trigger rolled, and the lie or the incidents it fired. Also the [store traits](#the-store-seam) of the rules and of the presets, with the stores in memory and the checks of a store behind features. | `selector`, `lie`, `incident`, `trigger`, `field`, `kernel`, `resource`, `clock`, `definition_api`, `definition_memory`, `definition_conformance` |
+| `rule` | The rule definition, the [preset](../domains/lies-and-incidents.md#presets), the rule's state, and the immutable snapshot of armed rules in priority order. The snapshot [evaluates a call](../domains/rules.md#evaluating-one-call): for each pass and each matching rule, the target, what the trigger rolled, and the lie or the incidents it fired. Also the [store traits](#the-store-seam) of the rules and of the presets, with the stores in memory behind a feature. | `selector`, `lie`, `incident`, `trigger`, `field`, `kernel`, `resource`, `clock`, `definition_api`, `definition_memory` |
+| `rule_conformance` | What a store of rules and a store of presets do, as checks that the tests of any such store run: the store contract with rules and with presets, and which rules use a selector or a preset. This crate is [test support](#test-support-crates). | `rule`, `definition_conformance`, `selector`, `lie`, `kernel` |
 | `combine` | [How lies combine](../domains/lies-and-incidents.md#how-lies-combine): which lies conflict, which win by priority, which are shadowed or pre-empted, across [both evaluation passes](request-pipeline.md#two-evaluation-passes). Also what the lies that apply do to the call at each stage: the refusals and rewrites per target, the summed delay and the maximum throttle. | `lie`, `field`, `clock` |
 | `wire_edit` | Surgery on requests and responses: remove partitions, merge responses, synthesize an error response for any API, map topic IDs to names. It also reads what a response says about each [part](../domains/lies-and-incidents.md#target) of its request, and the error code of the response itself. | `wire`, `field`, `kernel` |
 | `lie_api` | The contract between the pipeline and a lie kind: the `Lie` trait, and the effect that one lie asks the pipeline for. A lie gets the request decoded, with its parts named. Also the behaviour of timing, silence and hang-up. See [lies as crates](#lies-as-crates). | `lie`, `wire`, `wire_edit`, `field` |
@@ -335,7 +369,8 @@ Transactions arrive later as `sim_txn`, next to `sim_log` and `sim_group`.
 
 | Crate | Holds | Depends on |
 |---|---|---|
-| `environment` | [Environments](storage.md#environments), [secret references](storage.md#secrets), and the order in which flags, variables and files set a value. It never reads a secret. Also the [store trait](#the-store-seam) of the environments, with the store in memory and the check of a store behind features. | `kernel`, `resource`, `definition_api`, `definition_memory`, `definition_conformance` |
+| `environment` | [Environments](storage.md#environments), [secret references](storage.md#secrets), and the order in which flags, variables and files set a value. It never reads a secret. Also the [store trait](#the-store-seam) of the environments, with the store in memory behind a feature. | `kernel`, `resource`, `definition_api`, `definition_memory` |
+| `environment_conformance` | What a store of environments does, as a check that the tests of any store of environments run: the store contract with environments. This crate is [test support](#test-support-crates). | `environment`, `definition_conformance` |
 | `workspace` | The whole set of definitions as one model, over a store for each kind: cross-reference validation, the [UUID](identity.md#uuid) that every definition gets when someone creates it, and the check that no two definitions share one. It names the stores of every kind and the source of its UUIDs as one context, and it knows no files. Behind a feature, it has the stores of a workspace in memory, the context over them, and UUIDs that a test knows before they are made. See [the store seam](#the-store-seam). | `definition_api`, `definition_memory`, `selector`, `rule`, `scenario`, `surface`, `world`, `environment` |
 | `workspace_fs` | The stores that keep definitions in the files of a [workspace](storage.md#workspace): the YAML layout, loading, watching and writing back. A [reading error](storage.md#reading) names the file and the path of the key that failed. Also the scratch file, and reading the files that secret references name. This crate does IO. | `definition_api`, `workspace`, `selector`, `rule`, `surface`, `environment` |
 
@@ -343,7 +378,8 @@ Transactions arrive later as `sim_txn`, next to `sim_log` and `sim_group`.
 
 | Crate | Holds | Depends on |
 |---|---|---|
-| `surface` | [Pad layouts](../domains/control-surfaces.md#pad-layout), layers, pads as positions, the encoder mapping, and the intents a surface sends. Also the state of one surface: the layer it shows, its mode of play and its focus, and the [store trait](#the-store-seam) of the pad layouts, with the store in memory and the check of a store behind features. | `rule`, `selector`, `trigger`, `lie`, `field`, `kernel`, `resource`, `clock`, `definition_api`, `definition_memory`, `definition_conformance` |
+| `surface` | [Pad layouts](../domains/control-surfaces.md#pad-layout), layers, pads as positions, the encoder mapping, and the intents a surface sends. Also the state of one surface: the layer it shows, its mode of play and its focus, and the [store trait](#the-store-seam) of the pad layouts, with the store in memory behind a feature. | `rule`, `selector`, `trigger`, `lie`, `field`, `kernel`, `resource`, `clock`, `definition_api`, `definition_memory` |
+| `surface_conformance` | What a store of pad layouts does, as a check that the tests of any store of layouts run: the store contract with layouts, and which layouts have a row for a selector or a column for a preset. This crate is [test support](#test-support-crates). | `surface`, `definition_conformance`, `selector`, `rule` |
 | `quick_inject` | The ⌘K sentence parser: text to a rule definition, with completions for the word that is being typed, and the words it could not read. Whoever reads a sentence hands over the names the system knows. The host runs it behind the [control plane](control-plane.md#drafts). | `selector`, `lie`, `rule`, `trigger`, `field`, `kernel`, `clock` |
 | `control_api` | The [control plane](control-plane.md) as types: resources, commands and stream messages. It re-exports the definition types its messages carry, and it holds its own view of the World's state. | `call`, `journal`, `rule`, `scenario`, `selector`, `surface`, `incident`, `environment` |
 | `control_client` | A client for the control plane, for native targets and for WebAssembly. This crate does IO. | `control_api` |
@@ -361,7 +397,7 @@ Transactions arrive later as `sim_txn`, next to `sim_log` and `sim_group`.
 | `testcontainers` | A container module: it starts the GaslightMQ image next to a test, with the workspace the test hands over, waits until the instance is ready, and hands the test the addresses its clients connect to. This crate does IO. See [instances in a test](#instances-in-a-test). | `control_client` |
 | `kafka_client_api` | What a Kafka client offers to a test, whichever client it is: the producer, consumer and admin traits, one trait per protocol API, and a raw client that sends one request at a fixed version. Every call of a client returns one error, `ClientError`. A broker that refuses a call is the variant that holds the broker's error code, and a failure of the client holds no error code, so a test never takes one for the other. This crate does IO. | `wire`, `kernel` |
 | `kafka_client_native` | Our own Kafka client behind those traits, as three types: a producer, a consumer and an admin. Every instance has its own connections, its own view of the cluster, its own configuration and its own `client.id`, so a fault or a lie reaches one role alone. The consumer is one member of each group it joins, and everything it says about a group travels on connections of its own, so a Fetch that waits never delays a Heartbeat. Each role follows partition leaders, negotiates API versions on every connection, and reports every failure as the `ClientError` of `kafka_client_api`. What a role decides is sans-IO code inside the crate, and the async part only owns sockets and timers. This crate does IO. | `kafka_client_api`, `wire`, `kernel`, `clock` |
-| `test_kafka` | A real Kafka cluster for the tests of this workspace: brokers of the version the workspace tests against, each with an address for the clients of a test. Its own handles create topics, write records, read them back and open transactions, with one request at a fixed version each. They share the codec with the client a test is about, and no decision of a client. It starts no GaslightMQ. This crate does IO. See [a real cluster in a test](#a-real-cluster-in-a-test). | `wire`, `kernel`, `clock` |
+| `test_kafka` | A real Kafka cluster for the tests of this workspace: brokers of the version the workspace tests against, each with an address for the clients of a test. Its own handles create topics, write records, read them back and open transactions, with one request at a fixed version each. They share the codec with the client a test is about, and no decision of a client. It starts no GaslightMQ. This crate is [test support](#test-support-crates). This crate does IO. See [a real cluster in a test](#a-real-cluster-in-a-test). | `wire`, `kernel`, `clock` |
 | `gaslightmq` | The facade crate: `Proxy`, `Broker` and `Host`, and re-exports of what library users need. This crate does IO. | The public crates |
 | `gmq` | The binary: `gmq proxy`, `gmq broker`, `gmq start` and `gmq run`. It writes the context of the workspace, and picks its stores there: files, or memory when there are none. This crate does IO. | `host`, `control_server`, `workspace_fs`, `workspace` |
 
@@ -599,10 +635,12 @@ Every crate of the seam knows only what it needs.
 | `definition_api` | The contract of every store, as one async trait, and its errors. | No kind of definition. A definition is whatever has a name. |
 | `definition_memory` | The store in memory, which keeps the contract for any kind. | No kind of definition. |
 | `definition_conformance` | The check of the contract, for any kind. Whoever runs it hands in the definitions that it stores. | No kind of definition. |
-| `selector`, `rule`, `surface`, `environment` | Everything about the store of each kind they define: selectors, rules, presets, pad layouts and environments. The store trait is the contract for that kind, with what only a store of that kind is asked. Behind one feature, the store in memory is a store of that kind. Behind another, the crate has the check of its store trait, with the definitions that the check stores. | Their own kinds. |
+| `selector`, `rule`, `surface`, `environment` | The store of each kind they define: selectors, rules, presets, pad layouts and environments. The store trait is the contract for that kind, with what only a store of that kind is asked. Behind a feature, the store in memory is a store of that kind. | Their own kinds. |
+| `selector_conformance`, `rule_conformance`, `surface_conformance`, `environment_conformance` | The check of the store trait of each kind, with the definitions that the check stores. | The kinds of the crate they check. |
 | `workspace` | The stores of every kind as one trait, and the context of a workspace: its stores, and the source of its UUIDs. Behind a feature, the stores and the context of a workspace in memory. | Every kind. |
 
-The crate of a definition depends on the three crates above, and never the other way round.
+The crate of a definition depends on the contract and on the store in memory, and never the other way round.
+Its conformance crate sits in its directory, and depends on it and on the check of the contract.
 
 | A store | Keeps to |
 |---|---|
@@ -643,7 +681,7 @@ Only what puts a process together writes a context and names a store there: `gmq
 The traits are async, because a store of files waits for the file system, and a store can be a service somewhere else.
 A blocking trait would make the edge block, and the edge [has no blocking variant](#the-io-edge-is-async).
 A trait awaits nothing but the store itself, so the crates that hold one need no runtime and stay outside the IO edge.
-They still compile to WebAssembly, with every feature: the store in memory and the check of a store bring no runtime either.
+They still compile to WebAssembly, with every feature: the store in memory brings no runtime either.
 `workspace` awaits the stores it is handed, and does nothing else that is async.
 Its rules are plain functions over the definitions that the stores gave it.
 
@@ -658,8 +696,10 @@ The context of a test has a source whose UUIDs the test knows before they are ma
 `workspace` has that context behind a feature, over its stores in memory, and a test turns the feature on.
 
 `definition_conformance` holds the behaviour of the contract once, as a check.
-The crate of each kind holds the check of its store trait on top of it.
-The tests of every store run them, so a store of files is held to what a store in memory does.
+The conformance crate of each kind holds the check of its store trait on top of it.
+Its own tests run the check against the store in memory, and the tests of `workspace_fs` run it against the files,
+so a store of files is held to what a store in memory does.
+The conformance crates are [test support](#test-support-crates): no code that ships holds a check or a sample.
 
 ## Lies as crates
 
@@ -834,7 +874,7 @@ The crates arrive in the order the [first version](../README.md#first-version) n
 | 1 | `kernel`, `resource`, `field`, `clock`, `wire`, `selector`, `lie`, `incident`, `trigger`, `rule`, `combine` | Rules evaluate against hand-written calls in tests. |
 | 2 | `wire_edit`, `lie_api`, `lie_refusal`, `session`, `call`, `pipeline` | The pipeline runs in tests, with partial refusals and explanations. |
 | 3 | `environment`, `backend`, `overlay`, `backend_upstream`, `listener`, `engine` | A proxy that lies. |
-| 4 | `host`, `control_api`, `control_server`, `control_client`, `traffic`, `index`, `surface`, `quick_inject`, `definition_api`, `definition_memory`, `definition_conformance`, `workspace`, `ui` | The UI with live traffic, rules, pads and ⌘K. Definitions live in stores in memory. |
+| 4 | `host`, `control_api`, `control_server`, `control_client`, `traffic`, `index`, `surface`, `quick_inject`, `definition_api`, `definition_memory`, `definition_conformance`, `selector_conformance`, `rule_conformance`, `surface_conformance`, `environment_conformance`, `workspace`, `ui` | The UI with live traffic, rules, pads and ⌘K. Definitions live in stores in memory. |
 | 5 | `journal`, `scenario`, `workspace_fs`, `recording`, `test`, `testcontainers`, `gmq` | Definitions and scenarios in files, recordings, and tests in CI. |
 | 6 | `schema`, `schema_registry`, `virtual_log`, `world`, `sim_log`, `sim_group`, `broker`, `world_seed` | The broker, alone and behind a proxy. |
 | 7 | `lie_topology`, `lie_data`, `lie_progress`, `lie_config`, `sim_txn` | The remaining lies and transactions. |

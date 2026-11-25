@@ -1,13 +1,37 @@
 //! What a store of rules and a store of presets do, as checks that the tests of any such store run.
 //!
-//! The checks are for the tests of a store, so they are behind the `conformance` feature.
+//! [`RuleStore`] and [`PresetStore`] say what a store of rules and a store of presets are asked.
+//! This crate holds that behaviour once: [`assert_rule_store`] and [`assert_preset_store`] take a way to make
+//! an empty store, and fail when the store does not do what its trait asks.
+//! Each runs the check of every store, [`assert_store_contract`], with rules or presets of its own.
+//! The check of a store of rules then asks which rules use a selector or a preset.
+//!
+//! ```
+//! use futures::executor::block_on;
+//! use gaslightmq_definition_memory::MemoryStore;
+//! use gaslightmq_rule_conformance::{assert_preset_store, assert_rule_store};
+//!
+//! // The test of a store hands the check a way to make an empty one, and drives it with the executor it has.
+//! block_on(assert_rule_store(MemoryStore::new));
+//! block_on(assert_preset_store(MemoryStore::new));
+//! ```
+//!
+//! # Test support
+//!
+//! The crate is test support: only the tests of a crate depend on it, as a dev-dependency.
+//! `cargo xtask test-support` holds every crate to that.
+//!
+//! # No IO
+//!
+//! The crate depends on the rules, on the check of every store, and on what its rules and presets are made of:
+//! `gaslightmq_selector`, `gaslightmq_lie` and `gaslightmq_kernel`.
+//! It awaits the store it is handed, and nothing else: it has no executor, no IO, no clock and no randomness.
 
 use gaslightmq_definition_conformance::{Samples, assert_store_contract};
 use gaslightmq_kernel::ApiKey;
 use gaslightmq_lie::{HangUpLie, LieDefinition};
+use gaslightmq_rule::{Preset, PresetName, PresetStore, PresetUuid, Rule, RuleName, RuleStore, RuleUuid};
 use gaslightmq_selector::{Condition, Conditions, SelectorName};
-
-use crate::{Preset, PresetName, PresetStore, PresetUuid, Rule, RuleName, RuleStore, RuleUuid};
 
 /// The time someone created the definition that has a UUID, in milliseconds since the Unix epoch: 11 December 2024.
 const CREATED: u64 = 0x0193_b6c2_5f3e;
@@ -40,17 +64,6 @@ pub async fn assert_preset_store<S: PresetStore>(empty: impl Fn() -> S) {
 /// | It gives the rules that use a preset. | In the order of their names, and no rule with an inline action. |
 /// | A selector and a preset of one name are two things. | A rule that uses the one is not given for the other. |
 /// | The answers follow every change. | An update and a delete change who uses a selector and a preset. |
-///
-/// ```
-/// use gaslightmq_definition_api::prelude::*;
-/// use gaslightmq_rule::conformance::assert_rule_store;
-/// use gaslightmq_rule::prelude::*;
-///
-/// /// The test of a store of rules: it hands the check a way to make an empty one.
-/// async fn a_store_of_rules_does_what_the_trait_asks<S: RuleStore + Default>() {
-///     assert_rule_store(S::default).await;
-/// }
-/// ```
 ///
 /// # Panics
 ///
