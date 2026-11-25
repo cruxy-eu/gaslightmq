@@ -205,6 +205,9 @@ pub enum FireRuleError {
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum ReadSentenceError {
+    /// No environment of this name runs, so no traffic says which names a sentence may use.
+    #[error("environment {:?} does not run", .environment.as_str())]
+    NotRunning { environment: EnvironmentName },
     /// A store of the workspace could not be read, so the host does not know the names a sentence may use.
     /// `reason` says which store, and what it said.
     #[error("the names of the workspace could not be read: {reason}")]

@@ -82,7 +82,7 @@ They change nothing: no file, no rule and no live state.
 | Operation | Takes | Returns |
 |---|---|---|
 | **Query with a draft selector** | A recording, and a selector definition that nobody saved yet. | The calls the draft matches, and their count over the whole recording. |
-| **Parse a ⌘K sentence** | The text typed so far. | The rule definition the sentence gives, the completions for the next word, and what the parser could not read. |
+| **Parse a ⌘K sentence** | An environment that runs, and the text typed so far. | The rule definition the sentence gives, the completions for the next word, and what the parser could not read. The sentence knows the names of the workspace and those that the traffic of the environment has seen. |
 | **Preview records** | A topic and a partition of the World, an offset and a count. | The records from that offset on, decoded with the topic's [schema](../domains/world.md#schemas). |
 
 The engine answers from the whole recording and the whole workspace.

@@ -13,11 +13,13 @@ use std::num::NonZeroUsize;
 ///
 /// let mut configuration = TrafficConfiguration::new();
 /// assert_eq!(configuration.live_window.calls(), 1000);
+/// assert_eq!(configuration.seen_names, 1000);
 ///
 /// configuration.live_window = LiveWindowSize::new(250)?;
+/// configuration.seen_names = 100;
 /// # Ok::<(), LiveWindowSizeError>(())
 /// ```
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub struct TrafficConfiguration {
     /// Ours. Default: 1000 calls.
@@ -27,12 +29,29 @@ pub struct TrafficConfiguration {
     /// The window is what someone sees who starts to watch, so it is as large as the stretch they want to look back on.
     /// Every call it keeps is memory that the traffic holds.
     pub live_window: LiveWindowSize,
+    /// Ours. Default: 1000 names of each kind.
+    ///
+    /// How many topics, how many consumer groups and how many client IDs the [seen names](crate::SeenNames) keep.
+    /// A new name that finds its kind full pushes out the name that was seen longest ago.
+    /// The names are what a ⌘K sentence says without the word for their kind, and what it completes to.
+    /// With zero, the traffic keeps no name.
+    pub seen_names: usize,
 }
 
 impl TrafficConfiguration {
     /// The defaults.
     pub fn new() -> Self {
         Self::default()
+    }
+}
+
+/// The defaults that each property names.
+impl Default for TrafficConfiguration {
+    fn default() -> Self {
+        Self {
+            live_window: LiveWindowSize::default(),
+            seen_names: 1000,
+        }
     }
 }
 
@@ -121,6 +140,7 @@ mod tests {
         let configuration = TrafficConfiguration::new();
 
         assert_eq!(configuration.live_window.calls(), 1000);
+        assert_eq!(configuration.seen_names, 1000);
         assert_eq!(configuration, TrafficConfiguration::default());
     }
 

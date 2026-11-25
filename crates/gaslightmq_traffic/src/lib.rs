@@ -1,16 +1,19 @@
-//! Live traffic: the newest calls of an engine, subscriptions by selector, and statistics per rule and per API.
+//! Live traffic: the newest calls of an engine, subscriptions by selector, statistics per rule and per API, and the
+//! names that the calls named.
 //!
 //! An engine hands over the record of every call that ended.
 //! This crate is what a traffic view keeps of them, for someone who watches what happens now.
 //! It keeps no history: a recording keeps what happened, and the index counts it.
+//! What it keeps of the calls is bounded: a window of the newest, and the names that were seen last.
 //!
 //! | Type | Is |
 //! |---|---|
-//! | [`Traffic`] | The traffic of one engine: it takes the record of every call, and holds the three parts below. |
+//! | [`Traffic`] | The traffic of one engine: it takes the record of every call, and holds the four parts below. |
 //! | [`LiveWindow`] | The newest calls, for someone who starts to watch. |
 //! | [`SubscriptionId`] | One subscription to the calls that a selector matches. |
 //! | [`Statistics`] | The number of calls of each API, and what each rule did. |
 //! | [`RuleStatistics`] | How far one rule got, on how many calls: its matches and its firings. |
+//! | [`SeenNames`] | The topics, consumer groups and client IDs that the calls named, for a ⌘K sentence to say. |
 //! | [`TrafficConfiguration`] | What a traffic is configured with. |
 //! | [`LiveWindowSize`] | How many calls the live window keeps. |
 //!
@@ -47,17 +50,19 @@
 //!
 //! The crate depends on `gaslightmq_call` for the record of a call, on `gaslightmq_selector` for the selector
 //! of a subscription, and on `gaslightmq_rule` for the name that someone asks the statistics of a rule by.
-//! It reads the API of a call with `gaslightmq_field`, and counts it under the API key of `gaslightmq_kernel`.
+//! It reads the API and the names of a call with `gaslightmq_field`, and keeps them as the types of `gaslightmq_kernel`.
 //! It does not depend on the Kafka codec.
 //! It has no async code, no IO, no clock and no randomness: the order of the records is all it knows of time.
 
 mod configuration;
+mod names;
 mod statistics;
 mod subscription;
 mod traffic;
 mod window;
 
 pub use configuration::{LiveWindowSize, LiveWindowSizeError, TrafficConfiguration};
+pub use names::SeenNames;
 pub use statistics::{RuleStatistics, Statistics};
 pub use subscription::SubscriptionId;
 pub use traffic::Traffic;
@@ -83,7 +88,7 @@ pub use window::LiveWindow;
 pub mod prelude {
     #[doc(no_inline)]
     pub use crate::{
-        LiveWindow, LiveWindowSize, LiveWindowSizeError, RuleStatistics, Statistics, SubscriptionId, Traffic,
-        TrafficConfiguration,
+        LiveWindow, LiveWindowSize, LiveWindowSizeError, RuleStatistics, SeenNames, Statistics, SubscriptionId,
+        Traffic, TrafficConfiguration,
     };
 }

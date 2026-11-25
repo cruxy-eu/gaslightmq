@@ -50,6 +50,7 @@ mod next_to_std_and_every_neighbour {
         let window: &LiveWindow = traffic.live_window();
         let statistics: &Statistics = traffic.statistics();
         let rule: RuleStatistics = statistics.rule(&"leader-flap".parse().expect("a rule name"));
+        let seen: &SeenNames = traffic.seen_names();
 
         vec![
             size.to_string(),
@@ -57,6 +58,7 @@ mod next_to_std_and_every_neighbour {
             window.len().to_string(),
             statistics.calls().to_string(),
             rule.firings().to_string(),
+            seen.clients().count().to_string(),
         ]
     }
 
@@ -74,7 +76,7 @@ mod next_to_std_and_every_neighbour {
 fn the_prelude_names_every_type_next_to_std_and_every_neighbour() {
     assert_eq!(
         next_to_std_and_every_neighbour::every_item(),
-        ["64 calls", "subscription 1", "0", "0", "0"]
+        ["64 calls", "subscription 1", "0", "0", "0", "0"]
     );
 }
 

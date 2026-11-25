@@ -5,5 +5,6 @@
 mod support;
 
 mod live_window;
+mod seen_names;
 mod statistics;
 mod subscriptions;

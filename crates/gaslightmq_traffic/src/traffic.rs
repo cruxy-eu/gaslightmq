@@ -6,18 +6,20 @@ use gaslightmq_call::Call;
 use gaslightmq_selector::EffectiveSelector;
 
 use crate::subscription::Subscriptions;
-use crate::{LiveWindow, Statistics, SubscriptionId, TrafficConfiguration};
+use crate::{LiveWindow, SeenNames, Statistics, SubscriptionId, TrafficConfiguration};
 
-/// The traffic of one engine, as someone watches it: the newest calls, the subscriptions and the statistics.
+/// The traffic of one engine, as someone watches it: the newest calls, the subscriptions, the statistics and the
+/// names that the calls named.
 ///
 /// Whoever runs the engine hands it the record of every call that ended, with [`record`](Self::record).
-/// The traffic does three things with a record, and none of them waits:
+/// The traffic does four things with a record, and none of them waits:
 ///
 /// | It | So that |
 /// |---|---|
 /// | Keeps it in the [live window](Self::live_window). | Someone who starts to watch sees what just happened. |
 /// | Says which [subscriptions](Self::subscribe) it goes to. | A UI that only shows `orders.*` does not receive every call. |
 /// | Counts it in the [statistics](Self::statistics). | A rule shows its matches and its firings, and an API its calls. |
+/// | Notes the [names](Self::seen_names) it names. | A ⌘K sentence knows the topics, groups and clients of the traffic. |
 ///
 /// A traffic sends nothing itself.
 /// [`record`](Self::record) returns the subscriptions of a call, and whoever holds the connections passes the call on.
@@ -66,6 +68,7 @@ pub struct Traffic {
     live_window: LiveWindow,
     subscriptions: Subscriptions,
     statistics: Statistics,
+    seen_names: SeenNames,
 }
 
 impl Traffic {
@@ -73,6 +76,7 @@ impl Traffic {
     pub fn new(configuration: TrafficConfiguration) -> Self {
         Self {
             live_window: LiveWindow::new(configuration.live_window),
+            seen_names: SeenNames::new(configuration.seen_names),
             configuration,
             subscriptions: Subscriptions::new(),
             statistics: Statistics::default(),
@@ -86,12 +90,13 @@ impl Traffic {
 
     /// A call ended, and `call` is its record.
     ///
-    /// The live window keeps the record, and the statistics count it.
+    /// The live window keeps the record, the statistics count it, and the seen names take the names it names.
     /// The result names the subscriptions whose selector matches the call, in the order in which they were made.
     /// Whoever calls passes the record on to each of them.
     pub fn record(&mut self, call: Arc<Call>) -> Vec<SubscriptionId> {
         let subscriptions = self.subscriptions.of(&call);
         self.statistics.count(&call);
+        self.seen_names.note(&call);
         self.live_window.push(call);
         subscriptions
     }
@@ -112,6 +117,12 @@ impl Traffic {
     /// What the traffic counted since it began.
     pub const fn statistics(&self) -> &Statistics {
         &self.statistics
+    }
+
+    /// The topics, the consumer groups and the client IDs that the calls named, as many of each as the
+    /// [configuration](TrafficConfiguration::seen_names) keeps.
+    pub const fn seen_names(&self) -> &SeenNames {
+        &self.seen_names
     }
 
     /// Subscribes to the calls that `selector` matches, from the next call on.

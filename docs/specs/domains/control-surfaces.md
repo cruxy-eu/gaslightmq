@@ -42,6 +42,11 @@ The control plane reads the sentence while someone types,
 once they paused for the interval of the UI's configuration, and only its answer to the latest sentence counts.
 The palette shows the rule the sentence gives, part by part, and the words it could not read with the reason.
 
+A sentence knows the names of the environment shown: the presets and the selectors of the workspace,
+and the topics, consumer groups and client IDs that its traffic has seen.
+It says those without the word for their kind, and completes them: `order-ingest` reads as a client once
+`order-ingest` has called through the environment. Any other name follows the word for its kind: `client billing`.
+
 | Key | Does |
 |---|---|
 | Up, down | Move through the rule, the completions of the word at the end, and the views. |

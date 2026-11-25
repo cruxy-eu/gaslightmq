@@ -1,4 +1,5 @@
-//! A host runs several environments in front of real Kafka brokers, each with a proxy of its own.
+//! A host runs several environments in front of real Kafka brokers, each with a proxy of its own,
+//! and reads a ⌘K sentence with the names that the traffic of one of them has seen.
 //!
 //! The tests need Docker.
 //! Each test starts the cluster it needs, and a host whose workspace lives in memory.
@@ -16,11 +17,12 @@ use gaslightmq_environment::prelude::*;
 use gaslightmq_field::prelude::*;
 use gaslightmq_host::prelude::*;
 use gaslightmq_incident::prelude::*;
-use gaslightmq_kafka_client_native::KafkaProducer;
+use gaslightmq_kafka_client_native::{KafkaProducer, ProducerConfiguration};
 use gaslightmq_kernel::prelude::*;
 use gaslightmq_lie::prelude::*;
 use gaslightmq_lie_api::prelude::*;
 use gaslightmq_lie_refusal::prelude::*;
+use gaslightmq_quick_inject::prelude::*;
 use gaslightmq_rule::prelude::*;
 use gaslightmq_selector::prelude::*;
 use gaslightmq_test_kafka::KafkaCluster;
@@ -294,6 +296,101 @@ async fn a_rule_fired_by_hand_lies_on_the_next_call_and_an_incident_needs_a_back
         anyhow::bail!("a real cluster applied an incident: {moved:?}");
     };
     assert_eq!(&rule, election.name());
+    host.stop_all().await;
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_sentence_knows_the_names_of_the_workspace_and_those_the_traffic_has_seen() -> anyhow::Result<()> {
+    let cluster = KafkaCluster::plaintext().start().await?;
+    let orders = cluster.topics().create("orders.eu").await?;
+    let host = Host::new(
+        HostConfiguration::default(),
+        MemoryContext::new(),
+        Lies::of_every_build(),
+    );
+    let any = ListenAddress::new(LOCALHOST, 0);
+    let brokers = BrokerListeners::pinned(cluster.brokers().iter().map(|broker| (broker.id(), any)))?;
+    let staging = Environment::new(
+        "staging-proxy".parse()?,
+        Instances::ProxyInFrontOfCluster {
+            proxy: ProxyDefinition::new(Listeners::new(any, brokers, LOCALHOST.into())?),
+            upstream: Upstream::new(cluster.brokers()[0].address().to_string().parse()?),
+        },
+    );
+    // The workspace has a preset and a selector with a title.
+    host.create(Preset::new(
+        "leader-flap".parse()?,
+        RefusalLie::new(ErrorCode::NOT_LEADER_OR_FOLLOWER),
+    ))
+    .await?;
+    host.create(
+        Selector::new(
+            "order-producers".parse()?,
+            Conditions::from(Condition::is(ApiKey::PRODUCE)),
+        )
+        .with_title("Order producers".parse()?),
+    )
+    .await?;
+    host.start(EnvironmentConfiguration::new(&staging)?).await?;
+    let order_ingest: ClientId = "order-ingest".parse()?;
+    // The traffic has seen the calls of `order-ingest` once its subscription hands them over.
+    let mut of_order_ingest = host
+        .follow_calls(
+            staging.name(),
+            &SelectorRef::Inline(Conditions::from(Condition::is(order_ingest.clone()))),
+        )
+        .await?;
+    let bootstrap = host
+        .address_of(staging.name(), Endpoint::Bootstrap)?
+        .context("the bootstrap endpoint of the staging proxy is open")?;
+    let mut producing = ProducerConfiguration::new(bootstrap);
+    producing.client.client_id = order_ingest;
+
+    // Before `order-ingest` writes, a sentence does not know it.
+    let unknown = host
+        .read_sentence(staging.name(), "delay produce orders.* 750ms 40% order-ingest")
+        .await?;
+    let written = KafkaProducer::new(producing)
+        .send(
+            orders.name().as_str(),
+            Partition::new(0),
+            &[Record::new("placed").with_key("o-1").with_timestamp(PLACED_AT)],
+        )
+        .await;
+    tokio::time::timeout(PATIENCE, of_order_ingest.next())
+        .await?
+        .context("the environment runs until the test stops it")?;
+    let typing = host
+        .read_sentence(staging.name(), "delay produce orders.* 750ms 40% order-")
+        .await?;
+    let sentence = host
+        .read_sentence(staging.name(), "delay produce orders.* 750ms 40% order-ingest")
+        .await?;
+    let titled = host.read_sentence(staging.name(), "leader-flap prod").await?;
+
+    assert_eq!(written, Ok(Offset::new(0)));
+    let unread: Vec<&str> = unknown.unread().iter().map(Unread::word).collect();
+    assert_eq!(unread, ["order-ingest"]);
+    // Once it wrote, the sentence completes its client ID, and reads as a whole rule.
+    let clients: Vec<&str> = typing
+        .completions()
+        .iter()
+        .filter(|completion| completion.kind() == CompletionKind::Client)
+        .map(Completion::word)
+        .collect();
+    assert_eq!(clients, ["order-ingest"]);
+    assert!(sentence.unread().is_empty(), "{:?}", sentence.unread());
+    let rule = sentence.rule().context("the sentence names a lie")?;
+    assert_eq!(rule.scope().to_string(), "client.id is order-ingest");
+    // The names of the workspace stay known: a word of the title of a selector offers its name.
+    let selectors: Vec<&str> = titled
+        .completions()
+        .iter()
+        .filter(|completion| completion.kind() == CompletionKind::Selector)
+        .map(Completion::sentence)
+        .collect();
+    assert_eq!(selectors, ["leader-flap order-producers "]);
     host.stop_all().await;
     Ok(())
 }
