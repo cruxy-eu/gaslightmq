@@ -868,7 +868,7 @@ it activates a scenario, runs its clients and [asserts on the recording](control
 
 It stands with the applications, because nothing of the product depends on it.
 A crate that speaks to a real cluster takes it as a dev-dependency:
-`kafka_client_native`, `backend_upstream`, `engine` and `host` today, and `test` and `testcontainers` once they exist.
+`kafka_client_native`, `backend_upstream`, `engine`, `host` and `control_server` today, and `test` and `testcontainers` once they exist.
 It depends on vocabulary alone, so every crate above `wire` can use it without a cycle.
 
 - **One cluster, several brokers.**
