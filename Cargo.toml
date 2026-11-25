@@ -28,6 +28,7 @@ members = [
     "crates/gaslightmq_trigger",
     "crates/gaslightmq_wire",
     "crates/gaslightmq_wire_edit",
+    "crates/gaslightmq_workspace",
     "crates/gaslightmq_definition_store/*",
     "crates/gaslightmq_kafka_client/*",
     "xtask",
