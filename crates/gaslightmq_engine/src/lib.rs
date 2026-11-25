@@ -104,6 +104,12 @@
 //! let answer = member.heartbeat(group.as_str()).await;
 //! assert_eq!(answer, Ok(()));
 //!
+//! // The session of the member opened, and its first request said who its client is.
+//! let opened = events.next().await.expect("the engine runs, and the listener kept up");
+//! assert!(matches!(opened, EngineEvent::Session(SessionEvent::Opened(_))));
+//! let identified = events.next().await.expect("the engine runs, and the listener kept up");
+//! assert!(matches!(identified, EngineEvent::Session(SessionEvent::Identified { .. })));
+//!
 //! // The record of the call says what the client was told, and how long it waited for it.
 //! let event = events.next().await.expect("the engine runs, and the listener kept up");
 //! let EngineEvent::CallRecorded(record) = event else {

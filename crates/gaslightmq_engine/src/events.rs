@@ -14,7 +14,10 @@ use crate::{EventBacklog, LiveEventsError, SessionEvent};
 ///
 /// It is the one outlet of an engine.
 /// Whoever keeps what happened listens here: the traffic view, the index and a recording take the calls,
-/// and the scenario runner takes the calls and the incidents.
+/// the scenario runner takes the calls and the incidents, and whoever shows the sessions takes what happens to them.
+///
+/// The events of one session come in the order in which they happened: it opens, its first request says who its
+/// client is, its calls leave with what their rules fired before their records, and it closes.
 #[derive(Debug, Clone)]
 #[non_exhaustive]
 pub enum EngineEvent {
