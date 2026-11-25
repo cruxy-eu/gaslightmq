@@ -119,6 +119,17 @@ The workspace works in git.
 Teams review scenarios in pull requests,
 and CI runs them with `gmq run`.
 
+### Stores
+
+The engine reaches definitions through a store, and each kind of definition has a store of its own.
+The files of a workspace are one store of the definitions.
+Memory is another: the engine keeps its definitions there [without a workspace](#without-a-workspace), and so do tests.
+Every store keeps the same contract, so nothing else can tell which one it works with.
+A store also says who uses a selector or a preset, so a delete reads no definition that it does not need.
+[Names](#names) and [validation](#validation) are the same for every store.
+The layout above and [reading](#reading) are about files alone.
+See [the store seam](crates.md#the-store-seam).
+
 ### Reading
 
 When the engine cannot read a file, the error names the path of the key that failed:

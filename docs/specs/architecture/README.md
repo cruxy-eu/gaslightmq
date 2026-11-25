@@ -36,14 +36,14 @@ flowchart LR
     LI["Listeners<br/>one per endpoint"] --> SS["Sessions<br/>one per connection"]
     SS --> PL["Pipeline<br/>decode · match · decide · lie"]
     PL --> BE{{"Backend"}}
-    RS["Rule store<br/>snapshots · counters · budgets"] -->|publishes| SS
+    RS["Armed rules<br/>snapshots · counters · budgets"] -->|publishes| SS
     SR["Scenario runner<br/>mode · steps · live set"] -->|arms and fires| RS
     CK["Clock"] --- SR
     PL -->|call events| BUS["Event bus"]
     BUS --> REC["Recorder"]
     BUS --> IDX["Indexer"]
     BUS --> SR
-    WS["Workspace store"] <--> RS
+    WS["Workspace<br/>over its stores"] <--> RS
     WS <--> SR
     CP["Control plane<br/>HTTP + WebSocket"] --> RS
     CP --> SR
@@ -53,25 +53,25 @@ flowchart LR
   BE -->|Upstream| kafka["Real cluster"]
   BE -->|Simulated| world["Broker<br/>World"]
   CP <--> ui["Web UI"]
-  WS <--> files[("Workspace files")]
+  WS <--> stores[("Stores<br/>workspace files, or memory")]
   REC --> recs[("Recordings")]
 ```
 
 | Component | Responsibility |
 |---|---|
-| **Host** | Start and stop environments in one process. Share the workspace store and the control plane between them. |
+| **Host** | Start and stop environments in one process. Share the workspace and the control plane between them. |
 | **Listeners** | Accept connections on the bootstrap endpoint and one endpoint per broker. Refuse connections when a broker is down. |
 | **Sessions** | Run one connection each. A session is a transport and a pipeline: the transport reads and writes the client's bytes, and the pipeline decides. Share a client context with the other connections of the same client. |
 | **Pipeline** | Hold the state of one session: identity, the rule snapshot, per-session counters and in-flight calls. Take each call through the stages in [request pipeline](request-pipeline.md). |
 | **Backend** | Answer a call with the truth, from a real cluster or from the World. Expand incidents into their consequences, and apply or emulate them. |
-| **Rule store** | Hold every rule and its state, workspace rules and live rules alike. Publish an immutable snapshot of armed rules in priority order on every change. Hold each armed rule's shared counter and budget as atomics. |
+| **Armed rules** | Hold the rules that are armed, workspace rules and live rules alike. Publish an immutable snapshot of them in priority order on every change. Hold each armed rule's shared counter and budget as atomics. |
 | **Scenario runner** | Run the active scenario and the live set: turn the mode into a priority order, advance steps, and hand incidents to the backend. |
 | **Clock** | Tell the time for triggers, lifetimes, steps, arriving records and timeouts. |
 | **Event bus** | Carry call events, rule changes and world changes to everyone who listens. Keep every event for the recorder, and the newest ones for a listener that only watches. |
 | **Recorder** | Write call events and journal entries to a recording while recording is on. It misses no event, however slow it writes. |
 | **Journal** | Keep what changed and who changed it: arms, disarms, parameter changes, steps and incidents. |
 | **Indexer** | Maintain the facets of the current recording. |
-| **Workspace store** | Load definitions from files, watch them for changes and write edits back. Keep live rules in the scratch file. |
+| **Workspace** | Hold the definitions as one model, over a store for each kind, and check that they fit each other before a store takes a change. A store is the files of a workspace, or memory, and the workspace reaches its stores through one context. The stores of files load definitions, watch them for changes and write edits back, and keep live rules in the scratch file. |
 | **Control plane** | Expose the engine to the UI, the CLI and tests. |
 
 ## Principles
@@ -162,7 +162,7 @@ flowchart LR
     cp["Control plane"] --- e1
     cp --- e2
     cp --- e3
-    ws["Workspace store"] --- cp
+    ws["Workspace"] --- cp
   end
 
   p1 -->|TCP| kafka["Real cluster"]
