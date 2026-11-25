@@ -20,7 +20,7 @@ It is then set up by flags and files alone.
 |---|---|
 | `selectors` | List, get, create, update, delete. Test against the current recording. |
 | `presets` | List, get, create, update, delete. |
-| `rules` | List, get, create, update, delete. Arm, disarm, fire. Keep a live rule. |
+| `rules` | List, get, create, update, delete. List the rules of an environment with their state. Create, update and delete a live rule. Arm, disarm, fire. Keep a live rule. |
 | `scenarios` | List, get, create, update, delete. Activate, deactivate, step. |
 | `layouts` | List, get, create, update, delete. |
 | `sessions` | List the open sessions with their identity. Close one. |
@@ -42,10 +42,32 @@ Create and update operations on definitions write to the workspace files.
 Live rules are the exception.
 They stay in memory until *keep* saves them as workspace rules.
 
+A live rule belongs to one environment, and its name is a name that no rule of the workspace has.
+*Keep* saves it in the workspace under the same name and UUID.
+It stays in the state it has in its environment, and every other environment holds it disarmed.
+
 *Fire* skips a rule's trigger once.
 An incident fires immediately.
 A lie applies to the next call the rule matches.
 See [manual firing](../domains/rules.md#manual-firing).
+
+## Operations
+
+Every operation is one request, and it gets one answer or one error.
+The crate `control_api` holds each operation as a type, with the type of its answer and of its error,
+and a client and a server share them.
+How the requests and the answers travel over HTTP is up to the client and the server.
+
+- **An error holds what can go wrong with its operation, and nothing else.**
+  A client decides on each variant: it starts an environment that does not run, or picks another name for a rule.
+  The rest is text.
+  Operations that fail in the same ways share an error.
+- **A command on something live names an environment that runs.**
+  Every such command fails the same way when the environment does not run,
+  whether it stopped or never existed.
+- **A definition travels without its [UUID](identity.md#uuid).**
+  An answer leaves it out.
+  The workspace gives a definition its UUID when it creates it, and keeps it on every update, whatever UUID a request holds.
 
 ## Drafts
 
@@ -76,19 +98,27 @@ The WebSocket streams:
 
 | Message | Carries |
 |---|---|
-| **Snapshot** | The full state, sent when a client connects. |
+| **Snapshot** | The full state, sent when a client connects: every definition of the workspace, and every environment that runs with its backend, its rules and its sessions. |
 | **Call** | One call event: request summary, verdict and explanation. |
 | **Stats** | Matches, firings and remaining budget per rule, and calls per API, at a fixed interval. |
-| **Rule changed** | A rule changed state or definition. |
+| **Rule changed, removed** | A rule of an environment changed state, or a live rule was made or changed its definition. A live rule left its environment: someone deleted or kept it. |
+| **Definition changed, deleted** | Someone created, updated or deleted a definition of the workspace. |
 | **Scenario changed** | The active scenario changed, or advanced a step. |
 | **World changed** | An incident changed the World, or the Upstream backend's overlay. |
-| **Session opened, identified, closed** | Session lifecycle. |
+| **Session opened, identified, software named, closed** | Session lifecycle. The client software comes with the identification, or later with the first `ApiVersions` request that names it. |
 | **Journal entry** | Something changed, with the time and the surface that changed it. |
-| **Environment started, stopped** | An environment came up or went down. |
-| **Workspace error** | A file failed validation. |
+| **Environment started, stopped** | An environment came up, with its backend, its rules and its sessions, or went down. |
+| **Workspace invalid** | The definitions do not fit each other, or a file failed validation. The engine keeps the last valid version. |
+
+A message about something live names its environment.
+A client that applies every message to the snapshot holds what the process holds.
 
 Clients can subscribe to call events with a selector,
 so a UI that only shows `orders.*` does not receive every call.
+A client follows the calls of one environment at a time, and no calls until it subscribes.
+A new subscription replaces the one before it.
+A selector without conditions follows every call.
+Every other message reaches every client.
 
 ## Secrets
 

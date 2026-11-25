@@ -384,7 +384,7 @@ Transactions arrive later as `sim_txn`, next to `sim_log` and `sim_group`.
 | `surface` | [Pad layouts](../domains/control-surfaces.md#pad-layout), layers, pads as positions, the encoder mapping, and the intents a surface sends. Also the state of one surface: the layer it shows, its mode of play and its focus, and the [store trait](#the-store-seam) of the pad layouts, with the store in memory behind a feature. | `rule`, `selector`, `trigger`, `lie`, `field`, `kernel`, `resource`, `clock`, `definition_api`, `definition_memory` |
 | `surface_conformance` | What a store of pad layouts does, as a check that the tests of any store of layouts run: the store contract with layouts, and which layouts have a row for a selector or a column for a preset. This crate is [test support](#test-support-crates). | `surface`, `definition_conformance`, `selector`, `rule` |
 | `quick_inject` | The ⌘K sentence parser: text to a rule definition, with completions for the word that is being typed, and the words it could not read. Whoever reads a sentence hands over the names the system knows. The host runs it behind the [control plane](control-plane.md#drafts). | `selector`, `lie`, `rule`, `trigger`, `field`, `kernel`, `clock` |
-| `control_api` | The [control plane](control-plane.md) as types: resources, commands and stream messages. It re-exports the definition types its messages carry, and it holds its own view of the World's state. | `call`, `journal`, `rule`, `scenario`, `selector`, `surface`, `incident`, `environment` |
+| `control_api` | The [control plane](control-plane.md) as types: every operation with its answer and its error, and the messages of the live stream. It re-exports the crates of the definition types its messages carry, one module per domain, so the UI names them through it. It holds its own view of the World's state. | `call`, `journal`, `rule`, `scenario`, `selector`, `surface`, `incident`, `environment`, `lie`, `trigger`, `field`, `kernel`, `clock` |
 | `control_client` | A client for the control plane, for native targets and for WebAssembly. This crate does IO. | `control_api` |
 | `control_server` | The HTTP and WebSocket server in front of the host. This crate does IO. | `host`, `control_api` |
 
@@ -891,6 +891,7 @@ It depends on vocabulary alone, so every crate above `wire` can use it without a
 ## Features
 
 - Every crate with definition types has a `serde` feature.
+  `control_api` has none: its types exist to travel, so their `serde` forms are always on, and so are those of the definition types it carries.
 - `control_client` has one feature per transport: native and WebAssembly.
 - `gmq` has one feature per backend and one per crate of a lie kind,
   so a build can ship the proxy without the fake broker.
@@ -908,6 +909,11 @@ The crates arrive in the order the [first version](../README.md#first-version) n
 | 5 | `journal`, `scenario`, `workspace_fs`, `recording`, `test`, `testcontainers`, `gmq` | Definitions and scenarios in files, recordings, and tests in CI. |
 | 6 | `schema`, `schema_registry`, `virtual_log`, `world`, `sim_log`, `sim_group`, `broker`, `world_seed` | The broker, alone and behind a proxy. |
 | 7 | `lie_topology`, `lie_data`, `lie_progress`, `lie_config`, `sim_txn` | The remaining lies and transactions. |
+
+`control_api` arrives in step 4 with the operations and the messages of that step:
+the definitions, the environments, the rules of an environment and its live rules, pads, sessions, the backend and ⌘K.
+The operations and messages of scenarios, the journal, recordings and capture join it in step 5, with the crates of their domains.
+Its view of the World joins it in step 6, with the broker.
 
 `test` and `testcontainers` arrive in step 5.
 `testcontainers` needs the binary for its image, and both need the workspace files.

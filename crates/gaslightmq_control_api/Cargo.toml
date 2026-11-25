@@ -1,0 +1,28 @@
+[package]
+name = "gaslightmq_control_api"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lints]
+workspace = true
+
+# No `serde` feature: the types of the control plane exist to travel, so their forms are always there,
+# and so are those of the definition types they carry.
+[dependencies]
+gaslightmq_call = { workspace = true, features = ["serde"] }
+gaslightmq_clock = { workspace = true, features = ["serde"] }
+gaslightmq_environment = { workspace = true, features = ["serde"] }
+gaslightmq_field = { workspace = true, features = ["serde"] }
+gaslightmq_incident = { workspace = true, features = ["serde"] }
+gaslightmq_kernel = { workspace = true, features = ["serde"] }
+gaslightmq_lie = { workspace = true, features = ["serde"] }
+gaslightmq_rule = { workspace = true, features = ["serde"] }
+gaslightmq_selector = { workspace = true, features = ["serde"] }
+gaslightmq_surface = { workspace = true, features = ["serde"] }
+gaslightmq_trigger = { workspace = true, features = ["serde"] }
+serde.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true

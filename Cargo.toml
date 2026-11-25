@@ -6,6 +6,7 @@ members = [
     "crates/gaslightmq_clock",
     "crates/gaslightmq_clock_waitable",
     "crates/gaslightmq_combine",
+    "crates/gaslightmq_control_api",
     "crates/gaslightmq_engine",
     "crates/gaslightmq_environment",
     "crates/gaslightmq_environment/conformance",

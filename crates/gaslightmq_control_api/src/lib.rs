@@ -1,0 +1,191 @@
+//! The control plane as types: the operations a client asks, their answers and errors, and the live stream.
+//!
+//! The UI, the CLI and tests reach a process through the control plane, and nothing else.
+//! This crate holds what travels between them and the process: each operation, what it answers with,
+//! why it fails, and each message of the live stream.
+//! It does no IO and holds no behaviour of the engine: a server answers the operations, and a client sends them.
+//!
+//! | Type | Is |
+//! |---|---|
+//! | [`Operation`] | One thing a client asks, with its answer and its error. |
+//! | [`AnyOperation`] | Any operation, as one value. |
+//! | [`EditableDefinition`] | A kind of definition that the control plane lists, gets, creates, updates and deletes. |
+//! | [`ListDefinitions`], [`GetDefinition`], [`CreateDefinition`], [`UpdateDefinition`], [`DeleteDefinition`] | The operations on the definitions of the workspace, for each kind. |
+//! | [`AnyDefinition`], [`DefinitionRef`], [`Definitions`] | A definition of any kind, its name with its kind, and every definition by kind. |
+//! | [`ListEnvironments`], [`GetEnvironment`], [`StartEnvironment`], [`StopEnvironment`] | The environments of the workspace, and running one. |
+//! | [`EnvironmentStatus`] | An environment, and whether it runs. |
+//! | [`ListEnvironmentRules`], [`RuleStatus`] | The rules of an environment, each with its state there. |
+//! | [`CreateLiveRule`], [`UpdateLiveRule`], [`DeleteLiveRule`], [`KeepRule`] | The live rules of an environment, and keeping one in the workspace. |
+//! | [`ArmRule`], [`DisarmRule`], [`FireRule`] | Commands on a rule of an environment. |
+//! | [`SendIntent`] | What someone did at a pad. |
+//! | [`ListSessions`], [`CloseSession`], [`SessionStatus`], [`SessionIdentity`], [`SessionCloser`] | The sessions of an environment. |
+//! | [`GetBackend`], [`BackendStatus`], [`BackendKind`] | The backend of an environment: its kind, its endpoints and the incidents it can do. |
+//! | [`ParseSentence`], [`ParsedSentence`], [`WordCompletion`], [`WordKind`], [`UnreadWord`] | A ⌘K sentence that is still being typed, and the rule it gives. |
+//! | [`StreamMessage`], [`ProcessState`], [`RunningEnvironment`] | The live stream, and the state it starts from. |
+//! | [`Stats`], [`RuleStats`] | Calls per API, and how far each rule got. |
+//! | [`Subscription`] | Which calls a client of the stream follows. |
+//!
+//! The [`prelude`] holds all of them, with their [errors](#errors).
+//!
+//! ```
+//! use gaslightmq_control_api::prelude::*;
+//!
+//! // Someone presses a pad, and the UI arms the rule of the pad in the environment it shows.
+//! let arm = ArmRule {
+//!     environment: "orders-sim".parse().expect("an environment name"),
+//!     rule: "delay-1s-on-order-producers".parse().expect("a rule name"),
+//! };
+//! let request = serde_json::to_value(AnyOperation::from(arm)).expect("a request has a form");
+//! assert_eq!(
+//!     request,
+//!     serde_json::json!({ "operation": "arm-rule", "environment": "orders-sim", "rule": "delay-1s-on-order-producers" }),
+//! );
+//!
+//! // The environment does not run, and the UI offers to start it.
+//! let refusal = serde_json::json!({ "error": "not-running", "environment": "orders-sim" });
+//! let error: <ArmRule as Operation>::Error = serde_json::from_value(refusal).expect("an error of the operation");
+//! assert!(matches!(error, RuleCommandError::NotRunning { .. }));
+//! assert_eq!(error.to_string(), "environment \"orders-sim\" does not run");
+//! ```
+//!
+//! # The definition types travel as they are
+//!
+//! A definition has one form: in a file, in a request and in the UI.
+//! The control plane carries the definition types of their own crates, and this crate re-exports those crates,
+//! one module per domain, so the UI names every type it shares with the engine through this crate:
+//! [`selector`], [`rule`], [`lie`], [`trigger`], [`incident`], [`surface`], [`environment`] and [`call`],
+//! and the vocabulary they are made of, [`kernel`], [`field`] and [`clock`].
+//! A definition only holds valid values, so the UI checks a value in a form with the engine's own types.
+//!
+//! The UUID of a definition stays inside the workspace.
+//! An answer holds a definition without it, and the workspace keeps or gives the UUID, whatever a request holds.
+//!
+//! # Names, not UUIDs
+//!
+//! Every operation names a definition by its name, and an operation on something live names its environment too.
+//! Nothing renames a definition: an update changes everything but the name.
+//!
+//! # Errors
+//!
+//! Each operation fails in its own ways, and its error holds only those.
+//! Operations that fail in the same ways share one error.
+//!
+//! | Operation | Error | What is wrong |
+//! |---|---|---|
+//! | [`ListDefinitions`], [`ListEnvironments`] | [`ListDefinitionsError`] | A store could not read. |
+//! | [`GetDefinition`], [`GetEnvironment`] | [`GetDefinitionError`] | No definition has the name, or a store could not read. |
+//! | [`CreateDefinition`] | [`CreateDefinitionError`] | The name is taken, the definition does not fit the workspace, or a store failed. |
+//! | [`UpdateDefinition`] | [`UpdateDefinitionError`] | No definition has the name, the definition does not fit the workspace, or a store failed. |
+//! | [`DeleteDefinition`] | [`DeleteDefinitionError`] | No definition has the name, other definitions use it, or a store failed. |
+//! | [`StartEnvironment`] | [`StartEnvironmentError`] | No environment has the name, it runs already, or it did not come up. |
+//! | [`StopEnvironment`], [`ListEnvironmentRules`], [`ListSessions`], [`GetBackend`], [`ParseSentence`] | [`EnvironmentNotRunning`] | The environment does not run. |
+//! | [`CreateLiveRule`] | [`CreateLiveRuleError`] | The environment does not run, a rule has the name, or the rule does not fit the workspace. |
+//! | [`UpdateLiveRule`] | [`UpdateLiveRuleError`] | The environment does not run, no live rule has the name, or the rule does not fit the workspace. |
+//! | [`DeleteLiveRule`] | [`DeleteLiveRuleError`] | The environment does not run, or no live rule has the name. |
+//! | [`KeepRule`] | [`KeepRuleError`] | The environment does not run, no live rule has the name, the workspace has a rule of that name, the rule does not fit the workspace, or a store failed. |
+//! | [`ArmRule`], [`DisarmRule`], [`FireRule`] | [`RuleCommandError`] | The environment does not run, no rule has the name, or the rule cannot do this from where it stands. |
+//! | [`SendIntent`] | [`IntentError`] | The environment does not run, the layout does not exist, or the intent changed nothing. |
+//! | [`CloseSession`] | [`CloseSessionError`] | The environment does not run, or no session is open on the connection. |
+//!
+//! The server meets the errors of the crates that do the work, such as the workspace, and turns them into these.
+//! What they said is text, in a field `reason`.
+//! The message of every error is complete, so no error has a [`source`](std::error::Error::source).
+//!
+//! # The `serde` forms
+//!
+//! Every type of this crate travels, so every one has a `serde` form, and the crate has no feature for it.
+//! The definition types it carries have the forms of their own crates.
+//!
+//! | Type | Form |
+//! |---|---|
+//! | [`AnyOperation`] | The map of its operation, with an `operation` key that names it: `arm-rule`, `create-selector`. |
+//! | An operation | A map of its fields. |
+//! | An error | A map of its fields, with an `error` key that names the variant: `{ "error": "not-found", "name": { "rule": "x" } }`. [`EnvironmentNotRunning`] is the map of its field. |
+//! | [`DefinitionRef`], [`AnyDefinition`] | A map with one entry: the kind, and the name or the definition. |
+//! | [`StreamMessage`] | The map of its fields, with a `message` key that names it: `rule-changed`. |
+//! | [`Subscription`] | The map of its fields, with a `follow` key: `calls` or `nothing`. |
+//! | [`BackendKind`], [`SessionCloser`], [`WordKind`] | The name in kebab case. |
+//! | Every other type | A map of its fields. A field that is `None` or empty is left out. |
+//!
+//! # What the control plane does not hold yet
+//!
+//! Scenarios, the journal, recordings and capture arrive with the crates of their domains,
+//! and the World with the broker. Their operations and messages arrive with them.
+//!
+//! # No IO
+//!
+//! The crate depends on the crates of the definitions it carries, and on nothing that touches the network,
+//! a file or a clock. It does not depend on the Kafka codec, and it compiles to WebAssembly.
+
+pub use gaslightmq_call as call;
+pub use gaslightmq_clock as clock;
+pub use gaslightmq_environment as environment;
+pub use gaslightmq_field as field;
+pub use gaslightmq_incident as incident;
+pub use gaslightmq_kernel as kernel;
+pub use gaslightmq_lie as lie;
+pub use gaslightmq_rule as rule;
+pub use gaslightmq_selector as selector;
+pub use gaslightmq_surface as surface;
+pub use gaslightmq_trigger as trigger;
+
+mod backend;
+mod definitions;
+mod environments;
+mod operation;
+mod pads;
+mod rules;
+mod sentence;
+mod sessions;
+mod stats;
+mod stream;
+
+pub use backend::{BackendKind, BackendStatus, GetBackend};
+pub use definitions::{
+    AnyDefinition, CreateDefinition, CreateDefinitionError, DefinitionRef, Definitions, DeleteDefinition,
+    DeleteDefinitionError, EditableDefinition, GetDefinition, GetDefinitionError, ListDefinitions,
+    ListDefinitionsError, UpdateDefinition, UpdateDefinitionError,
+};
+pub use environments::{
+    EnvironmentNotRunning, EnvironmentStatus, GetEnvironment, ListEnvironments, StartEnvironment,
+    StartEnvironmentError, StopEnvironment,
+};
+pub use operation::{AnyOperation, Operation};
+pub use pads::{IntentError, SendIntent};
+pub use rules::{
+    ArmRule, CreateLiveRule, CreateLiveRuleError, DeleteLiveRule, DeleteLiveRuleError, DisarmRule, FireRule, KeepRule,
+    KeepRuleError, ListEnvironmentRules, RuleCommandError, RuleStatus, UpdateLiveRule, UpdateLiveRuleError,
+};
+pub use sentence::{ParseSentence, ParsedSentence, UnreadWord, WordCompletion, WordKind};
+pub use sessions::{CloseSession, CloseSessionError, ListSessions, SessionCloser, SessionIdentity, SessionStatus};
+pub use stats::{RuleStats, Stats};
+pub use stream::{ProcessState, RunningEnvironment, StreamMessage, Subscription};
+
+/// Every type of this crate, with its error.
+///
+/// Import it whole wherever code speaks to the control plane, next to the preludes of the domains it re-exports.
+/// No name in it is a name of those preludes or of the standard one, so the import shadows nothing.
+///
+/// ```
+/// use gaslightmq_control_api::environment::EnvironmentNameError;
+/// use gaslightmq_control_api::prelude::*;
+///
+/// let stop = StopEnvironment { environment: "orders-sim".parse()? };
+/// assert_eq!(AnyOperation::from(stop.clone()), AnyOperation::StopEnvironment(stop));
+/// # Ok::<(), EnvironmentNameError>(())
+/// ```
+pub mod prelude {
+    #[doc(no_inline)]
+    pub use crate::{
+        AnyDefinition, AnyOperation, ArmRule, BackendKind, BackendStatus, CloseSession, CloseSessionError,
+        CreateDefinition, CreateDefinitionError, CreateLiveRule, CreateLiveRuleError, DefinitionRef, Definitions,
+        DeleteDefinition, DeleteDefinitionError, DeleteLiveRule, DeleteLiveRuleError, DisarmRule, EditableDefinition,
+        EnvironmentNotRunning, EnvironmentStatus, FireRule, GetBackend, GetDefinition, GetDefinitionError,
+        GetEnvironment, IntentError, KeepRule, KeepRuleError, ListDefinitions, ListDefinitionsError,
+        ListEnvironmentRules, ListEnvironments, ListSessions, Operation, ParseSentence, ParsedSentence, ProcessState,
+        RuleCommandError, RuleStats, RuleStatus, RunningEnvironment, SendIntent, SessionCloser, SessionIdentity,
+        SessionStatus, StartEnvironment, StartEnvironmentError, Stats, StopEnvironment, StreamMessage, Subscription,
+        UnreadWord, UpdateDefinition, UpdateDefinitionError, UpdateLiveRule, UpdateLiveRuleError, WordCompletion,
+        WordKind,
+    };
+}
