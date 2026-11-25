@@ -153,7 +153,7 @@
 //!
 //! The crate has no logic and no IO: no socket, no file, no clock and no randomness.
 //! The trait returns futures, and nothing in the crate spawns, sleeps or polls one.
-//! It is the only crate outside the IO edge with an async signature.
+//! Outside the IO edge, only a contract has an async signature, and this crate holds one.
 //! A backend waits on whatever its own crate brings, and the engine drives the futures on its runtime.
 //!
 //! The crate reaches the Kafka codec, so it does not compile to WebAssembly.
