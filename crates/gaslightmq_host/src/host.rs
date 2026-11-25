@@ -87,7 +87,7 @@ mod watch;
 /// let staging: EnvironmentName = "staging-proxy".parse().expect("an environment name");
 /// let rule = Rule::new("quiet-produce".parse().expect("a rule name"), Conditions::new(), quiet.name().clone());
 /// let armed = host.arm(&staging, &rule).await;
-/// assert_eq!(armed, Err(ArmRuleError::NotRunning { environment: staging }));
+/// assert_eq!(armed.err(), Some(ArmRuleError::NotRunning { environment: staging }));
 /// # }
 /// ```
 pub struct Host<C: WorkspaceContext> {
