@@ -45,7 +45,8 @@
 //! ```
 //!
 //! The wall clock is not in this crate.
-//! It reads the system, so the IO edge implements [`Clock`] for it.
+//! It reads the system, so it stands at the IO edge, in `gaslightmq_clock_waitable`,
+//! with the clocks that a task waits on.
 //!
 //! The `serde` feature maps a [`TimeSpan`] to its text, such as `10s`,
 //! and an [`Instant`] and a [`Speed`] to plain numbers.

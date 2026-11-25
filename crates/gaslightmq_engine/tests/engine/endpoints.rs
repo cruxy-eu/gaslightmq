@@ -2,6 +2,7 @@
 
 use gaslightmq_call::prelude::*;
 use gaslightmq_clock::TimeSpan;
+use gaslightmq_clock_waitable::SteppedClock;
 use gaslightmq_engine::prelude::*;
 use gaslightmq_field::prelude::*;
 use gaslightmq_kafka_client_api::{ProtocolConsumer, RawKafkaClient};

@@ -10,6 +10,7 @@
 use anyhow::Context;
 use gaslightmq_backend_upstream::prelude::*;
 use gaslightmq_clock::Duration;
+use gaslightmq_clock_waitable::WallClock;
 use gaslightmq_engine::prelude::*;
 use gaslightmq_environment::prelude::*;
 use gaslightmq_field::prelude::*;

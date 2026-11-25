@@ -4,11 +4,13 @@ members = [
     "crates/gaslightmq_backend_upstream",
     "crates/gaslightmq_call",
     "crates/gaslightmq_clock",
+    "crates/gaslightmq_clock_waitable",
     "crates/gaslightmq_combine",
     "crates/gaslightmq_engine",
     "crates/gaslightmq_environment",
     "crates/gaslightmq_environment/conformance",
     "crates/gaslightmq_field",
+    "crates/gaslightmq_host",
     "crates/gaslightmq_incident",
     "crates/gaslightmq_index",
     "crates/gaslightmq_kernel",
@@ -49,10 +51,12 @@ gaslightmq_backend = { path = "crates/gaslightmq_backend" }
 gaslightmq_backend_upstream = { path = "crates/gaslightmq_backend_upstream" }
 gaslightmq_call = { path = "crates/gaslightmq_call" }
 gaslightmq_clock = { path = "crates/gaslightmq_clock" }
+gaslightmq_clock_waitable = { path = "crates/gaslightmq_clock_waitable" }
 gaslightmq_combine = { path = "crates/gaslightmq_combine" }
 gaslightmq_definition_api = { path = "crates/gaslightmq_definition/api" }
 gaslightmq_definition_conformance = { path = "crates/gaslightmq_definition/conformance" }
 gaslightmq_definition_memory = { path = "crates/gaslightmq_definition/memory" }
+gaslightmq_engine = { path = "crates/gaslightmq_engine" }
 gaslightmq_environment = { path = "crates/gaslightmq_environment" }
 gaslightmq_field = { path = "crates/gaslightmq_field" }
 gaslightmq_incident = { path = "crates/gaslightmq_incident" }
@@ -65,6 +69,7 @@ gaslightmq_lie_refusal = { path = "crates/gaslightmq_lie_refusal" }
 gaslightmq_listener = { path = "crates/gaslightmq_listener" }
 gaslightmq_overlay = { path = "crates/gaslightmq_overlay" }
 gaslightmq_pipeline = { path = "crates/gaslightmq_pipeline" }
+gaslightmq_quick_inject = { path = "crates/gaslightmq_quick_inject" }
 gaslightmq_resource = { path = "crates/gaslightmq_resource" }
 gaslightmq_rule = { path = "crates/gaslightmq_rule" }
 gaslightmq_selector = { path = "crates/gaslightmq_selector" }

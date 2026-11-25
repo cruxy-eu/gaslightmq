@@ -1,9 +1,25 @@
-//! Clocks that a task waits on: the clock of `gaslightmq_clock`, with a wait until an instant.
+//! Clocks that a task waits on: the [`Clock`] of `gaslightmq_clock`, with a wait until an instant.
+//!
+//! | Type | Is |
+//! |---|---|
+//! | [`WaitableClock`] | A clock that a task waits on: it tells the time, and it says when it reaches an instant. |
+//! | [`WallClock`] | Real time. The clock of a proxy in front of a real cluster. |
+//! | [`SteppedClock`] | A clock that moves when its owner moves it. The clock of a test, and of a proxy in front of a broker. |
 //!
 //! `gaslightmq_clock` is sans-IO, so its [`Clock`] tells the time and nothing waits on it:
 //! a wait is a future, which the timer of a runtime or another task ends.
-//! That part belongs to the IO edge, and it is all this module adds.
+//! That part belongs to the IO edge, and it is all this crate adds.
 //! Both clocks here are a [`Clock`], and the stepped one is the [`VirtualClock`] of that crate behind a handle.
+//!
+//! An engine waits on the clock it is handed.
+//! Whoever starts an engine picks that clock: a host picks the wall clock for a proxy in front of a real cluster,
+//! and a test picks a stepped one. So the clocks stand in a crate of their own, and not in the engine.
+//!
+//! # IO
+//!
+//! This crate is part of the IO edge.
+//! The wall clock reads the time of the system, and its waits are waits on the timer of Tokio,
+//! so a wait on it runs inside the runtime. A wait on the stepped clock needs no timer, and takes no real time.
 
 use std::future::Future;
 use std::sync::Arc;
@@ -48,7 +64,7 @@ impl<C: WaitableClock> WaitableClock for Arc<C> {
 ///
 /// ```
 /// use gaslightmq_clock::{Clock, Duration, Instant};
-/// use gaslightmq_engine::prelude::*;
+/// use gaslightmq_clock_waitable::{WaitableClock, WallClock};
 ///
 /// # #[tokio::main(flavor = "current_thread")]
 /// # async fn main() {
@@ -112,7 +128,7 @@ impl WaitableClock for WallClock {
 ///
 /// ```
 /// use gaslightmq_clock::{Clock, Duration, Instant};
-/// use gaslightmq_engine::prelude::*;
+/// use gaslightmq_clock_waitable::{SteppedClock, WaitableClock};
 ///
 /// # #[tokio::main(flavor = "current_thread")]
 /// # async fn main() {

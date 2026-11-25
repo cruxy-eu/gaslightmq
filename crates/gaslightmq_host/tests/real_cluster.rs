@@ -1,0 +1,214 @@
+//! A host runs several environments in front of real Kafka brokers, each with a proxy of its own.
+//!
+//! The tests need Docker.
+//! Each test starts the cluster it needs, and a host whose workspace lives in memory.
+//! The environments of a test stand in front of that cluster, and every listener of theirs takes a free port,
+//! unless the test names one.
+//! The client is the producer of `gaslightmq_kafka_client_native`, which knows the bootstrap address of one
+//! environment and nothing else.
+
+use std::net::{IpAddr, Ipv4Addr, TcpListener};
+
+use anyhow::Context;
+use gaslightmq_clock::Duration;
+use gaslightmq_engine::prelude::*;
+use gaslightmq_environment::prelude::*;
+use gaslightmq_field::prelude::*;
+use gaslightmq_host::prelude::*;
+use gaslightmq_kafka_client_native::KafkaProducer;
+use gaslightmq_kernel::prelude::*;
+use gaslightmq_lie::prelude::*;
+use gaslightmq_lie_api::prelude::*;
+use gaslightmq_lie_refusal::prelude::*;
+use gaslightmq_rule::prelude::*;
+use gaslightmq_selector::prelude::*;
+use gaslightmq_test_kafka::KafkaCluster;
+use gaslightmq_trigger::prelude::*;
+use gaslightmq_wire::{Offset, Partition, Record};
+use gaslightmq_workspace::prelude::*;
+
+/// How long a test waits for the record of a call that the client already got its answer for.
+const PATIENCE: Duration = Duration::from_secs(30);
+
+/// When the orders of these tests were placed, in milliseconds since 1970.
+/// A record with a timestamp of its own reads back as it was written.
+const PLACED_AT: i64 = 1_700_000_000_000;
+
+/// The address that the listeners of a test listen on, and that its clients connect to.
+const LOCALHOST: IpAddr = IpAddr::V4(Ipv4Addr::LOCALHOST);
+
+#[tokio::test]
+async fn a_rule_armed_in_one_environment_leaves_the_other_alone() -> anyhow::Result<()> {
+    let cluster = KafkaCluster::plaintext().with_brokers(3).start().await?;
+    let orders = cluster.topics().create("orders").await?;
+    let host = Host::new(
+        HostConfiguration::default(),
+        MemoryContext::new(),
+        Lies::of_every_build().with(Refusal)?,
+    );
+    // Two environments stand in front of the same cluster. Every listener of both takes a free port.
+    let any = ListenAddress::new(LOCALHOST, 0);
+    let brokers = BrokerListeners::pinned(cluster.brokers().iter().map(|broker| (broker.id(), any)))?;
+    let listen = Listeners::new(any, brokers, LOCALHOST.into())?;
+    let upstream = Upstream::new(cluster.brokers()[0].address().to_string().parse()?);
+    let mut workspace = host.workspace().await;
+    let staging = workspace
+        .create(Environment::new(
+            "staging-proxy".parse()?,
+            Instances::ProxyInFrontOfCluster {
+                proxy: ProxyDefinition::new(listen.clone()),
+                upstream: upstream.clone(),
+            },
+        ))
+        .await?;
+    let canary = workspace
+        .create(Environment::new(
+            "canary-proxy".parse()?,
+            Instances::ProxyInFrontOfCluster {
+                proxy: ProxyDefinition::new(listen),
+                upstream,
+            },
+        ))
+        .await?;
+    // The workspace has a preset that both environments can use.
+    let leader_flap = workspace
+        .create(Preset::new(
+            "leader-flap".parse()?,
+            RefusalLie::new(ErrorCode::NOT_LEADER_OR_FOLLOWER),
+        ))
+        .await?;
+    drop(workspace);
+    host.start(EnvironmentConfiguration::new(&staging)?).await?;
+    host.start(EnvironmentConfiguration::new(&canary)?).await?;
+    // Someone arms a rule in the canary alone: "tell the 1st Produce that its broker no longer leads the partition".
+    let flap = Rule::new(
+        "leader-flap-on-produce".parse()?,
+        Conditions::from(Condition::is(ApiKey::PRODUCE)),
+        leader_flap.name().clone(),
+    )
+    .with_trigger(TriggerParts::new().with_nth(MatchNumber::new(1)?));
+    host.arm(canary.name(), &flap).await?;
+    let mut staging_events = host.live_events(staging.name())?;
+    let mut canary_events = host.live_events(canary.name())?;
+    let through_staging = host
+        .address_of(staging.name(), Endpoint::Bootstrap)?
+        .context("the bootstrap endpoint of the staging proxy is open")?;
+    let through_canary = host
+        .address_of(canary.name(), Endpoint::Bootstrap)?
+        .context("the bootstrap endpoint of the canary proxy is open")?;
+    let placed = Record::new("placed").with_key("o-1").with_timestamp(PLACED_AT);
+    let shipped = Record::new("shipped").with_key("o-1").with_timestamp(PLACED_AT);
+
+    let written_through_staging = KafkaProducer::from(through_staging)
+        .send(orders.name().as_str(), Partition::new(0), std::slice::from_ref(&placed))
+        .await;
+    let written_through_canary = KafkaProducer::from(through_canary)
+        .send(
+            orders.name().as_str(),
+            Partition::new(0),
+            std::slice::from_ref(&shipped),
+        )
+        .await;
+
+    assert_eq!(written_through_staging, Ok(Offset::new(0)));
+    assert_eq!(written_through_canary, Ok(Offset::new(1)));
+    // The staging proxy armed nothing, so its Produce went through at once.
+    let staging_produce = loop {
+        let event = tokio::time::timeout(PATIENCE, staging_events.next()).await??;
+        if let EngineEvent::CallRecorded(record) = event
+            && let Some(api) = record.fields().read(Field::Api).present()
+            && api.contains(&ApiKey::PRODUCE.into())
+        {
+            break record;
+        }
+    };
+    assert_eq!(staging_produce.verdict().to_string(), "pass");
+    // The canary proxy refused the first Produce, and the client sent the record again.
+    let mut canary_produces = Vec::new();
+    while canary_produces.len() < 2 {
+        let event = tokio::time::timeout(PATIENCE, canary_events.next()).await??;
+        if let EngineEvent::CallRecorded(record) = event
+            && let Some(api) = record.fields().read(Field::Api).present()
+            && api.contains(&ApiKey::PRODUCE.into())
+        {
+            canary_produces.push(record);
+        }
+    }
+    assert_eq!(
+        canary_produces[0].verdict().to_string(),
+        "NOT_LEADER_OR_FOLLOWER on orders/0"
+    );
+    assert_eq!(canary_produces[1].verdict().to_string(), "pass");
+    // Each record is in the log once.
+    assert_eq!(
+        orders.partition(0).records().await?,
+        [placed.with_offset(Offset::new(0)), shipped.with_offset(Offset::new(1))]
+    );
+
+    host.stop_all().await;
+    assert_eq!(host.running(), Vec::<EnvironmentName>::new());
+    Ok(())
+}
+
+#[tokio::test]
+async fn an_environment_runs_once_and_keeps_its_ports_until_it_stops() -> anyhow::Result<()> {
+    let cluster = KafkaCluster::plaintext().with_brokers(3).start().await?;
+    let host = Host::new(
+        HostConfiguration::default(),
+        MemoryContext::new(),
+        Lies::of_every_build(),
+    );
+    let any = ListenAddress::new(LOCALHOST, 0);
+    // A port that the system has just handed out, and that the staging proxy names for its bootstrap endpoint.
+    let named = ListenAddress::new(LOCALHOST, TcpListener::bind((LOCALHOST, 0))?.local_addr()?.port());
+    let brokers = BrokerListeners::pinned(cluster.brokers().iter().map(|broker| (broker.id(), any)))?;
+    let upstream = Upstream::new(cluster.brokers()[0].address().to_string().parse()?);
+    let staging = Environment::new(
+        "staging-proxy".parse()?,
+        Instances::ProxyInFrontOfCluster {
+            proxy: ProxyDefinition::new(Listeners::new(named, brokers.clone(), LOCALHOST.into())?),
+            upstream: upstream.clone(),
+        },
+    );
+    // The canary names the same port.
+    let canary = Environment::new(
+        "canary-proxy".parse()?,
+        Instances::ProxyInFrontOfCluster {
+            proxy: ProxyDefinition::new(Listeners::new(named, brokers, LOCALHOST.into())?),
+            upstream,
+        },
+    );
+    host.start(EnvironmentConfiguration::new(&staging)?).await?;
+
+    let twice = host.start(EnvironmentConfiguration::new(&staging)?).await;
+    let beside = host.start(EnvironmentConfiguration::new(&canary)?).await;
+
+    assert_eq!(
+        twice,
+        Err(EnvironmentStartError::AlreadyRunning {
+            name: staging.name().clone()
+        })
+    );
+    assert_eq!(
+        beside,
+        Err(EnvironmentStartError::SharedListener {
+            name: canary.name().clone(),
+            running: staging.name().clone(),
+            address: named,
+        })
+    );
+    assert_eq!(host.running(), [staging.name().clone()]);
+    assert_eq!(
+        host.address_of(staging.name(), Endpoint::Bootstrap)?,
+        Some(named.into())
+    );
+
+    // Once the staging proxy stopped, its port is free, and the canary takes it.
+    host.stop(staging.name()).await?;
+    host.start(EnvironmentConfiguration::new(&canary)?).await?;
+
+    assert_eq!(host.running(), [canary.name().clone()]);
+    assert_eq!(host.address_of(canary.name(), Endpoint::Bootstrap)?, Some(named.into()));
+    host.stop_all().await;
+    Ok(())
+}

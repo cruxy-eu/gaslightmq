@@ -321,6 +321,32 @@ impl Listeners {
         self
     }
 
+    /// The first address that one of these listeners and one of `other` would both listen on.
+    ///
+    /// Two environments that one process runs cannot listen on such an address together.
+    /// A listener on port zero takes any free port, and shares none.
+    ///
+    /// ```
+    /// use gaslightmq_environment::prelude::*;
+    ///
+    /// let on = |bootstrap: &str, brokers: &str| {
+    ///     let bootstrap = bootstrap.parse().expect("a listen address");
+    ///     let brokers = brokers.parse().expect("broker listeners");
+    ///     Listeners::new(bootstrap, brokers, "localhost".parse().expect("a host name"))
+    ///         .expect("a bootstrap port outside the ports of the brokers")
+    /// };
+    /// let staging = on("0.0.0.0:9092", "0.0.0.0:19092-19094");
+    /// let tests = on("127.0.0.1:29092", "127.0.0.1:19094-19096");
+    /// let demo = on("0.0.0.0:39092", "0.0.0.0:39093-39095");
+    ///
+    /// assert_eq!(staging.shared_listener(&tests), Some("127.0.0.1:19094".parse()?));
+    /// assert_eq!(staging.shared_listener(&demo), None);
+    /// # Ok::<(), ListenAddressError>(())
+    /// ```
+    pub fn shared_listener(&self, other: &Listeners) -> Option<ListenAddress> {
+        Taken::first_shared(&self.taken(), &other.taken())
+    }
+
     /// Every port that these listeners can take.
     pub(crate) fn taken(&self) -> Vec<Taken> {
         let mut taken = self.brokers.taken();

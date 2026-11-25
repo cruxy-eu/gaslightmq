@@ -15,6 +15,7 @@ sans_io_modules = ["configuration", "error", "timers"]
 gaslightmq_backend.workspace = true
 gaslightmq_call.workspace = true
 gaslightmq_clock.workspace = true
+gaslightmq_clock_waitable.workspace = true
 gaslightmq_environment.workspace = true
 gaslightmq_field.workspace = true
 gaslightmq_incident.workspace = true
