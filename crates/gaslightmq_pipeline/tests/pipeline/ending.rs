@@ -394,3 +394,19 @@ fn a_request_behind_a_silence_does_not_identify_the_session() {
     driver.send(&api_versions(42, "librdkafka"));
     assert_eq!(driver.pipeline.identity().client_software(), None);
 }
+
+#[test]
+fn a_session_closed_at_the_proxy_ends_its_calls_and_closes_the_connection() {
+    let mut driver = Driver::with([]);
+    let forwarded = driver.send(&heartbeat(41));
+    assert_eq!(forwarded.kinds(), ["forward"]);
+
+    // Someone closes the session through the control plane while the heartbeat waits for the backend.
+    let closed = driver.handle(Input::ProxyClosed);
+
+    assert_eq!(closed.kinds(), ["emit", "close"]);
+    assert_eq!(closed.emitted().delivered(), &Delivered::Nothing);
+    let ended = driver.pipeline.closed().unwrap();
+    assert_eq!((ended.by(), ended.at()), (ClosedBy::Proxy, driver.now()));
+    assert!(driver.handle(Input::ProxyClosed).is_empty());
+}

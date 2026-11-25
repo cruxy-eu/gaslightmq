@@ -2,10 +2,14 @@
 //!
 //! A property is a public field, and its type only holds values that the property allows.
 
+use std::fmt;
+
 use gaslightmq_backend_upstream::UpstreamBackendConfiguration;
 use gaslightmq_engine::EngineConfiguration;
 use gaslightmq_environment::{Environment, EnvironmentName, Instances};
 use gaslightmq_quick_inject::QuickInjectConfiguration;
+use gaslightmq_surface::EncoderMapping;
+use gaslightmq_traffic::TrafficConfiguration;
 
 /// What a [`Host`](crate::Host) is configured with: what holds for every environment it runs.
 ///
@@ -21,7 +25,7 @@ use gaslightmq_quick_inject::QuickInjectConfiguration;
 ///
 /// configuration.quick_inject.default_delay = TimeSpan::from_millis(750);
 /// ```
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub struct HostConfiguration {
     /// Ours. Default: the defaults of quick inject.
@@ -29,6 +33,165 @@ pub struct HostConfiguration {
     /// What a ⌘K sentence means where it leaves a value out, and how many completions it offers.
     /// Every environment reads its sentences with it: see [`read_sentence`](crate::Host::read_sentence).
     pub quick_inject: QuickInjectConfiguration,
+    /// Ours. Default: the defaults of the encoder mapping.
+    ///
+    /// What one step of each encoder is worth, when someone turns one at a pad: see
+    /// [`send_intent`](crate::Host::send_intent).
+    pub encoders: EncoderMapping,
+    /// Ours. Default: the defaults of the traffic.
+    ///
+    /// What the traffic of every environment keeps: the calls of its live window. The statistics come from it.
+    pub traffic: TrafficConfiguration,
+    /// Ours. Default: 1024 changes.
+    ///
+    /// How many [changes](crate::HostChange) the host keeps for a follower that falls behind.
+    /// A follower that falls further behind learns how many it missed.
+    pub change_backlog: ChangeBacklog,
+    /// Ours. Default: 1024 calls.
+    ///
+    /// How many calls the host keeps for a follower of the calls of an environment that falls behind:
+    /// see [`follow_calls`](crate::Host::follow_calls). A follower that falls further behind misses the oldest calls.
+    pub call_backlog: CallBacklog,
+}
+
+impl Default for HostConfiguration {
+    fn default() -> Self {
+        Self {
+            quick_inject: QuickInjectConfiguration::default(),
+            encoders: EncoderMapping::default(),
+            traffic: TrafficConfiguration::default(),
+            change_backlog: ChangeBacklog::DEFAULT,
+            call_backlog: CallBacklog::DEFAULT,
+        }
+    }
+}
+
+/// How many changes a host keeps for a follower of its [changes](crate::Host::changes) that falls behind.
+///
+/// A backlog holds at least one change, and at most [`ChangeBacklog::MAX`].
+/// The host sets the room for them aside when it starts, so a backlog has a largest size.
+///
+/// ```
+/// use gaslightmq_host::prelude::*;
+///
+/// let backlog = ChangeBacklog::new(64)?;
+/// assert_eq!(backlog.changes(), 64);
+/// assert_eq!(backlog.to_string(), "64 changes");
+/// assert_eq!(ChangeBacklog::new(0), Err(ChangeBacklogError::Zero));
+/// # Ok::<(), ChangeBacklogError>(())
+/// ```
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct ChangeBacklog(usize);
+
+impl ChangeBacklog {
+    /// The default backlog: 1024 changes.
+    pub const DEFAULT: Self = Self(1024);
+
+    /// The largest backlog: 1 048 576 changes, which a host can still set the room aside for.
+    pub const MAX: Self = Self(1 << 20);
+
+    /// Check that `changes` is a number of changes that a backlog can hold, and keep it.
+    ///
+    /// # Errors
+    ///
+    /// [`ChangeBacklogError::Zero`] when `changes` is zero,
+    /// and [`ChangeBacklogError::TooLarge`] when it is more than [`ChangeBacklog::MAX`].
+    pub const fn new(changes: usize) -> Result<Self, ChangeBacklogError> {
+        if changes == 0 {
+            return Err(ChangeBacklogError::Zero);
+        }
+        if changes > Self::MAX.0 {
+            return Err(ChangeBacklogError::TooLarge { changes });
+        }
+        Ok(Self(changes))
+    }
+
+    /// The backlog as a plain number of changes.
+    pub const fn changes(self) -> usize {
+        self.0
+    }
+}
+
+/// Writes the number of changes: `1024 changes`.
+impl fmt::Display for ChangeBacklog {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{} changes", self.0)
+    }
+}
+
+/// Why a number of changes is no [`ChangeBacklog`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+pub enum ChangeBacklogError {
+    /// A backlog of no change would keep nothing for a follower.
+    #[error("a change backlog holds at least one change")]
+    Zero,
+    /// The backlog is larger than [`ChangeBacklog::MAX`].
+    #[error("a change backlog holds at most 1048576 changes, and not {changes}")]
+    TooLarge { changes: usize },
+}
+
+/// How many calls a host keeps for a follower of the calls of an environment that falls behind.
+///
+/// A backlog holds at least one call, and at most [`CallBacklog::MAX`].
+/// The host sets the room for them aside when someone follows the calls, so a backlog has a largest size.
+///
+/// ```
+/// use gaslightmq_host::prelude::*;
+///
+/// let backlog = CallBacklog::new(64)?;
+/// assert_eq!(backlog.calls(), 64);
+/// assert_eq!(backlog.to_string(), "64 calls");
+/// assert_eq!(CallBacklog::new(0), Err(CallBacklogError::Zero));
+/// # Ok::<(), CallBacklogError>(())
+/// ```
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct CallBacklog(usize);
+
+impl CallBacklog {
+    /// The default backlog: 1024 calls.
+    pub const DEFAULT: Self = Self(1024);
+
+    /// The largest backlog: 1 048 576 calls, which a host can still set the room aside for.
+    pub const MAX: Self = Self(1 << 20);
+
+    /// Check that `calls` is a number of calls that a backlog can hold, and keep it.
+    ///
+    /// # Errors
+    ///
+    /// [`CallBacklogError::Zero`] when `calls` is zero,
+    /// and [`CallBacklogError::TooLarge`] when it is more than [`CallBacklog::MAX`].
+    pub const fn new(calls: usize) -> Result<Self, CallBacklogError> {
+        if calls == 0 {
+            return Err(CallBacklogError::Zero);
+        }
+        if calls > Self::MAX.0 {
+            return Err(CallBacklogError::TooLarge { calls });
+        }
+        Ok(Self(calls))
+    }
+
+    /// The backlog as a plain number of calls.
+    pub const fn calls(self) -> usize {
+        self.0
+    }
+}
+
+/// Writes the number of calls: `1024 calls`.
+impl fmt::Display for CallBacklog {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{} calls", self.0)
+    }
+}
+
+/// Why a number of calls is no [`CallBacklog`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+pub enum CallBacklogError {
+    /// A backlog of no call would keep nothing for a follower.
+    #[error("a call backlog holds at least one call")]
+    Zero,
+    /// The backlog is larger than [`CallBacklog::MAX`].
+    #[error("a call backlog holds at most 1048576 calls, and not {calls}")]
+    TooLarge { calls: usize },
 }
 
 /// What a host starts one environment with: its name, and the configuration of each instance it runs.

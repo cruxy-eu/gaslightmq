@@ -9,11 +9,14 @@
 //! | [`Engine`] | The runtime of one proxy, from the moment it starts until someone stops it. |
 //! | [`EngineConfiguration`] | What an engine is configured with: its listeners, its seed, and its waits and limits. |
 //! | [`ArmedRules`] | The armed rules of the proxy. Arming and disarming publishes a snapshot to every session. |
+//! | [`RuleChanges`] | Every snapshot that the armed rules publish, for whoever follows what is armed. |
+//! | [`OpenSession`], [`SessionEvent`] | A session that is open, and what happens to a session: it opens, says who its client is, and closes. |
 //! | [`EngineEvent`] | What a session hands over: the record of a call, or an incident that a rule fired. |
 //! | [`LiveEvents`], [`EveryEvent`] | The events as a listener receives them: one that watches and may miss the oldest, and one that keeps every event. |
 //! | [`EventBacklog`] | How many events an engine keeps for a live listener that falls behind. |
 //! | [`EngineStartError`], [`EndpointOpenError`] | Why an engine did not start, and why an endpoint has no listener. |
-//! | [`ArmError`], [`DisarmError`], [`LiveEventsError`] | Why a rule was not armed or disarmed, and why a live listener has no next event. |
+//! | [`ArmError`], [`DisarmError`], [`RetuneError`], [`LiveEventsError`] | Why a rule was not armed, disarmed or retuned, and why a live listener has no next event. |
+//! | [`NotOpenError`] | No session is open on the connection that someone asked to close. |
 //!
 //! The [`prelude`] holds all of them.
 //!
@@ -100,6 +103,12 @@
 //! let group: GroupId = "analytics-etl".parse().expect("a group ID");
 //! let answer = member.heartbeat(group.as_str()).await;
 //! assert_eq!(answer, Ok(()));
+//!
+//! // The session of the member opened, and its first request said who its client is.
+//! let opened = events.next().await.expect("the engine runs, and the listener kept up");
+//! assert!(matches!(opened, EngineEvent::Session(SessionEvent::Opened(_))));
+//! let identified = events.next().await.expect("the engine runs, and the listener kept up");
+//! assert!(matches!(identified, EngineEvent::Session(SessionEvent::Identified { .. })));
 //!
 //! // The record of the call says what the client was told, and how long it waited for it.
 //! let event = events.next().await.expect("the engine runs, and the listener kept up");
@@ -285,15 +294,19 @@ mod endpoints;
 mod engine;
 mod error;
 mod events;
+mod open_sessions;
 mod rules;
 mod session;
 mod timers;
 
 pub use configuration::{EngineConfiguration, EventBacklog, EventBacklogError};
 pub use engine::Engine;
-pub use error::{ArmError, DisarmError, EndpointOpenError, EngineStartError, LiveEventsError};
+pub use error::{
+    ArmError, DisarmError, EndpointOpenError, EngineStartError, LiveEventsError, NotOpenError, RetuneError,
+};
 pub use events::{EngineEvent, EveryEvent, LiveEvents};
-pub use rules::ArmedRules;
+pub use open_sessions::{OpenSession, SessionEvent};
+pub use rules::{ArmedRules, RuleChanges};
 
 /// Every item of this crate.
 ///
@@ -312,6 +325,7 @@ pub mod prelude {
     #[doc(no_inline)]
     pub use crate::{
         ArmError, ArmedRules, DisarmError, EndpointOpenError, Engine, EngineConfiguration, EngineEvent,
-        EngineStartError, EventBacklog, EventBacklogError, EveryEvent, LiveEvents, LiveEventsError,
+        EngineStartError, EventBacklog, EventBacklogError, EveryEvent, LiveEvents, LiveEventsError, NotOpenError,
+        OpenSession, RetuneError, RuleChanges, SessionEvent,
     };
 }

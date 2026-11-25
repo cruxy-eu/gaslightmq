@@ -52,8 +52,7 @@ async fn a_rule_armed_in_one_environment_leaves_the_other_alone() -> anyhow::Res
     let brokers = BrokerListeners::pinned(cluster.brokers().iter().map(|broker| (broker.id(), any)))?;
     let listen = Listeners::new(any, brokers, LOCALHOST.into())?;
     let upstream = Upstream::new(cluster.brokers()[0].address().to_string().parse()?);
-    let mut workspace = host.workspace().await;
-    let staging = workspace
+    let staging = host
         .create(Environment::new(
             "staging-proxy".parse()?,
             Instances::ProxyInFrontOfCluster {
@@ -62,7 +61,7 @@ async fn a_rule_armed_in_one_environment_leaves_the_other_alone() -> anyhow::Res
             },
         ))
         .await?;
-    let canary = workspace
+    let canary = host
         .create(Environment::new(
             "canary-proxy".parse()?,
             Instances::ProxyInFrontOfCluster {
@@ -72,13 +71,12 @@ async fn a_rule_armed_in_one_environment_leaves_the_other_alone() -> anyhow::Res
         ))
         .await?;
     // The workspace has a preset that both environments can use.
-    let leader_flap = workspace
+    let leader_flap = host
         .create(Preset::new(
             "leader-flap".parse()?,
             RefusalLie::new(ErrorCode::NOT_LEADER_OR_FOLLOWER),
         ))
         .await?;
-    drop(workspace);
     host.start(EnvironmentConfiguration::new(&staging)?).await?;
     host.start(EnvironmentConfiguration::new(&canary)?).await?;
     // Someone arms a rule in the canary alone: "tell the 1st Produce that its broker no longer leads the partition".

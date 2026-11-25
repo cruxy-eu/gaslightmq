@@ -23,6 +23,7 @@ use crate::TimerId;
 /// | A timer runs out. | [`TimerFired`](Self::TimerFired) | The engine's clock |
 /// | A rule changes. | [`SnapshotPublished`](Self::SnapshotPublished) | The armed rules |
 /// | The client closes the connection. | [`ClientClosed`](Self::ClientClosed) | The transport |
+/// | Someone closes the session at the proxy. | [`ProxyClosed`](Self::ProxyClosed) | The control plane |
 #[derive(Debug, Clone)]
 pub enum Input<'a> {
     /// The client sent these bytes.
@@ -59,6 +60,9 @@ pub enum Input<'a> {
     SnapshotPublished(Arc<Snapshot>),
     /// The client closed the connection, or gave up on it.
     ClientClosed,
+    /// Someone closed the session at the proxy, through the control plane.
+    /// The session ends as closed by the proxy, and the client finds its connection closed.
+    ProxyClosed,
 }
 
 /// What should happen. The pipeline returns it, and the engine performs it.

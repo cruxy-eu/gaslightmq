@@ -19,6 +19,7 @@ use tokio::net::TcpListener;
 use tokio::sync::watch;
 use tokio::task::JoinHandle;
 
+use crate::feed::Feed;
 use crate::plane::{ControlPlane, Reply, form};
 use crate::stream::ClientStream;
 use crate::{ControlServerConfiguration, ControlServerError, RequestSizeLimit};
@@ -83,8 +84,11 @@ impl ControlServer {
             .map_err(|error| not_opened(error.to_string()))?;
         let address = listener.local_addr().map_err(|error| not_opened(error.to_string()))?;
         let (stopping, stopped) = watch::channel(false);
+        let plane = Arc::new(ControlPlane::new(host, configuration.stream_backlog));
+        // The feed follows the host from before the first client connects, so no change of the host goes past.
+        tokio::spawn(Feed::new(Arc::clone(&plane), configuration.stats_interval, stopped.clone()).run());
         let shared = Shared {
-            plane: Arc::new(ControlPlane::new(host, configuration.stream_backlog)),
+            plane,
             request_limit: configuration.request_limit,
             stopping: stopped.clone(),
         };
@@ -180,4 +184,9 @@ async fn operation<C: WorkspaceContext + 'static>(State(shared): State<Shared<C>
 async fn stream<C: WorkspaceContext + 'static>(State(shared): State<Shared<C>>, upgrade: WebSocketUpgrade) -> Response {
     let client = ClientStream::new(shared.plane, shared.stopping);
     upgrade.on_upgrade(move |socket| client.run(socket))
+}
+
+/// Waits until the server stops. A server whose stop signal went away stops too.
+pub(crate) async fn stopped(stopping: &mut watch::Receiver<bool>) {
+    let _ = stopping.wait_for(|stopping| *stopping).await;
 }

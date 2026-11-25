@@ -6,6 +6,7 @@ use gaslightmq_control_api::rule::{Preset, Rule};
 use gaslightmq_control_api::selector::Selector;
 use gaslightmq_control_api::surface::PadLayout;
 use gaslightmq_definition_api::{Definition, Store, StoreReadError};
+use gaslightmq_host::Host;
 use gaslightmq_workspace::{
     CreateError, DefinitionName, DeleteError, Stores, UpdateError, Workspace, WorkspaceContext, WorkspaceDefinition,
     WorkspaceError,
@@ -129,13 +130,13 @@ impl DefinitionOperations {
         }
     }
 
-    /// Answers [`CreateDefinition`], and returns the definition as the workspace keeps it, without its UUID.
+    /// Answers [`CreateDefinition`], through the host, which tells whoever follows it.
     pub(crate) async fn create<D: Editable, C: WorkspaceContext>(
-        workspace: &mut Workspace<C>,
+        host: &Host<C>,
         definition: D,
-    ) -> Result<D, CreateDefinitionError> {
-        match workspace.create(definition).await {
-            Ok(created) => Ok(created.without_uuid()),
+    ) -> Result<(), CreateDefinitionError> {
+        match host.create(definition).await {
+            Ok(_) => Ok(()),
             Err(CreateError::NameTaken { name }) => Err(CreateDefinitionError::NameTaken { name: reference(name) }),
             Err(CreateError::DoesNotFit { name, errors }) => Err(CreateDefinitionError::DoesNotFit {
                 name: reference(name),
@@ -148,13 +149,13 @@ impl DefinitionOperations {
         }
     }
 
-    /// Answers [`UpdateDefinition`], and returns the definition as the workspace keeps it, without its UUID.
+    /// Answers [`UpdateDefinition`], through the host, which tells whoever follows it.
     pub(crate) async fn update<D: Editable, C: WorkspaceContext>(
-        workspace: &mut Workspace<C>,
+        host: &Host<C>,
         definition: D,
-    ) -> Result<D, UpdateDefinitionError> {
-        match workspace.update(definition).await {
-            Ok(updated) => Ok(updated.without_uuid()),
+    ) -> Result<(), UpdateDefinitionError> {
+        match host.update(definition).await {
+            Ok(_) => Ok(()),
             Err(UpdateError::NotFound { name }) => Err(UpdateDefinitionError::NotFound { name: reference(name) }),
             Err(UpdateError::DoesNotFit { name, errors }) => Err(UpdateDefinitionError::DoesNotFit {
                 name: reference(name),
@@ -167,12 +168,12 @@ impl DefinitionOperations {
         }
     }
 
-    /// Answers [`DeleteDefinition`].
+    /// Answers [`DeleteDefinition`], through the host, which tells whoever follows it.
     pub(crate) async fn delete<D: Editable, C: WorkspaceContext>(
-        workspace: &mut Workspace<C>,
+        host: &Host<C>,
         name: <D as EditableDefinition>::Name,
     ) -> Result<(), DeleteDefinitionError> {
-        match workspace.delete(name).await {
+        match host.delete(name).await {
             Ok(()) => Ok(()),
             Err(DeleteError::NotFound { name }) => Err(DeleteDefinitionError::NotFound { name: reference(name) }),
             Err(DeleteError::InUse { name, users }) => Err(DeleteDefinitionError::InUse {
@@ -187,6 +188,26 @@ impl DefinitionOperations {
     }
 }
 
+/// The definition of that name and kind, without its UUID, or `None` when the workspace does not have it.
+///
+/// # Errors
+///
+/// What the store of its kind said when it could not read.
+pub(crate) async fn named<C: WorkspaceContext>(
+    workspace: &Workspace<C>,
+    name: &DefinitionName,
+) -> Result<Option<AnyDefinition>, String> {
+    Ok(match name {
+        DefinitionName::Selector(name) => get::<Selector, C>(workspace, name).await?.map(AnyDefinition::Selector),
+        DefinitionName::Preset(name) => get::<Preset, C>(workspace, name).await?.map(AnyDefinition::Preset),
+        DefinitionName::Rule(name) => get::<Rule, C>(workspace, name).await?.map(AnyDefinition::Rule),
+        DefinitionName::Layout(name) => get::<PadLayout, C>(workspace, name).await?.map(AnyDefinition::Layout),
+        DefinitionName::Environment(name) => get::<Environment, C>(workspace, name)
+            .await?
+            .map(AnyDefinition::Environment),
+    })
+}
+
 /// The name of a definition with its kind, as the control plane writes it.
 pub(crate) fn reference(name: DefinitionName) -> DefinitionRef {
     match name {
@@ -199,7 +220,7 @@ pub(crate) fn reference(name: DefinitionName) -> DefinitionRef {
 }
 
 /// Everything that keeps the definitions from fitting each other, in one line, with `; ` between them.
-fn each(errors: &[WorkspaceError]) -> String {
+pub(crate) fn each(errors: &[WorkspaceError]) -> String {
     let messages: Vec<String> = errors.iter().map(ToString::to_string).collect();
     messages.join("; ")
 }

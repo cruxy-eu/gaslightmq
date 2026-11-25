@@ -16,6 +16,7 @@ use gaslightmq_lie_api::prelude::*;
 use gaslightmq_quick_inject::prelude::*;
 use gaslightmq_rule::prelude::*;
 use gaslightmq_selector::prelude::*;
+use gaslightmq_surface::{Column, Intent, Layer, Pad, Row};
 use gaslightmq_workspace::prelude::*;
 
 /// How long the backend waits for a cluster that never answers, before the start gives up.
@@ -103,7 +104,7 @@ async fn a_rule_resolves_against_the_workspace_before_it_is_armed() -> anyhow::R
         "order-producers".parse()?,
         Conditions::new().with(Condition::is(ApiKey::PRODUCE)),
     );
-    host.workspace().await.create(order_producers.clone()).await?;
+    host.create(order_producers.clone()).await?;
     let blackhole: PresetName = "blackhole".parse()?;
     let rule = Rule::new(
         "blackhole-order-producers".parse()?,
@@ -122,10 +123,7 @@ async fn a_rule_resolves_against_the_workspace_before_it_is_armed() -> anyhow::R
     );
 
     // Once the workspace has it, the rule resolves, and only an environment that runs can arm it.
-    host.workspace()
-        .await
-        .create(Preset::new(blackhole, LieDefinition::Silence))
-        .await?;
+    host.create(Preset::new(blackhole, LieDefinition::Silence)).await?;
     let Err(not_running) = host.arm(&staging, &rule).await else {
         anyhow::bail!("a rule was armed in an environment that does not run");
     };
@@ -149,8 +147,8 @@ async fn a_sentence_knows_the_presets_and_the_selectors_of_the_workspace() -> an
         Conditions::new().with(Condition::is(ApiKey::PRODUCE)),
     )
     .with_title("Order producers".parse()?);
-    host.workspace().await.create(leader_flap).await?;
-    host.workspace().await.create(order_producers).await?;
+    host.create(leader_flap).await?;
+    host.create(order_producers).await?;
 
     // Someone types the start of a word of the title of a selector, and the sentence offers its name.
     let typing = host.read_sentence("leader-flap prod").await?;
@@ -170,5 +168,110 @@ async fn a_sentence_knows_the_presets_and_the_selectors_of_the_workspace() -> an
     assert_eq!(rule.action().preset().map(PresetName::as_str), Some("leader-flap"));
     assert_eq!(rule.lifetime().to_string(), "3 firings");
     assert!(sentence.unread().is_empty(), "{:?}", sentence.unread());
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_follower_of_the_host_learns_of_every_change_of_a_definition() -> anyhow::Result<()> {
+    let host = Host::new(
+        HostConfiguration::default(),
+        MemoryContext::new(),
+        Lies::of_every_build(),
+    );
+    let mut changes = host.changes();
+    let order_producers = Selector::new(
+        "order-producers".parse()?,
+        Conditions::new().with(Condition::is(ApiKey::PRODUCE)),
+    );
+
+    host.create(order_producers.clone()).await?;
+    host.update(order_producers.clone().with_title("Order producers".parse()?))
+        .await?;
+    host.delete(order_producers.name().clone()).await?;
+
+    let name = DefinitionName::from(order_producers.name().clone());
+    assert_eq!(
+        changes.next().await?,
+        HostChange::DefinitionChanged { name: name.clone() }
+    );
+    assert_eq!(
+        changes.next().await?,
+        HostChange::DefinitionChanged { name: name.clone() }
+    );
+    assert_eq!(changes.next().await?, HostChange::DefinitionDeleted { name });
+    Ok(())
+}
+
+#[tokio::test]
+async fn live_rules_pads_and_sessions_need_an_environment_that_runs() -> anyhow::Result<()> {
+    let host = Host::new(
+        HostConfiguration::default(),
+        MemoryContext::new(),
+        Lies::of_every_build(),
+    );
+    let staging: EnvironmentName = "staging-proxy".parse()?;
+    let silence = Rule::new("blackhole".parse()?, Conditions::new(), LieDefinition::Silence);
+    let pad = Pad::new(
+        "order-desk".parse()?,
+        Layer::all_clients(),
+        Row::from_index(0),
+        Column::from_index(0),
+    );
+
+    assert_eq!(
+        host.rules_of(&staging).await,
+        Err(EnvironmentRulesError::NotRunning {
+            environment: staging.clone()
+        })
+    );
+    assert_eq!(
+        host.create_live_rule(&staging, silence.clone()).await,
+        Err(CreateLiveRuleError::NotRunning {
+            environment: staging.clone()
+        })
+    );
+    assert_eq!(
+        host.update_live_rule(&staging, silence.clone()).await,
+        Err(UpdateLiveRuleError::NotRunning {
+            environment: staging.clone()
+        })
+    );
+    assert_eq!(
+        host.delete_live_rule(&staging, silence.name()),
+        Err(DeleteLiveRuleError::NotRunning {
+            environment: staging.clone()
+        })
+    );
+    assert_eq!(
+        host.keep(&staging, silence.name()).await,
+        Err(KeepRuleError::NotRunning {
+            environment: staging.clone()
+        })
+    );
+    assert_eq!(
+        host.send_intent(&staging, &Intent::Arm { pad }).await,
+        Err(IntentError::NotRunning {
+            environment: staging.clone()
+        })
+    );
+    assert_eq!(
+        host.close_session(&staging, ConnectionNumber::new(7)),
+        Err(CloseSessionError::NotRunning {
+            environment: staging.clone()
+        })
+    );
+    assert_eq!(
+        host.follow_calls(&staging, &SelectorRef::Inline(Conditions::new()))
+            .await
+            .map(|_| ()),
+        Err(FollowCallsError::NotRunning {
+            environment: staging.clone()
+        })
+    );
+    assert_eq!(host.sessions(&staging), Err(NotRunningError { name: staging.clone() }));
+    assert_eq!(
+        host.statistics(&staging).map(|_| ()),
+        Err(NotRunningError { name: staging })
+    );
     Ok(())
 }

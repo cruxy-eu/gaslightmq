@@ -386,16 +386,16 @@ Transactions arrive later as `sim_txn`, next to `sim_log` and `sim_group`.
 | `quick_inject` | The ⌘K sentence parser: text to a rule definition, with completions for the word that is being typed, and the words it could not read. Whoever reads a sentence hands over the names the system knows. The host runs it behind the [control plane](control-plane.md#drafts). | `selector`, `lie`, `rule`, `trigger`, `field`, `kernel`, `clock` |
 | `control_api` | The [control plane](control-plane.md) as types: every operation with its answer and its error, and the messages of the live stream. It re-exports the crates of the definition types its messages carry, one module per domain, so the UI names them through it. It holds its own view of the World's state. | `call`, `journal`, `rule`, `scenario`, `selector`, `surface`, `incident`, `environment`, `lie`, `trigger`, `field`, `kernel`, `clock` |
 | `control_client` | A client for the control plane, for native targets and for WebAssembly. It sends an operation and returns what the control plane answered: the answer or the error of that operation, each typed by it. An operation without an answer of its own is a `SendError`, so a caller never takes it for a refusal of the operation. It opens and follows the live stream, which ends with a `StreamError`. A stream does not reconnect: the caller opens a new one, which starts with a fresh snapshot. The client speaks plain HTTP and WebSocket, without TLS. Over HTTP and a WebSocket: on Tokio, or through the browser's own fetch and WebSocket, one feature each. This crate does IO. | `control_api` |
-| `control_server` | The HTTP and WebSocket server in front of the host: it answers every [operation](control-plane.md#operations) with the host, starts an environment of the workspace by its name, and sends the live stream, with the changes that go through it and the calls that a client follows. See [over the network](control-plane.md#over-the-network). This crate does IO. | `host`, `control_api`, `engine`, `workspace`, `definition_api`, `quick_inject` |
+| `control_server` | The HTTP and WebSocket server in front of the host: it answers every [operation](control-plane.md#operations) with the host, starts an environment of the workspace by its name, and sends the live stream: every change of the host, the calls that a client follows, and the statistics at an interval. See [over the network](control-plane.md#over-the-network). This crate does IO. | `host`, `control_api`, `engine`, `session`, `workspace`, `definition_api`, `quick_inject` |
 
 ### Runtime and applications
 
 | Crate | Holds | Depends on |
 |---|---|---|
-| `engine` | The runtime of one proxy: one task per session that owns the transport and drives the pipeline, a listener for every endpoint of the backend, the armed rules, the scenario runner, the event bus, the journal, the recorder and the indexer. This crate does IO. | `pipeline`, `session`, `rule`, `trigger`, `lie_api`, `call`, `incident`, `field`, `wire`, `scenario`, `journal`, `recording`, `backend`, `listener`, `environment`, `clock`, `clock_waitable` |
+| `engine` | The runtime of one proxy: one task per session that owns the transport and drives the pipeline, a listener for every endpoint of the backend, the armed rules, the sessions that are open, the scenario runner, the event bus, the journal, the recorder and the indexer. This crate does IO. | `pipeline`, `session`, `rule`, `trigger`, `lie_api`, `call`, `incident`, `field`, `wire`, `scenario`, `journal`, `recording`, `backend`, `listener`, `environment`, `kernel`, `clock`, `clock_waitable` |
 | `ui` | The web UI, a Dioxus application. It reaches the engine only through the control plane. This crate does IO. | `control_api`, `control_client`, `surface` |
 | `listener` | Kafka on a socket: accept connections, frame bytes, and run whatever [handles a connection](#the-connection-handler). A proxy's pipeline and a broker alone both sit behind it. This crate does IO. | `wire`, `field`, `clock` |
-| `host` | One process with several [environments](storage.md#several-environments-in-one-process): it starts and stops proxies and brokers, runs the task that drives each broker, and shares the workspace and the control plane between them. It holds the workspace over the context it is handed, whichever stores that names, resolves the rules it arms against that workspace, and reads ⌘K sentences with its names. See [the host](#the-host). This crate does IO. | `engine`, `broker`, `backend`, `backend_upstream`, `workspace`, `environment`, `quick_inject`, `clock`, `clock_waitable`, `lie_api`, `rule`, `selector`, `field`, `incident`, `definition_api` |
+| `host` | One process with several [environments](storage.md#several-environments-in-one-process): it starts and stops proxies and brokers, runs the task that drives each broker, and shares the workspace and the control plane between them. It holds the workspace over the context it is handed, whichever stores that names, resolves the rules it arms against that workspace, and reads ⌘K sentences with its names. It holds the live rules of every environment, acts on what someone does at a pad, counts the traffic of every environment and hands its calls to whoever follows them, and tells every change of the process to whoever follows it. See [the host](#the-host). This crate does IO. | `engine`, `broker`, `backend`, `backend_upstream`, `call`, `workspace`, `environment`, `quick_inject`, `surface`, `traffic`, `clock`, `clock_waitable`, `lie_api`, `rule`, `selector`, `field`, `incident`, `definition_api` |
 | `test` | The test library: it starts a proxy, a broker, or a proxy in front of a broker inside the test's own process, on free ports, and hands the test the addresses its clients connect to. The test then activates a scenario and asserts on the recording. This crate does IO. See [instances in a test](#instances-in-a-test). | `host`, `control_client`, `workspace` |
 | `testcontainers` | A container module: it starts the GaslightMQ image next to a test, with the workspace the test hands over, waits until the instance is ready, and hands the test the addresses its clients connect to. This crate does IO. See [instances in a test](#instances-in-a-test). | `control_client` |
 | `kafka_client_api` | What a Kafka client offers to a test, whichever client it is: the producer, consumer and admin traits, one trait per protocol API, and a raw client that sends one request at a fixed version. Every call of a client returns one error, `ClientError`. A broker that refuses a call is the variant that holds the broker's error code, and a failure of the client holds no error code, so a test never takes one for the other. This crate does IO. | `wire`, `kernel` |
@@ -552,7 +552,7 @@ On a native target they run on Tokio.
 | `control_server` | HTTP and WebSocket. |
 | `control_client` | HTTP and WebSocket, from a native target or from the browser. |
 | `engine` | Tasks, timers and channels. It opens no socket itself. |
-| `host` | One task per instance. |
+| `host` | One task per instance, and one that watches each environment. |
 
 - **The edge waits, and a sans-IO crate decides.**
   A task in the edge waits for a socket, a timer or a channel.
@@ -730,6 +730,28 @@ The conformance crates are [test support](#test-support-crates): no code that sh
 - **A ⌘K sentence knows the names of the workspace.**
   The host hands quick inject the presets and the selectors of the workspace, with their titles.
   The topics, groups and clients come from the traffic, once an environment keeps it.
+- **Live rules belong to one environment.**
+  A live rule resolves against the workspace when someone makes it or changes it, and gets its UUID from the workspace
+  then. It stays in the memory of its environment until someone keeps it, deletes it, or stops the environment.
+  *Keep* saves it in the workspace under its name and its UUID, and it stays in the state it has.
+  A change of a live rule that is armed keeps its counters.
+- **A pad plays the rules of one environment.**
+  The pad points at the rule that has the name of its position: a rule of the workspace, or a live rule.
+  A press arms it, and makes the live rule of the position first when the pad has none.
+  A turn changes a live rule as the encoders of the host's configuration say, and never a rule of the workspace,
+  which changes in the workspace.
+- **A task watches each environment.**
+  It counts the calls of the environment in its traffic, and tells what happens to its sessions and its armed rules.
+  The traffic matches each call against the selectors that someone follows, and the task hands the call to them.
+  A rule that a firing spent or whose lifetime ended disarms there, as one that someone disarmed.
+  The task ends a moment after the proxy, once it took every event, and the stop waits for it.
+- **Every change reaches whoever follows the host.**
+  The host tells each change once: an environment started or stopped, a definition changed through the host,
+  a rule changed its state or a live rule its definition, a live rule left, and what happened to a session.
+  A change names what changed, and whoever follows the host asks it for the state of that thing.
+  Changes are states, so a follower that reads one late reads the newest state, and one that falls behind learns how
+  many it missed and asks for everything again.
+  A definition that changes behind the host, as a file that someone edits, tells nothing yet.
 
 Until the [broker](#the-broker-is-a-state-machine-too) exists, the host runs a proxy in front of a real cluster alone,
 and refuses an environment with a broker.

@@ -39,3 +39,11 @@ pub enum StreamBacklogError {
     #[error("a stream backlog holds at most 1048576 messages, and not {messages}")]
     TooLarge { messages: usize },
 }
+
+/// Why a time span is no [`StatsInterval`](crate::StatsInterval).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+pub enum StatsIntervalError {
+    /// The statistics cannot come all the time: an interval is longer than no time at all.
+    #[error("a stats interval is longer than no time at all")]
+    Zero,
+}

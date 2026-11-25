@@ -19,6 +19,7 @@ gaslightmq_clock_waitable.workspace = true
 gaslightmq_environment.workspace = true
 gaslightmq_field.workspace = true
 gaslightmq_incident.workspace = true
+gaslightmq_kernel.workspace = true
 gaslightmq_lie_api.workspace = true
 gaslightmq_listener.workspace = true
 gaslightmq_pipeline.workspace = true
@@ -40,7 +41,6 @@ gaslightmq_test_kafka.workspace = true
 # The client of `tests/engine`: it sends one request at a fixed version, and returns its response.
 gaslightmq_kafka_client_api.workspace = true
 # What a test arms: selectors, the definitions of lies, and the refusal that the build of a test registers.
-gaslightmq_kernel.workspace = true
 gaslightmq_lie.workspace = true
 gaslightmq_lie_refusal.workspace = true
 gaslightmq_selector.workspace = true

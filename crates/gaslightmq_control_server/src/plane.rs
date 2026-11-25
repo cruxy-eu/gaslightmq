@@ -1,23 +1,26 @@
-//! The control plane over one host: the answer to every operation, the state of the process, and the changes.
+//! The control plane over one host: the answer to every operation, and the state of the process.
 
+use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use gaslightmq_control_api::environment::{Environment, EnvironmentName, ListenAddress};
+use gaslightmq_control_api::field::ConnectionNumber;
 use gaslightmq_control_api::prelude::*;
-use gaslightmq_control_api::rule::{Preset, Rule, RuleName, RuleState};
-use gaslightmq_control_api::selector::{EffectiveSelector, Selector, SelectorSet};
-use gaslightmq_control_api::surface::PadLayout;
+use gaslightmq_control_api::rule::{Preset, Rule, RuleName};
+use gaslightmq_control_api::selector::Selector;
+use gaslightmq_control_api::surface::{Intent, PadLayout};
+use gaslightmq_engine::OpenSession;
 use gaslightmq_host::{
-    ArmRuleError, EnvironmentConfiguration, EnvironmentConfigurationError, EnvironmentStartError, FireRuleError, Host,
-    ReadSentenceError,
+    ArmRuleError, CallSubscription, EnvironmentConfiguration, EnvironmentConfigurationError, EnvironmentRule,
+    EnvironmentRulesError, EnvironmentStartError, FireRuleError, Host, ReadSentenceError,
 };
 use gaslightmq_quick_inject::{CompletionKind, Sentence};
-use gaslightmq_workspace::WorkspaceContext;
+use gaslightmq_workspace::{CreateError, WorkspaceContext};
 use serde::Serialize;
 use tokio::sync::broadcast;
 
 use crate::StreamBacklog;
-use crate::definitions::{self, DefinitionOperations, Editable};
+use crate::definitions::{self, DefinitionOperations, Editable, each};
 
 /// What the server answers a request with, before it travels.
 #[derive(Debug)]
@@ -26,7 +29,7 @@ pub(crate) enum Reply {
     Answered(String),
     /// The operation failed, and this is the form of its error.
     Failed(String),
-    /// The request got neither: the server does not serve the operation, or read none.
+    /// The request got neither: the server read no operation in it.
     Refused(RequestError),
 }
 
@@ -48,11 +51,21 @@ pub(crate) fn form(value: &impl Serialize) -> String {
     serde_json::to_string(value).unwrap_or_else(|_| "null".to_owned())
 }
 
-/// The control plane of one host: it answers every operation and makes the state of the process, and every change it
-/// makes reaches the clients of the live stream.
+/// What reaches every client of the live stream.
+#[derive(Debug, Clone)]
+pub(crate) enum Change {
+    /// A message of the live stream, which every client sends as it is.
+    Message(Arc<StreamMessage>),
+    /// The server missed changes of the host, so no client holds what the process holds:
+    /// each one gets the whole state again.
+    Resync,
+}
+
+/// The control plane of one host: it answers every operation and makes the state of the process.
+/// The changes of the host reach the clients of the live stream through it.
 pub(crate) struct ControlPlane<C: WorkspaceContext> {
     host: Arc<Host<C>>,
-    changes: broadcast::Sender<StreamMessage>,
+    changes: broadcast::Sender<Change>,
 }
 
 impl<C: WorkspaceContext + 'static> ControlPlane<C> {
@@ -63,12 +76,12 @@ impl<C: WorkspaceContext + 'static> ControlPlane<C> {
     }
 
     /// The changes from now on, for one client of the live stream.
-    pub(crate) fn changes(&self) -> broadcast::Receiver<StreamMessage> {
+    pub(crate) fn changes(&self) -> broadcast::Receiver<Change> {
         self.changes.subscribe()
     }
 
     /// Hands a change to every client of the live stream. A change that no client listens to is gone.
-    fn publish(&self, change: StreamMessage) {
+    pub(crate) fn publish(&self, change: Change) {
         let _ = self.changes.send(change);
     }
 
@@ -133,25 +146,32 @@ impl<C: WorkspaceContext + 'static> ControlPlane<C> {
             AnyOperation::ListEnvironmentRules(list) => {
                 Reply::of::<ListEnvironmentRules>(self.environment_rules(list.environment).await)
             }
+            AnyOperation::CreateLiveRule(create) => {
+                Reply::of::<CreateLiveRule>(self.create_live_rule(create.environment, create.rule).await)
+            }
+            AnyOperation::UpdateLiveRule(update) => {
+                Reply::of::<UpdateLiveRule>(self.update_live_rule(update.environment, update.rule).await)
+            }
+            AnyOperation::DeleteLiveRule(delete) => {
+                Reply::of::<DeleteLiveRule>(self.delete_live_rule(&delete.environment, &delete.rule))
+            }
+            AnyOperation::KeepRule(keep) => Reply::of::<KeepRule>(self.keep(keep.environment, keep.rule).await),
             AnyOperation::ArmRule(arm) => Reply::of::<ArmRule>(self.arm(arm.environment, arm.rule).await),
             AnyOperation::DisarmRule(disarm) => {
                 Reply::of::<DisarmRule>(self.disarm(disarm.environment, disarm.rule).await)
             }
             AnyOperation::FireRule(fire) => Reply::of::<FireRule>(self.fire(fire.environment, fire.rule).await),
+            AnyOperation::SendIntent(send) => {
+                Reply::of::<SendIntent>(self.intent(send.environment, &send.intent).await)
+            }
+            AnyOperation::ListSessions(list) => Reply::of::<ListSessions>(self.sessions(list.environment)),
+            AnyOperation::CloseSession(close) => {
+                Reply::of::<CloseSession>(self.close_session(&close.environment, close.connection))
+            }
             AnyOperation::GetBackend(get) => Reply::of::<GetBackend>(self.backend(&get.environment)),
             AnyOperation::ParseSentence(parse) => {
                 Reply::of::<ParseSentence>(self.parse(parse.environment, &parse.text).await)
             }
-            // The host has no live rules, no sessions and no pads yet.
-            unserved @ (AnyOperation::CreateLiveRule(_)
-            | AnyOperation::UpdateLiveRule(_)
-            | AnyOperation::DeleteLiveRule(_)
-            | AnyOperation::KeepRule(_)
-            | AnyOperation::SendIntent(_)
-            | AnyOperation::ListSessions(_)
-            | AnyOperation::CloseSession(_)) => Reply::Refused(RequestError::NotServed {
-                operation: unserved.name().to_owned(),
-            }),
         }
     }
 
@@ -166,27 +186,15 @@ impl<C: WorkspaceContext + 'static> ControlPlane<C> {
     }
 
     async fn create<D: Editable>(&self, definition: D) -> Result<(), CreateDefinitionError> {
-        let created = DefinitionOperations::create(&mut *self.host.workspace().await, definition).await?;
-        self.publish(StreamMessage::DefinitionChanged {
-            definition: EditableDefinition::into_any(created),
-        });
-        Ok(())
+        DefinitionOperations::create(&self.host, definition).await
     }
 
     async fn update<D: Editable>(&self, definition: D) -> Result<(), UpdateDefinitionError> {
-        let updated = DefinitionOperations::update(&mut *self.host.workspace().await, definition).await?;
-        self.publish(StreamMessage::DefinitionChanged {
-            definition: EditableDefinition::into_any(updated),
-        });
-        Ok(())
+        DefinitionOperations::update(&self.host, definition).await
     }
 
     async fn delete<D: Editable>(&self, name: <D as EditableDefinition>::Name) -> Result<(), DeleteDefinitionError> {
-        DefinitionOperations::delete::<D, C>(&mut *self.host.workspace().await, name.clone()).await?;
-        self.publish(StreamMessage::DefinitionDeleted {
-            name: Into::<DefinitionRef>::into(name),
-        });
-        Ok(())
+        DefinitionOperations::delete::<D, C>(&self.host, name).await
     }
 
     // The environments
@@ -235,34 +243,24 @@ impl<C: WorkspaceContext + 'static> ControlPlane<C> {
             },
         )?;
         match self.host.start(configuration).await {
-            Ok(()) => {}
+            Ok(()) => Ok(()),
             Err(EnvironmentStartError::AlreadyRunning { .. }) => {
-                return Err(StartEnvironmentError::Running { environment: name });
+                Err(StartEnvironmentError::Running { environment: name })
             }
-            Err(EnvironmentStartError::SharedListener { running, address, .. }) => {
-                let reason = format!("{address} is taken by environment {:?}", running.as_str());
-                return Err(failed(reason));
-            }
-            Err(EnvironmentStartError::BackendNotStarted { error, .. }) => return Err(failed(error.to_string())),
-            Err(EnvironmentStartError::ProxyNotStarted { error, .. }) => return Err(failed(error.to_string())),
+            Err(EnvironmentStartError::SharedListener { running, address, .. }) => Err(failed(format!(
+                "{address} is taken by environment {:?}",
+                running.as_str()
+            ))),
+            Err(EnvironmentStartError::BackendNotStarted { error, .. }) => Err(failed(error.to_string())),
+            Err(EnvironmentStartError::ProxyNotStarted { error, .. }) => Err(failed(error.to_string())),
         }
-        // A client that cannot be told what runs now gets it with its next snapshot.
-        if let Ok(Some(environment)) = self.running_environment(&name).await {
-            self.publish(StreamMessage::EnvironmentStarted { environment });
-        }
-        Ok(())
     }
 
     async fn stop(&self, name: EnvironmentName) -> Result<(), EnvironmentNotRunning> {
-        match self.host.stop(&name).await {
-            Ok(()) => {
-                self.publish(StreamMessage::EnvironmentStopped {
-                    environment: name.clone(),
-                });
-                Ok(())
-            }
-            Err(_) => Err(EnvironmentNotRunning { environment: name }),
-        }
+        self.host
+            .stop(&name)
+            .await
+            .map_err(|_| EnvironmentNotRunning { environment: name })
     }
 
     /// The environment of the workspace with that name, without its UUID.
@@ -273,51 +271,95 @@ impl<C: WorkspaceContext + 'static> ControlPlane<C> {
     // The rules of an environment
 
     async fn environment_rules(&self, environment: EnvironmentName) -> Result<Vec<RuleStatus>, EnvironmentReadError> {
-        match self.rule_statuses(&environment).await {
-            Ok(Some(rules)) => Ok(rules),
-            Ok(None) => Err(EnvironmentReadError::NotRunning { environment }),
-            Err(reason) => Err(EnvironmentReadError::StoreFailed { environment, reason }),
-        }
-    }
-
-    /// The rules of the workspace, each with its state in the environment, or `None` when it does not run.
-    ///
-    /// A rule of the workspace is armed where someone armed it, and disarmed everywhere else.
-    async fn rule_statuses(&self, environment: &EnvironmentName) -> Result<Option<Vec<RuleStatus>>, String> {
-        let rules = definitions::list::<Rule, C>(&*self.host.workspace().await).await?;
-        let Ok(armed) = self.host.rules(environment) else {
-            return Ok(None);
-        };
-        let armed = armed.snapshot();
-        let statuses = rules.into_iter().map(|rule| {
-            let state = if armed.get(rule.name()).is_some() {
-                RuleState::Armed
-            } else {
-                RuleState::Disarmed
-            };
-            RuleStatus {
-                rule,
-                live: false,
-                state,
+        match self.host.rules_of(&environment).await {
+            Ok(rules) => Ok(rules.into_iter().map(status).collect()),
+            Err(EnvironmentRulesError::NotRunning { environment }) => {
+                Err(EnvironmentReadError::NotRunning { environment })
             }
-        });
-        Ok(Some(statuses.collect()))
+            Err(EnvironmentRulesError::StoreFailed { environment, reason }) => {
+                Err(EnvironmentReadError::StoreFailed { environment, reason })
+            }
+        }
     }
 
-    /// The rule of the workspace that a command on an environment names.
-    async fn commanded_rule(&self, environment: &EnvironmentName, name: &RuleName) -> Result<Rule, RuleCommandError> {
-        if !self.host.running().contains(environment) {
-            return Err(RuleCommandError::NotRunning {
-                environment: environment.clone(),
-            });
+    async fn create_live_rule(&self, environment: EnvironmentName, rule: Rule) -> Result<(), CreateLiveRuleError> {
+        use gaslightmq_host::CreateLiveRuleError as Host;
+        let name = rule.name().clone();
+        match self.host.create_live_rule(&environment, rule).await {
+            Ok(_) => Ok(()),
+            Err(Host::NotRunning { environment }) => Err(CreateLiveRuleError::NotRunning { environment }),
+            Err(Host::NameTaken { environment, rule }) => Err(CreateLiveRuleError::NameTaken { environment, rule }),
+            Err(Host::StoreFailed { rule, reason }) => Err(CreateLiveRuleError::StoreFailed { rule, reason }),
+            Err(Host::WorkspaceInvalid { rule, reason }) => Err(CreateLiveRuleError::DoesNotFit {
+                rule,
+                reason: format!("the workspace is not valid: {reason}"),
+            }),
+            Err(Host::Unresolved { error }) => Err(CreateLiveRuleError::DoesNotFit {
+                rule: name,
+                reason: error.to_string(),
+            }),
         }
-        match definitions::get::<Rule, C>(&*self.host.workspace().await, name).await {
+    }
+
+    async fn update_live_rule(&self, environment: EnvironmentName, rule: Rule) -> Result<(), UpdateLiveRuleError> {
+        use gaslightmq_host::UpdateLiveRuleError as Host;
+        let name = rule.name().clone();
+        match self.host.update_live_rule(&environment, rule).await {
+            Ok(_) => Ok(()),
+            Err(Host::NotRunning { environment }) => Err(UpdateLiveRuleError::NotRunning { environment }),
+            Err(Host::NotFound { environment, rule }) => Err(UpdateLiveRuleError::NotFound { environment, rule }),
+            Err(Host::StoreFailed { rule, reason }) => Err(UpdateLiveRuleError::StoreFailed { rule, reason }),
+            Err(Host::WorkspaceInvalid { rule, reason }) => Err(UpdateLiveRuleError::DoesNotFit {
+                rule,
+                reason: format!("the workspace is not valid: {reason}"),
+            }),
+            Err(Host::Unresolved { error }) => Err(UpdateLiveRuleError::DoesNotFit {
+                rule: name,
+                reason: error.to_string(),
+            }),
+        }
+    }
+
+    fn delete_live_rule(&self, environment: &EnvironmentName, rule: &RuleName) -> Result<(), DeleteLiveRuleError> {
+        use gaslightmq_host::DeleteLiveRuleError as Host;
+        match self.host.delete_live_rule(environment, rule) {
+            Ok(()) => Ok(()),
+            Err(Host::NotRunning { environment }) => Err(DeleteLiveRuleError::NotRunning { environment }),
+            Err(Host::NotFound { environment, rule }) => Err(DeleteLiveRuleError::NotFound { environment, rule }),
+        }
+    }
+
+    async fn keep(&self, environment: EnvironmentName, name: RuleName) -> Result<(), KeepRuleError> {
+        use gaslightmq_host::KeepRuleError as Host;
+        match self.host.keep(&environment, &name).await {
+            Ok(_) => Ok(()),
+            Err(Host::NotRunning { environment }) => Err(KeepRuleError::NotRunning { environment }),
+            Err(Host::NotFound { environment, rule }) => Err(KeepRuleError::NotFound { environment, rule }),
+            Err(Host::NotKept { rule, error }) => Err(match error {
+                CreateError::NameTaken { .. } => KeepRuleError::NameTaken { rule },
+                CreateError::DoesNotFit { errors, .. } => KeepRuleError::DoesNotFit {
+                    rule,
+                    reason: each(&errors),
+                },
+                CreateError::StoreFailed { reason, .. } => KeepRuleError::StoreFailed { rule, reason },
+            }),
+        }
+    }
+
+    /// The rule of the environment that a command names: a rule of the workspace, or a live rule.
+    async fn commanded_rule(
+        &self,
+        environment: &EnvironmentName,
+        name: &RuleName,
+    ) -> Result<EnvironmentRule, RuleCommandError> {
+        match self.host.rule_of(environment, name).await {
             Ok(Some(rule)) => Ok(rule),
             Ok(None) => Err(RuleCommandError::NotFound {
                 environment: environment.clone(),
                 rule: name.clone(),
             }),
-            Err(reason) => Err(RuleCommandError::StoreFailed {
+            Err(EnvironmentRulesError::NotRunning { environment }) => Err(RuleCommandError::NotRunning { environment }),
+            Err(EnvironmentRulesError::StoreFailed { reason, .. }) => Err(RuleCommandError::StoreFailed {
                 rule: name.clone(),
                 reason,
             }),
@@ -331,56 +373,33 @@ impl<C: WorkspaceContext + 'static> ControlPlane<C> {
             rule: name.clone(),
             reason,
         };
-        match self.host.arm(&environment, &rule).await {
-            Ok(_) => {}
-            Err(ArmRuleError::NotRunning { .. }) => {
-                return Err(RuleCommandError::NotRunning {
-                    environment: environment.clone(),
-                });
-            }
-            Err(ArmRuleError::StoreFailed { reason, .. }) => {
-                return Err(RuleCommandError::StoreFailed { rule: name, reason });
-            }
+        match self.host.arm(&environment, &rule.rule).await {
+            Ok(_) => Ok(()),
+            Err(ArmRuleError::NotRunning { .. }) => Err(RuleCommandError::NotRunning {
+                environment: environment.clone(),
+            }),
+            Err(ArmRuleError::StoreFailed { reason, .. }) => Err(RuleCommandError::StoreFailed { rule: name, reason }),
             Err(ArmRuleError::WorkspaceInvalid { reason, .. }) => {
-                return Err(refused(format!("the workspace is not valid: {reason}")));
+                Err(refused(format!("the workspace is not valid: {reason}")))
             }
-            Err(ArmRuleError::Unresolved { error }) => return Err(refused(error.to_string())),
-            Err(ArmRuleError::AlreadyArmed { .. }) => return Err(refused("it is armed already".to_owned())),
+            Err(ArmRuleError::Unresolved { error }) => Err(refused(error.to_string())),
+            Err(ArmRuleError::AlreadyArmed { .. }) => Err(refused("it is armed already".to_owned())),
         }
-        self.publish(StreamMessage::RuleChanged {
-            environment,
-            rule: RuleStatus {
-                rule,
-                live: false,
-                state: RuleState::Armed,
-            },
-        });
-        Ok(())
     }
 
     async fn disarm(&self, environment: EnvironmentName, name: RuleName) -> Result<(), RuleCommandError> {
-        let rule = self.commanded_rule(&environment, &name).await?;
+        self.commanded_rule(&environment, &name).await?;
         let armed = self
             .host
             .rules(&environment)
             .map_err(|_| RuleCommandError::NotRunning {
                 environment: environment.clone(),
             })?;
-        if armed.disarm(&name).is_err() {
-            return Err(RuleCommandError::Refused {
-                environment,
-                rule: name,
-                reason: "it is not armed".to_owned(),
-            });
-        }
-        self.publish(StreamMessage::RuleChanged {
+        armed.disarm(&name).map_err(|_| RuleCommandError::Refused {
             environment,
-            rule: RuleStatus {
-                rule,
-                live: false,
-                state: RuleState::Disarmed,
-            },
-        });
+            rule: name,
+            reason: "it is not armed".to_owned(),
+        })?;
         Ok(())
     }
 
@@ -405,6 +424,47 @@ impl<C: WorkspaceContext + 'static> ControlPlane<C> {
         }
     }
 
+    // Pads
+
+    async fn intent(&self, environment: EnvironmentName, intent: &Intent) -> Result<(), IntentError> {
+        use gaslightmq_host::IntentError as Host;
+        match self.host.send_intent(&environment, intent).await {
+            Ok(()) => Ok(()),
+            Err(Host::NotRunning { environment }) => Err(IntentError::NotRunning { environment }),
+            Err(Host::UnknownLayout { layout }) => Err(IntentError::UnknownLayout { layout }),
+            Err(Host::StoreFailed { reason }) => Err(IntentError::StoreFailed { reason }),
+            Err(Host::Refused { reason }) => Err(IntentError::Refused { reason }),
+        }
+    }
+
+    // Sessions
+
+    fn sessions(&self, environment: EnvironmentName) -> Result<Vec<SessionStatus>, EnvironmentNotRunning> {
+        match self.host.sessions(&environment) {
+            Ok(sessions) => Ok(sessions.iter().map(session_status).collect()),
+            Err(_) => Err(EnvironmentNotRunning { environment }),
+        }
+    }
+
+    fn close_session(
+        &self,
+        environment: &EnvironmentName,
+        connection: ConnectionNumber,
+    ) -> Result<(), CloseSessionError> {
+        use gaslightmq_host::CloseSessionError as Host;
+        match self.host.close_session(environment, connection) {
+            Ok(()) => Ok(()),
+            Err(Host::NotRunning { environment }) => Err(CloseSessionError::NotRunning { environment }),
+            Err(Host::NotOpen {
+                environment,
+                connection,
+            }) => Err(CloseSessionError::NotFound {
+                environment,
+                connection,
+            }),
+        }
+    }
+
     // What runs in an environment
 
     fn backend(&self, environment: &EnvironmentName) -> Result<BackendStatus, EnvironmentNotRunning> {
@@ -413,7 +473,7 @@ impl<C: WorkspaceContext + 'static> ControlPlane<C> {
         };
         let endpoints = self.host.endpoints(environment).map_err(not_running)?;
         let incidents = self.host.incident_support(environment).map_err(not_running)?;
-        let mut addresses = std::collections::BTreeMap::new();
+        let mut addresses = BTreeMap::new();
         for endpoint in endpoints {
             let address = self.host.address_of(environment, endpoint).map_err(not_running)?;
             addresses.insert(endpoint, address.map(ListenAddress::from));
@@ -440,18 +500,23 @@ impl<C: WorkspaceContext + 'static> ControlPlane<C> {
     // The state of the process
 
     /// An environment that runs, with what is live in it, or `None` when it does not run.
-    async fn running_environment(&self, name: &EnvironmentName) -> Result<Option<RunningEnvironment>, String> {
-        let Some(rules) = self.rule_statuses(name).await? else {
-            return Ok(None);
+    pub(crate) async fn running_environment(
+        &self,
+        name: &EnvironmentName,
+    ) -> Result<Option<RunningEnvironment>, String> {
+        let rules = match self.host.rules_of(name).await {
+            Ok(rules) => rules,
+            Err(EnvironmentRulesError::NotRunning { .. }) => return Ok(None),
+            Err(EnvironmentRulesError::StoreFailed { reason, .. }) => return Err(reason),
         };
-        let Ok(backend) = self.backend(name) else {
+        let (Ok(backend), Ok(sessions)) = (self.backend(name), self.host.sessions(name)) else {
             return Ok(None);
         };
         Ok(Some(RunningEnvironment {
             environment: name.clone(),
             backend,
-            rules,
-            sessions: Vec::new(),
+            rules: rules.into_iter().map(status).collect(),
+            sessions: sessions.iter().map(session_status).collect(),
         }))
     }
 
@@ -475,25 +540,46 @@ impl<C: WorkspaceContext + 'static> ControlPlane<C> {
         })
     }
 
-    /// The calls that a subscription follows: the environment, and the selector that its calls have to match.
+    /// The calls that a subscription follows, or `None` for a subscription to nothing.
     ///
     /// # Errors
     ///
-    /// Why the subscription cannot be followed: the environment does not run, or the selector does not resolve.
+    /// Why the subscription cannot be followed: the environment does not run, the selectors could not be read,
+    /// or the selector does not resolve.
     pub(crate) async fn follow(
         &self,
         subscription: Subscription,
-    ) -> Result<Option<(EnvironmentName, EffectiveSelector)>, String> {
+    ) -> Result<Option<(EnvironmentName, CallSubscription)>, String> {
         let Subscription::Calls { environment, selector } = subscription else {
             return Ok(None);
         };
-        if !self.host.running().contains(&environment) {
-            return Err(EnvironmentNotRunning { environment }.to_string());
+        match self.host.follow_calls(&environment, &selector).await {
+            Ok(calls) => Ok(Some((environment, calls))),
+            Err(error) => Err(error.to_string()),
         }
-        let selectors = definitions::list::<Selector, C>(&*self.host.workspace().await).await?;
-        let selectors = SelectorSet::new(selectors).map_err(|error| error.to_string())?;
-        let selector = selectors.resolve(&selector).map_err(|error| error.to_string())?;
-        Ok(Some((environment, selector)))
+    }
+}
+
+/// A rule of an environment as the control plane hands it out: without its UUID.
+pub(crate) fn status(rule: EnvironmentRule) -> RuleStatus {
+    RuleStatus {
+        rule: rule.rule.without_uuid(),
+        live: rule.live,
+        state: rule.state,
+    }
+}
+
+/// An open session as the control plane hands it out.
+pub(crate) fn session_status(session: &OpenSession) -> SessionStatus {
+    SessionStatus {
+        connection: session.connection(),
+        address: session.address(),
+        endpoint: session.endpoint(),
+        opened: session.opened(),
+        identity: session.is_identified().then(|| SessionIdentity {
+            client: session.client().cloned(),
+            software: session.software().cloned(),
+        }),
     }
 }
 

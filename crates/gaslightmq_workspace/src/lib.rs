@@ -7,7 +7,7 @@
 //!
 //! | Type | Is |
 //! |---|---|
-//! | [`Workspace`] | The door for every change: create, update, delete and validate. |
+//! | [`Workspace`] | The door for every change: create, update, delete and validate, and keep what was made outside it under the UUID it stamped. |
 //! | [`WorkspaceContext`] | Everything a workspace is handed, as one type: its stores, and the source of its UUIDs. |
 //! | [`Stores`] | The five stores that a workspace works over, one for each kind. |
 //! | [`WorkspaceDefinition`] | A definition of a kind that a workspace holds. |
@@ -66,7 +66,7 @@
 //!
 //! | Asked | Error | What is wrong |
 //! |---|---|---|
-//! | [`Workspace::create`] | [`CreateError`] | The name is taken, the definition does not fit the others, or a store failed. |
+//! | [`Workspace::create`], [`Workspace::keep`] | [`CreateError`] | The name is taken, the definition does not fit the others, or a store failed. |
 //! | [`Workspace::update`] | [`UpdateError`] | No definition has the name, the definition does not fit the others, or a store failed. |
 //! | [`Workspace::delete`] | [`DeleteError`] | No definition has the name, other definitions use it, or a store failed. |
 //! | [`Workspace::validate`] | [`ValidationError`] | The definitions do not fit each other, or a store failed. |

@@ -85,8 +85,37 @@ mod next_to_the_others {
             rule: "blackhole".parse().unwrap(),
         };
         let not_armed: FireRuleError = FireRuleError::NotArmed {
-            environment: staging,
+            environment: staging.clone(),
             rule: "blackhole".parse().unwrap(),
+        };
+        let rules: EnvironmentRulesError = EnvironmentRulesError::NotRunning {
+            environment: staging.clone(),
+        };
+        let taken: CreateLiveRuleError = CreateLiveRuleError::NameTaken {
+            environment: staging.clone(),
+            rule: "blackhole".parse().unwrap(),
+        };
+        let unchanged: UpdateLiveRuleError = UpdateLiveRuleError::NotFound {
+            environment: staging.clone(),
+            rule: "blackhole".parse().unwrap(),
+        };
+        let undeleted: DeleteLiveRuleError = DeleteLiveRuleError::NotFound {
+            environment: staging.clone(),
+            rule: "blackhole".parse().unwrap(),
+        };
+        let unkept: KeepRuleError = KeepRuleError::NotFound {
+            environment: staging.clone(),
+            rule: "blackhole".parse().unwrap(),
+        };
+        let unknown: IntentError = IntentError::UnknownLayout {
+            layout: "order-desk".parse().unwrap(),
+        };
+        let unclosed: CloseSessionError = CloseSessionError::NotRunning { environment: staging };
+        let missed: HostChangesError = HostChangesError::Missed { changes: 3 };
+        let backlog: ChangeBacklogError = ChangeBacklogError::Zero;
+        let calls: CallBacklogError = CallBacklogError::Zero;
+        let followed: FollowCallsError = FollowCallsError::StoreFailed {
+            reason: "the selector store could not be read: disk full".to_owned(),
         };
         let unread: ReadSentenceError = ReadSentenceError::StoreFailed {
             reason: "the preset store could not be read: disk full".to_owned(),
@@ -98,6 +127,17 @@ mod next_to_the_others {
         assert!(std::error::Error::source(&armed).is_none());
         assert!(std::error::Error::source(&not_armed).is_none());
         assert!(std::error::Error::source(&unread).is_none());
+        assert!(std::error::Error::source(&rules).is_none());
+        assert!(std::error::Error::source(&taken).is_none());
+        assert!(std::error::Error::source(&unchanged).is_none());
+        assert!(std::error::Error::source(&undeleted).is_none());
+        assert!(std::error::Error::source(&unkept).is_none());
+        assert!(std::error::Error::source(&unknown).is_none());
+        assert!(std::error::Error::source(&unclosed).is_none());
+        assert!(std::error::Error::source(&missed).is_none());
+        assert!(std::error::Error::source(&backlog).is_none());
+        assert!(std::error::Error::source(&calls).is_none());
+        assert!(std::error::Error::source(&followed).is_none());
         vec![
             unsupported.to_string(),
             running.to_string(),
@@ -105,6 +145,17 @@ mod next_to_the_others {
             armed.to_string(),
             not_armed.to_string(),
             unread.to_string(),
+            rules.to_string(),
+            taken.to_string(),
+            unchanged.to_string(),
+            undeleted.to_string(),
+            unkept.to_string(),
+            unknown.to_string(),
+            unclosed.to_string(),
+            missed.to_string(),
+            backlog.to_string(),
+            calls.to_string(),
+            followed.to_string(),
         ]
     }
 }
@@ -129,6 +180,17 @@ fn the_prelude_names_the_error_of_every_type() {
             "rule \"blackhole\" is armed already in environment \"staging-proxy\"",
             "rule \"blackhole\" is not armed in environment \"staging-proxy\"",
             "the names of the workspace could not be read: the preset store could not be read: disk full",
+            "environment \"staging-proxy\" does not run",
+            "environment \"staging-proxy\" has a rule \"blackhole\" already",
+            "environment \"staging-proxy\" has no live rule \"blackhole\"",
+            "environment \"staging-proxy\" has no live rule \"blackhole\"",
+            "environment \"staging-proxy\" has no live rule \"blackhole\"",
+            "layout \"order-desk\" does not exist",
+            "environment \"staging-proxy\" does not run",
+            "the follower fell behind, and missed 3 changes of the host",
+            "a change backlog holds at least one change",
+            "a call backlog holds at least one call",
+            "the calls were not followed: the selector store could not be read: disk full",
         ]
     );
 }

@@ -9,7 +9,7 @@ use gaslightmq_rule::{ArmedRule, ResolvedRule, RuleName, Snapshot, SnapshotError
 use gaslightmq_trigger::Seed;
 use tokio::sync::watch;
 
-use crate::{ArmError, DisarmError};
+use crate::{ArmError, DisarmError, RetuneError};
 
 /// The armed rules of one proxy, in the order in which they win a conflict.
 ///
@@ -111,6 +111,52 @@ impl ArmedRules {
         disarmed.ok_or_else(|| DisarmError::NotArmed { rule: name.clone() })
     }
 
+    /// Replaces the armed rule of the same name with `rule`, and keeps its arming: its counters, its budget,
+    /// its hand firings and its moment of arming stay. It keeps its place in the order too.
+    ///
+    /// The sessions get the snapshot with it, and a call in flight finishes on the rule it started with.
+    /// See [`ArmedRule::retuned`].
+    ///
+    /// # Errors
+    ///
+    /// [`RetuneError::NotArmed`] when no rule of that name is armed, or its lifetime ended.
+    pub fn retune(&self, rule: ResolvedRule) -> Result<ArmedRule, RetuneError> {
+        let now = self.inner.clock.now();
+        let name = rule.name().clone();
+        let mut retuned = None;
+        self.inner.published.send_if_modified(|published| {
+            let Some(armed) = published.get(&name).filter(|armed| !armed.arming().has_ended(now)) else {
+                return false;
+            };
+            let changed = armed.retuned(rule);
+            let rules = published.iter().map(|armed| {
+                if armed.name() == &name {
+                    changed.clone()
+                } else {
+                    armed.clone()
+                }
+            });
+            match Snapshot::new(rules) {
+                Ok(snapshot) => {
+                    *published = Arc::new(snapshot);
+                    retuned = Some(changed);
+                    true
+                }
+                // The rules had one name each, and the retuned rule keeps its own.
+                Err(SnapshotError::DuplicateName { .. }) => false,
+            }
+        });
+        retuned.ok_or(RetuneError::NotArmed { rule: name })
+    }
+
+    /// Every snapshot that the armed rules publish from now on: when a rule is armed, disarmed or retuned,
+    /// and when a lifetime ends. The one that is published now counts as seen.
+    pub fn changes(&self) -> RuleChanges {
+        RuleChanges {
+            published: self.published(),
+        }
+    }
+
     /// The armed rules at this moment, as every session received them last.
     pub fn snapshot(&self) -> Arc<Snapshot> {
         Arc::clone(&self.inner.published.borrow())
@@ -167,6 +213,24 @@ impl ArmedRules {
         }
         *published = Arc::new(published.keeping(stays));
         true
+    }
+}
+
+/// The snapshots that the [`ArmedRules`] of one proxy publish, for whoever follows what is armed.
+///
+/// [`ArmedRules::changes`] makes one. It never holds the rules up: a follower that is slow skips to the newest
+/// snapshot, which holds every change before it.
+#[derive(Debug)]
+pub struct RuleChanges {
+    published: watch::Receiver<Arc<Snapshot>>,
+}
+
+impl RuleChanges {
+    /// Waits for the next snapshot, or returns `None` once every handle of the armed rules is gone,
+    /// because their engine stopped.
+    pub async fn next(&mut self) -> Option<Arc<Snapshot>> {
+        self.published.changed().await.ok()?;
+        Some(Arc::clone(&self.published.borrow_and_update()))
     }
 }
 
@@ -252,6 +316,31 @@ mod tests {
         rules.disarm(&name("blackhole")).unwrap();
         assert!(session.has_changed().unwrap());
         assert!(session.borrow_and_update().is_empty());
+    }
+
+    #[test]
+    fn a_retuned_rule_keeps_its_arming_and_its_place() {
+        let rules = armed_rules(&SteppedClock::new());
+        let first = rules.arm(resolved(&rule("blackhole"))).unwrap();
+        rules.arm(resolved(&rule("leader-flap"))).unwrap();
+        let mut changes = rules.changes();
+        let slower = Rule::new(
+            name("blackhole"),
+            Conditions::new(),
+            gaslightmq_lie::TimingLie::new().with_delay(TimeSpan::from_millis(20)),
+        );
+
+        let retuned = rules.retune(resolved(&slower)).unwrap();
+
+        assert!(retuned.is(&first), "the same arming, with its counters");
+        assert_eq!(armed(&rules), ["leader-flap", "blackhole"]);
+        assert_eq!(retuned.rule(), &resolved(&slower));
+        let published = futures::executor::block_on(changes.next()).unwrap();
+        assert!(published.get(&name("blackhole")).unwrap().is(&first));
+        assert_eq!(
+            rules.retune(resolved(&rule("throttle"))).unwrap_err(),
+            RetuneError::NotArmed { rule: name("throttle") }
+        );
     }
 
     #[test]

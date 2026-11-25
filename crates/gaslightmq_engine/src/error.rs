@@ -1,7 +1,7 @@
 //! Why an engine could not do what it was asked to do: one error for each thing that fails in its own way.
 
 use gaslightmq_environment::BrokerListenersError;
-use gaslightmq_field::Endpoint;
+use gaslightmq_field::{ConnectionNumber, Endpoint};
 use gaslightmq_rule::RuleName;
 
 /// Why an endpoint of a proxy has no listener.
@@ -108,6 +108,38 @@ pub enum DisarmError {
     /// No rule of that name is armed: nobody armed it, someone disarmed it, or its lifetime ended.
     #[error("rule {:?} is not armed", .rule.as_str())]
     NotArmed { rule: RuleName },
+}
+
+/// Why the [`ArmedRules`](crate::ArmedRules) did not retune a rule.
+///
+/// ```
+/// use gaslightmq_engine::prelude::*;
+///
+/// let error = RetuneError::NotArmed { rule: "leader-flap".parse().expect("a rule name") };
+/// assert_eq!(error.to_string(), "rule \"leader-flap\" is not armed, so it has nothing to retune");
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum RetuneError {
+    /// No rule of that name is armed, so no arming keeps its counters. Whoever changes the rule arms it anew.
+    #[error("rule {:?} is not armed, so it has nothing to retune", .rule.as_str())]
+    NotArmed { rule: RuleName },
+}
+
+/// No session is open on the connection that an engine was asked to [close](crate::Engine::close_session):
+/// it closed already, or it never opened.
+///
+/// ```
+/// use gaslightmq_engine::prelude::*;
+/// use gaslightmq_field::prelude::*;
+///
+/// let error = NotOpenError { connection: ConnectionNumber::new(7) };
+/// assert_eq!(error.to_string(), "no session is open on connection #7");
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[error("no session is open on connection {connection}")]
+pub struct NotOpenError {
+    /// The connection that has no open session.
+    pub connection: ConnectionNumber,
 }
 
 /// Why a listener of the [live events](crate::LiveEvents) of an engine has no next event.

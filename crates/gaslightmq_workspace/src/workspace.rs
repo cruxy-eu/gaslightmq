@@ -130,17 +130,47 @@ impl<C: WorkspaceContext> Workspace<C> {
             return Err(CreateError::NameTaken { name });
         }
 
-        let definition = Kind::with_uuid(definition, D::uuid_of(self.context.uuids().seed()));
-        let errors = contents.errors_with(definition.clone().into_any());
-        if !errors.is_empty() {
-            return Err(CreateError::DoesNotFit { name, errors });
+        let definition = self.stamp(definition);
+        self.add(definition, name, &contents).await
+    }
+
+    /// Adds a definition that was made outside the workspace, under the UUID that it holds, and returns it.
+    ///
+    /// A live rule is such a definition: it gets its UUID from [`stamp`](Self::stamp) when it is made,
+    /// and keeps it when someone keeps it in the workspace. A definition without a UUID gets one, as on
+    /// [`create`](Self::create).
+    ///
+    /// # Errors
+    ///
+    /// - [`CreateError::NameTaken`] when a definition of this kind has the name. Nothing overwrites it.
+    /// - [`CreateError::DoesNotFit`] when the definitions would not fit each other with this one:
+    ///   it refers to a name that does not exist, it is a rule that can never fire,
+    ///   or another definition has its UUID.
+    /// - [`CreateError::StoreFailed`] when a store could not read its definitions, or could not keep this one.
+    pub async fn keep<D: WorkspaceDefinition>(&mut self, definition: D) -> Result<D, CreateError> {
+        let name: DefinitionName = definition.name().clone().into();
+        let contents = match self.contents().await {
+            Ok(contents) => contents,
+            Err(Unread { reason }) => return Err(CreateError::StoreFailed { name, reason }),
+        };
+        if contents.get(&name).is_some() {
+            return Err(CreateError::NameTaken { name });
         }
 
-        match self.store_create(definition.clone().into_any()).await {
-            Ok(()) => Ok(definition),
-            Err(StoreCreateError::NameTaken) => Err(CreateError::NameTaken { name }),
-            Err(StoreCreateError::Failed { reason }) => Err(CreateError::StoreFailed { name, reason }),
-        }
+        let definition = match definition.uuid() {
+            Some(_) => definition,
+            None => self.stamp(definition),
+        };
+        self.add(definition, name, &contents).await
+    }
+
+    /// Gives `definition` a new UUID, as [`create`](Self::create) gives one, and stores nothing.
+    ///
+    /// Whoever makes a definition that lives outside the workspace for a while, such as a live rule, stamps it,
+    /// so that the definition has the UUID it keeps from then on, also once someone [keeps](Self::keep) it.
+    #[must_use]
+    pub fn stamp<D: WorkspaceDefinition>(&mut self, definition: D) -> D {
+        Kind::with_uuid(definition, D::uuid_of(self.context.uuids().seed()))
     }
 
     /// Replaces the definition of the same kind and name, and returns it with the UUID that it keeps.
@@ -238,6 +268,25 @@ impl<C: WorkspaceContext> Workspace<C> {
             Ok(())
         } else {
             Err(ValidationError::Invalid { errors })
+        }
+    }
+
+    /// Checks a definition that has its UUID against `contents`, and asks the store of its kind to take it.
+    async fn add<D: WorkspaceDefinition>(
+        &self,
+        definition: D,
+        name: DefinitionName,
+        contents: &Contents,
+    ) -> Result<D, CreateError> {
+        let errors = contents.errors_with(definition.clone().into_any());
+        if !errors.is_empty() {
+            return Err(CreateError::DoesNotFit { name, errors });
+        }
+
+        match self.store_create(definition.clone().into_any()).await {
+            Ok(()) => Ok(definition),
+            Err(StoreCreateError::NameTaken) => Err(CreateError::NameTaken { name }),
+            Err(StoreCreateError::Failed { reason }) => Err(CreateError::StoreFailed { name, reason }),
         }
     }
 

@@ -187,17 +187,32 @@ Every frame is a text frame.
   It closes with `1001 Going Away` when it stops,
   and with `1011 Internal Error` when the workspace cannot be read for a snapshot, with what the store said as the reason.
 
-### What the server does not serve yet
+### Where the changes come from
 
-The host has no live rules, no sessions and no pads yet.
-Until it has, the server answers these operations with `501` and a `RequestError::NotServed`:
-`create-live-rule`, `update-live-rule`, `delete-live-rule`, `keep-rule`, `send-intent`, `list-sessions` and `close-session`.
-The `sessions` of an environment in a snapshot are empty.
+The server follows the changes of the host, whoever makes them: an operation of the control plane, a pad,
+a rule that a firing spent or whose lifetime ended, a client that connects or leaves, or `gmq` itself.
+Each change names what changed, and the server sends the state that thing has when it sends the message.
+A change whose subject is gone again by then sends nothing, because a later message says that it went.
 
-The stream carries the changes that go through the control plane.
-A rule that its lifetime disarms, an environment that `gmq` starts beside the server, and a file that someone edits
-send no message yet. The next snapshot holds them.
-`stats`, `rule-removed`, the messages of sessions and `workspace-invalid` arrive with what makes them in the host.
+| The host tells | The server sends |
+|---|---|
+| An environment started or stopped. | `environment-started` with what runs in it, or `environment-stopped` once its sessions closed. |
+| A definition changed through the host, or went. | `definition-changed` with the definition, or `definition-deleted`. |
+| A rule armed or disarmed in an environment, or a live rule was made or changed. | `rule-changed` with the rule and its state. |
+| A live rule left its environment. | `rule-removed`. Keeping a live rule sends `rule-removed`, `definition-changed` and `rule-changed`, in that order. |
+| A session opened, was identified, named its software, or closed. | The message of the session. |
+
+A rule of the workspace that someone creates sends `definition-changed` alone: every environment holds it, disarmed.
+`stats` comes for every environment that runs, at the interval of the server's configuration.
+A server that falls behind the changes of the host sends every client a new `snapshot`.
+
+### What the server does not send yet
+
+Every operation of `control_api` is served, so no answer is `501` today.
+`RequestError::NotServed` stays for a process that knows fewer operations than its client:
+an older process, or one built without a part.
+
+`workspace-invalid` waits for the files of a workspace, which can change behind the host. Stores in memory cannot.
 
 No request needs a token yet, and the server allows no request from a page of another origin.
 The `token` of the [process configuration](storage.md#process-configuration) arrives with the binary.
@@ -216,6 +231,8 @@ A pad press sends *arm the rule at row 1, column 4 on layer order-ingest*,
 and the engine creates a live rule if the pad has none yet.
 An encoder turn sends *change probability by +3*, not *set probability to 43*,
 so two surfaces turning the same encoder do not fight.
+A turn changes a live rule, and never a rule of the workspace, which changes in the workspace.
+A pad whose rule someone kept therefore takes presses, and refuses turns.
 
 ## Tests
 

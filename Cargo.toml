@@ -82,6 +82,7 @@ gaslightmq_selector = { path = "crates/gaslightmq_selector" }
 gaslightmq_session = { path = "crates/gaslightmq_session" }
 gaslightmq_surface = { path = "crates/gaslightmq_surface" }
 gaslightmq_test_kafka = { path = "crates/gaslightmq_test_kafka" }
+gaslightmq_traffic = { path = "crates/gaslightmq_traffic" }
 gaslightmq_trigger = { path = "crates/gaslightmq_trigger" }
 gaslightmq_wire = { path = "crates/gaslightmq_wire" }
 gaslightmq_wire_edit = { path = "crates/gaslightmq_wire_edit" }

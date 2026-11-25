@@ -14,6 +14,7 @@ use gaslightmq_lie::prelude::*;
 use gaslightmq_lie_api::prelude::*;
 use gaslightmq_rule::prelude::*;
 use gaslightmq_selector::prelude::*;
+use gaslightmq_session::ClosedBy;
 use tokio::net::TcpStream;
 
 use crate::support::{EngineUnderTest, ScriptedBackend};
@@ -87,8 +88,28 @@ async fn stopping_an_engine_ends_its_sessions_and_frees_its_addresses() -> anyho
 
     assert_eq!(EngineUnderTest::soon(client.closed()).await?, Ok(()));
     assert!(TcpStream::connect(address).await.is_err());
-    // A listener of the events gets what the engine kept, and then hears that it stopped.
+    // A listener of the events gets what the engine kept: the session opened, said who its client is, recorded its
+    // call, and ended as the proxy ended it. Then the listener hears that the engine stopped.
+    assert!(matches!(
+        events.next().await,
+        Ok(EngineEvent::Session(SessionEvent::Opened(_)))
+    ));
+    assert!(matches!(
+        events.next().await,
+        Ok(EngineEvent::Session(SessionEvent::Identified { .. }))
+    ));
     assert!(matches!(events.next().await, Ok(EngineEvent::CallRecorded(_))));
+    let closed = events.next().await;
+    assert!(
+        matches!(
+            closed,
+            Ok(EngineEvent::Session(SessionEvent::Closed {
+                by: ClosedBy::Proxy,
+                ..
+            }))
+        ),
+        "{closed:?}"
+    );
     assert_eq!(events.next().await.err(), Some(LiveEventsError::EngineStopped));
     // A new engine takes the address.
     let mut configuration = EngineUnderTest::configuration()?;
@@ -220,6 +241,17 @@ async fn an_engine_runs_on_the_wall_clock_too() -> anyhow::Result<()> {
 
     assert_eq!(member.heartbeat(group.as_str()).await, Ok(()));
 
+    // The session opens and says who its client is, and then the call has its record.
+    let opened = events.next().await?;
+    assert!(
+        matches!(opened, EngineEvent::Session(SessionEvent::Opened(_))),
+        "{opened:?}"
+    );
+    let identified = events.next().await?;
+    assert!(
+        matches!(identified, EngineEvent::Session(SessionEvent::Identified { .. })),
+        "{identified:?}"
+    );
     let EngineEvent::CallRecorded(record) = events.next().await? else {
         anyhow::bail!("the call has a record");
     };
