@@ -46,6 +46,7 @@ pub enum Link {
 /// ```
 #[derive(Debug, Clone, PartialEq)]
 pub struct Live {
+    configuration: UiConfiguration,
     link: Link,
     process: Option<Process>,
     shown: Option<EnvironmentName>,
@@ -59,6 +60,7 @@ impl Live {
     /// The UI before its first live stream.
     pub fn new(configuration: &UiConfiguration) -> Self {
         Self {
+            configuration: configuration.clone(),
             link: Link::Opening,
             process: None,
             shown: None,
@@ -130,7 +132,7 @@ impl Live {
     pub fn apply(&mut self, message: StreamMessage) {
         match message {
             StreamMessage::Snapshot(state) => {
-                let process = Process::new(state);
+                let process = Process::new(state, self.configuration.stats_kept);
                 if self.shown.is_none() {
                     self.shown = process
                         .environments()

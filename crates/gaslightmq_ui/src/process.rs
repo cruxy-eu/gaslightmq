@@ -1,6 +1,7 @@
 //! The process as the live stream tells it: the snapshot, with every change applied to it.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, VecDeque};
+use std::num::NonZeroUsize;
 
 use gaslightmq_control_api::environment::EnvironmentName;
 use gaslightmq_control_api::field::{ClientSoftware, ConnectionNumber};
@@ -15,16 +16,19 @@ use gaslightmq_control_api::rule::{Rule, RuleName, RuleState};
 #[derive(Debug, Clone, PartialEq)]
 pub struct Process {
     state: ProcessState,
-    stats: BTreeMap<EnvironmentName, Stats>,
+    /// The statistics of each environment, the newest last, as many as `stats_kept` says.
+    stats: BTreeMap<EnvironmentName, VecDeque<Stats>>,
+    stats_kept: NonZeroUsize,
     workspace_invalid: Option<String>,
 }
 
 impl Process {
-    /// The process as a snapshot says it is.
-    pub fn new(state: ProcessState) -> Self {
+    /// The process as a snapshot says it is. It keeps the last `stats_kept` statistics of each environment.
+    pub fn new(state: ProcessState, stats_kept: NonZeroUsize) -> Self {
         Self {
             state,
             stats: BTreeMap::new(),
+            stats_kept,
             workspace_invalid: None,
         }
     }
@@ -54,7 +58,12 @@ impl Process {
 
     /// What the environment counted, once its first statistics came.
     pub fn stats(&self, name: &EnvironmentName) -> Option<&Stats> {
-        self.stats.get(name)
+        self.stats.get(name)?.back()
+    }
+
+    /// The last statistics of the environment, the oldest first: one for each interval of the control plane.
+    pub fn stats_history(&self, name: &EnvironmentName) -> impl Iterator<Item = &Stats> {
+        self.stats.get(name).into_iter().flatten()
     }
 
     /// Why the definitions of the workspace do not fit each other, when the process said so last.
@@ -67,7 +76,11 @@ impl Process {
     pub fn apply(&mut self, message: &StreamMessage) {
         match message {
             StreamMessage::Stats { environment, stats } => {
-                self.stats.insert(environment.clone(), stats.clone());
+                let history = self.stats.entry(environment.clone()).or_default();
+                history.push_back(stats.clone());
+                while history.len() > self.stats_kept.get() {
+                    history.pop_front();
+                }
             }
             StreamMessage::RuleChanged { environment, rule } => {
                 if let Some(running) = self.running(environment) {

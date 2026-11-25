@@ -2,6 +2,7 @@
 //! and the control plane with the UI on `http://127.0.0.1:8080`.
 //!
 //! `just demo` runs it. It needs Docker for the cluster, and `just ui` for the files of the UI.
+//! An address as the first argument puts the control plane there instead: `just demo 127.0.0.1:8081`.
 //! The workspace lives in memory and holds the order desk of the specs: selectors, presets, a rule and a pad layout.
 //! Ctrl-C stops everything, the cluster with it.
 
@@ -68,7 +69,11 @@ async fn main() -> anyhow::Result<()> {
     )
     .with_title("Staging proxy".parse()?);
     host.create(staging.clone()).await?;
-    let server = ControlServer::start(ControlServerConfiguration::default(), Arc::clone(&host)).await?;
+    let mut configuration = ControlServerConfiguration::default();
+    if let Some(listen) = std::env::args().nth(1) {
+        configuration.listen = listen.parse()?;
+    }
+    let server = ControlServer::start(configuration, Arc::clone(&host)).await?;
     let client = ControlClient::new(ControlClientConfiguration::new(server.address().into()));
     order_desk(&client).await?;
     client

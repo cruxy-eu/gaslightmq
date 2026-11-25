@@ -26,6 +26,9 @@
 //! | [`Link`] | Whether the live stream is open. |
 //! | [`UiConfiguration`] | The window of the traffic, how often the UI draws, and when it opens a new stream. |
 //!
+//! The module [`rules`] holds what the Rules view decides: which rules a tab lists, what someone can do with a rule,
+//! and which operation carries it out. The module [`text`] writes times and the values of a call.
+//!
 //! # The live stream
 //!
 //! The UI opens the live stream when it starts. The snapshot comes first, and every message after it applies to it,
@@ -39,6 +42,7 @@ mod filter;
 mod following;
 mod live;
 mod process;
+pub mod rules;
 pub mod text;
 mod traffic;
 

@@ -77,6 +77,7 @@ ui:
     rm -rf crates/gaslightmq_control_server/ui
     cp -R target/dx/gaslightmq_ui/release/web/public crates/gaslightmq_control_server/ui
 
-# The UI in front of live traffic on http://127.0.0.1:8080: a proxy, a real cluster and busy clients. Needs Docker.
-demo: ui
-    cargo run -p gaslightmq_control_server --example demo
+# The UI in front of live traffic on http://127.0.0.1:8080, or on the address given: a proxy, a real cluster and busy
+# clients. Needs Docker.
+demo *address: ui
+    cargo run -p gaslightmq_control_server --example demo -- {{address}}

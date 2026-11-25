@@ -23,6 +23,11 @@ pub struct UiConfiguration {
     ///
     /// How many calls the live traffic keeps, the newest first. An older call leaves the window.
     pub calls_kept: NonZeroUsize,
+    /// Ours. Default: 60 statistics.
+    ///
+    /// How many statistics of each environment the UI keeps, the newest last, for the activity of a rule.
+    /// The control plane sends them at an interval, so 60 of them at the default interval are the last minute.
+    pub stats_kept: NonZeroUsize,
     /// Ours. Default: 1 second.
     ///
     /// How long the UI waits to open a new live stream, after one ended or did not open.
@@ -42,6 +47,7 @@ impl Default for UiConfiguration {
     fn default() -> Self {
         Self {
             calls_kept: NonZeroUsize::new(500).expect("500 is no zero"),
+            stats_kept: NonZeroUsize::new(60).expect("60 is no zero"),
             reconnect_after: TimeSpan::from_secs(1),
             refresh_interval: TimeSpan::from_millis(100),
             notice_for: TimeSpan::from_secs(5),
