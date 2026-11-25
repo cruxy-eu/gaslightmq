@@ -22,6 +22,8 @@
 //! | [`PassEvaluation`] | What one evaluation pass gave for one call: every rule that matched. |
 //! | [`RuleEvaluation`] | One of those rules: its target, what its trigger rolled, and what it fired. |
 //! | [`FiredAction`] | What a rule that fired does: its lie on its target, or its incidents. |
+//! | [`RuleStore`] | What keeps the rules: the store contract, and which rules use a selector or a preset. |
+//! | [`PresetStore`] | What keeps the presets: the store contract. |
 //!
 //! The [`prelude`] holds all of them, and the error of each.
 //!
@@ -149,6 +151,21 @@
 //!   A firing that is withdrawn goes back to the budget, and a hand firing waits for the next matching call.
 //! - It keeps no order of its own. A snapshot takes its rules in the order it is given.
 //!
+//! # Stores
+//!
+//! A [`Rule`] and a [`Preset`] are definitions that a store holds under their names.
+//! A [`RuleStore`] and a [`PresetStore`] are the store contract of `gaslightmq_definition_api`
+//! for rules and for presets.
+//! A store of rules also answers what only it can answer without reading every rule:
+//! which rules use a selector, and which use a preset.
+//! The trait answers both for every store, over the rules that the store lists.
+//! The crate holds the traits, and no store.
+//!
+//! | Feature | Adds |
+//! |---|---|
+//! | `memory` | The stores of rules and of presets in memory: [`RuleStore`] and [`PresetStore`] for the `MemoryStore` of `gaslightmq_definition_memory`. |
+//! | `conformance` | The module `conformance`, with the checks that the tests of any store of rules or of presets run. |
+//!
 //! # The `serde` feature
 //!
 //! With the `serde` feature, every definition type has a `serde` form.
@@ -186,11 +203,15 @@
 //! The crate depends on the vocabulary of selectors, lies, incidents and triggers,
 //! and on `gaslightmq_field`, `gaslightmq_kernel` and `gaslightmq_clock` for calls, API keys and instants.
 //! It does not depend on the Kafka codec.
-//! It has no async code, no IO, no system clock and no global randomness, and it compiles to WebAssembly.
+//! It has no IO, no system clock and no global randomness, and it compiles to WebAssembly.
+//! Its only async code is around [`RuleStore`] and [`PresetStore`]: the traits and their checks await the store
+//! they are handed, and nothing else.
 //! The current time comes in as an [`Instant`](gaslightmq_clock::Instant) argument.
 
 mod action;
 mod armed;
+#[cfg(feature = "conformance")]
+pub mod conformance;
 mod error;
 mod evaluation;
 mod name;
@@ -202,6 +223,7 @@ mod serde;
 mod set;
 mod snapshot;
 mod state;
+mod store;
 mod title;
 mod uuid;
 
@@ -216,6 +238,7 @@ pub use rule::Rule;
 pub use set::{RuleSet, RuleSetError};
 pub use snapshot::{Snapshot, SnapshotError};
 pub use state::{RuleState, RuleStateError};
+pub use store::{PresetStore, RuleStore};
 pub use title::{PresetTitle, PresetTitleError, RuleTitle, RuleTitleError};
 pub use uuid::{PresetUuid, PresetUuidError, RuleUuid, RuleUuidError};
 
@@ -237,8 +260,8 @@ pub mod prelude {
     #[doc(no_inline)]
     pub use crate::{
         Action, ActionRef, ArmedRule, FiredAction, HandFiring, PassEvaluation, Preset, PresetName, PresetNameError,
-        PresetSet, PresetSetError, PresetTitle, PresetTitleError, PresetUuid, PresetUuidError, ResolvedRule, Rule,
-        RuleError, RuleEvaluation, RuleName, RuleNameError, RuleSet, RuleSetError, RuleState, RuleStateError,
-        RuleTitle, RuleTitleError, RuleUuid, RuleUuidError, Snapshot, SnapshotError,
+        PresetSet, PresetSetError, PresetStore, PresetTitle, PresetTitleError, PresetUuid, PresetUuidError,
+        ResolvedRule, Rule, RuleError, RuleEvaluation, RuleName, RuleNameError, RuleSet, RuleSetError, RuleState,
+        RuleStateError, RuleStore, RuleTitle, RuleTitleError, RuleUuid, RuleUuidError, Snapshot, SnapshotError,
     };
 }

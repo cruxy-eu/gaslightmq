@@ -15,6 +15,7 @@
 //! | [`RecordingMode`] | How much of a call a recording keeps. |
 //! | [`EnvironmentSet`] | The environments of a workspace by [`EnvironmentName`], and the ones a process can start together. |
 //! | [`Setting`] | One setting with what each [`SettingSource`] gave for it, and the [`EffectiveSetting`] that wins. |
+//! | [`EnvironmentStore`] | What keeps the environments: the store contract. |
 //!
 //! ```
 //! use gaslightmq_environment::prelude::*;
@@ -157,13 +158,28 @@
 //! The message of every error is complete, so no error has a [`source`](std::error::Error::source).
 //! An error that holds the error of a part writes it once, after the text it read.
 //!
+//! # A store
+//!
+//! An [`Environment`] is a definition that a store holds under its name.
+//! An [`EnvironmentStore`] is the store contract of `gaslightmq_definition_api` for environments.
+//! The crate holds the trait, and no store.
+//!
+//! | Feature | Adds |
+//! |---|---|
+//! | `memory` | The store of environments in memory: [`EnvironmentStore`] for the `MemoryStore` of `gaslightmq_definition_memory`. |
+//! | `conformance` | The module `conformance`, with the check that the tests of any store of environments run. |
+//!
 //! # No IO
 //!
-//! The crate depends on `gaslightmq_kernel` for the broker ID that a broker listener belongs to.
-//! It has no async code, no IO, no system clock and no randomness, and it compiles to WebAssembly.
+//! The crate depends on `gaslightmq_kernel` for the broker ID that a broker listener belongs to,
+//! and on `gaslightmq_definition_api` for the store contract.
+//! It has no IO, no system clock and no randomness, and it compiles to WebAssembly.
+//! Its only async code is the check of an [`EnvironmentStore`], which awaits the store it is handed.
 //! An address is a value here: nothing listens, connects or resolves a name.
 
 mod address;
+#[cfg(feature = "conformance")]
+pub mod conformance;
 mod environment;
 mod host;
 mod listeners;
@@ -176,6 +192,7 @@ mod secret;
 mod serde;
 mod set;
 mod setting;
+mod store;
 mod text;
 mod title;
 mod upstream;
@@ -192,6 +209,7 @@ pub use schema_registry::{SchemaRegistry, SchemaRegistryError, SchemaRegistryUrl
 pub use secret::{FilePath, FilePathError, SecretRef, SecretRefError, VariableName, VariableNameError};
 pub use set::{EnvironmentSet, EnvironmentSetError};
 pub use setting::{EffectiveSetting, Setting, SettingSource, SettingSourceError};
+pub use store::EnvironmentStore;
 pub use title::{EnvironmentTitle, EnvironmentTitleError};
 pub use upstream::{Sasl, SaslMechanism, SaslMechanismError, SaslUsername, SaslUsernameError, Tls, Upstream};
 pub use uuid::{EnvironmentUuid, EnvironmentUuidError};
@@ -215,7 +233,7 @@ pub mod prelude {
     #[doc(no_inline)]
     pub use crate::{
         BrokerDefinition, BrokerListeners, BrokerListenersError, EffectiveSetting, Environment, EnvironmentError,
-        EnvironmentName, EnvironmentNameError, EnvironmentSet, EnvironmentSetError, EnvironmentTitle,
+        EnvironmentName, EnvironmentNameError, EnvironmentSet, EnvironmentSetError, EnvironmentStore, EnvironmentTitle,
         EnvironmentTitleError, EnvironmentUuid, EnvironmentUuidError, FilePath, FilePathError, HostName, HostNameError,
         Instances, ListenAddress, ListenAddressError, Listeners, ListenersError, PortRange, PortRangeError,
         ProxyDefinition, RecordingMode, RecordingModeError, Sasl, SaslMechanism, SaslMechanismError, SaslUsername,

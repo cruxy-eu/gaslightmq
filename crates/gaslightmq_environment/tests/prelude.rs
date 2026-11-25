@@ -6,7 +6,8 @@
 )]
 
 /// Imports the prelude next to the standard prelude, the modules of `std` that code imports most,
-/// and the preludes of the crates whose types travel with an environment: to the engine, and to the UI.
+/// the preludes of the crates whose types travel with an environment: to the engine, and to the UI,
+/// and the prelude of the store contract.
 ///
 /// All of them are glob imports, so they rank the same.
 /// A name that two of them hold is ambiguous, and using it does not compile.
@@ -33,6 +34,7 @@ mod next_to_the_others {
 
     use gaslightmq_call::prelude::*;
     use gaslightmq_combine::prelude::*;
+    use gaslightmq_definition_api::prelude::*;
     use gaslightmq_environment::prelude::*;
     use gaslightmq_field::prelude::*;
     use gaslightmq_incident::prelude::*;
@@ -44,6 +46,15 @@ mod next_to_the_others {
 
     /// The UUID that a workspace gave the environment `staging-proxy`.
     const STAGING_PROXY_UUID: &str = "0193b6c2-5f3e-7a41-9c2d-8e4b1f6a7d10";
+
+    /// Every environment that someone defined, with their store named by its trait.
+    #[expect(
+        dead_code,
+        reason = "no store is at hand here: the trait only has to compile next to the other preludes"
+    )]
+    async fn defined(environments: &impl EnvironmentStore) -> Vec<Environment> {
+        environments.list().await.unwrap()
+    }
 
     /// One value of every type of the prelude, each named without a path.
     pub fn every_item() -> Vec<String> {

@@ -80,7 +80,7 @@ pub enum EngineStartError {
     EndpointNotOpened { error: EndpointOpenError },
 }
 
-/// Why a [`RuleStore`](crate::RuleStore) did not arm a rule.
+/// Why the [`ArmedRules`](crate::ArmedRules) did not arm a rule.
 ///
 /// ```
 /// use gaslightmq_engine::prelude::*;
@@ -95,7 +95,7 @@ pub enum ArmError {
     AlreadyArmed { rule: RuleName },
 }
 
-/// Why a [`RuleStore`](crate::RuleStore) did not disarm a rule.
+/// Why the [`ArmedRules`](crate::ArmedRules) did not disarm a rule.
 ///
 /// ```
 /// use gaslightmq_engine::prelude::*;
@@ -196,7 +196,7 @@ mod tests {
     }
 
     #[test]
-    fn the_errors_of_the_rule_store_name_the_rule() {
+    fn the_errors_of_the_armed_rules_name_the_rule() {
         let already_armed = ArmError::AlreadyArmed { rule: rule() };
         let not_armed = DisarmError::NotArmed { rule: rule() };
 

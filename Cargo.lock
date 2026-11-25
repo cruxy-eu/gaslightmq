@@ -287,6 +287,31 @@ dependencies = [
 ]
 
 [[package]]
+name = "gaslightmq_definition_api"
+version = "0.1.0"
+dependencies = [
+ "futures",
+ "thiserror",
+]
+
+[[package]]
+name = "gaslightmq_definition_conformance"
+version = "0.1.0"
+dependencies = [
+ "futures",
+ "gaslightmq_definition_api",
+]
+
+[[package]]
+name = "gaslightmq_definition_memory"
+version = "0.1.0"
+dependencies = [
+ "futures",
+ "gaslightmq_definition_api",
+ "gaslightmq_definition_conformance",
+]
+
+[[package]]
 name = "gaslightmq_engine"
 version = "0.1.0"
 dependencies = [
@@ -324,8 +349,13 @@ dependencies = [
 name = "gaslightmq_environment"
 version = "0.1.0"
 dependencies = [
+ "futures",
  "gaslightmq_call",
  "gaslightmq_combine",
+ "gaslightmq_definition_api",
+ "gaslightmq_definition_conformance",
+ "gaslightmq_definition_memory",
+ "gaslightmq_environment",
  "gaslightmq_field",
  "gaslightmq_incident",
  "gaslightmq_kernel",
@@ -531,12 +561,17 @@ dependencies = [
 name = "gaslightmq_rule"
 version = "0.1.0"
 dependencies = [
+ "futures",
  "gaslightmq_clock",
+ "gaslightmq_definition_api",
+ "gaslightmq_definition_conformance",
+ "gaslightmq_definition_memory",
  "gaslightmq_field",
  "gaslightmq_incident",
  "gaslightmq_kernel",
  "gaslightmq_lie",
  "gaslightmq_resource",
+ "gaslightmq_rule",
  "gaslightmq_selector",
  "gaslightmq_trigger",
  "serde",
@@ -548,9 +583,14 @@ dependencies = [
 name = "gaslightmq_selector"
 version = "0.1.0"
 dependencies = [
+ "futures",
+ "gaslightmq_definition_api",
+ "gaslightmq_definition_conformance",
+ "gaslightmq_definition_memory",
  "gaslightmq_field",
  "gaslightmq_kernel",
  "gaslightmq_resource",
+ "gaslightmq_selector",
  "serde",
  "serde_json",
  "serde_test",
@@ -575,7 +615,11 @@ dependencies = [
 name = "gaslightmq_surface"
 version = "0.1.0"
 dependencies = [
+ "futures",
  "gaslightmq_clock",
+ "gaslightmq_definition_api",
+ "gaslightmq_definition_conformance",
+ "gaslightmq_definition_memory",
  "gaslightmq_field",
  "gaslightmq_incident",
  "gaslightmq_kernel",
@@ -583,6 +627,7 @@ dependencies = [
  "gaslightmq_resource",
  "gaslightmq_rule",
  "gaslightmq_selector",
+ "gaslightmq_surface",
  "gaslightmq_trigger",
  "serde",
  "serde_json",
@@ -650,6 +695,28 @@ dependencies = [
  "gaslightmq_field",
  "gaslightmq_kernel",
  "gaslightmq_wire",
+ "thiserror",
+]
+
+[[package]]
+name = "gaslightmq_workspace"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "futures",
+ "gaslightmq_clock",
+ "gaslightmq_definition_api",
+ "gaslightmq_definition_memory",
+ "gaslightmq_environment",
+ "gaslightmq_field",
+ "gaslightmq_incident",
+ "gaslightmq_kernel",
+ "gaslightmq_lie",
+ "gaslightmq_rule",
+ "gaslightmq_selector",
+ "gaslightmq_surface",
+ "gaslightmq_trigger",
+ "gaslightmq_workspace",
  "thiserror",
 ]
 

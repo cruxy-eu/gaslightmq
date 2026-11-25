@@ -8,6 +8,10 @@ license.workspace = true
 workspace = true
 
 [features]
+# The check that the tests of a store of pad layouts run. It brings no runtime.
+conformance = ["dep:gaslightmq_definition_conformance"]
+# The store of pad layouts in memory.
+memory = ["dep:gaslightmq_definition_memory"]
 serde = [
     "dep:serde",
     "gaslightmq_clock/serde",
@@ -20,6 +24,9 @@ serde = [
 
 [dependencies]
 gaslightmq_clock.workspace = true
+gaslightmq_definition_api.workspace = true
+gaslightmq_definition_conformance = { workspace = true, optional = true }
+gaslightmq_definition_memory = { workspace = true, optional = true }
 gaslightmq_field.workspace = true
 gaslightmq_kernel.workspace = true
 gaslightmq_lie.workspace = true
@@ -31,6 +38,11 @@ serde = { workspace = true, optional = true }
 thiserror.workspace = true
 
 [dev-dependencies]
+# The executor that drives the store in `tests/store.rs`. The crate itself needs no runtime.
+futures.workspace = true
+# The store in memory and the check of a store, which `tests/store.rs` runs. A test turns the features on.
+gaslightmq_surface = { workspace = true, features = ["conformance", "memory"] }
+gaslightmq_definition_memory.workspace = true
 # The preludes that code imports next to this one. `tests/prelude.rs` checks that no name clashes.
 gaslightmq_incident.workspace = true
 serde_json.workspace = true

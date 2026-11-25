@@ -6,7 +6,7 @@
 )]
 
 /// Imports the prelude next to the standard prelude, the modules of `std` that code imports most,
-/// and the preludes of the kernel and of the fields.
+/// and the preludes of the kernel, of the fields and of the store contract.
 ///
 /// All of them are glob imports, so they rank the same.
 /// A name that two of them hold is ambiguous, and using it does not compile.
@@ -31,12 +31,22 @@ mod next_to_the_others {
     use std::sync::*;
     use std::time::*;
 
+    use gaslightmq_definition_api::prelude::*;
     use gaslightmq_field::prelude::*;
     use gaslightmq_kernel::prelude::*;
     use gaslightmq_selector::prelude::*;
 
     /// The UUID that a workspace gave the selector `group-orders`.
     const GROUP_ORDERS_UUID: &str = "0193b6c2-5f3e-7a41-9c2d-8e4b1f6a7d10";
+
+    /// The selectors that include another one, with their store named by its trait.
+    #[expect(
+        dead_code,
+        reason = "no store is at hand here: the trait only has to compile next to the other preludes"
+    )]
+    async fn including(selectors: &impl SelectorStore, name: &SelectorName) -> Vec<Selector> {
+        selectors.using_selector(name).await.unwrap()
+    }
 
     /// One value of every type of the prelude, each named without a path.
     pub fn every_item() -> Vec<String> {

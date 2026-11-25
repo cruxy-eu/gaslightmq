@@ -113,7 +113,7 @@ mod next_to_the_others {
             Engine::start(configuration.clone(), Mute, stepped.clone(), Lies::of_every_build())
                 .await
                 .unwrap();
-        let rules: &RuleStore = engine.rules();
+        let rules: &ArmedRules = engine.rules();
         let silence = Rule::new("blackhole".parse().unwrap(), Conditions::new(), LieDefinition::Silence);
         let resolved = silence.resolve(&SelectorSet::default(), &PresetSet::default()).unwrap();
         let armed = rules.arm(resolved).unwrap();

@@ -6,7 +6,7 @@
 )]
 
 /// Imports the prelude next to the standard prelude, the modules of `std` that code imports most, the clock,
-/// and the preludes of the crates whose types a surface speaks in.
+/// and the preludes of the crates whose types a surface speaks in, and of the store contract.
 ///
 /// All of them are glob imports, so they rank the same.
 /// A name that two of them hold is ambiguous, and using it does not compile.
@@ -31,6 +31,7 @@ mod next_to_the_others {
     use std::sync::*;
     use std::time::*;
 
+    use gaslightmq_definition_api::prelude::*;
     use gaslightmq_field::prelude::*;
     use gaslightmq_incident::prelude::*;
     use gaslightmq_kernel::prelude::*;
@@ -42,6 +43,15 @@ mod next_to_the_others {
 
     /// The UUID that a workspace gave the layout `order-desk`.
     const ORDER_DESK_UUID: &str = "0193b6c2-5f3e-7a41-9c2d-8e4b1f6a7d10";
+
+    /// The layouts with a column for a preset, with their store named by its trait.
+    #[expect(
+        dead_code,
+        reason = "no store is at hand here: the trait only has to compile next to the other preludes"
+    )]
+    async fn with_a_column_for(layouts: &impl LayoutStore, preset: &PresetName) -> Vec<PadLayout> {
+        layouts.using_preset(preset).await.unwrap()
+    }
 
     /// One value of every type of the prelude, each named without a path.
     pub fn every_item() -> Vec<String> {
