@@ -20,6 +20,7 @@
 //! | [`EncoderMapping`] | What one step of each encoder is worth, and what a turn does to a rule. |
 //! | [`Intent`] | What a surface sends: arm, disarm, or change a parameter by a turn. |
 //! | [`Surface`] | One surface: its layout, the layer it shows, its mode and its focus. It turns presses and turns into intents. |
+//! | [`LayoutStore`] | What keeps the pad layouts: the store contract, and which layouts use a selector or a preset. |
 //!
 //! The [`prelude`] holds all of them, and the error of each.
 //!
@@ -140,13 +141,22 @@
 //! Reading rejects a key it does not know.
 //! A [`PadState`] and a [`Surface`] have no form: they are what one surface shows, and they stay with it.
 //!
+//! # A store
+//!
+//! A [`PadLayout`] is a definition that a store holds under its name.
+//! A [`LayoutStore`] is the store contract of `gaslightmq_definition_store_api` for pad layouts.
+//! It also answers what only it can answer without reading every layout:
+//! which layouts have a row for a selector, and which have a column for a preset.
+//! The crate holds the trait, and no store.
+//!
 //! # No IO
 //!
 //! The crate depends on the definitions of rules, selectors, triggers and lies,
 //! and on `gaslightmq_field`, `gaslightmq_kernel` and `gaslightmq_clock` for the fields of a scope,
 //! client IDs, error codes and time spans.
 //! It does not depend on the Kafka codec.
-//! It has no async code, no IO, no system clock and no randomness, and it compiles to WebAssembly.
+//! It has no IO, no system clock and no randomness, and it compiles to WebAssembly.
+//! Its only async code is the signatures of [`LayoutStore`]: the crate awaits nothing.
 
 mod encoder;
 mod intent;
@@ -158,6 +168,7 @@ mod pad;
 mod play;
 #[cfg(feature = "serde")]
 mod serde;
+mod store;
 mod surface;
 
 pub use encoder::{Encoder, EncoderError, EncoderTurn, Steps};
@@ -168,6 +179,7 @@ pub use mapping::{EncoderMapping, TurnError};
 pub use name::{LayoutName, LayoutNameError, LayoutTitle, LayoutTitleError, LayoutUuid, LayoutUuidError};
 pub use pad::{Column, Pad, PadState, Row};
 pub use play::{PlayMode, PlayModeError};
+pub use store::LayoutStore;
 pub use surface::Surface;
 
 /// Every item of this crate.
@@ -186,7 +198,7 @@ pub mod prelude {
     #[doc(no_inline)]
     pub use crate::{
         Column, Encoder, EncoderError, EncoderMapping, EncoderTurn, Intent, Layer, LayerError, LayoutName,
-        LayoutNameError, LayoutTitle, LayoutTitleError, LayoutUuid, LayoutUuidError, Pad, PadLayout, PadLayoutError,
-        PadState, PlayMode, PlayModeError, Row, Steps, Surface, TurnError,
+        LayoutNameError, LayoutStore, LayoutTitle, LayoutTitleError, LayoutUuid, LayoutUuidError, Pad, PadLayout,
+        PadLayoutError, PadState, PlayMode, PlayModeError, Row, Steps, Surface, TurnError,
     };
 }

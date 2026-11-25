@@ -18,6 +18,7 @@ serde = [
 
 [dependencies]
 gaslightmq_clock.workspace = true
+gaslightmq_definition_store_api.workspace = true
 gaslightmq_field.workspace = true
 gaslightmq_incident.workspace = true
 gaslightmq_kernel.workspace = true

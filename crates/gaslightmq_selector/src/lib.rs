@@ -17,6 +17,7 @@
 //! | [`Match`] | What matching gives: the [`Target`](gaslightmq_field::Target), no match, or pending. |
 //! | [`Pass`] | The evaluation pass that can decide a selector: request or response. |
 //! | [`ApiIndex`] | Selectors by API, so a call only tests the selectors that can match its API. |
+//! | [`SelectorStore`] | What keeps the selectors: the store contract, and who includes a selector. |
 //!
 //! ```
 //! use gaslightmq_field::prelude::*;
@@ -85,6 +86,13 @@
 //! [`EffectiveSelector::pass`] says which pass decides a selector.
 //! Evaluated too early, such a selector gives [`Match::Pending`], unless a condition on the request already fails.
 //!
+//! # A store
+//!
+//! A [`Selector`] is a definition that a store holds under its name.
+//! A [`SelectorStore`] is the store contract of `gaslightmq_definition_store_api` for selectors,
+//! with the one question that only a store of selectors answers: which selectors include this one.
+//! The crate holds the trait, and no store.
+//!
 //! # The `serde` feature
 //!
 //! With the `serde` feature, every definition type has a `serde` form.
@@ -148,8 +156,10 @@
 //! # No IO
 //!
 //! The crate depends on `gaslightmq_field` for the field vocabulary,
-//! and on `gaslightmq_kernel` for the API key that the index is built on.
-//! It has no async code, no IO, no system clock and no randomness, and it compiles to WebAssembly.
+//! on `gaslightmq_kernel` for the API key that the index is built on,
+//! and on `gaslightmq_definition_store_api` for the store contract.
+//! It has no IO, no system clock and no randomness, and it compiles to WebAssembly.
+//! Its only async code is the signature of [`SelectorStore`]: the crate awaits nothing.
 
 mod condition;
 mod conditions;
@@ -161,6 +171,7 @@ mod selector;
 #[cfg(feature = "serde")]
 mod serde;
 mod set;
+mod store;
 mod text;
 mod title;
 mod uuid;
@@ -173,6 +184,7 @@ pub use index::ApiIndex;
 pub use name::{SelectorName, SelectorNameError};
 pub use selector::{Selector, SelectorRef};
 pub use set::{SelectorSet, SelectorSetError};
+pub use store::SelectorStore;
 pub use title::{SelectorTitle, SelectorTitleError};
 pub use uuid::{SelectorUuid, SelectorUuidError};
 
@@ -195,6 +207,7 @@ pub mod prelude {
     pub use crate::{
         ApiIndex, Apis, Condition, ConditionError, Conditions, EffectiveSelector, Glob, GlobError, Match, Operator,
         OperatorError, Pass, Scope, ScopeError, Selector, SelectorName, SelectorNameError, SelectorRef, SelectorSet,
-        SelectorSetError, SelectorTitle, SelectorTitleError, SelectorUuid, SelectorUuidError, ValueSet, ValueSetError,
+        SelectorSetError, SelectorStore, SelectorTitle, SelectorTitleError, SelectorUuid, SelectorUuidError, ValueSet,
+        ValueSetError,
     };
 }
