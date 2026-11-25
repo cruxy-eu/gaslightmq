@@ -13,7 +13,9 @@ use std::fmt::Debug;
 
 use gaslightmq_control_api::call::{Call, CallId, CallTiming, Delivered, Explanation, RuleExplanation};
 use gaslightmq_control_api::clock::{Duration, Instant};
-use gaslightmq_control_api::environment::{BrokerDefinition, Environment, Instances, Listeners, ProxyDefinition};
+use gaslightmq_control_api::environment::{
+    BrokerDefinition, Environment, EnvironmentName, Instances, Listeners, ProxyDefinition,
+};
 use gaslightmq_control_api::field::{ClientSoftware, ConnectionNumber, Endpoint, Field, Fields};
 use gaslightmq_control_api::incident::{IncidentKind, IncidentSupport};
 use gaslightmq_control_api::kernel::{ApiKey, BrokerId, ClientId};
@@ -409,6 +411,84 @@ fn an_error_names_its_variant() {
 }
 
 #[test]
+fn a_store_that_could_not_read_says_what_it_said() {
+    Form(RuleCommandError::StoreFailed {
+        rule: "slow-order-producers".parse().unwrap(),
+        reason: "the rule store could not be read: permission denied".to_owned(),
+    })
+    .writes(json!({
+        "error": "store-failed",
+        "rule": "slow-order-producers",
+        "reason": "the rule store could not be read: permission denied",
+    }));
+    Form(EnvironmentReadError::StoreFailed {
+        environment: "orders-sim".parse().unwrap(),
+        reason: "the preset store could not be read: permission denied".to_owned(),
+    })
+    .writes(json!({
+        "error": "store-failed",
+        "environment": "orders-sim",
+        "reason": "the preset store could not be read: permission denied",
+    }));
+    Form(EnvironmentReadError::NotRunning {
+        environment: "orders-sim".parse().unwrap(),
+    })
+    .writes(json!({ "error": "not-running", "environment": "orders-sim" }));
+}
+
+#[test]
+fn a_request_that_got_no_operation_says_why_in_the_same_way_for_every_operation() {
+    Form(RequestError::NotServed {
+        operation: "keep-rule".to_owned(),
+    })
+    .writes(json!({ "error": "not-served", "operation": "keep-rule" }));
+    Form(RequestError::Unreadable {
+        reason: "unknown variant `rename-rule`".to_owned(),
+    })
+    .writes(json!({ "error": "unreadable", "reason": "unknown variant `rename-rule`" }));
+}
+
+#[test]
+fn an_operation_names_itself_as_its_form_does() {
+    let environment: EnvironmentName = "orders-sim".parse().unwrap();
+    let rule: RuleName = "slow-order-producers".parse().unwrap();
+    let operations = [
+        AnyOperation::from(ListDefinitions::<Selector>::new()),
+        AnyOperation::from(GetDefinition::<Rule> { name: rule.clone() }),
+        AnyOperation::from(CreateDefinition {
+            definition: OrderDesk::rule(),
+        }),
+        AnyOperation::from(DeleteDefinition::<PadLayout> {
+            name: "order-desk".parse().unwrap(),
+        }),
+        AnyOperation::from(ListEnvironments {}),
+        AnyOperation::from(StartEnvironment {
+            environment: environment.clone(),
+        }),
+        AnyOperation::from(ListEnvironmentRules {
+            environment: environment.clone(),
+        }),
+        AnyOperation::from(KeepRule {
+            environment: environment.clone(),
+            rule: rule.clone(),
+        }),
+        AnyOperation::from(FireRule {
+            environment: environment.clone(),
+            rule,
+        }),
+        AnyOperation::from(ParseSentence {
+            environment,
+            text: "delay produce".to_owned(),
+        }),
+    ];
+
+    for operation in operations {
+        let json = Form(operation.clone()).json();
+        assert_eq!(json["operation"], operation.name(), "{json}");
+    }
+}
+
+#[test]
 fn a_definition_in_use_names_each_user_with_its_kind() {
     let selector: SelectorName = "order-producers".parse().unwrap();
     let rule: RuleName = "slow-order-producers".parse().unwrap();
@@ -442,6 +522,14 @@ fn an_error_of_another_operation_does_not_read() {
 }
 
 // The live stream
+
+#[test]
+fn a_refused_subscription_says_why() {
+    Form(StreamMessage::SubscriptionRefused {
+        reason: "environment \"orders-sim\" does not run".to_owned(),
+    })
+    .writes(json!({ "message": "subscription-refused", "reason": "environment \"orders-sim\" does not run" }));
+}
 
 #[test]
 fn a_client_that_connects_gets_the_state_of_the_process() {

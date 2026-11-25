@@ -9,6 +9,7 @@
 //! |---|---|
 //! | [`Operation`] | One thing a client asks, with its answer and its error. |
 //! | [`AnyOperation`] | Any operation, as one value. |
+//! | [`RequestError`] | Why a request got neither the answer nor the error of its operation. |
 //! | [`EditableDefinition`] | A kind of definition that the control plane lists, gets, creates, updates and deletes. |
 //! | [`ListDefinitions`], [`GetDefinition`], [`CreateDefinition`], [`UpdateDefinition`], [`DeleteDefinition`] | The operations on the definitions of the workspace, for each kind. |
 //! | [`AnyDefinition`], [`DefinitionRef`], [`Definitions`] | A definition of any kind, its name with its kind, and every definition by kind. |
@@ -78,14 +79,19 @@
 //! | [`UpdateDefinition`] | [`UpdateDefinitionError`] | No definition has the name, the definition does not fit the workspace, or a store failed. |
 //! | [`DeleteDefinition`] | [`DeleteDefinitionError`] | No definition has the name, other definitions use it, or a store failed. |
 //! | [`StartEnvironment`] | [`StartEnvironmentError`] | No environment has the name, it runs already, or it did not come up. |
-//! | [`StopEnvironment`], [`ListEnvironmentRules`], [`ListSessions`], [`GetBackend`], [`ParseSentence`] | [`EnvironmentNotRunning`] | The environment does not run. |
+//! | [`StopEnvironment`], [`ListSessions`], [`GetBackend`] | [`EnvironmentNotRunning`] | The environment does not run. |
+//! | [`ListEnvironmentRules`], [`ParseSentence`] | [`EnvironmentReadError`] | The environment does not run, or a store could not read. |
 //! | [`CreateLiveRule`] | [`CreateLiveRuleError`] | The environment does not run, a rule has the name, or the rule does not fit the workspace. |
 //! | [`UpdateLiveRule`] | [`UpdateLiveRuleError`] | The environment does not run, no live rule has the name, or the rule does not fit the workspace. |
 //! | [`DeleteLiveRule`] | [`DeleteLiveRuleError`] | The environment does not run, or no live rule has the name. |
 //! | [`KeepRule`] | [`KeepRuleError`] | The environment does not run, no live rule has the name, the workspace has a rule of that name, the rule does not fit the workspace, or a store failed. |
-//! | [`ArmRule`], [`DisarmRule`], [`FireRule`] | [`RuleCommandError`] | The environment does not run, no rule has the name, or the rule cannot do this from where it stands. |
+//! | [`ArmRule`], [`DisarmRule`], [`FireRule`] | [`RuleCommandError`] | The environment does not run, no rule has the name, the rule cannot do this from where it stands, or a store could not read. |
 //! | [`SendIntent`] | [`IntentError`] | The environment does not run, the layout does not exist, or the intent changed nothing. |
 //! | [`CloseSession`] | [`CloseSessionError`] | The environment does not run, or no session is open on the connection. |
+//!
+//! A request can also fail before its operation runs, in the same way for every operation:
+//! the process does not serve the operation yet, or reads no operation in the request.
+//! That is a [`RequestError`].
 //!
 //! The server meets the errors of the crates that do the work, such as the workspace, and turns them into these.
 //! What they said is text, in a field `reason`.
@@ -147,10 +153,10 @@ pub use definitions::{
     ListDefinitionsError, UpdateDefinition, UpdateDefinitionError,
 };
 pub use environments::{
-    EnvironmentNotRunning, EnvironmentStatus, GetEnvironment, ListEnvironments, StartEnvironment,
+    EnvironmentNotRunning, EnvironmentReadError, EnvironmentStatus, GetEnvironment, ListEnvironments, StartEnvironment,
     StartEnvironmentError, StopEnvironment,
 };
-pub use operation::{AnyOperation, Operation};
+pub use operation::{AnyOperation, Operation, RequestError};
 pub use pads::{IntentError, SendIntent};
 pub use rules::{
     ArmRule, CreateLiveRule, CreateLiveRuleError, DeleteLiveRule, DeleteLiveRuleError, DisarmRule, FireRule, KeepRule,
@@ -180,12 +186,12 @@ pub mod prelude {
         AnyDefinition, AnyOperation, ArmRule, BackendKind, BackendStatus, CloseSession, CloseSessionError,
         CreateDefinition, CreateDefinitionError, CreateLiveRule, CreateLiveRuleError, DefinitionRef, Definitions,
         DeleteDefinition, DeleteDefinitionError, DeleteLiveRule, DeleteLiveRuleError, DisarmRule, EditableDefinition,
-        EnvironmentNotRunning, EnvironmentStatus, FireRule, GetBackend, GetDefinition, GetDefinitionError,
-        GetEnvironment, IntentError, KeepRule, KeepRuleError, ListDefinitions, ListDefinitionsError,
-        ListEnvironmentRules, ListEnvironments, ListSessions, Operation, ParseSentence, ParsedSentence, ProcessState,
-        RuleCommandError, RuleStats, RuleStatus, RunningEnvironment, SendIntent, SessionCloser, SessionIdentity,
-        SessionStatus, StartEnvironment, StartEnvironmentError, Stats, StopEnvironment, StreamMessage, Subscription,
-        UnreadWord, UpdateDefinition, UpdateDefinitionError, UpdateLiveRule, UpdateLiveRuleError, WordCompletion,
-        WordKind,
+        EnvironmentNotRunning, EnvironmentReadError, EnvironmentStatus, FireRule, GetBackend, GetDefinition,
+        GetDefinitionError, GetEnvironment, IntentError, KeepRule, KeepRuleError, ListDefinitions,
+        ListDefinitionsError, ListEnvironmentRules, ListEnvironments, ListSessions, Operation, ParseSentence,
+        ParsedSentence, ProcessState, RequestError, RuleCommandError, RuleStats, RuleStatus, RunningEnvironment,
+        SendIntent, SessionCloser, SessionIdentity, SessionStatus, StartEnvironment, StartEnvironmentError, Stats,
+        StopEnvironment, StreamMessage, Subscription, UnreadWord, UpdateDefinition, UpdateDefinitionError,
+        UpdateLiveRule, UpdateLiveRuleError, WordCompletion, WordKind,
     };
 }

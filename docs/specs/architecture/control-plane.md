@@ -56,7 +56,7 @@ See [manual firing](../domains/rules.md#manual-firing).
 Every operation is one request, and it gets one answer or one error.
 The crate `control_api` holds each operation as a type, with the type of its answer and of its error,
 and a client and a server share them.
-How the requests and the answers travel over HTTP is up to the client and the server.
+[Over the network](#over-the-network) says how they travel between a client and the server.
 
 - **An error holds what can go wrong with its operation, and nothing else.**
   A client decides on each variant: it starts an environment that does not run, or picks another name for a rule.
@@ -109,6 +109,7 @@ The WebSocket streams:
 | **Journal entry** | Something changed, with the time and the surface that changed it. |
 | **Environment started, stopped** | An environment came up, with its backend, its rules and its sessions, or went down. |
 | **Workspace invalid** | The definitions do not fit each other, or a file failed validation. The engine keeps the last valid version. |
+| **Subscription refused** | The last subscription of this client cannot be followed, and why. The client follows no calls. |
 
 A message about something live names its environment.
 A client that applies every message to the snapshot holds what the process holds.
@@ -118,7 +119,83 @@ so a UI that only shows `orders.*` does not receive every call.
 A client follows the calls of one environment at a time, and no calls until it subscribes.
 A new subscription replaces the one before it.
 A selector without conditions follows every call.
-Every other message reaches every client.
+Every other message reaches every client, except a refusal, which reaches the client whose subscription it refuses.
+
+## Over the network
+
+`control_server` serves the control plane, and `control_client` speaks to it.
+The server listens on one address: `127.0.0.1:8080`, until its configuration names another.
+Every body and every frame is JSON, and it is the `serde` form of a type of `control_api`.
+No other form exists, so a client in the browser and one on a native target send the same bytes.
+
+| What | Where |
+|---|---|
+| An operation | `POST /api/operations` |
+| The live stream | `GET /api/stream`, which upgrades to a WebSocket |
+
+The other paths stay free for the UI.
+
+### Operations
+
+A request is one `POST /api/operations` with an `AnyOperation` as its body:
+`{ "operation": "arm-rule", "environment": "orders-sim", "rule": "slow-order-producers" }`.
+The status of the response says what its body is.
+
+| Status | The body is |
+|---|---|
+| `200 OK` | The answer of the operation, in the form of its `Answer`. An answer of `()` is `null`. |
+| `422 Unprocessable Content` | The error of the operation, in the form of its `Error`. |
+| `501 Not Implemented` | A `RequestError::NotServed`: the process does not serve the operation yet. |
+| `400 Bad Request` | A `RequestError::Unreadable`: the body is larger than the server takes, or it is no operation that the server knows. |
+
+A client knows which operation it sent, so it reads `200` with the type of the answer and `422` with the type of the error.
+A `RequestError` is the same for every operation, and its `error` key names the variant.
+The server answers every request to `/api/operations` with one of these four.
+An answer takes as long as its operation: a start waits until the environment accepts connections.
+
+### The live stream
+
+A client opens the stream with `GET /api/stream`, which upgrades to a WebSocket.
+Every frame is a text frame.
+
+| Direction | Each frame is |
+|---|---|
+| Server to client | One `StreamMessage`. |
+| Client to server | One `Subscription`. |
+
+- **The snapshot comes first.**
+  The first message is a `snapshot`, and every message after it is a change, a call or a refusal.
+- **A message is a state, not a difference.**
+  A change says what a rule, a definition or an environment is now.
+  A change can repeat what the snapshot holds already, and applying it again changes nothing.
+- **A client that falls behind gets a new snapshot.**
+  The server keeps a backlog of changes for every client, as large as its configuration says.
+  A client that falls further behind would miss changes, so the server sends it a new `snapshot` and goes on from there.
+  Calls do not count: a client that falls behind the calls of its environment misses the oldest of them.
+- **A subscription that cannot be followed is refused.**
+  A frame that is no subscription, an environment that does not run and a selector that the workspace does not have
+  each get a `subscription-refused` that says what was wrong.
+  The client then follows no calls, as after a subscription to nothing.
+- **A subscription ends with its environment.**
+  When the environment stops, the client follows no calls, and the `environment-stopped` says so.
+- **The server ends the stream with a close frame.**
+  It closes with `1001 Going Away` when it stops,
+  and with `1011 Internal Error` when the workspace cannot be read for a snapshot, with what the store said as the reason.
+
+### What the server does not serve yet
+
+The host has no live rules, no sessions and no pads yet.
+Until it has, the server answers these operations with `501` and a `RequestError::NotServed`:
+`create-live-rule`, `update-live-rule`, `delete-live-rule`, `keep-rule`, `send-intent`, `list-sessions` and `close-session`.
+The `sessions` of an environment in a snapshot are empty.
+
+The stream carries the changes that go through the control plane.
+A rule that its lifetime disarms, an environment that `gmq` starts beside the server, and a file that someone edits
+send no message yet. The next snapshot holds them.
+`stats`, `rule-removed`, the messages of sessions and `workspace-invalid` arrive with what makes them in the host.
+
+No request needs a token yet, and the server allows no request from a page of another origin.
+The `token` of the [process configuration](storage.md#process-configuration) arrives with the binary.
 
 ## Secrets
 

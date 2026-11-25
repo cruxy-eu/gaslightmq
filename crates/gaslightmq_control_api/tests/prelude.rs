@@ -63,7 +63,7 @@ mod next_to_std_and_every_domain {
         let _: Option<<StopEnvironment as Operation>::Answer> = None::<()>;
         let _: Option<<StopEnvironment as Operation>::Error> = None::<EnvironmentNotRunning>;
         let _: Option<<ListEnvironmentRules as Operation>::Answer> = None::<Vec<RuleStatus>>;
-        let _: Option<<ListEnvironmentRules as Operation>::Error> = None::<EnvironmentNotRunning>;
+        let _: Option<<ListEnvironmentRules as Operation>::Error> = None::<EnvironmentReadError>;
         let _: Option<<CreateLiveRule as Operation>::Answer> = None::<()>;
         let _: Option<<CreateLiveRule as Operation>::Error> = None::<CreateLiveRuleError>;
         let _: Option<<UpdateLiveRule as Operation>::Answer> = None::<()>;
@@ -87,7 +87,7 @@ mod next_to_std_and_every_domain {
         let _: Option<<GetBackend as Operation>::Answer> = None::<BackendStatus>;
         let _: Option<<GetBackend as Operation>::Error> = None::<EnvironmentNotRunning>;
         let _: Option<<ParseSentence as Operation>::Answer> = None::<ParsedSentence>;
-        let _: Option<<ParseSentence as Operation>::Error> = None::<EnvironmentNotRunning>;
+        let _: Option<<ParseSentence as Operation>::Error> = None::<EnvironmentReadError>;
     }
 
     /// Every other type of the prelude, named without a path.
@@ -95,6 +95,7 @@ mod next_to_std_and_every_domain {
     fn every_other_type_is_named_without_a_path() {
         let _: Option<<Selector as EditableDefinition>::Name> = None::<SelectorName>;
         let _: Option<AnyOperation> = None;
+        let _: Option<RequestError> = None;
         let _: Option<AnyDefinition> = None;
         let _: Option<DefinitionRef> = None;
         let _: Option<Definitions> = None;

@@ -4,7 +4,7 @@ use gaslightmq_environment::EnvironmentName;
 use gaslightmq_rule::{Rule, RuleName, RuleState};
 use serde::{Deserialize, Serialize};
 
-use crate::{EnvironmentNotRunning, Operation};
+use crate::{EnvironmentReadError, Operation};
 
 /// A rule of an environment, and its state there.
 ///
@@ -32,7 +32,7 @@ pub struct ListEnvironmentRules {
 
 impl Operation for ListEnvironmentRules {
     type Answer = Vec<RuleStatus>;
-    type Error = EnvironmentNotRunning;
+    type Error = EnvironmentReadError;
 }
 
 /// Add a live rule to an environment, disarmed.
@@ -278,4 +278,7 @@ pub enum RuleCommandError {
         rule: RuleName,
         reason: String,
     },
+    /// A store of the workspace could not read the rule, or what it names. `reason` says which store, and what it said.
+    #[error("rule {:?} was not read: {reason}", .rule.as_str())]
+    StoreFailed { rule: RuleName, reason: String },
 }

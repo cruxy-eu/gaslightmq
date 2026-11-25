@@ -6,7 +6,7 @@ use gaslightmq_environment::EnvironmentName;
 use gaslightmq_rule::Rule;
 use serde::{Deserialize, Serialize};
 
-use crate::{EnvironmentNotRunning, Operation};
+use crate::{EnvironmentReadError, Operation};
 
 /// Read the ⌘K sentence typed so far, against the names an environment knows.
 ///
@@ -24,7 +24,7 @@ pub struct ParseSentence {
 
 impl Operation for ParseSentence {
     type Answer = ParsedSentence;
-    type Error = EnvironmentNotRunning;
+    type Error = EnvironmentReadError;
 }
 
 /// What a sentence gives: the rule, the completions for the word at its end, and the words that were not read.
