@@ -13,9 +13,7 @@ use std::fmt::Debug;
 
 use gaslightmq_control_api::call::{Call, CallId, CallTiming, Delivered, Explanation, RuleExplanation};
 use gaslightmq_control_api::clock::{Duration, Instant};
-use gaslightmq_control_api::environment::{
-    BrokerDefinition, Environment, EnvironmentName, Instances, Listeners, ProxyDefinition,
-};
+use gaslightmq_control_api::environment::{BrokerDefinition, Environment, Instances, Listeners, ProxyDefinition};
 use gaslightmq_control_api::field::{ClientSoftware, ConnectionNumber, Endpoint, Field, Fields};
 use gaslightmq_control_api::incident::{IncidentKind, IncidentSupport};
 use gaslightmq_control_api::kernel::{ApiKey, BrokerId, ClientId};
@@ -30,10 +28,18 @@ use serde_json::{Value, json};
 /// A value next to the JSON that a client or a server writes for it.
 struct Form<T>(T);
 
+impl<T: Serialize> Form<T> {
+    /// What the value writes. A value inside a message has the form of its own crate, which this crate does not
+    /// spell out again.
+    fn json(&self) -> Value {
+        serde_json::to_value(&self.0).unwrap()
+    }
+}
+
 impl<T: Serialize + DeserializeOwned + PartialEq + Debug> Form<T> {
     /// `json` is what the value writes, and what reads back as the same value.
     fn writes(&self, json: Value) {
-        assert_eq!(serde_json::to_value(&self.0).unwrap(), json);
+        assert_eq!(self.json(), json);
         assert_eq!(serde_json::from_value::<T>(json).unwrap(), self.0);
     }
 
@@ -45,64 +51,45 @@ impl<T: Serialize + DeserializeOwned + PartialEq + Debug> Form<T> {
     }
 }
 
-/// What the value writes, for a value inside a message whose form its own crate shows.
-fn form_of<T: Serialize>(value: &T) -> Value {
-    serde_json::to_value(value).unwrap()
-}
+/// The order desk of the specs: the definitions that several tests carry, as the workspace files write them.
+struct OrderDesk;
 
-fn orders_sim() -> EnvironmentName {
-    "orders-sim".parse().unwrap()
-}
+impl OrderDesk {
+    /// The selector `order-producers`: Produce calls to the `orders.*` topics.
+    fn selector() -> Selector {
+        Selector::new(
+            "order-producers".parse().unwrap(),
+            Conditions::new()
+                .with(Condition::is(ApiKey::PRODUCE))
+                .with(Condition::parse(Field::Topic, "orders.*").unwrap()),
+        )
+    }
 
-/// `name: slow-order-producers`, `selector: order-producers`, `action: delay-1s`.
-fn slow_order_producers() -> Rule {
-    Rule::new(
-        "slow-order-producers".parse().unwrap(),
-        "order-producers".parse::<SelectorName>().unwrap(),
-        "delay-1s".parse::<PresetName>().unwrap(),
-    )
-}
+    /// The rule `slow-order-producers`: the selector `order-producers`, and the preset `delay-1s`.
+    fn rule() -> Rule {
+        Rule::new(
+            "slow-order-producers".parse().unwrap(),
+            "order-producers".parse::<SelectorName>().unwrap(),
+            "delay-1s".parse::<PresetName>().unwrap(),
+        )
+    }
 
-/// The JSON of [`slow_order_producers`].
-fn slow_order_producers_form() -> Value {
-    json!({ "name": "slow-order-producers", "selector": "order-producers", "action": "delay-1s" })
-}
-
-/// The selector `order-producers`: Produce calls to the `orders.*` topics.
-fn order_producers() -> Selector {
-    Selector::new(
-        "order-producers".parse().unwrap(),
-        Conditions::new()
-            .with(Condition::is(ApiKey::PRODUCE))
-            .with(Condition::parse(Field::Topic, "orders.*").unwrap()),
-    )
-}
-
-/// `environments/orders-sim.yaml` of the spec: a proxy in front of a broker.
-fn orders_sim_environment() -> Environment {
-    let listen = Listeners::new(
-        "0.0.0.0:29092".parse().unwrap(),
-        "0.0.0.0:29093-29192".parse().unwrap(),
-        "localhost".parse().unwrap(),
-    )
-    .unwrap();
-    Environment::new(
-        orders_sim(),
-        Instances::ProxyInFrontOfBroker {
-            proxy: ProxyDefinition::new(listen),
-            broker: BrokerDefinition::new("orders-sim".parse().unwrap()),
-        },
-    )
-}
-
-/// The pad at row 1, column 4 on layer `order-ingest` of the layout `order-desk`.
-fn pad() -> Pad {
-    Pad::new(
-        "order-desk".parse().unwrap(),
-        "order-ingest".parse().unwrap(),
-        Row::from_index(0),
-        Column::from_index(3),
-    )
+    /// `environments/orders-sim.yaml`: a proxy in front of a broker.
+    fn environment() -> Environment {
+        let listen = Listeners::new(
+            "0.0.0.0:29092".parse().unwrap(),
+            "0.0.0.0:29093-29192".parse().unwrap(),
+            "localhost".parse().unwrap(),
+        )
+        .unwrap();
+        Environment::new(
+            "orders-sim".parse().unwrap(),
+            Instances::ProxyInFrontOfBroker {
+                proxy: ProxyDefinition::new(listen),
+                broker: BrokerDefinition::new("orders-sim".parse().unwrap()),
+            },
+        )
+    }
 }
 
 // Requests
@@ -111,7 +98,7 @@ fn pad() -> Pad {
 fn an_operation_on_a_definition_names_its_kind() {
     // Someone saves a new selector in the UI.
     Form(AnyOperation::from(CreateDefinition {
-        definition: order_producers(),
+        definition: OrderDesk::selector(),
     }))
     .writes(json!({
         "operation": "create-selector",
@@ -137,7 +124,7 @@ fn a_list_says_nothing_but_its_operation() {
 
 #[test]
 fn an_update_carries_the_whole_definition_under_its_name() {
-    let titled = slow_order_producers().with_title("Slow down order producers".parse().unwrap());
+    let titled = OrderDesk::rule().with_title("Slow down order producers".parse().unwrap());
 
     Form(AnyOperation::from(UpdateDefinition { definition: titled })).writes(json!({
         "operation": "update-rule",
@@ -155,17 +142,17 @@ fn a_command_on_something_live_names_its_environment() {
     let rule: RuleName = "slow-order-producers".parse().unwrap();
 
     Form(AnyOperation::from(ArmRule {
-        environment: orders_sim(),
+        environment: "orders-sim".parse().unwrap(),
         rule: rule.clone(),
     }))
     .writes(json!({ "operation": "arm-rule", "environment": "orders-sim", "rule": "slow-order-producers" }));
     Form(AnyOperation::from(FireRule {
-        environment: orders_sim(),
+        environment: "orders-sim".parse().unwrap(),
         rule,
     }))
     .writes(json!({ "operation": "fire-rule", "environment": "orders-sim", "rule": "slow-order-producers" }));
     Form(AnyOperation::from(CloseSession {
-        environment: orders_sim(),
+        environment: "orders-sim".parse().unwrap(),
         connection: ConnectionNumber::new(7),
     }))
     .writes(json!({ "operation": "close-session", "environment": "orders-sim", "connection": 7 }));
@@ -174,7 +161,7 @@ fn a_command_on_something_live_names_its_environment() {
 #[test]
 fn the_rules_of_an_environment_are_another_list_than_the_rules_of_the_workspace() {
     Form(AnyOperation::from(ListEnvironmentRules {
-        environment: orders_sim(),
+        environment: "orders-sim".parse().unwrap(),
     }))
     .writes(json!({ "operation": "list-environment-rules", "environment": "orders-sim" }));
     Form(AnyOperation::from(ListDefinitions::<Rule>::new())).writes(json!({ "operation": "list-rules" }));
@@ -183,13 +170,13 @@ fn the_rules_of_an_environment_are_another_list_than_the_rules_of_the_workspace(
 #[test]
 fn a_live_rule_carries_its_definition() {
     Form(AnyOperation::from(CreateLiveRule {
-        environment: orders_sim(),
-        rule: slow_order_producers(),
+        environment: "orders-sim".parse().unwrap(),
+        rule: OrderDesk::rule(),
     }))
     .writes(json!({
         "operation": "create-live-rule",
         "environment": "orders-sim",
-        "rule": slow_order_producers_form(),
+        "rule": Form(OrderDesk::rule()).json(),
     }));
 }
 
@@ -197,8 +184,15 @@ fn a_live_rule_carries_its_definition() {
 fn a_pad_press_sends_its_intent() {
     // Arm the rule at row 1, column 4 on layer order-ingest.
     Form(AnyOperation::from(SendIntent {
-        environment: orders_sim(),
-        intent: Intent::Arm { pad: pad() },
+        environment: "orders-sim".parse().unwrap(),
+        intent: Intent::Arm {
+            pad: Pad::new(
+                "order-desk".parse().unwrap(),
+                "order-ingest".parse().unwrap(),
+                Row::from_index(0),
+                Column::from_index(3),
+            ),
+        },
     }))
     .writes(json!({
         "operation": "send-intent",
@@ -213,7 +207,7 @@ fn a_pad_press_sends_its_intent() {
 #[test]
 fn a_sentence_is_the_text_typed_so_far() {
     Form(AnyOperation::from(ParseSentence {
-        environment: orders_sim(),
+        environment: "orders-sim".parse().unwrap(),
         text: "leader-flap on produce ord".to_owned(),
     }))
     .writes(
@@ -251,22 +245,22 @@ fn a_request_with_a_key_that_its_operation_does_not_know_does_not_read() {
 #[test]
 fn a_rule_of_an_environment_says_whether_it_is_live_and_its_state() {
     Form(RuleStatus {
-        rule: slow_order_producers(),
+        rule: OrderDesk::rule(),
         live: false,
         state: RuleState::Armed,
     })
-    .writes(json!({ "rule": slow_order_producers_form(), "live": false, "state": "armed" }));
+    .writes(json!({ "rule": Form(OrderDesk::rule()).json(), "live": false, "state": "armed" }));
 }
 
 #[test]
 fn an_environment_says_whether_it_runs() {
-    let environment = orders_sim_environment();
+    let environment = OrderDesk::environment();
 
     Form(EnvironmentStatus {
         environment: environment.clone(),
         running: true,
     })
-    .writes(json!({ "environment": form_of(&environment), "running": true }));
+    .writes(json!({ "environment": Form(&environment).json(), "running": true }));
 }
 
 #[test]
@@ -328,7 +322,7 @@ fn a_backend_names_each_endpoint_with_the_address_of_its_listener() {
     Form(backend).writes(json!({
         "kind": "upstream",
         "endpoints": { "bootstrap": "0.0.0.0:9092", "broker 1": "0.0.0.0:19092", "broker 2": null },
-        "incidents": form_of(&incidents),
+        "incidents": Form(&incidents).json(),
     }));
 }
 
@@ -362,11 +356,11 @@ fn a_sentence_gives_its_rule_its_completions_and_what_it_could_not_read() {
 #[test]
 fn a_whole_sentence_gives_a_rule_and_nothing_else() {
     Form(ParsedSentence {
-        rule: Some(slow_order_producers()),
+        rule: Some(OrderDesk::rule()),
         completions: Vec::new(),
         unread: Vec::new(),
     })
-    .writes(json!({ "rule": slow_order_producers_form() }));
+    .writes(json!({ "rule": Form(OrderDesk::rule()).json() }));
 }
 
 #[test]
@@ -402,7 +396,7 @@ fn an_error_names_its_variant() {
     Form(GetDefinitionError::NotFound { name: name.into() })
         .writes(json!({ "error": "not-found", "name": { "rule": "slow-order-producers" } }));
     Form(RuleCommandError::Refused {
-        environment: orders_sim(),
+        environment: "orders-sim".parse().unwrap(),
         rule: "slow-order-producers".parse().unwrap(),
         reason: "an armed rule is not armed again".to_owned(),
     })
@@ -434,7 +428,7 @@ fn a_definition_in_use_names_each_user_with_its_kind() {
 #[test]
 fn an_environment_that_does_not_run_is_the_map_of_its_name() {
     Form(EnvironmentNotRunning {
-        environment: orders_sim(),
+        environment: "orders-sim".parse().unwrap(),
     })
     .writes(json!({ "environment": "orders-sim" }));
 }
@@ -451,15 +445,15 @@ fn an_error_of_another_operation_does_not_read() {
 
 #[test]
 fn a_client_that_connects_gets_the_state_of_the_process() {
-    let environment = orders_sim_environment();
+    let environment = OrderDesk::environment();
     let state = ProcessState {
         definitions: Definitions {
-            selectors: vec![order_producers()],
+            selectors: vec![OrderDesk::selector()],
             environments: vec![environment.clone()],
             ..Definitions::default()
         },
         environments: vec![RunningEnvironment {
-            environment: orders_sim(),
+            environment: "orders-sim".parse().unwrap(),
             backend: BackendStatus {
                 kind: BackendKind::Simulated,
                 endpoints: BTreeMap::from([(Endpoint::Bootstrap, Some("0.0.0.0:29092".parse().unwrap()))]),
@@ -473,18 +467,18 @@ fn a_client_that_connects_gets_the_state_of_the_process() {
     Form(StreamMessage::Snapshot(state)).writes(json!({
         "message": "snapshot",
         "definitions": {
-            "selectors": [form_of(&order_producers())],
+            "selectors": [Form(OrderDesk::selector()).json()],
             "presets": [],
             "rules": [],
             "layouts": [],
-            "environments": [form_of(&environment)],
+            "environments": [Form(&environment).json()],
         },
         "environments": [{
             "environment": "orders-sim",
             "backend": {
                 "kind": "simulated",
                 "endpoints": { "bootstrap": "0.0.0.0:29092" },
-                "incidents": form_of(&IncidentSupport::none().applies(IncidentKind::ALL)),
+                "incidents": Form(IncidentSupport::none().applies(IncidentKind::ALL)).json(),
             },
             "rules": [],
             "sessions": [],
@@ -506,18 +500,18 @@ fn a_call_travels_with_its_environment() {
     .unwrap();
 
     Form(StreamMessage::Call {
-        environment: orders_sim(),
+        environment: "orders-sim".parse().unwrap(),
         call: call.clone(),
     })
-    .writes(json!({ "message": "call", "environment": "orders-sim", "call": form_of(&call) }));
+    .writes(json!({ "message": "call", "environment": "orders-sim", "call": Form(&call).json() }));
 }
 
 #[test]
 fn a_pad_press_comes_back_as_the_rule_it_changed() {
     Form(StreamMessage::RuleChanged {
-        environment: orders_sim(),
+        environment: "orders-sim".parse().unwrap(),
         rule: RuleStatus {
-            rule: slow_order_producers(),
+            rule: OrderDesk::rule(),
             live: true,
             state: RuleState::Armed,
         },
@@ -525,18 +519,18 @@ fn a_pad_press_comes_back_as_the_rule_it_changed() {
     .writes(json!({
         "message": "rule-changed",
         "environment": "orders-sim",
-        "rule": { "rule": slow_order_producers_form(), "live": true, "state": "armed" },
+        "rule": { "rule": Form(OrderDesk::rule()).json(), "live": true, "state": "armed" },
     }));
 }
 
 #[test]
 fn a_change_to_the_workspace_names_the_kind_of_its_definition() {
     Form(StreamMessage::DefinitionChanged {
-        definition: AnyDefinition::Selector(order_producers()),
+        definition: AnyDefinition::Selector(OrderDesk::selector()),
     })
     .writes(json!({
         "message": "definition-changed",
-        "definition": { "selector": form_of(&order_producers()) },
+        "definition": { "selector": Form(OrderDesk::selector()).json() },
     }));
     Form(StreamMessage::DefinitionDeleted {
         name: "blackhole".parse::<PresetName>().unwrap().into(),
@@ -547,7 +541,7 @@ fn a_change_to_the_workspace_names_the_kind_of_its_definition() {
 #[test]
 fn a_session_says_who_closed_it() {
     Form(StreamMessage::SessionClosed {
-        environment: orders_sim(),
+        environment: "orders-sim".parse().unwrap(),
         connection: ConnectionNumber::new(7),
         by: SessionCloser::Lie,
     })
@@ -557,7 +551,7 @@ fn a_session_says_who_closed_it() {
 #[test]
 fn an_environment_that_stops_takes_its_name_with_it() {
     Form(StreamMessage::EnvironmentStopped {
-        environment: orders_sim(),
+        environment: "orders-sim".parse().unwrap(),
     })
     .writes(json!({ "message": "environment-stopped", "environment": "orders-sim" }));
 }
@@ -576,14 +570,14 @@ fn a_workspace_that_does_not_fit_says_why() {
 #[test]
 fn a_client_follows_the_calls_that_a_selector_matches() {
     Form(Subscription::Calls {
-        environment: orders_sim(),
+        environment: "orders-sim".parse().unwrap(),
         selector: SelectorRef::Named("order-producers".parse().unwrap()),
     })
     .writes(json!({ "follow": "calls", "environment": "orders-sim", "selector": "order-producers" }));
 
     // A selector without conditions matches every call.
     Form(Subscription::Calls {
-        environment: orders_sim(),
+        environment: "orders-sim".parse().unwrap(),
         selector: SelectorRef::Inline(Conditions::new()),
     })
     .writes(json!({ "follow": "calls", "environment": "orders-sim", "selector": {} }));
