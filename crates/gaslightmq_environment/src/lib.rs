@@ -167,19 +167,16 @@
 //! | Feature | Adds |
 //! |---|---|
 //! | `memory` | The store of environments in memory: [`EnvironmentStore`] for the `MemoryStore` of `gaslightmq_definition_memory`. |
-//! | `conformance` | The module `conformance`, with the check that the tests of any store of environments run. |
 //!
 //! # No IO
 //!
 //! The crate depends on `gaslightmq_kernel` for the broker ID that a broker listener belongs to,
 //! and on `gaslightmq_definition_api` for the store contract.
 //! It has no IO, no system clock and no randomness, and it compiles to WebAssembly.
-//! Its only async code is the check of an [`EnvironmentStore`], which awaits the store it is handed.
+//! It has no async code: an [`EnvironmentStore`] asks nothing more than the store contract.
 //! An address is a value here: nothing listens, connects or resolves a name.
 
 mod address;
-#[cfg(feature = "conformance")]
-pub mod conformance;
 mod environment;
 mod host;
 mod listeners;

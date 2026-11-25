@@ -2,7 +2,7 @@
 
 use futures::executor::block_on;
 use gaslightmq_definition_memory::MemoryStore;
-use gaslightmq_surface::conformance::assert_layout_store;
+use gaslightmq_surface_conformance::assert_layout_store;
 
 #[test]
 fn a_store_of_layouts_in_memory_keeps_the_contract_and_says_who_uses_a_selector_or_a_preset() {

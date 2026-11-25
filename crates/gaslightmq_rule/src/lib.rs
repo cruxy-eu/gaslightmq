@@ -164,7 +164,6 @@
 //! | Feature | Adds |
 //! |---|---|
 //! | `memory` | The stores of rules and of presets in memory: [`RuleStore`] and [`PresetStore`] for the `MemoryStore` of `gaslightmq_definition_memory`. |
-//! | `conformance` | The module `conformance`, with the checks that the tests of any store of rules or of presets run. |
 //!
 //! # The `serde` feature
 //!
@@ -204,14 +203,11 @@
 //! and on `gaslightmq_field`, `gaslightmq_kernel` and `gaslightmq_clock` for calls, API keys and instants.
 //! It does not depend on the Kafka codec.
 //! It has no IO, no system clock and no global randomness, and it compiles to WebAssembly.
-//! Its only async code is around [`RuleStore`] and [`PresetStore`]: the traits and their checks await the store
-//! they are handed, and nothing else.
+//! Its only async code is in [`RuleStore`]: the trait awaits the store it is handed, and nothing else.
 //! The current time comes in as an [`Instant`](gaslightmq_clock::Instant) argument.
 
 mod action;
 mod armed;
-#[cfg(feature = "conformance")]
-pub mod conformance;
 mod error;
 mod evaluation;
 mod name;

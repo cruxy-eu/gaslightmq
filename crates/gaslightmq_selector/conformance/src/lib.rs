@@ -1,11 +1,34 @@
 //! What a store of selectors does, as a check that the tests of any store of selectors run.
 //!
-//! The check is for the tests of a store, so it is behind the `conformance` feature.
+//! [`SelectorStore`] says what a store of selectors is asked.
+//! This crate holds that behaviour once: [`assert_selector_store`] takes a way to make an empty store,
+//! and fails when the store does not do what the trait asks.
+//! It runs the check of every store, [`assert_store_contract`], with selectors of its own,
+//! and then asks who includes a selector.
+//!
+//! ```
+//! use futures::executor::block_on;
+//! use gaslightmq_definition_memory::MemoryStore;
+//! use gaslightmq_selector_conformance::assert_selector_store;
+//!
+//! // The test of a store hands the check a way to make an empty one, and drives it with the executor it has.
+//! block_on(assert_selector_store(MemoryStore::new));
+//! ```
+//!
+//! # Test support
+//!
+//! The crate is test support: only the tests of a crate depend on it, as a dev-dependency.
+//! `cargo xtask test-support` holds every crate to that.
+//!
+//! # No IO
+//!
+//! The crate depends on the selectors, on the check of every store, and on `gaslightmq_kernel` for the API keys
+//! that its selectors test.
+//! It awaits the store it is handed, and nothing else: it has no executor, no IO, no clock and no randomness.
 
 use gaslightmq_definition_conformance::{Samples, assert_store_contract};
 use gaslightmq_kernel::ApiKey;
-
-use crate::{Condition, Conditions, Selector, SelectorName, SelectorStore, SelectorUuid};
+use gaslightmq_selector::{Condition, Conditions, Selector, SelectorName, SelectorStore, SelectorUuid};
 
 /// Fails when a store of selectors does not do what a [`SelectorStore`] does.
 ///
@@ -18,17 +41,6 @@ use crate::{Condition, Conditions, Selector, SelectorName, SelectorStore, Select
 /// | It gives the selectors that include a selector. | In the order of their names, and none that includes another one. |
 /// | It need not hold the selector that is included. | A selector that includes what nobody defined is given too. |
 /// | The answer follows every change. | An update and a delete change who includes a selector. |
-///
-/// ```
-/// use gaslightmq_definition_api::prelude::*;
-/// use gaslightmq_selector::conformance::assert_selector_store;
-/// use gaslightmq_selector::prelude::*;
-///
-/// /// The test of a store of selectors: it hands the check a way to make an empty one.
-/// async fn a_store_of_selectors_does_what_the_trait_asks<S: SelectorStore + Default>() {
-///     assert_selector_store(S::default).await;
-/// }
-/// ```
 ///
 /// # Panics
 ///
