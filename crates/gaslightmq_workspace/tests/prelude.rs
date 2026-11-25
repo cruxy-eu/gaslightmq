@@ -35,7 +35,6 @@ mod next_to_the_others {
     use std::time::*;
 
     use gaslightmq_definition_api::prelude::*;
-    use gaslightmq_definition_memory::{KnownUuids, MemoryContext};
     use gaslightmq_environment::prelude::*;
     use gaslightmq_field::prelude::*;
     use gaslightmq_incident::prelude::*;

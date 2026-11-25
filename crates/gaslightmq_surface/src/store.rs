@@ -20,8 +20,12 @@ impl Definition for PadLayout {
 /// What keeps the pad layouts: the files of a workspace, memory, or anything else.
 ///
 /// A store of layouts keeps the [store contract](Store), and it answers two questions more.
-/// A selector with a row or a preset with a column cannot go, and only the store knows which layouts have one
-/// without reading every layout.
+/// A selector with a row or a preset with a column cannot go, so someone asks which layouts have one.
+///
+/// Every store of layouts has the answers: the trait finds them among the layouts that the store
+/// [lists](Store::list).
+/// A store that knows a shorter way, such as an index, writes the methods itself.
+/// A store with nothing to add is one line: `impl LayoutStore for MyStore {}`.
 ///
 /// ```
 /// use gaslightmq_definition_api::prelude::*;
@@ -45,12 +49,28 @@ pub trait LayoutStore: Store<PadLayout> {
     fn using_selector(
         &self,
         selector: &SelectorName,
-    ) -> impl Future<Output = Result<Vec<PadLayout>, StoreReadError>> + Send;
+    ) -> impl Future<Output = Result<Vec<PadLayout>, StoreReadError>> + Send {
+        async move {
+            let mut layouts = self.list().await?;
+            layouts.retain(|layout| layout.rows().contains(selector));
+            Ok(layouts)
+        }
+    }
 
     /// The layouts with a [column](PadLayout::columns) for the preset of this name, in the order of their names.
     ///
     /// # Errors
     ///
     /// [`StoreReadError`] when the store could not read what it holds.
-    fn using_preset(&self, preset: &PresetName) -> impl Future<Output = Result<Vec<PadLayout>, StoreReadError>> + Send;
+    fn using_preset(&self, preset: &PresetName) -> impl Future<Output = Result<Vec<PadLayout>, StoreReadError>> + Send {
+        async move {
+            let mut layouts = self.list().await?;
+            layouts.retain(|layout| layout.columns().contains(preset));
+            Ok(layouts)
+        }
+    }
 }
+
+/// A store of pad layouts in memory is a [`LayoutStore`], with the answers of the trait.
+#[cfg(feature = "memory")]
+impl LayoutStore for gaslightmq_definition_memory::MemoryStore<PadLayout> {}

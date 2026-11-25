@@ -147,7 +147,13 @@
 //! A [`LayoutStore`] is the store contract of `gaslightmq_definition_api` for pad layouts.
 //! It also answers what only it can answer without reading every layout:
 //! which layouts have a row for a selector, and which have a column for a preset.
+//! The trait answers both for every store, over the layouts that the store lists.
 //! The crate holds the trait, and no store.
+//!
+//! | Feature | Adds |
+//! |---|---|
+//! | `memory` | The store of pad layouts in memory: [`LayoutStore`] for the `MemoryStore` of `gaslightmq_definition_memory`. |
+//! | `conformance` | The module `conformance`, with the check that the tests of any store of pad layouts run. |
 //!
 //! # No IO
 //!
@@ -156,8 +162,11 @@
 //! client IDs, error codes and time spans.
 //! It does not depend on the Kafka codec.
 //! It has no IO, no system clock and no randomness, and it compiles to WebAssembly.
-//! Its only async code is the signatures of [`LayoutStore`]: the crate awaits nothing.
+//! Its only async code is around [`LayoutStore`]: the trait and its check await the store they are handed,
+//! and nothing else.
 
+#[cfg(feature = "conformance")]
+pub mod conformance;
 mod encoder;
 mod intent;
 mod layer;

@@ -1,64 +1,52 @@
-//! Definitions kept in memory, and nowhere else: the stores, and the context of a workspace over them.
+//! The store that keeps definitions in memory, and nowhere else.
 //!
-//! | Type | Is |
-//! |---|---|
-//! | [`MemoryStore`] | The store of one kind of definition. It keeps the store contract for any kind, and the store trait of each kind of a workspace. |
-//! | [`MemoryStores`] | The stores of a workspace: a [`MemoryStore`] for each kind. |
-//! | [`MemoryContext`] | The context of a workspace over those stores, with a source of UUIDs. |
-//! | [`KnownUuids`] | A source whose UUIDs a test knows before they are made. |
+//! A [`MemoryStore`] keeps the [store contract](gaslightmq_definition_api::Store) for any kind of definition.
+//! It is the store of a test, and of an engine that runs without the files of a workspace:
+//! everything it holds is gone when it is.
 //!
-//! These are the stores of a test, and of an engine that runs without the files of a workspace:
-//! everything they hold is gone when they are.
+//! The crate knows no kind of definition.
+//! The crate of a kind implements its store trait for the `MemoryStore` of its kind,
+//! so a store of rules in memory is also what the crate of the rules asks a store of rules to be.
 //!
 //! ```
 //! use futures::executor::block_on;
 //! use gaslightmq_definition_api::prelude::*;
-//! use gaslightmq_definition_memory::{KnownUuids, MemoryContext};
-//! use gaslightmq_kernel::prelude::*;
-//! use gaslightmq_lie::prelude::*;
-//! use gaslightmq_rule::prelude::*;
-//! use gaslightmq_selector::prelude::*;
-//! use gaslightmq_workspace::prelude::*;
+//! use gaslightmq_definition_memory::MemoryStore;
 //!
-//! // The workspace of a test: nothing is written anywhere, and every UUID is known.
-//! let mut workspace = Workspace::new(MemoryContext::new());
+//! /// What a team says when it starts its day, under a name.
+//! #[derive(Debug, Clone, PartialEq)]
+//! struct Greeting {
+//!     name: String,
+//!     text: String,
+//! }
 //!
-//! let metadata: SelectorName = "metadata".parse().expect("a selector name");
-//! let selector = Selector::new(metadata.clone(), Conditions::new().with(Condition::is(ApiKey::METADATA)));
-//! let rule = Rule::new("blackhole-metadata".parse().expect("a rule name"), metadata.clone(), LieDefinition::Silence);
+//! impl Definition for Greeting {
+//!     type Name = String;
 //!
-//! block_on(async {
-//!     workspace.create(selector).await?;
-//!     let rule = workspace.create(rule).await?;
-//!     assert_eq!(rule.uuid().map(String::from), Some(KnownUuids::nth(2)));
+//!     const LABEL: &'static str = "greeting";
 //!
-//!     // The store of the rules says who uses the selector, without anyone reading every rule.
-//!     let using = workspace.stores().rules().using_selector(&metadata).await;
-//!     assert_eq!(using, Ok(vec![rule]));
-//!     Ok::<(), CreateError>(())
-//! })?;
-//! # Ok::<(), CreateError>(())
+//!     fn name(&self) -> &String {
+//!         &self.name
+//!     }
+//! }
+//!
+//! let greetings = MemoryStore::new();
+//! let morning = Greeting { name: "morning".to_owned(), text: "Good morning".to_owned() };
+//!
+//! block_on(greetings.create(morning.clone()))?;
+//! assert_eq!(block_on(greetings.get(morning.name())).expect("a store in memory reads"), Some(morning.clone()));
+//!
+//! // Nothing overwrites a definition: the name is taken.
+//! assert_eq!(block_on(greetings.create(morning)), Err(StoreCreateError::NameTaken));
+//! # Ok::<(), StoreCreateError>(())
 //! ```
-//!
-//! # One store, for every kind
-//!
-//! [`MemoryStore`] implements the store contract of `gaslightmq_definition_api` once, for any definition.
-//! The store trait of a kind comes on top: a trait that asks nothing more is one line,
-//! and a trait with questions of its own answers them over the definitions it holds.
 //!
 //! # No IO
 //!
-//! The crate depends on the store contract, on the crates of the definitions, and on `gaslightmq_workspace`
-//! for the stores and the context that it implements.
+//! The crate depends on the store contract alone.
 //! It has no IO, no system clock and no global randomness.
 //! Its methods are async because the contract is, and none of them waits: every future is ready when it is first polled.
 
-mod context;
 mod store;
-mod stores;
-mod uuids;
 
-pub use context::MemoryContext;
 pub use store::MemoryStore;
-pub use stores::MemoryStores;
-pub use uuids::KnownUuids;

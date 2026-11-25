@@ -18,6 +18,7 @@ impl Definition for Environment {
 /// What keeps the environments: the files of a workspace, memory, or anything else.
 ///
 /// A store of environments keeps the [store contract](Store), and nothing asks it more than that.
+/// So a store of environments is one line: `impl EnvironmentStore for MyStore {}`.
 ///
 /// ```
 /// use gaslightmq_definition_api::prelude::*;
@@ -29,3 +30,7 @@ impl Definition for Environment {
 /// }
 /// ```
 pub trait EnvironmentStore: Store<Environment> {}
+
+/// A store of environments in memory is an [`EnvironmentStore`].
+#[cfg(feature = "memory")]
+impl EnvironmentStore for gaslightmq_definition_memory::MemoryStore<Environment> {}

@@ -9,13 +9,6 @@ workspace = true
 
 [dependencies]
 gaslightmq_definition_api.workspace = true
-# The definitions that the samples are made of.
-gaslightmq_environment.workspace = true
-gaslightmq_kernel.workspace = true
-gaslightmq_lie.workspace = true
-gaslightmq_rule.workspace = true
-gaslightmq_selector.workspace = true
-gaslightmq_surface.workspace = true
 
 [dev-dependencies]
 # The executor that drives the check in the example. The crate itself needs no runtime.

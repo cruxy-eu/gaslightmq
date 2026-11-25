@@ -23,8 +23,9 @@ use crate::Samples;
 /// | Delete needs a name that exists. | Nothing changed. |
 /// | A name is free again after a delete. | Create takes a definition of that name. |
 ///
-/// The check of a kind, such as [`assert_rule_store`](crate::assert_rule_store), runs this one with the samples
-/// of its kind.
+/// This crate knows no kind of definition, so the samples come from whoever runs the check.
+/// The crate of a kind has a check of its own for its store trait, which runs this one with the samples of its kind
+/// and then asks what only a store of that kind is asked.
 ///
 /// # Panics
 ///
@@ -63,7 +64,7 @@ where
     D: Definition + PartialEq + fmt::Debug,
     S: Store<D>,
 {
-    // The changed definition has a UUID and a title, so it shows that a store keeps every part.
+    // The changed definition has every part that a store has to keep.
     let definition = samples.changed();
 
     assert_eq!(
@@ -237,7 +238,7 @@ where
 }
 
 /// Creates a definition that a behaviour starts from.
-pub(crate) async fn created<D, S>(store: &S, definition: &D)
+async fn created<D, S>(store: &S, definition: &D)
 where
     D: Definition + PartialEq + fmt::Debug,
     S: Store<D>,

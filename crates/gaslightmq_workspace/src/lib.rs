@@ -17,13 +17,26 @@
 //! | [`CreateError`], [`UpdateError`], [`DeleteError`] | Why a workspace did not make a change. |
 //! | [`ValidationError`] | Why the definitions of a workspace are not valid. |
 //!
-//! The [`prelude`] holds all of them.
+//! The [`prelude`] holds all of them, and those of the `memory` feature when it is on.
 //!
 //! # One context
 //!
 //! A workspace has one type parameter, its [`WorkspaceContext`].
 //! Whoever puts a process together writes the context, and names the concrete stores there and nowhere else.
 //! Code that holds a workspace is generic over the context, and cannot tell which stores it works with.
+//!
+//! # In memory
+//!
+//! With the `memory` feature, the crate has a workspace that is kept in memory, and nowhere else.
+//!
+//! | Type | Is |
+//! |---|---|
+//! | [`MemoryStores`] | The stores of a workspace: a store in memory for each kind of definition. |
+//! | [`MemoryContext`] | The context of a workspace over those stores, with a source of UUIDs. |
+//! | [`KnownUuids`] | A source whose UUIDs a test knows before they are made. |
+//!
+//! A test turns the feature on, and starts its workspace over `MemoryContext::new()`.
+//! An engine that runs without the files of a workspace takes its stores from here too.
 //!
 //! # What a workspace checks
 //!
@@ -42,7 +55,7 @@
 //! When something was wrong before, as after someone edited a file, a change to another definition still goes through.
 //!
 //! A delete asks the stores who uses a definition, with the questions that the store trait of each kind holds.
-//! It reads no definition that has nothing to do with the one that goes.
+//! It asks only the stores whose definitions can refer to the one that goes.
 //!
 //! An environment names a world, and no store holds worlds yet, so nothing checks that name.
 //!
@@ -76,6 +89,8 @@ mod contents;
 mod context;
 mod error;
 mod kind;
+#[cfg(feature = "memory")]
+mod memory;
 mod name;
 mod stores;
 mod uuid;
@@ -84,6 +99,8 @@ mod workspace;
 pub use context::WorkspaceContext;
 pub use error::{CreateError, DeleteError, UpdateError, ValidationError, WorkspaceError};
 pub use kind::WorkspaceDefinition;
+#[cfg(feature = "memory")]
+pub use memory::{KnownUuids, MemoryContext, MemoryStores};
 pub use name::DefinitionName;
 pub use stores::Stores;
 pub use uuid::{UuidSeed, UuidSource};
@@ -110,4 +127,7 @@ pub mod prelude {
         CreateError, DefinitionName, DeleteError, Stores, UpdateError, UuidSeed, UuidSource, ValidationError,
         Workspace, WorkspaceContext, WorkspaceDefinition, WorkspaceError,
     };
+    #[cfg(feature = "memory")]
+    #[doc(no_inline)]
+    pub use crate::{KnownUuids, MemoryContext, MemoryStores};
 }

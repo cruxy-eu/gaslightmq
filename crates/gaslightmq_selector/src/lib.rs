@@ -91,7 +91,13 @@
 //! A [`Selector`] is a definition that a store holds under its name.
 //! A [`SelectorStore`] is the store contract of `gaslightmq_definition_api` for selectors,
 //! with the one question that only a store of selectors answers: which selectors include this one.
+//! The trait answers it for every store, over the selectors that the store lists.
 //! The crate holds the trait, and no store.
+//!
+//! | Feature | Adds |
+//! |---|---|
+//! | `memory` | The store of selectors in memory: [`SelectorStore`] for the `MemoryStore` of `gaslightmq_definition_memory`. |
+//! | `conformance` | The module `conformance`, with the check that the tests of any store of selectors run. |
 //!
 //! # The `serde` feature
 //!
@@ -159,10 +165,13 @@
 //! on `gaslightmq_kernel` for the API key that the index is built on,
 //! and on `gaslightmq_definition_api` for the store contract.
 //! It has no IO, no system clock and no randomness, and it compiles to WebAssembly.
-//! Its only async code is the signature of [`SelectorStore`]: the crate awaits nothing.
+//! Its only async code is around [`SelectorStore`]: the trait and its check await the store they are handed,
+//! and nothing else.
 
 mod condition;
 mod conditions;
+#[cfg(feature = "conformance")]
+pub mod conformance;
 mod effective;
 mod glob;
 mod index;

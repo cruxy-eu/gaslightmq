@@ -2,7 +2,7 @@
 
 use futures::executor::block_on;
 use gaslightmq_definition_api::prelude::*;
-use gaslightmq_definition_memory::{MemoryContext, MemoryStore};
+use gaslightmq_definition_memory::MemoryStore;
 use gaslightmq_lie::prelude::*;
 use gaslightmq_rule::prelude::*;
 use gaslightmq_selector::prelude::*;

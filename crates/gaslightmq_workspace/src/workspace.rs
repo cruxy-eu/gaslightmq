@@ -48,7 +48,6 @@ use crate::{
 ///
 /// ```
 /// use futures::executor::block_on;
-/// use gaslightmq_definition_memory::{KnownUuids, MemoryContext};
 /// use gaslightmq_kernel::prelude::*;
 /// use gaslightmq_lie::prelude::*;
 /// use gaslightmq_rule::prelude::*;
@@ -187,7 +186,7 @@ impl<C: WorkspaceContext> Workspace<C> {
     /// Removes the definition of this kind and name.
     ///
     /// The type of the name says the kind: a `RuleName` deletes a rule.
-    /// The workspace asks the stores who uses the definition, and reads no other definition for it.
+    /// The workspace asks the stores who uses the definition, and only those whose definitions can refer to it.
     ///
     /// # Errors
     ///

@@ -30,6 +30,7 @@ impl Definition for Preset {
 /// What keeps the presets: the files of a workspace, memory, or anything else.
 ///
 /// A store of presets keeps the [store contract](Store), and nothing asks it more than that.
+/// So a store of presets is one line: `impl PresetStore for MyStore {}`.
 ///
 /// ```
 /// use gaslightmq_definition_api::prelude::*;
@@ -46,8 +47,12 @@ pub trait PresetStore: Store<Preset> {}
 /// What keeps the rules: the files of a workspace, memory, or anything else.
 ///
 /// A store of rules keeps the [store contract](Store), and it answers two questions more.
-/// A selector or a preset that a rule names cannot go, and only the store knows which rules name it
-/// without reading every rule.
+/// A selector or a preset that a rule names cannot go, so someone asks which rules name it.
+///
+/// Every store of rules has the answers: the trait finds them among the rules that the store
+/// [lists](Store::list).
+/// A store that knows a shorter way, such as an index, writes the methods itself.
+/// A store with nothing to add is one line: `impl RuleStore for MyStore {}`.
 ///
 /// ```
 /// use gaslightmq_definition_api::prelude::*;
@@ -69,8 +74,16 @@ pub trait RuleStore: Store<Rule> {
     /// # Errors
     ///
     /// [`StoreReadError`] when the store could not read what it holds.
-    fn using_selector(&self, selector: &SelectorName)
-    -> impl Future<Output = Result<Vec<Rule>, StoreReadError>> + Send;
+    fn using_selector(
+        &self,
+        selector: &SelectorName,
+    ) -> impl Future<Output = Result<Vec<Rule>, StoreReadError>> + Send {
+        async move {
+            let mut rules = self.list().await?;
+            rules.retain(|rule| rule.selector().name() == Some(selector));
+            Ok(rules)
+        }
+    }
 
     /// The rules whose [action](Rule::action) is the preset of this name, in the order of their names.
     ///
@@ -79,5 +92,19 @@ pub trait RuleStore: Store<Rule> {
     /// # Errors
     ///
     /// [`StoreReadError`] when the store could not read what it holds.
-    fn using_preset(&self, preset: &PresetName) -> impl Future<Output = Result<Vec<Rule>, StoreReadError>> + Send;
+    fn using_preset(&self, preset: &PresetName) -> impl Future<Output = Result<Vec<Rule>, StoreReadError>> + Send {
+        async move {
+            let mut rules = self.list().await?;
+            rules.retain(|rule| rule.action().preset() == Some(preset));
+            Ok(rules)
+        }
+    }
 }
+
+/// A store of presets in memory is a [`PresetStore`].
+#[cfg(feature = "memory")]
+impl PresetStore for gaslightmq_definition_memory::MemoryStore<Preset> {}
+
+/// A store of rules in memory is a [`RuleStore`], with the answers of the trait.
+#[cfg(feature = "memory")]
+impl RuleStore for gaslightmq_definition_memory::MemoryStore<Rule> {}

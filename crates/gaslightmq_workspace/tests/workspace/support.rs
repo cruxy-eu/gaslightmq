@@ -4,7 +4,7 @@ use std::future::ready;
 
 use gaslightmq_clock::TimeSpan;
 use gaslightmq_definition_api::prelude::*;
-use gaslightmq_definition_memory::{KnownUuids, MemoryStore};
+use gaslightmq_definition_memory::MemoryStore;
 use gaslightmq_environment::prelude::*;
 use gaslightmq_field::prelude::*;
 use gaslightmq_kernel::prelude::*;
@@ -115,7 +115,7 @@ impl OrderDesk {
 
 /// The context of a workspace over the stores of a test, with UUIDs that the test knows before they are made.
 ///
-/// A test whose stores all work takes the context of the memory crate.
+/// A test whose stores all work takes the context in memory that the workspace crate has.
 /// This one is for the stores below, of which one fails.
 pub struct Context<S> {
     stores: S,
@@ -321,15 +321,5 @@ impl Store<Rule> for Unreadable {
     }
 }
 
-impl RuleStore for Unreadable {
-    fn using_selector(
-        &self,
-        _selector: &SelectorName,
-    ) -> impl Future<Output = Result<Vec<Rule>, StoreReadError>> + Send {
-        ready(Err(Self::failed()))
-    }
-
-    fn using_preset(&self, _preset: &PresetName) -> impl Future<Output = Result<Vec<Rule>, StoreReadError>> + Send {
-        ready(Err(Self::failed()))
-    }
-}
+/// The trait answers who uses a selector or a preset over the rules that the store lists, and it lists none.
+impl RuleStore for Unreadable {}

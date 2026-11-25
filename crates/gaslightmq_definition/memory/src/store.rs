@@ -5,17 +5,13 @@ use std::fmt;
 use std::sync::{Mutex, MutexGuard, PoisonError};
 
 use gaslightmq_definition_api::{Definition, Store, StoreChangeError, StoreCreateError, StoreReadError};
-use gaslightmq_environment::{Environment, EnvironmentStore};
-use gaslightmq_rule::{Preset, PresetName, PresetStore, Rule, RuleStore};
-use gaslightmq_selector::{Selector, SelectorName, SelectorStore};
-use gaslightmq_surface::{LayoutStore, PadLayout};
 
 /// The definitions of one kind, kept in memory.
 ///
 /// A new store holds nothing, and it never fails to read or to keep a definition.
 /// It refuses what the [contract](Store) refuses: a name that is taken, and a name that it does not hold.
-/// It keeps the contract once, for every kind of definition, and it is the store of each kind on top of that:
-/// a `MemoryStore<Rule>` is a [`RuleStore`], and answers which rules use a selector.
+/// It keeps the contract once, for every kind of definition, and it knows none of them.
+/// The crate of a kind makes it the store of its kind, with the store trait that the crate holds.
 ///
 /// Whoever shares the store shares one set of definitions: put it behind an `Arc`, or lend it out.
 /// A change is one step, so a task never sees half of it.
@@ -24,18 +20,34 @@ use gaslightmq_surface::{LayoutStore, PadLayout};
 /// use futures::executor::block_on;
 /// use gaslightmq_definition_api::prelude::*;
 /// use gaslightmq_definition_memory::MemoryStore;
-/// use gaslightmq_selector::prelude::*;
 ///
-/// let selectors = MemoryStore::new();
-/// let fetches = Selector::new("fetches".parse().expect("a selector name"), Conditions::new());
+/// /// What a team says when it starts its day, under a name.
+/// #[derive(Debug, Clone, PartialEq)]
+/// struct Greeting {
+///     name: String,
+///     text: String,
+/// }
+///
+/// impl Definition for Greeting {
+///     type Name = String;
+///
+///     const LABEL: &'static str = "greeting";
+///
+///     fn name(&self) -> &String {
+///         &self.name
+///     }
+/// }
+///
+/// let greetings = MemoryStore::new();
+/// let morning = Greeting { name: "morning".to_owned(), text: "Good morning".to_owned() };
 ///
 /// // Updating never creates a definition.
-/// assert_eq!(block_on(selectors.update(fetches.clone())), Err(StoreChangeError::NotFound));
+/// assert_eq!(block_on(greetings.update(morning.clone())), Err(StoreChangeError::NotFound));
 ///
-/// block_on(selectors.create(fetches.clone())).expect("the name is free");
-/// let titled = fetches.with_title("Every fetch".parse().expect("a selector title"));
-/// block_on(selectors.update(titled.clone()))?;
-/// assert_eq!(block_on(selectors.list()).expect("a store in memory reads"), [titled]);
+/// block_on(greetings.create(morning.clone())).expect("the name is free");
+/// let louder = Greeting { text: "Good morning, everyone".to_owned(), ..morning };
+/// block_on(greetings.update(louder.clone()))?;
+/// assert_eq!(block_on(greetings.list()).expect("a store in memory reads"), [louder]);
 /// # Ok::<(), StoreChangeError>(())
 /// ```
 pub struct MemoryStore<D: Definition> {
@@ -55,15 +67,6 @@ impl<D: Definition> MemoryStore<D> {
     /// A task that panicked while it held them left them whole: every step changes the map once, at its end.
     fn definitions(&self) -> MutexGuard<'_, BTreeMap<D::Name, D>> {
         self.by_name.lock().unwrap_or_else(PoisonError::into_inner)
-    }
-
-    /// The definitions that `uses` holds for, in the order of their names.
-    fn that(&self, uses: impl Fn(&D) -> bool) -> Vec<D> {
-        self.definitions()
-            .values()
-            .filter(|definition| uses(definition))
-            .cloned()
-            .collect()
     }
 }
 
@@ -126,65 +129,37 @@ impl<D: Definition> Store<D> for MemoryStore<D> {
     }
 }
 
-#[expect(
-    clippy::unused_async_trait_impl,
-    reason = "the contract is async, and a store in memory has nothing to wait for"
-)]
-impl SelectorStore for MemoryStore<Selector> {
-    async fn using_selector(&self, selector: &SelectorName) -> Result<Vec<Selector>, StoreReadError> {
-        Ok(self.that(|held| held.include() == Some(selector)))
-    }
-}
-
-impl PresetStore for MemoryStore<Preset> {}
-
-#[expect(
-    clippy::unused_async_trait_impl,
-    reason = "the contract is async, and a store in memory has nothing to wait for"
-)]
-impl RuleStore for MemoryStore<Rule> {
-    async fn using_selector(&self, selector: &SelectorName) -> Result<Vec<Rule>, StoreReadError> {
-        Ok(self.that(|rule| rule.selector().name() == Some(selector)))
-    }
-
-    async fn using_preset(&self, preset: &PresetName) -> Result<Vec<Rule>, StoreReadError> {
-        Ok(self.that(|rule| rule.action().preset() == Some(preset)))
-    }
-}
-
-#[expect(
-    clippy::unused_async_trait_impl,
-    reason = "the contract is async, and a store in memory has nothing to wait for"
-)]
-impl LayoutStore for MemoryStore<PadLayout> {
-    async fn using_selector(&self, selector: &SelectorName) -> Result<Vec<PadLayout>, StoreReadError> {
-        Ok(self.that(|layout| layout.rows().contains(selector)))
-    }
-
-    async fn using_preset(&self, preset: &PresetName) -> Result<Vec<PadLayout>, StoreReadError> {
-        Ok(self.that(|layout| layout.columns().contains(preset)))
-    }
-}
-
-impl EnvironmentStore for MemoryStore<Environment> {}
-
 #[cfg(test)]
 mod tests {
-    use gaslightmq_selector::Conditions;
-
     use super::*;
+
+    /// What a team says when it starts its day, under a name.
+    #[derive(Clone)]
+    struct Greeting {
+        name: String,
+    }
+
+    impl Definition for Greeting {
+        type Name = String;
+
+        const LABEL: &'static str = "greeting";
+
+        fn name(&self) -> &String {
+            &self.name
+        }
+    }
 
     #[test]
     fn a_store_shows_its_kind_and_its_names_when_debugging() {
-        let selectors = MemoryStore::new();
-        for name in ["order-producers", "fetches"] {
-            let selector = Selector::new(name.parse().unwrap(), Conditions::new());
-            futures::executor::block_on(selectors.create(selector)).unwrap();
+        let greetings = MemoryStore::new();
+        for name in ["morning", "evening"] {
+            let greeting = Greeting { name: name.to_owned() };
+            futures::executor::block_on(greetings.create(greeting)).unwrap();
         }
 
         assert_eq!(
-            format!("{selectors:?}"),
-            "MemoryStore { of: \"selector\", names: [SelectorName(\"fetches\"), SelectorName(\"order-producers\")] }"
+            format!("{greetings:?}"),
+            "MemoryStore { of: \"greeting\", names: [\"evening\", \"morning\"] }"
         );
     }
 }
