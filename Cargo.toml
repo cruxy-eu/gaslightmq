@@ -28,6 +28,7 @@ members = [
     "crates/gaslightmq_trigger",
     "crates/gaslightmq_wire",
     "crates/gaslightmq_wire_edit",
+    "crates/gaslightmq_definition_store/*",
     "crates/gaslightmq_kafka_client/*",
     "xtask",
 ]
@@ -44,6 +45,9 @@ gaslightmq_backend_upstream = { path = "crates/gaslightmq_backend_upstream" }
 gaslightmq_call = { path = "crates/gaslightmq_call" }
 gaslightmq_clock = { path = "crates/gaslightmq_clock" }
 gaslightmq_combine = { path = "crates/gaslightmq_combine" }
+gaslightmq_definition_store_api = { path = "crates/gaslightmq_definition_store/api" }
+gaslightmq_definition_store_conformance = { path = "crates/gaslightmq_definition_store/conformance" }
+gaslightmq_definition_store_memory = { path = "crates/gaslightmq_definition_store/memory" }
 gaslightmq_environment = { path = "crates/gaslightmq_environment" }
 gaslightmq_field = { path = "crates/gaslightmq_field" }
 gaslightmq_incident = { path = "crates/gaslightmq_incident" }
@@ -60,10 +64,12 @@ gaslightmq_resource = { path = "crates/gaslightmq_resource" }
 gaslightmq_rule = { path = "crates/gaslightmq_rule" }
 gaslightmq_selector = { path = "crates/gaslightmq_selector" }
 gaslightmq_session = { path = "crates/gaslightmq_session" }
+gaslightmq_surface = { path = "crates/gaslightmq_surface" }
 gaslightmq_test_kafka = { path = "crates/gaslightmq_test_kafka" }
 gaslightmq_trigger = { path = "crates/gaslightmq_trigger" }
 gaslightmq_wire = { path = "crates/gaslightmq_wire" }
 gaslightmq_wire_edit = { path = "crates/gaslightmq_wire_edit" }
+gaslightmq_workspace = { path = "crates/gaslightmq_workspace" }
 # Only tests use it: a test returns `anyhow::Result<()>`. No crate names it in its API or outside its tests.
 anyhow = "1"
 arc-swap = "1"

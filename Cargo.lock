@@ -287,6 +287,44 @@ dependencies = [
 ]
 
 [[package]]
+name = "gaslightmq_definition_store_api"
+version = "0.1.0"
+dependencies = [
+ "futures",
+ "thiserror",
+]
+
+[[package]]
+name = "gaslightmq_definition_store_conformance"
+version = "0.1.0"
+dependencies = [
+ "futures",
+ "gaslightmq_definition_store_api",
+ "gaslightmq_environment",
+ "gaslightmq_kernel",
+ "gaslightmq_lie",
+ "gaslightmq_rule",
+ "gaslightmq_selector",
+ "gaslightmq_surface",
+]
+
+[[package]]
+name = "gaslightmq_definition_store_memory"
+version = "0.1.0"
+dependencies = [
+ "futures",
+ "gaslightmq_definition_store_api",
+ "gaslightmq_definition_store_conformance",
+ "gaslightmq_environment",
+ "gaslightmq_kernel",
+ "gaslightmq_lie",
+ "gaslightmq_rule",
+ "gaslightmq_selector",
+ "gaslightmq_surface",
+ "gaslightmq_workspace",
+]
+
+[[package]]
 name = "gaslightmq_engine"
 version = "0.1.0"
 dependencies = [
@@ -326,6 +364,7 @@ version = "0.1.0"
 dependencies = [
  "gaslightmq_call",
  "gaslightmq_combine",
+ "gaslightmq_definition_store_api",
  "gaslightmq_field",
  "gaslightmq_incident",
  "gaslightmq_kernel",
@@ -532,6 +571,7 @@ name = "gaslightmq_rule"
 version = "0.1.0"
 dependencies = [
  "gaslightmq_clock",
+ "gaslightmq_definition_store_api",
  "gaslightmq_field",
  "gaslightmq_incident",
  "gaslightmq_kernel",
@@ -548,6 +588,7 @@ dependencies = [
 name = "gaslightmq_selector"
 version = "0.1.0"
 dependencies = [
+ "gaslightmq_definition_store_api",
  "gaslightmq_field",
  "gaslightmq_kernel",
  "gaslightmq_resource",
@@ -576,6 +617,7 @@ name = "gaslightmq_surface"
 version = "0.1.0"
 dependencies = [
  "gaslightmq_clock",
+ "gaslightmq_definition_store_api",
  "gaslightmq_field",
  "gaslightmq_incident",
  "gaslightmq_kernel",
@@ -650,6 +692,27 @@ dependencies = [
  "gaslightmq_field",
  "gaslightmq_kernel",
  "gaslightmq_wire",
+ "thiserror",
+]
+
+[[package]]
+name = "gaslightmq_workspace"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "futures",
+ "gaslightmq_clock",
+ "gaslightmq_definition_store_api",
+ "gaslightmq_definition_store_memory",
+ "gaslightmq_environment",
+ "gaslightmq_field",
+ "gaslightmq_incident",
+ "gaslightmq_kernel",
+ "gaslightmq_lie",
+ "gaslightmq_rule",
+ "gaslightmq_selector",
+ "gaslightmq_surface",
+ "gaslightmq_trigger",
  "thiserror",
 ]
 
