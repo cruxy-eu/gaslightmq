@@ -482,8 +482,18 @@ fn broker_listeners_write_pinned_brokers_as_a_map() {
         r#"{"1":"0.0.0.0:19092","2":"0.0.0.0:19092"}"#,
         "brokers 1 and 2 are both pinned to 0.0.0.0:19092",
     );
-    rejects::<BrokerListeners>(r#"{"-1":"0.0.0.0:19092"}"#, "");
-    rejects::<BrokerListeners>(r#"{"one":"0.0.0.0:19092"}"#, "");
+    rejects::<BrokerListeners>(
+        r#"{"-1":"0.0.0.0:19092"}"#,
+        r#"invalid value: string "-1", expected a broker ID"#,
+    );
+    rejects::<BrokerListeners>(
+        r#"{"one":"0.0.0.0:19092"}"#,
+        r#"invalid value: string "one", expected a broker ID"#,
+    );
+    // A value that holds the map is read in two steps inside a message of the control plane,
+    // and every key is text by then.
+    let value = serde_json::to_value(&pinned).unwrap();
+    assert_eq!(serde_json::from_value::<BrokerListeners>(value).unwrap(), pinned);
 }
 
 // The upstream cluster
