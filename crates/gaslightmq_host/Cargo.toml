@@ -12,12 +12,15 @@ workspace = true
 sans_io_modules = ["configuration", "error"]
 
 [dependencies]
+gaslightmq_backend.workspace = true
 gaslightmq_backend_upstream.workspace = true
+gaslightmq_clock.workspace = true
 gaslightmq_clock_waitable.workspace = true
 gaslightmq_definition_api.workspace = true
 gaslightmq_engine.workspace = true
 gaslightmq_environment.workspace = true
 gaslightmq_field.workspace = true
+gaslightmq_incident.workspace = true
 gaslightmq_lie_api.workspace = true
 gaslightmq_quick_inject.workspace = true
 gaslightmq_rule.workspace = true
@@ -40,8 +43,4 @@ gaslightmq_lie.workspace = true
 gaslightmq_lie_refusal.workspace = true
 gaslightmq_trigger.workspace = true
 gaslightmq_wire.workspace = true
-# The preludes that code imports next to this one. `tests/prelude.rs` checks that no name clashes.
-gaslightmq_backend.workspace = true
-# The time spans of the tests.
-gaslightmq_clock.workspace = true
 tokio = { workspace = true, features = ["rt", "rt-multi-thread", "macros", "net", "time"] }

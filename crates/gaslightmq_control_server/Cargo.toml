@@ -1,0 +1,40 @@
+[package]
+name = "gaslightmq_control_server"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lints]
+workspace = true
+
+# The modules that hold values and never wait: `cargo xtask sans-io` holds them to that.
+[package.metadata.gaslightmq]
+sans_io_modules = ["configuration", "error"]
+
+[dependencies]
+gaslightmq_control_api.workspace = true
+gaslightmq_definition_api.workspace = true
+gaslightmq_engine.workspace = true
+gaslightmq_host.workspace = true
+gaslightmq_quick_inject.workspace = true
+gaslightmq_workspace.workspace = true
+axum.workspace = true
+futures.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tokio = { workspace = true, features = ["net", "sync", "time", "rt"] }
+
+[dev-dependencies]
+anyhow.workspace = true
+# Every test speaks to the server through the client, as the UI, the CLI and tests do.
+gaslightmq_control_client.workspace = true
+# The workspace of every test: stores in memory, and UUIDs that a test knows.
+gaslightmq_workspace = { workspace = true, features = ["memory"] }
+# The lies that the host of a test tells.
+gaslightmq_lie_api.workspace = true
+# The environment of `tests/real_cluster`: a real client in front, and real Kafka brokers behind.
+gaslightmq_kafka_client_native.workspace = true
+gaslightmq_test_kafka.workspace = true
+gaslightmq_wire.workspace = true
+tokio = { workspace = true, features = ["rt", "rt-multi-thread", "macros", "net", "time"] }

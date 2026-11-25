@@ -14,7 +14,7 @@ use std::fmt::Debug;
 use gaslightmq_control_api::call::{Call, CallId, CallTiming, Delivered, Explanation, RuleExplanation};
 use gaslightmq_control_api::clock::{Duration, Instant};
 use gaslightmq_control_api::environment::{
-    BrokerDefinition, Environment, EnvironmentName, Instances, Listeners, ProxyDefinition,
+    BrokerDefinition, BrokerListeners, Environment, EnvironmentName, Instances, Listeners, ProxyDefinition, Upstream,
 };
 use gaslightmq_control_api::field::{ClientSoftware, ConnectionNumber, Endpoint, Field, Fields};
 use gaslightmq_control_api::incident::{IncidentKind, IncidentSupport};
@@ -381,12 +381,20 @@ fn the_statistics_count_calls_by_the_name_of_their_api_and_rules_by_their_name()
         )]),
     };
 
-    Form(stats).writes(json!({
+    let json = json!({
         "calls": 3,
         "missed-events": 0,
         "apis": { "Produce": 2, "Fetch": 1 },
         "rules": { "slow-order-producers": { "matches": 2, "firings": 1, "left": 2 } },
-    }));
+    });
+
+    Form(stats.clone()).writes(json.clone());
+    // Inside a message, whose `message` key the reader looks for first, the keys of the maps read the same.
+    Form(StreamMessage::Stats {
+        environment: "orders-sim".parse().unwrap(),
+        stats,
+    })
+    .writes(json!({ "message": "stats", "environment": "orders-sim", "stats": json }));
 }
 
 // Errors
@@ -524,6 +532,24 @@ fn an_error_of_another_operation_does_not_read() {
 // The live stream
 
 #[test]
+fn an_accepted_subscription_says_what_the_client_follows() {
+    Form(StreamMessage::Following {
+        subscription: Subscription::Calls {
+            environment: "orders-sim".parse().unwrap(),
+            selector: SelectorRef::Named("order-producers".parse().unwrap()),
+        },
+    })
+    .writes(json!({
+        "message": "following",
+        "subscription": { "follow": "calls", "environment": "orders-sim", "selector": "order-producers" },
+    }));
+    Form(StreamMessage::Following {
+        subscription: Subscription::Nothing,
+    })
+    .writes(json!({ "message": "following", "subscription": { "follow": "nothing" } }));
+}
+
+#[test]
 fn a_refused_subscription_says_why() {
     Form(StreamMessage::SubscriptionRefused {
         reason: "environment \"orders-sim\" does not run".to_owned(),
@@ -572,6 +598,82 @@ fn a_client_that_connects_gets_the_state_of_the_process() {
             "sessions": [],
         }],
     }));
+}
+
+#[test]
+fn an_environment_with_brokers_travels_inside_a_message() {
+    // A proxy in front of a real cluster, with a port pinned for each broker.
+    let brokers = BrokerListeners::pinned([
+        (BrokerId::from(1), "0.0.0.0:19092".parse().unwrap()),
+        (BrokerId::from(2), "0.0.0.0:19093".parse().unwrap()),
+    ])
+    .unwrap();
+    let listen = Listeners::new("0.0.0.0:9092".parse().unwrap(), brokers, "localhost".parse().unwrap()).unwrap();
+    let staging = Environment::new(
+        "staging-proxy".parse().unwrap(),
+        Instances::ProxyInFrontOfCluster {
+            proxy: ProxyDefinition::new(listen),
+            upstream: Upstream::new("kafka-1.staging:9092".parse().unwrap()),
+        },
+    );
+    let running = RunningEnvironment {
+        environment: staging.name().clone(),
+        backend: BackendStatus {
+            kind: BackendKind::Upstream,
+            endpoints: BTreeMap::from([
+                (Endpoint::Bootstrap, Some("127.0.0.1:9092".parse().unwrap())),
+                (
+                    Endpoint::Broker(BrokerId::from(1)),
+                    Some("127.0.0.1:19092".parse().unwrap()),
+                ),
+                (Endpoint::Broker(BrokerId::from(2)), None),
+            ]),
+            incidents: IncidentSupport::none(),
+        },
+        rules: Vec::new(),
+        sessions: Vec::new(),
+    };
+    let staging_json = json!({
+        "name": "staging-proxy",
+        "proxy": {
+            "upstream": { "bootstrap": "kafka-1.staging:9092" },
+            "listen": {
+                "bootstrap": "0.0.0.0:9092",
+                "brokers": { "1": "0.0.0.0:19092", "2": "0.0.0.0:19093" },
+                "advertise": "localhost",
+            },
+        },
+    });
+    let running_json = json!({
+        "environment": "staging-proxy",
+        "backend": {
+            "kind": "upstream",
+            "endpoints": { "bootstrap": "127.0.0.1:9092", "broker 1": "127.0.0.1:19092", "broker 2": null },
+            "incidents": Form(IncidentSupport::none()).json(),
+        },
+        "rules": [],
+        "sessions": [],
+    });
+
+    assert_eq!(Form(&staging).json(), staging_json);
+    Form(StreamMessage::Snapshot(ProcessState {
+        definitions: Definitions {
+            environments: vec![staging.clone()],
+            ..Definitions::default()
+        },
+        environments: vec![running.clone()],
+    }))
+    .writes(json!({
+        "message": "snapshot",
+        "definitions": { "selectors": [], "presets": [], "rules": [], "layouts": [], "environments": [staging_json] },
+        "environments": [running_json],
+    }));
+    Form(StreamMessage::DefinitionChanged {
+        definition: AnyDefinition::Environment(staging),
+    })
+    .writes(json!({ "message": "definition-changed", "definition": { "environment": staging_json } }));
+    Form(StreamMessage::EnvironmentStarted { environment: running })
+        .writes(json!({ "message": "environment-started", "environment": running_json }));
 }
 
 #[test]

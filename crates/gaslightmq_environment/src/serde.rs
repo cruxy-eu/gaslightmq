@@ -9,7 +9,7 @@
 use std::fmt;
 
 use gaslightmq_kernel::BrokerId;
-use serde::de::{Error, MapAccess, SeqAccess, Visitor};
+use serde::de::{Error, MapAccess, SeqAccess, Unexpected, Visitor};
 use serde::ser::SerializeMap;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
@@ -228,14 +228,55 @@ impl<'de> Deserialize<'de> for BrokerListeners {
 
             fn visit_map<A: MapAccess<'de>>(self, mut map: A) -> Result<BrokerListeners, A::Error> {
                 let mut pinned = Vec::new();
-                while let Some(entry) = map.next_entry::<BrokerId, ListenAddress>()? {
-                    pinned.push(entry);
+                while let Some((PinnedBroker(broker), address)) = map.next_entry::<PinnedBroker, ListenAddress>()? {
+                    pinned.push((broker, address));
                 }
                 BrokerListeners::pinned(pinned).map_err(A::Error::custom)
             }
         }
 
         deserializer.deserialize_any(RangeOrPinned)
+    }
+}
+
+/// The broker ID of a pinned listener, as the key of the map of pinned brokers.
+///
+/// YAML writes the key as a number. JSON writes every key as text, and so does every format once a value that holds
+/// the map is read in two steps, as a message of the control plane whose `message` key comes first. A key reads as
+/// either.
+struct PinnedBroker(BrokerId);
+
+impl<'de> Deserialize<'de> for PinnedBroker {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        struct Key;
+
+        impl Visitor<'_> for Key {
+            type Value = PinnedBroker;
+
+            fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                f.write_str("a broker ID")
+            }
+
+            fn visit_u64<E: Error>(self, number: u64) -> Result<PinnedBroker, E> {
+                let unexpected = || E::invalid_value(Unexpected::Unsigned(number), &self);
+                let number = u32::try_from(number).map_err(|_| unexpected())?;
+                BrokerId::new(number).map(PinnedBroker).map_err(E::custom)
+            }
+
+            fn visit_i64<E: Error>(self, number: i64) -> Result<PinnedBroker, E> {
+                let unexpected = || E::invalid_value(Unexpected::Signed(number), &self);
+                let number = u32::try_from(number).map_err(|_| unexpected())?;
+                BrokerId::new(number).map(PinnedBroker).map_err(E::custom)
+            }
+
+            fn visit_str<E: Error>(self, text: &str) -> Result<PinnedBroker, E> {
+                let unexpected = || E::invalid_value(Unexpected::Str(text), &self);
+                let number = text.parse::<u32>().map_err(|_| unexpected())?;
+                BrokerId::new(number).map(PinnedBroker).map_err(E::custom)
+            }
+        }
+
+        deserializer.deserialize_any(Key)
     }
 }
 

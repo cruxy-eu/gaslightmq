@@ -15,6 +15,7 @@ use gaslightmq_engine::prelude::*;
 use gaslightmq_environment::prelude::*;
 use gaslightmq_field::prelude::*;
 use gaslightmq_host::prelude::*;
+use gaslightmq_incident::prelude::*;
 use gaslightmq_kafka_client_native::KafkaProducer;
 use gaslightmq_kernel::prelude::*;
 use gaslightmq_lie::prelude::*;
@@ -209,6 +210,92 @@ async fn an_environment_runs_once_and_keeps_its_ports_until_it_stops() -> anyhow
 
     assert_eq!(host.running(), [canary.name().clone()]);
     assert_eq!(host.address_of(canary.name(), Endpoint::Bootstrap)?, Some(named.into()));
+    host.stop_all().await;
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_rule_fired_by_hand_lies_on_the_next_call_and_an_incident_needs_a_backend_that_applies_it()
+-> anyhow::Result<()> {
+    let cluster = KafkaCluster::plaintext().with_brokers(3).start().await?;
+    let orders = cluster.topics().create("orders").await?;
+    let host = Host::new(
+        HostConfiguration::default(),
+        MemoryContext::new(),
+        Lies::of_every_build().with(Refusal)?,
+    );
+    let any = ListenAddress::new(LOCALHOST, 0);
+    let brokers = BrokerListeners::pinned(cluster.brokers().iter().map(|broker| (broker.id(), any)))?;
+    let staging = Environment::new(
+        "staging-proxy".parse()?,
+        Instances::ProxyInFrontOfCluster {
+            proxy: ProxyDefinition::new(Listeners::new(any, brokers, LOCALHOST.into())?),
+            upstream: Upstream::new(cluster.brokers()[0].address().to_string().parse()?),
+        },
+    );
+    host.start(EnvironmentConfiguration::new(&staging)?).await?;
+    // A pad that refuses the next Produce when someone presses it, and nothing before.
+    let flap = Rule::new(
+        "leader-flap-on-produce".parse()?,
+        Conditions::from(Condition::is(ApiKey::PRODUCE)),
+        RefusalLie::new(ErrorCode::NOT_LEADER_OR_FOLLOWER),
+    )
+    .with_trigger(Trigger::Manual);
+    // A pad that moves the leader of the first partition of the orders.
+    let election = Rule::new(
+        "leader-election".parse()?,
+        Conditions::new(),
+        IncidentDefinition::LeaderMoves {
+            partition: Some("orders/0".parse()?),
+            to: None,
+        },
+    )
+    .with_trigger(Trigger::Manual);
+    let not_armed = host.fire(staging.name(), flap.name()).await;
+    host.arm(staging.name(), &flap).await?;
+    host.arm(staging.name(), &election).await?;
+    let mut events = host.live_events(staging.name())?;
+    let bootstrap = host
+        .address_of(staging.name(), Endpoint::Bootstrap)?
+        .context("the bootstrap endpoint of the staging proxy is open")?;
+
+    host.fire(staging.name(), flap.name()).await?;
+    let written = KafkaProducer::from(bootstrap)
+        .send(
+            orders.name().as_str(),
+            Partition::new(0),
+            &[Record::new("placed").with_key("o-1").with_timestamp(PLACED_AT)],
+        )
+        .await;
+    let moved = host.fire(staging.name(), election.name()).await;
+
+    assert_eq!(
+        not_armed,
+        Err(FireRuleError::NotArmed {
+            environment: staging.name().clone(),
+            rule: flap.name().clone(),
+        })
+    );
+    // The hand firing refused the first Produce, and the client sent the record again.
+    assert_eq!(written, Ok(Offset::new(0)));
+    let mut produces = Vec::new();
+    while produces.len() < 2 {
+        let event = tokio::time::timeout(PATIENCE, events.next()).await??;
+        if let EngineEvent::CallRecorded(record) = event
+            && let Some(api) = record.fields().read(Field::Api).present()
+            && api.contains(&ApiKey::PRODUCE.into())
+        {
+            produces.push(record);
+        }
+    }
+    assert_eq!(produces[0].verdict().to_string(), "NOT_LEADER_OR_FOLLOWER on orders/0");
+    assert_eq!(produces[1].verdict().to_string(), "pass");
+    // A proxy in front of a real cluster neither applies nor emulates an incident yet.
+    assert_eq!(host.incident_support(staging.name())?, IncidentSupport::none());
+    let Err(FireRuleError::IncidentRejected { rule, .. }) = moved else {
+        anyhow::bail!("a real cluster applied an incident: {moved:?}");
+    };
+    assert_eq!(&rule, election.name());
     host.stop_all().await;
     Ok(())
 }

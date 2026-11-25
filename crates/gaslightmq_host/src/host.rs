@@ -7,20 +7,23 @@ use std::ops::DerefMut;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use futures::future::join_all;
+use gaslightmq_backend::Backend;
 use gaslightmq_backend_upstream::UpstreamBackend;
+use gaslightmq_clock::Clock;
 use gaslightmq_clock_waitable::WallClock;
 use gaslightmq_definition_api::{Definition, Store, StoreReadError};
 use gaslightmq_engine::{ArmError, ArmedRules, Engine, EveryEvent, LiveEvents};
 use gaslightmq_environment::{EnvironmentName, Listeners};
 use gaslightmq_field::Endpoint;
+use gaslightmq_incident::IncidentSupport;
 use gaslightmq_lie_api::Lies;
 use gaslightmq_quick_inject::{KnownNames, QuickInject, Sentence};
-use gaslightmq_rule::{ArmedRule, Preset, PresetSet, Rule};
+use gaslightmq_rule::{ArmedRule, HandFiring, Preset, PresetSet, Rule, RuleName};
 use gaslightmq_selector::{Selector, SelectorSet};
 use gaslightmq_workspace::{Stores, Workspace, WorkspaceContext};
 
 use crate::{
-    ArmRuleError, EnvironmentConfiguration, EnvironmentStartError, HostConfiguration, NotRunningError,
+    ArmRuleError, EnvironmentConfiguration, EnvironmentStartError, FireRuleError, HostConfiguration, NotRunningError,
     ReadSentenceError,
 };
 
@@ -86,9 +89,11 @@ pub struct Host<C: WorkspaceContext> {
     changing: tokio::sync::Mutex<()>,
 }
 
-/// One environment that runs: its proxy, and the listeners it was started with.
+/// One environment that runs: its proxy, the backend behind it, and the listeners it was started with.
 struct Running {
-    engine: Engine<UpstreamBackend, WallClock>,
+    engine: Engine<Arc<UpstreamBackend>, WallClock>,
+    /// The backend that the engine holds too, to apply what a rule fires by hand without holding the environments.
+    backend: Arc<UpstreamBackend>,
     listeners: Listeners,
 }
 
@@ -139,15 +144,23 @@ impl<C: WorkspaceContext> Host<C> {
         self.check_listeners(&name, &engine.listeners)?;
 
         let backend = match UpstreamBackend::start(upstream).await {
-            Ok(backend) => backend,
+            Ok(backend) => Arc::new(backend),
             Err(error) => return Err(EnvironmentStartError::BackendNotStarted { name, error }),
         };
         let listeners = engine.listeners.clone();
-        let engine = match Engine::start(engine, backend, WallClock::new(), Arc::clone(&self.lies)).await {
+        let started = Engine::start(engine, Arc::clone(&backend), WallClock::new(), Arc::clone(&self.lies)).await;
+        let engine = match started {
             Ok(engine) => engine,
             Err(error) => return Err(EnvironmentStartError::ProxyNotStarted { name, error }),
         };
-        self.environments().insert(name, Running { engine, listeners });
+        self.environments().insert(
+            name,
+            Running {
+                engine,
+                backend,
+                listeners,
+            },
+        );
         Ok(())
     }
 
@@ -209,6 +222,15 @@ impl<C: WorkspaceContext> Host<C> {
     /// [`NotRunningError`] when no environment of that name runs.
     pub fn endpoints(&self, name: &EnvironmentName) -> Result<Vec<Endpoint>, NotRunningError> {
         self.with_running(name, |running| running.engine.endpoints())
+    }
+
+    /// What the backend of an environment does with each kind of incident: apply it, emulate it, or neither.
+    ///
+    /// # Errors
+    ///
+    /// [`NotRunningError`] when no environment of that name runs.
+    pub fn incident_support(&self, name: &EnvironmentName) -> Result<IncidentSupport, NotRunningError> {
+        self.with_running(name, |running| running.backend.incident_support())
     }
 
     /// A listener of what the sessions of an environment hand over from now on, as it happens:
@@ -310,6 +332,62 @@ impl<C: WorkspaceContext> Host<C> {
                 environment: environment.clone(),
                 rule,
             })
+    }
+
+    /// Fires a rule that is armed in an environment by hand, which skips its trigger once.
+    ///
+    /// A rule with a lie lies on the next call that its selector matches.
+    /// A rule with an incident fires it at once: the backend of the environment applies it, and the firing counts
+    /// once the backend did.
+    ///
+    /// # Errors
+    ///
+    /// - [`FireRuleError::NotRunning`] when no environment of that name runs.
+    /// - [`FireRuleError::NotArmed`] when no rule of that name is armed in the environment.
+    /// - [`FireRuleError::NotFired`] when the lifetime of the rule has ended, or its budget has no firing free.
+    /// - [`FireRuleError::NeedsCall`] when the incident of the rule leaves its subject to a call.
+    /// - [`FireRuleError::IncidentRejected`] when the backend cannot apply the incident.
+    ///   The firing goes back to the budget.
+    pub async fn fire(&self, environment: &EnvironmentName, rule: &RuleName) -> Result<(), FireRuleError> {
+        let (armed, now, backend) = {
+            let environments = self.environments();
+            let Some(running) = environments.get(environment) else {
+                return Err(FireRuleError::NotRunning {
+                    environment: environment.clone(),
+                });
+            };
+            let snapshot = running.engine.rules().snapshot();
+            let Some(armed) = snapshot.get(rule).cloned() else {
+                return Err(FireRuleError::NotArmed {
+                    environment: environment.clone(),
+                    rule: rule.clone(),
+                });
+            };
+            (armed, running.engine.clock().now(), Arc::clone(&running.backend))
+        };
+        let fired = armed
+            .fire_by_hand(now)
+            .map_err(|error| FireRuleError::NeedsCall { error })?;
+        match fired {
+            HandFiring::OnNextMatch => Ok(()),
+            HandFiring::NotFired => Err(FireRuleError::NotFired {
+                environment: environment.clone(),
+                rule: rule.clone(),
+            }),
+            HandFiring::Incidents { incidents, firing } => {
+                for incident in incidents {
+                    // The firing goes back to the budget when it is dropped before it is confirmed.
+                    if let Err(error) = backend.apply(incident).await {
+                        return Err(FireRuleError::IncidentRejected {
+                            rule: rule.clone(),
+                            error,
+                        });
+                    }
+                }
+                firing.confirm();
+                Ok(())
+            }
+        }
     }
 
     /// Reads a ⌘K sentence, as someone types it, with the names of the workspace.

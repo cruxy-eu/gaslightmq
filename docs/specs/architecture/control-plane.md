@@ -109,6 +109,7 @@ The WebSocket streams:
 | **Journal entry** | Something changed, with the time and the surface that changed it. |
 | **Environment started, stopped** | An environment came up, with its backend, its rules and its sessions, or went down. |
 | **Workspace invalid** | The definitions do not fit each other, or a file failed validation. The engine keeps the last valid version. |
+| **Following** | The last subscription of this client is in force: the server sends every call it names from here on. |
 | **Subscription refused** | The last subscription of this client cannot be followed, and why. The client follows no calls. |
 
 A message about something live names its environment.
@@ -119,7 +120,7 @@ so a UI that only shows `orders.*` does not receive every call.
 A client follows the calls of one environment at a time, and no calls until it subscribes.
 A new subscription replaces the one before it.
 A selector without conditions follows every call.
-Every other message reaches every client, except a refusal, which reaches the client whose subscription it refuses.
+Every other message reaches every client, except the answer to a subscription, which reaches the client that sent it.
 
 ## Over the network
 
@@ -164,7 +165,7 @@ Every frame is a text frame.
 | Client to server | One `Subscription`. |
 
 - **The snapshot comes first.**
-  The first message is a `snapshot`, and every message after it is a change, a call or a refusal.
+  The first message is a `snapshot`, and every message after it is a change, a call or the answer to a subscription.
 - **A message is a state, not a difference.**
   A change says what a rule, a definition or an environment is now.
   A change can repeat what the snapshot holds already, and applying it again changes nothing.
@@ -172,6 +173,10 @@ Every frame is a text frame.
   The server keeps a backlog of changes for every client, as large as its configuration says.
   A client that falls further behind would miss changes, so the server sends it a new `snapshot` and goes on from there.
   Calls do not count: a client that falls behind the calls of its environment misses the oldest of them.
+- **Every subscription gets an answer.**
+  A subscription that the server follows gets a `following` with the subscription,
+  and the client gets every call it names from that message on, and none before it.
+  A subscription to nothing gets one too: the client follows no calls from there.
 - **A subscription that cannot be followed is refused.**
   A frame that is no subscription, an environment that does not run and a selector that the workspace does not have
   each get a `subscription-refused` that says what was wrong.

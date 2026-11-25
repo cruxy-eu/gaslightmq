@@ -8,6 +8,7 @@ members = [
     "crates/gaslightmq_combine",
     "crates/gaslightmq_control_api",
     "crates/gaslightmq_control_client",
+    "crates/gaslightmq_control_server",
     "crates/gaslightmq_engine",
     "crates/gaslightmq_environment",
     "crates/gaslightmq_environment/conformance",
@@ -56,12 +57,14 @@ gaslightmq_clock = { path = "crates/gaslightmq_clock" }
 gaslightmq_clock_waitable = { path = "crates/gaslightmq_clock_waitable" }
 gaslightmq_combine = { path = "crates/gaslightmq_combine" }
 gaslightmq_control_api = { path = "crates/gaslightmq_control_api" }
+gaslightmq_control_client = { path = "crates/gaslightmq_control_client" }
 gaslightmq_definition_api = { path = "crates/gaslightmq_definition/api" }
 gaslightmq_definition_conformance = { path = "crates/gaslightmq_definition/conformance" }
 gaslightmq_definition_memory = { path = "crates/gaslightmq_definition/memory" }
 gaslightmq_engine = { path = "crates/gaslightmq_engine" }
 gaslightmq_environment = { path = "crates/gaslightmq_environment" }
 gaslightmq_field = { path = "crates/gaslightmq_field" }
+gaslightmq_host = { path = "crates/gaslightmq_host" }
 gaslightmq_incident = { path = "crates/gaslightmq_incident" }
 gaslightmq_kafka_client_api = { path = "crates/gaslightmq_kafka_client/api" }
 gaslightmq_kafka_client_native = { path = "crates/gaslightmq_kafka_client/native" }
@@ -86,6 +89,8 @@ gaslightmq_workspace = { path = "crates/gaslightmq_workspace" }
 # Only tests use it: a test returns `anyhow::Result<()>`. No crate names it in its API or outside its tests.
 anyhow = "1"
 arc-swap = "1"
+# Only `gaslightmq_control_server` names it: the HTTP and WebSocket server of the control plane.
+axum = { version = "0.8", default-features = false, features = ["http1", "tokio", "ws"] }
 bytes = "1"
 futures = "0.3"
 # Only `gaslightmq_control_client` names them, for the browser's own fetch, WebSocket and timers.

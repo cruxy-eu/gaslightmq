@@ -9,7 +9,7 @@
 //! | [`HostConfiguration`] | What holds for every environment of a host: how it reads a ⌘K sentence. |
 //! | [`EnvironmentConfiguration`] | What a host starts one environment with: the configuration of its proxy and of its backend. |
 //! | [`EnvironmentStartError`], [`NotRunningError`] | Why an environment did not start, and that an environment does not run. |
-//! | [`ArmRuleError`], [`ReadSentenceError`] | Why a rule was not armed, and why a sentence was not read. |
+//! | [`ArmRuleError`], [`FireRuleError`], [`ReadSentenceError`] | Why a rule was not armed or fired, and why a sentence was not read. |
 //! | [`EnvironmentConfigurationError`] | Why an environment has no configuration that a host can start. |
 //!
 //! The [`prelude`] holds all of them.
@@ -85,7 +85,7 @@
 //! - **The live set, scenarios, the journal, the traffic and recordings** arrive with their crates.
 //!   Until then the armed rules of an environment are its live set, and a ⌘K sentence knows the names of the
 //!   workspace alone.
-//! - **The control plane** stands in front of the host, in its own crate.
+//! - **The control plane** stands in front of the host, in the crate `gaslightmq_control_server`.
 //!
 //! # Errors
 //!
@@ -97,6 +97,7 @@
 //! | [`Host::start`] | [`EnvironmentStartError`] | The environment runs already, its listeners meet those of another, or its backend or its proxy did not start. |
 //! | [`Host::stop`], and every question about an environment that runs | [`NotRunningError`] | No environment of that name runs. |
 //! | [`Host::arm`] | [`ArmRuleError`] | The environment does not run, the workspace could not be read or is not valid, the rule does not resolve, or it is armed already. |
+//! | [`Host::fire`] | [`FireRuleError`] | The environment does not run, the rule is not armed or fires no more, its incident needs a call, or the backend rejects it. |
 //! | [`Host::read_sentence`] | [`ReadSentenceError`] | The workspace could not be read. |
 //!
 //! A variant is something its caller decides on, and the rest is text.
@@ -116,7 +117,7 @@ mod error;
 mod host;
 
 pub use configuration::{EnvironmentConfiguration, EnvironmentConfigurationError, HostConfiguration};
-pub use error::{ArmRuleError, EnvironmentStartError, NotRunningError, ReadSentenceError};
+pub use error::{ArmRuleError, EnvironmentStartError, FireRuleError, NotRunningError, ReadSentenceError};
 pub use host::Host;
 
 /// Every item of this crate.
@@ -136,7 +137,7 @@ pub use host::Host;
 pub mod prelude {
     #[doc(no_inline)]
     pub use crate::{
-        ArmRuleError, EnvironmentConfiguration, EnvironmentConfigurationError, EnvironmentStartError, Host,
-        HostConfiguration, NotRunningError, ReadSentenceError,
+        ArmRuleError, EnvironmentConfiguration, EnvironmentConfigurationError, EnvironmentStartError, FireRuleError,
+        Host, HostConfiguration, NotRunningError, ReadSentenceError,
     };
 }

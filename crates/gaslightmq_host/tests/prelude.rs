@@ -81,6 +81,10 @@ mod next_to_the_others {
         let running: EnvironmentStartError = EnvironmentStartError::AlreadyRunning { name: staging.clone() };
         let not_running: NotRunningError = NotRunningError { name: staging.clone() };
         let armed: ArmRuleError = ArmRuleError::AlreadyArmed {
+            environment: staging.clone(),
+            rule: "blackhole".parse().unwrap(),
+        };
+        let not_armed: FireRuleError = FireRuleError::NotArmed {
             environment: staging,
             rule: "blackhole".parse().unwrap(),
         };
@@ -92,12 +96,14 @@ mod next_to_the_others {
         assert!(std::error::Error::source(&running).is_none());
         assert!(std::error::Error::source(&not_running).is_none());
         assert!(std::error::Error::source(&armed).is_none());
+        assert!(std::error::Error::source(&not_armed).is_none());
         assert!(std::error::Error::source(&unread).is_none());
         vec![
             unsupported.to_string(),
             running.to_string(),
             not_running.to_string(),
             armed.to_string(),
+            not_armed.to_string(),
             unread.to_string(),
         ]
     }
@@ -121,6 +127,7 @@ fn the_prelude_names_the_error_of_every_type() {
             "environment \"staging-proxy\" runs already",
             "environment \"staging-proxy\" does not run",
             "rule \"blackhole\" is armed already in environment \"staging-proxy\"",
+            "rule \"blackhole\" is not armed in environment \"staging-proxy\"",
             "the names of the workspace could not be read: the preset store could not be read: disk full",
         ]
     );
