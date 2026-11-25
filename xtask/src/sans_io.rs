@@ -17,13 +17,16 @@
 //!   A crate that the tables plan, and the workspace does not hold yet, is held to the crates its row lists.
 //! - Sans-IO code has no `async fn` with a body, no `async` block or closure, and no `.await`.
 //!   A trait may declare an async method: an `async fn` without a body is a signature, and it runs nothing.
-//!   [`AWAITS_STORES`] lists the crates that await a store of definitions, and what they may have.
+//!   [`AWAITS_STORES`] lists the code that awaits a store of definitions, and what it may have.
+//!   A method of a trait whose whole body is one `async` block is an `async fn` with a body, written out
+//!   so that its signature can say that its future is `Send`. The check reads it as one.
 //! - Sans-IO code names nothing that does IO: no path into a package of [`IO_PACKAGES`], no `Future`,
 //!   and none of the paths and names of the standard library in [`STANDARD_LIBRARY`], [`NAMES`] and [`PATHS`],
 //!   which stand for sockets, files, the system clock, the process, threads and global randomness.
 //!   One place may name `Future`: the return type of a method of a trait, where the trait declares the method
 //!   and where a type implements it. That is how a trait declares an async method whose future is `Send`.
-//!   Such a method gets its future from the code it calls, because nothing else here makes one.
+//!   Outside [`AWAITS_STORES`], such a method gets its future from the code it calls,
+//!   because nothing else makes one.
 //! - A sans-IO module names nothing of its own crate outside the sans-IO modules.
 //!   A path that starts with `crate`, `self` or `super` ends inside one of them.
 //!
@@ -43,8 +46,8 @@ use std::path::PathBuf;
 use proc_macro2::{TokenStream, TokenTree};
 use syn::visit::{self, Visit};
 use syn::{
-    ExprAsync, ExprAwait, ExprClosure, ImplItemFn, Item, ItemFn, ItemImpl, ItemMod, ItemUse, Macro, Signature,
-    TraitItemFn, UseTree, Visibility,
+    Block, Expr, ExprAsync, ExprAwait, ExprClosure, ImplItemFn, Item, ItemFn, ItemImpl, ItemMod, ItemUse, Macro,
+    Signature, Stmt, TraitItemFn, UseTree, Visibility,
 };
 
 use crate::crate_layout::{self, CrateLayout, DOES_IO};
@@ -119,16 +122,38 @@ const PATHS: [(&[&str], Reach); 6] = [
     (&["rand", "rng"], Reach::Randomness),
 ];
 
-/// The sans-IO crates that await a store of definitions, which `crates.md` describes under "The store seam":
-/// they keep the store contract, or they call it.
-/// Such a crate may have an `async fn` with a body and an `.await`. Any other async code fails there too:
-/// it makes no future of its own, and it names no task and no runtime, so it cannot start anything,
+/// The sans-IO code that awaits a store of definitions, which `crates.md` describes under "The store seam":
+/// it keeps the store contract, or it calls it.
+/// Each crate stands with the modules of it that await, by the first name of their path.
+/// A crate without a module here awaits a store wherever it likes.
+///
+/// Such code may have an `async fn` with a body and an `.await`. Any other async code fails there too:
+/// it makes no other future, and it names no task and no runtime, so it cannot start anything,
 /// wait for a timer or block.
-const AWAITS_STORES: [&str; 3] = [
-    "gaslightmq_definition_conformance",
-    "gaslightmq_definition_memory",
-    "gaslightmq_workspace",
+///
+/// The crate of a definition awaits in two modules: `store` holds its store trait, whose methods with a body
+/// read what the store lists, and `conformance` holds the check of that trait.
+/// Everything else in such a crate is held to the rule of every sans-IO crate.
+const AWAITS_STORES: [(&str, &[&str]); 7] = [
+    ("gaslightmq_definition_conformance", &[]),
+    ("gaslightmq_definition_memory", &[]),
+    ("gaslightmq_environment", &["conformance"]),
+    ("gaslightmq_rule", &["conformance", "store"]),
+    ("gaslightmq_selector", &["conformance", "store"]),
+    ("gaslightmq_surface", &["conformance", "store"]),
+    ("gaslightmq_workspace", &[]),
 ];
+
+/// Whether a file of a sans-IO crate is code that awaits a store of definitions.
+fn awaits_stores(name: &str, file: &SourceFile) -> bool {
+    AWAITS_STORES.iter().any(|(awaiting, modules)| {
+        let in_a_module = file
+            .module
+            .first()
+            .is_some_and(|first| modules.contains(&first.as_str()));
+        *awaiting == name && (modules.is_empty() || in_a_module)
+    })
+}
 
 /// Whether a package is async or does IO, by its name in a manifest or in a path.
 fn is_io_package(name: &str) -> bool {
@@ -235,8 +260,8 @@ fn source_violations(member: &Member, does_io: bool, files: &[SourceFile]) -> Ve
             violations.push(SansIoViolation::DeclaresModules { name: name.clone() });
         }
         let code = Code::Crate { name: name.clone() };
-        let awaits = AWAITS_STORES.contains(&name.as_str());
         for file in files {
+            let awaits = awaits_stores(name, file);
             let found = read(file, None).into_iter().filter(|(_, found)| match found {
                 Found::AsyncFunction | Found::Await => !awaits,
                 Found::AsyncBlock | Found::Names { .. } => true,
@@ -361,6 +386,20 @@ impl Reader<'_> {
         (!inside).then_some(Reach::RestOfTheCrate)
     }
 
+    /// Reads the body of a method of a trait.
+    ///
+    /// A body that is one `async` block is the body of an `async fn`, written out so that the signature
+    /// can say that the future is `Send`. It is an async function with a body, and no future made on the side.
+    fn body_of_a_trait_method(&mut self, body: &Block) {
+        if let [Stmt::Expr(Expr::Async(written_out), None)] = body.stmts.as_slice() {
+            let line = written_out.async_token.span.start().line;
+            self.found.push((line, Found::AsyncFunction));
+            self.visit_block(&written_out.block);
+        } else {
+            self.visit_block(body);
+        }
+    }
+
     /// Reads the tokens of a macro call, which have no syntax tree.
     fn tokens(&mut self, tokens: TokenStream) {
         let trees: Vec<TokenTree> = tokens.into_iter().collect();
@@ -431,8 +470,16 @@ impl<'ast> Visit<'ast> for Reader<'_> {
         if let Some(asyncness) = &function.sig.asyncness {
             self.found.push((asyncness.span.start().line, Found::AsyncFunction));
         }
+        for attribute in &function.attrs {
+            self.visit_attribute(attribute);
+        }
         self.reads_a_trait_method = self.implements_a_trait;
-        visit::visit_impl_item_fn(self, function);
+        self.visit_signature(&function.sig);
+        if self.implements_a_trait {
+            self.body_of_a_trait_method(&function.block);
+        } else {
+            self.visit_block(&function.block);
+        }
     }
 
     /// An `async fn` without a body declares a method and runs nothing, so only one with a body is found.
@@ -440,8 +487,14 @@ impl<'ast> Visit<'ast> for Reader<'_> {
         if let (Some(asyncness), Some(_)) = (&function.sig.asyncness, &function.default) {
             self.found.push((asyncness.span.start().line, Found::AsyncFunction));
         }
+        for attribute in &function.attrs {
+            self.visit_attribute(attribute);
+        }
         self.reads_a_trait_method = true;
-        visit::visit_trait_item_fn(self, function);
+        self.visit_signature(&function.sig);
+        if let Some(body) = &function.default {
+            self.body_of_a_trait_method(body);
+        }
     }
 
     /// Reads a signature, and lets the return type of a method of a trait name `Future`.
@@ -550,7 +603,7 @@ impl fmt::Display for Code {
 /// What sans-IO code holds, and should not.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Found {
-    /// An `async fn` with a body.
+    /// An `async fn` with a body, also one that a method of a trait writes out as one `async` block.
     AsyncFunction,
     /// An `async` block or closure.
     AsyncBlock,
@@ -788,20 +841,21 @@ mod tests {
     }
 
     #[test]
-    fn a_method_of_a_trait_runs_nothing_and_makes_no_future() {
+    fn the_body_of_a_method_of_a_trait_is_async_code_like_any_other() {
         let found = found_in(
             "trait Backend {
                  async fn close(&self) {}
-                 fn call(&self) -> impl Future<Output = u8> { async { 1 } }
+                 fn call(&self) -> impl Future<Output = u8> + Send { async move { self.answer().await } }
                  fn wait(&self) -> impl Future<Output = ()> { tokio::time::sleep(self.wait) }
              }
              impl Backend for Broker {
                  async fn close(&self) { self.flush().await; }
                  fn call(&self) -> impl Future<Output = u8> { std::future::ready(1) }
                  fn poll(&self, answer: Pin<&mut dyn Future<Output = u8>>) {}
+                 fn later(&self) -> impl Future<Output = u8> { let answer = async { 1 }; answer }
              }
              impl Broker {
-                 fn call(&self) -> impl Future<Output = u8> { self.answer() }
+                 fn call(&self) -> impl Future<Output = u8> { async { 1 } }
              }",
         );
 
@@ -809,13 +863,19 @@ mod tests {
             found,
             [
                 (2, Found::AsyncFunction),
-                (3, Found::AsyncBlock),
+                // A body that is one `async` block is an `async fn` written out.
+                (3, Found::AsyncFunction),
+                (3, Found::Await),
                 (4, names("tokio::time::sleep", Reach::Package)),
                 (7, Found::AsyncFunction),
                 (7, Found::Await),
                 (8, names("std::future::ready", Reach::Async)),
                 (9, names("Future", Reach::Future)),
-                (12, names("Future", Reach::Future)),
+                // A block next to other code makes a future on the side.
+                (10, Found::AsyncBlock),
+                // A method of no trait names no future, and writes no `async fn` out.
+                (13, names("Future", Reach::Future)),
+                (13, Found::AsyncBlock),
             ]
         );
     }
@@ -1211,42 +1271,53 @@ mod tests {
     }
 
     #[test]
-    fn a_crate_that_awaits_a_store_has_async_functions_and_no_other_async_code() {
+    fn code_that_awaits_a_store_has_async_functions_and_no_other_async_code() {
         let text = "impl<D> Store<D> for MemoryStore<D> {
                         async fn list(&self) -> Vec<D> { self.definitions() }
                     }
                     pub async fn validate(store: &impl Store<Rule>) -> usize { store.list().await.len() }
                     fn ready(store: &Memory) -> impl Future<Output = usize> { std::future::ready(store.len()) }
                     fn later(store: &Memory) { let listing = async { store.list().await }; }
-                    async fn nap() { tokio::time::sleep(wait).await; }";
-
-        for name in AWAITS_STORES {
+                    async fn nap() { tokio::time::sleep(wait).await; }
+                    pub trait RuleStore: Store<Rule> {
+                        fn count(&self) -> impl Future<Output = usize> + Send { async move { self.list().await.len() } }
+                    }";
+        let found_in_file = |name: &str, in_src: &str| {
             let member = Member::alone(name);
-            let violations = source_violations(&member, false, &[file(&member, "lib.rs", text)]);
-
-            let found: Vec<(usize, &Found)> = violations
-                .iter()
+            let violations = source_violations(&member, false, &[file(&member, in_src, text)]);
+            violations
+                .into_iter()
                 .filter_map(|violation| match violation {
-                    SansIoViolation::InSource { line, found, .. } => Some((*line, found)),
+                    SansIoViolation::InSource { line, found, .. } => Some((line, found)),
                     _ => None,
                 })
-                .collect();
+                .collect::<Vec<(usize, Found)>>()
+        };
+
+        for (name, modules) in AWAITS_STORES {
+            // A crate without a module awaits wherever it likes, and its root stands for it here.
+            let in_src = modules
+                .first()
+                .map_or("lib.rs".to_owned(), |module| format!("{module}.rs"));
+
             assert_eq!(
-                found,
+                found_in_file(name, &in_src),
                 [
-                    (5, &names("Future", Reach::Future)),
-                    (5, &names("std::future::ready", Reach::Async)),
-                    (6, &Found::AsyncBlock),
-                    (7, &names("tokio::time::sleep", Reach::Package)),
+                    (5, names("Future", Reach::Future)),
+                    (5, names("std::future::ready", Reach::Async)),
+                    (6, Found::AsyncBlock),
+                    (7, names("tokio::time::sleep", Reach::Package)),
                 ],
                 "{name}"
             );
         }
-        // The same code in any other sans-IO crate: three async functions and three awaits more.
-        assert_eq!(
-            source_violations(&sans_io_crate(), false, &[file(&sans_io_crate(), "lib.rs", text)]).len(),
-            10
-        );
+        // The same code in any other sans-IO crate: four async functions and four awaits more.
+        assert_eq!(found_in_file("gaslightmq_trigger", "lib.rs").len(), 12);
+        // The crate of a definition awaits in the modules of its store trait, and nowhere else.
+        assert_eq!(found_in_file("gaslightmq_rule", "store.rs").len(), 4);
+        assert_eq!(found_in_file("gaslightmq_rule", "conformance.rs").len(), 4);
+        assert_eq!(found_in_file("gaslightmq_rule", "snapshot.rs").len(), 12);
+        assert_eq!(found_in_file("gaslightmq_environment", "store.rs").len(), 12);
     }
 
     #[test]
