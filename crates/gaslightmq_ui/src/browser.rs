@@ -6,6 +6,8 @@
 use gaslightmq_control_api::clock::TimeSpan;
 use gaslightmq_control_client::ControlPlaneAddress;
 
+use crate::theme::ThemeChoice;
+
 /// The control plane that serves the page: the control server serves the UI and `/api/…` on one origin.
 #[cfg(target_arch = "wasm32")]
 pub fn control_plane() -> Option<ControlPlaneAddress> {
@@ -16,7 +18,7 @@ pub fn control_plane() -> Option<ControlPlaneAddress> {
 /// The control plane on its default address, for a build that never draws.
 #[cfg(not(target_arch = "wasm32"))]
 pub fn control_plane() -> Option<ControlPlaneAddress> {
-    "http://127.0.0.1:8080".parse().ok()
+    "http://127.0.0.1:7092".parse().ok()
 }
 
 /// Waits for `span` on a timer of the browser.
@@ -31,4 +33,36 @@ pub async fn sleep(span: TimeSpan) {
 pub async fn sleep(span: TimeSpan) {
     let _ = span;
     futures::future::pending::<()>().await;
+}
+
+/// Where the browser keeps the theme someone picked.
+const THEME_KEY: &str = "gaslightmq-theme";
+
+/// Shows the theme that the browser keeps, follows the system while the choice is the system's, and sends the choice
+/// back. A light theme is `data-theme="light"` on the page, and the dark theme is the default of the stylesheet.
+fn theme_script(pick: Option<ThemeChoice>) -> String {
+    let remember = pick.map_or_else(String::new, |pick| {
+        format!("localStorage.setItem('{THEME_KEY}', '{}');", pick.name())
+    });
+    format!(
+        "{remember}
+        const light = matchMedia('(prefers-color-scheme: light)');
+        const apply = () => {{
+            const choice = localStorage.getItem('{THEME_KEY}') || 'system';
+            const isLight = choice === 'light' || (choice === 'system' && light.matches);
+            document.documentElement.dataset.theme = isLight ? 'light' : 'dark';
+            return choice;
+        }};
+        if (!window.gaslightmqTheme) {{ light.addEventListener('change', apply); window.gaslightmqTheme = apply; }}
+        dioxus.send(apply());"
+    )
+}
+
+/// Shows the theme the browser keeps, or `pick` from here on, and returns the choice in force.
+pub async fn theme(pick: Option<ThemeChoice>) -> ThemeChoice {
+    let mut script = dioxus::document::eval(&theme_script(pick));
+    script
+        .recv::<String>()
+        .await
+        .map_or(ThemeChoice::System, |name| ThemeChoice::named(&name))
 }

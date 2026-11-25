@@ -24,6 +24,7 @@
 //! | [`TrafficFilter`] | The conditions of the calls that the traffic shows, which the stream follows as a selector. |
 //! | [`Following`] | What the UI asked of the stream, and what the control plane follows and refused. |
 //! | [`Link`] | Whether the live stream is open. |
+//! | [`ThemeChoice`] | The theme of the system, light or dark, as someone picked it in the shell. |
 //! | [`UiConfiguration`] | The window of the traffic, how often the UI draws, and when it opens a new stream. |
 //!
 //! The module [`pads`] holds the [`Desk`](pads::Desk): the surface someone plays, which turns presses and turns into
@@ -47,12 +48,14 @@ pub mod pads;
 mod process;
 pub mod rules;
 pub mod text;
+mod theme;
 mod traffic;
 
 mod app;
 mod browser;
 mod components;
 mod connection;
+mod style;
 mod views;
 
 pub use app::App;
@@ -61,4 +64,5 @@ pub use filter::TrafficFilter;
 pub use following::Following;
 pub use live::{Link, Live};
 pub use process::{Process, rule_label, rule_status};
+pub use theme::ThemeChoice;
 pub use traffic::Traffic;

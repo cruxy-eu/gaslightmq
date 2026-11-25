@@ -7,7 +7,7 @@ environments: [orders-sim]
 seed: 1337
 
 control:
-  listen: 0.0.0.0:8080
+  listen: 0.0.0.0:7092
 
 recordings:
   directory: recordings

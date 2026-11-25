@@ -27,7 +27,7 @@ spec:
             - --env=staging-proxy
           ports:
             - { name: kafka, containerPort: 9092 }
-            - { name: control, containerPort: 8080 }
+            - { name: control, containerPort: 7092 }
           volumeMounts:
             - { name: workspace, mountPath: /workspace, readOnly: true }
             # The environment file refers to /run/secrets/kafka/password and ca.pem.
@@ -51,7 +51,7 @@ spec:
   selector: { app: gaslightmq }
   ports:
     - { name: kafka, port: 9092 }
-    - { name: control, port: 8080 }
+    - { name: control, port: 7092 }
     # One port per upstream broker. The environment file pins the range.
     - { name: broker-1, port: 19092 }
     - { name: broker-2, port: 19093 }

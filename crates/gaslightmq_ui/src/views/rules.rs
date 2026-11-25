@@ -8,12 +8,17 @@ use gaslightmq_control_api::selector::{Condition, Conditions, Selector, Selector
 use gaslightmq_control_api::trigger::{Chance, Lifetime};
 
 use crate::app::Ui;
-use crate::components::{Icon, LieBadge, Shape, StateIcon, lie_color};
+use crate::components::{ConditionChip, Icon, InspectorPanel, LieBadge, Shape, StateIcon, Tone};
 use crate::live::Live;
 use crate::process::{Process, rule_label};
 use crate::rules::{
     RuleCommand, RuleOperation, RuleTab, activity, by_scope, commands, lifetimes, operation, scope_label, trigger_text,
     update, with_chance, with_lifetime,
+};
+use crate::style::{
+    BUTTON, BUTTON_DANGER, BUTTON_PRIMARY, CRUMB, DIVIDER, EMPTY, HEADER, NOTE, PROPERTY, PROPERTY_COLUMN,
+    PROPERTY_LABEL, PROPERTY_VALUES, SEGMENT, SEGMENT_ON, SEGMENTS, SWITCH_KNOB_OFF, SWITCH_KNOB_ON, SWITCH_OFF,
+    SWITCH_ON, TAB, TAB_ON, TAG,
 };
 
 /// The chances the inspector offers, in percent.
@@ -28,8 +33,8 @@ pub fn Rules() -> Element {
     let live = ui.live.read();
     let Some(running) = live.shown_running() else {
         return rsx! {
-            div { class: "hdr", div { class: "crumb", Icon { shape: Shape::Zap, size: 15 } "Rules" } }
-            div { class: "empty", "{nothing_runs(&live)}" }
+            div { class: HEADER, div { class: CRUMB, Icon { shape: Shape::Zap, size: 15 } "Rules" } }
+            div { class: EMPTY, "{nothing_runs(&live)}" }
         };
     };
     let environment = running.environment.clone();
@@ -44,30 +49,30 @@ pub fn Rules() -> Element {
         .collect();
     let selected = shown.as_ref().map(|status| status.rule.name().clone());
     rsx! {
-        div { class: "hdr",
-            div { class: "crumb", Icon { shape: Shape::Zap, size: 15 } "Rules" }
-            div { class: "tabs",
+        div { class: HEADER,
+            div { class: CRUMB, span { class: "text-muted", Icon { shape: Shape::Zap, size: 15 } } "Rules" }
+            div { class: "ml-2.5 flex gap-0.5",
                 for (each, count) in counts {
                     button {
                         key: "{each.name()}",
-                        class: if each == tab() { "tab on" } else { "tab" },
+                        class: if each == tab() { TAB_ON } else { TAB },
                         onclick: move |_| tab.set(each),
                         "{each.name()} "
-                        span { class: "t4", "{count}" }
+                        span { class: "text-caption text-subtle", "{count}" }
                     }
                 }
             }
         }
-        div { class: "rules",
-            div { class: "pane",
+        div { class: "flex min-h-0 flex-1",
+            div { class: "min-h-0 min-w-0 flex-1 overflow-auto",
                 if groups.is_empty() {
-                    div { class: "empty", "No rule here yet. A pad or ⌘K makes a live rule, and the workspace holds the others." }
+                    div { class: EMPTY, "No rule here yet. A pad or ⌘K makes a live rule, and the workspace holds the others." }
                 }
                 for group in groups {
-                    div { key: "{group.scope}", class: "lgrp",
-                        Icon { shape: if group.scope.is_all() { Shape::Globe } else { Shape::Users }, size: 13 }
+                    div { key: "{group.scope}", class: "sticky top-0 z-1 flex h-9 items-center gap-2 border-b border-edge bg-band pr-3.5 pl-4 text-compact font-medium text-strong",
+                        span { class: "text-muted", Icon { shape: if group.scope.is_all() { Shape::Globe } else { Shape::Users }, size: 13 } }
                         "{scope_label(&group.scope)}"
-                        span { class: "t4", "{group.rules.len()}" }
+                        span { class: "text-small font-normal text-subtle", "{group.rules.len()}" }
                     }
                     for status in group.rules {
                         RuleRow {
@@ -80,7 +85,7 @@ pub fn Rules() -> Element {
                     }
                 }
             }
-            div { class: "insp",
+            InspectorPanel { width: "w-100",
                 if let Some(status) = shown {
                     Inspector { environment, status }
                 }
@@ -132,7 +137,7 @@ fn RuleRow(status: RuleStatus, on: bool, environment: EnvironmentName, onpick: E
     let rule = &status.rule;
     let label = rule_label(rule);
     let targets = process.map_or_else(String::new, |process| selector_label(process, rule.selector()));
-    let (color, action) = process.map_or(("#9ca3af", String::new()), |process| {
+    let (tone, action) = process.map_or((Tone::Other, String::new()), |process| {
         action_label(process, rule.action())
     });
     let trigger = trigger_text(&rule.trigger());
@@ -151,29 +156,32 @@ fn RuleRow(status: RuleStatus, on: bool, environment: EnvironmentName, onpick: E
         }
     };
     let name = rule.name().clone();
-    let class = match (on, armed) {
-        (true, true) => "rrow on",
-        (true, false) => "rrow on off",
-        (false, true) => "rrow",
-        (false, false) => "rrow off",
+    let class = if on {
+        "flex h-10 cursor-pointer items-center gap-3 border-b border-edge/50 bg-selected pr-4 pl-6"
+    } else {
+        "flex h-10 cursor-pointer items-center gap-3 border-b border-edge/50 pr-4 pl-6 hover:bg-hover"
     };
     rsx! {
         div { class, onclick: move |_| onpick.call(name.clone()),
             StateIcon { state: status.state }
-            span { class: if status.live { "src live" } else { "src" }, if status.live { "live" } else { "workspace" } }
-            div { class: "ttl",
-                b { "{label}" }
-                span { class: "tag", "{targets}" }
+            span { class: if status.live { "w-16 shrink-0 font-mono text-micro font-medium text-accent-text" } else { "w-16 shrink-0 font-mono text-micro font-medium text-subtle" },
+                if status.live { "live" } else { "workspace" }
             }
-            LieBadge { color, text: action }
-            span { class: "mono t3 trig", "{trigger}" }
-            span { class: "mono t4 cnt", title: "fired / matched",
+            div { class: "flex min-w-0 flex-1 items-center gap-2 overflow-hidden",
+                b { class: if armed { "min-w-15 truncate font-medium text-strong" } else { "min-w-15 truncate font-medium text-muted" }, "{label}" }
+                span { class: TAG, "{targets}" }
+            }
+            LieBadge { tone, text: action }
+            span { class: "w-30 shrink-0 truncate font-mono text-tiny text-muted", "{trigger}" }
+            span { class: "w-17.5 shrink-0 text-right font-mono text-tiny text-subtle", title: "fired / matched",
                 if let Some(counted) = counted { "{counted.firings} / {counted.matches}" }
             }
             if status.state == RuleState::Draft {
-                span {}
+                span { class: "w-6.5 shrink-0" }
             } else {
-                span { class: if armed { "sw on" } else { "sw" }, title: if armed { "Disarm" } else { "Arm" }, onclick: toggle }
+                span { class: if armed { SWITCH_ON } else { SWITCH_OFF }, title: if armed { "Disarm" } else { "Arm" }, onclick: toggle,
+                    i { class: if armed { SWITCH_KNOB_ON } else { SWITCH_KNOB_OFF } }
+                }
             }
         }
     }
@@ -193,7 +201,7 @@ fn Inspector(environment: EnvironmentName, status: RuleStatus) -> Element {
     let scope = scope_label(rule.scope());
     let selector = selector_label(process, rule.selector());
     let conditions = conditions_of(process, rule.selector());
-    let (color, action) = action_label(process, rule.action());
+    let (tone, action) = action_label(process, rule.action());
     let trigger = rule.trigger();
     let chance = trigger.parts().map(|parts| parts.chance().unwrap_or(Chance::ALWAYS));
     let lifetime = rule.lifetime();
@@ -222,16 +230,16 @@ fn Inspector(environment: EnvironmentName, status: RuleStatus) -> Element {
     let offered_lifetimes = lifetimes();
     let other_lifetime = !offered_lifetimes.contains(&lifetime);
     rsx! {
-        div { class: "insp-in",
-            div { class: "src-line",
-                span { class: if status.live { "src live" } else { "src" }, "{source}" }
+        div { class: "px-5 pt-4 pb-7.5",
+            div { class: "flex items-center gap-2",
+                span { class: if status.live { "font-mono text-micro font-medium text-accent-text" } else { "font-mono text-micro font-medium text-subtle" }, "{source}" }
             }
-            h2 { "{label}" }
-            p { class: "d mono", "{name}" }
-            div { class: "prop",
-                label { "State" }
-                div { class: "pv",
-                    span { class: "sel-btn", StateIcon { state: status.state } "{state}" }
+            h2 { class: "mt-2.5 mb-0.5 text-title font-semibold tracking-tight text-strong", "{label}" }
+            p { class: "mb-4 font-mono text-caption text-subtle", "{name}" }
+            div { class: PROPERTY,
+                label { class: PROPERTY_LABEL, "State" }
+                div { class: PROPERTY_VALUES,
+                    span { class: "inline-flex h-7 items-center gap-1.75 pr-2.25 text-compact text-body", StateIcon { state: status.state } "{state}" }
                     for command in offered {
                         CommandButton {
                             key: "{command.name()}",
@@ -242,33 +250,33 @@ fn Inspector(environment: EnvironmentName, status: RuleStatus) -> Element {
                     }
                 }
             }
-            div { class: "prop",
-                label { "Scope" }
-                div { class: "pv", span { class: "tag", "{scope}" } }
+            div { class: PROPERTY,
+                label { class: PROPERTY_LABEL, "Scope" }
+                div { class: PROPERTY_VALUES, span { class: TAG, "{scope}" } }
             }
-            div { class: "prop",
-                label { "Selector" }
-                div { class: "pv col",
-                    span { class: "t2", "{selector}" }
+            div { class: PROPERTY,
+                label { class: PROPERTY_LABEL, "Selector" }
+                div { class: PROPERTY_COLUMN,
+                    span { class: "text-body", "{selector}" }
                     for condition in conditions.iter() {
                         ConditionChip { key: "{condition.field()}", condition: condition.clone() }
                     }
                     if conditions.is_empty() {
-                        span { class: "note", "No condition: every call of the scope." }
+                        span { class: NOTE, "No condition: every call of the scope." }
                     }
                 }
             }
-            div { class: "hr" }
-            div { class: "prop",
-                label { "Action" }
-                div { class: "pv", LieBadge { color, text: action } }
+            div { class: DIVIDER }
+            div { class: PROPERTY,
+                label { class: PROPERTY_LABEL, "Action" }
+                div { class: PROPERTY_VALUES, LieBadge { tone, text: action } }
             }
-            div { class: "prop",
-                label { "Trigger" }
-                div { class: "pv col",
-                    span { class: "mono t2", "{trigger_text(&trigger)}" }
+            div { class: PROPERTY,
+                label { class: PROPERTY_LABEL, "Trigger" }
+                div { class: PROPERTY_COLUMN,
+                    span { class: "font-mono text-small text-body", "{trigger_text(&trigger)}" }
                     if let Some(chance) = chance {
-                        div { class: "seg",
+                        div { class: SEGMENTS,
                             for percent in CHANCES {
                                 ChanceButton {
                                     key: "{percent}",
@@ -282,10 +290,10 @@ fn Inspector(environment: EnvironmentName, status: RuleStatus) -> Element {
                     }
                 }
             }
-            div { class: "prop",
-                label { "Lifetime" }
-                div { class: "pv col",
-                    div { class: "seg",
+            div { class: PROPERTY,
+                label { class: PROPERTY_LABEL, "Lifetime" }
+                div { class: PROPERTY_COLUMN,
+                    div { class: SEGMENTS,
                         for each in offered_lifetimes {
                             LifetimeButton {
                                 key: "{each}",
@@ -297,36 +305,36 @@ fn Inspector(environment: EnvironmentName, status: RuleStatus) -> Element {
                         }
                     }
                     if other_lifetime {
-                        span { class: "note", "This rule lives {lifetime}." }
+                        span { class: NOTE, "This rule lives {lifetime}." }
                     }
                 }
             }
-            div { class: "hr" }
-            h3 {
+            div { class: DIVIDER }
+            h3 { class: "flex items-center gap-2 text-compact font-medium text-strong",
                 "Activity"
-                span { class: "t4 light", "one bar per statistics interval" }
+                span { class: "text-small font-normal text-subtle", "one bar per statistics interval" }
             }
-            div { class: "chart",
+            div { class: "mt-3 mb-2 flex h-11.5 items-end gap-0.5",
                 for (index, interval) in intervals.iter().enumerate() {
-                    div { key: "{index}",
-                        i { class: "matched", style: "height:{bar(interval.matches, most)}%" }
-                        i { style: "height:{bar(interval.firings, most)}%;background:{color}" }
+                    div { key: "{index}", class: "relative h-full flex-1",
+                        i { class: "absolute inset-x-0 bottom-0 block min-h-px rounded-xs bg-track", style: "height:{bar(interval.matches, most)}%" }
+                        i { class: "absolute inset-x-0 bottom-0 block rounded-xs {tone.fill()}", style: "height:{bar(interval.firings, most)}%" }
                     }
                 }
             }
-            div { class: "stats",
-                span { b { "{counted.firings}" } " fired" }
-                span { b { "{counted.matches}" } " matched" }
+            div { class: "flex gap-4.5 text-small text-muted",
+                span { b { class: "font-mono font-medium text-strong", "{counted.firings}" } " fired" }
+                span { b { class: "font-mono font-medium text-strong", "{counted.matches}" } " matched" }
                 if let Some(left) = counted.left {
-                    span { b { "{left}" } " left" }
+                    span { b { class: "font-mono font-medium text-strong", "{left}" } " left" }
                 }
             }
             if status.live {
-                p { class: "note top",
+                p { class: "mt-4.5 {NOTE}",
                     "A live rule changes here, in this environment. Keep it to save it in the workspace under the same name."
                 }
             } else {
-                p { class: "note top",
+                p { class: "mt-4.5 {NOTE}",
                     "A change of a rule of the workspace writes to the workspace, and reaches every environment."
                 }
             }
@@ -344,9 +352,9 @@ fn bar(value: u64, most: u64) -> u64 {
 fn CommandButton(environment: EnvironmentName, status: RuleStatus, command: RuleCommand) -> Element {
     let ui = use_context::<Ui>();
     let class = match command {
-        RuleCommand::Arm => "btn primary",
-        RuleCommand::Delete => "btn ghost danger",
-        RuleCommand::Disarm | RuleCommand::Fire | RuleCommand::Keep => "btn",
+        RuleCommand::Arm => BUTTON_PRIMARY,
+        RuleCommand::Delete => BUTTON_DANGER,
+        RuleCommand::Disarm | RuleCommand::Fire | RuleCommand::Keep => BUTTON,
     };
     let shape = match command {
         RuleCommand::Arm => Shape::Play,
@@ -375,7 +383,7 @@ fn ChanceButton(environment: EnvironmentName, status: RuleStatus, percent: u8, o
         send(&ui, update(&environment, &status, changed));
     };
     rsx! {
-        button { class: if on { "on" } else { "" }, onclick: pick, "{percent}%" }
+        button { class: if on { SEGMENT_ON } else { SEGMENT }, onclick: pick, "{percent}%" }
     }
 }
 
@@ -388,28 +396,7 @@ fn LifetimeButton(environment: EnvironmentName, status: RuleStatus, lifetime: Li
         send(&ui, update(&environment, &status, changed));
     };
     rsx! {
-        button { class: if on { "on" } else { "" }, onclick: pick, "{lifetime}" }
-    }
-}
-
-/// One condition of a selector, as a chip without a button.
-#[component]
-fn ConditionChip(condition: Condition) -> Element {
-    let field = condition.field();
-    let operator = condition.operator().name();
-    let tested = match &condition {
-        Condition::Is(value) => value.to_string(),
-        Condition::IsAnyOf(values) | Condition::IsNot(values) => {
-            values.iter().map(ToString::to_string).collect::<Vec<_>>().join(", ")
-        }
-        Condition::Matches(_, pattern) => pattern.to_string(),
-    };
-    rsx! {
-        div { class: "chip",
-            span { class: "f", "{field}" }
-            span { class: "o", "{operator}" }
-            span { class: "v", "{tested}" }
-        }
+        button { class: if on { SEGMENT_ON } else { SEGMENT }, onclick: pick, "{lifetime}" }
     }
 }
 
@@ -443,7 +430,7 @@ fn conditions_of(process: &Process, selector: &SelectorRef) -> Vec<Condition> {
 }
 
 /// What an action does, in a few words, with the color of its lie: a preset by its title, or the lie itself.
-fn action_label(process: &Process, action: &ActionRef) -> (&'static str, String) {
+fn action_label(process: &Process, action: &ActionRef) -> (Tone, String) {
     let (preset, action) = match action {
         ActionRef::Preset(name) => {
             let preset = process.definitions().presets.iter().find(|held| held.name() == name);
@@ -454,14 +441,14 @@ fn action_label(process: &Process, action: &ActionRef) -> (&'static str, String)
         }
         ActionRef::Inline(action) => (None, Some(action.clone())),
     };
-    let color = match &action {
-        Some(Action::Lie(lie)) => lie_color(lie),
-        _ => "#9ca3af",
+    let tone = match &action {
+        Some(Action::Lie(lie)) => Tone::of(lie),
+        _ => Tone::Other,
     };
     let text = match (preset, action) {
         (Some(preset), _) => preset,
         (None, Some(action)) => action.to_string(),
         (None, None) => String::new(),
     };
-    (color, text)
+    (tone, text)
 }

@@ -26,7 +26,7 @@
 //! // The binary makes the host, starts what its flags say, and puts the control plane in front of it.
 //! let host = Arc::new(Host::new(HostConfiguration::default(), MemoryContext::new(), Lies::of_every_build()));
 //! let server = ControlServer::start(ControlServerConfiguration::default(), Arc::clone(&host)).await?;
-//! assert_eq!(server.address(), "127.0.0.1:8080".parse().expect("a socket address"));
+//! assert_eq!(server.address(), "127.0.0.1:7092".parse().expect("a socket address"));
 //!
 //! // On the way out, the control plane stops first, so nobody starts an environment that is about to stop.
 //! server.stop().await;

@@ -79,7 +79,7 @@ docker compose up
 
 Your application connects to `gaslightmq:9092` for Kafka
 and to `http://gaslightmq:8081` for the schema registry.
-The UI is at `http://localhost:8080`.
+The UI is at `http://localhost:7092`.
 
 ## Run it on Kubernetes
 

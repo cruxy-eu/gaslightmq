@@ -15,7 +15,7 @@ use crate::error::{RequestSizeLimitError, StatsIntervalError, StreamBacklogError
 /// use gaslightmq_control_server::prelude::*;
 ///
 /// let mut configuration = ControlServerConfiguration::default();
-/// assert_eq!(configuration.listen, "127.0.0.1:8080".parse().expect("a socket address"));
+/// assert_eq!(configuration.listen, "127.0.0.1:7092".parse().expect("a socket address"));
 ///
 /// // A test takes any free port, and asks the server which one it got.
 /// configuration.listen = "127.0.0.1:0".parse().expect("a socket address");
@@ -25,7 +25,7 @@ use crate::error::{RequestSizeLimitError, StatsIntervalError, StreamBacklogError
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub struct ControlServerConfiguration {
-    /// Ours. Default: `127.0.0.1:8080`, which the UI, the CLI and tests reach on the same machine.
+    /// Ours. Default: `127.0.0.1:7092`, which the UI, the CLI and tests reach on the same machine.
     ///
     /// The address the control plane listens on, which `control.listen` of `gaslight.yaml` names.
     /// Port 0 takes any free port, which [`ControlServer::address`](crate::ControlServer::address) names.
@@ -54,7 +54,7 @@ pub struct ControlServerConfiguration {
 impl Default for ControlServerConfiguration {
     fn default() -> Self {
         Self {
-            listen: SocketAddr::from((Ipv4Addr::LOCALHOST, 8080)),
+            listen: SocketAddr::from((Ipv4Addr::LOCALHOST, 7092)),
             request_limit: RequestSizeLimit::DEFAULT,
             stream_backlog: StreamBacklog::DEFAULT,
             stats_interval: StatsInterval::DEFAULT,

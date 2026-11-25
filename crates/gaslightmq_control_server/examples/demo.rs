@@ -1,5 +1,6 @@
 //! The UI in front of live traffic: a proxy in front of a real Kafka cluster, clients that keep it busy,
-//! and the control plane with the UI on `http://127.0.0.1:8080`.
+//! and the control plane with the UI on `http://127.0.0.1:7092`. It prints the address of the proxy for a Kafka
+//! client, and the bootstrap address of the cluster itself, which bypasses the proxy.
 //!
 //! `just demo` runs it. It needs Docker for the cluster, and `just ui` for the files of the UI.
 //! An address as the first argument puts the control plane there instead: `just demo 127.0.0.1:8081`.
@@ -107,9 +108,12 @@ async fn main() -> anyhow::Result<()> {
     );
     consume(bootstrap, "analytics-etl", "orders.eu", Duration::from_millis(300));
 
+    println!("The UI:                       http://{}", server.address());
+    println!("The proxy, for a Kafka client: {bootstrap}");
     println!(
-        "The UI is at http://{}, and the proxy at {bootstrap}.",
-        server.address()
+        "The cluster, past the proxy:   {}  (kcat -b {} -L)",
+        cluster.brokers()[0].address(),
+        cluster.brokers()[0].address()
     );
     println!("Ctrl-C stops the demo.");
     tokio::signal::ctrl_c().await?;

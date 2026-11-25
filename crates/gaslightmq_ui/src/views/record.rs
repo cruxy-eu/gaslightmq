@@ -11,10 +11,20 @@ use gaslightmq_control_api::prelude::*;
 use gaslightmq_control_api::selector::Condition;
 
 use crate::app::Ui;
-use crate::components::{ApiPill, Icon, LieBadge, Shape, StateIcon, api_color, lie_color};
+use crate::components::{ApiPill, ApiTone, ConditionChip, Icon, InspectorPanel, LieBadge, Shape, StateIcon, Tone};
 use crate::live::{Link, Live};
 use crate::process::{rule_label, rule_status};
+use crate::style::{
+    BUTTON, BUTTON_PRIMARY, CRUMB, EMPTY, FILTER_VALUE, FILTER_VALUE_ON, HEADER, ICON_BUTTON, KEY, NOTE, PANE_HEADER,
+    PANE_HEADER_INSET,
+};
 use crate::text::{length, since_start, value, values};
+
+/// A row of the traffic.
+const ROW: &str = "flex h-8 cursor-pointer items-center gap-2 border-b border-edge/50 px-3 text-small hover:bg-hover";
+
+/// The row of the call someone looks at.
+const ROW_SELECTED: &str = "flex h-8 cursor-pointer items-center gap-2 border-b border-edge/50 bg-accent/12 px-3 text-small ring-1 ring-accent/40 ring-inset";
 
 /// The live traffic of the environment shown.
 #[component]
@@ -44,20 +54,20 @@ pub fn Record() -> Element {
         }
     };
     rsx! {
-        div { class: "hdr",
-            div { class: "crumb", Icon { shape: Shape::Record, size: 15 } "Live traffic" }
-            span { class: "t4", "·" }
-            span { class: "t3 small", "{calls} calls followed · {sessions} sessions" }
+        div { class: HEADER,
+            div { class: CRUMB, span { class: "text-muted", Icon { shape: Shape::Record, size: 15 } } "Live traffic" }
+            span { class: "text-subtle", "·" }
+            span { class: "text-small text-muted", "{calls} calls followed · {sessions} sessions" }
             if let Some(reason) = refusal {
-                span { class: "refused", title: "{reason}", "Not following: {reason}" }
+                span { class: "max-w-2/5 truncate text-small text-danger", title: "{reason}", "Not following: {reason}" }
             }
-            span { class: "sp" }
-            button { class: "btn", onclick: pause,
+            span { class: "flex-1" }
+            button { class: BUTTON, onclick: pause,
                 if paused {
                     Icon { shape: Shape::Play }
                     "Go on"
                     if waiting_calls > 0 {
-                        span { class: "kbd", "{waiting_calls} new" }
+                        span { class: KEY, "{waiting_calls} new" }
                     }
                 } else {
                     Icon { shape: Shape::Pause }
@@ -66,20 +76,20 @@ pub fn Record() -> Element {
             }
         }
         FilterBar {}
-        div { class: if selected.is_some() { "rgrid sel" } else { "rgrid" },
-            div { class: "pane tree", SessionTree { environment: environment.clone() } }
-            div { class: "pane",
-                div { class: "srow thead",
-                    span { "Time" }
-                    span { "Client · connection" }
-                    span { title: "Endpoint", "To" }
-                    span { "API" }
-                    span { "Topics · details" }
-                    span { class: "right", "Latency" }
-                    span { "Outcome" }
+        div { class: "flex min-h-0 flex-1",
+            div { class: "min-h-0 w-52.5 shrink-0 overflow-auto border-r border-edge", SessionTree { environment: environment.clone() } }
+            div { class: "relative min-h-0 min-w-0 flex-1 overflow-auto",
+                div { class: "sticky top-0 z-2 flex h-8 items-center gap-2 border-b border-edge bg-panel px-3 text-caption text-subtle",
+                    span { class: "w-21 shrink-0", "Time" }
+                    span { class: "w-33 shrink-0", "Client · connection" }
+                    span { class: "w-8.5 shrink-0", title: "Endpoint", "To" }
+                    span { class: "w-29.5 shrink-0", "API" }
+                    span { class: "min-w-25 flex-1", "Topics · details" }
+                    span { class: "w-14 shrink-0 text-right", "Latency" }
+                    span { class: "w-37.5 shrink-0", "Outcome" }
                 }
                 if rows.is_empty() {
-                    div { class: "empty",
+                    div { class: EMPTY,
                         if live.filter().is_empty() {
                             "No call yet. Calls show here as clients send them."
                         } else {
@@ -91,12 +101,10 @@ pub fn Record() -> Element {
                     CallRow { key: "{call.id()}", selected: selected == Some(call.id()), call }
                 }
             }
-            div { class: "pane side-pane",
-                if live.inspected().is_some() {
-                    Inspector {}
-                } else {
-                    ApiCounts { environment }
-                }
+            if live.inspected().is_some() {
+                InspectorPanel { width: "w-105", Inspector {} }
+            } else {
+                InspectorPanel { width: "w-67.5", ApiCounts { environment } }
             }
         }
     }
@@ -112,8 +120,8 @@ fn waiting(live: &Live) -> Option<Element> {
         Link::Opening | Link::Open => "Connecting to the control plane…".to_owned(),
     };
     Some(rsx! {
-        div { class: "hdr", div { class: "crumb", "Live traffic" } }
-        div { class: "empty", "{text}" }
+        div { class: HEADER, div { class: CRUMB, "Live traffic" } }
+        div { class: EMPTY, "{text}" }
     })
 }
 
@@ -122,8 +130,8 @@ fn not_running(ui: &Ui, live: &Live) -> Element {
     let ui = ui.clone();
     let Some(shown) = live.shown().cloned() else {
         return rsx! {
-            div { class: "hdr", div { class: "crumb", "Live traffic" } }
-            div { class: "empty", "No environment runs. Pick one in the switcher at the bottom left to start it." }
+            div { class: HEADER, div { class: CRUMB, "Live traffic" } }
+            div { class: EMPTY, "No environment runs. Pick one in the switcher at the bottom left to start it." }
         };
     };
     let start = {
@@ -135,10 +143,10 @@ fn not_running(ui: &Ui, live: &Live) -> Element {
         }
     };
     rsx! {
-        div { class: "hdr", div { class: "crumb", "Live traffic" } }
-        div { class: "empty",
+        div { class: HEADER, div { class: CRUMB, "Live traffic" } }
+        div { class: EMPTY,
             p { "Environment {shown} does not run." }
-            button { class: "btn primary", onclick: start, Icon { shape: Shape::Play } "Start {shown}" }
+            button { class: BUTTON_PRIMARY, onclick: start, Icon { shape: Shape::Play } "Start {shown}" }
         }
     }
 }
@@ -150,48 +158,32 @@ fn FilterBar() -> Element {
     let live = ui.live.read();
     let conditions: Vec<Condition> = live.filter().conditions().iter().cloned().collect();
     rsx! {
-        div { class: "fbar",
+        div { class: "flex min-h-10.5 shrink-0 flex-wrap items-center gap-1.5 border-b border-edge py-2 pr-3 pl-4",
             if conditions.is_empty() {
-                span { class: "hint", "Every call. Click a client, a connection, an API or a topic to follow only calls like it." }
+                span { class: "text-small text-subtle", "Every call. Click a client, a connection, an API or a topic to follow only calls like it." }
             }
             for condition in conditions {
-                Chip { key: "{condition.field()}", condition }
+                ConditionChip {
+                    key: "{condition.field()}",
+                    onremove: {
+                        let ui = ui.clone();
+                        let field = condition.field();
+                        move |()| {
+                            let mut live = ui.live;
+                            live.write().clear_filter(field);
+                            ui.changed();
+                        }
+                    },
+                    condition,
+                }
             }
-        }
-    }
-}
-
-/// One condition of the filter.
-#[component]
-fn Chip(condition: Condition) -> Element {
-    let ui = use_context::<Ui>();
-    let field = condition.field();
-    let operator = condition.operator().name();
-    let tested = match &condition {
-        Condition::Is(value) => value.to_string(),
-        Condition::IsAnyOf(values) | Condition::IsNot(values) => {
-            values.iter().map(ToString::to_string).collect::<Vec<_>>().join(", ")
-        }
-        Condition::Matches(_, pattern) => pattern.to_string(),
-    };
-    let remove = move |_| {
-        let mut live = ui.live;
-        live.write().clear_filter(field);
-        ui.changed();
-    };
-    rsx! {
-        div { class: "chip",
-            span { class: "f", "{field}" }
-            span { class: "o", "{operator}" }
-            span { class: "v", "{tested}" }
-            span { class: "x", title: "Take the condition away", onclick: remove, Icon { shape: Shape::Close, size: 12 } }
         }
     }
 }
 
 /// A value that adds itself to the filter when someone clicks it.
 #[component]
-fn Value(value: FieldValue, class: &'static str, children: Element) -> Element {
+fn Value(value: FieldValue, children: Element) -> Element {
     let ui = use_context::<Ui>();
     let on = ui.live.read().filter().holds(&value);
     let toggle = move |event: MouseEvent| {
@@ -201,7 +193,7 @@ fn Value(value: FieldValue, class: &'static str, children: Element) -> Element {
         ui.changed();
     };
     rsx! {
-        span { class: if on { "{class} ff on" } else { "{class} ff" }, onclick: toggle, {children} }
+        span { class: if on { FILTER_VALUE_ON } else { FILTER_VALUE }, onclick: toggle, {children} }
     }
 }
 
@@ -229,44 +221,46 @@ fn CallRow(call: Call, selected: bool) -> Element {
         live.write().inspect(if already { None } else { Some(id) });
     };
     rsx! {
-        div { class: if selected { "srow selected" } else { "srow" }, onclick: inspect,
-            span { class: "mono t4", "{time}" }
-            div { class: "who",
-                if let Some(client) = client {
-                    Value { value: client.clone(), class: "name", "{client}" }
-                } else {
-                    span { class: "t4", "anonymous" }
+        div { class: if selected { ROW_SELECTED } else { ROW }, onclick: inspect,
+            span { class: "w-21 shrink-0 font-mono text-tiny text-subtle", "{time}" }
+            div { class: "flex w-33 min-w-0 shrink-0 items-center gap-1.75 text-body",
+                span { class: "truncate",
+                    if let Some(client) = client {
+                        Value { value: client.clone(), "{client}" }
+                    } else {
+                        span { class: "text-subtle", "anonymous" }
+                    }
                 }
-                Value { value: connection.clone(), class: "mono t4", "{connection}" }
+                span { class: "shrink-0 font-mono text-tiny text-subtle", Value { value: connection.clone(), "{connection}" } }
             }
-            span {
+            span { class: "w-8.5 shrink-0 font-mono text-tiny text-subtle",
                 if let Some((endpoint, short)) = endpoint {
-                    Value { value: endpoint, class: "mono t4", "{short}" }
+                    Value { value: endpoint, "{short}" }
                 }
             }
-            div {
+            div { class: "w-29.5 shrink-0",
                 if let Some(api) = api {
-                    Value { value: FieldValue::from(api), class: "", ApiPill { api, version } }
+                    Value { value: FieldValue::from(api), ApiPill { api, version } }
                 }
             }
-            div { class: "det",
+            div { class: "flex min-w-25 flex-1 items-center gap-1.5 overflow-hidden whitespace-nowrap text-muted",
                 for (topic, partitions) in topics {
-                    Value { key: "{topic}", value: FieldValue::from(topic.clone()), class: "tp", "{topic}" }
+                    span { key: "{topic}", class: "text-body", Value { value: FieldValue::from(topic.clone()), "{topic}" } }
                     if !partitions.is_empty() {
-                        span { class: "pp", "[{partitions}]" }
+                        span { class: "font-mono text-micro text-subtle", "[{partitions}]" }
                     }
                 }
                 if let Some(group) = group {
-                    span { class: "t5", "·" }
-                    Value { value: group.clone(), class: "", "group {group}" }
+                    span { class: "text-faint", "·" }
+                    Value { value: group.clone(), "group {group}" }
                 }
                 if let Some(transaction) = transaction {
-                    span { class: "t5", "·" }
-                    Value { value: transaction.clone(), class: "", "{transaction}" }
+                    span { class: "text-faint", "·" }
+                    Value { value: transaction.clone(), "{transaction}" }
                 }
             }
-            div { class: "lat",
-                if let Some(latency) = latency { "{latency}" } else { span { class: "t4", "no answer" } }
+            div { class: "w-14 shrink-0 text-right font-mono text-tiny text-muted",
+                if let Some(latency) = latency { "{latency}" } else { span { class: "text-subtle", "no answer" } }
             }
             Outcome { call: call.clone() }
         }
@@ -277,19 +271,19 @@ fn CallRow(call: Call, selected: bool) -> Element {
 #[component]
 fn Outcome(call: Call) -> Element {
     let verdict = call.verdict();
-    let lies: Vec<(&'static str, String)> = verdict
+    let lies: Vec<(Tone, String)> = verdict
         .lies()
         .iter()
-        .map(|lie| (lie_color(lie.lie()), lie.to_string()))
+        .map(|lie| (Tone::of(lie.lie()), lie.to_string()))
         .collect();
     let answer = delivered(call.delivered());
     rsx! {
-        div { class: "out",
+        div { class: "flex w-37.5 min-w-0 shrink-0 items-center gap-1.5 overflow-hidden whitespace-nowrap text-caption",
             if lies.is_empty() {
-                span { class: if answer == "ok" { "ok" } else { "err" }, "{answer}" }
+                span { class: if answer == "ok" { "font-mono text-tiny text-faint" } else { "truncate font-mono text-tiny text-danger" }, "{answer}" }
             }
-            for (color, text) in lies {
-                LieBadge { color, text }
+            for (tone, text) in lies {
+                LieBadge { tone, text }
             }
         }
     }
@@ -406,17 +400,17 @@ fn SessionTree(environment: EnvironmentName) -> Element {
         BackendKind::Simulated => "a simulated broker",
     };
     rsx! {
-        div { class: "ph", "Sessions" span { class: "t4", "{running.sessions.len()}" } }
+        div { class: PANE_HEADER, "Sessions" span { class: "ml-auto font-normal text-subtle", "{running.sessions.len()}" } }
         if groups.is_empty() {
-            div { class: "note pad", "No client is connected to {environment}." }
+            div { class: "px-3.5 py-2.5 {NOTE}", "No client is connected to {environment}." }
         }
         for (value, label, rows) in groups {
-            div { key: "{label}", class: "group",
-                div { class: "cl",
+            div { key: "{label}", class: "pb-1",
+                div { class: "mt-1 flex h-7.5 items-center gap-2 pr-3 pl-3.5 font-medium text-strong",
                     if let Some(value) = value {
-                        Value { value, class: "name", "{label}" }
+                        Value { value, "{label}" }
                     } else {
-                        span { class: "t4", "{label}" }
+                        span { class: "text-subtle", "{label}" }
                     }
                 }
                 for row in rows {
@@ -424,11 +418,14 @@ fn SessionTree(environment: EnvironmentName) -> Element {
                 }
             }
         }
-        div { class: "ph static", "Endpoints" span { class: "t4", "{kind}" } }
+        div { class: "mt-2.5 flex h-8.5 items-center gap-2 whitespace-nowrap border-y border-edge px-3.5 text-small font-medium text-muted",
+            "Endpoints"
+            span { class: "ml-auto font-normal text-subtle", "{kind}" }
+        }
         for (endpoint, address) in endpoints {
-            div { key: "{endpoint}", class: "cn endpoint",
-                span { class: "mono", "{endpoint}" }
-                span { class: "mono t4", "{address}" }
+            div { key: "{endpoint}", class: "flex h-6.25 items-center gap-1.5 px-3.5 font-mono text-tiny text-muted",
+                span { class: "w-17.5 shrink-0", "{endpoint}" }
+                span { class: "truncate text-subtle", "{address}" }
             }
         }
     }
@@ -448,13 +445,13 @@ struct SessionRow {
 fn Session(row: SessionRow) -> Element {
     let connection = FieldValue::from(row.connection);
     rsx! {
-        div { class: "cn",
-            Value { value: connection, class: "mono", "{row.connection}" }
-            span { class: "mono t4", "→ {row.endpoint}" }
-            span { class: "n", "{row.calls}" }
+        div { class: "flex h-6.25 items-center gap-1.5 pr-3 pl-7.5 text-small text-muted hover:bg-hover",
+            span { class: "w-8.5 shrink-0 font-mono text-tiny", Value { value: connection, "{row.connection}" } }
+            span { class: "flex-1 truncate font-mono text-tiny text-subtle", "→ {row.endpoint}" }
+            span { class: "font-mono text-tiny text-subtle", "{row.calls}" }
         }
         if let Some(software) = row.software {
-            div { class: "sub", "{software}" }
+            div { class: "-mt-0.5 truncate pr-3.5 pb-1 pl-7.5 font-mono text-micro text-subtle", "{software}" }
         }
     }
 }
@@ -467,8 +464,8 @@ fn ApiCounts(environment: EnvironmentName) -> Element {
     let stats = live.process().and_then(|process| process.stats(&environment));
     let Some(stats) = stats else {
         return rsx! {
-            div { class: "ph", "Calls per API" }
-            div { class: "note pad", "The first statistics come in a moment." }
+            div { class: PANE_HEADER_INSET, "Calls per API" }
+            div { class: "px-3.5 py-2.5 {NOTE}", "The first statistics come in a moment." }
         };
     };
     let mut apis: Vec<(ApiKey, u64)> = stats.apis.iter().map(|(api, calls)| (*api, *calls)).collect();
@@ -477,11 +474,11 @@ fn ApiCounts(environment: EnvironmentName) -> Element {
     let total = stats.calls;
     let missed = stats.missed_events;
     rsx! {
-        div { class: "ph", "Calls per API" span { class: "t4", "{total} since the start" } }
+        div { class: PANE_HEADER_INSET, "Calls per API" span { class: "ml-auto font-normal text-subtle", "{total} since the start" } }
         if missed > 0 {
-            div { class: "note pad", "{missed} events went uncounted: every number is the least it can be." }
+            div { class: "px-3.5 py-2.5 {NOTE}", "{missed} events went uncounted: every number is the least it can be." }
         }
-        div { class: "facet",
+        div { class: "px-3.5 py-2",
             for (api, calls) in apis {
                 ApiCount { key: "{api}", api, calls, most }
             }
@@ -500,19 +497,22 @@ fn ApiCount(api: ApiKey, calls: u64, most: u64) -> Element {
         reason = "a bar is as wide as a share, and needs no exact count"
     )]
     let width = (calls as f64 / most as f64 * 100.0).max(2.0);
-    let color = api_color(api);
+    let dot = ApiTone::of(api).dot();
     let toggle = move |_| {
         let mut live = ui.live;
         live.write().toggle(value.clone());
         ui.changed();
     };
     rsx! {
-        div { class: if on { "fv on" } else { "fv" }, onclick: toggle,
-            span { class: "bar", style: "width:{width}%" }
-            span { class: "ck", if on { Icon { shape: Shape::Check, size: 10 } } }
-            span { class: "sq", style: "background:{color}" }
-            span { class: "nm", "{api}" }
-            span { class: "c", "{calls}" }
+        div { class: if on { "relative -mx-1.5 flex h-6 cursor-pointer items-center gap-2 rounded px-1.5 text-small text-strong hover:bg-hover" } else { "relative -mx-1.5 flex h-6 cursor-pointer items-center gap-2 rounded px-1.5 text-small text-body hover:bg-hover" },
+            onclick: toggle,
+            span { class: if on { "absolute inset-y-0.75 left-0 rounded bg-accent/20" } else { "absolute inset-y-0.75 left-0 rounded bg-hover" }, style: "width:{width}%" }
+            span { class: if on { "relative grid size-3 shrink-0 place-items-center rounded-sm border border-primary bg-primary text-on-primary" } else { "relative grid size-3 shrink-0 place-items-center rounded-sm border border-edge-bold" },
+                if on { Icon { shape: Shape::Check, size: 10 } }
+            }
+            i { class: "relative {dot}" }
+            span { class: "relative truncate", "{api}" }
+            span { class: "relative ml-auto font-mono text-tiny text-subtle", "{calls}" }
         }
     }
 }
@@ -567,48 +567,45 @@ fn Inspector() -> Element {
         live.write().inspect(None);
     };
     rsx! {
-        div { class: "sh-h",
-            div { class: "row",
+        div { class: "border-b border-edge px-4 pt-3.5 pb-3",
+            div { class: "flex items-center gap-2",
                 if let Some(api) = api { ApiPill { api, version } }
-                span { class: "mono t4", "call {call.id()}" }
-                span { class: "sp" }
-                button { class: "ib", title: "Close", onclick: close, Icon { shape: Shape::Close } }
+                span { class: "font-mono text-caption text-subtle", "call {call.id()}" }
+                span { class: "flex-1" }
+                button { class: ICON_BUTTON, title: "Close", onclick: close, Icon { shape: Shape::Close } }
             }
-            div { class: "mono t4 meta", "{time} · {call.connection()} · waited {waited}" }
+            div { class: "mt-2 font-mono text-tiny text-subtle", "{time} · {call.connection()} · waited {waited}" }
         }
-        div { class: "vcard",
-            h5 {
-                span { class: if lied { "sdot lied" } else { "sdot pass" } }
+        div { class: "mx-4 mt-3.5 mb-1 flex flex-col gap-2.5 rounded-lg border border-edge-strong bg-raised px-3.5 py-3",
+            h5 { class: "flex items-center gap-2 text-compact font-medium text-strong",
+                span { class: if lied { "size-2 shrink-0 rounded-full bg-warning" } else { "size-2 shrink-0 rounded-full bg-armed" } }
                 if lied { "Lied" } else { "Pass" }
-                span { class: "t4 light", "{verdict_text}" }
+                span { class: "truncate font-normal text-subtle", "{verdict_text}" }
             }
-            div { class: "tv",
-                span { "Truth" }
-                span { class: "mono", "{truth}" }
-                span { "Delivered" }
-                span { class: "mono", "{received}" }
+            div { class: "flex flex-col gap-1 text-small text-muted",
+                Fact { label: "Truth", text: truth }
+                Fact { label: "Delivered", text: received }
                 if let Some(backend) = backend {
-                    span { "Backend" }
-                    span { class: "mono", "took {backend}" }
+                    Fact { label: "Backend", text: format!("took {backend}") }
                 }
             }
             if lines.is_empty() {
-                div { class: "ex note", "No armed rule matched this call." }
+                div { class: "border-t border-edge pt-2.25 {NOTE}", "No armed rule matched this call." }
             }
             for line in lines {
                 ExplanationLine { key: "{line.rule()}", line, running: running.clone() }
             }
             if let Some(failure) = failure {
-                div { class: "ex note failed", "GaslightMQ failed on this call: {failure}" }
+                div { class: "border-t border-edge pt-2.25 text-caption text-danger", "GaslightMQ failed on this call: {failure}" }
             }
         }
         for (title, fields) in groups {
             if !fields.is_empty() {
-                div { class: "fgrp", "{title}" }
+                div { class: "px-4 pt-3.5 pb-1 text-tiny font-medium text-subtle", "{title}" }
                 for (field, text) in fields {
-                    div { key: "{field}", class: "fld",
-                        span { class: "k", "{field}" }
-                        span { class: "val", "{text}" }
+                    div { key: "{field}", class: "flex min-h-6.5 items-center gap-2.5 px-4 py-0.5 font-mono text-caption",
+                        span { class: "w-30 shrink-0 text-muted", "{field}" }
+                        span { class: "min-w-0 break-all text-body", "{text}" }
                     }
                 }
             }
@@ -631,26 +628,26 @@ fn ExplanationLine(line: RuleExplanation, running: Option<RunningEnvironment>) -
     let lie = line.lie().and_then(|fate| {
         fate.applied()
             .is_some()
-            .then(|| (lie_color(fate.lie().lie()), fate.lie().to_string()))
+            .then(|| (Tone::of(fate.lie().lie()), fate.lie().to_string()))
     });
     rsx! {
-        div { class: "ex",
-            div { class: "nm",
+        div { class: "flex flex-col gap-1.5 border-t border-edge pt-2.25",
+            div { class: "flex min-w-0 items-center gap-1.75 text-compact font-medium text-strong",
                 if let Some(status) = &status {
                     StateIcon { state: status.state, size: 12 }
                 }
-                span { class: "ellipsis", "{label}" }
-                span { class: "sp" }
-                if let Some((color, text)) = lie {
-                    LieBadge { color, text }
+                span { class: "truncate", "{label}" }
+                span { class: "flex-1" }
+                if let Some((tone, text)) = lie {
+                    LieBadge { tone, text }
                 }
             }
-            div { class: "steps",
+            div { class: "flex flex-wrap items-center gap-1.25 text-caption text-muted",
                 for status in statuses {
                     span { class: step_class(status), "{status.name()}" }
                 }
             }
-            div { class: "mono t3 line", "{text}" }
+            div { class: "break-all font-mono text-micro leading-normal text-muted", "{text}" }
         }
     }
 }
@@ -658,9 +655,24 @@ fn ExplanationLine(line: RuleExplanation, running: Option<RunningEnvironment>) -
 /// How a step of an explanation looks: an applied lie stands out, a lost one warns.
 fn step_class(status: ExplanationStatus) -> &'static str {
     match status {
-        ExplanationStatus::Applied => "st ok",
-        ExplanationStatus::Shadowed | ExplanationStatus::PreEmpted => "st sh",
-        ExplanationStatus::Matched | ExplanationStatus::Rolled | ExplanationStatus::Fired => "st",
+        ExplanationStatus::Applied => "inline-flex min-h-4.75 items-center rounded bg-armed/12 px-1.5 text-armed",
+        ExplanationStatus::Shadowed | ExplanationStatus::PreEmpted => {
+            "inline-flex min-h-4.75 items-center rounded bg-warning/12 px-1.5 text-warning"
+        }
+        ExplanationStatus::Matched | ExplanationStatus::Rolled | ExplanationStatus::Fired => {
+            "inline-flex min-h-4.75 items-center rounded bg-selected px-1.5"
+        }
+    }
+}
+
+/// One fact of a call: a label, and its value in a monospace.
+#[component]
+fn Fact(label: &'static str, text: String) -> Element {
+    rsx! {
+        div { class: "flex gap-2.5",
+            span { class: "w-17 shrink-0", "{label}" }
+            span { class: "min-w-0 break-all font-mono text-caption text-body", "{text}" }
+        }
     }
 }
 

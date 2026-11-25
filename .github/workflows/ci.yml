@@ -124,11 +124,27 @@ jobs:
       - uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4
       - run: just doc
 
+  # The bundle of the UI, as `just ui` builds it: dx at the version that the justfile names, and the Tailwind it pins.
+  ui:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: rustup toolchain install
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+      - uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4
+      - run: |
+          curl -fsSL "https://github.com/cargo-bins/cargo-binstall/releases/latest/download/cargo-binstall-x86_64-unknown-linux-musl.tgz" \
+            | tar -xz -C "$HOME/.cargo/bin"
+          cargo binstall --no-confirm "dioxus-cli@$(just dx-version)"
+      - run: just ui
+
   # GitHub reads a skipped required job as passed, so this job runs always and fails unless every job succeeded.
   ci-success:
     name: CI
     if: always()
-    needs: [fmt, xtask, check, wasm, clippy, test, doc]
+    needs: [fmt, xtask, check, wasm, clippy, test, doc, ui]
     runs-on: ubuntu-latest
     steps:
       - name: Every job passed

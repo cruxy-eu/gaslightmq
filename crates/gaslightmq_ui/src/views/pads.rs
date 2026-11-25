@@ -8,7 +8,16 @@ use gaslightmq_control_api::surface::{Column, Encoder, Layer, LayoutName, PadSta
 use gaslightmq_control_api::trigger::Chance;
 
 use crate::app::Ui;
-use crate::components::{Icon, Shape, lie_color};
+use crate::components::LieBadge;
+use crate::components::{Icon, Shape, Tone};
+use crate::style::{CRUMB, EMPTY, HEADER, KEY, SEGMENT, SEGMENT_ON, SEGMENTS};
+
+/// The card of the focused pad, left of the encoders.
+const FOCUS_CARD: &str =
+    "flex w-54 min-w-0 shrink-0 flex-col justify-center gap-1.5 rounded-xl border border-edge bg-raised px-3.5 py-3";
+
+/// A step button of an encoder.
+const STEP: &str = "grid size-4 cursor-pointer place-items-center rounded text-small leading-none text-muted enabled:hover:bg-hover enabled:hover:text-strong disabled:cursor-default";
 use crate::pads::{Desk, Move, encoder_value};
 use crate::process::Process;
 
@@ -21,27 +30,27 @@ pub fn Pads() -> Element {
     let ui = use_context::<Ui>();
     let live = ui.live.read();
     let header = rsx! {
-        div { class: "crumb", Icon { shape: Shape::Grid, size: 15 } "Pads" }
-        span { class: "t4", "·" }
-        span { class: "t3 small", "rows are selectors, columns are presets, the bottom row picks the layer" }
+        div { class: CRUMB, span { class: "text-muted", Icon { shape: Shape::Grid, size: 15 } } "Pads" }
+        span { class: "text-subtle", "·" }
+        span { class: "text-small text-muted", "rows are selectors, columns are presets, the bottom row picks the layer" }
     };
     let Some(process) = live.process() else {
         return rsx! {
-            div { class: "hdr", {header} }
-            div { class: "empty", "Connecting to the control plane…" }
+            div { class: HEADER, {header} }
+            div { class: EMPTY, "Connecting to the control plane…" }
         };
     };
     let Some(running) = live.shown_running() else {
         return rsx! {
-            div { class: "hdr", {header} }
-            div { class: "empty", "No environment runs that the pads could play. Start one in the switcher at the bottom left." }
+            div { class: HEADER, {header} }
+            div { class: EMPTY, "No environment runs that the pads could play. Start one in the switcher at the bottom left." }
         };
     };
     let layouts = process.definitions().layouts.clone();
     let Some(desk) = Desk::following(ui.desk.read().clone(), &layouts) else {
         return rsx! {
-            div { class: "hdr", {header} }
-            div { class: "empty", "The workspace has no pad layout. A layout maps rows to selectors and columns to presets." }
+            div { class: HEADER, {header} }
+            div { class: EMPTY, "The workspace has no pad layout. A layout maps rows to selectors and columns to presets." }
         };
     };
     let layout = desk.layout().clone();
@@ -61,8 +70,6 @@ pub fn Pads() -> Element {
     let mode = desk.surface().mode();
     let shown_layer = desk.surface().layer().clone();
     let focused = desk.surface().focused();
-    let grid = format!("216px repeat({}, 68px)", columns.len());
-    let span = columns.len();
     let layer_buttons: Vec<(Layer, usize)> = layout
         .layers()
         .iter()
@@ -122,61 +129,68 @@ pub fn Pads() -> Element {
         }
     };
     rsx! {
-        div { class: "hdr",
+        div { class: HEADER,
             {header}
-            span { class: "sp" }
+            span { class: "flex-1" }
             if others.len() > 1 {
-                div { class: "seg",
+                div { class: SEGMENTS,
                     for (name, title) in others {
                         LayoutButton { key: "{name}", on: &name == layout.name(), name, title }
                     }
                 }
             }
-            div { class: "seg",
+            div { class: SEGMENTS,
                 for each in PlayMode::ALL {
                     ModeButton { key: "{each}", mode: each, on: each == mode }
                 }
             }
         }
-        div { class: "pads-wrap", tabindex: "0", onkeydown: keys,
-            div { class: "pads", style: "grid-template-columns:{grid}",
-                FocusCard {}
-                div { class: "deck", style: "grid-column:2 / span {span}",
-                    for encoder in Encoder::ALL {
-                        Knob { key: "{encoder.name()}", encoder }
-                    }
-                }
-                div {}
-                for (column, preset) in columns.clone() {
-                    ColumnHeader { key: "{column.index()}", preset }
-                }
-                for (row, selector) in rows {
-                    RowHeader { key: "row-{row.index()}", row, selector, on: focused.as_ref().is_some_and(|pad| pad.row() == row) }
-                    for (column, preset) in columns.clone() {
-                        PadCell {
-                            key: "{row.index()}-{column.index()}",
-                            row,
-                            column,
-                            color: preset_color(&presets, &preset),
-                            on: focused.as_ref().is_some_and(|pad| pad.row() == row && pad.column() == column),
+        div { class: "flex min-h-0 flex-1 justify-center overflow-auto px-6 pt-5 pb-6.5 outline-none", tabindex: "0", onkeydown: keys,
+            div { class: "flex w-min flex-col gap-2",
+                div { class: "flex gap-2",
+                    FocusCard {}
+                    div { class: "grid min-w-0 flex-1 grid-cols-8 gap-1 rounded-xl border border-edge bg-linear-to-b from-band to-panel px-1.5 pt-3 pb-2.5",
+                        for encoder in Encoder::ALL {
+                            Knob { key: "{encoder.name()}", encoder }
                         }
                     }
                 }
-                div { class: "scopelbl",
-                    span { class: "t2", "Layer" }
-                    "who the grid applies to"
-                }
-                div { class: "layers", style: "grid-column:2 / span {span}",
-                    for (index, (layer, armed)) in layer_buttons.into_iter().enumerate() {
-                        LayerButton { key: "{layer}", on: layer == shown_layer, number: index + 1, layer, armed }
+                div { class: "flex gap-2",
+                    div { class: "w-54 shrink-0" }
+                    for (column, preset) in columns.clone() {
+                        ColumnHeader { key: "{column.index()}", preset }
                     }
                 }
-                div { class: "legend", style: "grid-column:1 / span {span + 1}",
-                    span { class: "sw2", span { class: "sq lit" } "lit = armed, fill = chance" }
-                    span { class: "sw2", span { class: "sq dashed" } "dashed = rule exists, disarmed" }
-                    span { class: "sw2", span { class: "sdot small" } "armed on another layer" }
-                    span { class: "sw2", span { class: "kbd", "←↑→↓" } " move " span { class: "kbd", "space" } " press " span { class: "kbd", "1–9" } " layer" }
-                    span { class: "sp" }
+                for (row, selector) in rows {
+                    div { key: "row-{row.index()}", class: "flex gap-2",
+                        RowHeader { row, selector, on: focused.as_ref().is_some_and(|pad| pad.row() == row) }
+                        for (column, preset) in columns.clone() {
+                            PadCell {
+                                key: "{row.index()}-{column.index()}",
+                                row,
+                                column,
+                                tone: preset_tone(&presets, &preset),
+                                on: focused.as_ref().is_some_and(|pad| pad.row() == row && pad.column() == column),
+                            }
+                        }
+                    }
+                }
+                div { class: "flex gap-2",
+                    div { class: "flex w-54 shrink-0 flex-col justify-center px-2.5 text-caption text-subtle",
+                        span { class: "font-medium text-body", "Layer" }
+                        "who the grid applies to"
+                    }
+                    div { class: "flex flex-wrap gap-2",
+                        for (index, (layer, armed)) in layer_buttons.into_iter().enumerate() {
+                            LayerButton { key: "{layer}", on: layer == shown_layer, number: index + 1, layer, armed }
+                        }
+                    }
+                }
+                div { class: "mt-2 flex flex-wrap items-center gap-4.5 border-t border-edge pt-3 text-caption text-subtle",
+                    span { class: "inline-flex items-center gap-1.5", span { class: "inline-block size-2.5 rounded-sm bg-lie-delay shadow-md shadow-lie-delay" } "lit = armed, fill = chance" }
+                    span { class: "inline-flex items-center gap-1.5", span { class: "inline-block size-2.5 rounded-sm border border-dashed border-lie-delay/60" } "dashed = rule exists, disarmed" }
+                    span { class: "inline-flex items-center gap-1.5", span { class: "inline-block size-1.25 rounded-full bg-muted" } "armed on another layer" }
+                    span { class: "inline-flex items-center gap-1.5", span { class: KEY, "←↑→↓" } " move " span { class: KEY, "space" } " press " span { class: KEY, "1–9" } " layer" }
                     span { "A press of an empty pad makes its live rule and arms it. A layer is a page, not a priority." }
                 }
             }
@@ -220,11 +234,11 @@ fn armed_on(desk: &Desk, layer: &Layer, running: &RunningEnvironment) -> usize {
         .count()
 }
 
-/// The color of the lie of a preset, for its column.
-fn preset_color(presets: &[Preset], name: &PresetName) -> &'static str {
+/// The tone of the lie of a preset, for its column.
+fn preset_tone(presets: &[Preset], name: &PresetName) -> Tone {
     match presets.iter().find(|preset| preset.name() == name).map(Preset::action) {
-        Some(Action::Lie(lie)) => lie_color(lie),
-        _ => "#9ca3af",
+        Some(Action::Lie(lie)) => Tone::of(lie),
+        _ => Tone::Other,
     }
 }
 
@@ -253,7 +267,7 @@ fn LayoutButton(name: LayoutName, title: String, on: bool) -> Element {
         }
     };
     rsx! {
-        button { class: if on { "on" } else { "" }, onclick: pick, "{title}" }
+        button { class: if on { SEGMENT_ON } else { SEGMENT }, onclick: pick, "{title}" }
     }
 }
 
@@ -267,7 +281,7 @@ fn ModeButton(mode: PlayMode, on: bool) -> Element {
     };
     rsx! {
         button {
-            class: if on { "on" } else { "" },
+            class: if on { SEGMENT_ON } else { SEGMENT },
             title: if mode == PlayMode::Latch { "A press toggles the pad" } else { "The pad is armed while pressed" },
             onclick: move |_| play(&ui, |desk, _| {
                 desk.set_mode(mode);
@@ -284,17 +298,17 @@ fn FocusCard() -> Element {
     let ui = use_context::<Ui>();
     let live = ui.live.read();
     let (Some(process), Some(running)) = (live.process(), live.shown_running()) else {
-        return rsx! { div { class: "focuscard" } };
+        return rsx! { div { class: FOCUS_CARD } };
     };
     let Some(desk) = Desk::following(ui.desk.read().clone(), &process.definitions().layouts) else {
-        return rsx! { div { class: "focuscard" } };
+        return rsx! { div { class: FOCUS_CARD } };
     };
     let Some(pad) = desk.surface().focused() else {
         return rsx! {
-            div { class: "focuscard",
-                span { class: "t4", "Encoders" }
+            div { class: FOCUS_CARD,
+                span { class: "text-tiny text-subtle", "Encoders" }
                 b { "No pad has the focus" }
-                span { class: "t4", "Press a pad, or move to one with the arrow keys." }
+                span { class: "text-tiny text-subtle", "Press a pad, or move to one with the arrow keys." }
             }
         };
     };
@@ -304,7 +318,7 @@ fn FocusCard() -> Element {
         .map_or_else(String::new, |name| selector_title(process, name));
     let preset = layout.preset(pad.column());
     let preset_title = preset.map_or_else(String::new, |name| preset_title(process, name));
-    let color = preset.map_or("#9ca3af", |name| preset_color(&process.definitions().presets, name));
+    let tone = preset.map_or(Tone::Other, |name| preset_tone(&process.definitions().presets, name));
     let rule = desk.rule(pad.row(), pad.column(), running);
     let state = match rule {
         None => "no rule yet".to_owned(),
@@ -320,11 +334,11 @@ fn FocusCard() -> Element {
     };
     let key = ROW_KEYS.chars().nth(pad.row().index()).unwrap_or('?');
     rsx! {
-        div { class: "focuscard",
-            span { class: "t4", "Encoders → pad {key}{pad.column().index() + 1}" }
+        div { class: FOCUS_CARD,
+            span { class: "text-tiny text-subtle", "Encoders → pad {key}{pad.column().index() + 1}" }
             b { "{selector}" }
-            div { class: "row", span { class: "fault", style: "--c:{color}", "{preset_title}" } }
-            span { class: "t4", "{state} · layer {pad.layer()}" }
+            div { class: "flex gap-1.5", LieBadge { tone, text: preset_title } }
+            span { class: "text-tiny text-subtle", "{state} · layer {pad.layer()}" }
         }
     }
 }
@@ -357,7 +371,7 @@ fn Knob(encoder: Encoder) -> Element {
     let ui = use_context::<Ui>();
     let live = ui.live.read();
     let (Some(process), Some(running)) = (live.process(), live.shown_running()) else {
-        return rsx! { div { class: "knob na" } };
+        return rsx! { div { class: "opacity-30" } };
     };
     let presets = &process.definitions().presets;
     let desk = Desk::following(ui.desk.read().clone(), &process.definitions().layouts);
@@ -410,14 +424,14 @@ fn Knob(encoder: Encoder) -> Element {
         encoder.parameter()
     );
     rsx! {
-        div { class: if turns { "knob" } else { "knob na" }, title: "{title}", onwheel: wheel,
-            label { "{label}" }
-            div { class: "dial",
-                button { class: "step", disabled: !turns, onclick: down, "−" }
-                span { class: if turns { "ring on" } else { "ring" } }
-                button { class: "step", disabled: !turns, onclick: move |_| turn(1), "+" }
+        div { class: if turns { "flex min-w-0 select-none flex-col items-center gap-1" } else { "flex min-w-0 select-none flex-col items-center gap-1 opacity-30" }, title: "{title}", onwheel: wheel,
+            label { class: "whitespace-nowrap text-micro text-muted", "{label}" }
+            div { class: "flex items-center gap-0.5",
+                button { class: STEP, disabled: !turns, onclick: down, "−" }
+                span { class: if turns { "size-6.5 cursor-ns-resize rounded-full border-3 border-accent border-b-track bg-popover" } else { "size-6.5 rounded-full border-3 border-track bg-popover" } }
+                button { class: STEP, disabled: !turns, onclick: move |_| turn(1), "+" }
             }
-            span { class: "kv", "{value}" }
+            span { class: "max-w-16.5 truncate whitespace-nowrap font-mono text-micro font-medium text-strong", "{value}" }
         }
     }
 }
@@ -428,14 +442,15 @@ fn ColumnHeader(preset: PresetName) -> Element {
     let ui = use_context::<Ui>();
     let live = ui.live.read();
     let Some(process) = live.process() else {
-        return rsx! { div { class: "colh" } };
+        return rsx! { div { class: "w-17 shrink-0" } };
     };
     let title = preset_title(process, &preset);
-    let color = preset_color(&process.definitions().presets, &preset);
+    let tone = preset_tone(&process.definitions().presets, &preset);
     rsx! {
-        div { class: "colh", style: "--c:{color}", title: "{preset}",
+        div { class: "flex w-17 min-w-0 shrink-0 flex-col justify-end overflow-hidden px-0.5 pt-2 pb-0.5 text-tiny font-medium leading-tight text-body", title: "{preset}",
+            i { class: "mb-1.75 block h-0.75 w-3.5 rounded-xs {tone.fill()}" }
             "{title}"
-            small { "{preset}" }
+            small { class: "truncate font-mono text-micro font-normal text-subtle", "{preset}" }
         }
     }
 }
@@ -450,23 +465,26 @@ fn RowHeader(row: Row, selector: SelectorName, on: bool) -> Element {
         .map_or_else(|| selector.to_string(), |process| selector_title(process, &selector));
     let key = ROW_KEYS.chars().nth(row.index()).unwrap_or('?');
     rsx! {
-        div { class: if on { "rowh on" } else { "rowh" },
-            b { span { class: "key", "{key}" } "{title}" }
-            span { class: "meta", "{selector}" }
+        div { class: if on { "flex h-13.5 w-54 min-w-0 shrink-0 flex-col justify-center gap-1 rounded-lg bg-selected px-2.5" } else { "flex h-13.5 w-54 min-w-0 shrink-0 flex-col justify-center gap-1 rounded-lg px-2.5" },
+            b { class: "flex items-center gap-1.75 truncate text-compact font-medium text-strong",
+                span { class: "w-3.5 shrink-0 font-mono text-micro font-medium text-subtle", "{key}" }
+                "{title}"
+            }
+            span { class: "truncate pl-5.25 font-mono text-micro text-subtle", "{selector}" }
         }
     }
 }
 
 /// One pad: lit while its rule is armed, filled as high as its chance, dashed while its rule rests.
 #[component]
-fn PadCell(row: Row, column: Column, color: &'static str, on: bool) -> Element {
+fn PadCell(row: Row, column: Column, tone: Tone, on: bool) -> Element {
     let ui = use_context::<Ui>();
     let live = ui.live.read();
     let (Some(process), Some(running)) = (live.process(), live.shown_running()) else {
-        return rsx! { div { class: "pad" } };
+        return rsx! { div { class: "h-13.5 w-17 shrink-0" } };
     };
     let Some(desk) = Desk::following(ui.desk.read().clone(), &process.definitions().layouts) else {
-        return rsx! { div { class: "pad" } };
+        return rsx! { div { class: "h-13.5 w-17 shrink-0" } };
     };
     let state = desk.state(row, column, running);
     let elsewhere = desk.armed_elsewhere(row, column, running);
@@ -483,15 +501,12 @@ fn PadCell(row: Row, column: Column, color: &'static str, on: bool) -> Element {
         reason = "a share of 100 fits a percentage"
     )]
     let fill = chance.map_or(0, |chance| (chance.fraction() * 100.0).round() as u32);
-    let mut class = String::from("pad");
-    match state {
-        PadState::Armed => class.push_str(" on"),
-        PadState::Disarmed => class.push_str(" disarmed"),
-        PadState::Empty => {}
-    }
-    if on {
-        class.push_str(" focus");
-    }
+    let base = if on {
+        "relative h-13.5 w-17 shrink-0 cursor-pointer touch-none select-none overflow-hidden rounded-lg border ring-2 ring-strong/85 ring-offset-2 ring-offset-panel transition active:scale-96"
+    } else {
+        "relative h-13.5 w-17 shrink-0 cursor-pointer touch-none select-none overflow-hidden rounded-lg border transition active:scale-96"
+    };
+    let class = format!("{base} {}", tone.pad(state));
     let press = {
         let ui = ui.clone();
         move |_| play(&ui, |desk, running| desk.press(row, column, running))
@@ -507,13 +522,16 @@ fn PadCell(row: Row, column: Column, color: &'static str, on: bool) -> Element {
     rsx! {
         div {
             class,
-            style: "--c:{color}",
             onpointerdown: press,
             onpointerup: release,
             onpointerleave: leave,
-            div { class: "lv", style: if state == PadState::Armed { "height:{fill}%" } else { "height:0" } }
-            if elsewhere { i { class: "o" } }
-            span { class: "pl", "{fill}%" }
+            if state == PadState::Armed {
+                div { class: "absolute inset-x-0 bottom-0 bg-linear-to-b from-strong/20 to-transparent {tone.fill()}", style: "height:{fill}%" }
+            }
+            if elsewhere { i { class: "absolute top-1.5 right-1.5 size-1.25 rounded-full bg-strong/70" } }
+            if state == PadState::Armed {
+                span { class: "absolute bottom-1.25 left-1.75 font-mono text-micro font-semibold text-strong", "{fill}%" }
+            }
         }
     }
 }
@@ -532,9 +550,11 @@ fn LayerButton(layer: Layer, number: usize, armed: usize, on: bool) -> Element {
         }
     };
     rsx! {
-        button { class: if on { "scopebtn on" } else { "scopebtn" }, title: "Layer {number}", onclick: switch,
-            span { class: "nm", "{layer}" }
-            span { class: "n", if armed > 0 { "{armed} armed" } else { "·" } }
+        button { class: if on { "flex h-9 min-w-17 cursor-pointer flex-col items-center justify-center overflow-hidden whitespace-nowrap rounded-lg border border-accent/70 bg-accent/12 px-2 text-tiny leading-tight text-strong" } else { "flex h-9 min-w-17 cursor-pointer flex-col items-center justify-center overflow-hidden whitespace-nowrap rounded-lg border border-edge-strong bg-raised px-2 text-tiny leading-tight text-muted hover:text-strong" },
+            title: "Layer {number}",
+            onclick: switch,
+            span { "{layer}" }
+            span { class: "font-mono text-micro text-subtle", if armed > 0 { "{armed} armed" } else { "·" } }
         }
     }
 }

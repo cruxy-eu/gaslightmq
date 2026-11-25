@@ -125,7 +125,7 @@ Every other message reaches every client, except the answer to a subscription, w
 ## Over the network
 
 `control_server` serves the control plane, and `control_client` speaks to it.
-The server listens on one address: `127.0.0.1:8080`, until its configuration names another.
+The server listens on one address: `127.0.0.1:7092`, until its configuration names another.
 Every body and every frame is JSON, and it is the `serde` form of a type of `control_api`.
 No other form exists, so a client in the browser and one on a native target send the same bytes.
 

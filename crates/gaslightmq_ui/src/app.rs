@@ -11,8 +11,8 @@ use crate::live::Live;
 use crate::pads::Desk;
 use crate::views::{Pads, Record, Rules, Shell};
 
-/// The stylesheet of every view.
-const STYLE: Asset = asset!("/assets/ui.css");
+/// The stylesheet of every view, which dx builds from `tailwind.css` into the root of the bundle.
+const STYLE: &str = "/ui.css";
 
 /// The views of the UI, by their path. The shell holds the navigation and the environment switcher around them.
 #[derive(Debug, Clone, PartialEq, Routable)]
@@ -106,7 +106,7 @@ pub fn App() -> Element {
     let Some(address) = browser::control_plane() else {
         return rsx! {
             document::Stylesheet { href: STYLE }
-            div { class: "fatal", "The page has no address that a control plane can have." }
+            div { class: "p-12 text-danger", "The page has no address that a control plane can have." }
         };
     };
     let configuration = use_hook(UiConfiguration::default);

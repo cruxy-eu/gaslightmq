@@ -24,6 +24,8 @@ mod sans_io;
 mod source;
 mod table;
 mod test_support;
+mod ui_theme;
+mod ui_tokens;
 mod wasm_crates;
 mod workspace;
 mod workspace_rules;
@@ -72,10 +74,14 @@ enum Check {
     TestSupport,
     /// CI runs every check and every recipe of `just ci`, and each of its jobs blocks a merge.
     CiParity,
+    /// The UI styles with the tokens of its theme, and with no raw colour, arbitrary value or `dark:` variant.
+    UiTokens,
+    /// The theme of the UI gives every colour token a dark and a light value, both in OKLCH.
+    UiTheme,
 }
 
 impl Check {
-    const ALL: [Check; 14] = [
+    const ALL: [Check; 16] = [
         Check::Dependencies,
         Check::CrateNames,
         Check::WasmBoundary,
@@ -90,6 +96,8 @@ impl Check {
         Check::ErrorConversions,
         Check::TestSupport,
         Check::CiParity,
+        Check::UiTokens,
+        Check::UiTheme,
     ];
 
     fn name(self) -> &'static str {
@@ -108,6 +116,8 @@ impl Check {
             Check::ErrorConversions => "error-conversions",
             Check::TestSupport => "test-support",
             Check::CiParity => "ci-parity",
+            Check::UiTokens => "ui-tokens",
+            Check::UiTheme => "ui-theme",
         }
     }
 
@@ -128,6 +138,8 @@ impl Check {
             Check::ErrorConversions => "no From from the error of a library",
             Check::TestSupport => "nothing that ships builds with test support",
             Check::CiParity => "CI runs every check and recipe of just ci",
+            Check::UiTokens => "the UI styles with theme tokens only",
+            Check::UiTheme => "every theme token in OKLCH, dark and light",
         }
     }
 
@@ -189,6 +201,14 @@ impl Check {
             Check::CiParity => {
                 let checks = Check::ALL.map(Check::name);
                 let violations = ci_parity::violations(&workspace.root, &checks).map_err(|error| error.to_string())?;
+                Ok(lines(&violations))
+            }
+            Check::UiTokens => {
+                let violations = ui_tokens::violations(workspace).map_err(|error| error.to_string())?;
+                Ok(lines(&violations))
+            }
+            Check::UiTheme => {
+                let violations = ui_theme::violations(&workspace.root).map_err(|error| error.to_string())?;
                 Ok(lines(&violations))
             }
         }
