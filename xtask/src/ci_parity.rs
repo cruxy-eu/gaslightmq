@@ -255,10 +255,11 @@ fn prints_list(run: &str) -> bool {
         .any(|(at, word)| *word == LIST && runs_checks(at - 1))
 }
 
-/// The words of a script, without the quotes and the command substitutions around them.
+/// The words of a script, split at white space and at the punctuation of the shell.
+///
+/// `echo "checks=$(cargo xtask --list)"` is `echo`, `checks`, `cargo`, `xtask` and `--list`.
 fn words(run: &str) -> Vec<&str> {
-    run.split_whitespace()
-        .map(|word| word.trim_matches(|c| matches!(c, '"' | '\'' | '$' | '(' | ')' | '`')))
+    run.split(|c: char| c.is_whitespace() || matches!(c, '"' | '\'' | '$' | '(' | ')' | '`' | '=' | ';' | '|' | '&'))
         .filter(|word| !word.is_empty())
         .collect()
 }
