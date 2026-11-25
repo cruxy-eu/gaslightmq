@@ -9,6 +9,7 @@
 //! `cargo xtask --list` runs no check either.
 //! It prints every check as a JSON array of `{"name": …, "title": …}`, from which CI makes a job per check.
 
+mod ci_parity;
 mod crate_layout;
 mod crate_names;
 mod dyn_errors;
@@ -69,10 +70,12 @@ enum Check {
     ErrorConversions,
     /// No crate that ships builds with a test-support crate, and every test-support crate declares itself.
     TestSupport,
+    /// CI runs every check and every recipe of `just ci`, and each of its jobs blocks a merge.
+    CiParity,
 }
 
 impl Check {
-    const ALL: [Check; 13] = [
+    const ALL: [Check; 14] = [
         Check::Dependencies,
         Check::CrateNames,
         Check::WasmBoundary,
@@ -86,6 +89,7 @@ impl Check {
         Check::ErrorMessages,
         Check::ErrorConversions,
         Check::TestSupport,
+        Check::CiParity,
     ];
 
     fn name(self) -> &'static str {
@@ -103,6 +107,7 @@ impl Check {
             Check::ErrorMessages => "error-messages",
             Check::ErrorConversions => "error-conversions",
             Check::TestSupport => "test-support",
+            Check::CiParity => "ci-parity",
         }
     }
 
@@ -122,6 +127,7 @@ impl Check {
             Check::ErrorMessages => "an error writes its error and reason once",
             Check::ErrorConversions => "no From from the error of a library",
             Check::TestSupport => "nothing that ships builds with test support",
+            Check::CiParity => "CI runs every check and recipe of just ci",
         }
     }
 
@@ -180,6 +186,11 @@ impl Check {
                 Ok(lines(&violations))
             }
             Check::TestSupport => Ok(lines(&test_support::violations(workspace))),
+            Check::CiParity => {
+                let checks = Check::ALL.map(Check::name);
+                let violations = ci_parity::violations(&workspace.root, &checks).map_err(|error| error.to_string())?;
+                Ok(lines(&violations))
+            }
         }
     }
 }

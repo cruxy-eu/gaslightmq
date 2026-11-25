@@ -4,6 +4,7 @@ name: CI
 # The `checks` recipe is split: the `xtask` job builds the checks once and lists them,
 # and the `check` job runs that binary once per check, as `cargo xtask <name>` does.
 # Branch protection requires the `CI` job alone, which passes only when every other job passed.
+# The `ci-parity` check fails when a check or a recipe of `just ci` has no job here, or `CI` does not need a job.
 on:
   pull_request:
   push:

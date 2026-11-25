@@ -12,5 +12,6 @@ workspace = true
 proc-macro2.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+serde-saphyr.workspace = true
 syn.workspace = true
 thiserror.workspace = true
