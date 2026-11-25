@@ -19,6 +19,7 @@ mod manifest;
 mod sans_io;
 mod source;
 mod table;
+mod test_support;
 mod wasm_crates;
 mod workspace;
 mod workspace_rules;
@@ -60,10 +61,12 @@ enum Check {
     ErrorMessages,
     /// No `From` makes an error type from the error of a library or of the system.
     ErrorConversions,
+    /// No crate that ships builds with a test-support crate, and every test-support crate declares itself.
+    TestSupport,
 }
 
 impl Check {
-    const ALL: [Check; 12] = [
+    const ALL: [Check; 13] = [
         Check::Dependencies,
         Check::CrateNames,
         Check::WasmBoundary,
@@ -76,6 +79,7 @@ impl Check {
         Check::ErrorFields,
         Check::ErrorMessages,
         Check::ErrorConversions,
+        Check::TestSupport,
     ];
 
     fn name(self) -> &'static str {
@@ -92,6 +96,7 @@ impl Check {
             Check::ErrorFields => "error-fields",
             Check::ErrorMessages => "error-messages",
             Check::ErrorConversions => "error-conversions",
+            Check::TestSupport => "test-support",
         }
     }
 
@@ -149,6 +154,7 @@ impl Check {
                 let violations = error_conversions::violations(workspace).map_err(|error| error.to_string())?;
                 Ok(lines(&violations))
             }
+            Check::TestSupport => Ok(lines(&test_support::violations(workspace))),
         }
     }
 }
