@@ -8,6 +8,7 @@ use crate::browser;
 use crate::configuration::UiConfiguration;
 use crate::connection::{self, Changed};
 use crate::live::Live;
+use crate::pads::Desk;
 use crate::views::{Pads, Record, Rules, Shell};
 
 /// The stylesheet of every view.
@@ -38,6 +39,8 @@ pub struct Ui {
     pub client: ControlClient,
     /// What went wrong with what someone did, until it fades.
     pub notices: Signal<Vec<Notice>>,
+    /// The pads someone plays, once the workspace has a layout. It keeps its layer, mode and focus between views.
+    pub desk: Signal<Option<Desk>>,
     /// Tells the live stream that the UI shows something else.
     changes: Coroutine<Changed>,
     configuration: UiConfiguration,
@@ -110,6 +113,7 @@ pub fn App() -> Element {
     let client = use_hook(|| ControlClient::new(ControlClientConfiguration::new(address)));
     let live = use_signal(|| Live::new(&configuration));
     let notices = use_signal(Vec::new);
+    let desk = use_signal(|| None);
     let changes = use_coroutine({
         let client = client.clone();
         let configuration = configuration.clone();
@@ -119,6 +123,7 @@ pub fn App() -> Element {
         live,
         client,
         notices,
+        desk,
         changes,
         configuration,
     });

@@ -95,7 +95,19 @@ Each encoder maps to one parameter of the rule's action, trigger or lifetime.
 | Firings | A firings lifetime. |
 
 Encoders that do not apply to the focused preset are disabled.
+An empty pad has no rule to tune, and a pad whose rule someone kept refuses turns,
+so the encoders of both are disabled too.
 Turning an encoder on an armed rule does not reset the rule's counters.
+
+### Keys
+
+The grid plays by keyboard as well as by mouse.
+
+| Key | Does |
+|---|---|
+| Arrows | Move the focus one pad. The focus stays at the edge of the grid. |
+| Space | Press and release the focused pad. |
+| 1 to 9 | Show that layer of the layout. |
 
 ### Modes of play
 
