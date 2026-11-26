@@ -10,6 +10,8 @@ use gaslightmq_control_api::rule::{Preset, Rule, RuleName, RuleState};
 use gaslightmq_control_api::selector::Selector;
 use gaslightmq_control_api::surface::PadLayout;
 
+use crate::history::Subject;
+
 /// Every definition of the workspace, by kind, each as its file holds it.
 ///
 /// A definition holds what a person writes. What the process keeps beside it, its revision, is no part of it:
@@ -98,6 +100,15 @@ impl Process {
     /// The revision of the definition of that kind and name, when the workspace has one.
     pub fn revision(&self, name: &DefinitionRef) -> Option<Revision> {
         self.revisions.get(name).copied()
+    }
+
+    /// The revision that `subject` has, as far as the live stream told it, or `None` when the process holds no such
+    /// thing: an environment that does not run, a rule that it does not hold, or a definition that is gone.
+    pub fn revision_of(&self, subject: &Subject) -> Option<Revision> {
+        match subject {
+            Subject::Rule { environment, rule } => Some(rule_status(self.environment(environment)?, rule)?.revision),
+            Subject::Definition(definition) => self.revision(definition),
+        }
     }
 
     /// Every environment that runs, in the order the process told them.

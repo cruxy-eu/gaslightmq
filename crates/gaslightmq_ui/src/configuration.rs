@@ -15,6 +15,7 @@ use gaslightmq_control_api::clock::TimeSpan;
 /// let configuration = UiConfiguration::default();
 /// assert_eq!(configuration.calls_kept.get(), 500);
 /// assert_eq!(configuration.reconnect_after, TimeSpan::from_secs(1));
+/// assert_eq!(configuration.undo_depth.get(), 100);
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
@@ -47,6 +48,11 @@ pub struct UiConfiguration {
     ///
     /// How long a notice stays on the screen, such as the error of an operation that someone started.
     pub notice_for: TimeSpan,
+    /// Ours. Default: 100 steps.
+    ///
+    /// How many steps the [undo history](crate::history::History) of a tab holds.
+    /// The oldest step goes when a new one would be one too many.
+    pub undo_depth: NonZeroUsize,
 }
 
 impl Default for UiConfiguration {
@@ -58,6 +64,7 @@ impl Default for UiConfiguration {
             refresh_interval: TimeSpan::from_millis(100),
             notice_for: TimeSpan::from_secs(5),
             parse_after: TimeSpan::from_millis(150),
+            undo_depth: NonZeroUsize::new(100).expect("100 is no zero"),
         }
     }
 }

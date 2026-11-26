@@ -32,6 +32,8 @@
 //! The module [`pads`] holds the [`Desk`](pads::Desk): the surface someone plays, which turns presses and turns into
 //! intents against the rules of the environment shown.
 //! The module [`palette`] holds ⌘K: the sentence, the answer of the control plane to it, and the live rule it gives.
+//! The module [`history`] holds the undo history of the tab: what takes back each change that the tab made, and what
+//! makes it again, read from what the control plane answered.
 //! The module [`rules`] holds what the Rules view decides: which rules a tab lists, what someone can do with a rule,
 //! and which operation carries it out. The module [`text`] writes times and the values of a call.
 //!
@@ -53,10 +55,19 @@
 //! A press in hold that gets no answer may have added a hold that the tab cannot name,
 //! so the tab lets go of its presence, and the control plane ends whatever it held.
 //! A page that loads again is a new presence: it knows nothing of the pads that the page before it held.
+//!
+//! # Undo and redo
+//!
+//! ⌘Z takes back the last change that someone made in this tab, and ⇧⌘Z makes it again. The tab keeps the history in
+//! memory, and the engine keeps none: an undo is an ordinary operation, the inverse of the change, with the cause
+//! `undo`. Every change of the UI expects the run and the revision that the tab shows, and an undo expects what the
+//! tab left. When someone else changed the same thing since, the control plane refuses the undo, the tab drops the
+//! step, and says so.
 
 mod configuration;
 mod filter;
 mod following;
+pub mod history;
 mod live;
 pub mod pads;
 pub mod palette;
