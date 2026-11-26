@@ -19,6 +19,8 @@
 //!
 //! What a command did goes to the standard output, one thing per line.
 //! Why it failed goes to the standard error, and the command exits with a failure.
+//! What GaslightMQ logs goes to the standard error too, from the level that `--log` or `GMQ_LOG` names and up:
+//! `warn` until someone names another.
 //! A workspace whose files do not read prints every file that does not, one per line.
 //!
 //! # Features
@@ -39,6 +41,7 @@ mod brokers;
 mod cli;
 mod error;
 mod health;
+mod log;
 mod proxy;
 mod reload;
 mod report;
@@ -55,6 +58,7 @@ use crate::report::{HealthReport, ReloadReport};
 #[tokio::main]
 async fn main() -> ExitCode {
     let gmq = Gmq::parse();
+    log::install(gmq.log);
     match gmq.command {
         Command::Proxy(flags) => match proxy::proxy(flags).await {
             Ok(()) => ExitCode::SUCCESS,

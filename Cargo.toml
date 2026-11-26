@@ -148,6 +148,8 @@ tokio = "1"
 # Only `gaslightmq_control_client` names it, for the WebSocket from a native target. Plain `ws`: no TLS.
 tokio-tungstenite = "0.30"
 tracing = "0.1"
+# Only `gmq` names it: the log output of the binary, which writes what the crates log through `tracing`.
+tracing-subscriber = { version = "0.3", default-features = false, features = ["fmt", "std"] }
 # Only `gaslightmq_control_client` names it, for the address of a control plane.
 url = "2"
 # Only `gaslightmq_ui` names it, on wasm32, for the address of the page that the browser shows.

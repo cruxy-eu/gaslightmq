@@ -20,8 +20,28 @@ use crate::brokers::broker_listeners;
 #[derive(Debug, Parser)]
 #[command(name = "gmq", version)]
 pub(crate) struct Gmq {
+    /// How much of what GaslightMQ logs reaches the standard error. Every command takes it.
+    #[arg(long, global = true, env = "GMQ_LOG", value_name = "LEVEL", default_value = "warn")]
+    pub(crate) log: LogLevel,
     #[command(subcommand)]
     pub(crate) command: Command,
+}
+
+/// How much of what GaslightMQ logs reaches the standard error: a level, and every level above it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub(crate) enum LogLevel {
+    /// Nothing.
+    Off,
+    /// What failed: a listener that stopped, a connection that a handler gave up.
+    Error,
+    /// What went wrong and was taken care of: a cluster that answered out of step, a broker without a listener.
+    Warn,
+    /// What the process does.
+    Info,
+    /// Every connection and every answer of the cluster.
+    Debug,
+    /// Everything.
+    Trace,
 }
 
 /// What `gmq` does.
@@ -199,6 +219,15 @@ mod tests {
     #[test]
     fn the_commands_hold_together() {
         Gmq::command().debug_assert();
+    }
+
+    #[test]
+    fn every_command_logs_its_warnings_until_the_flags_say_otherwise() {
+        let gmq = Gmq::try_parse_from(["gmq", "reload"]).unwrap();
+        assert_eq!(gmq.log, LogLevel::Warn);
+
+        let gmq = Gmq::try_parse_from(["gmq", "proxy", "--upstream", "kafka:9092", "--log", "debug"]).unwrap();
+        assert_eq!(gmq.log, LogLevel::Debug);
     }
 
     #[test]

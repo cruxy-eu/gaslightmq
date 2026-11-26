@@ -36,6 +36,8 @@ clap.workspace = true
 getrandom.workspace = true
 thiserror.workspace = true
 tokio = { workspace = true, features = ["rt-multi-thread", "macros", "signal"] }
+# The log output: what the engine, the listener and the backend log, on the standard error.
+tracing-subscriber.workspace = true
 
 [dev-dependencies]
 anyhow.workspace = true

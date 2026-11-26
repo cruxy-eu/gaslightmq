@@ -97,6 +97,10 @@ Nothing reads `gaslight.yaml` yet: until it does, a setting comes from a flag, a
 Every flag has an environment variable, which counts when the flag is not there.
 A flag that names an address, a size or a wait has a default, and `gmq <command> --help` names it.
 
+Every command takes `--log` or `GMQ_LOG`: how much of what GaslightMQ logs reaches the standard error,
+from `off` through `error`, `warn`, `info` and `debug` to `trace`. It is `warn` until someone names another level.
+The standard output holds what the command did, one thing per line, and no log line.
+
 `gmq proxy` describes [an environment without a file](#environments): a proxy in front of a real cluster.
 
 | Flag | Variable | Default | Sets |
