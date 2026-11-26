@@ -17,6 +17,7 @@ use tokio::time::MissedTickBehavior;
 use crate::StatsInterval;
 use crate::definitions::{named, reference};
 use crate::plane::{Change, ControlPlane, session_status, status};
+use crate::revisions::revision;
 use crate::server::stopped;
 
 /// The task that hands every change of the host to the clients of the live stream, and the statistics of every
@@ -84,8 +85,11 @@ impl<C: WorkspaceContext + 'static> Feed<C> {
             }
             HostChange::EnvironmentStopped { environment } => Some(StreamMessage::EnvironmentStopped { environment }),
             HostChange::DefinitionChanged { name } => {
-                let definition = named(&*self.plane.host().workspace().await, &name).await.ok()??;
-                Some(StreamMessage::DefinitionChanged { definition })
+                let workspace = self.plane.host().workspace().await;
+                let definition = named(&*workspace, &name).await.ok()??;
+                // The definition and its revision are read as one: nobody changes the workspace in between.
+                let revision = revision(workspace.revision(name));
+                Some(StreamMessage::DefinitionChanged { definition, revision })
             }
             HostChange::DefinitionDeleted { name } => Some(StreamMessage::DefinitionDeleted { name: reference(name) }),
             HostChange::RuleChanged { environment, rule } => {

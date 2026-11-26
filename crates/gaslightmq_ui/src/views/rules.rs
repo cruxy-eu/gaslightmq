@@ -108,6 +108,11 @@ fn send(ui: &Ui, operation: RuleOperation) {
         let ui = ui.clone();
         move |()| ui.notify(text, false)
     };
+    // A change answers with the revision it left, which the view does not keep yet.
+    let changed = |text: String| {
+        let ui = ui.clone();
+        move |_: gaslightmq_control_api::Revised| ui.notify(text, false)
+    };
     match operation {
         RuleOperation::Arm(arm) => ui.send(arm),
         RuleOperation::Disarm(disarm) => ui.send(disarm),
@@ -117,11 +122,11 @@ fn send(ui: &Ui, operation: RuleOperation) {
         }
         RuleOperation::Keep(keep) => {
             let text = format!("Kept {} in the workspace", keep.rule);
-            ui.send_then(keep, done(text));
+            ui.send_then(keep, changed(text));
         }
         RuleOperation::Delete(delete) => {
             let text = format!("Deleted the live rule {}", delete.rule);
-            ui.send_then(delete, done(text));
+            ui.send_then(delete, changed(text));
         }
         RuleOperation::UpdateLive(update) => ui.send(update),
         RuleOperation::UpdateWorkspace(update) => ui.send(update),

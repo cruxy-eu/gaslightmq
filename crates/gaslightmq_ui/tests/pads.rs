@@ -20,6 +20,9 @@ use gaslightmq_control_api::surface::{
 };
 use gaslightmq_ui::pads::{Desk, Move};
 
+/// The revision that the control plane told beside a rule or a definition. Nothing here reads it yet.
+const TOLD: Revision = Revision::new(7);
+
 /// The order desk of the specs, cut down: two rows, a delay and a refusal, and two layers.
 struct OrderDesk;
 
@@ -99,6 +102,7 @@ fn a_press_of_an_empty_pad_arms_it_and_a_press_of_an_armed_pad_disarms_it() {
         rule: OrderDesk::rule(0, 0),
         live: true,
         state: RuleState::Armed,
+        revision: TOLD,
     }]);
 
     let first = desk.press(Row::from_index(0), Column::from_index(0), &empty).unwrap();
@@ -224,6 +228,7 @@ fn an_encoder_turns_a_live_rule_whose_action_has_its_parameter() {
         rule: OrderDesk::rule(0, 0),
         live: true,
         state: RuleState::Armed,
+        revision: TOLD,
     }]);
     desk.focus(Row::from_index(0), Column::from_index(0));
 
@@ -245,6 +250,7 @@ fn a_kept_rule_and_an_empty_pad_refuse_every_turn() {
         rule: OrderDesk::rule(0, 0),
         live: false,
         state: RuleState::Armed,
+        revision: TOLD,
     }]);
     desk.focus(Row::from_index(0), Column::from_index(0));
 
@@ -278,6 +284,7 @@ fn a_pad_on_one_layer_shows_that_the_same_pad_is_armed_on_another() {
         rule: OrderDesk::rule(0, 0),
         live: true,
         state: RuleState::Armed,
+        revision: TOLD,
     }]);
 
     assert!(desk.switch_to(&"order-ingest".parse().unwrap()));

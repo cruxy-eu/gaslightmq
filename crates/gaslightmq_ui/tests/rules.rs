@@ -18,6 +18,9 @@ use gaslightmq_ui::rules::{
     RuleCommand, RuleOperation, RuleTab, activity, by_scope, commands, operation, update, with_chance,
 };
 
+/// The revision that the control plane told beside a rule or a definition. Nothing here reads it yet.
+const TOLD: Revision = Revision::new(7);
+
 /// The rule `slow-order-producers` of the specs: the selector `order-producers`, and the preset `delay-1s`.
 fn slow_order_producers() -> Rule {
     Rule::new(
@@ -33,6 +36,7 @@ fn an_armed_rule_disarms_and_fires_and_a_disarmed_one_arms() {
         rule: slow_order_producers(),
         live: false,
         state: RuleState::Armed,
+        revision: TOLD,
     };
     let disarmed = RuleStatus {
         state: RuleState::Disarmed,
@@ -54,6 +58,7 @@ fn a_live_rule_can_be_kept_or_deleted_and_a_rule_of_the_workspace_cannot() {
         rule: slow_order_producers(),
         live: true,
         state: RuleState::Disarmed,
+        revision: TOLD,
     };
     let environment: EnvironmentName = "orders-sim".parse().unwrap();
 
@@ -66,6 +71,7 @@ fn a_live_rule_can_be_kept_or_deleted_and_a_rule_of_the_workspace_cannot() {
         RuleOperation::Keep(KeepRule {
             environment,
             rule: "slow-order-producers".parse().unwrap(),
+            expects: None,
         })
     );
 }
@@ -77,6 +83,7 @@ fn a_change_of_a_live_rule_stays_in_its_environment_and_a_rule_of_the_workspace_
         rule: slow_order_producers(),
         live: false,
         state: RuleState::Armed,
+        revision: TOLD,
     };
     let live = RuleStatus {
         live: true,
@@ -89,11 +96,15 @@ fn a_change_of_a_live_rule_stays_in_its_environment_and_a_rule_of_the_workspace_
         RuleOperation::UpdateLive(UpdateLiveRule {
             environment: environment.clone(),
             rule: sometimes.clone(),
+            expects: None,
         })
     );
     assert_eq!(
         update(&environment, &workspace, sometimes.clone()),
-        RuleOperation::UpdateWorkspace(UpdateDefinition { definition: sometimes })
+        RuleOperation::UpdateWorkspace(UpdateDefinition {
+            expects: None,
+            definition: sometimes,
+        })
     );
 }
 
@@ -129,11 +140,13 @@ fn the_armed_tab_lists_the_armed_rules_by_scope_and_every_client_comes_first() {
         .scoped(ingest.clone()),
         live: true,
         state: RuleState::Armed,
+        revision: TOLD,
     };
     let for_everyone = RuleStatus {
         rule: slow_order_producers(),
         live: false,
         state: RuleState::Armed,
+        revision: TOLD,
     };
     let resting = RuleStatus {
         rule: Rule::new(
@@ -143,6 +156,7 @@ fn the_armed_tab_lists_the_armed_rules_by_scope_and_every_client_comes_first() {
         ),
         live: false,
         state: RuleState::Disarmed,
+        revision: TOLD,
     };
 
     let groups = by_scope(&[for_ingest.clone(), for_everyone.clone(), resting], RuleTab::Armed);

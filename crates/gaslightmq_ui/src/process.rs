@@ -3,19 +3,47 @@
 use std::collections::{BTreeMap, VecDeque};
 use std::num::NonZeroUsize;
 
-use gaslightmq_control_api::environment::EnvironmentName;
+use gaslightmq_control_api::environment::{Environment, EnvironmentName};
 use gaslightmq_control_api::field::{ClientSoftware, ConnectionNumber};
 use gaslightmq_control_api::prelude::*;
-use gaslightmq_control_api::rule::{Rule, RuleName, RuleState};
+use gaslightmq_control_api::rule::{Preset, Rule, RuleName, RuleState};
+use gaslightmq_control_api::selector::Selector;
+use gaslightmq_control_api::surface::PadLayout;
+
+/// Every definition of the workspace, by kind, each as its file holds it.
+///
+/// A definition holds what a person writes. What the process keeps beside it, its revision, is no part of it:
+/// see [`Process::revision`].
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct WorkspaceDefinitions {
+    /// Every selector.
+    pub selectors: Vec<Selector>,
+    /// Every preset.
+    pub presets: Vec<Preset>,
+    /// Every rule of the workspace. Live rules belong to an environment, and are not here.
+    pub rules: Vec<Rule>,
+    /// Every pad layout.
+    pub layouts: Vec<PadLayout>,
+    /// Every environment, whether it runs or not.
+    pub environments: Vec<Environment>,
+}
 
 /// What the process holds, as far as the live stream told it: every definition of the workspace,
 /// every environment that runs with its backend, its rules and its sessions, and what each one counted.
 ///
 /// It starts from a [snapshot](StreamMessage::Snapshot), and every change applies to it.
 /// A change says what its subject is now, so applying it again changes nothing.
+///
+/// The snapshot names the [run](Self::run) of the process, and every revision means something in that run alone:
+/// the [revision](Self::revision) of a definition, and the one of a rule in an environment, which its
+/// [`RuleStatus`] holds.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Process {
-    state: ProcessState,
+    run: RunId,
+    definitions: WorkspaceDefinitions,
+    /// The revision of every definition, beside it.
+    revisions: BTreeMap<DefinitionRef, Revision>,
+    environments: Vec<RunningEnvironment>,
     /// The statistics of each environment, the newest last, as many as `stats_kept` says.
     stats: BTreeMap<EnvironmentName, VecDeque<Stats>>,
     stats_kept: NonZeroUsize,
@@ -25,30 +53,61 @@ pub struct Process {
 impl Process {
     /// The process as a snapshot says it is. It keeps the last `stats_kept` statistics of each environment.
     pub fn new(state: ProcessState, stats_kept: NonZeroUsize) -> Self {
+        let ProcessState {
+            run,
+            definitions,
+            environments,
+        } = state;
+        let mut revisions = BTreeMap::new();
+        let definitions = WorkspaceDefinitions {
+            selectors: held(definitions.selectors, &mut revisions, |selector| {
+                selector.name().clone().into()
+            }),
+            presets: held(definitions.presets, &mut revisions, |preset| {
+                preset.name().clone().into()
+            }),
+            rules: held(definitions.rules, &mut revisions, |rule| rule.name().clone().into()),
+            layouts: held(definitions.layouts, &mut revisions, |layout| {
+                layout.name().clone().into()
+            }),
+            environments: held(definitions.environments, &mut revisions, |environment| {
+                environment.name().clone().into()
+            }),
+        };
         Self {
-            state,
+            run,
+            definitions,
+            revisions,
+            environments,
             stats: BTreeMap::new(),
             stats_kept,
             workspace_invalid: None,
         }
     }
 
+    /// The run of the process, as its snapshot named it. A snapshot that names another run is another process.
+    pub const fn run(&self) -> RunId {
+        self.run
+    }
+
     /// Every definition of the workspace.
-    pub fn definitions(&self) -> &Definitions {
-        &self.state.definitions
+    pub const fn definitions(&self) -> &WorkspaceDefinitions {
+        &self.definitions
+    }
+
+    /// The revision of the definition of that kind and name, when the workspace has one.
+    pub fn revision(&self, name: &DefinitionRef) -> Option<Revision> {
+        self.revisions.get(name).copied()
     }
 
     /// Every environment that runs, in the order the process told them.
     pub fn environments(&self) -> &[RunningEnvironment] {
-        &self.state.environments
+        &self.environments
     }
 
     /// The environment of that name, when it runs.
     pub fn environment(&self, name: &EnvironmentName) -> Option<&RunningEnvironment> {
-        self.state
-            .environments
-            .iter()
-            .find(|running| &running.environment == name)
+        self.environments.iter().find(|running| &running.environment == name)
     }
 
     /// Whether the environment of that name runs.
@@ -92,7 +151,9 @@ impl Process {
                     running.rules.retain(|status| status.rule.name() != rule);
                 }
             }
-            StreamMessage::DefinitionChanged { definition } => self.definition_changed(definition),
+            StreamMessage::DefinitionChanged { definition, revision } => {
+                self.definition_changed(definition, *revision);
+            }
             StreamMessage::DefinitionDeleted { name } => self.definition_deleted(name),
             StreamMessage::SessionOpened { environment, session } => {
                 if let Some(running) = self.running(environment) {
@@ -128,7 +189,7 @@ impl Process {
                 }
             }
             StreamMessage::EnvironmentStarted { environment } => {
-                let environments = &mut self.state.environments;
+                let environments = &mut self.environments;
                 match environments
                     .iter_mut()
                     .find(|running| running.environment == environment.environment)
@@ -138,9 +199,7 @@ impl Process {
                 }
             }
             StreamMessage::EnvironmentStopped { environment } => {
-                self.state
-                    .environments
-                    .retain(|running| &running.environment != environment);
+                self.environments.retain(|running| &running.environment != environment);
                 self.stats.remove(environment);
             }
             StreamMessage::WorkspaceInvalid { reason } => self.workspace_invalid = Some(reason.clone()),
@@ -152,8 +211,7 @@ impl Process {
     }
 
     fn running(&mut self, name: &EnvironmentName) -> Option<&mut RunningEnvironment> {
-        self.state
-            .environments
+        self.environments
             .iter_mut()
             .find(|running| &running.environment == name)
     }
@@ -165,10 +223,13 @@ impl Process {
             .find(|session| session.connection == connection)
     }
 
-    /// A definition of the workspace is what the message says. A rule of the workspace is a rule of every environment
-    /// too: it keeps its state where an environment holds it, and every other environment holds it disarmed.
-    fn definition_changed(&mut self, definition: &AnyDefinition) {
-        let definitions = &mut self.state.definitions;
+    /// A definition of the workspace is what the message says, at the revision it says.
+    /// A rule of the workspace is a rule of every environment too: it keeps its state where an environment holds it,
+    /// and every other environment holds it disarmed. Its revision in an environment is the later of the change of
+    /// its definition and the last change of its state there.
+    fn definition_changed(&mut self, definition: &AnyDefinition, revision: Revision) {
+        self.revisions.insert(definition.name(), revision);
+        let definitions = &mut self.definitions;
         match definition {
             AnyDefinition::Selector(selector) => put(&mut definitions.selectors, selector.clone(), |held| {
                 held.name() == selector.name()
@@ -190,18 +251,17 @@ impl Process {
             }
             AnyDefinition::Rule(rule) => {
                 put(&mut definitions.rules, rule.clone(), |held| held.name() == rule.name());
-                for running in &mut self.state.environments {
-                    let state = running
-                        .rules
-                        .iter()
-                        .find(|status| status.rule.name() == rule.name())
-                        .map_or(RuleState::Disarmed, |status| status.state);
+                for running in &mut self.environments {
+                    let held = running.rules.iter().find(|status| status.rule.name() == rule.name());
+                    let state = held.map_or(RuleState::Disarmed, |status| status.state);
+                    let revision = held.map_or(revision, |status| status.revision.max(revision));
                     put_rule(
                         &mut running.rules,
                         RuleStatus {
                             rule: rule.clone(),
                             live: false,
                             state,
+                            revision,
                         },
                     );
                 }
@@ -211,7 +271,8 @@ impl Process {
 
     /// A definition of the workspace went, and a rule of the workspace leaves every environment with it.
     fn definition_deleted(&mut self, name: &DefinitionRef) {
-        let definitions = &mut self.state.definitions;
+        self.revisions.remove(name);
+        let definitions = &mut self.definitions;
         match name {
             DefinitionRef::Selector(name) => definitions.selectors.retain(|held| held.name() != name),
             DefinitionRef::Preset(name) => definitions.presets.retain(|held| held.name() != name),
@@ -219,12 +280,28 @@ impl Process {
             DefinitionRef::Environment(name) => definitions.environments.retain(|held| held.name() != name),
             DefinitionRef::Rule(name) => {
                 definitions.rules.retain(|held| held.name() != name);
-                for running in &mut self.state.environments {
+                for running in &mut self.environments {
                     running.rules.retain(|status| status.live || status.rule.name() != name);
                 }
             }
         }
     }
+}
+
+/// The definitions of one kind as their files hold them. The revision of each goes to `revisions`, under the name
+/// that `named` gives the definition.
+fn held<D>(
+    definitions: Vec<DefinitionStatus<D>>,
+    revisions: &mut BTreeMap<DefinitionRef, Revision>,
+    named: impl Fn(&D) -> DefinitionRef,
+) -> Vec<D> {
+    definitions
+        .into_iter()
+        .map(|DefinitionStatus { definition, revision }| {
+            revisions.insert(named(&definition), revision);
+            definition
+        })
+        .collect()
 }
 
 /// The rule of an environment with that name, or `None`.

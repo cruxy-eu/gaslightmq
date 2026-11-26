@@ -15,9 +15,12 @@
 //! | [`EditableDefinition`] | A kind of definition that the control plane lists, gets, creates, updates and deletes. |
 //! | [`ListDefinitions`], [`GetDefinition`], [`CreateDefinition`], [`UpdateDefinition`], [`DeleteDefinition`] | The operations on the definitions of the workspace, for each kind. |
 //! | [`AnyDefinition`], [`DefinitionRef`], [`Definitions`] | A definition of any kind, its name with its kind, and every definition by kind. |
+//! | [`DefinitionStatus`] | A definition, with its revision beside it. |
+//! | [`Revision`], [`RunId`] | Which state of something someone saw, and the run of the process that gave the revision. |
+//! | [`Expects`], [`Revised`] | What a change expects of what it changes, and what it answers with: the revision it left. |
 //! | [`ListEnvironments`], [`GetEnvironment`], [`StartEnvironment`], [`StopEnvironment`] | The environments of the workspace, and running one. |
-//! | [`EnvironmentStatus`] | An environment, and whether it runs. |
-//! | [`ListEnvironmentRules`], [`RuleStatus`] | The rules of an environment, each with its state there. |
+//! | [`EnvironmentStatus`] | An environment, with its revision, and whether it runs. |
+//! | [`ListEnvironmentRules`], [`RuleStatus`] | The rules of an environment, each with its state and its revision there. |
 //! | [`CreateLiveRule`], [`UpdateLiveRule`], [`DeleteLiveRule`], [`KeepRule`] | The live rules of an environment, and keeping one in the workspace. |
 //! | [`ArmRule`], [`DisarmRule`], [`FireRule`] | Commands on a rule of an environment. |
 //! | [`SendIntent`], [`IntentEffect`] | What someone did at a pad, and what that did to the rule of the pad. |
@@ -37,6 +40,7 @@
 //! let arm = ArmRule {
 //!     environment: "orders-sim".parse().expect("an environment name"),
 //!     rule: "delay-1s-on-order-producers".parse().expect("a rule name"),
+//!     expects: None,
 //! };
 //! let request = serde_json::to_value(OperationRequest::new(RequestSurface::Pad, arm)).expect("a request has a form");
 //! assert_eq!(
@@ -75,6 +79,24 @@
 //! A request names one of six surfaces. The process names the surface of a change that no request made,
 //! so no request can claim one of those.
 //!
+//! # Revisions
+//!
+//! Several clients change one process, and a revision keeps one of them from overwriting what it has not seen.
+//! Whatever a request changes has a [`Revision`]: a definition, and a rule in an environment.
+//! One counter of the process gives all of them, so a revision never comes back within a run.
+//!
+//! - **Whoever reads something gets its revision**, beside what it belongs to: in a [`DefinitionStatus`],
+//!   a [`RuleStatus`], an [`EnvironmentStatus`] and a [`StreamMessage::DefinitionChanged`].
+//! - **The snapshot names the run**: see [`ProcessState::run`]. A revision means something in the run that gave it.
+//! - **A change answers with the revision it left**: a [`Revised`].
+//! - **A change can say what it [`Expects`]**: the run that its sender read from, and the revision that it saw.
+//!   A change that expects another revision changes nothing, and its error is `changed`, with the revision that the
+//!   thing has now. A change that expects another run changes nothing, and its error is `other-run`, with the run
+//!   of the process.
+//! - **Without it, the last change wins**, and a create expects nothing.
+//!
+//! Live state travels beside a definition, and never inside it: a definition holds what a person writes.
+//!
 //! # Names
 //!
 //! Every operation names a definition by its name, and an operation on something live names its environment too.
@@ -90,18 +112,22 @@
 //! | [`ListDefinitions`], [`ListEnvironments`] | [`ListDefinitionsError`] | A store could not read. |
 //! | [`GetDefinition`], [`GetEnvironment`] | [`GetDefinitionError`] | No definition has the name, or a store could not read. |
 //! | [`CreateDefinition`] | [`CreateDefinitionError`] | The name is taken, the definition does not fit the workspace, or a store failed. |
-//! | [`UpdateDefinition`] | [`UpdateDefinitionError`] | No definition has the name, the definition does not fit the workspace, or a store failed. |
-//! | [`DeleteDefinition`] | [`DeleteDefinitionError`] | No definition has the name, other definitions use it, or a store failed. |
+//! | [`UpdateDefinition`] | [`UpdateDefinitionError`] | No definition has the name, it changed since, the definition does not fit the workspace, or a store failed. |
+//! | [`DeleteDefinition`] | [`DeleteDefinitionError`] | No definition has the name, it changed since, other definitions use it, or a store failed. |
 //! | [`StartEnvironment`] | [`StartEnvironmentError`] | No environment has the name, it runs already, or it did not come up. |
 //! | [`StopEnvironment`], [`ListSessions`], [`GetBackend`] | [`EnvironmentNotRunning`] | The environment does not run. |
 //! | [`ListEnvironmentRules`], [`ParseSentence`] | [`EnvironmentReadError`] | The environment does not run, or a store could not read. |
 //! | [`CreateLiveRule`] | [`CreateLiveRuleError`] | The environment does not run, a rule has the name, the rule does not fit the workspace, or a store could not read. |
-//! | [`UpdateLiveRule`] | [`UpdateLiveRuleError`] | The environment does not run, no live rule has the name, the rule does not fit the workspace, or a store could not read. |
-//! | [`DeleteLiveRule`] | [`DeleteLiveRuleError`] | The environment does not run, or no live rule has the name. |
-//! | [`KeepRule`] | [`KeepRuleError`] | The environment does not run, no live rule has the name, the workspace has a rule of that name, the rule does not fit the workspace, or a store failed. |
-//! | [`ArmRule`], [`DisarmRule`], [`FireRule`] | [`RuleCommandError`] | The environment does not run, no rule has the name, the rule cannot do this from where it stands, or a store could not read. |
+//! | [`UpdateLiveRule`] | [`UpdateLiveRuleError`] | The environment does not run, no live rule has the name, it changed since, the rule does not fit the workspace, or a store could not read. |
+//! | [`DeleteLiveRule`] | [`DeleteLiveRuleError`] | The environment does not run, no live rule has the name, or it changed since. |
+//! | [`KeepRule`] | [`KeepRuleError`] | The environment does not run, no live rule has the name, it changed since, another rule has the name, the rule does not fit the workspace, or a store failed. |
+//! | [`ArmRule`], [`DisarmRule`] | [`RuleCommandError`] | The environment does not run, no rule has the name, it changed since, the rule cannot do this from where it stands, or a store could not read. |
+//! | [`FireRule`] | [`FireRuleError`] | The environment does not run, no rule has the name, the rule cannot fire from where it stands, or a store could not read. |
 //! | [`SendIntent`] | [`IntentError`] | The environment does not run, the layout does not exist, the environment cannot act on the intent, or a store could not read. |
 //! | [`CloseSession`] | [`CloseSessionError`] | The environment does not run, or no session is open on the connection. |
+//!
+//! A change that says what it [`Expects`] fails with the variant `Changed` when the thing has another revision,
+//! and with `OtherRun` when the revision is of another run. Either way it changed nothing.
 //!
 //! A request can also fail before its operation runs, in the same way for every operation:
 //! the process does not serve the operation yet, reads no operation in the request,
@@ -121,7 +147,9 @@
 //! |---|---|
 //! | [`OperationRequest`] | The map of its [`AnyOperation`], with a `from` key next to its keys: `{ "from": { "surface": "cli" }, "operation": "arm-rule", … }`. |
 //! | [`AnyOperation`] | The map of its operation, with an `operation` key that names it: `arm-rule`, `create-selector`. |
-//! | An operation | A map of its fields. |
+//! | An operation | A map of its fields. A change that expects nothing leaves `expects` out. |
+//! | [`Revision`], [`RunId`] | The number, and the 32 hexadecimal digits in lower case as text. |
+//! | [`Expects`], [`Revised`], [`DefinitionStatus`] | A map of its fields: `{ "run": "4be0…47dd", "revision": 7 }`, `{ "revision": 8 }` and `{ "definition": { … }, "revision": 7 }`. |
 //! | An error | A map of its fields, with an `error` key that names the variant: `{ "error": "not-found", "name": { "rule": "x" } }`. [`EnvironmentNotRunning`] is the map of its field. |
 //! | [`DefinitionRef`], [`AnyDefinition`] | A map with one entry: the kind, and the name or the definition. |
 //! | [`StreamMessage`] | The map of its fields, with a `message` key that names it: `rule-changed`. |
@@ -157,6 +185,7 @@ mod environments;
 mod operation;
 mod pads;
 mod request;
+mod revision;
 mod rules;
 mod sentence;
 mod sessions;
@@ -165,8 +194,8 @@ mod stream;
 
 pub use backend::{BackendKind, BackendStatus, GetBackend};
 pub use definitions::{
-    AnyDefinition, CreateDefinition, CreateDefinitionError, DefinitionRef, Definitions, DeleteDefinition,
-    DeleteDefinitionError, EditableDefinition, GetDefinition, GetDefinitionError, ListDefinitions,
+    AnyDefinition, CreateDefinition, CreateDefinitionError, DefinitionRef, DefinitionStatus, Definitions,
+    DeleteDefinition, DeleteDefinitionError, EditableDefinition, GetDefinition, GetDefinitionError, ListDefinitions,
     ListDefinitionsError, UpdateDefinition, UpdateDefinitionError,
 };
 pub use environments::{
@@ -176,9 +205,11 @@ pub use environments::{
 pub use operation::{AnyOperation, Operation, RequestError};
 pub use pads::{IntentEffect, IntentError, SendIntent};
 pub use request::{OperationRequest, RequestCause, RequestSource, RequestSurface};
+pub use revision::{Expects, Revised, Revision, RunId, RunIdError};
 pub use rules::{
-    ArmRule, CreateLiveRule, CreateLiveRuleError, DeleteLiveRule, DeleteLiveRuleError, DisarmRule, FireRule, KeepRule,
-    KeepRuleError, ListEnvironmentRules, RuleCommandError, RuleStatus, UpdateLiveRule, UpdateLiveRuleError,
+    ArmRule, CreateLiveRule, CreateLiveRuleError, DeleteLiveRule, DeleteLiveRuleError, DisarmRule, FireRule,
+    FireRuleError, KeepRule, KeepRuleError, ListEnvironmentRules, RuleCommandError, RuleStatus, UpdateLiveRule,
+    UpdateLiveRuleError,
 };
 pub use sentence::{ParseSentence, ParsedSentence, UnreadWord, WordCompletion, WordKind};
 pub use sessions::{CloseSession, CloseSessionError, ListSessions, SessionCloser, SessionIdentity, SessionStatus};
@@ -202,15 +233,15 @@ pub mod prelude {
     #[doc(no_inline)]
     pub use crate::{
         AnyDefinition, AnyOperation, ArmRule, BackendKind, BackendStatus, CloseSession, CloseSessionError,
-        CreateDefinition, CreateDefinitionError, CreateLiveRule, CreateLiveRuleError, DefinitionRef, Definitions,
-        DeleteDefinition, DeleteDefinitionError, DeleteLiveRule, DeleteLiveRuleError, DisarmRule, EditableDefinition,
-        EnvironmentNotRunning, EnvironmentReadError, EnvironmentStatus, FireRule, GetBackend, GetDefinition,
-        GetDefinitionError, GetEnvironment, IntentEffect, IntentError, KeepRule, KeepRuleError, ListDefinitions,
-        ListDefinitionsError, ListEnvironmentRules, ListEnvironments, ListSessions, Operation, OperationRequest,
-        ParseSentence, ParsedSentence, ProcessState, RequestCause, RequestError, RequestSource, RequestSurface,
-        RuleCommandError, RuleStats, RuleStatus, RunningEnvironment, SendIntent, SessionCloser, SessionIdentity,
-        SessionStatus, StartEnvironment, StartEnvironmentError, Stats, StopEnvironment, StreamMessage, Subscription,
-        UnreadWord, UpdateDefinition, UpdateDefinitionError, UpdateLiveRule, UpdateLiveRuleError, WordCompletion,
-        WordKind,
+        CreateDefinition, CreateDefinitionError, CreateLiveRule, CreateLiveRuleError, DefinitionRef, DefinitionStatus,
+        Definitions, DeleteDefinition, DeleteDefinitionError, DeleteLiveRule, DeleteLiveRuleError, DisarmRule,
+        EditableDefinition, EnvironmentNotRunning, EnvironmentReadError, EnvironmentStatus, Expects, FireRule,
+        FireRuleError, GetBackend, GetDefinition, GetDefinitionError, GetEnvironment, IntentEffect, IntentError,
+        KeepRule, KeepRuleError, ListDefinitions, ListDefinitionsError, ListEnvironmentRules, ListEnvironments,
+        ListSessions, Operation, OperationRequest, ParseSentence, ParsedSentence, ProcessState, RequestCause,
+        RequestError, RequestSource, RequestSurface, Revised, Revision, RuleCommandError, RuleStats, RuleStatus, RunId,
+        RunIdError, RunningEnvironment, SendIntent, SessionCloser, SessionIdentity, SessionStatus, StartEnvironment,
+        StartEnvironmentError, Stats, StopEnvironment, StreamMessage, Subscription, UnreadWord, UpdateDefinition,
+        UpdateDefinitionError, UpdateLiveRule, UpdateLiveRuleError, WordCompletion, WordKind,
     };
 }

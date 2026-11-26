@@ -97,6 +97,8 @@ bytes = "1"
 # Only `gaslightmq_ui` names it: the web UI, a Dioxus application. The renderer of the browser comes on wasm32 alone.
 dioxus = { version = "0.7", default-features = false, features = ["lib", "launch", "router"] }
 futures = "0.3"
+# Only what puts a process together names it: it reads the randomness of the system once, for the ID of the run.
+getrandom = "0.4"
 # Only `gaslightmq_control_client` names `gloo-net`, for the browser's own fetch and WebSocket.
 # It and `gaslightmq_ui` name `gloo-timers`, for the timers of the browser.
 gloo-net = { version = "0.8", default-features = false, features = ["http", "websocket"] }

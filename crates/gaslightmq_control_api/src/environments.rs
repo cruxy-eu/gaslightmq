@@ -3,9 +3,9 @@
 use gaslightmq_environment::{Environment, EnvironmentName};
 use serde::{Deserialize, Serialize};
 
-use crate::{GetDefinitionError, ListDefinitionsError, Operation};
+use crate::{GetDefinitionError, ListDefinitionsError, Operation, Revision};
 
-/// An environment of the workspace, and whether the process runs it.
+/// An environment of the workspace, with its revision beside it, and whether the process runs it.
 ///
 /// The environment shows its [secret references](gaslightmq_environment::SecretRef), and never a secret.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -13,6 +13,8 @@ use crate::{GetDefinitionError, ListDefinitionsError, Operation};
 pub struct EnvironmentStatus {
     /// The definition of the environment, as its file holds it.
     pub environment: Environment,
+    /// The revision of the definition: the number of the change that last created or updated it.
+    pub revision: Revision,
     /// Whether the process runs the environment now.
     pub running: bool,
 }

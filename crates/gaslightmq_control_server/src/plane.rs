@@ -11,8 +11,8 @@ use gaslightmq_control_api::selector::Selector;
 use gaslightmq_control_api::surface::{Intent, PadLayout};
 use gaslightmq_engine::OpenSession;
 use gaslightmq_host::{
-    ArmRuleError, CallSubscription, EnvironmentConfiguration, EnvironmentConfigurationError, EnvironmentRule,
-    EnvironmentRulesError, EnvironmentStartError, FireRuleError, Host, ReadSentenceError,
+    ArmRuleError, CallSubscription, DisarmRuleError, EnvironmentConfiguration, EnvironmentConfigurationError,
+    EnvironmentRule, EnvironmentRulesError, EnvironmentStartError, Host, ReadSentenceError,
 };
 use gaslightmq_quick_inject::{CompletionKind, Sentence};
 use gaslightmq_workspace::{CreateError, WorkspaceContext};
@@ -21,6 +21,7 @@ use tokio::sync::broadcast;
 
 use crate::StreamBacklog;
 use crate::definitions::{self, DefinitionOperations, Editable, each};
+use crate::revisions::{expected, revised, revision, run};
 
 /// What the server answers a request with, before it travels.
 #[derive(Debug)]
@@ -102,45 +103,29 @@ impl<C: WorkspaceContext + 'static> ControlPlane<C> {
             AnyOperation::CreateSelector(create) => {
                 Reply::of::<CreateDefinition<Selector>>(self.create(create.definition).await)
             }
-            AnyOperation::UpdateSelector(update) => {
-                Reply::of::<UpdateDefinition<Selector>>(self.update(update.definition).await)
-            }
-            AnyOperation::DeleteSelector(delete) => {
-                Reply::of::<DeleteDefinition<Selector>>(self.delete::<Selector>(delete.name).await)
-            }
+            AnyOperation::UpdateSelector(update) => Reply::of::<UpdateDefinition<Selector>>(self.update(update).await),
+            AnyOperation::DeleteSelector(delete) => Reply::of::<DeleteDefinition<Selector>>(self.delete(delete).await),
             AnyOperation::ListPresets(_) => Reply::of::<ListDefinitions<Preset>>(self.list().await),
             AnyOperation::GetPreset(get) => Reply::of::<GetDefinition<Preset>>(self.get(get.name).await),
             AnyOperation::CreatePreset(create) => {
                 Reply::of::<CreateDefinition<Preset>>(self.create(create.definition).await)
             }
-            AnyOperation::UpdatePreset(update) => {
-                Reply::of::<UpdateDefinition<Preset>>(self.update(update.definition).await)
-            }
-            AnyOperation::DeletePreset(delete) => {
-                Reply::of::<DeleteDefinition<Preset>>(self.delete::<Preset>(delete.name).await)
-            }
+            AnyOperation::UpdatePreset(update) => Reply::of::<UpdateDefinition<Preset>>(self.update(update).await),
+            AnyOperation::DeletePreset(delete) => Reply::of::<DeleteDefinition<Preset>>(self.delete(delete).await),
             AnyOperation::ListRules(_) => Reply::of::<ListDefinitions<Rule>>(self.list().await),
             AnyOperation::GetRule(get) => Reply::of::<GetDefinition<Rule>>(self.get(get.name).await),
             AnyOperation::CreateRule(create) => {
                 Reply::of::<CreateDefinition<Rule>>(self.create(create.definition).await)
             }
-            AnyOperation::UpdateRule(update) => {
-                Reply::of::<UpdateDefinition<Rule>>(self.update(update.definition).await)
-            }
-            AnyOperation::DeleteRule(delete) => {
-                Reply::of::<DeleteDefinition<Rule>>(self.delete::<Rule>(delete.name).await)
-            }
+            AnyOperation::UpdateRule(update) => Reply::of::<UpdateDefinition<Rule>>(self.update(update).await),
+            AnyOperation::DeleteRule(delete) => Reply::of::<DeleteDefinition<Rule>>(self.delete(delete).await),
             AnyOperation::ListLayouts(_) => Reply::of::<ListDefinitions<PadLayout>>(self.list().await),
             AnyOperation::GetLayout(get) => Reply::of::<GetDefinition<PadLayout>>(self.get(get.name).await),
             AnyOperation::CreateLayout(create) => {
                 Reply::of::<CreateDefinition<PadLayout>>(self.create(create.definition).await)
             }
-            AnyOperation::UpdateLayout(update) => {
-                Reply::of::<UpdateDefinition<PadLayout>>(self.update(update.definition).await)
-            }
-            AnyOperation::DeleteLayout(delete) => {
-                Reply::of::<DeleteDefinition<PadLayout>>(self.delete::<PadLayout>(delete.name).await)
-            }
+            AnyOperation::UpdateLayout(update) => Reply::of::<UpdateDefinition<PadLayout>>(self.update(update).await),
+            AnyOperation::DeleteLayout(delete) => Reply::of::<DeleteDefinition<PadLayout>>(self.delete(delete).await),
             AnyOperation::ListEnvironments(_) => Reply::of::<ListEnvironments>(self.list_environments().await),
             AnyOperation::GetEnvironment(get) => {
                 Reply::of::<GetEnvironment>(self.get_environment(get.environment).await)
@@ -151,17 +136,11 @@ impl<C: WorkspaceContext + 'static> ControlPlane<C> {
                 Reply::of::<ListEnvironmentRules>(self.environment_rules(list.environment).await)
             }
             AnyOperation::CreateLiveRule(create) => Reply::of::<CreateLiveRule>(self.create_live_rule(create).await),
-            AnyOperation::UpdateLiveRule(update) => {
-                Reply::of::<UpdateLiveRule>(self.update_live_rule(update.environment, update.rule).await)
-            }
-            AnyOperation::DeleteLiveRule(delete) => {
-                Reply::of::<DeleteLiveRule>(self.delete_live_rule(&delete.environment, &delete.rule))
-            }
-            AnyOperation::KeepRule(keep) => Reply::of::<KeepRule>(self.keep(keep.environment, keep.rule).await),
-            AnyOperation::ArmRule(arm) => Reply::of::<ArmRule>(self.arm(arm.environment, arm.rule).await),
-            AnyOperation::DisarmRule(disarm) => {
-                Reply::of::<DisarmRule>(self.disarm(disarm.environment, disarm.rule).await)
-            }
+            AnyOperation::UpdateLiveRule(update) => Reply::of::<UpdateLiveRule>(self.update_live_rule(update).await),
+            AnyOperation::DeleteLiveRule(delete) => Reply::of::<DeleteLiveRule>(self.delete_live_rule(delete)),
+            AnyOperation::KeepRule(keep) => Reply::of::<KeepRule>(self.keep(keep).await),
+            AnyOperation::ArmRule(arm) => Reply::of::<ArmRule>(self.arm(arm).await),
+            AnyOperation::DisarmRule(disarm) => Reply::of::<DisarmRule>(self.disarm(disarm).await),
             AnyOperation::FireRule(fire) => Reply::of::<FireRule>(self.fire(fire.environment, fire.rule).await),
             AnyOperation::SendIntent(send) => {
                 Reply::of::<SendIntent>(self.intent(send.environment, &send.intent).await)
@@ -179,46 +158,56 @@ impl<C: WorkspaceContext + 'static> ControlPlane<C> {
 
     // The definitions of the workspace
 
-    async fn list<D: Editable>(&self) -> Result<Vec<D>, ListDefinitionsError> {
+    async fn list<D: Editable>(&self) -> Result<Vec<DefinitionStatus<D>>, ListDefinitionsError> {
         DefinitionOperations::list(&*self.host.workspace().await).await
     }
 
-    async fn get<D: Editable>(&self, name: <D as EditableDefinition>::Name) -> Result<D, GetDefinitionError> {
+    async fn get<D: Editable>(
+        &self,
+        name: <D as EditableDefinition>::Name,
+    ) -> Result<DefinitionStatus<D>, GetDefinitionError> {
         DefinitionOperations::get(&*self.host.workspace().await, name).await
     }
 
-    async fn create<D: Editable>(&self, definition: D) -> Result<(), CreateDefinitionError> {
+    async fn create<D: Editable>(&self, definition: D) -> Result<Revised, CreateDefinitionError> {
         DefinitionOperations::create(&self.host, definition).await
     }
 
-    async fn update<D: Editable>(&self, definition: D) -> Result<(), UpdateDefinitionError> {
-        DefinitionOperations::update(&self.host, definition).await
+    async fn update<D: Editable>(&self, update: UpdateDefinition<D>) -> Result<Revised, UpdateDefinitionError> {
+        DefinitionOperations::update(&self.host, update).await
     }
 
-    async fn delete<D: Editable>(&self, name: <D as EditableDefinition>::Name) -> Result<(), DeleteDefinitionError> {
-        DefinitionOperations::delete::<D, C>(&self.host, name).await
+    async fn delete<D: Editable>(&self, delete: DeleteDefinition<D>) -> Result<Revised, DeleteDefinitionError> {
+        DefinitionOperations::delete(&self.host, delete).await
     }
 
     // The environments
 
     async fn list_environments(&self) -> Result<Vec<EnvironmentStatus>, ListDefinitionsError> {
-        let environments = definitions::list::<Environment, C>(&*self.host.workspace().await).await;
+        let environments = definitions::list_with_revisions::<Environment, C>(&*self.host.workspace().await).await;
         let environments = environments.map_err(|reason| ListDefinitionsError::StoreFailed { reason })?;
         let running = self.host.running();
         Ok(environments
             .into_iter()
-            .map(|environment| EnvironmentStatus {
-                running: running.contains(environment.name()),
-                environment,
+            .map(|DefinitionStatus { definition, revision }| EnvironmentStatus {
+                running: running.contains(definition.name()),
+                environment: definition,
+                revision,
             })
             .collect())
     }
 
     async fn get_environment(&self, name: EnvironmentName) -> Result<EnvironmentStatus, GetDefinitionError> {
-        match self.environment(&name).await {
-            Ok(Some(environment)) => Ok(EnvironmentStatus {
+        let found = {
+            let workspace = self.host.workspace().await;
+            let environment = definitions::get::<Environment, C>(&*workspace, &name).await;
+            environment.map(|found| found.map(|environment| definitions::with_revision(&*workspace, environment)))
+        };
+        match found {
+            Ok(Some(DefinitionStatus { definition, revision })) => Ok(EnvironmentStatus {
                 running: self.host.running().contains(&name),
-                environment,
+                environment: definition,
+                revision,
             }),
             Ok(None) => Err(GetDefinitionError::NotFound { name: name.into() }),
             Err(reason) => Err(GetDefinitionError::StoreFailed {
@@ -285,7 +274,7 @@ impl<C: WorkspaceContext + 'static> ControlPlane<C> {
     }
 
     /// Adds the live rule, armed when the operation says so: the host arms and adds it as one step.
-    async fn create_live_rule(&self, create: CreateLiveRule) -> Result<(), CreateLiveRuleError> {
+    async fn create_live_rule(&self, create: CreateLiveRule) -> Result<Revised, CreateLiveRuleError> {
         use gaslightmq_host::CreateLiveRuleError as Host;
         let CreateLiveRule {
             environment,
@@ -294,12 +283,12 @@ impl<C: WorkspaceContext + 'static> ControlPlane<C> {
         } = create;
         let name = rule.name().clone();
         let created = if armed {
-            self.host.create_live_rule_armed(&environment, rule).await.map(|_| ())
+            self.host.create_live_rule_armed(&environment, rule).await
         } else {
-            self.host.create_live_rule(&environment, rule).await.map(|_| ())
+            self.host.create_live_rule(&environment, rule).await
         };
         match created {
-            Ok(()) => Ok(()),
+            Ok(created) => Ok(revised(created)),
             Err(Host::NotRunning { environment }) => Err(CreateLiveRuleError::NotRunning { environment }),
             Err(Host::NameTaken { environment, rule }) => Err(CreateLiveRuleError::NameTaken { environment, rule }),
             Err(Host::StoreFailed { rule, reason }) => Err(CreateLiveRuleError::StoreFailed { rule, reason }),
@@ -314,13 +303,28 @@ impl<C: WorkspaceContext + 'static> ControlPlane<C> {
         }
     }
 
-    async fn update_live_rule(&self, environment: EnvironmentName, rule: Rule) -> Result<(), UpdateLiveRuleError> {
+    async fn update_live_rule(&self, update: UpdateLiveRule) -> Result<Revised, UpdateLiveRuleError> {
         use gaslightmq_host::UpdateLiveRuleError as Host;
+        let UpdateLiveRule {
+            environment,
+            rule,
+            expects,
+        } = update;
         let name = rule.name().clone();
-        match self.host.update_live_rule(&environment, rule).await {
-            Ok(_) => Ok(()),
+        match self.host.update_live_rule(&environment, rule, expected(expects)).await {
+            Ok(updated) => Ok(revised(updated)),
+            Err(Host::OtherRun { run: of_the_host }) => Err(UpdateLiveRuleError::OtherRun { run: run(of_the_host) }),
             Err(Host::NotRunning { environment }) => Err(UpdateLiveRuleError::NotRunning { environment }),
             Err(Host::NotFound { environment, rule }) => Err(UpdateLiveRuleError::NotFound { environment, rule }),
+            Err(Host::Changed {
+                environment,
+                rule,
+                revision: now,
+            }) => Err(UpdateLiveRuleError::Changed {
+                environment,
+                rule,
+                revision: revision(now),
+            }),
             Err(Host::StoreFailed { rule, reason }) => Err(UpdateLiveRuleError::StoreFailed { rule, reason }),
             Err(Host::WorkspaceInvalid { rule, reason }) => Err(UpdateLiveRuleError::DoesNotFit {
                 rule,
@@ -333,21 +337,51 @@ impl<C: WorkspaceContext + 'static> ControlPlane<C> {
         }
     }
 
-    fn delete_live_rule(&self, environment: &EnvironmentName, rule: &RuleName) -> Result<(), DeleteLiveRuleError> {
+    fn delete_live_rule(&self, delete: DeleteLiveRule) -> Result<Revised, DeleteLiveRuleError> {
         use gaslightmq_host::DeleteLiveRuleError as Host;
-        match self.host.delete_live_rule(environment, rule) {
-            Ok(()) => Ok(()),
+        let DeleteLiveRule {
+            environment,
+            rule,
+            expects,
+        } = delete;
+        match self.host.delete_live_rule(&environment, &rule, expected(expects)) {
+            Ok(deleted) => Ok(revised(deleted)),
+            Err(Host::OtherRun { run: of_the_host }) => Err(DeleteLiveRuleError::OtherRun { run: run(of_the_host) }),
             Err(Host::NotRunning { environment }) => Err(DeleteLiveRuleError::NotRunning { environment }),
             Err(Host::NotFound { environment, rule }) => Err(DeleteLiveRuleError::NotFound { environment, rule }),
+            Err(Host::Changed {
+                environment,
+                rule,
+                revision: now,
+            }) => Err(DeleteLiveRuleError::Changed {
+                environment,
+                rule,
+                revision: revision(now),
+            }),
         }
     }
 
-    async fn keep(&self, environment: EnvironmentName, name: RuleName) -> Result<(), KeepRuleError> {
+    async fn keep(&self, keep: KeepRule) -> Result<Revised, KeepRuleError> {
         use gaslightmq_host::KeepRuleError as Host;
-        match self.host.keep(&environment, &name).await {
-            Ok(_) => Ok(()),
+        let KeepRule {
+            environment,
+            rule,
+            expects,
+        } = keep;
+        match self.host.keep(&environment, &rule, expected(expects)).await {
+            Ok(kept) => Ok(revised(kept)),
+            Err(Host::OtherRun { run: of_the_host }) => Err(KeepRuleError::OtherRun { run: run(of_the_host) }),
             Err(Host::NotRunning { environment }) => Err(KeepRuleError::NotRunning { environment }),
             Err(Host::NotFound { environment, rule }) => Err(KeepRuleError::NotFound { environment, rule }),
+            Err(Host::Changed {
+                environment,
+                rule,
+                revision: now,
+            }) => Err(KeepRuleError::Changed {
+                environment,
+                rule,
+                revision: revision(now),
+            }),
             Err(Host::NameTaken { rule, environment }) => Err(KeepRuleError::NameTaken {
                 rule,
                 environment: Some(environment),
@@ -367,36 +401,58 @@ impl<C: WorkspaceContext + 'static> ControlPlane<C> {
     }
 
     /// The rule of the environment that a command names: a rule of the workspace, or a live rule.
-    async fn commanded_rule(
-        &self,
-        environment: &EnvironmentName,
-        name: &RuleName,
-    ) -> Result<EnvironmentRule, RuleCommandError> {
+    async fn commanded_rule(&self, environment: &EnvironmentName, name: &RuleName) -> Result<EnvironmentRule, NoRule> {
         match self.host.rule_of(environment, name).await {
             Ok(Some(rule)) => Ok(rule),
-            Ok(None) => Err(RuleCommandError::NotFound {
-                environment: environment.clone(),
-                rule: name.clone(),
-            }),
-            Err(EnvironmentRulesError::NotRunning { environment }) => Err(RuleCommandError::NotRunning { environment }),
-            Err(EnvironmentRulesError::StoreFailed { reason, .. }) => Err(RuleCommandError::StoreFailed {
-                rule: name.clone(),
-                reason,
-            }),
+            Ok(None) => Err(NoRule::NotFound),
+            Err(EnvironmentRulesError::NotRunning { .. }) => Err(NoRule::NotRunning),
+            Err(EnvironmentRulesError::StoreFailed { reason, .. }) => Err(NoRule::StoreFailed { reason }),
         }
     }
 
-    async fn arm(&self, environment: EnvironmentName, name: RuleName) -> Result<(), RuleCommandError> {
-        let rule = self.commanded_rule(&environment, &name).await?;
+    /// The run of the process, when a change expects a revision of another run.
+    ///
+    /// A client that read from an earlier run learns that first, whatever else is wrong with its change:
+    /// nothing that it holds is certain any more.
+    fn other_run(&self, expects: Option<Expects>) -> Option<RunId> {
+        let of_the_process = run(self.host.run());
+        expects
+            .is_some_and(|expects| expects.run != of_the_process)
+            .then_some(of_the_process)
+    }
+
+    async fn arm(&self, arm: ArmRule) -> Result<Revised, RuleCommandError> {
+        let ArmRule {
+            environment,
+            rule: name,
+            expects,
+        } = arm;
+        if let Some(run) = self.other_run(expects) {
+            return Err(RuleCommandError::OtherRun { run });
+        }
+        let found = self.commanded_rule(&environment, &name).await;
+        let rule = found.map_err(|missing| missing.of_a_command(&environment, &name))?;
         let refused = |reason: String| RuleCommandError::Refused {
             environment: environment.clone(),
             rule: name.clone(),
             reason,
         };
-        match self.host.arm(&environment, &rule.rule).await {
-            Ok(_) => Ok(()),
+        match self.host.arm(&environment, &rule.rule, expected(expects)).await {
+            Ok(armed) => Ok(revised(armed)),
+            Err(ArmRuleError::OtherRun { run: of_the_host }) => {
+                Err(RuleCommandError::OtherRun { run: run(of_the_host) })
+            }
             Err(ArmRuleError::NotRunning { .. }) => Err(RuleCommandError::NotRunning {
                 environment: environment.clone(),
+            }),
+            Err(ArmRuleError::Changed {
+                environment,
+                rule,
+                revision: now,
+            }) => Err(RuleCommandError::Changed {
+                environment,
+                rule,
+                revision: revision(now),
             }),
             Err(ArmRuleError::StoreFailed { reason, .. }) => Err(RuleCommandError::StoreFailed { rule: name, reason }),
             Err(ArmRuleError::WorkspaceInvalid { reason, .. }) => {
@@ -407,40 +463,60 @@ impl<C: WorkspaceContext + 'static> ControlPlane<C> {
         }
     }
 
-    async fn disarm(&self, environment: EnvironmentName, name: RuleName) -> Result<(), RuleCommandError> {
-        self.commanded_rule(&environment, &name).await?;
-        let armed = self
-            .host
-            .rules(&environment)
-            .map_err(|_| RuleCommandError::NotRunning {
-                environment: environment.clone(),
-            })?;
-        armed.disarm(&name).map_err(|_| RuleCommandError::Refused {
+    async fn disarm(&self, disarm: DisarmRule) -> Result<Revised, RuleCommandError> {
+        let DisarmRule {
             environment,
             rule: name,
-            reason: "it is not armed".to_owned(),
-        })?;
-        Ok(())
+            expects,
+        } = disarm;
+        if let Some(run) = self.other_run(expects) {
+            return Err(RuleCommandError::OtherRun { run });
+        }
+        let found = self.commanded_rule(&environment, &name).await;
+        found.map_err(|missing| missing.of_a_command(&environment, &name))?;
+        match self.host.disarm(&environment, &name, expected(expects)).await {
+            Ok(disarmed) => Ok(revised(disarmed)),
+            Err(DisarmRuleError::OtherRun { run: of_the_host }) => {
+                Err(RuleCommandError::OtherRun { run: run(of_the_host) })
+            }
+            Err(DisarmRuleError::NotRunning { environment }) => Err(RuleCommandError::NotRunning { environment }),
+            Err(DisarmRuleError::Changed {
+                environment,
+                rule,
+                revision: now,
+            }) => Err(RuleCommandError::Changed {
+                environment,
+                rule,
+                revision: revision(now),
+            }),
+            Err(DisarmRuleError::NotArmed { environment, rule }) => Err(RuleCommandError::Refused {
+                environment,
+                rule,
+                reason: "it is not armed".to_owned(),
+            }),
+        }
     }
 
-    async fn fire(&self, environment: EnvironmentName, name: RuleName) -> Result<(), RuleCommandError> {
-        self.commanded_rule(&environment, &name).await?;
-        let refused = |reason: String| RuleCommandError::Refused {
+    async fn fire(&self, environment: EnvironmentName, name: RuleName) -> Result<(), FireRuleError> {
+        use gaslightmq_host::FireRuleError as Host;
+        let found = self.commanded_rule(&environment, &name).await;
+        found.map_err(|missing| missing.of_a_firing(&environment, &name))?;
+        let refused = |reason: String| FireRuleError::Refused {
             environment: environment.clone(),
             rule: name.clone(),
             reason,
         };
         match self.host.fire(&environment, &name).await {
             Ok(()) => Ok(()),
-            Err(FireRuleError::NotRunning { .. }) => Err(RuleCommandError::NotRunning {
+            Err(Host::NotRunning { .. }) => Err(FireRuleError::NotRunning {
                 environment: environment.clone(),
             }),
-            Err(FireRuleError::NotArmed { .. }) => Err(refused("it is not armed".to_owned())),
-            Err(FireRuleError::NotFired { .. }) => Err(refused(
+            Err(Host::NotArmed { .. }) => Err(refused("it is not armed".to_owned())),
+            Err(Host::NotFired { .. }) => Err(refused(
                 "it fires no more: its lifetime has ended, or its budget has no firing free".to_owned(),
             )),
-            Err(FireRuleError::NeedsCall { error }) => Err(refused(error.to_string())),
-            Err(FireRuleError::IncidentRejected { error, .. }) => Err(refused(error.to_string())),
+            Err(Host::NeedsCall { error }) => Err(refused(error.to_string())),
+            Err(Host::IncidentRejected { error, .. }) => Err(refused(error.to_string())),
         }
     }
 
@@ -543,7 +619,7 @@ impl<C: WorkspaceContext + 'static> ControlPlane<C> {
         }))
     }
 
-    /// The whole state of the process: every definition, and every environment that runs.
+    /// The whole state of the process: its run, every definition, and every environment that runs.
     ///
     /// # Errors
     ///
@@ -558,6 +634,7 @@ impl<C: WorkspaceContext + 'static> ControlPlane<C> {
             }
         }
         Ok(ProcessState {
+            run: run(self.host.run()),
             definitions,
             environments,
         })
@@ -589,6 +666,39 @@ pub(crate) fn status(rule: EnvironmentRule) -> RuleStatus {
         rule: rule.rule,
         live: rule.live,
         state: rule.state,
+        revision: revision(rule.revision),
+    }
+}
+
+/// Why a command on a rule of an environment found no rule to act on.
+enum NoRule {
+    /// The environment does not run.
+    NotRunning,
+    /// Neither the workspace nor the environment has a rule of that name.
+    NotFound,
+    /// The store of the rules could not be read. `reason` says what it said.
+    StoreFailed { reason: String },
+}
+
+impl NoRule {
+    /// The error of an arm or a disarm that found no rule.
+    fn of_a_command(self, environment: &EnvironmentName, rule: &RuleName) -> RuleCommandError {
+        let (environment, rule) = (environment.clone(), rule.clone());
+        match self {
+            NoRule::NotRunning => RuleCommandError::NotRunning { environment },
+            NoRule::NotFound => RuleCommandError::NotFound { environment, rule },
+            NoRule::StoreFailed { reason } => RuleCommandError::StoreFailed { rule, reason },
+        }
+    }
+
+    /// The error of a firing that found no rule.
+    fn of_a_firing(self, environment: &EnvironmentName, rule: &RuleName) -> FireRuleError {
+        let (environment, rule) = (environment.clone(), rule.clone());
+        match self {
+            NoRule::NotRunning => FireRuleError::NotRunning { environment },
+            NoRule::NotFound => FireRuleError::NotFound { environment, rule },
+            NoRule::StoreFailed { reason } => FireRuleError::StoreFailed { rule, reason },
+        }
     }
 }
 

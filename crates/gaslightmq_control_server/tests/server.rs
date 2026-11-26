@@ -1,6 +1,7 @@
 //! The control plane without a real cluster, driven through the client as the UI, the CLI and tests drive it:
-//! the definitions of the workspace, what an operation answers about an environment that does not run,
-//! a request that does not say where it comes from, and the live stream.
+//! the definitions of the workspace with their revisions, a change that expects another revision or another run,
+//! what an operation answers about an environment that does not run, a request that does not say where it comes
+//! from, and the live stream.
 //!
 //! Each test starts a host whose workspace lives in memory, puts a server in front of it on a free port,
 //! and speaks to that server with a client. The tests in `tests/real_cluster` run environments in front of real
@@ -18,6 +19,8 @@ use gaslightmq_control_api::field::ConnectionNumber;
 use gaslightmq_control_api::kernel::ApiKey;
 use gaslightmq_control_api::lie::TimingLie;
 use gaslightmq_control_api::prelude::*;
+// The revision of the control plane, and not the one of the workspace behind it, whose prelude names its own.
+use gaslightmq_control_api::Revision;
 use gaslightmq_control_api::rule::{Preset, PresetName, Rule};
 use gaslightmq_control_api::selector::{Condition, Conditions, Selector, SelectorRef};
 use gaslightmq_control_api::surface::{Column, Intent, Layer, Pad, Row};
@@ -36,12 +39,19 @@ const LOCALHOST: IpAddr = IpAddr::V4(Ipv4Addr::LOCALHOST);
 /// Port 0: the system picks a free port, so the tests run side by side.
 const ANY_PORT: u16 = 0;
 
+/// The run of the host of a test, as the snapshot writes it. A test names its own run.
+const RUN: &str = "4be0643f1d98573b97cdca98a65347dd";
+
+/// The run of the process before it started again: the one that a client that read back then still names.
+const EARLIER_RUN: &str = "1f0a52c79be34d168a703c5ed2946b08";
+
 #[tokio::test]
 async fn a_definition_changes_in_the_workspace_and_every_client_of_the_stream_hears_of_it() -> anyhow::Result<()> {
     let host = Arc::new(Host::new(
         HostConfiguration::default(),
         MemoryContext::new(),
         Lies::of_every_build(),
+        RUN.parse()?,
     ));
     let mut configuration = ControlServerConfiguration::default();
     configuration.listen = SocketAddr::new(LOCALHOST, ANY_PORT);
@@ -60,14 +70,16 @@ async fn a_definition_changes_in_the_workspace_and_every_client_of_the_stream_he
     );
 
     // The workspace is empty, and the stream says so first.
-    let first = tokio::time::timeout(PATIENCE, stream.next()).await??;
-    assert_eq!(first, StreamMessage::Snapshot(ProcessState::default()));
+    let StreamMessage::Snapshot(first) = tokio::time::timeout(PATIENCE, stream.next()).await?? else {
+        anyhow::bail!("the stream did not start with a snapshot");
+    };
+    assert_eq!(first.definitions, Definitions::default());
 
     let created = client
         .send(CreateDefinition {
             definition: order_producers.clone(),
         })
-        .await?;
+        .await??;
     let changed = tokio::time::timeout(PATIENCE, stream.next()).await??;
     let got = client
         .send(GetDefinition::<Selector> {
@@ -76,16 +88,21 @@ async fn a_definition_changes_in_the_workspace_and_every_client_of_the_stream_he
         .await?;
     let listed = client.send(ListDefinitions::<Selector>::new()).await?;
 
-    assert_eq!(created, Ok(()));
+    // The create answered with the revision of the selector, and whoever reads the selector gets it beside it.
     assert_eq!(
         changed,
         StreamMessage::DefinitionChanged {
-            definition: AnyDefinition::Selector(order_producers.clone())
+            definition: AnyDefinition::Selector(order_producers.clone()),
+            revision: created.revision,
         }
     );
-    // A definition travels as its file holds it.
-    assert_eq!(got, Ok(order_producers.clone()));
-    assert_eq!(listed, Ok(vec![order_producers.clone()]));
+    // A definition travels as its file holds it, and its revision is no part of it.
+    let held = DefinitionStatus {
+        definition: order_producers.clone(),
+        revision: created.revision,
+    };
+    assert_eq!(got, Ok(held.clone()));
+    assert_eq!(listed, Ok(vec![held]));
 
     // The rule names a preset that the workspace does not have yet.
     let early = client
@@ -104,18 +121,13 @@ async fn a_definition_changes_in_the_workspace_and_every_client_of_the_stream_he
 
     // Once the preset is there, the rule is too, and the selector stays as long as the rule uses it.
     let preset = Preset::new(delay, TimingLie::new().with_delay("1s".parse()?));
-    assert_eq!(client.send(CreateDefinition { definition: preset }).await?, Ok(()));
-    assert_eq!(
-        client
-            .send(CreateDefinition {
-                definition: slow.clone()
-            })
-            .await?,
-        Ok(())
-    );
+    client.send(CreateDefinition { definition: preset }).await??;
+    let definition = slow.clone();
+    client.send(CreateDefinition { definition }).await??;
     let in_use = client
         .send(DeleteDefinition::<Selector> {
             name: order_producers.name().clone(),
+            expects: None,
         })
         .await?;
     assert_eq!(
@@ -129,9 +141,11 @@ async fn a_definition_changes_in_the_workspace_and_every_client_of_the_stream_he
     let deleted = client
         .send(DeleteDefinition::<Rule> {
             name: slow.name().clone(),
+            expects: None,
         })
-        .await?;
-    assert_eq!(deleted, Ok(()));
+        .await??;
+    // Every change takes the next number of one counter, whatever it changes.
+    assert!(created.revision < deleted.revision, "{created:?} and then {deleted:?}");
     // The stream heard of the preset and the rule, and then of the rule that went.
     // A change tells the state of what it names when it travels, so the rule that went may have no change of its
     // own by then. The deletion comes last, whatever came before it.
@@ -155,6 +169,7 @@ async fn a_command_on_an_environment_that_does_not_run_fails_as_its_operation_sa
         HostConfiguration::default(),
         MemoryContext::new(),
         Lies::of_every_build(),
+        RUN.parse()?,
     ));
     let mut configuration = ControlServerConfiguration::default();
     configuration.listen = SocketAddr::new(LOCALHOST, ANY_PORT);
@@ -171,6 +186,7 @@ async fn a_command_on_an_environment_that_does_not_run_fails_as_its_operation_sa
         .send(ArmRule {
             environment: staging.clone(),
             rule: "slow-order-producers".parse()?,
+            expects: None,
         })
         .await?;
     let rules = client
@@ -214,6 +230,7 @@ async fn an_environment_that_the_workspace_does_not_have_or_that_runs_a_broker_d
         HostConfiguration::default(),
         MemoryContext::new(),
         Lies::of_every_build(),
+        RUN.parse()?,
     ));
     let mut configuration = ControlServerConfiguration::default();
     configuration.listen = SocketAddr::new(LOCALHOST, ANY_PORT);
@@ -232,7 +249,9 @@ async fn an_environment_that_the_workspace_does_not_have_or_that_runs_a_broker_d
             broker: BrokerDefinition::new("orders-sim".parse()?),
         },
     );
-    host.create(orders.clone()).await?;
+    // The host answers the create with the revision of the environment, which the control plane hands out by its
+    // number.
+    let created = Revision::new(host.create(orders.clone()).await?.number());
     let staging: EnvironmentName = "staging-proxy".parse()?;
 
     let unknown = client
@@ -259,6 +278,7 @@ async fn an_environment_that_the_workspace_does_not_have_or_that_runs_a_broker_d
         statuses,
         Ok(vec![EnvironmentStatus {
             environment: orders,
+            revision: created,
             running: false,
         }])
     );
@@ -273,6 +293,7 @@ async fn live_rules_pads_and_sessions_need_an_environment_that_runs() -> anyhow:
         HostConfiguration::default(),
         MemoryContext::new(),
         Lies::of_every_build(),
+        RUN.parse()?,
     ));
     let mut configuration = ControlServerConfiguration::default();
     configuration.listen = SocketAddr::new(LOCALHOST, ANY_PORT);
@@ -302,6 +323,7 @@ async fn live_rules_pads_and_sessions_need_an_environment_that_runs() -> anyhow:
         .send(KeepRule {
             environment: staging.clone(),
             rule: hold.name().clone(),
+            expects: None,
         })
         .await?;
     let pressed = client
@@ -357,6 +379,7 @@ async fn a_subscription_is_answered_and_a_stop_of_the_server_ends_the_stream() -
         HostConfiguration::default(),
         MemoryContext::new(),
         Lies::of_every_build(),
+        RUN.parse()?,
     ));
     let mut configuration = ControlServerConfiguration::default();
     configuration.listen = SocketAddr::new(LOCALHOST, ANY_PORT);
@@ -405,6 +428,7 @@ async fn a_request_says_where_it_comes_from_or_the_server_does_not_read_it() -> 
         HostConfiguration::default(),
         MemoryContext::new(),
         Lies::of_every_build(),
+        RUN.parse()?,
     ));
     let mut configuration = ControlServerConfiguration::default();
     configuration.listen = SocketAddr::new(LOCALHOST, ANY_PORT);
@@ -459,6 +483,202 @@ async fn a_request_says_where_it_comes_from_or_the_server_does_not_read_it() -> 
     Ok(())
 }
 
+#[tokio::test]
+async fn a_change_that_expects_another_revision_changes_nothing_and_says_which_revision_holds() -> anyhow::Result<()> {
+    let host = Arc::new(Host::new(
+        HostConfiguration::default(),
+        MemoryContext::new(),
+        Lies::of_every_build(),
+        RUN.parse()?,
+    ));
+    let mut configuration = ControlServerConfiguration::default();
+    configuration.listen = SocketAddr::new(LOCALHOST, ANY_PORT);
+    let server = ControlServer::start(configuration, Arc::clone(&host)).await?;
+    let mut of_the_ui = ControlClientConfiguration::new(server.address().into());
+    of_the_ui.surface = RequestSurface::Ui;
+    // Two tabs of the UI.
+    let one_tab = ControlClient::new(of_the_ui.clone());
+    let other_tab = ControlClient::new(of_the_ui);
+    let blackhole = Preset::new("blackhole".parse()?, TimingLie::new().with_delay("1s".parse()?));
+    one_tab
+        .send(CreateDefinition {
+            definition: blackhole.clone(),
+        })
+        .await??;
+    // Both tabs read the preset: the snapshot names the run, and holds the preset with its revision.
+    let mut stream = other_tab.live_stream().await?;
+    let StreamMessage::Snapshot(snapshot) = tokio::time::timeout(PATIENCE, stream.next()).await?? else {
+        anyhow::bail!("the stream did not start with a snapshot");
+    };
+    let read = snapshot
+        .definitions
+        .presets
+        .first()
+        .context("the snapshot holds the preset")?;
+    let seen = Some(Expects {
+        run: snapshot.run,
+        revision: read.revision,
+    });
+
+    // One tab gives the preset a title, and the other one a different title, without having seen the first.
+    let titled = blackhole.clone().with_title("Blackhole".parse()?);
+    let first = one_tab
+        .send(UpdateDefinition {
+            expects: seen,
+            definition: titled.clone(),
+        })
+        .await??;
+    let late = other_tab
+        .send(UpdateDefinition {
+            expects: seen,
+            definition: blackhole.clone().with_title("Silence".parse()?),
+        })
+        .await?;
+    let deleted_late = other_tab
+        .send(DeleteDefinition::<Preset> {
+            name: blackhole.name().clone(),
+            expects: seen,
+        })
+        .await?;
+
+    assert_eq!(read.definition, blackhole);
+    assert!(read.revision < first.revision, "{read:?} and then {first:?}");
+    // The late changes change nothing, and say which revision the preset has now.
+    assert_eq!(
+        late,
+        Err(UpdateDefinitionError::Changed {
+            name: blackhole.name().clone().into(),
+            revision: first.revision,
+        })
+    );
+    assert_eq!(
+        deleted_late,
+        Err(DeleteDefinitionError::Changed {
+            name: blackhole.name().clone().into(),
+            revision: first.revision,
+        })
+    );
+    let held = other_tab
+        .send(GetDefinition::<Preset> {
+            name: blackhole.name().clone(),
+        })
+        .await?;
+    assert_eq!(
+        held,
+        Ok(DefinitionStatus {
+            definition: titled,
+            revision: first.revision,
+        })
+    );
+    // The other tab changes the preset as it is now: it expects the revision that the error named.
+    let seen_now = Some(Expects {
+        run: snapshot.run,
+        revision: first.revision,
+    });
+    let second = other_tab
+        .send(UpdateDefinition {
+            expects: seen_now,
+            definition: blackhole.clone().with_title("Silence".parse()?),
+        })
+        .await??;
+    assert!(first.revision < second.revision, "{first:?} and then {second:?}");
+    server.stop().await;
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_change_that_expects_a_revision_of_another_run_changes_nothing_and_names_the_run() -> anyhow::Result<()> {
+    let host = Arc::new(Host::new(
+        HostConfiguration::default(),
+        MemoryContext::new(),
+        Lies::of_every_build(),
+        RUN.parse()?,
+    ));
+    let mut configuration = ControlServerConfiguration::default();
+    configuration.listen = SocketAddr::new(LOCALHOST, ANY_PORT);
+    let server = ControlServer::start(configuration, Arc::clone(&host)).await?;
+    let client = ControlClient::new(ControlClientConfiguration::new(server.address().into()));
+    let staging: EnvironmentName = "staging-proxy".parse()?;
+    let blackhole = Preset::new("blackhole".parse()?, TimingLie::new().with_delay("1s".parse()?));
+    let created = client
+        .send(CreateDefinition {
+            definition: blackhole.clone(),
+        })
+        .await??;
+    // A tab read the preset before the process started again. The counter starts again with every run, so the
+    // revision alone can fit, and the run does not.
+    let before_the_restart = Some(Expects {
+        run: EARLIER_RUN.parse()?,
+        revision: created.revision,
+    });
+    let other_run = RUN.parse::<RunId>()?;
+
+    let updated = client
+        .send(UpdateDefinition {
+            expects: before_the_restart,
+            definition: blackhole.clone().with_title("Blackhole".parse()?),
+        })
+        .await?;
+    let deleted = client
+        .send(DeleteDefinition::<Preset> {
+            name: blackhole.name().clone(),
+            expects: before_the_restart,
+        })
+        .await?;
+    // An undo of the earlier run arms nothing: it learns of the other run before anything else,
+    // also where its environment does not run any more.
+    let armed = client
+        .send(ArmRule {
+            environment: staging.clone(),
+            rule: "slow-order-producers".parse()?,
+            expects: before_the_restart,
+        })
+        .await?;
+    let disarmed = client
+        .send(DisarmRule {
+            environment: staging.clone(),
+            rule: "slow-order-producers".parse()?,
+            expects: before_the_restart,
+        })
+        .await?;
+    let kept = client
+        .send(KeepRule {
+            environment: staging.clone(),
+            rule: "slow-order-producers".parse()?,
+            expects: before_the_restart,
+        })
+        .await?;
+    let removed = client
+        .send(DeleteLiveRule {
+            environment: staging,
+            rule: "slow-order-producers".parse()?,
+            expects: before_the_restart,
+        })
+        .await?;
+
+    assert_eq!(updated, Err(UpdateDefinitionError::OtherRun { run: other_run }));
+    assert_eq!(deleted, Err(DeleteDefinitionError::OtherRun { run: other_run }));
+    assert_eq!(armed, Err(RuleCommandError::OtherRun { run: other_run }));
+    assert_eq!(disarmed, Err(RuleCommandError::OtherRun { run: other_run }));
+    assert_eq!(kept, Err(KeepRuleError::OtherRun { run: other_run }));
+    assert_eq!(removed, Err(DeleteLiveRuleError::OtherRun { run: other_run }));
+    // The preset is as it was created.
+    let held = client
+        .send(GetDefinition::<Preset> {
+            name: blackhole.name().clone(),
+        })
+        .await?;
+    assert_eq!(
+        held,
+        Ok(DefinitionStatus {
+            definition: blackhole,
+            revision: created.revision,
+        })
+    );
+    server.stop().await;
+    Ok(())
+}
+
 /// The first line and the headers of what the server answers to `request`, sent as it is on a new connection.
 async fn exchange(server: SocketAddr, request: &str) -> anyhow::Result<String> {
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -476,6 +696,7 @@ async fn every_path_that_the_control_plane_leaves_free_serves_the_page_of_the_ui
         HostConfiguration::default(),
         MemoryContext::new(),
         Lies::of_every_build(),
+        RUN.parse()?,
     ));
     let mut configuration = ControlServerConfiguration::default();
     configuration.listen = SocketAddr::new(LOCALHOST, ANY_PORT);

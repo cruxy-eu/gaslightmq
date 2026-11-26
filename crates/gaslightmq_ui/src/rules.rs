@@ -182,28 +182,52 @@ pub enum RuleOperation {
 }
 
 /// The operation that carries out `command` on the rule of an environment.
+///
+/// The operation says nothing of what it expects yet, so the last change wins.
 pub fn operation(environment: &EnvironmentName, status: &RuleStatus, command: RuleCommand) -> RuleOperation {
     let environment = environment.clone();
     let rule = status.rule.name().clone();
+    let expects = None;
     match command {
-        RuleCommand::Arm => RuleOperation::Arm(ArmRule { environment, rule }),
-        RuleCommand::Disarm => RuleOperation::Disarm(DisarmRule { environment, rule }),
+        RuleCommand::Arm => RuleOperation::Arm(ArmRule {
+            environment,
+            rule,
+            expects,
+        }),
+        RuleCommand::Disarm => RuleOperation::Disarm(DisarmRule {
+            environment,
+            rule,
+            expects,
+        }),
         RuleCommand::Fire => RuleOperation::Fire(FireRule { environment, rule }),
-        RuleCommand::Keep => RuleOperation::Keep(KeepRule { environment, rule }),
-        RuleCommand::Delete => RuleOperation::Delete(DeleteLiveRule { environment, rule }),
+        RuleCommand::Keep => RuleOperation::Keep(KeepRule {
+            environment,
+            rule,
+            expects,
+        }),
+        RuleCommand::Delete => RuleOperation::Delete(DeleteLiveRule {
+            environment,
+            rule,
+            expects,
+        }),
     }
 }
 
 /// The operation that replaces a rule with `changed`, which has its name: a live rule changes in its environment,
 /// and a rule of the workspace changes in the workspace, for every environment.
+/// It says nothing of what it expects yet, so the last change wins.
 pub fn update(environment: &EnvironmentName, status: &RuleStatus, changed: Rule) -> RuleOperation {
     if status.live {
         RuleOperation::UpdateLive(UpdateLiveRule {
             environment: environment.clone(),
             rule: changed,
+            expects: None,
         })
     } else {
-        RuleOperation::UpdateWorkspace(UpdateDefinition { definition: changed })
+        RuleOperation::UpdateWorkspace(UpdateDefinition {
+            expects: None,
+            definition: changed,
+        })
     }
 }
 

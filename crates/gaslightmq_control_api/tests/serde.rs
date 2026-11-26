@@ -27,6 +27,15 @@ use serde::Serialize;
 use serde::de::DeserializeOwned;
 use serde_json::{Value, json};
 
+/// The run of the process, as its snapshot writes it.
+const RUN: &str = "4be0643f1d98573b97cdca98a65347dd";
+
+/// The revision that a client saw beside what it changes.
+const SEEN: Revision = Revision::new(7);
+
+/// The revision that the change of that client left, or that someone else's change left before it.
+const NOW: Revision = Revision::new(8);
+
 /// A value next to the JSON that a client or a server writes for it.
 struct Form<T>(T);
 
@@ -102,6 +111,7 @@ fn a_request_says_where_it_comes_from_next_to_its_operation() {
     let arm = ArmRule {
         environment: "orders-sim".parse().unwrap(),
         rule: "slow-order-producers".parse().unwrap(),
+        expects: None,
     };
 
     Form(OperationRequest::new(RequestSurface::Pad, arm)).writes(json!({
@@ -135,6 +145,7 @@ fn an_undo_and_a_redo_say_their_cause() {
         DisarmRule {
             environment: environment.clone(),
             rule: rule.clone(),
+            expects: None,
         },
     ))
     .writes(json!({
@@ -143,7 +154,12 @@ fn an_undo_and_a_redo_say_their_cause() {
         "environment": "orders-sim",
         "rule": "slow-order-producers",
     }));
-    Form(OperationRequest::new(redo, ArmRule { environment, rule })).writes(json!({
+    let arm = ArmRule {
+        environment,
+        rule,
+        expects: None,
+    };
+    Form(OperationRequest::new(redo, arm)).writes(json!({
         "from": { "surface": "ui", "cause": "redo" },
         "operation": "arm-rule",
         "environment": "orders-sim",
@@ -209,10 +225,12 @@ fn an_operation_on_a_definition_names_its_kind() {
     // A rule and a selector can share a name, and the operation says which one goes.
     Form(AnyOperation::from(DeleteDefinition::<Rule> {
         name: "order-producers".parse().unwrap(),
+        expects: None,
     }))
     .writes(json!({ "operation": "delete-rule", "name": "order-producers" }));
     Form(AnyOperation::from(DeleteDefinition::<Selector> {
         name: "order-producers".parse().unwrap(),
+        expects: None,
     }))
     .writes(json!({ "operation": "delete-selector", "name": "order-producers" }));
 }
@@ -227,7 +245,11 @@ fn a_list_says_nothing_but_its_operation() {
 fn an_update_carries_the_whole_definition_under_its_name() {
     let titled = OrderDesk::rule().with_title("Slow down order producers".parse().unwrap());
 
-    Form(AnyOperation::from(UpdateDefinition { definition: titled })).writes(json!({
+    Form(AnyOperation::from(UpdateDefinition {
+        expects: None,
+        definition: titled,
+    }))
+    .writes(json!({
         "operation": "update-rule",
         "definition": {
             "name": "slow-order-producers",
@@ -245,6 +267,7 @@ fn a_command_on_something_live_names_its_environment() {
     Form(AnyOperation::from(ArmRule {
         environment: "orders-sim".parse().unwrap(),
         rule: rule.clone(),
+        expects: None,
     }))
     .writes(json!({ "operation": "arm-rule", "environment": "orders-sim", "rule": "slow-order-producers" }));
     Form(AnyOperation::from(FireRule {
@@ -257,6 +280,105 @@ fn a_command_on_something_live_names_its_environment() {
         connection: ConnectionNumber::new(7),
     }))
     .writes(json!({ "operation": "close-session", "environment": "orders-sim", "connection": 7 }));
+}
+
+#[test]
+fn a_change_says_what_it_expects_next_to_the_keys_of_its_operation() {
+    // What the UI read: the run of its snapshot, and the revision beside the rule.
+    let seen = Expects {
+        run: RUN.parse().unwrap(),
+        revision: SEEN,
+    };
+    let expects = json!({ "run": RUN, "revision": SEEN.number() });
+    let environment: EnvironmentName = "orders-sim".parse().unwrap();
+    let rule: RuleName = "slow-order-producers".parse().unwrap();
+
+    Form(OperationRequest::new(
+        RequestSurface::Ui,
+        UpdateDefinition {
+            expects: Some(seen),
+            definition: OrderDesk::rule(),
+        },
+    ))
+    .writes(json!({
+        "from": { "surface": "ui" },
+        "operation": "update-rule",
+        "expects": expects,
+        "definition": { "name": "slow-order-producers", "selector": "order-producers", "action": "delay-1s" },
+    }));
+    Form(AnyOperation::from(DeleteDefinition::<Rule> {
+        name: rule.clone(),
+        expects: Some(seen),
+    }))
+    .writes(json!({ "operation": "delete-rule", "name": "slow-order-producers", "expects": expects }));
+    let on_the_rule = json!({ "environment": "orders-sim", "rule": "slow-order-producers", "expects": expects });
+    let named = |operation: &str| {
+        let mut form = on_the_rule.clone();
+        form["operation"] = json!(operation);
+        form
+    };
+    Form(AnyOperation::from(ArmRule {
+        environment: environment.clone(),
+        rule: rule.clone(),
+        expects: Some(seen),
+    }))
+    .writes(named("arm-rule"));
+    Form(AnyOperation::from(DisarmRule {
+        environment: environment.clone(),
+        rule: rule.clone(),
+        expects: Some(seen),
+    }))
+    .writes(named("disarm-rule"));
+    Form(AnyOperation::from(DeleteLiveRule {
+        environment: environment.clone(),
+        rule: rule.clone(),
+        expects: Some(seen),
+    }))
+    .writes(named("delete-live-rule"));
+    Form(AnyOperation::from(KeepRule {
+        environment: environment.clone(),
+        rule,
+        expects: Some(seen),
+    }))
+    .writes(named("keep-rule"));
+    Form(AnyOperation::from(UpdateLiveRule {
+        environment,
+        rule: OrderDesk::rule(),
+        expects: Some(seen),
+    }))
+    .writes(json!({
+        "operation": "update-live-rule",
+        "environment": "orders-sim",
+        "rule": Form(OrderDesk::rule()).json(),
+        "expects": expects,
+    }));
+}
+
+#[test]
+fn a_create_and_a_firing_expect_nothing() {
+    let expects = json!({ "run": RUN, "revision": SEEN.number() });
+
+    Form::<AnyOperation>::rejects(
+        json!({ "operation": "create-rule", "definition": Form(OrderDesk::rule()).json(), "expects": expects }),
+        "unknown field `expects`",
+    );
+    Form::<AnyOperation>::rejects(
+        json!({ "operation": "fire-rule", "environment": "orders-sim", "rule": "slow-order-producers", "expects": expects }),
+        "unknown field `expects`",
+    );
+}
+
+#[test]
+fn what_a_change_expects_names_a_run_and_a_revision() {
+    let arm = |expects: Value| json!({ "operation": "arm-rule", "environment": "orders-sim", "rule": "slow-order-producers", "expects": expects });
+
+    // A revision means something only together with the run that gave it.
+    Form::<AnyOperation>::rejects(arm(json!({ "revision": SEEN.number() })), "missing field `run`");
+    Form::<AnyOperation>::rejects(arm(json!({ "run": RUN })), "missing field `revision`");
+    Form::<AnyOperation>::rejects(
+        arm(json!({ "run": "orders-sim", "revision": SEEN.number() })),
+        "a run ID has 32 hexadecimal digits, and not 10 characters",
+    );
 }
 
 #[test]
@@ -357,8 +479,15 @@ fn a_press_answers_with_the_rule_whether_it_made_or_changed_it_and_its_hold() {
         rule: OrderDesk::rule(),
         live: true,
         state: RuleState::Armed,
+        revision: NOW,
     };
-    let rule = json!({ "rule": Form(OrderDesk::rule()).json(), "live": true, "state": "armed" });
+    // The rule comes with the revision it has now, which the undo of the press expects.
+    let rule = json!({
+        "rule": Form(OrderDesk::rule()).json(),
+        "live": true,
+        "state": "armed",
+        "revision": NOW.number(),
+    });
 
     // A press in hold of an empty pad made its live rule, armed it, and added a hold.
     Form(IntentEffect {
@@ -425,24 +554,74 @@ fn a_request_with_a_key_that_its_operation_does_not_know_does_not_read() {
 // Answers
 
 #[test]
-fn a_rule_of_an_environment_says_whether_it_is_live_and_its_state() {
+fn a_rule_of_an_environment_says_whether_it_is_live_its_state_and_its_revision() {
     Form(RuleStatus {
         rule: OrderDesk::rule(),
         live: false,
         state: RuleState::Armed,
+        revision: NOW,
     })
-    .writes(json!({ "rule": Form(OrderDesk::rule()).json(), "live": false, "state": "armed" }));
+    .writes(json!({
+        "rule": Form(OrderDesk::rule()).json(),
+        "live": false,
+        "state": "armed",
+        "revision": NOW.number(),
+    }));
 }
 
 #[test]
-fn an_environment_says_whether_it_runs() {
+fn an_environment_says_its_revision_and_whether_it_runs() {
     let environment = OrderDesk::environment();
 
     Form(EnvironmentStatus {
         environment: environment.clone(),
+        revision: SEEN,
         running: true,
     })
-    .writes(json!({ "environment": Form(&environment).json(), "running": true }));
+    .writes(json!({ "environment": Form(&environment).json(), "revision": SEEN.number(), "running": true }));
+}
+
+#[test]
+fn a_definition_travels_as_its_file_holds_it_with_its_revision_beside_it() {
+    let rule = OrderDesk::rule();
+
+    // The revision is live state: it is a key next to the definition, and never a key of it.
+    Form(DefinitionStatus {
+        definition: rule.clone(),
+        revision: SEEN,
+    })
+    .writes(json!({ "definition": Form(&rule).json(), "revision": SEEN.number() }));
+    Form::<DefinitionStatus<Rule>>::rejects(
+        json!({
+            "definition": {
+                "name": "slow-order-producers",
+                "selector": "order-producers",
+                "action": "delay-1s",
+                "revision": SEEN.number(),
+            },
+            "revision": SEEN.number(),
+        }),
+        "unknown field `revision`",
+    );
+}
+
+#[test]
+fn a_change_answers_with_the_revision_it_left() {
+    Form(Revised { revision: NOW }).writes(json!({ "revision": NOW.number() }));
+}
+
+#[test]
+fn a_revision_is_a_number_and_a_run_is_32_hexadecimal_digits_in_lower_case() {
+    let run: RunId = RUN.parse().unwrap();
+
+    Form(SEEN).writes(json!(SEEN.number()));
+    Form(run).writes(json!(RUN));
+    Form::<RunId>::rejects(json!(RUN.to_uppercase()), "which is no digit and no letter from a to f");
+    Form::<RunId>::rejects(
+        json!("4be0643f"),
+        "a run ID has 32 hexadecimal digits, and not 8 characters",
+    );
+    Form::<Revision>::rejects(json!("7"), "invalid type");
 }
 
 #[test]
@@ -630,6 +809,97 @@ fn a_name_that_a_live_rule_of_another_environment_has_is_taken_there() {
 }
 
 #[test]
+fn a_change_that_expects_another_revision_says_which_revision_holds_now() {
+    let name: RuleName = "slow-order-producers".parse().unwrap();
+    let environment: EnvironmentName = "orders-sim".parse().unwrap();
+
+    // A definition names itself with its kind, and a rule in an environment with its environment.
+    let of_a_definition =
+        json!({ "error": "changed", "name": { "rule": "slow-order-producers" }, "revision": NOW.number() });
+    Form(UpdateDefinitionError::Changed {
+        name: name.clone().into(),
+        revision: NOW,
+    })
+    .writes(of_a_definition.clone());
+    Form(DeleteDefinitionError::Changed {
+        name: name.clone().into(),
+        revision: NOW,
+    })
+    .writes(of_a_definition);
+    let of_a_rule = json!({
+        "error": "changed",
+        "environment": "orders-sim",
+        "rule": "slow-order-producers",
+        "revision": NOW.number(),
+    });
+    Form(RuleCommandError::Changed {
+        environment: environment.clone(),
+        rule: name.clone(),
+        revision: NOW,
+    })
+    .writes(of_a_rule.clone());
+    Form(UpdateLiveRuleError::Changed {
+        environment: environment.clone(),
+        rule: name.clone(),
+        revision: NOW,
+    })
+    .writes(of_a_rule.clone());
+    Form(DeleteLiveRuleError::Changed {
+        environment: environment.clone(),
+        rule: name.clone(),
+        revision: NOW,
+    })
+    .writes(of_a_rule.clone());
+    let kept_late = KeepRuleError::Changed {
+        environment,
+        rule: name,
+        revision: NOW,
+    };
+    assert_eq!(
+        kept_late.to_string(),
+        format!("rule \"slow-order-producers\" changed in environment \"orders-sim\" since: it has revision {NOW} now")
+    );
+    Form(kept_late).writes(of_a_rule);
+}
+
+#[test]
+fn a_change_that_expects_another_run_names_the_run_of_the_process() {
+    let run: RunId = RUN.parse().unwrap();
+    let other_run = json!({ "error": "other-run", "run": RUN });
+
+    Form(UpdateDefinitionError::OtherRun { run }).writes(other_run.clone());
+    Form(DeleteDefinitionError::OtherRun { run }).writes(other_run.clone());
+    Form(RuleCommandError::OtherRun { run }).writes(other_run.clone());
+    Form(UpdateLiveRuleError::OtherRun { run }).writes(other_run.clone());
+    Form(DeleteLiveRuleError::OtherRun { run }).writes(other_run.clone());
+    let kept_late = KeepRuleError::OtherRun { run };
+    assert_eq!(
+        kept_late.to_string(),
+        format!("the change expects a revision of another run than {RUN}, which is the run of the process")
+    );
+    Form(kept_late).writes(other_run);
+}
+
+#[test]
+fn a_firing_fails_in_its_own_ways_and_never_for_a_revision() {
+    Form(FireRuleError::Refused {
+        environment: "orders-sim".parse().unwrap(),
+        rule: "slow-order-producers".parse().unwrap(),
+        reason: "it is not armed".to_owned(),
+    })
+    .writes(json!({
+        "error": "refused",
+        "environment": "orders-sim",
+        "rule": "slow-order-producers",
+        "reason": "it is not armed",
+    }));
+    Form::<FireRuleError>::rejects(
+        json!({ "error": "other-run", "run": RUN }),
+        "unknown variant `other-run`",
+    );
+}
+
+#[test]
 fn a_store_that_could_not_read_says_what_it_said() {
     Form(RuleCommandError::StoreFailed {
         rule: "slow-order-producers".parse().unwrap(),
@@ -679,6 +949,7 @@ fn an_operation_names_itself_as_its_form_does() {
         }),
         AnyOperation::from(DeleteDefinition::<PadLayout> {
             name: "order-desk".parse().unwrap(),
+            expects: None,
         }),
         AnyOperation::from(ListEnvironments {}),
         AnyOperation::from(StartEnvironment {
@@ -690,6 +961,7 @@ fn an_operation_names_itself_as_its_form_does() {
         AnyOperation::from(KeepRule {
             environment: environment.clone(),
             rule: rule.clone(),
+            expects: None,
         }),
         AnyOperation::from(FireRule {
             environment: environment.clone(),
@@ -772,9 +1044,16 @@ fn a_refused_subscription_says_why() {
 fn a_client_that_connects_gets_the_state_of_the_process() {
     let environment = OrderDesk::environment();
     let state = ProcessState {
+        run: RUN.parse().unwrap(),
         definitions: Definitions {
-            selectors: vec![OrderDesk::selector()],
-            environments: vec![environment.clone()],
+            selectors: vec![DefinitionStatus {
+                definition: OrderDesk::selector(),
+                revision: NOW,
+            }],
+            environments: vec![DefinitionStatus {
+                definition: environment.clone(),
+                revision: SEEN,
+            }],
             ..Definitions::default()
         },
         environments: vec![RunningEnvironment {
@@ -789,14 +1068,16 @@ fn a_client_that_connects_gets_the_state_of_the_process() {
         }],
     };
 
+    // The snapshot names the run, and whatever has a revision comes with it.
     Form(StreamMessage::Snapshot(state)).writes(json!({
         "message": "snapshot",
+        "run": RUN,
         "definitions": {
-            "selectors": [Form(OrderDesk::selector()).json()],
+            "selectors": [{ "definition": Form(OrderDesk::selector()).json(), "revision": NOW.number() }],
             "presets": [],
             "rules": [],
             "layouts": [],
-            "environments": [Form(&environment).json()],
+            "environments": [{ "definition": Form(&environment).json(), "revision": SEEN.number() }],
         },
         "environments": [{
             "environment": "orders-sim",
@@ -868,21 +1149,37 @@ fn an_environment_with_brokers_travels_inside_a_message() {
 
     assert_eq!(Form(&staging).json(), staging_json);
     Form(StreamMessage::Snapshot(ProcessState {
+        run: RUN.parse().unwrap(),
         definitions: Definitions {
-            environments: vec![staging.clone()],
+            environments: vec![DefinitionStatus {
+                definition: staging.clone(),
+                revision: SEEN,
+            }],
             ..Definitions::default()
         },
         environments: vec![running.clone()],
     }))
     .writes(json!({
         "message": "snapshot",
-        "definitions": { "selectors": [], "presets": [], "rules": [], "layouts": [], "environments": [staging_json] },
+        "run": RUN,
+        "definitions": {
+            "selectors": [],
+            "presets": [],
+            "rules": [],
+            "layouts": [],
+            "environments": [{ "definition": staging_json, "revision": SEEN.number() }],
+        },
         "environments": [running_json],
     }));
     Form(StreamMessage::DefinitionChanged {
         definition: AnyDefinition::Environment(staging),
+        revision: NOW,
     })
-    .writes(json!({ "message": "definition-changed", "definition": { "environment": staging_json } }));
+    .writes(json!({
+        "message": "definition-changed",
+        "definition": { "environment": staging_json },
+        "revision": NOW.number(),
+    }));
     Form(StreamMessage::EnvironmentStarted { environment: running })
         .writes(json!({ "message": "environment-started", "environment": running_json }));
 }
@@ -915,12 +1212,13 @@ fn a_pad_press_comes_back_as_the_rule_it_changed() {
             rule: OrderDesk::rule(),
             live: true,
             state: RuleState::Armed,
+            revision: NOW,
         },
     })
     .writes(json!({
         "message": "rule-changed",
         "environment": "orders-sim",
-        "rule": { "rule": Form(OrderDesk::rule()).json(), "live": true, "state": "armed" },
+        "rule": { "rule": Form(OrderDesk::rule()).json(), "live": true, "state": "armed", "revision": NOW.number() },
     }));
 }
 
@@ -928,10 +1226,12 @@ fn a_pad_press_comes_back_as_the_rule_it_changed() {
 fn a_change_to_the_workspace_names_the_kind_of_its_definition() {
     Form(StreamMessage::DefinitionChanged {
         definition: AnyDefinition::Selector(OrderDesk::selector()),
+        revision: NOW,
     })
     .writes(json!({
         "message": "definition-changed",
         "definition": { "selector": Form(OrderDesk::selector()).json() },
+        "revision": NOW.number(),
     }));
     Form(StreamMessage::DefinitionDeleted {
         name: "blackhole".parse::<PresetName>().unwrap().into(),

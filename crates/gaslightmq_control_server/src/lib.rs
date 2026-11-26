@@ -24,7 +24,9 @@
 //! # #[tokio::main(flavor = "current_thread")]
 //! # async fn main() -> Result<(), ControlServerError> {
 //! // The binary makes the host, starts what its flags say, and puts the control plane in front of it.
-//! let host = Arc::new(Host::new(HostConfiguration::default(), MemoryContext::new(), Lies::of_every_build()));
+//! // It reads the randomness of the system once, for the ID of the run. This one is written out.
+//! let run = RunId::from_random_bits(0x4be0_643f_1d98_573b_97cd_ca98_a653_47dd);
+//! let host = Arc::new(Host::new(HostConfiguration::default(), MemoryContext::new(), Lies::of_every_build(), run));
 //! let server = ControlServer::start(ControlServerConfiguration::default(), Arc::clone(&host)).await?;
 //! assert_eq!(server.address(), "127.0.0.1:7092".parse().expect("a socket address"));
 //!
@@ -57,6 +59,10 @@
 //! or a redo. A request that does not say so, or that claims a surface which only the process names, is unreadable.
 //! Nothing records where a request comes from yet: the journal does, once it exists.
 //!
+//! - **Whatever a request changes has a revision**, and the server hands it out beside the thing:
+//!   with every definition, with every rule of an environment, and in the snapshot, which names the run of the host.
+//!   A change answers with the revision it left. A change that says what it expects reaches the host with it,
+//!   and a change that expects a revision of another run learns that before anything else.
 //! - **Definitions** change in the workspace, through the host, which checks them first.
 //! - **An environment starts by its name.** The server reads it from the workspace, makes its
 //!   configuration as the environment says, and hands that to the host.
@@ -67,7 +73,7 @@
 //! # The live stream follows the host
 //!
 //! The server follows every change of the host, whoever makes it, and sends each one to every client with the state
-//! that its subject has then: a definition changed or deleted, a rule armed, disarmed, changed or removed, a session
+//! and the revision that its subject has then: a definition changed or deleted, a rule armed, disarmed, changed or removed, a session
 //! that opened, said who its client is or closed, and an environment that started or stopped.
 //! The statistics of every environment that runs come at the
 //! [interval](ControlServerConfiguration::stats_interval) of the configuration.
@@ -96,6 +102,7 @@ mod definitions;
 mod error;
 mod feed;
 mod plane;
+mod revisions;
 mod server;
 mod stream;
 mod ui;

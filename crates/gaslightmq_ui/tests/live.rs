@@ -26,6 +26,12 @@ use gaslightmq_control_api::selector::{Condition, Conditions, SelectorName, Sele
 use gaslightmq_ui::{Link, Live, UiConfiguration};
 
 /// The environments of the tests, as the workspace and the control plane describe them.
+/// The revision that the control plane told beside a rule or a definition. Nothing here reads it yet.
+const TOLD: Revision = Revision::new(7);
+
+/// The run of the process, as its snapshot writes it.
+const RUN: &str = "4be0643f1d98573b97cdca98a65347dd";
+
 struct Workspace;
 
 impl Workspace {
@@ -58,9 +64,17 @@ impl Workspace {
 
     /// The snapshot of a process whose workspace has both environments, of which `running` run.
     fn snapshot(running: &[&str]) -> StreamMessage {
+        let told = |definition| DefinitionStatus {
+            definition,
+            revision: TOLD,
+        };
         StreamMessage::Snapshot(ProcessState {
+            run: RUN.parse().unwrap(),
             definitions: Definitions {
-                environments: vec![Self::environment("staging-proxy"), Self::environment("orders-sim")],
+                environments: vec![
+                    told(Self::environment("staging-proxy")),
+                    told(Self::environment("orders-sim")),
+                ],
                 ..Definitions::default()
             },
             environments: running.iter().map(|name| Self::running(name)).collect(),
@@ -316,10 +330,13 @@ mod process {
 
         live.apply(StreamMessage::DefinitionChanged {
             definition: AnyDefinition::Rule(Workspace::rule()),
+            revision: TOLD,
         });
 
         let process = live.process().unwrap();
         assert_eq!(process.definitions().rules, [Workspace::rule()]);
+        // The revision is no part of the rule: the process keeps it beside it.
+        assert_eq!(process.revision(&Workspace::rule().name().clone().into()), Some(TOLD));
         for running in process.environments() {
             assert_eq!(
                 running.rules,
@@ -327,6 +344,7 @@ mod process {
                     rule: Workspace::rule(),
                     live: false,
                     state: RuleState::Disarmed,
+                    revision: TOLD,
                 }],
                 "{}",
                 running.environment
@@ -344,6 +362,7 @@ mod process {
             rule: Workspace::rule(),
             live,
             state: RuleState::Armed,
+            revision: TOLD,
         };
         live.apply(StreamMessage::RuleChanged {
             environment: staging.clone(),
@@ -357,6 +376,7 @@ mod process {
         });
         live.apply(StreamMessage::DefinitionChanged {
             definition: AnyDefinition::Rule(Workspace::rule()),
+            revision: TOLD,
         });
         live.apply(StreamMessage::RuleChanged {
             environment: staging.clone(),

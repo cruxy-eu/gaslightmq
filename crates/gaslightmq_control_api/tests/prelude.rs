@@ -44,15 +44,15 @@ mod next_to_std_and_every_domain {
     /// A line only compiles when the type is right.
     #[test]
     fn every_operation_answers_and_fails_as_the_crate_says() {
-        let _: Option<<ListDefinitions<Selector> as Operation>::Answer> = None::<Vec<Selector>>;
+        let _: Option<<ListDefinitions<Selector> as Operation>::Answer> = None::<Vec<DefinitionStatus<Selector>>>;
         let _: Option<<ListDefinitions<Selector> as Operation>::Error> = None::<ListDefinitionsError>;
-        let _: Option<<GetDefinition<Preset> as Operation>::Answer> = None::<Preset>;
+        let _: Option<<GetDefinition<Preset> as Operation>::Answer> = None::<DefinitionStatus<Preset>>;
         let _: Option<<GetDefinition<Preset> as Operation>::Error> = None::<GetDefinitionError>;
-        let _: Option<<CreateDefinition<Rule> as Operation>::Answer> = None::<()>;
+        let _: Option<<CreateDefinition<Rule> as Operation>::Answer> = None::<Revised>;
         let _: Option<<CreateDefinition<Rule> as Operation>::Error> = None::<CreateDefinitionError>;
-        let _: Option<<UpdateDefinition<PadLayout> as Operation>::Answer> = None::<()>;
+        let _: Option<<UpdateDefinition<PadLayout> as Operation>::Answer> = None::<Revised>;
         let _: Option<<UpdateDefinition<PadLayout> as Operation>::Error> = None::<UpdateDefinitionError>;
-        let _: Option<<DeleteDefinition<Selector> as Operation>::Answer> = None::<()>;
+        let _: Option<<DeleteDefinition<Selector> as Operation>::Answer> = None::<Revised>;
         let _: Option<<DeleteDefinition<Selector> as Operation>::Error> = None::<DeleteDefinitionError>;
         let _: Option<<ListEnvironments as Operation>::Answer> = None::<Vec<EnvironmentStatus>>;
         let _: Option<<ListEnvironments as Operation>::Error> = None::<ListDefinitionsError>;
@@ -64,20 +64,20 @@ mod next_to_std_and_every_domain {
         let _: Option<<StopEnvironment as Operation>::Error> = None::<EnvironmentNotRunning>;
         let _: Option<<ListEnvironmentRules as Operation>::Answer> = None::<Vec<RuleStatus>>;
         let _: Option<<ListEnvironmentRules as Operation>::Error> = None::<EnvironmentReadError>;
-        let _: Option<<CreateLiveRule as Operation>::Answer> = None::<()>;
+        let _: Option<<CreateLiveRule as Operation>::Answer> = None::<Revised>;
         let _: Option<<CreateLiveRule as Operation>::Error> = None::<CreateLiveRuleError>;
-        let _: Option<<UpdateLiveRule as Operation>::Answer> = None::<()>;
+        let _: Option<<UpdateLiveRule as Operation>::Answer> = None::<Revised>;
         let _: Option<<UpdateLiveRule as Operation>::Error> = None::<UpdateLiveRuleError>;
-        let _: Option<<DeleteLiveRule as Operation>::Answer> = None::<()>;
+        let _: Option<<DeleteLiveRule as Operation>::Answer> = None::<Revised>;
         let _: Option<<DeleteLiveRule as Operation>::Error> = None::<DeleteLiveRuleError>;
-        let _: Option<<KeepRule as Operation>::Answer> = None::<()>;
+        let _: Option<<KeepRule as Operation>::Answer> = None::<Revised>;
         let _: Option<<KeepRule as Operation>::Error> = None::<KeepRuleError>;
-        let _: Option<<ArmRule as Operation>::Answer> = None::<()>;
+        let _: Option<<ArmRule as Operation>::Answer> = None::<Revised>;
         let _: Option<<ArmRule as Operation>::Error> = None::<RuleCommandError>;
-        let _: Option<<DisarmRule as Operation>::Answer> = None::<()>;
+        let _: Option<<DisarmRule as Operation>::Answer> = None::<Revised>;
         let _: Option<<DisarmRule as Operation>::Error> = None::<RuleCommandError>;
         let _: Option<<FireRule as Operation>::Answer> = None::<()>;
-        let _: Option<<FireRule as Operation>::Error> = None::<RuleCommandError>;
+        let _: Option<<FireRule as Operation>::Error> = None::<FireRuleError>;
         let _: Option<<SendIntent as Operation>::Answer> = None::<IntentEffect>;
         let _: Option<<SendIntent as Operation>::Error> = None::<IntentError>;
         let _: Option<<ListSessions as Operation>::Answer> = None::<Vec<SessionStatus>>;
@@ -103,6 +103,10 @@ mod next_to_std_and_every_domain {
         let _: Option<AnyDefinition> = None;
         let _: Option<DefinitionRef> = None;
         let _: Option<Definitions> = None;
+        let _: Option<Revision> = None;
+        let _: Option<RunId> = None;
+        let _: Option<RunIdError> = None;
+        let _: Option<Expects> = None;
         let _: Option<SessionIdentity> = None;
         let _: Option<SessionCloser> = None;
         let _: Option<BackendKind> = None;

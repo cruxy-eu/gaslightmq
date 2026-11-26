@@ -33,9 +33,11 @@
 //! let arm = ArmRule {
 //!     environment: "orders-sim".parse().expect("an environment name"),
 //!     rule: "delay-1s-on-order-producers".parse().expect("a rule name"),
+//!     expects: None,
 //! };
 //! match client.send(arm).await? {
-//!     Ok(()) => {}
+//!     // The rule is armed, and the answer holds the revision that it has in the environment from here on.
+//!     Ok(Revised { .. }) => {}
 //!     // The environment does not run: start it, and arm the rule again.
 //!     Err(RuleCommandError::NotRunning { environment }) => {
 //!         let _ = client.send(StartEnvironment { environment }).await?;
