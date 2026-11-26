@@ -149,6 +149,7 @@ impl<C: WorkspaceContext + 'static> ControlPlane<C> {
             }
             AnyOperation::StartEnvironment(start) => Reply::of::<StartEnvironment>(self.start(start.environment).await),
             AnyOperation::StopEnvironment(stop) => Reply::of::<StopEnvironment>(self.stop(stop.environment).await),
+            AnyOperation::CheckHealth(_) => Reply::of::<CheckHealth>(self.health()),
             AnyOperation::ListEnvironmentRules(list) => {
                 Reply::of::<ListEnvironmentRules>(self.environment_rules(list.environment).await)
             }
@@ -286,6 +287,27 @@ impl<C: WorkspaceContext + 'static> ControlPlane<C> {
     }
 
     // The environments
+
+    /// Every environment that the process started with, and whether it runs: healthy when each of them does.
+    pub(crate) fn health(&self) -> Result<Health, Unhealthy> {
+        let running = self.host.running();
+        let health = Health {
+            environments: self
+                .host
+                .started_with()
+                .into_iter()
+                .map(|environment| EnvironmentHealth {
+                    running: running.contains(&environment),
+                    environment,
+                })
+                .collect(),
+        };
+        if health.is_healthy() {
+            Ok(health)
+        } else {
+            Err(Unhealthy { health })
+        }
+    }
 
     async fn list_environments(&self) -> Result<Vec<EnvironmentStatus>, ListDefinitionsError> {
         let environments = definitions::list_with_revisions::<Environment, C>(&*self.host.workspace().await).await;

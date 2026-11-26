@@ -76,6 +76,127 @@ impl Operation for StopEnvironment {
     type Error = EnvironmentNotRunning;
 }
 
+/// Say whether every environment that the process was started with runs: the health of the process.
+///
+/// Whoever starts the process names the environments that it starts with, such as the one of the flags of
+/// `gmq proxy`. The process is healthy while each of them runs. An environment that someone started later counts for
+/// nothing, and one of the start that someone stopped since makes the process unhealthy, until someone starts it
+/// again. A process that started with no environment is healthy.
+///
+/// It answers with every environment of the start, each with whether it runs, and fails with the same list when one
+/// of them does not run. The check reads what the process holds in memory, so it fails in no other way.
+///
+/// With `serde`, it is `{ "operation": "check-health" }`.
+///
+/// ```
+/// use gaslightmq_control_api::prelude::*;
+///
+/// let request = OperationRequest::new(RequestSurface::Cli, CheckHealth {});
+/// assert_eq!(
+///     serde_json::to_value(request).expect("a request has a form"),
+///     serde_json::json!({ "from": { "surface": "cli" }, "operation": "check-health" }),
+/// );
+/// ```
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CheckHealth {}
+
+impl Operation for CheckHealth {
+    type Answer = Health;
+    type Error = Unhealthy;
+}
+
+/// The environments that the process was started with, each with whether it runs, in the order of their start.
+///
+/// The answer of a [check](CheckHealth) holds it when every one of them runs, and [`Unhealthy`] holds it otherwise.
+///
+/// With `serde`, it is a map of its field: `{ "environments": [{ "environment": "staging-proxy", "running": true }] }`.
+///
+/// ```
+/// use gaslightmq_control_api::prelude::*;
+///
+/// let health = Health {
+///     environments: vec![EnvironmentHealth { environment: "staging-proxy".parse().expect("an environment name"), running: true }],
+/// };
+/// assert!(health.is_healthy());
+/// assert_eq!(
+///     serde_json::to_value(&health).expect("an answer has a form"),
+///     serde_json::json!({ "environments": [{ "environment": "staging-proxy", "running": true }] }),
+/// );
+/// ```
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Health {
+    /// Every environment of the start, in the order of their start.
+    pub environments: Vec<EnvironmentHealth>,
+}
+
+impl Health {
+    /// Whether every environment of the start runs.
+    pub fn is_healthy(&self) -> bool {
+        self.environments.iter().all(|environment| environment.running)
+    }
+
+    /// The environments of the start that do not run.
+    pub fn not_running(&self) -> impl Iterator<Item = &EnvironmentName> {
+        self.environments
+            .iter()
+            .filter(|environment| !environment.running)
+            .map(|environment| &environment.environment)
+    }
+}
+
+/// One environment that the process was started with, and whether it runs now.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct EnvironmentHealth {
+    /// The name of the environment.
+    pub environment: EnvironmentName,
+    /// Whether it runs now.
+    pub running: bool,
+}
+
+/// An environment that the process was started with does not run: the process is not healthy.
+///
+/// It holds every environment of the start, as the answer of a healthy process does, so a reader of either reads one
+/// form.
+///
+/// With `serde`, it is the form of its [`Health`]: `{ "environments": [{ "environment": "orders-sim", "running": false }] }`.
+///
+/// ```
+/// use gaslightmq_control_api::prelude::*;
+///
+/// let health = Health {
+///     environments: vec![
+///         EnvironmentHealth { environment: "staging-proxy".parse().expect("an environment name"), running: true },
+///         EnvironmentHealth { environment: "orders-sim".parse().expect("an environment name"), running: false },
+///     ],
+/// };
+/// let error = Unhealthy { health };
+/// assert_eq!(error.to_string(), "the process started with environment \"orders-sim\", which does not run");
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error, Serialize, Deserialize)]
+#[error("the process started with {}", stopped(.health))]
+#[serde(transparent)]
+pub struct Unhealthy {
+    /// Every environment of the start, with whether it runs. One of them at least does not.
+    pub health: Health,
+}
+
+/// The environments of the start that do not run, as the rest of a sentence:
+/// `environments "orders-sim" and "payments", which do not run`.
+fn stopped(health: &Health) -> String {
+    let names: Vec<String> = health
+        .not_running()
+        .map(|name| format!("{:?}", name.as_str()))
+        .collect();
+    match names.as_slice() {
+        [] => "every environment running".to_owned(),
+        [one] => format!("environment {one}, which does not run"),
+        [first @ .., last] => format!("environments {} and {last}, which do not run", first.join(", ")),
+    }
+}
+
 /// Why the control plane did not [start](StartEnvironment) an environment.
 ///
 /// ```

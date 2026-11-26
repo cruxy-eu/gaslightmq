@@ -9,10 +9,10 @@ use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    ArmRule, CloseSession, CreateDefinition, CreateLiveRule, DeleteDefinition, DeleteLiveRule, DisarmRule, FireRule,
-    GetBackend, GetDefinition, GetEnvironment, KeepRule, ListDefinitions, ListEnvironmentRules, ListEnvironments,
-    ListSessions, ParseSentence, QueryJournal, ReloadWorkspace, SaveWorkspace, SendIntent, StartEnvironment,
-    StopEnvironment, UpdateDefinition, UpdateLiveRule,
+    ArmRule, CheckHealth, CloseSession, CreateDefinition, CreateLiveRule, DeleteDefinition, DeleteLiveRule, DisarmRule,
+    FireRule, GetBackend, GetDefinition, GetEnvironment, KeepRule, ListDefinitions, ListEnvironmentRules,
+    ListEnvironments, ListSessions, ParseSentence, QueryJournal, ReloadWorkspace, SaveWorkspace, SendIntent,
+    StartEnvironment, StopEnvironment, UpdateDefinition, UpdateLiveRule,
 };
 
 /// One thing that a client asks of the control plane, with what it gets back.
@@ -105,6 +105,8 @@ pub enum AnyOperation {
     StartEnvironment(StartEnvironment),
     /// [Stop an environment](StopEnvironment).
     StopEnvironment(StopEnvironment),
+    /// [Say whether every environment of the start runs](CheckHealth).
+    CheckHealth(CheckHealth),
     /// [List the rules of an environment, with their state](ListEnvironmentRules).
     ListEnvironmentRules(ListEnvironmentRules),
     /// [Add a live rule](CreateLiveRule).
@@ -174,6 +176,7 @@ impl AnyOperation {
             AnyOperation::GetEnvironment(_) => "get-environment",
             AnyOperation::StartEnvironment(_) => "start-environment",
             AnyOperation::StopEnvironment(_) => "stop-environment",
+            AnyOperation::CheckHealth(_) => "check-health",
             AnyOperation::ListEnvironmentRules(_) => "list-environment-rules",
             AnyOperation::CreateLiveRule(_) => "create-live-rule",
             AnyOperation::UpdateLiveRule(_) => "update-live-rule",
@@ -260,6 +263,7 @@ requests! {
     GetEnvironment => GetEnvironment;
     StartEnvironment => StartEnvironment;
     StopEnvironment => StopEnvironment;
+    CheckHealth => CheckHealth;
     ListEnvironmentRules => ListEnvironmentRules;
     CreateLiveRule => CreateLiveRule;
     UpdateLiveRule => UpdateLiveRule;
