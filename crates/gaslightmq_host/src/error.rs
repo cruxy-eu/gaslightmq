@@ -9,7 +9,7 @@ use gaslightmq_rule::{RuleError, RuleName};
 use gaslightmq_scenario::ScenarioName;
 use gaslightmq_selector::SelectorSetError;
 use gaslightmq_surface::LayoutName;
-use gaslightmq_workspace::{CreateError, DeleteError, Revision, UpdateError};
+use gaslightmq_workspace::{CreateError, DeleteError, ReloadError, Revision, UpdateError};
 
 use crate::run::RunId;
 
@@ -575,6 +575,61 @@ pub enum CreateDefinitionError {
     /// The workspace did not take the definition. Its error says why.
     #[error("{error}")]
     NotCreated { error: CreateError },
+}
+
+/// Why a host did not [reload](crate::Host::reload) the workspace.
+///
+/// A reload that failed changed nothing: the workspace holds what it held, and every armed rule stays as it is.
+///
+/// | Variant | What to do about it |
+/// |---|---|
+/// | [`NameTaken`](Self::NameTaken) | Delete or rename the live rule first, or give the rule of the files another name. |
+/// | [`Unresolved`](Self::Unresolved) | Disarm or delete the live rule first, or bring back in the files what it refers to. |
+/// | [`NotReloaded`](Self::NotReloaded) | Fix the files: its `error` says every one that does not read, or every definition that does not fit. |
+///
+/// ```
+/// use gaslightmq_host::prelude::*;
+///
+/// let error = ReloadWorkspaceError::NameTaken {
+///     rule: "slow-order-producers".parse().expect("a rule name"),
+///     environment: "orders-sim".parse().expect("an environment name"),
+/// };
+/// assert_eq!(
+///     error.to_string(),
+///     "the workspace was not reloaded: the files hold a rule \"slow-order-producers\", \
+///      and environment \"orders-sim\" has a live rule of that name",
+/// );
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum ReloadWorkspaceError {
+    /// The files hold a rule, of the workspace or of a scenario, with the name of a live rule of this environment.
+    /// A rule of the workspace is in every environment, so it never stands next to a live rule of its name.
+    #[error(
+        "the workspace was not reloaded: the files hold a rule {:?}, and environment {:?} has a live rule of that name",
+        .rule.as_str(),
+        .environment.as_str()
+    )]
+    NameTaken {
+        rule: RuleName,
+        environment: EnvironmentName,
+    },
+    /// A rule that is armed in the environment would not resolve against what the files hold,
+    /// so it could not follow the reload: a live rule whose selector or preset the files no longer have.
+    /// `reason` says what is wrong with it.
+    #[error(
+        "the workspace was not reloaded: rule {:?}, which is armed in environment {:?}, would not resolve: {reason}",
+        .rule.as_str(),
+        .environment.as_str()
+    )]
+    Unresolved {
+        environment: EnvironmentName,
+        rule: RuleName,
+        reason: String,
+    },
+    /// The workspace did not take the reload. Its error says why: a store could not read again,
+    /// or what the files hold does not fit together.
+    #[error("{error}")]
+    NotReloaded { error: ReloadError },
 }
 
 /// Why a host did not act on what someone did at a pad: see [`send_intent`](crate::Host::send_intent).

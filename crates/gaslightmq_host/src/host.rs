@@ -42,6 +42,7 @@ use crate::{
 
 mod live;
 mod pads;
+mod reload;
 mod watch;
 
 /// One process with several environments: it runs the proxy of each, and shares the workspace between them.

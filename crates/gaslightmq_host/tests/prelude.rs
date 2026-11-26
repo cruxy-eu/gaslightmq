@@ -72,11 +72,16 @@ mod next_to_the_others {
         };
         let host: Host<MemoryContext> =
             Host::new(configuration.clone(), MemoryContext::new(), Lies::of_every_build(), run);
+        let reloaded: Reloaded = Reloaded {
+            revision: RevisionCounter::FIRST,
+            changes: Vec::new(),
+        };
         vec![
             format!("{configuration:?}"),
             environment.name().to_string(),
             format!("{host:?}"),
             expects.to_string(),
+            reloaded.revision.to_string(),
         ]
     }
 
@@ -124,6 +129,10 @@ mod next_to_the_others {
             rule: "blackhole".parse().unwrap(),
             holder,
         };
+        let unreloaded: ReloadWorkspaceError = ReloadWorkspaceError::NameTaken {
+            rule: "blackhole".parse().unwrap(),
+            environment: staging.clone(),
+        };
         let unclosed: CloseSessionError = CloseSessionError::NotRunning { environment: staging };
         let missed: HostChangesError = HostChangesError::Missed { changes: 3 };
         let backlog: ChangeBacklogError = ChangeBacklogError::Zero;
@@ -153,6 +162,7 @@ mod next_to_the_others {
         assert!(std::error::Error::source(&calls).is_none());
         assert!(std::error::Error::source(&followed).is_none());
         assert!(std::error::Error::source(&uncreated).is_none());
+        assert!(std::error::Error::source(&unreloaded).is_none());
         vec![
             unsupported.to_string(),
             running.to_string(),
@@ -172,6 +182,7 @@ mod next_to_the_others {
             calls.to_string(),
             followed.to_string(),
             uncreated.to_string(),
+            unreloaded.to_string(),
         ]
     }
 
@@ -208,10 +219,11 @@ mod next_to_the_others {
 fn the_prelude_names_every_item_next_to_the_other_preludes() {
     let items = next_to_the_others::every_item();
 
-    assert_eq!(items.len(), 4);
+    assert_eq!(items.len(), 5);
     assert_eq!(items[1], "staging-proxy");
     assert_eq!(items[2], "Host { running: [], .. }");
     assert_eq!(items[3], "revision 1 of run 4be0643f1d98573b97cdca98a65347dd");
+    assert_eq!(items[4], "1");
 }
 
 #[test]
@@ -237,6 +249,8 @@ fn the_prelude_names_the_error_of_every_type() {
             "a call backlog holds at least one call",
             "the calls were not followed: the selector store could not be read: disk full",
             "rule \"blackhole\" was not created: environment \"staging-proxy\" has a live rule of that name",
+            "the workspace was not reloaded: the files hold a rule \"blackhole\", \
+             and environment \"staging-proxy\" has a live rule of that name",
         ]
     );
 }

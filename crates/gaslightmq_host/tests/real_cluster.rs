@@ -4,14 +4,17 @@
 //! only under a name that no other one has.
 //! Whatever someone changes has a revision, and a change says what it expects.
 //! The journal of each environment records every change, with the surface it came from.
+//! A reload of the files of the workspace takes in what someone edited, and every armed rule follows it.
 //!
 //! The tests need Docker.
-//! Each test starts the cluster it needs, and a host whose workspace lives in memory.
+//! Each test starts the cluster it needs, and a host whose workspace lives in memory, or in the files of a
+//! temporary directory for a test that reloads them.
 //! The environments of a test stand in front of that cluster, and every listener of theirs takes a free port,
 //! unless the test names one.
 //! The client is the producer of `gaslightmq_kafka_client_native`, which knows the bootstrap address of one
 //! environment and nothing else.
 
+use std::fs;
 use std::net::{IpAddr, Ipv4Addr, TcpListener};
 
 use anyhow::Context;
@@ -37,6 +40,7 @@ use gaslightmq_test_kafka::KafkaCluster;
 use gaslightmq_trigger::prelude::*;
 use gaslightmq_wire::{Offset, Partition, Record};
 use gaslightmq_workspace::prelude::*;
+use gaslightmq_workspace_fs::prelude::*;
 
 /// How long a test waits for the record of a call that the client already got its answer for.
 const PATIENCE: Duration = Duration::from_secs(30);
@@ -1893,6 +1897,290 @@ async fn a_press_and_a_turn_at_a_pad_leave_what_they_changed_in_the_journal() ->
                 }
             ),
             (4, left(&released), pads, Change::RuleDisarmed { rule }),
+        ]
+    );
+    host.stop_all().await;
+    Ok(())
+}
+
+#[tokio::test]
+async fn an_armed_rule_follows_a_reload_and_keeps_what_it_counted() -> anyhow::Result<()> {
+    let cluster = KafkaCluster::plaintext().start().await?;
+    let orders = cluster.topics().create("orders").await?;
+    let directory = tempfile::tempdir()?;
+    fs::write(
+        directory.path().join("selectors.yaml"),
+        "- name: order-producers\n  match:\n    api: Produce\n",
+    )?;
+    fs::write(
+        directory.path().join("presets.yaml"),
+        "- name: hold-20ms\n  lie: timing\n  delay: 20ms\n",
+    )?;
+    let rules = directory.path().join("rules");
+    fs::create_dir(&rules)?;
+    fs::write(
+        rules.join("producers.yaml"),
+        "- name: hold-order-producers\n  selector: order-producers\n  action: hold-20ms\n",
+    )?;
+    let stores = FileStores::open(directory.path(), Access::ReadWrite).await?;
+    let host = Host::new(
+        HostConfiguration::default(),
+        FileContext::new(stores),
+        Lies::of_every_build(),
+        RUN,
+    );
+    let any = ListenAddress::new(LOCALHOST, 0);
+    let brokers = BrokerListeners::pinned(cluster.brokers().iter().map(|broker| (broker.id(), any)))?;
+    let staging = Environment::new(
+        "staging-proxy".parse()?,
+        Instances::ProxyInFrontOfCluster {
+            proxy: ProxyDefinition::new(Listeners::new(any, brokers, LOCALHOST.into())?),
+            upstream: Upstream::new(cluster.brokers()[0].address().to_string().parse()?),
+        },
+    );
+    host.start(EnvironmentConfiguration::new(&staging)?).await?;
+    let producers: RuleName = "hold-order-producers".parse()?;
+    let rule = host.workspace().await.stores().rules().get(&producers).await?;
+    let rule = rule.context("the workspace read the rule of the producers")?;
+    host.arm(staging.name(), &rule, None, ChangeSurface::Test).await?;
+    // One Produce goes through the proxy, and the rule counts it.
+    let bootstrap = host
+        .address_of(staging.name(), Endpoint::Bootstrap)?
+        .context("the bootstrap endpoint of the staging proxy is open")?;
+    let written = KafkaProducer::from(bootstrap)
+        .send(
+            orders.name().as_str(),
+            Partition::new(0),
+            &[Record::new("placed").with_key("o-1").with_timestamp(PLACED_AT)],
+        )
+        .await;
+    assert_eq!(written, Ok(Offset::new(0)));
+
+    // Someone edits the rule to hold every 2nd Produce, and reloads.
+    fs::write(
+        rules.join("producers.yaml"),
+        "- name: hold-order-producers\n  selector: order-producers\n  action: hold-20ms\n  trigger: { nth: 2 }\n",
+    )?;
+    let mut changes = host.changes();
+    let reloaded = host.reload().await?;
+
+    assert_eq!(reloaded.changes, [DefinitionChange::Updated(producers.clone().into())]);
+    // The rule stays armed with the definition of the file, at the revision of the reload.
+    let every_2nd = TriggerParts::new().with_nth(MatchNumber::new(2)?);
+    let edited = rule.with_trigger(every_2nd);
+    assert_eq!(
+        host.rule_of(staging.name(), &producers).await?,
+        Some(EnvironmentRule {
+            rule: edited,
+            live: false,
+            state: RuleState::Armed,
+            revision: reloaded.revision,
+        })
+    );
+    // The proxy holds the edited rule, which still counts the Produce from before the reload.
+    let armed = host.armed_rules(staging.name())?;
+    let followed = armed.get(&producers).context("the rule is still armed")?;
+    assert_eq!(followed.arming().trigger(), Trigger::from(every_2nd));
+    assert_eq!(followed.arming().counter().matches(), 1);
+    // Whoever follows the host learns of the definition, and that the armed rule follows it.
+    let mut told = Vec::new();
+    while told.len() < 2 {
+        let change = tokio::time::timeout(PATIENCE, changes.next()).await??;
+        if matches!(
+            change,
+            HostChange::DefinitionChanged { .. } | HostChange::RuleChanged { .. }
+        ) {
+            told.push(change);
+        }
+    }
+    assert_eq!(
+        told,
+        [
+            HostChange::DefinitionChanged {
+                name: producers.clone().into()
+            },
+            HostChange::RuleChanged {
+                environment: staging.name().clone(),
+                rule: producers,
+            },
+        ]
+    );
+    host.stop_all().await;
+    Ok(())
+}
+
+#[tokio::test]
+async fn an_armed_rule_whose_file_went_disarms_with_the_reload_that_the_journal_records() -> anyhow::Result<()> {
+    let cluster = KafkaCluster::plaintext().start().await?;
+    let directory = tempfile::tempdir()?;
+    fs::write(
+        directory.path().join("selectors.yaml"),
+        "- name: order-fetches\n  match:\n    api: Fetch\n",
+    )?;
+    fs::write(
+        directory.path().join("presets.yaml"),
+        "- name: hold-20ms\n  lie: timing\n  delay: 20ms\n",
+    )?;
+    let rules = directory.path().join("rules");
+    fs::create_dir(&rules)?;
+    fs::write(
+        rules.join("fetches.yaml"),
+        "- name: hold-order-fetches\n  selector: order-fetches\n  action: hold-20ms\n",
+    )?;
+    let stores = FileStores::open(directory.path(), Access::ReadWrite).await?;
+    let host = Host::new(
+        HostConfiguration::default(),
+        FileContext::new(stores),
+        Lies::of_every_build(),
+        RUN,
+    );
+    let any = ListenAddress::new(LOCALHOST, 0);
+    let brokers = BrokerListeners::pinned(cluster.brokers().iter().map(|broker| (broker.id(), any)))?;
+    let staging = Environment::new(
+        "staging-proxy".parse()?,
+        Instances::ProxyInFrontOfCluster {
+            proxy: ProxyDefinition::new(Listeners::new(any, brokers, LOCALHOST.into())?),
+            upstream: Upstream::new(cluster.brokers()[0].address().to_string().parse()?),
+        },
+    );
+    host.start(EnvironmentConfiguration::new(&staging)?).await?;
+    let fetches: RuleName = "hold-order-fetches".parse()?;
+    let rule = host.workspace().await.stores().rules().get(&fetches).await?;
+    let rule = rule.context("the workspace read the rule of the fetches")?;
+    host.arm(staging.name(), &rule, None, ChangeSurface::Test).await?;
+
+    // A colleague's branch deletes the file of the rule, and someone reloads.
+    fs::remove_file(rules.join("fetches.yaml"))?;
+    let mut changes = host.changes();
+    let reloaded = host.reload().await?;
+
+    assert_eq!(reloaded.changes, [DefinitionChange::Deleted(fetches.clone().into())]);
+    // The rule is armed no more, and the environment holds no rule of its name.
+    assert!(host.armed_rules(staging.name())?.get(&fetches).is_none());
+    assert_eq!(host.rule_of(staging.name(), &fetches).await?, None);
+    // The journal says that the rule disarmed and went, both from the files, with the revision of the reload.
+    let file = ChangeSource::new(ChangeSurface::File);
+    let left = Some(gaslightmq_journal::Revision::new(reloaded.revision.number()));
+    let journal = host.journal(staging.name(), None)?;
+    let said: Vec<(Option<gaslightmq_journal::Revision>, ChangeSource, Change)> = journal
+        .into_iter()
+        .skip_while(|entry| entry.revision != left)
+        .map(|entry| (entry.revision, entry.from, entry.change))
+        .collect();
+    let rule = RecordedName::new(fetches.as_str())?;
+    assert_eq!(
+        said,
+        [
+            (left, file, Change::RuleDisarmed { rule: rule.clone() }),
+            (
+                left,
+                file,
+                Change::DefinitionDeleted {
+                    definition: RecordedDefinition::Rule(rule)
+                }
+            ),
+        ]
+    );
+    // Whoever follows the host learns that the definition went, which takes the rule out of every environment.
+    let deleted = HostChange::DefinitionDeleted { name: fetches.into() };
+    while tokio::time::timeout(PATIENCE, changes.next()).await?? != deleted {}
+    host.stop_all().await;
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_reload_that_a_live_rule_stands_in_the_way_of_changes_nothing() -> anyhow::Result<()> {
+    let cluster = KafkaCluster::plaintext().start().await?;
+    let directory = tempfile::tempdir()?;
+    let selectors = directory.path().join("selectors.yaml");
+    fs::write(&selectors, "- name: order-producers\n  match:\n    api: Produce\n")?;
+    fs::write(
+        directory.path().join("presets.yaml"),
+        "- name: hold-20ms\n  lie: timing\n  delay: 20ms\n",
+    )?;
+    let stores = FileStores::open(directory.path(), Access::ReadWrite).await?;
+    let host = Host::new(
+        HostConfiguration::default(),
+        FileContext::new(stores),
+        Lies::of_every_build(),
+        RUN,
+    );
+    let any = ListenAddress::new(LOCALHOST, 0);
+    let brokers = BrokerListeners::pinned(cluster.brokers().iter().map(|broker| (broker.id(), any)))?;
+    let staging = Environment::new(
+        "staging-proxy".parse()?,
+        Instances::ProxyInFrontOfCluster {
+            proxy: ProxyDefinition::new(Listeners::new(any, brokers, LOCALHOST.into())?),
+            upstream: Upstream::new(cluster.brokers()[0].address().to_string().parse()?),
+        },
+    );
+    host.start(EnvironmentConfiguration::new(&staging)?).await?;
+    // Someone pressed a pad, and the staging proxy holds every Produce with a live rule.
+    let order_producers: SelectorName = "order-producers".parse()?;
+    let live = Rule::new(
+        "hold-the-produces".parse()?,
+        order_producers.clone(),
+        "hold-20ms".parse::<PresetName>()?,
+    );
+    host.create_live_rule_armed(staging.name(), live.clone(), ChangeSurface::Pad)
+        .await?;
+
+    // A colleague's branch brings a rule of the workspace with the name of the live rule.
+    let rules = directory.path().join("rules");
+    fs::create_dir(&rules)?;
+    fs::write(
+        rules.join("produces.yaml"),
+        "- name: hold-the-produces\n  selector: order-producers\n  action: hold-20ms\n",
+    )?;
+    let taken = host.reload().await;
+
+    assert_eq!(
+        taken,
+        Err(ReloadWorkspaceError::NameTaken {
+            rule: live.name().clone(),
+            environment: staging.name().clone(),
+        })
+    );
+    assert_eq!(
+        host.workspace().await.stores().rules().list().await?,
+        Vec::<Rule>::new()
+    );
+
+    // Another branch takes away the selector that the armed live rule uses.
+    fs::remove_file(rules.join("produces.yaml"))?;
+    fs::write(&selectors, "- name: order-fetches\n  match:\n    api: Fetch\n")?;
+    let unresolved = host.reload().await;
+
+    assert_eq!(
+        unresolved,
+        Err(ReloadWorkspaceError::Unresolved {
+            environment: staging.name().clone(),
+            rule: live.name().clone(),
+            reason: "rule \"hold-the-produces\": no selector is named \"order-producers\"".to_owned(),
+        })
+    );
+    let kept = host
+        .workspace()
+        .await
+        .stores()
+        .selectors()
+        .get(&order_producers)
+        .await?;
+    assert!(
+        kept.is_some(),
+        "the workspace holds the selector that the live rule uses"
+    );
+    let still_armed = host.rule_of(staging.name(), live.name()).await?;
+    assert_eq!(still_armed.map(|rule| rule.state), Some(RuleState::Armed));
+
+    // Once the live rule is gone, nothing stands in the way of the files.
+    host.delete_live_rule(staging.name(), live.name(), None, ChangeSurface::Pad)?;
+    let reloaded = host.reload().await?;
+    assert_eq!(
+        reloaded.changes,
+        [
+            DefinitionChange::Created("order-fetches".parse::<SelectorName>()?.into()),
+            DefinitionChange::Deleted(order_producers.into()),
         ]
     );
     host.stop_all().await;

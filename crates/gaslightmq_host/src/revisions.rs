@@ -82,6 +82,15 @@ impl RuleRevisions {
         revision
     }
 
+    /// Forgets a rule of the workspace that a reload took away while it was armed here.
+    ///
+    /// It disarmed with the reload, and takes no number of its own: the reload has one, and the rule has no
+    /// revision in the environment any more.
+    pub(crate) fn forget(&mut self, rule: &RuleName) {
+        self.changed.remove(rule);
+        self.armed.remove(rule);
+    }
+
     /// Counts the end of a live rule that left the environment: the delete takes the next number,
     /// and nothing has that revision afterwards.
     pub(crate) fn count_removed(&mut self, rule: &RuleName) -> Revision {

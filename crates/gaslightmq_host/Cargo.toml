@@ -9,7 +9,7 @@ workspace = true
 
 # The modules that hold values and never wait: `cargo xtask sans-io` holds them to that.
 [package.metadata.gaslightmq]
-sans_io_modules = ["configuration", "error", "holds", "run"]
+sans_io_modules = ["configuration", "error", "holds", "reloaded", "run"]
 
 [dependencies]
 gaslightmq_backend.workspace = true
@@ -40,8 +40,11 @@ tokio = { workspace = true, features = ["sync", "rt", "macros"] }
 
 [dev-dependencies]
 anyhow.workspace = true
-# The workspace of every test: stores in memory.
+# The workspace of every test: stores in memory, and the files of a workspace in a temporary directory for the
+# tests that reload it.
 gaslightmq_workspace = { workspace = true, features = ["memory"] }
+gaslightmq_workspace_fs.workspace = true
+tempfile.workspace = true
 # The proxies of `tests/real_cluster`: a real client in front, and real Kafka brokers behind.
 gaslightmq_kafka_client_native.workspace = true
 gaslightmq_test_kafka.workspace = true

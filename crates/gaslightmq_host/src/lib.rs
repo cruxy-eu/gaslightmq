@@ -20,6 +20,7 @@
 //! | [`ChangeBacklog`], [`CallBacklog`] | How many changes, and how many calls, a host keeps for a follower that falls behind. |
 //! | [`CallSubscription`] | The calls of one environment that one selector matches, as its traffic matches them. |
 //! | [`CreateDefinitionError`] | Why a definition was not created in the workspace. |
+//! | [`Reloaded`], [`ReloadWorkspaceError`] | What a reload of the workspace took in from its files, and why a reload changed nothing. |
 //! | [`CreateLiveRuleError`], [`UpdateLiveRuleError`], [`DeleteLiveRuleError`], [`KeepRuleError`] | Why a live rule was not made, changed, removed or kept. |
 //! | [`EnvironmentRulesError`], [`IntentError`], [`CloseSessionError`], [`HostChangesError`], [`FollowCallsError`] | Why the rules of an environment were not read, a pad was not acted on, a session was not closed, a follower has no next change, and the calls of an environment were not followed. |
 //!
@@ -123,8 +124,7 @@
 //! - **The live set, scenarios and recordings** arrive with their crates.
 //!   Until then the armed rules of an environment are its live set, and no journal has an entry of a scenario,
 //!   of a step or of a recording.
-//! - **Reloading the workspace** arrives with the stores of files. No change has the surface `file` until then,
-//!   and none has the surface `step` until a scenario runs.
+//! - **Steps.** No change has the surface `step` until a scenario runs.
 //! - **The control plane** stands in front of the host, in the crate `gaslightmq_control_server`.
 //!
 //! # Errors
@@ -147,6 +147,7 @@
 //! | [`Host::update_live_rule`] | [`UpdateLiveRuleError`] | The environment does not run, it has no live rule of the name, the rule does not resolve, or it changed since. |
 //! | [`Host::delete_live_rule`] | [`DeleteLiveRuleError`] | The environment does not run, it has no live rule of the name, or it changed since. |
 //! | [`Host::create`] | [`CreateDefinitionError`] | A live rule of an environment that runs has the name of the rule, or the workspace did not take the definition. |
+//! | [`Host::reload`] | [`ReloadWorkspaceError`] | A rule of the files has the name of a live rule, an armed rule would not resolve against the files, or the workspace did not take the reload. |
 //! | [`Host::keep`] | [`KeepRuleError`] | The environment does not run, it has no live rule of the name, it changed since, a live rule of another environment has the name, or the workspace did not take it. |
 //! | [`Host::send_intent`], [`Host::send_intent_from`] | [`IntentError`] | The environment does not run, the layout does not exist, a store could not read, or the host cannot act on the intent: a hold of a presence that is not open is one such intent. An intent that finds the state it wants changes nothing, and is no error. |
 //! | [`Host::close_session`] | [`CloseSessionError`] | The environment does not run, or no session is open on the connection. |
@@ -179,6 +180,7 @@ mod error;
 mod holds;
 mod host;
 mod journaling;
+mod reloaded;
 mod revisions;
 mod rules;
 mod run;
@@ -192,10 +194,11 @@ pub use configuration::{
 pub use error::{
     ArmRuleError, CloseSessionError, CreateDefinitionError, CreateLiveRuleError, DeleteDefinitionError,
     DeleteLiveRuleError, DisarmRuleError, EnvironmentRulesError, EnvironmentStartError, FireRuleError,
-    FollowCallsError, IntentError, KeepRuleError, NotRunningError, ReadSentenceError, RuleHolder,
+    FollowCallsError, IntentError, KeepRuleError, NotRunningError, ReadSentenceError, ReloadWorkspaceError, RuleHolder,
     UpdateDefinitionError, UpdateLiveRuleError,
 };
 pub use host::Host;
+pub use reloaded::Reloaded;
 pub use rules::{EnvironmentRule, IntentEffect};
 pub use run::{Expects, RunId, RunIdError};
 
@@ -221,6 +224,7 @@ pub mod prelude {
         DisarmRuleError, EnvironmentConfiguration, EnvironmentConfigurationError, EnvironmentRule,
         EnvironmentRulesError, EnvironmentStartError, Expects, FireRuleError, FollowCallsError, Host, HostChange,
         HostChanges, HostChangesError, HostConfiguration, IntentEffect, IntentError, KeepRuleError, NotRunningError,
-        ReadSentenceError, RuleHolder, RunId, RunIdError, UpdateDefinitionError, UpdateLiveRuleError,
+        ReadSentenceError, ReloadWorkspaceError, Reloaded, RuleHolder, RunId, RunIdError, UpdateDefinitionError,
+        UpdateLiveRuleError,
     };
 }
