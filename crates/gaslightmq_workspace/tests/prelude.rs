@@ -60,11 +60,6 @@ mod next_to_the_others {
             .collect()
     }
 
-    /// The next seed of a source, with the source named by its trait.
-    fn next_of(uuids: &mut impl UuidSource) -> UuidSeed {
-        uuids.seed()
-    }
-
     /// The names of the presets of a workspace, with its context and its stores named by their traits.
     fn presets_of<C: WorkspaceContext<Stores: Stores>>(workspace: &Workspace<C>) -> Vec<DefinitionName> {
         names_in(workspace.stores().presets())
@@ -74,19 +69,14 @@ mod next_to_the_others {
     pub fn every_item() -> Vec<String> {
         let name: DefinitionName = RuleName::new("slow-order-producers").unwrap().into();
         let label: &str = label_of::<Rule>();
-        let seed: UuidSeed = UuidSeed::new(KnownUuids::CREATED, KnownUuids::RANDOM);
-        let mut uuids = move || seed;
-        let next: UuidSeed = next_of(&mut uuids);
-        let mut workspace: Workspace<_> = Workspace::new(MemoryContext::with_uuids(uuids));
+        let mut workspace: Workspace<_> = Workspace::new(MemoryContext::new());
         let blackhole = Preset::new("blackhole".parse().unwrap(), LieDefinition::Silence);
-        let created = futures::executor::block_on(workspace.create(blackhole)).unwrap();
+        futures::executor::block_on(workspace.create(blackhole)).unwrap();
         let held = presets_of(&workspace);
 
         vec![
             name.to_string(),
             label.to_owned(),
-            next.unix_millis().to_string(),
-            created.uuid().map(String::from).unwrap(),
             held.iter().map(ToString::to_string).collect(),
         ]
     }
@@ -130,13 +120,7 @@ mod next_to_the_others {
 fn the_prelude_names_every_item_next_to_the_other_preludes() {
     assert_eq!(
         next_to_the_others::every_item(),
-        [
-            "rule \"slow-order-producers\"",
-            "rule",
-            "1733938011966",
-            "0193b6c2-5f3e-7a41-9c2d-8e4b1f6a7d10",
-            "preset \"blackhole\"",
-        ]
+        ["rule \"slow-order-producers\"", "rule", "preset \"blackhole\"",]
     );
 }
 

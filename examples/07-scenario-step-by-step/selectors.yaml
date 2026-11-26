@@ -1,5 +1,4 @@
 - name: order-fetches
-  uuid: 01a20cc8-8fc5-7091-839e-598050d012fe
   title: Order fetches
   match:
     api: Fetch

@@ -1,5 +1,4 @@
 name: consumer-survives-leader-churn
-uuid: 01a20cc8-8fb3-7fbd-85da-5dd829acbf89
 title: Consumer survives leader churn
 mode: sequence
 seed: 7

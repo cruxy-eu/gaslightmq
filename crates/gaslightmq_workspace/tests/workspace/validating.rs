@@ -36,55 +36,7 @@ fn definitions_that_someone_wrote_by_hand_are_valid_when_they_fit_each_other() -
         stores.selectors().create(OrderDesk::order_producers()).await?;
         stores.environments().create(OrderDesk::environment()).await?;
 
-        // No definition has a UUID yet, and that is no error.
         assert_eq!(workspace.validate().await, Ok(()));
-        Ok(())
-    })
-}
-
-#[test]
-fn no_two_definitions_share_a_uuid_whatever_their_kinds_are() -> anyhow::Result<()> {
-    let workspace = Workspace::new(MemoryContext::new());
-    let metadata: RuleName = "blackhole-metadata".parse()?;
-    let fetches: RuleName = "blackhole-fetches".parse()?;
-    let blackhole: PresetName = "blackhole".parse()?;
-    let (created, random) = (KnownUuids::CREATED, KnownUuids::RANDOM);
-
-    block_on(async {
-        // Someone copied a rule and gave the copy another name. The UUID came along.
-        let original = OrderDesk::blackhole_metadata().with_uuid(RuleUuid::new(created, random));
-        let copy = Rule::new(fetches.clone(), original.selector().clone(), original.action().clone())
-            .with_uuid(RuleUuid::new(created, random));
-        // A preset has the same UUID too.
-        let preset = OrderDesk::blackhole().with_uuid(PresetUuid::new(created, random));
-        workspace.stores().rules().create(original).await?;
-        workspace.stores().rules().create(copy).await?;
-        workspace.stores().presets().create(preset).await?;
-
-        let error = workspace.validate().await.unwrap_err();
-
-        // Nobody knows which one is the copy. The first in the order of kinds and names holds the UUID.
-        assert_eq!(
-            error,
-            ValidationError::Invalid {
-                errors: vec![
-                    WorkspaceError::SharedUuid {
-                        definition: fetches.into(),
-                        holder: blackhole.clone().into(),
-                    },
-                    WorkspaceError::SharedUuid {
-                        definition: metadata.into(),
-                        holder: blackhole.into(),
-                    },
-                ],
-            }
-        );
-        assert_eq!(
-            error.to_string(),
-            "the definitions do not fit each other: \
-             rule \"blackhole-fetches\" has the UUID of preset \"blackhole\"; \
-             rule \"blackhole-metadata\" has the UUID of preset \"blackhole\""
-        );
         Ok(())
     })
 }
@@ -214,7 +166,8 @@ fn an_environment_names_a_world_that_nothing_checks_yet() -> anyhow::Result<()> 
 
     block_on(async {
         // No store holds worlds yet, so the world of an environment is a name and no reference.
-        let environment = workspace.create(OrderDesk::environment()).await?;
+        let environment = OrderDesk::environment();
+        workspace.create(environment.clone()).await?;
 
         assert_eq!(
             environment.world().map(ToString::to_string).as_deref(),

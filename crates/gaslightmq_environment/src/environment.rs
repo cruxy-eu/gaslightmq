@@ -9,7 +9,6 @@ use crate::recording::RecordingMode;
 use crate::schema_registry::SchemaRegistry;
 use crate::title::EnvironmentTitle;
 use crate::upstream::Upstream;
-use crate::uuid::EnvironmentUuid;
 
 /// The proxy of an environment: where it listens, and how much its recordings keep.
 ///
@@ -219,9 +218,7 @@ impl fmt::Display for Instances {
 /// - a built-in schema registry stands next to a broker, and a real one next to a real cluster,
 /// - a built-in schema registry takes no port of a Kafka listener.
 ///
-/// An environment of a workspace also has an [`EnvironmentUuid`], which its file holds as `uuid`.
-/// Nobody writes it: the workspace gives an environment its UUID, and tells its environments apart by it.
-/// Everything else references an environment by its name.
+/// Everything references an environment by its name.
 ///
 /// ```
 /// use gaslightmq_environment::prelude::*;
@@ -252,38 +249,20 @@ impl fmt::Display for Instances {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Environment {
     name: EnvironmentName,
-    uuid: Option<EnvironmentUuid>,
     title: Option<EnvironmentTitle>,
     instances: Instances,
     schema_registry: Option<SchemaRegistry>,
 }
 
 impl Environment {
-    /// The environment of this name with these instances, without a UUID, a title or a schema registry.
+    /// The environment of this name with these instances, without a title or a schema registry.
     pub fn new(name: EnvironmentName, instances: Instances) -> Self {
         Self {
             name,
-            uuid: None,
             title: None,
             instances,
             schema_registry: None,
         }
-    }
-
-    /// The same environment with the UUID that the workspace gives it.
-    /// It replaces the UUID the environment had before.
-    #[must_use]
-    pub fn with_uuid(self, uuid: EnvironmentUuid) -> Self {
-        Self {
-            uuid: Some(uuid),
-            ..self
-        }
-    }
-
-    /// The same environment without a UUID: an environment that no workspace holds yet, such as the copy of one.
-    #[must_use]
-    pub fn without_uuid(self) -> Self {
-        Self { uuid: None, ..self }
     }
 
     /// The same environment with a title, which says what the environment is.
@@ -341,11 +320,6 @@ impl Environment {
     /// The name of the environment, unique among environments. It is the identity of the environment.
     pub fn name(&self) -> &EnvironmentName {
         &self.name
-    }
-
-    /// The identity of the environment inside the workspace, once the workspace gave it one.
-    pub fn uuid(&self) -> Option<EnvironmentUuid> {
-        self.uuid
     }
 
     /// What the environment is, in free text, when someone wrote it down.
@@ -501,10 +475,6 @@ impl EnvironmentError {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    /// The UUID that a workspace gave the environment `staging-proxy`, and the one of another environment.
-    const STAGING_PROXY_UUID: &str = "0193b6c2-5f3e-7a41-9c2d-8e4b1f6a7d10";
-    const ANOTHER_UUID: &str = "0193b6c2-6b07-7d52-8a1e-3c5f7a9b0d24";
 
     fn listen(bootstrap: &str, brokers: &str) -> Listeners {
         Listeners::new(
@@ -768,34 +738,5 @@ mod tests {
             Some(&title("Staging"))
         );
         assert_eq!(titled.without_title(), staging);
-    }
-
-    #[test]
-    fn an_environment_has_a_uuid_when_the_workspace_gives_it_one() {
-        let uuid = |text: &str| text.parse::<EnvironmentUuid>().unwrap();
-        let staging = Environment::new(name("staging-proxy"), in_front_of_cluster());
-        let stored = staging.clone().with_uuid(uuid(STAGING_PROXY_UUID));
-
-        assert_eq!(staging.uuid(), None);
-        assert_eq!(stored.uuid(), Some(uuid(STAGING_PROXY_UUID)));
-        assert_eq!(stored.name(), staging.name());
-        assert_eq!(stored.instances(), staging.instances());
-        assert_eq!(
-            stored.clone().with_uuid(uuid(ANOTHER_UUID)).uuid(),
-            Some(uuid(ANOTHER_UUID))
-        );
-        assert_ne!(stored, stored.clone().with_uuid(uuid(ANOTHER_UUID)));
-        assert_eq!(stored.without_uuid(), staging);
-    }
-
-    #[test]
-    fn an_environment_keeps_its_uuid_when_it_gets_a_schema_registry() {
-        let uuid: EnvironmentUuid = STAGING_PROXY_UUID.parse().unwrap();
-        let staging = Environment::new(name("staging-proxy"), in_front_of_cluster())
-            .with_uuid(uuid)
-            .with_schema_registry(real())
-            .unwrap();
-
-        assert_eq!(staging.uuid(), Some(uuid));
     }
 }

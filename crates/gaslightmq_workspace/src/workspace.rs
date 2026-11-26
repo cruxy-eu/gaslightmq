@@ -7,25 +7,22 @@ use gaslightmq_selector::{Selector, SelectorStore};
 use gaslightmq_surface::{LayoutStore, PadLayout};
 
 use crate::contents::Contents;
-use crate::kind::{AnyDefinition, Kind};
+use crate::kind::AnyDefinition;
 use crate::{
-    CreateError, DefinitionName, DeleteError, Stores, UpdateError, UuidSource, ValidationError, WorkspaceContext,
+    CreateError, DefinitionName, DeleteError, Stores, UpdateError, ValidationError, WorkspaceContext,
     WorkspaceDefinition,
 };
 
 /// Every definition of a workspace, as one model that holds together.
 ///
-/// A workspace works with a [`WorkspaceContext`]: the [`Stores`] of the definitions, one for each kind,
-/// and the source of its UUIDs.
+/// A workspace works with a [`WorkspaceContext`]: the [`Stores`] of the definitions, one for each kind.
 /// It holds no definition itself, and it knows no files.
 /// What it holds is the rules that no single store can keep, because they span the kinds:
 ///
 /// - every reference names a definition that exists: the selector that a selector includes,
 ///   the selector and the preset of a rule, and the rows and the columns of a pad layout,
 /// - no selectors include each other in a circle, and every rule can fire,
-/// - a selector or a preset that another definition uses stays,
-/// - every definition has a UUID from the moment someone creates it,
-/// - no two definitions have the same UUID, whatever their kinds are.
+/// - a selector or a preset that another definition uses stays.
 ///
 /// Every change goes through the workspace, which checks it against the definitions of every store
 /// and then asks one store for it.
@@ -40,12 +37,6 @@ use crate::{
 /// A store can still change behind the back of the workspace, as when someone edits a file.
 /// [`validate`](Self::validate) says whether the definitions still fit each other.
 ///
-/// # UUIDs
-///
-/// The workspace gives a definition its UUID when someone creates it, and the definition keeps it from then on.
-/// It reads neither a clock nor the randomness of the system: the seeds come from the [`UuidSource`]
-/// of its context.
-///
 /// ```
 /// use futures::executor::block_on;
 /// use gaslightmq_kernel::prelude::*;
@@ -54,7 +45,7 @@ use crate::{
 /// use gaslightmq_selector::prelude::*;
 /// use gaslightmq_workspace::prelude::*;
 ///
-/// // Nothing is written anywhere, and every UUID is known before the workspace makes it.
+/// // Nothing is written anywhere.
 /// let mut workspace = Workspace::new(MemoryContext::new());
 ///
 /// let produce = Selector::new(
@@ -75,10 +66,7 @@ use crate::{
 ///
 ///     workspace.create(produce.clone()).await?;
 ///     workspace.create(blackhole).await?;
-///     let rule = workspace.create(rule).await?;
-///
-///     // Each definition got a UUID of its own. The rule was the fourth to ask for one.
-///     assert_eq!(rule.uuid().map(String::from), Some(KnownUuids::nth(4)));
+///     workspace.create(rule).await?;
 ///
 ///     // The rule uses the selector, so the selector stays.
 ///     let in_use = workspace.delete(produce.name().clone()).await.unwrap_err();
@@ -96,7 +84,7 @@ pub struct Workspace<C: WorkspaceContext> {
 }
 
 impl<C: WorkspaceContext> Workspace<C> {
-    /// The workspace over the stores of that context, which takes the seeds of its UUIDs from it.
+    /// The workspace over the stores of that context.
     ///
     /// It checks nothing yet: [`validate`](Self::validate) says whether what the stores hold fits together.
     pub fn new(context: C) -> Self {
@@ -108,76 +96,22 @@ impl<C: WorkspaceContext> Workspace<C> {
         self.context.stores()
     }
 
-    /// Adds a definition, and returns it with the UUID that it got.
-    ///
-    /// The definition gets a new UUID, whatever UUID it comes with:
-    /// a copy of a definition is a definition of its own.
+    /// Adds a definition.
     ///
     /// # Errors
     ///
     /// - [`CreateError::NameTaken`] when a definition of this kind has the name. Nothing overwrites it.
     /// - [`CreateError::DoesNotFit`] when the definitions would not fit each other with this one:
-    ///   it refers to a name that does not exist, it is a rule that can never fire,
-    ///   or the UUID that was made for it is the UUID of another definition.
+    ///   it refers to a name that does not exist, or it is a rule that can never fire.
     /// - [`CreateError::StoreFailed`] when a store could not read its definitions, or could not keep this one.
-    pub async fn create<D: WorkspaceDefinition>(&mut self, definition: D) -> Result<D, CreateError> {
+    pub async fn create<D: WorkspaceDefinition>(&mut self, definition: D) -> Result<(), CreateError> {
         let name: DefinitionName = definition.name().clone().into();
-        let contents = match self.contents().await {
-            Ok(contents) => contents,
-            Err(Unread { reason }) => return Err(CreateError::StoreFailed { name, reason }),
-        };
-        if contents.get(&name).is_some() {
-            return Err(CreateError::NameTaken { name });
-        }
-
-        let definition = self.stamp(definition);
-        self.add(definition, name, &contents).await
+        self.add(definition, &name).await
     }
 
-    /// Adds a definition that was made outside the workspace, under the UUID that it holds, and returns it.
-    ///
-    /// A live rule is such a definition: it gets its UUID from [`stamp`](Self::stamp) when it is made,
-    /// and keeps it when someone keeps it in the workspace. A definition without a UUID gets one, as on
-    /// [`create`](Self::create).
-    ///
-    /// # Errors
-    ///
-    /// - [`CreateError::NameTaken`] when a definition of this kind has the name. Nothing overwrites it.
-    /// - [`CreateError::DoesNotFit`] when the definitions would not fit each other with this one:
-    ///   it refers to a name that does not exist, it is a rule that can never fire,
-    ///   or another definition has its UUID.
-    /// - [`CreateError::StoreFailed`] when a store could not read its definitions, or could not keep this one.
-    pub async fn keep<D: WorkspaceDefinition>(&mut self, definition: D) -> Result<D, CreateError> {
-        let name: DefinitionName = definition.name().clone().into();
-        let contents = match self.contents().await {
-            Ok(contents) => contents,
-            Err(Unread { reason }) => return Err(CreateError::StoreFailed { name, reason }),
-        };
-        if contents.get(&name).is_some() {
-            return Err(CreateError::NameTaken { name });
-        }
-
-        let definition = match definition.uuid() {
-            Some(_) => definition,
-            None => self.stamp(definition),
-        };
-        self.add(definition, name, &contents).await
-    }
-
-    /// Gives `definition` a new UUID, as [`create`](Self::create) gives one, and stores nothing.
-    ///
-    /// Whoever makes a definition that lives outside the workspace for a while, such as a live rule, stamps it,
-    /// so that the definition has the UUID it keeps from then on, also once someone [keeps](Self::keep) it.
-    #[must_use]
-    pub fn stamp<D: WorkspaceDefinition>(&mut self, definition: D) -> D {
-        Kind::with_uuid(definition, D::uuid_of(self.context.uuids().seed()))
-    }
-
-    /// Replaces the definition of the same kind and name, and returns it with the UUID that it keeps.
+    /// Replaces the definition of the same kind and name.
     ///
     /// The definition changes in everything but its name.
-    /// It keeps the UUID that its store holds for it, whatever UUID `definition` comes with.
-    /// A definition that its store holds without a UUID, as a file that someone wrote by hand, gets one.
     ///
     /// # Errors
     ///
@@ -186,28 +120,23 @@ impl<C: WorkspaceContext> Workspace<C> {
     ///   the definition refers to a name that does not exist, or a rule can never fire with it,
     ///   which can be a rule that uses the selector or the preset that changes.
     /// - [`UpdateError::StoreFailed`] when a store could not read its definitions, or could not keep the change.
-    pub async fn update<D: WorkspaceDefinition>(&mut self, definition: D) -> Result<D, UpdateError> {
+    pub async fn update<D: WorkspaceDefinition>(&mut self, definition: D) -> Result<(), UpdateError> {
         let name: DefinitionName = definition.name().clone().into();
         let contents = match self.contents().await {
             Ok(contents) => contents,
             Err(Unread { reason }) => return Err(UpdateError::StoreFailed { name, reason }),
         };
-        let Some(stored) = contents.get(&name) else {
+        if contents.get(&name).is_none() {
             return Err(UpdateError::NotFound { name });
-        };
+        }
 
-        let uuid = match D::of(stored).and_then(Kind::uuid) {
-            Some(uuid) => uuid,
-            None => D::uuid_of(self.context.uuids().seed()),
-        };
-        let definition = Kind::with_uuid(definition, uuid);
         let errors = contents.errors_with(definition.clone().into_any());
         if !errors.is_empty() {
             return Err(UpdateError::DoesNotFit { name, errors });
         }
 
-        match self.store_update(definition.clone().into_any()).await {
-            Ok(()) => Ok(definition),
+        match self.store_update(definition.into_any()).await {
+            Ok(()) => Ok(()),
             Err(StoreChangeError::NotFound) => Err(UpdateError::NotFound { name }),
             Err(StoreChangeError::Failed { reason }) => Err(UpdateError::StoreFailed { name, reason }),
         }
@@ -250,13 +179,11 @@ impl<C: WorkspaceContext> Workspace<C> {
     /// Checks that the definitions of every store fit each other.
     ///
     /// Whoever opens a workspace asks this once, and again whenever a store changed behind the workspace.
-    /// A definition without a UUID is no error: its next [update](Self::update) gives it one.
     ///
     /// # Errors
     ///
     /// - [`ValidationError::Invalid`] with everything that is wrong: a reference that names nothing,
-    ///   a UUID that two definitions have, selectors that include each other in a circle,
-    ///   and a rule that can never fire.
+    ///   selectors that include each other in a circle, and a rule that can never fire.
     /// - [`ValidationError::StoreFailed`] when a store could not read its definitions.
     pub async fn validate(&self) -> Result<(), ValidationError> {
         let contents = match self.contents().await {
@@ -271,22 +198,29 @@ impl<C: WorkspaceContext> Workspace<C> {
         }
     }
 
-    /// Checks a definition that has its UUID against `contents`, and asks the store of its kind to take it.
-    async fn add<D: WorkspaceDefinition>(
-        &self,
-        definition: D,
-        name: DefinitionName,
-        contents: &Contents,
-    ) -> Result<D, CreateError> {
-        let errors = contents.errors_with(definition.clone().into_any());
-        if !errors.is_empty() {
-            return Err(CreateError::DoesNotFit { name, errors });
+    /// Checks a new definition against what the stores hold, and asks the store of its kind to take it.
+    async fn add<D: WorkspaceDefinition>(&self, definition: D, name: &DefinitionName) -> Result<(), CreateError> {
+        let failed = |reason| CreateError::StoreFailed {
+            name: name.clone(),
+            reason,
+        };
+        let contents = self.contents().await.map_err(|Unread { reason }| failed(reason))?;
+        if contents.get(name).is_some() {
+            return Err(CreateError::NameTaken { name: name.clone() });
         }
 
-        match self.store_create(definition.clone().into_any()).await {
-            Ok(()) => Ok(definition),
-            Err(StoreCreateError::NameTaken) => Err(CreateError::NameTaken { name }),
-            Err(StoreCreateError::Failed { reason }) => Err(CreateError::StoreFailed { name, reason }),
+        let errors = contents.errors_with(definition.clone().into_any());
+        if !errors.is_empty() {
+            return Err(CreateError::DoesNotFit {
+                name: name.clone(),
+                errors,
+            });
+        }
+
+        match self.store_create(definition.into_any()).await {
+            Ok(()) => Ok(()),
+            Err(StoreCreateError::NameTaken) => Err(CreateError::NameTaken { name: name.clone() }),
+            Err(StoreCreateError::Failed { reason }) => Err(failed(reason)),
         }
     }
 

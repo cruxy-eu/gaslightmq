@@ -11,7 +11,7 @@ use crate::{GetDefinitionError, ListDefinitionsError, Operation};
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct EnvironmentStatus {
-    /// The definition of the environment, without its UUID.
+    /// The definition of the environment, as its file holds it.
     pub environment: Environment,
     /// Whether the process runs the environment now.
     pub running: bool,

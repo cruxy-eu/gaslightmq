@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 use std::collections::btree_map;
 
-use crate::{Action, ActionRef, PresetName, PresetTitle, PresetUuid};
+use crate::{Action, ActionRef, PresetName, PresetTitle};
 
 /// A named, reusable lie or incident with its parameters.
 ///
@@ -19,9 +19,6 @@ use crate::{Action, ActionRef, PresetName, PresetTitle, PresetUuid};
 /// ```
 ///
 /// Rules reference a preset by its name, and pad grid columns, ⌘K suggestions and rule editors offer presets.
-///
-/// A preset of a workspace also has a [`PresetUuid`], which a file holds as `uuid`.
-/// Nobody writes it: the workspace gives a preset its UUID, and tells its presets apart by it.
 ///
 /// ```
 /// use gaslightmq_clock::TimeSpan;
@@ -43,38 +40,19 @@ use crate::{Action, ActionRef, PresetName, PresetTitle, PresetUuid};
 pub struct Preset {
     name: PresetName,
     #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Option::is_none"))]
-    uuid: Option<PresetUuid>,
-    #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Option::is_none"))]
     title: Option<PresetTitle>,
     #[cfg_attr(feature = "serde", serde(flatten))]
     action: Action,
 }
 
 impl Preset {
-    /// The preset that gives `action` a name. It has no UUID and no title.
+    /// The preset that gives `action` a name. It has no title.
     pub fn new(name: PresetName, action: impl Into<Action>) -> Self {
         Self {
             name,
-            uuid: None,
             title: None,
             action: action.into(),
         }
-    }
-
-    /// The same preset with the UUID that the workspace gives it.
-    /// It replaces the UUID the preset had before.
-    #[must_use]
-    pub fn with_uuid(self, uuid: PresetUuid) -> Self {
-        Self {
-            uuid: Some(uuid),
-            ..self
-        }
-    }
-
-    /// The same preset without a UUID: a preset that no workspace holds yet, such as the copy of one.
-    #[must_use]
-    pub fn without_uuid(self) -> Self {
-        Self { uuid: None, ..self }
     }
 
     /// The same preset with a title, which says what the preset does.
@@ -105,11 +83,6 @@ impl Preset {
     /// The name of the preset, unique among presets. It is the identity of the preset.
     pub fn name(&self) -> &PresetName {
         &self.name
-    }
-
-    /// The identity of the preset inside the workspace, once the workspace gave it one.
-    pub fn uuid(&self) -> Option<PresetUuid> {
-        self.uuid
     }
 
     /// What the preset does, in free text, when someone wrote it down.
@@ -243,15 +216,7 @@ mod tests {
 
     use super::*;
 
-    /// The UUID that a workspace gave the preset `delay-1s`, and the one of another preset.
-    const DELAY_1S_UUID: &str = "0193b6c2-5f3e-7a41-9c2d-8e4b1f6a7d10";
-    const ANOTHER_UUID: &str = "0193b6c2-6b07-7d52-8a1e-3c5f7a9b0d24";
-
     fn name(text: &str) -> PresetName {
-        text.parse().unwrap()
-    }
-
-    fn uuid(text: &str) -> PresetUuid {
         text.parse().unwrap()
     }
 
@@ -343,20 +308,5 @@ mod tests {
             Some(&title("One second late"))
         );
         assert_eq!(titled.without_title(), delay());
-    }
-
-    #[test]
-    fn a_preset_has_a_uuid_when_the_workspace_gives_it_one() {
-        let stored = delay().with_uuid(uuid(DELAY_1S_UUID));
-
-        assert_eq!(delay().uuid(), None);
-        assert_eq!(stored.uuid(), Some(uuid(DELAY_1S_UUID)));
-        assert_eq!(stored.name(), delay().name());
-        assert_eq!(stored.action(), delay().action());
-        assert_eq!(
-            stored.clone().with_uuid(uuid(ANOTHER_UUID)).uuid(),
-            Some(uuid(ANOTHER_UUID))
-        );
-        assert_eq!(stored.without_uuid(), delay());
     }
 }

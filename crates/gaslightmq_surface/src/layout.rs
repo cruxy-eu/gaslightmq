@@ -1,14 +1,13 @@
 use gaslightmq_rule::{Preset, PresetName, PresetSet, PresetTitle, Rule, RuleName, RuleTitle};
 use gaslightmq_selector::{Selector, SelectorName, SelectorSet, SelectorTitle};
 
-use crate::{Column, Layer, LayoutName, LayoutTitle, LayoutUuid, Pad, Row};
+use crate::{Column, Layer, LayoutName, LayoutTitle, Pad, Row};
 
 /// A pad layout: a grid that maps rows to selectors, columns to presets and layers to scopes.
 ///
 /// | Part | Meaning | When left out |
 /// |---|---|---|
 /// | Name | The identity of the layout: unique among layouts. A [`Pad`] names its layout by it. | |
-/// | UUID | The identity of the layout inside the workspace. Nobody writes it, and nothing else references it. | No UUID, until the workspace gives the layout one. |
 /// | Title | What the layout is for, in free text. | No title. |
 /// | Rows | Selectors, by name. | |
 /// | Columns | Presets, by name. | |
@@ -71,8 +70,9 @@ use crate::{Column, Layer, LayoutName, LayoutTitle, LayoutUuid, Pad, Row};
 /// # Ok::<(), PadLayoutError>(())
 /// ```
 ///
-/// With the `serde` feature, a layout serializes as the map above, with a `uuid` next to its name when it has one.
-/// Writing leaves out a UUID and a title that the layout does not have, and reading rejects a key it does not know.
+/// With the `serde` feature, a layout serializes as the map above.
+/// Writing leaves out a title that the layout does not have, and reading rejects a key it does not know,
+/// such as `uuid`.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 #[cfg_attr(
     feature = "serde",
@@ -81,7 +81,6 @@ use crate::{Column, Layer, LayoutName, LayoutTitle, LayoutUuid, Pad, Row};
 )]
 pub struct PadLayout {
     name: LayoutName,
-    uuid: Option<LayoutUuid>,
     title: Option<LayoutTitle>,
     rows: Vec<SelectorName>,
     columns: Vec<PresetName>,
@@ -90,7 +89,7 @@ pub struct PadLayout {
 
 impl PadLayout {
     /// A layout of those rows, columns and layers, each in the order a surface shows them.
-    /// It has no UUID and no title.
+    /// It has no title.
     ///
     /// # Errors
     ///
@@ -131,28 +130,11 @@ impl PadLayout {
         }
         Ok(Self {
             name,
-            uuid: None,
             title: None,
             rows,
             columns,
             layers,
         })
-    }
-
-    /// The same layout with the UUID that the workspace gives it.
-    /// It replaces the UUID the layout had before.
-    #[must_use]
-    pub fn with_uuid(self, uuid: LayoutUuid) -> Self {
-        Self {
-            uuid: Some(uuid),
-            ..self
-        }
-    }
-
-    /// The same layout without a UUID: a layout that no workspace holds yet, such as the copy of one.
-    #[must_use]
-    pub fn without_uuid(self) -> Self {
-        Self { uuid: None, ..self }
     }
 
     /// The same layout with a title, which says what the layout is for.
@@ -174,11 +156,6 @@ impl PadLayout {
     /// The name of the layout: its identity, unique among layouts.
     pub const fn name(&self) -> &LayoutName {
         &self.name
-    }
-
-    /// The identity of the layout inside the workspace, once the workspace gave it one.
-    pub const fn uuid(&self) -> Option<LayoutUuid> {
-        self.uuid
     }
 
     /// What the layout is for, in free text, when someone wrote it down.
@@ -280,9 +257,6 @@ impl PadLayout {
     /// One that has no title, or that they do not hold, stands in the title of the rule with its name.
     /// The rule has no title when the text of the layer makes one that breaks the rule for titles.
     /// Someone can change the title afterwards, and the name stays.
-    ///
-    /// The rule has no UUID: a layout reads no clock and has no randomness.
-    /// Whoever makes the rule a live rule gives it one.
     pub fn rule(&self, pad: &Pad, selectors: &SelectorSet, presets: &PresetSet) -> Option<Rule> {
         let (selector, preset, layer) = self.parts(pad)?;
         let rule = Rule::new(self.rule_name(pad)?, selector.clone(), preset.clone()).scoped(layer.scope().clone());
@@ -312,7 +286,6 @@ impl PadLayout {
     }
 
     /// The parts of the layout that own their text, as a file writes them.
-    /// The UUID is not among them: [`uuid`](Self::uuid) copies it.
     #[cfg(feature = "serde")]
     pub(crate) fn into_parts(
         self,
@@ -390,9 +363,6 @@ mod tests {
 
     impl OrderDesk {
         const NAME: &'static str = "order-desk";
-        /// The UUID that a workspace gave the layout, and the one of another layout.
-        const UUID: &'static str = "0193b6c2-5f3e-7a41-9c2d-8e4b1f6a7d10";
-        const ANOTHER_UUID: &'static str = "0193b6c2-6b07-7d52-8a1e-3c5f7a9b0d24";
         const ROWS: [&'static str; 3] = ["order-producers", "fetch", "metadata"];
         const COLUMNS: [&'static str; 4] = ["error-retriable", "delay-100ms", "delay-1s", "blackhole"];
         const CLIENTS: [&'static str; 2] = ["order-ingest", "payments-svc"];
@@ -473,7 +443,6 @@ mod tests {
         let layout = OrderDesk::layout();
 
         assert_eq!(layout.name(), OrderDesk::NAME);
-        assert_eq!(layout.uuid(), None);
         assert_eq!(layout.title(), None);
         assert_eq!(layout.rows(), OrderDesk::rows());
         assert_eq!(layout.columns(), OrderDesk::columns());
@@ -493,37 +462,6 @@ mod tests {
             Some(&title("The desk of the orders"))
         );
         assert_eq!(titled.without_title(), OrderDesk::layout());
-    }
-
-    #[test]
-    fn a_layout_has_a_uuid_when_the_workspace_gives_it_one() {
-        let uuid = |text: &str| text.parse::<LayoutUuid>().unwrap();
-        let stored = OrderDesk::layout().with_uuid(uuid(OrderDesk::UUID));
-
-        assert_eq!(stored.uuid(), Some(uuid(OrderDesk::UUID)));
-        assert_eq!(stored.name(), OrderDesk::layout().name());
-        assert_eq!(
-            stored.clone().with_uuid(uuid(OrderDesk::ANOTHER_UUID)).uuid(),
-            Some(uuid(OrderDesk::ANOTHER_UUID))
-        );
-        assert_ne!(stored, stored.clone().with_uuid(uuid(OrderDesk::ANOTHER_UUID)));
-        assert_eq!(stored.without_uuid(), OrderDesk::layout());
-    }
-
-    #[test]
-    fn the_rule_of_a_pad_has_no_uuid_whether_its_layout_has_one_or_not() {
-        let stored = OrderDesk::layout().with_uuid(OrderDesk::UUID.parse().unwrap());
-        let pad = OrderDesk::slow_ingest();
-
-        let rule = stored
-            .rule(&pad, &OrderDesk::selectors(), &OrderDesk::presets())
-            .unwrap();
-
-        assert_eq!(rule.uuid(), None);
-        assert_eq!(
-            Some(rule),
-            OrderDesk::layout().rule(&pad, &OrderDesk::selectors(), &OrderDesk::presets())
-        );
     }
 
     #[test]

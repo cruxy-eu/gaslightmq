@@ -34,13 +34,6 @@ pub enum WorkspaceError {
         definition: DefinitionName,
         reference: DefinitionName,
     },
-    /// A definition has the UUID of another definition, of any kind.
-    /// That happens when someone copies a definition with its UUID.
-    #[error("{definition} has the UUID of {holder}")]
-    SharedUuid {
-        definition: DefinitionName,
-        holder: DefinitionName,
-    },
     /// The selectors do not hold together: they include each other in a circle.
     #[error("{error}")]
     InvalidSelectors { error: SelectorSetError },
@@ -146,17 +139,17 @@ pub enum DeleteError {
 ///
 /// ```
 /// use gaslightmq_rule::prelude::*;
-/// use gaslightmq_selector::prelude::*;
 /// use gaslightmq_workspace::prelude::*;
 ///
-/// let copy: RuleName = "blackhole-fetches".parse()?;
-/// let original: RuleName = "blackhole-metadata".parse()?;
+/// let rule: RuleName = "slow-order-producers".parse()?;
+/// let preset: PresetName = "delay-1s".parse().expect("a preset name");
 /// let error = ValidationError::Invalid {
-///     errors: vec![WorkspaceError::SharedUuid { definition: copy.into(), holder: original.into() }],
+///     errors: vec![WorkspaceError::UnknownReference { definition: rule.into(), reference: preset.into() }],
 /// };
 /// assert_eq!(
 ///     error.to_string(),
-///     "the definitions do not fit each other: rule \"blackhole-fetches\" has the UUID of rule \"blackhole-metadata\""
+///     "the definitions do not fit each other: \
+///      rule \"slow-order-producers\" refers to preset \"delay-1s\", which does not exist"
 /// );
 /// # Ok::<(), RuleNameError>(())
 /// ```
@@ -230,13 +223,6 @@ mod tests {
             (
                 unknown_selector(),
                 "rule \"slow-order-producers\" refers to selector \"order-producers\", which does not exist".to_owned(),
-            ),
-            (
-                WorkspaceError::SharedUuid {
-                    definition: preset("blackhole"),
-                    holder: selector("metadata"),
-                },
-                "preset \"blackhole\" has the UUID of selector \"metadata\"".to_owned(),
             ),
             (
                 WorkspaceError::InvalidSelectors { error: circle.clone() },

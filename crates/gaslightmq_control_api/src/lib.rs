@@ -58,10 +58,9 @@
 //! and the vocabulary they are made of, [`kernel`], [`field`] and [`clock`].
 //! A definition only holds valid values, so the UI checks a value in a form with the engine's own types.
 //!
-//! The UUID of a definition stays inside the workspace.
-//! An answer holds a definition without it, and the workspace keeps or gives the UUID, whatever a request holds.
+//! A definition travels as its file holds it, in a request as in an answer.
 //!
-//! # Names, not UUIDs
+//! # Names
 //!
 //! Every operation names a definition by its name, and an operation on something live names its environment too.
 //! Nothing renames a definition: an update changes everything but the name.

@@ -1,12 +1,12 @@
 //! The kinds of definitions that a workspace holds, and what it needs of each.
 
 use gaslightmq_definition_api::Definition;
-use gaslightmq_environment::{Environment, EnvironmentUuid};
-use gaslightmq_rule::{Preset, PresetUuid, Rule, RuleUuid};
-use gaslightmq_selector::{Selector, SelectorUuid};
-use gaslightmq_surface::{LayoutUuid, PadLayout};
+use gaslightmq_environment::Environment;
+use gaslightmq_rule::{Preset, Rule};
+use gaslightmq_selector::Selector;
+use gaslightmq_surface::PadLayout;
 
-use crate::{DefinitionName, UuidSeed};
+use crate::DefinitionName;
 
 /// A definition of a kind that a [`Workspace`](crate::Workspace) holds:
 /// a selector, a preset, a rule, a pad layout or an environment.
@@ -28,26 +28,10 @@ use crate::{DefinitionName, UuidSeed};
 /// ```
 pub trait WorkspaceDefinition: Definition<Name: Into<DefinitionName>> + Kind {}
 
-/// What a workspace needs of a kind, next to its name: its UUID, and its place among the other kinds.
+/// What a workspace needs of a kind, next to its name: its place among the other kinds.
 pub trait Kind: Sized {
-    /// The UUID of a definition of this kind.
-    type Uuid: Copy;
-
     /// The definition, as one of any kind.
     fn into_any(self) -> AnyDefinition;
-
-    /// The definition of this kind that `definition` is, or `None` when it is of another kind.
-    fn of(definition: &AnyDefinition) -> Option<&Self>;
-
-    /// The UUID of the definition, when it has one.
-    fn uuid(&self) -> Option<Self::Uuid>;
-
-    /// The same definition with this UUID.
-    #[must_use]
-    fn with_uuid(self, uuid: Self::Uuid) -> Self;
-
-    /// The UUID that `seed` makes.
-    fn uuid_of(seed: UuidSeed) -> Self::Uuid;
 }
 
 /// One definition of a workspace, of any kind.
@@ -62,36 +46,15 @@ pub enum AnyDefinition {
     Environment(Environment),
 }
 
-/// Makes a definition type a kind of the workspace: the variant it has, and the UUID it takes.
+/// Makes a definition type a kind of the workspace: the variant it has.
 macro_rules! kind {
-    ($($definition:ident, $uuid:ident => $variant:ident;)*) => {
+    ($($definition:ident => $variant:ident;)*) => {
         $(
             impl WorkspaceDefinition for $definition {}
 
             impl Kind for $definition {
-                type Uuid = $uuid;
-
                 fn into_any(self) -> AnyDefinition {
                     AnyDefinition::$variant(self)
-                }
-
-                fn of(definition: &AnyDefinition) -> Option<&Self> {
-                    match definition {
-                        AnyDefinition::$variant(definition) => Some(definition),
-                        _ => None,
-                    }
-                }
-
-                fn uuid(&self) -> Option<$uuid> {
-                    $definition::uuid(self)
-                }
-
-                fn with_uuid(self, uuid: $uuid) -> Self {
-                    $definition::with_uuid(self, uuid)
-                }
-
-                fn uuid_of(seed: UuidSeed) -> $uuid {
-                    $uuid::new(seed.unix_millis(), seed.random())
                 }
             }
         )*
@@ -103,25 +66,16 @@ macro_rules! kind {
                     $(AnyDefinition::$variant(definition) => definition.name().clone().into(),)*
                 }
             }
-
-            /// The UUID of the definition as text, when the definition has one.
-            ///
-            /// Every kind has a UUID type of its own. The text is what the UUIDs of two kinds compare by.
-            pub(crate) fn uuid(&self) -> Option<String> {
-                match self {
-                    $(AnyDefinition::$variant(definition) => definition.uuid().map(String::from),)*
-                }
-            }
         }
     };
 }
 
 kind! {
-    Selector, SelectorUuid => Selector;
-    Preset, PresetUuid => Preset;
-    Rule, RuleUuid => Rule;
-    PadLayout, LayoutUuid => Layout;
-    Environment, EnvironmentUuid => Environment;
+    Selector => Selector;
+    Preset => Preset;
+    Rule => Rule;
+    PadLayout => Layout;
+    Environment => Environment;
 }
 
 impl AnyDefinition {

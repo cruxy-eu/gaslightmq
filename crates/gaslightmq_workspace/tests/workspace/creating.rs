@@ -1,4 +1,4 @@
-//! Creating: a definition gets a UUID, its name is free, and everything it names exists.
+//! Creating: a definition has a free name, and everything it names exists.
 
 use futures::executor::block_on;
 use gaslightmq_definition_api::prelude::*;
@@ -12,78 +12,37 @@ use gaslightmq_workspace::prelude::*;
 use crate::support::{Context, OrderDesk, ReadOnly, ReadOnlyPresets, UnreadableRules};
 
 #[test]
-fn a_definition_gets_a_uuid_when_it_is_created() -> anyhow::Result<()> {
-    let mut workspace = Workspace::new(MemoryContext::new());
-    let written = OrderDesk::order_producers();
-    assert_eq!(written.uuid(), None);
-
-    block_on(async {
-        let created = workspace.create(written.clone()).await?;
-
-        // The definition is as it was written, and it has the first UUID of the source.
-        assert_eq!(created.uuid().map(String::from), Some(KnownUuids::nth(1)));
-        assert_eq!(created.clone().without_uuid(), written);
-        // Its store holds it with that UUID.
-        assert_eq!(workspace.stores().selectors().list().await?, [created]);
-        Ok(())
-    })
-}
-
-#[test]
-fn every_kind_of_definition_gets_a_uuid_of_its_own() -> anyhow::Result<()> {
+fn a_created_definition_is_in_its_store_as_it_was_written() -> anyhow::Result<()> {
     let mut workspace = Workspace::new(MemoryContext::new());
 
     block_on(async {
-        let order_producers = workspace.create(OrderDesk::order_producers()).await?;
-        let from_ingest = workspace.create(OrderDesk::order_producers_from_ingest()).await?;
-        let delay = workspace.create(OrderDesk::delay_1s()).await?;
-        let blackhole = workspace.create(OrderDesk::blackhole()).await?;
-        let rule = workspace.create(OrderDesk::slow_order_producers()).await?;
-        let layout = workspace.create(OrderDesk::layout()).await?;
-        let environment = workspace.create(OrderDesk::environment()).await?;
+        workspace.create(OrderDesk::order_producers()).await?;
+        workspace.create(OrderDesk::order_producers_from_ingest()).await?;
+        workspace.create(OrderDesk::delay_1s()).await?;
+        workspace.create(OrderDesk::blackhole()).await?;
+        workspace.create(OrderDesk::slow_order_producers()).await?;
+        workspace.create(OrderDesk::layout()).await?;
+        workspace.create(OrderDesk::environment()).await?;
 
-        let uuids = [
-            order_producers.uuid().map(String::from),
-            from_ingest.uuid().map(String::from),
-            delay.uuid().map(String::from),
-            blackhole.uuid().map(String::from),
-            rule.uuid().map(String::from),
-            layout.uuid().map(String::from),
-            environment.uuid().map(String::from),
-        ];
-        let made_in_order = (1..=7).map(|nth| Some(KnownUuids::nth(nth)));
-        assert!(uuids.into_iter().eq(made_in_order));
-
-        // Each definition is in the store of its kind.
-        assert_eq!(workspace.stores().presets().list().await?, [blackhole, delay]);
-        assert_eq!(workspace.stores().rules().list().await?, [rule]);
-        assert_eq!(workspace.stores().layouts().list().await?, [layout]);
-        assert_eq!(workspace.stores().environments().list().await?, [environment]);
-        assert_eq!(workspace.validate().await, Ok(()));
-        Ok(())
-    })
-}
-
-#[test]
-fn a_copy_of_a_definition_gets_a_new_uuid() -> anyhow::Result<()> {
-    let mut workspace = Workspace::new(MemoryContext::new());
-
-    block_on(async {
-        let original = workspace.create(OrderDesk::blackhole_metadata()).await?;
-
-        // Someone copies the rule under another name. The UUID comes along with the copy.
-        let copy = Rule::new(
-            "blackhole-metadata-again".parse()?,
-            original.selector().clone(),
-            original.action().clone(),
+        // Each definition is in the store of its kind, in the order of the names.
+        assert_eq!(
+            workspace.stores().selectors().list().await?,
+            [OrderDesk::order_producers(), OrderDesk::order_producers_from_ingest()]
         );
-        let copy = original.uuid().map_or(copy.clone(), |uuid| copy.with_uuid(uuid));
-        assert_eq!(copy.uuid(), original.uuid());
-
-        let created = workspace.create(copy).await?;
-
-        assert_eq!(created.uuid().map(String::from), Some(KnownUuids::nth(2)));
-        assert_ne!(created.uuid(), original.uuid());
+        assert_eq!(
+            workspace.stores().presets().list().await?,
+            [OrderDesk::blackhole(), OrderDesk::delay_1s()]
+        );
+        assert_eq!(
+            workspace.stores().rules().list().await?,
+            [OrderDesk::slow_order_producers()]
+        );
+        assert_eq!(workspace.stores().layouts().list().await?, [OrderDesk::layout()]);
+        assert_eq!(
+            workspace.stores().environments().list().await?,
+            [OrderDesk::environment()]
+        );
+        assert_eq!(workspace.validate().await, Ok(()));
         Ok(())
     })
 }
@@ -94,7 +53,7 @@ fn create_refuses_a_name_that_is_taken() -> anyhow::Result<()> {
     let blackhole: PresetName = "blackhole".parse()?;
 
     block_on(async {
-        let first = workspace.create(OrderDesk::blackhole()).await?;
+        workspace.create(OrderDesk::blackhole()).await?;
 
         // Another preset wants the name: a hang-up instead of a silence.
         let other = Preset::new(blackhole.clone(), HangUpLie::new());
@@ -108,7 +67,10 @@ fn create_refuses_a_name_that_is_taken() -> anyhow::Result<()> {
         );
         assert_eq!(error.to_string(), "preset \"blackhole\" exists already");
         // Nothing overwrote the preset that was there.
-        assert_eq!(workspace.stores().presets().get(&blackhole).await?, Some(first));
+        assert_eq!(
+            workspace.stores().presets().get(&blackhole).await?,
+            Some(OrderDesk::blackhole())
+        );
         Ok(())
     })
 }
@@ -129,12 +91,14 @@ fn two_kinds_can_share_a_name() -> anyhow::Result<()> {
             .await?;
 
         // Every reference says which kind it means, so the rule finds its selector and its preset.
-        let created = workspace
-            .create(Rule::new(rule, selector.clone(), preset.clone()))
+        workspace
+            .create(Rule::new(rule.clone(), selector.clone(), preset.clone()))
             .await?;
 
-        assert_eq!(created.selector().name(), Some(&selector));
-        assert_eq!(created.action().preset(), Some(&preset));
+        assert_eq!(
+            workspace.stores().rules().get(&rule).await?,
+            Some(Rule::new(rule.clone(), selector, preset))
+        );
         Ok(())
     })
 }
@@ -276,40 +240,6 @@ fn a_rule_that_can_never_fire_is_not_created() -> anyhow::Result<()> {
              when the truth is not known yet. Give the lie `stage: after`"
         );
         assert_eq!(workspace.stores().rules().list().await?, []);
-        Ok(())
-    })
-}
-
-#[test]
-fn a_uuid_that_another_definition_has_is_not_given_twice() -> anyhow::Result<()> {
-    // This source repeats itself: every seed is the first one.
-    let stuck = || UuidSeed::new(KnownUuids::CREATED, KnownUuids::RANDOM);
-    let mut workspace = Workspace::new(MemoryContext::with_uuids(stuck));
-    let order_producers: SelectorName = "order-producers".parse()?;
-    let blackhole: PresetName = "blackhole".parse()?;
-
-    block_on(async {
-        workspace.create(OrderDesk::order_producers()).await?;
-
-        // The preset would get the UUID of the selector. A UUID is there once, whatever the kinds are.
-        let error = workspace.create(OrderDesk::blackhole()).await.unwrap_err();
-
-        assert_eq!(
-            error,
-            CreateError::DoesNotFit {
-                name: blackhole.clone().into(),
-                errors: vec![WorkspaceError::SharedUuid {
-                    definition: blackhole.into(),
-                    holder: order_producers.into(),
-                }],
-            }
-        );
-        assert_eq!(
-            error.to_string(),
-            "preset \"blackhole\" does not fit the workspace: \
-             preset \"blackhole\" has the UUID of selector \"order-producers\""
-        );
-        assert_eq!(workspace.stores().presets().list().await?, []);
         Ok(())
     })
 }

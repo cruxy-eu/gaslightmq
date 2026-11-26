@@ -6,9 +6,8 @@
 //!
 //! | Type | Is |
 //! |---|---|
-//! | [`Rule`] | A rule as a file writes it: a name, a UUID, a title, a selector, a scope, an action, a trigger, a lifetime and a dice key. |
+//! | [`Rule`] | A rule as a file writes it: a name, a title, a selector, a scope, an action, a trigger, a lifetime and a dice key. |
 //! | [`RuleName`], [`PresetName`] | The names that other things reference a rule and a preset by: slugs, and their identity. |
-//! | [`RuleUuid`], [`PresetUuid`] | The identity of a rule and of a preset inside the workspace, which gives each its UUID. |
 //! | [`RuleTitle`], [`PresetTitle`] | The free text that says what a rule is for and what a preset does. |
 //! | [`Action`] | What happens when a rule fires: a lie or an incident. |
 //! | [`ActionRef`] | How a rule says it: a preset name, or an inline action. |
@@ -34,7 +33,6 @@
 //! | Type | Error | What is wrong |
 //! |---|---|---|
 //! | [`RuleName`], [`PresetName`] | [`RuleNameError`], [`PresetNameError`] | The text breaks a part of the [rule for names](RuleName#the-rule-for-names). |
-//! | [`RuleUuid`], [`PresetUuid`] | [`RuleUuidError`], [`PresetUuidError`] | The text is no UUID of version 7. |
 //! | [`RuleTitle`], [`PresetTitle`] | [`RuleTitleError`], [`PresetTitleError`] | The text breaks a part of the [rule for titles](RuleTitle#the-rule-for-titles). |
 //! | [`RuleSet`] | [`RuleSetError`] | Two rules share a name. |
 //! | [`PresetSet`] | [`PresetSetError`] | Two presets share a name. |
@@ -172,11 +170,11 @@
 //!
 //! | Type | Form |
 //! |---|---|
-//! | [`RuleName`], [`PresetName`], [`RuleUuid`], [`PresetUuid`], [`RuleTitle`], [`PresetTitle`] | The text. |
+//! | [`RuleName`], [`PresetName`], [`RuleTitle`], [`PresetTitle`] | The text. |
 //! | [`Action`] | The flat map of the lie or of the incident: `{ lie: refusal, error: NOT_LEADER_OR_FOLLOWER }`. |
 //! | [`ActionRef`] | The name of a preset as text, or the map of an inline action. |
-//! | [`Preset`] | The map of its action, with a `name` key next to the others, and a `uuid` and a `title` key when it has them. |
-//! | [`Rule`] | A map with `name`, `selector` and `action`, and with `uuid`, `title`, `scope`, `trigger`, `lifetime` and `dice` when it has them. |
+//! | [`Preset`] | The map of its action, with a `name` key next to the others, and a `title` key when it has one. |
+//! | [`Rule`] | A map with `name`, `selector` and `action`, and with `title`, `scope`, `trigger`, `lifetime` and `dice` when it has them. |
 //! | [`RuleState`] | Its name: `draft`, `armed` or `disarmed`. |
 //!
 //! ```yaml
@@ -221,7 +219,6 @@ mod snapshot;
 mod state;
 mod store;
 mod title;
-mod uuid;
 
 pub use action::{Action, ActionRef};
 pub use armed::{ArmedRule, HandFiring};
@@ -236,7 +233,6 @@ pub use snapshot::{Snapshot, SnapshotError};
 pub use state::{RuleState, RuleStateError};
 pub use store::{PresetStore, RuleStore};
 pub use title::{PresetTitle, PresetTitleError, RuleTitle, RuleTitleError};
-pub use uuid::{PresetUuid, PresetUuidError, RuleUuid, RuleUuidError};
 
 /// Every item of this crate.
 ///
@@ -256,8 +252,8 @@ pub mod prelude {
     #[doc(no_inline)]
     pub use crate::{
         Action, ActionRef, ArmedRule, FiredAction, HandFiring, PassEvaluation, Preset, PresetName, PresetNameError,
-        PresetSet, PresetSetError, PresetStore, PresetTitle, PresetTitleError, PresetUuid, PresetUuidError,
-        ResolvedRule, Rule, RuleError, RuleEvaluation, RuleName, RuleNameError, RuleSet, RuleSetError, RuleState,
-        RuleStateError, RuleStore, RuleTitle, RuleTitleError, RuleUuid, RuleUuidError, Snapshot, SnapshotError,
+        PresetSet, PresetSetError, PresetStore, PresetTitle, PresetTitleError, ResolvedRule, Rule, RuleError,
+        RuleEvaluation, RuleName, RuleNameError, RuleSet, RuleSetError, RuleState, RuleStateError, RuleStore,
+        RuleTitle, RuleTitleError, Snapshot, SnapshotError,
     };
 }

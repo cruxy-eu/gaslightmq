@@ -1,5 +1,4 @@
 - name: order-acknowledgements-get-lost
-  uuid: 01a20cc8-903d-7599-92ae-4a7fd4300294
   title: Order acknowledgements get lost
   selector:
     api: Produce

@@ -30,14 +30,8 @@
 use gaslightmq_definition_conformance::{Samples, assert_store_contract};
 use gaslightmq_kernel::ApiKey;
 use gaslightmq_lie::{HangUpLie, LieDefinition};
-use gaslightmq_rule::{Preset, PresetName, PresetStore, PresetUuid, Rule, RuleName, RuleStore, RuleUuid};
+use gaslightmq_rule::{Preset, PresetName, PresetStore, Rule, RuleName, RuleStore};
 use gaslightmq_selector::{Condition, Conditions, SelectorName};
-
-/// The time someone created the definition that has a UUID, in milliseconds since the Unix epoch: 11 December 2024.
-const CREATED: u64 = 0x0193_b6c2_5f3e;
-
-/// The random bits of that UUID.
-const RANDOM: [u8; 10] = [0x0a, 0x41, 0x1c, 0x2d, 0x8e, 0x4b, 0x1f, 0x6a, 0x7d, 0x10];
 
 /// Fails when a store of presets does not do what a [`PresetStore`] does.
 ///
@@ -173,23 +167,18 @@ async fn created<S: RuleStore>(store: &S, rule: Rule) {
 }
 
 /// The presets that the contract of every store is checked with:
-/// a hang-up as someone wrote it, the same with a UUID and a title, and a silence.
+/// a hang-up as someone wrote it, the same with a title, and a silence.
 fn presets() -> Samples<Preset> {
     let hang_up = Preset::new(preset("hang-up"), HangUpLie::new());
-    let titled = hang_up
-        .clone()
-        .with_uuid(PresetUuid::new(CREATED, RANDOM))
-        .with_title("Hang up".parse().expect("a preset title"));
+    let titled = hang_up.clone().with_title("Hang up".parse().expect("a preset title"));
     let blackhole = Preset::new(preset("blackhole"), LieDefinition::Silence);
     Samples::new(hang_up, titled, blackhole)
 }
 
 /// The rules that the contract of every store is checked with:
-/// a silence on every Metadata call as someone wrote it, the same with a UUID and a title, and a silence on every Fetch.
+/// a silence on every Metadata call as someone wrote it, the same with a title, and a silence on every Fetch.
 fn rules() -> Samples<Rule> {
-    let titled = blackhole_metadata()
-        .with_uuid(RuleUuid::new(CREATED, RANDOM))
-        .with_title("Blackhole Metadata".parse().expect("a rule title"));
+    let titled = blackhole_metadata().with_title("Blackhole Metadata".parse().expect("a rule title"));
     let fetches = Rule::new(name("blackhole-fetches"), on(ApiKey::FETCH), LieDefinition::Silence);
     Samples::new(blackhole_metadata(), titled, fetches)
 }

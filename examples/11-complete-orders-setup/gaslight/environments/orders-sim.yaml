@@ -1,6 +1,5 @@
 # A fake cluster that lies: a broker, a schema registry and a proxy in front.
 name: orders-sim
-uuid: 01a20cc8-90a9-7e55-a2f0-1762e72fb21e
 
 # The broker owns the data. It answers truthfully from its World.
 broker:

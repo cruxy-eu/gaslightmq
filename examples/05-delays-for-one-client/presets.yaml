@@ -1,6 +1,5 @@
 # A preset is a lie with a name.
 - name: delay-1s
-  uuid: 01a20cc8-8f2f-71e1-9f03-acee91f2c763
   title: Delay 1 s
   lie: timing
   delay: 1s

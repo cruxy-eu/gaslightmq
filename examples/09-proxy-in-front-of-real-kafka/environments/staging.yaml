@@ -1,6 +1,5 @@
 # A proxy in front of a real cluster. There is no broker and no world file.
 name: staging
-uuid: 01a20cc8-902e-73c2-8620-ad8bf6d873be
 
 proxy:
   upstream:

@@ -156,34 +156,32 @@ impl<C: WorkspaceContext> Host<C> {
         HostChanges::new(self.changes.subscribe())
     }
 
-    /// Adds a definition to the workspace, and returns it with the UUID it got. See [`Workspace::create`].
+    /// Adds a definition to the workspace. See [`Workspace::create`].
     ///
     /// Whoever follows the host learns of it.
     ///
     /// # Errors
     ///
     /// The [`CreateError`] of the workspace.
-    pub async fn create<D: WorkspaceDefinition>(&self, definition: D) -> Result<D, CreateError> {
-        let created = self.workspace.lock().await.create(definition).await?;
-        self.publish(HostChange::DefinitionChanged {
-            name: created.name().clone().into(),
-        });
-        Ok(created)
+    pub async fn create<D: WorkspaceDefinition>(&self, definition: D) -> Result<(), CreateError> {
+        let name = definition.name().clone().into();
+        self.workspace.lock().await.create(definition).await?;
+        self.publish(HostChange::DefinitionChanged { name });
+        Ok(())
     }
 
-    /// Replaces a definition of the workspace, and returns it with the UUID it keeps. See [`Workspace::update`].
+    /// Replaces a definition of the workspace. See [`Workspace::update`].
     ///
     /// Whoever follows the host learns of it.
     ///
     /// # Errors
     ///
     /// The [`UpdateError`] of the workspace.
-    pub async fn update<D: WorkspaceDefinition>(&self, definition: D) -> Result<D, UpdateError> {
-        let updated = self.workspace.lock().await.update(definition).await?;
-        self.publish(HostChange::DefinitionChanged {
-            name: updated.name().clone().into(),
-        });
-        Ok(updated)
+    pub async fn update<D: WorkspaceDefinition>(&self, definition: D) -> Result<(), UpdateError> {
+        let name = definition.name().clone().into();
+        self.workspace.lock().await.update(definition).await?;
+        self.publish(HostChange::DefinitionChanged { name });
+        Ok(())
     }
 
     /// Removes a definition from the workspace. See [`Workspace::delete`].

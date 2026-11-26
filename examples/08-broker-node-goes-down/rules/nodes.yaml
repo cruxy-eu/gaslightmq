@@ -1,7 +1,6 @@
 # A rule can cause an incident instead of telling a lie.
 # An incident changes the fake cluster itself, for every client.
 - name: node-2-fails-on-the-50th-fetch
-  uuid: 01a20cc8-8ffc-71c1-a01b-ed8197415bb3
   title: Node 2 fails on the 50th fetch
   selector:
     api: Fetch

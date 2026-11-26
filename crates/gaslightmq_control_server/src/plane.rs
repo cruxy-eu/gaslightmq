@@ -263,7 +263,7 @@ impl<C: WorkspaceContext + 'static> ControlPlane<C> {
             .map_err(|_| EnvironmentNotRunning { environment: name })
     }
 
-    /// The environment of the workspace with that name, without its UUID.
+    /// The environment of the workspace with that name.
     async fn environment(&self, name: &EnvironmentName) -> Result<Option<Environment>, String> {
         definitions::get::<Environment, C>(&*self.host.workspace().await, name).await
     }
@@ -558,10 +558,10 @@ impl<C: WorkspaceContext + 'static> ControlPlane<C> {
     }
 }
 
-/// A rule of an environment as the control plane hands it out: without its UUID.
+/// A rule of an environment as the control plane hands it out.
 pub(crate) fn status(rule: EnvironmentRule) -> RuleStatus {
     RuleStatus {
-        rule: rule.rule.without_uuid(),
+        rule: rule.rule,
         live: rule.live,
         state: rule.state,
     }

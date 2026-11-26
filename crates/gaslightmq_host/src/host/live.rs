@@ -73,7 +73,7 @@ impl<C: WorkspaceContext> Host<C> {
         Ok(rules.into_iter().find(|rule| rule.rule.name() == name))
     }
 
-    /// Adds a live rule to an environment, disarmed, and returns it with the UUID that the workspace stamped on it.
+    /// Adds a live rule to an environment, disarmed, and returns it.
     ///
     /// The rule stays in the memory of the environment, and never in the workspace, until someone
     /// [keeps](Self::keep) it. It resolves against the workspace first, so a rule that could never work is no live
@@ -124,7 +124,6 @@ impl<C: WorkspaceContext> Host<C> {
             },
             Unresolvable::Unresolved { error } => CreateLiveRuleError::Unresolved { error },
         })?;
-        let rule = self.workspace.lock().await.stamp(rule);
         {
             let mut environments = self.environments();
             let Some(running) = environments.get_mut(environment) else {
@@ -145,7 +144,7 @@ impl<C: WorkspaceContext> Host<C> {
     }
 
     /// Replaces the live rule of an environment that has the name of `rule`, and returns it as the environment holds
-    /// it now: with the UUID it had.
+    /// it now.
     ///
     /// Everything but the name changes. A rule that is armed stays armed with the change, and none of its counters
     /// resets. Whoever follows the host learns of it.
@@ -188,25 +187,20 @@ impl<C: WorkspaceContext> Host<C> {
             },
             Unresolvable::Unresolved { error } => UpdateLiveRuleError::Unresolved { error },
         })?;
-        let rule = {
+        {
             let mut environments = self.environments();
             let Some(running) = environments.get_mut(environment) else {
                 return Err(UpdateLiveRuleError::NotRunning {
                     environment: environment.clone(),
                 });
             };
-            let Some(before) = running.live.get(&name) else {
+            let Some(live) = running.live.get_mut(&name) else {
                 return Err(not_found());
             };
-            let rule = match before.uuid() {
-                Some(uuid) => rule.with_uuid(uuid),
-                None => rule,
-            };
-            running.live.insert(name.clone(), rule.clone());
+            *live = rule.clone();
             // A rule that is not armed has no arming to keep, and arms with the change when someone arms it.
             let _ = running.engine.rules().retune(resolved);
-            rule
-        };
+        }
         self.publish(HostChange::RuleChanged {
             environment: environment.clone(),
             rule: name,
@@ -244,8 +238,7 @@ impl<C: WorkspaceContext> Host<C> {
         Ok(())
     }
 
-    /// Keeps a live rule of an environment in the workspace, under its name and its UUID, and returns it as the
-    /// workspace holds it.
+    /// Keeps a live rule of an environment in the workspace, under its name, and returns it as the workspace holds it.
     ///
     /// The rule stays in the state it has in the environment, and every other environment holds it disarmed,
     /// as every rule of the workspace. Whoever follows the host learns that the live rule left the environment,
@@ -266,17 +259,16 @@ impl<C: WorkspaceContext> Host<C> {
             };
             running.live.get(name).cloned()
         };
-        let Some(live) = live else {
+        let Some(rule) = live else {
             return Err(KeepRuleError::NotFound {
                 environment: environment.clone(),
                 rule: name.clone(),
             });
         };
-        let kept = self
-            .workspace
+        self.workspace
             .lock()
             .await
-            .keep(live)
+            .create(rule.clone())
             .await
             .map_err(|error| KeepRuleError::NotKept {
                 rule: name.clone(),
@@ -296,7 +288,7 @@ impl<C: WorkspaceContext> Host<C> {
             environment: environment.clone(),
             rule: name.clone(),
         });
-        Ok(kept)
+        Ok(rule)
     }
 
     /// Whether an environment of that name runs. Returns its name when it does not.

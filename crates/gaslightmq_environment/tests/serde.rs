@@ -33,7 +33,7 @@ fn rejects<T: DeserializeOwned + Debug>(json: &str, reason: &str) -> String {
     error
 }
 
-/// The UUID that a workspace gave the environment `plain-kafka`.
+/// A UUID, which an environment does not hold.
 const PLAIN_KAFKA_UUID: &str = "0193b6c2-5f3e-7a41-9c2d-8e4b1f6a7d10";
 
 fn name(text: &str) -> EnvironmentName {
@@ -198,50 +198,16 @@ fn an_environment_writes_its_title_when_it_has_one() {
 }
 
 #[test]
-fn an_environment_writes_its_uuid_when_the_workspace_gave_it_one() {
-    // name: plain-kafka
-    // uuid: 0193b6c2-5f3e-7a41-9c2d-8e4b1f6a7d10
-    // title: A broker that nothing lies about
-    // broker:
-    //   world: orders-sim
-    //   listen:
-    //     bootstrap: 0.0.0.0:39092
-    //     brokers: 0.0.0.0:39093-39192
-    //     advertise: localhost
-    let uuid: EnvironmentUuid = PLAIN_KAFKA_UUID.parse().unwrap();
-    let plain = Environment::new(
-        name("plain-kafka"),
-        Instances::BrokerAlone {
-            broker: broker("orders-sim"),
-            listen: listen("0.0.0.0:39092", "0.0.0.0:39093-39192", "localhost"),
-        },
-    );
-    let stored = plain
-        .clone()
-        .with_uuid(uuid)
-        .with_title("A broker that nothing lies about".parse().unwrap());
+fn an_environment_holds_no_uuid() {
     let blocks = concat!(
         r#""broker":{"world":"orders-sim","#,
         r#""listen":{"bootstrap":"0.0.0.0:39092","brokers":"0.0.0.0:39093-39192","advertise":"localhost"}}}"#,
     );
 
-    writes(
-        &stored,
-        &format!(
-            r#"{{"name":"plain-kafka","uuid":"{PLAIN_KAFKA_UUID}","title":"A broker that nothing lies about",{blocks}"#
-        ),
-    );
-    // An environment that someone wrote by hand has no UUID, and writes none.
-    writes(&plain, &format!(r#"{{"name":"plain-kafka",{blocks}"#));
-    writes(&uuid, &format!(r#""{PLAIN_KAFKA_UUID}""#));
-    rejects::<EnvironmentUuid>(
-        r#""plain-kafka""#,
-        "environment UUID \"plain-kafka\" is no UUID of version 7",
-    );
-    // A UUID of version 4.
+    // No file holds the UUID of an environment: `uuid` is a key that an environment does not have.
     rejects::<Environment>(
-        &format!(r#"{{"name":"plain-kafka","uuid":"550e8400-e29b-41d4-a716-446655440000",{blocks}"#),
-        "environment UUID \"550e8400-e29b-41d4-a716-446655440000\" is no UUID of version 7",
+        &format!(r#"{{"name":"plain-kafka","uuid":"{PLAIN_KAFKA_UUID}",{blocks}"#),
+        "unknown field `uuid`",
     );
 }
 

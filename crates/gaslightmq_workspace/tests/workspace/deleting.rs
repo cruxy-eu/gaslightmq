@@ -146,14 +146,16 @@ fn rules_layouts_and_environments_are_deleted_whenever_someone_asks() -> anyhow:
         workspace.create(OrderDesk::order_producers_from_ingest()).await?;
         workspace.create(OrderDesk::delay_1s()).await?;
         workspace.create(OrderDesk::blackhole()).await?;
-        let rule = workspace.create(OrderDesk::slow_order_producers()).await?;
-        let layout = workspace.create(OrderDesk::layout()).await?;
-        let environment = workspace.create(OrderDesk::environment()).await?;
+        workspace.create(OrderDesk::slow_order_producers()).await?;
+        workspace.create(OrderDesk::layout()).await?;
+        workspace.create(OrderDesk::environment()).await?;
 
         // Nothing refers to a rule, a layout or an environment by name.
-        workspace.delete(rule.name().clone()).await?;
-        workspace.delete(layout.name().clone()).await?;
-        workspace.delete(environment.name().clone()).await?;
+        workspace
+            .delete(OrderDesk::slow_order_producers().name().clone())
+            .await?;
+        workspace.delete(OrderDesk::layout().name().clone()).await?;
+        workspace.delete(OrderDesk::environment().name().clone()).await?;
 
         assert_eq!(workspace.stores().rules().list().await?, []);
         assert_eq!(workspace.stores().layouts().list().await?, []);
