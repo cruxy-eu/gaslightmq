@@ -184,3 +184,34 @@ async fn a_workspace_over_the_files_writes_every_change_it_lets_through() -> any
     );
     Ok(())
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_write_keeps_the_line_endings_of_its_file() -> anyhow::Result<()> {
+    let workspace = tempfile::tempdir()?;
+    let crlf = SELECTORS.replace('\n', "\r\n");
+    fs::write(workspace.path().join("selectors.yaml"), &crlf)?;
+    let stores = FileStores::open(workspace.path(), Access::ReadWrite).await?;
+
+    let fetches: SelectorName = "order-fetches".parse()?;
+    let all_fetches = Selector::new(fetches, Conditions::new().with(Condition::is(ApiKey::FETCH)))
+        .with_title("Order fetches".parse()?);
+    stores.selectors().update(all_fetches).await?;
+    let metadata = Selector::new(
+        "metadata".parse()?,
+        Conditions::new().with(Condition::is(ApiKey::METADATA)),
+    );
+    stores.selectors().create(metadata).await?;
+
+    // Every line ends in CRLF, the ones the store wrote too.
+    assert_eq!(
+        fs::read_to_string(workspace.path().join("selectors.yaml"))?,
+        format!(
+            "{}\r\n- name: metadata\r\n  match:\r\n    api: Metadata\r\n",
+            crlf.replace(
+                "  match:\r\n    api: Fetch\r\n    topic: orders\r\n",
+                "  match:\r\n    api: Fetch\r\n"
+            )
+        )
+    );
+    Ok(())
+}

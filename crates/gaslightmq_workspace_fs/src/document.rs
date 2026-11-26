@@ -98,7 +98,7 @@ impl Document {
         };
         let mut after = String::with_capacity(text.len() + written.len());
         after.push_str(&text[..item.range.start]);
-        after.push_str(&placed(written, in_list, item.indent));
+        after.push_str(&placed(written, in_list, item.indent, newline_of(text)));
         after.push_str(&text[item.range.end..]);
         Ok(after)
     }
@@ -111,14 +111,15 @@ impl Document {
     ///
     /// When the list is in flow style and holds items, which a change does not edit.
     pub(crate) fn append(&self, text: &str, written: &str) -> Result<String, InFlow> {
+        let newline = newline_of(text);
         match self {
             Self::Nothing | Self::One(_) => {
                 let mut after = text.to_owned();
                 if !after.is_empty() && !after.ends_with('\n') {
-                    after.push('\n');
+                    after.push_str(newline);
                 }
-                after.push_str(&placed(written, true, 0));
-                after.push('\n');
+                after.push_str(&placed(written, true, 0, newline));
+                after.push_str(newline);
                 Ok(after)
             }
             Self::List(list) if !list.block && !list.items.is_empty() => Err(InFlow),
@@ -128,19 +129,19 @@ impl Document {
                     let indent = column_of(text, list.span.start);
                     let mut after = String::with_capacity(text.len() + written.len());
                     after.push_str(&text[..list.span.start]);
-                    after.push_str(&placed(written, true, indent));
+                    after.push_str(&placed(written, true, indent, newline));
                     after.push_str(&text[list.span.end..]);
                     Ok(after)
                 }
                 Some(previous) => {
                     let mut after = String::with_capacity(text.len() + written.len());
                     after.push_str(&text[..previous.range.end]);
-                    after.push('\n');
+                    after.push_str(newline);
                     if list.spaced {
-                        after.push('\n');
+                        after.push_str(newline);
                     }
                     after.push_str(&" ".repeat(previous.indent));
-                    after.push_str(&placed(written, true, previous.indent));
+                    after.push_str(&placed(written, true, previous.indent, newline));
                     after.push_str(&text[previous.range.end..]);
                     Ok(after)
                 }
@@ -170,20 +171,21 @@ impl Document {
             None => text.len(),
         };
 
+        let newline = newline_of(text);
         let before = &text[..start];
         let mut after = &text[end..];
-        let blank_before = before.is_empty() || before.ends_with("\n\n");
-        if blank_before && after.starts_with('\n') {
-            after = &after[1..];
+        let blank_before = before.is_empty() || before.ends_with(&newline.repeat(2));
+        if blank_before && after.starts_with(newline) {
+            after = &after[newline.len()..];
         }
         let mut text = String::with_capacity(before.len() + after.len());
         text.push_str(before);
         text.push_str(after);
         if after.is_empty() {
-            let kept = text.trim_end_matches('\n').len();
+            let kept = text.trim_end_matches(['\r', '\n']).len();
             text.truncate(kept);
             if kept > 0 {
-                text.push('\n');
+                text.push_str(newline);
             }
         }
         Ok(text)
@@ -211,8 +213,19 @@ impl Item {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct InFlow;
 
-/// The written form of a definition as the text of an item: `- ` before a list item, and the indentation of its place.
-fn placed(written: &str, in_list: bool, indent: usize) -> String {
+/// The line ending of a text: `\r\n` when its first line ends so, and `\n` otherwise.
+///
+/// A change writes its lines with the ending of the file, so that a file never mixes them.
+fn newline_of(text: &str) -> &'static str {
+    match text.find('\n') {
+        Some(newline) if text[..newline].ends_with('\r') => "\r\n",
+        _ => "\n",
+    }
+}
+
+/// The written form of a definition as the text of an item: `- ` before a list item, the indentation of its place,
+/// and the line ending of its file.
+fn placed(written: &str, in_list: bool, indent: usize, newline: &str) -> String {
     let pad = " ".repeat(indent);
     let mut placed = String::with_capacity(written.len());
     for (index, line) in written.trim_end_matches('\n').split('\n').enumerate() {
@@ -221,7 +234,7 @@ fn placed(written: &str, in_list: bool, indent: usize) -> String {
                 placed.push_str("- ");
             }
         } else {
-            placed.push('\n');
+            placed.push_str(newline);
             if !line.is_empty() {
                 placed.push_str(&pad);
                 if in_list {
@@ -612,6 +625,30 @@ mod tests {
                 .replace(text, 0, "name: shop\nbroker:\n  world: orders\n")
                 .expect("one node"),
             "# The shop.\nname: shop\nbroker:\n  world: orders\n"
+        );
+    }
+
+    #[test]
+    fn a_file_with_crlf_line_endings_keeps_them_in_every_line_a_change_touches() {
+        let text = SELECTORS.replace('\n', "\r\n");
+        let document = parsed(&text);
+        let written = "name: order-fetches\nmatch:\n  api: Fetch\n  topic: orders\n";
+
+        let replaced = document.replace(&text, 1, written).expect("a list in block style");
+        let appended = document
+            .append(&text, "name: metadata\nmatch:\n  api: Metadata\n")
+            .expect("a list");
+        let removed = document.remove(&text, 0).expect("a list in block style");
+
+        for after in [&replaced, &appended, &removed] {
+            assert_eq!(after.matches('\n').count(), after.matches("\r\n").count(), "{after:?}");
+        }
+        assert_eq!(
+            replaced,
+            text.replace(
+                "  match:\r\n    api: Fetch\r\n",
+                "  match:\r\n    api: Fetch\r\n    topic: orders\r\n"
+            )
         );
     }
 

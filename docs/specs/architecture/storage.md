@@ -277,6 +277,7 @@ So what it writes has to read well in a diff.
   Its keys come in a fixed order, the order of the examples in these documents.
   A definition that GaslightMQ wrote once never changes again in a diff, unless its content changes.
   In a list, it is an item that starts with `- `, and it keeps the indentation of the list.
+  Its lines end as the lines of its file do, in `\n` or in `\r\n`, so a file never mixes them.
 - **A new definition goes where its kind goes.**
   A selector or a preset comes after the last one of its file, with an empty line before it when the first two have one between them.
   A rule goes to `rules/<name>.yaml`, after the rules that the file holds already.
