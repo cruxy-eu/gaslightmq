@@ -34,6 +34,9 @@ const OPERATIONS: &str = "/api/operations";
 /// The path of the live stream.
 const STREAM: &str = "/api/stream";
 
+/// The path of the health of the process, which a probe asks without a request body.
+const HEALTH: &str = "/health";
+
 /// The HTTP and WebSocket server of the control plane, in front of one host.
 ///
 /// It serves the operations of `gaslightmq_control_api` and the live stream, as
@@ -163,6 +166,7 @@ impl ControlServer {
         let routes = Router::new()
             .route(OPERATIONS, post(operation::<C, K>))
             .route(STREAM, get(stream::<C, K>))
+            .route(HEALTH, get(health::<C, K>))
             .fallback(ui::serve)
             .with_state(shared);
         let mut until_stopped = stopped;
@@ -257,6 +261,19 @@ async fn operation<C: WorkspaceContext + 'static, K: WaitableClock>(
         Reply::Failed(body) => (StatusCode::UNPROCESSABLE_ENTITY, body),
         Reply::Refused(error @ RequestError::NotServed { .. }) => (StatusCode::NOT_IMPLEMENTED, form(&error)),
         Reply::Refused(error @ RequestError::Unreadable { .. }) => (StatusCode::BAD_REQUEST, form(&error)),
+    };
+    (status, [(header::CONTENT_TYPE, "application/json")], body).into_response()
+}
+
+/// Answers a probe of the health of the process, such as one of Kubernetes or of a load balancer.
+///
+/// It answers as [`CheckHealth`] does, from the same state of the host: `200 OK` when every environment that the
+/// process was started with runs, and `503 Service Unavailable` when one does not.
+/// The body is the list of those environments either way: the form of [`Health`].
+async fn health<C: WorkspaceContext + 'static, K: WaitableClock>(State(shared): State<Shared<C, K>>) -> Response {
+    let (status, body) = match shared.plane.health() {
+        Ok(health) => (StatusCode::OK, form(&health)),
+        Err(unhealthy) => (StatusCode::SERVICE_UNAVAILABLE, form(&unhealthy)),
     };
     (status, [(header::CONTENT_TYPE, "application/json")], body).into_response()
 }
