@@ -212,7 +212,7 @@ Undo reverses what someone set, and never what happened.
 | Creating, changing or deleting a definition. | A lie or an incident that fired, by a trigger or by hand. |
 | Making, changing or deleting a live rule. | A step that advanced. |
 | Arming and disarming a rule. | What the traffic counted and spent: counters and budgets. |
-| A pad press and an encoder turn. | Keeping a live rule, and reloading the workspace. |
+| A pad press and an encoder turn. | Keeping a live rule, and reloading or saving the workspace. |
 | Activating and deactivating a scenario. | Starting or stopping an environment, a recording or a capture, and closing a session. |
 
 A client that got an error, or that waited, has already reacted.
