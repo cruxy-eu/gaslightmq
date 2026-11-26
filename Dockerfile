@@ -37,4 +37,9 @@ ENV GMQ_CONTROL_LISTEN=0.0.0.0:7092
 # 9092: where the clients of `gmq proxy` connect first. 19092-19191: its brokers. 7092: the control plane and the UI.
 EXPOSE 9092 19092-19191 7092
 
+# Healthy while every environment that the process was started with runs. `gmq health` asks the control plane over
+# localhost, and fails when nothing answers.
+HEALTHCHECK --interval=5s --timeout=3s --start-period=10s --retries=3 \
+    CMD ["/usr/local/bin/gmq", "health"]
+
 ENTRYPOINT ["/usr/local/bin/gmq"]
