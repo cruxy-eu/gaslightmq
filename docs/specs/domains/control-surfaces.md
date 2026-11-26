@@ -155,9 +155,13 @@ Several people can play one environment, each at a surface of their own.
 - **The engine counts the holds of a rule.**
   A press in hold adds a hold and arms the rule, and its release takes one hold away.
   The rule disarms when its last hold goes, so it stays armed while anyone still holds its pad.
+  A press in hold on an armed rule adds a hold too, so its release disarms a rule that nobody else holds.
+- **A release ends the hold of its own press.**
+  The engine numbers every hold and answers the press with it, and the release names it.
+  When someone lets go before the answer comes, the surface sends the release as soon as it does.
 - **A disarm ends every hold.**
-  When someone disarms a held rule, by a press in latch, by a command or by a lifetime, the rule has no holds left.
-  A release that comes after it changes nothing.
+  When someone disarms a held rule, by a press in latch, by a command, by a lifetime or by deleting it, the rule has no holds left.
+  A release that comes after it changes nothing, also when someone held the rule again since.
 
 ## Undo and redo
 
