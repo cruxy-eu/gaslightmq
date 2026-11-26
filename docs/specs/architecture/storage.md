@@ -247,11 +247,15 @@ It is an [operation of the control plane](control-plane.md#resources): `gmq relo
   It applies as a whole or not at all.
 - **A reload that does not fit changes nothing.**
   When the files cannot be read, or the definitions in them do not [fit each other](#validation), the reload fails with every error.
-  It also fails when a new rule of the files has the name of a [live rule](control-plane.md#resources) of an environment that runs.
+  It also fails when a new rule of the files has the name of a [live rule](control-plane.md#resources) of an environment that runs,
+  whether the workspace or a scenario holds that rule,
+  and when a live rule that is armed would not resolve against the files, because they no longer have its selector or its preset.
   The engine keeps what it holds, armed rules included.
 - **An armed rule follows a reload.**
-  The engine resolves every armed rule that the reload changed, and replaces it in every environment that armed it.
+  The engine resolves every armed rule of every environment that runs against what the files hold,
+  and replaces each one that resolves to another rule than the one that is armed: its definition changed, or a selector or a preset that it uses.
   The rule stays armed, and it keeps its counters and its budget, as after a change of a parameter.
+  A rule of the workspace that the reload takes away while it is armed disarms, and the journal records that too.
 - **A change that a reload takes in has the surface `file`.**
   The [journal](../domains/observation.md#journal) records each one, whoever asked for the reload.
   Nobody undoes it in the UI.
@@ -340,6 +344,7 @@ A reload still works, because it only reads.
 Whoever starts the process says that the workspace is read-only.
 The engine does not guess it from the permissions of the files.
 The stores of the files then refuse every write, and the error says that the workspace is read-only.
+The [snapshot](control-plane.md#live-stream) says it beforehand, so a surface can leave out what would write.
 
 ## Environments
 

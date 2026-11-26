@@ -30,6 +30,7 @@ use gaslightmq_workspace::{
 use tokio::sync::broadcast;
 use tokio::task::JoinHandle;
 
+use self::follow::Unfollowed;
 use crate::calls::{Watched, lock};
 use crate::holds::Holds;
 use crate::revisions::RuleRevisions;
@@ -40,8 +41,10 @@ use crate::{
     journaling,
 };
 
+mod follow;
 mod live;
 mod pads;
+mod reload;
 mod watch;
 
 /// One process with several environments: it runs the proxy of each, and shares the workspace between them.
@@ -307,9 +310,15 @@ impl<C: WorkspaceContext> Host<C> {
     /// `from` says where the change comes from, and the journal of every environment that runs records it.
     /// Whoever follows the host learns of the change.
     ///
+    /// Every armed rule follows the change, as after a [reload](Self::reload): a rule of the workspace whose
+    /// definition changed, and a rule that uses a selector or a preset that changed, is replaced in every environment
+    /// that armed it, and keeps its counters and its budget. Whoever follows the host learns that an armed rule of the
+    /// workspace changed with its definition.
+    ///
     /// # Errors
     ///
     /// - [`UpdateDefinitionError::OtherRun`] when the change expects a revision of another run.
+    /// - [`UpdateDefinitionError::Unresolved`] when a live rule that is armed would not resolve with the change.
     /// - [`UpdateDefinitionError::NotUpdated`] with the [`UpdateError`](gaslightmq_workspace::UpdateError) of the
     ///   workspace, which is [`Changed`](gaslightmq_workspace::UpdateError::Changed) when the definition has
     ///   another revision than the change expects.
@@ -324,16 +333,48 @@ impl<C: WorkspaceContext> Host<C> {
             .expected(expects)
             .map_err(|run| UpdateDefinitionError::OtherRun { run })?;
         let name: DefinitionName = definition.name().clone().into();
-        let revision = {
-            // The workspace stays taken until the journals hold the change, so their entries come in its order.
+        let (revision, following) = {
+            // The workspace stays taken until every armed rule follows the change and the journals hold it,
+            // so their entries come in its order.
             let mut workspace = self.workspace.lock().await;
+            let followings = match workspace.preview_update(definition.clone()).await {
+                Some(after) => self.followings(
+                    after.definitions::<Rule>(),
+                    &BTreeSet::new(),
+                    after.definitions::<Selector>(),
+                    after.definitions::<Preset>(),
+                ),
+                None => Ok(BTreeMap::new()),
+            };
+            let followings = followings.map_err(
+                |Unfollowed {
+                     environment,
+                     rule,
+                     reason,
+                 }| UpdateDefinitionError::Unresolved {
+                    name: name.clone(),
+                    environment,
+                    rule,
+                    reason,
+                },
+            )?;
             let updated = workspace.update(definition, expects).await;
             let revision = updated.map_err(|error| UpdateDefinitionError::NotUpdated { error })?;
+            let changed: BTreeSet<RuleName> = match &name {
+                DefinitionName::Rule(rule) => BTreeSet::from([rule.clone()]),
+                _ => BTreeSet::new(),
+            };
             let definition = journaling::definition(&name);
-            self.record_everywhere(&Change::DefinitionChanged { definition }, from, revision);
-            revision
+            let following = self.follow_everywhere(&followings, &changed, |running, _| {
+                let definition = definition.clone();
+                running.record(Change::DefinitionChanged { definition }, from, revision);
+            });
+            (revision, following)
         };
         self.publish(HostChange::DefinitionChanged { name });
+        for (environment, rule) in following {
+            self.publish(HostChange::RuleChanged { environment, rule });
+        }
         Ok(revision)
     }
 
@@ -344,9 +385,15 @@ impl<C: WorkspaceContext> Host<C> {
     /// `from` says where the change comes from, and the journal of every environment that runs records it.
     /// Whoever follows the host learns of the change.
     ///
+    /// A rule of the workspace that is armed disarms in every environment that armed it, as after a
+    /// [reload](Self::reload) that takes it away: the journal records that it disarmed, and then that it went,
+    /// both with the revision of the delete.
+    ///
     /// # Errors
     ///
     /// - [`DeleteDefinitionError::OtherRun`] when the change expects a revision of another run.
+    /// - [`DeleteDefinitionError::Unresolved`] when a live rule that is armed uses the definition, and would not
+    ///   resolve without it.
     /// - [`DeleteDefinitionError::NotDeleted`] with the [`DeleteError`](gaslightmq_workspace::DeleteError) of the
     ///   workspace, which is [`Changed`](gaslightmq_workspace::DeleteError::Changed) when the definition has
     ///   another revision than the change expects.
@@ -361,16 +408,53 @@ impl<C: WorkspaceContext> Host<C> {
             .expected(expects)
             .map_err(|run| DeleteDefinitionError::OtherRun { run })?;
         let name = name.into();
-        let revision = {
-            // The workspace stays taken until the journals hold the change, so their entries come in its order.
+        let (revision, following) = {
+            // The workspace stays taken until every armed rule follows the change and the journals hold it,
+            // so their entries come in its order.
             let mut workspace = self.workspace.lock().await;
+            let gone: BTreeSet<RuleName> = match &name {
+                DefinitionName::Rule(rule) => BTreeSet::from([rule.clone()]),
+                _ => BTreeSet::new(),
+            };
+            let followings = match workspace.preview_delete(name.clone()).await {
+                Some(after) => self.followings(
+                    after.definitions::<Rule>(),
+                    &gone,
+                    after.definitions::<Selector>(),
+                    after.definitions::<Preset>(),
+                ),
+                None => Ok(BTreeMap::new()),
+            };
+            let followings = followings.map_err(
+                |Unfollowed {
+                     environment,
+                     rule,
+                     reason,
+                 }| DeleteDefinitionError::Unresolved {
+                    name: name.clone(),
+                    environment,
+                    rule,
+                    reason,
+                },
+            )?;
             let deleted = workspace.delete(name.clone(), expects).await;
             let revision = deleted.map_err(|error| DeleteDefinitionError::NotDeleted { error })?;
             let definition = journaling::definition(&name);
-            self.record_everywhere(&Change::DefinitionDeleted { definition }, from, revision);
-            revision
+            let following = self.follow_everywhere(&followings, &BTreeSet::new(), |running, disarmed| {
+                for rule in disarmed {
+                    // Every arming in a journal ends with a disarm, also the one of a rule that goes.
+                    let rule = journaling::rule(rule);
+                    running.record(Change::RuleDisarmed { rule }, from, revision);
+                }
+                let definition = definition.clone();
+                running.record(Change::DefinitionDeleted { definition }, from, revision);
+            });
+            (revision, following)
         };
         self.publish(HostChange::DefinitionDeleted { name });
+        for (environment, rule) in following {
+            self.publish(HostChange::RuleChanged { environment, rule });
+        }
         Ok(revision)
     }
 

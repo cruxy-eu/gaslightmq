@@ -15,7 +15,7 @@ use tokio::sync::watch;
 use tokio::time::MissedTickBehavior;
 
 use crate::StatsInterval;
-use crate::definitions::{named, reference};
+use crate::definitions::{loses_comment, named, reference};
 use crate::plane::{Change, ControlPlane, session_status, status};
 use crate::revisions::revision;
 use crate::server::stopped;
@@ -87,9 +87,14 @@ impl<C: WorkspaceContext + 'static> Feed<C> {
             HostChange::DefinitionChanged { name } => {
                 let workspace = self.plane.host().workspace().await;
                 let definition = named(&*workspace, &name).await.ok()??;
-                // The definition and its revision are read as one: nobody changes the workspace in between.
+                // The definition and what is kept beside it are read as one: nobody changes the workspace in between.
+                let loses_comment = loses_comment(&*workspace, &name).await.ok()?;
                 let revision = revision(workspace.revision(name));
-                Some(StreamMessage::DefinitionChanged { definition, revision })
+                Some(StreamMessage::DefinitionChanged {
+                    definition,
+                    revision,
+                    loses_comment,
+                })
             }
             HostChange::DefinitionDeleted { name } => Some(StreamMessage::DefinitionDeleted { name: reference(name) }),
             HostChange::RuleChanged { environment, rule } => {

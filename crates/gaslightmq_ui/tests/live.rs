@@ -68,6 +68,7 @@ impl Workspace {
         let told = |definition| DefinitionStatus {
             definition,
             revision: TOLD,
+            loses_comment: false,
         };
         StreamMessage::Snapshot(ProcessState {
             run: RUN.parse().unwrap(),
@@ -79,6 +80,7 @@ impl Workspace {
                 ..Definitions::default()
             },
             environments: running.iter().map(|name| Self::running(name)).collect(),
+            read_only: false,
         })
     }
 
@@ -332,6 +334,7 @@ mod process {
         live.apply(StreamMessage::DefinitionChanged {
             definition: AnyDefinition::Rule(Workspace::rule()),
             revision: TOLD,
+            loses_comment: false,
         });
 
         let process = live.process().unwrap();
@@ -378,6 +381,7 @@ mod process {
         live.apply(StreamMessage::DefinitionChanged {
             definition: AnyDefinition::Rule(Workspace::rule()),
             revision: TOLD,
+            loses_comment: false,
         });
         live.apply(StreamMessage::RuleChanged {
             environment: staging.clone(),

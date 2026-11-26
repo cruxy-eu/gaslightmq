@@ -379,6 +379,11 @@ pub enum KeepRuleError {
     /// The rule does not fit the workspace any more. `reason` says what is wrong.
     #[error("rule {:?} does not fit the workspace: {reason}", .rule.as_str())]
     DoesNotFit { rule: RuleName, reason: String },
+    /// Someone changed the file where the rule would go since the process read it, and the process wrote nothing:
+    /// the live rule is still there. A [reload](crate::ReloadWorkspace) takes the edit in, and the keep can come
+    /// again on top of it. `reason` says which file changed, and how: its bytes changed, it is gone, or it exists now.
+    #[error("rule {:?} was not kept, because {reason}", .rule.as_str())]
+    ChangedOutside { rule: RuleName, reason: String },
     /// A store could not keep the rule. `reason` is what the store said.
     #[error("rule {:?} was not kept: {reason}", .rule.as_str())]
     StoreFailed { rule: RuleName, reason: String },

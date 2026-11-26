@@ -101,6 +101,7 @@ gaslightmq_trigger = { path = "crates/gaslightmq_trigger" }
 gaslightmq_wire = { path = "crates/gaslightmq_wire" }
 gaslightmq_wire_edit = { path = "crates/gaslightmq_wire_edit" }
 gaslightmq_workspace = { path = "crates/gaslightmq_workspace" }
+gaslightmq_workspace_fs = { path = "crates/gaslightmq_workspace_fs" }
 # Only tests and examples use it: they return `anyhow::Result<()>`. No crate names it in its API or outside them.
 anyhow = "1"
 arc-swap = "1"

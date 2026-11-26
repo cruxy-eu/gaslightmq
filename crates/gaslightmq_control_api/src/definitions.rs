@@ -194,14 +194,16 @@ impl From<EnvironmentName> for DefinitionRef {
     }
 }
 
-/// A definition of the workspace, with what the process keeps beside it: its revision.
+/// A definition of the workspace, with what the process keeps beside it: its revision, and whether a write of it
+/// would lose a comment.
 ///
 /// A definition holds what a person writes, and nothing else.
 /// Live state travels beside it, never inside it: the definition is one key, and its [`Revision`] is a key next to
-/// it.
+/// it, as is whether a write would lose a comment that someone wrote in its file.
 ///
 /// With `serde`, it is a map of its fields:
-/// `{ "definition": { "name": "slow-order-producers", … }, "revision": 7 }`.
+/// `{ "definition": { "name": "slow-order-producers", … }, "revision": 7, "loses-comment": true }`.
+/// A definition whose write loses nothing leaves `loses-comment` out.
 ///
 /// ```
 /// use gaslightmq_control_api::prelude::*;
@@ -213,7 +215,7 @@ impl From<EnvironmentName> for DefinitionRef {
 ///     "order-producers".parse::<SelectorName>().expect("a selector name"),
 ///     "delay-1s".parse::<PresetName>().expect("a preset name"),
 /// );
-/// let held = DefinitionStatus { definition, revision: Revision::new(7) };
+/// let held = DefinitionStatus { definition, revision: Revision::new(7), loses_comment: false };
 /// assert_eq!(
 ///     serde_json::to_value(&held).expect("an answer has a form"),
 ///     serde_json::json!({
@@ -229,6 +231,10 @@ pub struct DefinitionStatus<D> {
     pub definition: D,
     /// The revision of the definition: the number of the change that last created or updated it.
     pub revision: Revision,
+    /// Whether a write of the definition would lose a comment that someone wrote inside it, in its file.
+    /// A write puts the definition in its own written form, so the UI asks before it saves an edit of it.
+    #[serde(rename = "loses-comment", default, skip_serializing_if = "std::ops::Not::not")]
+    pub loses_comment: bool,
 }
 
 /// Every definition of the workspace, by kind, each with its revision.
@@ -474,6 +480,11 @@ pub enum CreateDefinitionError {
     /// `reason` says everything that would be wrong.
     #[error("{name} does not fit the workspace: {reason}")]
     DoesNotFit { name: DefinitionRef, reason: String },
+    /// Someone changed the file where the definition would go since the process read it, and the process wrote
+    /// nothing. A [reload](crate::ReloadWorkspace) takes the edit in, and the create can come again on top of it.
+    /// `reason` says which file changed, and how: its bytes changed, it is gone, or it exists now.
+    #[error("{name} was not created, because {reason}")]
+    ChangedOutside { name: DefinitionRef, reason: String },
     /// A store could not read its definitions, or could not keep this one. `reason` is what the store said.
     #[error("{name} was not created: {reason}")]
     StoreFailed { name: DefinitionRef, reason: String },
@@ -511,6 +522,25 @@ pub enum UpdateDefinitionError {
     /// the definition itself, or the definitions that use it. `reason` says everything that would be wrong.
     #[error("{name} does not fit the workspace: {reason}")]
     DoesNotFit { name: DefinitionRef, reason: String },
+    /// A live rule that is armed in the environment would not fit the workspace with the change, so it could not
+    /// follow it: the rule could not fire with the selector or the preset as the change leaves it.
+    /// Disarm or delete the live rule first. `reason` says what is wrong with it.
+    #[error(
+        "{name} was not updated: rule {:?}, which is armed in environment {:?}, would not fit it: {reason}",
+        .rule.as_str(),
+        .environment.as_str()
+    )]
+    LiveRuleDoesNotFit {
+        name: DefinitionRef,
+        environment: EnvironmentName,
+        rule: RuleName,
+        reason: String,
+    },
+    /// Someone changed the file of the definition since the process read it, and the process wrote nothing.
+    /// A [reload](crate::ReloadWorkspace) takes the edit in, and the update can come again on top of it.
+    /// `reason` says which file changed, and how: its bytes changed, it is gone, or it exists now.
+    #[error("{name} was not updated, because {reason}")]
+    ChangedOutside { name: DefinitionRef, reason: String },
     /// A store could not read its definitions, or could not keep the change. `reason` is what the store said.
     #[error("{name} was not updated: {reason}")]
     StoreFailed { name: DefinitionRef, reason: String },
@@ -550,6 +580,24 @@ pub enum DeleteDefinitionError {
         name: DefinitionRef,
         users: Vec<DefinitionRef>,
     },
+    /// A live rule that is armed in the environment uses the definition, and would not fit the workspace without it.
+    /// Disarm or delete the live rule first. `reason` says what is wrong with it.
+    #[error(
+        "{name} was not deleted: rule {:?}, which is armed in environment {:?}, would not fit it: {reason}",
+        .rule.as_str(),
+        .environment.as_str()
+    )]
+    LiveRuleDoesNotFit {
+        name: DefinitionRef,
+        environment: EnvironmentName,
+        rule: RuleName,
+        reason: String,
+    },
+    /// Someone changed the file of the definition since the process read it, and the process wrote nothing.
+    /// A [reload](crate::ReloadWorkspace) takes the edit in, and the delete can come again on top of it.
+    /// `reason` says which file changed, and how: its bytes changed, it is gone, or it exists now.
+    #[error("{name} was not deleted, because {reason}")]
+    ChangedOutside { name: DefinitionRef, reason: String },
     /// A store could not read its definitions, or could not remove this one. `reason` is what the store said.
     #[error("{name} was not deleted: {reason}")]
     StoreFailed { name: DefinitionRef, reason: String },

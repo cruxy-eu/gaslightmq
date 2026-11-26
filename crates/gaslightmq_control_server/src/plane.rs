@@ -16,12 +16,12 @@ use gaslightmq_host::{
     EnvironmentRule, EnvironmentRulesError, EnvironmentStartError, Host, ReadSentenceError,
 };
 use gaslightmq_quick_inject::{CompletionKind, Sentence};
-use gaslightmq_workspace::{CreateError, WorkspaceContext};
+use gaslightmq_workspace::{CreateError, DefinitionChange as Changed, ReloadError, WorkspaceContext};
 use serde::Serialize;
 use tokio::sync::broadcast;
 
 use crate::StreamBacklog;
-use crate::definitions::{self, DefinitionOperations, Editable, each, rule_holder};
+use crate::definitions::{self, DefinitionOperations, Editable, each, reference, rule_holder};
 use crate::revisions::{expected, revised, revision, run};
 
 /// What the server answers a request with, before it travels.
@@ -176,6 +176,7 @@ impl<C: WorkspaceContext + 'static> ControlPlane<C> {
             AnyOperation::QueryJournal(query) => {
                 Reply::of::<QueryJournal>(self.journal(query.environment, query.after))
             }
+            AnyOperation::ReloadWorkspace(_) => Reply::of::<ReloadWorkspace>(self.reload().await),
         }
     }
 
@@ -212,6 +213,37 @@ impl<C: WorkspaceContext + 'static> ControlPlane<C> {
         DefinitionOperations::delete(&self.host, delete, from).await
     }
 
+    /// Reads the files of the workspace again, through the host, which records what changed and tells whoever
+    /// follows it. Whoever asks, the changes come from the files.
+    async fn reload(&self) -> Result<Reloaded, ReloadWorkspaceError> {
+        use gaslightmq_host::ReloadWorkspaceError as Host;
+        match self.host.reload().await {
+            Ok(reloaded) => Ok(Reloaded {
+                revision: revision(reloaded.revision),
+                changes: reloaded.changes.into_iter().map(definition_change).collect(),
+            }),
+            Err(Host::NameTaken { rule, environment }) => Err(ReloadWorkspaceError::NameTaken {
+                rule,
+                holder: RuleHolder::Environment(environment),
+            }),
+            Err(Host::Unresolved {
+                environment,
+                rule,
+                reason,
+            }) => Err(ReloadWorkspaceError::LiveRuleDoesNotFit {
+                environment,
+                rule,
+                reason,
+            }),
+            Err(Host::NotReloaded {
+                error: ReloadError::Invalid { errors },
+            }) => Err(ReloadWorkspaceError::DoesNotFit { reason: each(&errors) }),
+            Err(Host::NotReloaded {
+                error: ReloadError::StoreFailed { reason },
+            }) => Err(ReloadWorkspaceError::StoreFailed { reason }),
+        }
+    }
+
     // The environments
 
     async fn list_environments(&self) -> Result<Vec<EnvironmentStatus>, ListDefinitionsError> {
@@ -220,25 +252,40 @@ impl<C: WorkspaceContext + 'static> ControlPlane<C> {
         let running = self.host.running();
         Ok(environments
             .into_iter()
-            .map(|DefinitionStatus { definition, revision }| EnvironmentStatus {
-                running: running.contains(definition.name()),
-                environment: definition,
-                revision,
-            })
+            .map(
+                |DefinitionStatus {
+                     definition,
+                     revision,
+                     loses_comment,
+                 }| EnvironmentStatus {
+                    running: running.contains(definition.name()),
+                    environment: definition,
+                    revision,
+                    loses_comment,
+                },
+            )
             .collect())
     }
 
     async fn get_environment(&self, name: EnvironmentName) -> Result<EnvironmentStatus, GetDefinitionError> {
         let found = {
             let workspace = self.host.workspace().await;
-            let environment = definitions::get::<Environment, C>(&*workspace, &name).await;
-            environment.map(|found| found.map(|environment| definitions::with_revision(&*workspace, environment)))
+            match definitions::get::<Environment, C>(&*workspace, &name).await {
+                Ok(Some(environment)) => definitions::with_revision(&*workspace, environment).await.map(Some),
+                Ok(None) => Ok(None),
+                Err(reason) => Err(reason),
+            }
         };
         match found {
-            Ok(Some(DefinitionStatus { definition, revision })) => Ok(EnvironmentStatus {
+            Ok(Some(DefinitionStatus {
+                definition,
+                revision,
+                loses_comment,
+            })) => Ok(EnvironmentStatus {
                 running: self.host.running().contains(&name),
                 environment: definition,
                 revision,
+                loses_comment,
             }),
             Ok(None) => Err(GetDefinitionError::NotFound { name: name.into() }),
             Err(reason) => Err(GetDefinitionError::StoreFailed {
@@ -440,10 +487,8 @@ impl<C: WorkspaceContext + 'static> ControlPlane<C> {
                     rule,
                     reason: each(&errors),
                 },
-                // The control plane has no answer of its own yet for a file that someone changed since it was read.
-                CreateError::ChangedOutside { reason, .. } | CreateError::StoreFailed { reason, .. } => {
-                    KeepRuleError::StoreFailed { rule, reason }
-                }
+                CreateError::ChangedOutside { reason, .. } => KeepRuleError::ChangedOutside { rule, reason },
+                CreateError::StoreFailed { reason, .. } => KeepRuleError::StoreFailed { rule, reason },
             }),
         }
     }
@@ -714,9 +759,11 @@ impl<C: WorkspaceContext + 'static> ControlPlane<C> {
                 environments.push(environment);
             }
         }
+        let read_only = self.host.workspace().await.read_only();
         Ok(ProcessState {
             run: run(self.host.run()),
             definitions,
+            read_only,
             environments,
         })
     }
@@ -748,6 +795,15 @@ pub(crate) fn status(rule: EnvironmentRule) -> RuleStatus {
         live: rule.live,
         state: rule.state,
         revision: revision(rule.revision),
+    }
+}
+
+/// What a reload changed in one definition, as the control plane writes it.
+fn definition_change(change: Changed) -> DefinitionChange {
+    match change {
+        Changed::Created(name) => DefinitionChange::Created(reference(name)),
+        Changed::Updated(name) => DefinitionChange::Updated(reference(name)),
+        Changed::Deleted(name) => DefinitionChange::Deleted(reference(name)),
     }
 }
 

@@ -229,6 +229,10 @@ impl<D: FileDefinition> Store<D> for FileStore<D> {
         Ok(lock(&self.shared.held).would_lose_comment(name))
     }
 
+    fn read_only(&self) -> bool {
+        self.shared.access == Access::ReadOnly
+    }
+
     async fn read_again(&self) -> Result<Option<Vec<D>>, StoreReadError> {
         let read = self.read(|shared, reading| {
             let definitions = reading.list();

@@ -9,6 +9,7 @@
 //! |---|---|
 //! | [`Workspace`] | The door for every change: create, update, delete, validate and reload. |
 //! | [`Reload`], [`DefinitionChange`] | A reload that fits and is not taken in yet, and what it changes in one definition. |
+//! | [`Preview`] | What the stores would hold after an update or a delete, which nobody asked for yet. |
 //! | [`WorkspaceContext`] | Everything a workspace is handed, as one type: its stores. |
 //! | [`Stores`] | The six stores that a workspace works over, one for each kind. |
 //! | [`WorkspaceDefinition`] | A definition of a kind that a workspace holds. |
@@ -121,7 +122,7 @@ pub use memory::{MemoryContext, MemoryStores};
 pub use name::DefinitionName;
 pub use revision::{Revision, RevisionCounter};
 pub use stores::Stores;
-pub use workspace::{DefinitionChange, Reload, Workspace};
+pub use workspace::{DefinitionChange, Preview, Reload, Workspace};
 
 /// Every item of this crate.
 ///
@@ -141,8 +142,9 @@ pub use workspace::{DefinitionChange, Reload, Workspace};
 pub mod prelude {
     #[doc(no_inline)]
     pub use crate::{
-        CreateError, DefinitionChange, DefinitionName, DeleteError, Reload, ReloadError, Revision, RevisionCounter,
-        Stores, UpdateError, ValidationError, Workspace, WorkspaceContext, WorkspaceDefinition, WorkspaceError,
+        CreateError, DefinitionChange, DefinitionName, DeleteError, Preview, Reload, ReloadError, Revision,
+        RevisionCounter, Stores, UpdateError, ValidationError, Workspace, WorkspaceContext, WorkspaceDefinition,
+        WorkspaceError,
     };
     #[cfg(feature = "memory")]
     #[doc(no_inline)]

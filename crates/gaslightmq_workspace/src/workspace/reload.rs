@@ -52,7 +52,8 @@ impl fmt::Display for DefinitionChange {
 /// A reload that fits, and that the workspace has not taken in yet.
 ///
 /// [`Workspace::reload`] reads every store again and checks what they read, and this is what it found.
-/// [`changes`](Self::changes) says what the reload would change, by name.
+/// [`changes`](Self::changes) says what the reload would change, by name,
+/// and [`definitions`](Self::definitions) gives what the stores read.
 /// Whoever reloads can still refuse it, for what only it knows: it drops the reload, and nothing changed.
 /// [`take`](Self::take) takes the changes in, as one change.
 ///
@@ -63,6 +64,8 @@ pub struct Reload<'w, C: WorkspaceContext> {
     workspace: &'w mut Workspace<C>,
     /// In the order of the kinds and names of their definitions.
     changes: Vec<DefinitionChange>,
+    /// What the stores read again, which they hold once the reload is taken.
+    read: Contents,
 }
 
 impl<C: WorkspaceContext> Reload<'_, C> {
@@ -71,6 +74,31 @@ impl<C: WorkspaceContext> Reload<'_, C> {
     /// A definition that the stores hold as the workspace held it is not among them.
     pub fn changes(&self) -> &[DefinitionChange] {
         &self.changes
+    }
+
+    /// Every definition of the kind `D` that the stores read again, in the order of their names:
+    /// what the workspace holds of that kind once the reload is taken.
+    ///
+    /// Whoever reloads checks there what only it knows, before it takes the reload:
+    /// whether a rule that the reload brings has a name that something outside the workspace holds,
+    /// and whether what it runs still resolves.
+    ///
+    /// ```
+    /// use futures::executor::block_on;
+    /// use gaslightmq_rule::prelude::*;
+    /// use gaslightmq_workspace::prelude::*;
+    ///
+    /// let mut workspace = Workspace::new(MemoryContext::new());
+    /// block_on(async {
+    ///     // A store in memory has nothing to read again, so a reload holds what the workspace holds.
+    ///     let reload = workspace.reload().await?;
+    ///     assert_eq!(reload.definitions::<Rule>().count(), 0);
+    ///     Ok::<(), ReloadError>(())
+    /// })?;
+    /// # Ok::<(), ReloadError>(())
+    /// ```
+    pub fn definitions<D: WorkspaceDefinition>(&self) -> impl Iterator<Item = &D> {
+        self.read.of::<D>()
     }
 
     /// Takes the changes in, as one change, and returns its revision.
@@ -152,6 +180,7 @@ impl<C: WorkspaceContext> Workspace<C> {
         Ok(Reload {
             workspace: self,
             changes,
+            read: after,
         })
     }
 }

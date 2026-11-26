@@ -76,7 +76,7 @@ pub(crate) async fn get<D: Stored, C: WorkspaceContext>(
     D::store(workspace.stores()).get(name).await.map_err(unread::<D>)
 }
 
-/// Every definition of the kind `D`, each with the revision that the workspace keeps beside it.
+/// Every definition of the kind `D`, each with what the workspace keeps beside it.
 ///
 /// # Errors
 ///
@@ -85,20 +85,69 @@ pub(crate) async fn list_with_revisions<D: Stored + WorkspaceDefinition, C: Work
     workspace: &Workspace<C>,
 ) -> Result<Vec<DefinitionStatus<D>>, String> {
     let definitions = list::<D, C>(workspace).await?;
-    Ok(definitions
-        .into_iter()
-        .map(|definition| with_revision(workspace, definition))
-        .collect())
+    let mut statuses = Vec::with_capacity(definitions.len());
+    for definition in definitions {
+        statuses.push(with_revision(workspace, definition).await?);
+    }
+    Ok(statuses)
 }
 
-/// The definition, with the revision that the workspace keeps beside it.
-pub(crate) fn with_revision<D: WorkspaceDefinition, C: WorkspaceContext>(
+/// The definition, with what the workspace keeps beside it: its revision, and whether a write of it would lose a
+/// comment of its file.
+///
+/// # Errors
+///
+/// What the store said when it could not read, after the word for its kind.
+pub(crate) async fn with_revision<D: Stored + WorkspaceDefinition, C: WorkspaceContext>(
     workspace: &Workspace<C>,
     definition: D,
-) -> DefinitionStatus<D> {
-    DefinitionStatus {
+) -> Result<DefinitionStatus<D>, String> {
+    let loses_comment = D::store(workspace.stores())
+        .would_lose_comment(definition.name())
+        .await
+        .map_err(unread::<D>)?;
+    Ok(DefinitionStatus {
         revision: revision(workspace.revision(definition.name().clone())),
         definition,
+        loses_comment,
+    })
+}
+
+/// Whether a write of the definition of that name and kind would lose a comment of its file.
+///
+/// # Errors
+///
+/// What the store of its kind said when it could not read.
+pub(crate) async fn loses_comment<C: WorkspaceContext>(
+    workspace: &Workspace<C>,
+    name: &DefinitionName,
+) -> Result<bool, String> {
+    let stores = workspace.stores();
+    match name {
+        DefinitionName::Selector(name) => Selector::store(stores)
+            .would_lose_comment(name)
+            .await
+            .map_err(unread::<Selector>),
+        DefinitionName::Preset(name) => Preset::store(stores)
+            .would_lose_comment(name)
+            .await
+            .map_err(unread::<Preset>),
+        DefinitionName::Rule(name) => Rule::store(stores)
+            .would_lose_comment(name)
+            .await
+            .map_err(unread::<Rule>),
+        DefinitionName::Scenario(name) => Scenario::store(stores)
+            .would_lose_comment(name)
+            .await
+            .map_err(unread::<Scenario>),
+        DefinitionName::Layout(name) => PadLayout::store(stores)
+            .would_lose_comment(name)
+            .await
+            .map_err(unread::<PadLayout>),
+        DefinitionName::Environment(name) => Environment::store(stores)
+            .would_lose_comment(name)
+            .await
+            .map_err(unread::<Environment>),
     }
 }
 
@@ -136,8 +185,13 @@ impl DefinitionOperations {
         workspace: &Workspace<C>,
         name: <D as EditableDefinition>::Name,
     ) -> Result<DefinitionStatus<D>, GetDefinitionError> {
-        match get::<D, C>(workspace, &name).await {
-            Ok(Some(definition)) => Ok(with_revision(workspace, definition)),
+        let found = match get::<D, C>(workspace, &name).await {
+            Ok(Some(definition)) => with_revision(workspace, definition).await.map(Some),
+            Ok(None) => Ok(None),
+            Err(reason) => Err(reason),
+        };
+        match found {
+            Ok(Some(status)) => Ok(status),
             Ok(None) => Err(GetDefinitionError::NotFound {
                 name: Into::<DefinitionRef>::into(name),
             }),
@@ -174,9 +228,14 @@ impl DefinitionOperations {
                 name: reference(name),
                 reason: each(&errors),
             }),
-            // The control plane has no answer of its own yet for a file that someone changed since it was read.
             Err(Host::NotCreated {
-                error: CreateError::ChangedOutside { name, reason } | CreateError::StoreFailed { name, reason },
+                error: CreateError::ChangedOutside { name, reason },
+            }) => Err(CreateDefinitionError::ChangedOutside {
+                name: reference(name),
+                reason,
+            }),
+            Err(Host::NotCreated {
+                error: CreateError::StoreFailed { name, reason },
             }) => Err(CreateDefinitionError::StoreFailed {
                 name: reference(name),
                 reason,
@@ -197,6 +256,19 @@ impl DefinitionOperations {
             Err(Host::OtherRun { run: of_the_host }) => {
                 return Err(UpdateDefinitionError::OtherRun { run: run(of_the_host) });
             }
+            Err(Host::Unresolved {
+                name,
+                environment,
+                rule,
+                reason,
+            }) => {
+                return Err(UpdateDefinitionError::LiveRuleDoesNotFit {
+                    name: reference(name),
+                    environment,
+                    rule,
+                    reason,
+                });
+            }
             Err(Host::NotUpdated { error }) => error,
         };
         Err(match error {
@@ -209,13 +281,14 @@ impl DefinitionOperations {
                 name: reference(name),
                 reason: each(&errors),
             },
-            // The control plane has no answer of its own yet for a file that someone changed since it was read.
-            UpdateError::ChangedOutside { name, reason } | UpdateError::StoreFailed { name, reason } => {
-                UpdateDefinitionError::StoreFailed {
-                    name: reference(name),
-                    reason,
-                }
-            }
+            UpdateError::ChangedOutside { name, reason } => UpdateDefinitionError::ChangedOutside {
+                name: reference(name),
+                reason,
+            },
+            UpdateError::StoreFailed { name, reason } => UpdateDefinitionError::StoreFailed {
+                name: reference(name),
+                reason,
+            },
         })
     }
 
@@ -232,6 +305,19 @@ impl DefinitionOperations {
             Err(Host::OtherRun { run: of_the_host }) => {
                 return Err(DeleteDefinitionError::OtherRun { run: run(of_the_host) });
             }
+            Err(Host::Unresolved {
+                name,
+                environment,
+                rule,
+                reason,
+            }) => {
+                return Err(DeleteDefinitionError::LiveRuleDoesNotFit {
+                    name: reference(name),
+                    environment,
+                    rule,
+                    reason,
+                });
+            }
             Err(Host::NotDeleted { error }) => error,
         };
         Err(match error {
@@ -244,13 +330,14 @@ impl DefinitionOperations {
                 name: reference(name),
                 users: users.into_iter().map(reference).collect(),
             },
-            // The control plane has no answer of its own yet for a file that someone changed since it was read.
-            DeleteError::ChangedOutside { name, reason } | DeleteError::StoreFailed { name, reason } => {
-                DeleteDefinitionError::StoreFailed {
-                    name: reference(name),
-                    reason,
-                }
-            }
+            DeleteError::ChangedOutside { name, reason } => DeleteDefinitionError::ChangedOutside {
+                name: reference(name),
+                reason,
+            },
+            DeleteError::StoreFailed { name, reason } => DeleteDefinitionError::StoreFailed {
+                name: reference(name),
+                reason,
+            },
         })
     }
 }

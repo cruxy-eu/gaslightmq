@@ -5,9 +5,11 @@ use serde::{Deserialize, Serialize};
 
 use crate::{GetDefinitionError, ListDefinitionsError, Operation, Revision};
 
-/// An environment of the workspace, with its revision beside it, and whether the process runs it.
+/// An environment of the workspace, with its revision beside it, whether a write of it would lose a comment, and
+/// whether the process runs it.
 ///
 /// The environment shows its [secret references](gaslightmq_environment::SecretRef), and never a secret.
+/// With `serde`, an environment whose write loses nothing leaves `loses-comment` out.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct EnvironmentStatus {
@@ -15,6 +17,9 @@ pub struct EnvironmentStatus {
     pub environment: Environment,
     /// The revision of the definition: the number of the change that last created or updated it.
     pub revision: Revision,
+    /// Whether a write of the environment would lose a comment that someone wrote inside it, in its file.
+    #[serde(rename = "loses-comment", default, skip_serializing_if = "std::ops::Not::not")]
+    pub loses_comment: bool,
     /// Whether the process runs the environment now.
     pub running: bool,
 }

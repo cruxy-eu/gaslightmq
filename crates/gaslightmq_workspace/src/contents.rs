@@ -11,7 +11,7 @@ use gaslightmq_selector::{Selector, SelectorName, SelectorSet};
 use gaslightmq_surface::PadLayout;
 
 use crate::kind::AnyDefinition;
-use crate::{DefinitionChange, DefinitionName, WorkspaceError};
+use crate::{DefinitionChange, DefinitionName, WorkspaceDefinition, WorkspaceError};
 
 /// The definitions of every kind, as the stores listed them.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -135,8 +135,17 @@ impl Contents {
         errors
     }
 
+    /// The same contents without the definition of that kind and name.
+    pub(crate) fn without(&self, name: &DefinitionName) -> Self {
+        let definitions = (self.definitions.iter())
+            .filter(|held| held.name() != *name)
+            .cloned()
+            .collect();
+        Self { definitions }
+    }
+
     /// The same contents with `definition`, in the place of the definition of its name when there is one.
-    fn with(&self, definition: AnyDefinition) -> Self {
+    pub(crate) fn with(&self, definition: AnyDefinition) -> Self {
         let name = definition.name();
         let mut definitions: Vec<AnyDefinition> = (self.definitions.iter())
             .filter(|held| held.name() != name)
@@ -145,6 +154,11 @@ impl Contents {
         definitions.push(definition);
         definitions.sort_by_cached_key(AnyDefinition::name);
         Self { definitions }
+    }
+
+    /// Every definition of the kind `D`, in the order of their names.
+    pub(crate) fn of<D: WorkspaceDefinition>(&self) -> impl Iterator<Item = &D> {
+        self.definitions.iter().filter_map(D::of)
     }
 
     fn selectors(&self) -> impl Iterator<Item = &Selector> {

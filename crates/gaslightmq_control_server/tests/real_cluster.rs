@@ -708,6 +708,7 @@ async fn a_kept_live_rule_leaves_its_environment_for_the_workspace_and_stays_arm
             StreamMessage::DefinitionChanged {
                 definition: AnyDefinition::Rule(made.clone()),
                 revision: kept.revision,
+                loses_comment: false,
             },
             StreamMessage::RuleChanged {
                 environment: staging.name().clone(),

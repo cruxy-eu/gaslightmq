@@ -23,7 +23,7 @@ It is then set up by flags and files alone.
 | `rules` | List, get, create, update, delete. List the rules of an environment with their state. Create a live rule, armed when the request says so. Update and delete a live rule. Arm, disarm, fire. Keep a live rule. |
 | `scenarios` | List, get, create, update, delete. Activate, deactivate, step. |
 | `layouts` | List, get, create, update, delete. |
-| `workspace` | [Reload](storage.md#reloading) the definitions from the files of the workspace. |
+| `workspace` | [Reload](#reloading) the definitions from the files of the workspace. |
 | `sessions` | List the open sessions with their identity. Close one. |
 | `recordings` | Start, stop, list, open. Query calls with a selector, saved or [draft](#drafts). Get the index. |
 | `world` | Only for an environment with a broker. Get state, apply an incident, save as a world definition, set the clock. [Preview the records](#drafts) at an offset. |
@@ -43,6 +43,17 @@ Create and update operations on definitions write to the workspace files.
 See [writing back](storage.md#writing-back).
 Live rules are the exception.
 They stay in memory until *keep* saves them as workspace rules.
+
+An armed rule follows a change of the workspace, as it follows a [reload](storage.md#reloading):
+
+- **An update replaces every armed rule that it changes.**
+  A rule of the workspace whose definition changed, and a rule that uses a selector or a preset that changed, stays armed in every environment that armed it, with its counters and its budget.
+  An armed rule of the workspace that the update changed is a `rule-changed` too.
+- **A delete of a rule of the workspace disarms it** wherever it is armed.
+  The journal records that it disarmed, and then that it went, both with the revision of the delete.
+- **A change that an armed live rule could not follow changes nothing.**
+  An update that leaves a selector or a preset that an armed live rule cannot fire with, and a delete of one that it uses, fail with `live-rule-does-not-fit`.
+  Whoever wants the change disarms or deletes the live rule first.
 
 A live rule belongs to one environment, and its name is a name that no rule of the workspace has.
 Two environments can each have a live rule of one name, because each holds its own.
@@ -255,7 +266,14 @@ One counter of the process gives all of them, so a revision never comes back wit
   Nobody reads the rule disarmed at the revision it had while it was armed.
 
 A write to a file can also fail because [someone edited the file](storage.md#the-check-before-a-write) while the process ran.
-Its error is `changed-outside`, and no revision is involved: the engine does not hold what the file holds now, until someone asks for a reload.
+Its error is `changed-outside`, and no revision is involved: the engine does not hold what the file holds now, until someone asks for a [reload](#reloading).
+Create, update and delete of a definition and keep each fail that way, with the name of what they changed and a `reason` that says which file changed, and how.
+
+```json
+{ "error": "changed-outside", "name": { "selector": "order-producers" }, "reason": "selectors.yaml changed since the store read it" }
+```
+
+A [read-only workspace](storage.md#read-only-workspaces) refuses each of them with `store-failed`, and the snapshot says beforehand that it is read-only.
 
 A pad intent expects nothing.
 It acts on the rule as the rule is, and it says the state that it wants.
@@ -277,6 +295,42 @@ It acts on the rule as the rule is, and it says the state that it wants.
   The release names the hold of its press, so it never takes away the hold of someone else.
 - **A surface never works out what a press or a turn did.**
   The name of a rule that a pad makes and the bounds of an encoder belong to the engine.
+
+## Reloading
+
+`reload-workspace` reads the files of the workspace again, and takes in what changed as one change.
+[Reloading](storage.md#reloading) says what it compares, and what it does to the armed rules.
+It names nothing and expects nothing: what it changes comes from the files.
+
+```json
+{ "from": { "surface": "cli" }, "operation": "reload-workspace" }
+```
+
+It answers with its revision, and with what it changed, by the kind and the name of each definition:
+
+```json
+{ "revision": 12, "changes": [{ "updated": { "selector": "order-producers" } }, { "deleted": { "preset": "blackhole" } }] }
+```
+
+- **A reload that changed nothing answers with its revision alone.**
+  It is a change all the same, and takes a number.
+- **Every client hears of each change.**
+  A definition that the reload created or updated is a `definition-changed`, and one that went is a `definition-deleted`.
+  An armed rule of the workspace whose definition changed is a `rule-changed` too.
+- **The journal of every environment that runs records each change with the surface `file`**, whoever asked for the reload, and with the revision of the reload.
+  A rule of the workspace that disarms because the reload took it away is a `rule-disarmed` before its `definition-deleted`.
+- **A change that still expects a definition as it was before the reload changes nothing.**
+  The reload gave the definition a new revision, so the change fails with `changed`.
+
+| Error | When | The other keys |
+|---|---|---|
+| `name-taken` | A rule of the files has the name of a live rule of an environment that runs. | `rule`, and the `holder`: `{ "environment": "canary-proxy" }`. |
+| `live-rule-does-not-fit` | A live rule that is armed would not resolve against the files. | `environment`, `rule`, and the `reason`. |
+| `does-not-fit` | The definitions of the files do not fit each other. | The `reason`, with every error. |
+| `store-failed` | A file does not read. | The `reason`, with every file and the path of its key that failed. |
+
+A reload that fails changes nothing.
+Whoever deletes the live rule, or fixes the files, reloads again.
 
 ## Undo
 
@@ -404,7 +458,7 @@ The WebSocket streams:
 | Message | Carries |
 |---|---|
 | **Present** | The ID of the [presence](#presence) of this client. It is the first message, and comes once. |
-| **Snapshot** | The full state, sent when a client connects: the [run ID](identity.md#run), every definition of the workspace, and every environment that runs with its backend, its rules and its sessions. Whatever has a revision comes with it. It holds no [journal](#the-journal). |
+| **Snapshot** | The full state, sent when a client connects: the [run ID](identity.md#run), every definition of the workspace, whether the workspace is [read-only](storage.md#read-only-workspaces), and every environment that runs with its backend, its rules and its sessions. Whatever has a revision comes with it. It holds no [journal](#the-journal). |
 | **Call** | One call event: request summary, verdict and explanation. |
 | **Stats** | Matches, firings and remaining budget per rule, and calls per API, at a fixed interval. |
 | **Rule changed, removed** | A rule of an environment changed state, or a live rule was made or changed its definition, with its revision. A live rule left its environment: someone deleted or kept it. |
@@ -552,16 +606,13 @@ Every operation of `control_api` is served, so no answer is `501` today.
 `RequestError::NotServed` stays for a process that knows fewer operations than its client:
 an older process, or one built without a part.
 
-No operation reloads the workspace yet.
-It arrives with the stores of files: a store in memory has nothing to reload.
-
 No operation lists, gets, creates, updates or deletes a scenario yet.
 So nothing refuses yet a scenario that owns a rule with the name of a live rule: that check arrives with those operations.
 The snapshot holds every scenario of the workspace, and a change of one is a `definition-changed` or a `definition-deleted` message, as for every kind.
 
 The journal has no entry of the activation of a scenario, of a step or of a recording yet: those arrive with their operations.
 No backend applies or emulates an incident yet, so no journal has an entry of one.
-No change has the surface `step` or `file` yet.
+No change has the surface `step` yet.
 
 The scenario of an environment has no revision yet: no operation activates a scenario or steps one.
 Its revision, and the `expects` of those operations, arrive with them.
