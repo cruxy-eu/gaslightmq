@@ -262,6 +262,19 @@ pub enum DeleteLiveRuleError {
 /// Why an environment did not [keep a live rule](KeepRule).
 ///
 /// A keep that fails changed nothing: the live rule is still there.
+///
+/// ```
+/// use gaslightmq_control_api::prelude::*;
+///
+/// let error = KeepRuleError::NameTaken {
+///     rule: "slow-order-producers".parse().expect("a rule name"),
+///     environment: Some("canary-proxy".parse().expect("an environment name")),
+/// };
+/// assert_eq!(
+///     error.to_string(),
+///     "rule \"slow-order-producers\" was not kept: environment \"canary-proxy\" has a live rule of that name",
+/// );
+/// ```
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error, Serialize, Deserialize)]
 #[serde(tag = "error", rename_all = "kebab-case", deny_unknown_fields)]
 pub enum KeepRuleError {
@@ -274,9 +287,16 @@ pub enum KeepRuleError {
         environment: EnvironmentName,
         rule: RuleName,
     },
-    /// Someone created a rule with that name in the workspace since the live rule was made.
-    #[error("the workspace has a rule {:?} already", .rule.as_str())]
-    NameTaken { rule: RuleName },
+    /// Another rule has the name: a rule of the workspace, or a live rule of the environment `environment`.
+    /// A rule of the workspace is in every environment, so it never stands next to a live rule of its name:
+    /// whoever wants the rule in the workspace deletes that live rule first.
+    #[error("rule {:?} was not kept: {}", .rule.as_str(), taken_by(.environment.as_ref()))]
+    NameTaken {
+        rule: RuleName,
+        /// The environment whose live rule has the name, or `None` when the workspace has a rule of the name.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        environment: Option<EnvironmentName>,
+    },
     /// The rule does not fit the workspace any more. `reason` says what is wrong.
     #[error("rule {:?} does not fit the workspace: {reason}", .rule.as_str())]
     DoesNotFit { rule: RuleName, reason: String },
@@ -323,4 +343,12 @@ pub enum RuleCommandError {
     /// A store of the workspace could not read the rule, or what it names. `reason` says which store, and what it said.
     #[error("rule {:?} was not read: {reason}", .rule.as_str())]
     StoreFailed { rule: RuleName, reason: String },
+}
+
+/// Who has the name of a rule: a live rule of an environment, or the workspace.
+pub(crate) fn taken_by(environment: Option<&EnvironmentName>) -> String {
+    match environment {
+        Some(environment) => format!("environment {:?} has a live rule of that name", environment.as_str()),
+        None => "the workspace has a rule of that name".to_owned(),
+    }
 }

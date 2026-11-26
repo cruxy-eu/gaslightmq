@@ -121,14 +121,28 @@ impl DefinitionOperations {
         host: &Host<C>,
         definition: D,
     ) -> Result<(), CreateDefinitionError> {
+        use gaslightmq_host::CreateDefinitionError as Host;
         match host.create(definition).await {
             Ok(()) => Ok(()),
-            Err(CreateError::NameTaken { name }) => Err(CreateDefinitionError::NameTaken { name: reference(name) }),
-            Err(CreateError::DoesNotFit { name, errors }) => Err(CreateDefinitionError::DoesNotFit {
+            Err(Host::NameTaken { rule, environment }) => Err(CreateDefinitionError::NameTaken {
+                name: rule.into(),
+                environment: Some(environment),
+            }),
+            Err(Host::NotCreated {
+                error: CreateError::NameTaken { name },
+            }) => Err(CreateDefinitionError::NameTaken {
+                name: reference(name),
+                environment: None,
+            }),
+            Err(Host::NotCreated {
+                error: CreateError::DoesNotFit { name, errors },
+            }) => Err(CreateDefinitionError::DoesNotFit {
                 name: reference(name),
                 reason: each(&errors),
             }),
-            Err(CreateError::StoreFailed { name, reason }) => Err(CreateDefinitionError::StoreFailed {
+            Err(Host::NotCreated {
+                error: CreateError::StoreFailed { name, reason },
+            }) => Err(CreateDefinitionError::StoreFailed {
                 name: reference(name),
                 reason,
             }),

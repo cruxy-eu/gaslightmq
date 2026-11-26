@@ -366,9 +366,16 @@ pub enum GetDefinitionError {
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error, Serialize, Deserialize)]
 #[serde(tag = "error", rename_all = "kebab-case", deny_unknown_fields)]
 pub enum CreateDefinitionError {
-    /// A definition of the kind has the name already. Creating never overwrites it.
-    #[error("{name} exists already")]
-    NameTaken { name: DefinitionRef },
+    /// A definition of the kind has the name already, or for a rule, a live rule of the environment `environment`.
+    /// Creating never overwrites it. A rule of the workspace is in every environment, so it never stands next to a
+    /// live rule of its name.
+    #[error("{name} {}", exists(.environment.as_ref()))]
+    NameTaken {
+        name: DefinitionRef,
+        /// The environment whose live rule has the name of the rule, or `None` when the workspace has the name.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        environment: Option<EnvironmentName>,
+    },
     /// The definitions of the workspace would not fit each other with this one.
     /// `reason` says everything that would be wrong.
     #[error("{name} does not fit the workspace: {reason}")]
@@ -443,6 +450,14 @@ fn all(users: &[DefinitionRef]) -> String {
         [] => String::new(),
         [only] => only.clone(),
         [first @ .., last] => format!("{} and {last}", first.join(", ")),
+    }
+}
+
+/// What has the name of a definition: a live rule of an environment, or the workspace.
+fn exists(environment: Option<&EnvironmentName>) -> String {
+    match environment {
+        Some(environment) => format!("is the name of a live rule of environment {:?}", environment.as_str()),
+        None => "exists already".to_owned(),
     }
 }
 

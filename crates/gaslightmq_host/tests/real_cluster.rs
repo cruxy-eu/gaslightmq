@@ -1,6 +1,6 @@
 //! A host runs several environments in front of real Kafka brokers, each with a proxy of its own,
-//! makes a live rule armed in one step, and reads a ⌘K sentence with the names that the traffic of one of them has
-//! seen.
+//! makes a live rule armed in one step, reads a ⌘K sentence with the names that the traffic of one of them has
+//! seen, and keeps a live rule only under a name that no other one has.
 //!
 //! The tests need Docker.
 //! Each test starts the cluster it needs, and a host whose workspace lives in memory.
@@ -12,7 +12,7 @@
 use std::net::{IpAddr, Ipv4Addr, TcpListener};
 
 use anyhow::Context;
-use gaslightmq_clock::Duration;
+use gaslightmq_clock::{Duration, TimeSpan};
 use gaslightmq_engine::prelude::*;
 use gaslightmq_environment::prelude::*;
 use gaslightmq_field::prelude::*;
@@ -446,6 +446,74 @@ async fn a_sentence_knows_the_names_of_the_workspace_and_those_the_traffic_has_s
         .map(Completion::sentence)
         .collect();
     assert_eq!(selectors, ["leader-flap order-producers "]);
+    host.stop_all().await;
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_name_that_a_live_rule_of_another_environment_has_is_no_name_for_the_workspace() -> anyhow::Result<()> {
+    let cluster = KafkaCluster::plaintext().start().await?;
+    let host = Host::new(
+        HostConfiguration::default(),
+        MemoryContext::new(),
+        Lies::of_every_build(),
+    );
+    // Two environments stand in front of the same cluster. Every listener of both takes a free port.
+    let any = ListenAddress::new(LOCALHOST, 0);
+    let brokers = BrokerListeners::pinned(cluster.brokers().iter().map(|broker| (broker.id(), any)))?;
+    let listen = Listeners::new(any, brokers, LOCALHOST.into())?;
+    let upstream = Upstream::new(cluster.brokers()[0].address().to_string().parse()?);
+    let staging = Environment::new(
+        "staging-proxy".parse()?,
+        Instances::ProxyInFrontOfCluster {
+            proxy: ProxyDefinition::new(listen.clone()),
+            upstream: upstream.clone(),
+        },
+    );
+    let canary = Environment::new(
+        "canary-proxy".parse()?,
+        Instances::ProxyInFrontOfCluster {
+            proxy: ProxyDefinition::new(listen),
+            upstream,
+        },
+    );
+    let order_producers = Selector::new(
+        "order-producers".parse()?,
+        Conditions::from(Condition::is(ApiKey::PRODUCE)),
+    );
+    let delay = Preset::new("delay-1s".parse()?, TimingLie::new().with_delay(TimeSpan::from_secs(1)));
+    let slow = Rule::new(
+        "slow-order-producers".parse()?,
+        order_producers.name().clone(),
+        delay.name().clone(),
+    );
+    host.create(order_producers).await?;
+    host.create(delay).await?;
+    host.start(EnvironmentConfiguration::new(&staging)?).await?;
+    host.start(EnvironmentConfiguration::new(&canary)?).await?;
+    // Each environment holds a live rule of the same name.
+    host.create_live_rule(staging.name(), slow.clone()).await?;
+    host.create_live_rule(canary.name(), slow.clone()).await?;
+
+    let kept = host.keep(staging.name(), slow.name()).await;
+    let created = host.create(slow.clone()).await;
+
+    // A rule of the workspace is in every environment, so it never stands next to a live rule of its name.
+    assert_eq!(
+        kept,
+        Err(KeepRuleError::NameTaken {
+            rule: slow.name().clone(),
+            environment: canary.name().clone(),
+        })
+    );
+    assert!(
+        matches!(&created, Err(CreateDefinitionError::NameTaken { rule, .. }) if rule == slow.name()),
+        "{created:?}"
+    );
+
+    // Once the canary deleted its live rule, the staging proxy keeps its own.
+    host.delete_live_rule(canary.name(), slow.name())?;
+    assert_eq!(host.keep(staging.name(), slow.name()).await?, slow);
     host.stop_all().await;
     Ok(())
 }

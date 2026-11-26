@@ -539,6 +539,37 @@ fn an_error_names_its_variant() {
 }
 
 #[test]
+fn a_name_that_a_live_rule_of_another_environment_has_is_taken_there() {
+    let name: RuleName = "slow-order-producers".parse().unwrap();
+
+    Form(KeepRuleError::NameTaken {
+        rule: name.clone(),
+        environment: Some("canary-proxy".parse().unwrap()),
+    })
+    .writes(json!({ "error": "name-taken", "rule": "slow-order-producers", "environment": "canary-proxy" }));
+    Form(CreateDefinitionError::NameTaken {
+        name: name.clone().into(),
+        environment: Some("canary-proxy".parse().unwrap()),
+    })
+    .writes(json!({
+        "error": "name-taken",
+        "name": { "rule": "slow-order-producers" },
+        "environment": "canary-proxy",
+    }));
+    // A name that the workspace has is taken without an environment.
+    Form(KeepRuleError::NameTaken {
+        rule: name.clone(),
+        environment: None,
+    })
+    .writes(json!({ "error": "name-taken", "rule": "slow-order-producers" }));
+    Form(CreateDefinitionError::NameTaken {
+        name: name.into(),
+        environment: None,
+    })
+    .writes(json!({ "error": "name-taken", "name": { "rule": "slow-order-producers" } }));
+}
+
+#[test]
 fn a_store_that_could_not_read_says_what_it_said() {
     Form(RuleCommandError::StoreFailed {
         rule: "slow-order-producers".parse().unwrap(),

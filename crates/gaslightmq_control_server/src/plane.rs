@@ -348,8 +348,15 @@ impl<C: WorkspaceContext + 'static> ControlPlane<C> {
             Ok(_) => Ok(()),
             Err(Host::NotRunning { environment }) => Err(KeepRuleError::NotRunning { environment }),
             Err(Host::NotFound { environment, rule }) => Err(KeepRuleError::NotFound { environment, rule }),
+            Err(Host::NameTaken { rule, environment }) => Err(KeepRuleError::NameTaken {
+                rule,
+                environment: Some(environment),
+            }),
             Err(Host::NotKept { rule, error }) => Err(match error {
-                CreateError::NameTaken { .. } => KeepRuleError::NameTaken { rule },
+                CreateError::NameTaken { .. } => KeepRuleError::NameTaken {
+                    rule,
+                    environment: None,
+                },
                 CreateError::DoesNotFit { errors, .. } => KeepRuleError::DoesNotFit {
                     rule,
                     reason: each(&errors),

@@ -110,6 +110,10 @@ mod next_to_the_others {
         let unknown: IntentError = IntentError::UnknownLayout {
             layout: "order-desk".parse().unwrap(),
         };
+        let uncreated: CreateDefinitionError = CreateDefinitionError::NameTaken {
+            rule: "blackhole".parse().unwrap(),
+            environment: staging.clone(),
+        };
         let unclosed: CloseSessionError = CloseSessionError::NotRunning { environment: staging };
         let missed: HostChangesError = HostChangesError::Missed { changes: 3 };
         let backlog: ChangeBacklogError = ChangeBacklogError::Zero;
@@ -138,6 +142,7 @@ mod next_to_the_others {
         assert!(std::error::Error::source(&backlog).is_none());
         assert!(std::error::Error::source(&calls).is_none());
         assert!(std::error::Error::source(&followed).is_none());
+        assert!(std::error::Error::source(&uncreated).is_none());
         vec![
             unsupported.to_string(),
             running.to_string(),
@@ -156,6 +161,7 @@ mod next_to_the_others {
             backlog.to_string(),
             calls.to_string(),
             followed.to_string(),
+            uncreated.to_string(),
         ]
     }
 }
@@ -191,6 +197,7 @@ fn the_prelude_names_the_error_of_every_type() {
             "a change backlog holds at least one change",
             "a call backlog holds at least one call",
             "the calls were not followed: the selector store could not be read: disk full",
+            "rule \"blackhole\" was not created: environment \"staging-proxy\" has a live rule of that name",
         ]
     );
 }

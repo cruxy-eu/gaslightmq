@@ -23,15 +23,16 @@ use gaslightmq_selector::{Selector, SelectorRef, SelectorSet};
 use gaslightmq_surface::EncoderMapping;
 use gaslightmq_traffic::{Statistics, Traffic, TrafficConfiguration};
 use gaslightmq_workspace::{
-    CreateError, DefinitionName, DeleteError, Stores, UpdateError, Workspace, WorkspaceContext, WorkspaceDefinition,
+    DefinitionName, DeleteError, Stores, UpdateError, Workspace, WorkspaceContext, WorkspaceDefinition,
 };
 use tokio::sync::broadcast;
 use tokio::task::JoinHandle;
 
 use crate::calls::{Watched, lock};
 use crate::{
-    ArmRuleError, CallBacklog, CallSubscription, CloseSessionError, EnvironmentConfiguration, EnvironmentStartError,
-    FireRuleError, FollowCallsError, HostChange, HostChanges, HostConfiguration, NotRunningError, ReadSentenceError,
+    ArmRuleError, CallBacklog, CallSubscription, CloseSessionError, CreateDefinitionError, EnvironmentConfiguration,
+    EnvironmentStartError, FireRuleError, FollowCallsError, HostChange, HostChanges, HostConfiguration,
+    NotRunningError, ReadSentenceError,
 };
 
 mod live;
@@ -158,14 +159,33 @@ impl<C: WorkspaceContext> Host<C> {
 
     /// Adds a definition to the workspace. See [`Workspace::create`].
     ///
+    /// A rule of the workspace is in every environment, so it never stands next to a live rule of its name:
+    /// the host refuses a rule that has the name of a live rule of an environment that runs.
     /// Whoever follows the host learns of it.
     ///
     /// # Errors
     ///
-    /// The [`CreateError`] of the workspace.
-    pub async fn create<D: WorkspaceDefinition>(&self, definition: D) -> Result<(), CreateError> {
-        let name = definition.name().clone().into();
-        self.workspace.lock().await.create(definition).await?;
+    /// - [`CreateDefinitionError::NameTaken`] when the definition is a rule, and a live rule of an environment that
+    ///   runs has its name.
+    /// - [`CreateDefinitionError::NotCreated`] with the [`CreateError`](gaslightmq_workspace::CreateError) of the workspace.
+    pub async fn create<D: WorkspaceDefinition>(&self, definition: D) -> Result<(), CreateDefinitionError> {
+        let name: DefinitionName = definition.name().clone().into();
+        {
+            // The workspace stays taken from the check to the write, as it does while a live rule goes in.
+            let mut workspace = self.workspace.lock().await;
+            if let DefinitionName::Rule(rule) = &name
+                && let Some(environment) = self.live_rule_of_another(rule, None)
+            {
+                return Err(CreateDefinitionError::NameTaken {
+                    rule: rule.clone(),
+                    environment,
+                });
+            }
+            workspace
+                .create(definition)
+                .await
+                .map_err(|error| CreateDefinitionError::NotCreated { error })?;
+        }
         self.publish(HostChange::DefinitionChanged { name });
         Ok(())
     }
