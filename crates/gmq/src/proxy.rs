@@ -74,7 +74,8 @@ async fn serve<C: WorkspaceContext + 'static>(
     let host = Arc::new(Host::new(HostConfiguration::default(), context, lies(), run));
     let configuration =
         EnvironmentConfiguration::new(environment).expect("a host configures a proxy in front of a real cluster");
-    host.start(configuration)
+    // The environment of the flags is the one that the process starts with: it is healthy while it runs.
+    host.start_with([configuration])
         .await
         .map_err(|error| ProxyError::ProxyNotStarted { error })?;
     let server = match control {

@@ -160,3 +160,59 @@ async fn a_reload_of_the_command_line_takes_in_a_rule_that_someone_edited() -> a
     gmq.kill().await?;
     Ok(())
 }
+
+#[tokio::test]
+async fn a_health_check_of_the_command_line_says_that_the_proxy_runs_until_someone_stops_it() -> anyhow::Result<()> {
+    let cluster = KafkaCluster::plaintext().start().await?;
+    let broker = cluster.brokers()[0].id();
+    let mut gmq = Command::new(GMQ)
+        .args(["proxy", "--upstream", &cluster.bootstrap_servers()])
+        .args(["--listen", "127.0.0.1:0", "--brokers", &format!("{broker}=127.0.0.1:0")])
+        .args(["--advertise", "127.0.0.1", "--control-listen", "127.0.0.1:0"])
+        .stdout(Stdio::piped())
+        .kill_on_drop(true)
+        .spawn()?;
+    let mut lines = BufReader::new(gmq.stdout.take().context("the output of gmq")?).lines();
+    let mut control = None;
+    while let Some(line) = lines.next_line().await? {
+        if let Some(address) = line.strip_prefix("control plane and UI on ") {
+            control = Some(address.to_owned());
+        }
+        if line.starts_with("ready") {
+            break;
+        }
+    }
+    let control = control.context("gmq printed its control plane")?;
+
+    // The process started with the proxy of its flags, which runs.
+    let running = Command::new(GMQ)
+        .args(["health", "--control", &control])
+        .output()
+        .await?;
+    // Someone stops the proxy through the control plane, and the process runs on without it.
+    let mut configuration = ControlClientConfiguration::new(control.parse()?);
+    configuration.surface = RequestSurface::Test;
+    ControlClient::new(configuration)
+        .send(StopEnvironment {
+            environment: "proxy".parse()?,
+        })
+        .await??;
+    let stopped = Command::new(GMQ)
+        .args(["health", "--control", &control])
+        .output()
+        .await?;
+
+    assert!(running.status.success(), "{}", String::from_utf8_lossy(&running.stderr));
+    assert_eq!(String::from_utf8(running.stdout)?, "environment \"proxy\" runs\n");
+    assert!(!stopped.status.success());
+    assert_eq!(
+        String::from_utf8(stopped.stdout)?,
+        "environment \"proxy\" does not run\n"
+    );
+    assert_eq!(
+        String::from_utf8(stopped.stderr)?,
+        "the process started with environment \"proxy\", which does not run\n"
+    );
+    gmq.kill().await?;
+    Ok(())
+}

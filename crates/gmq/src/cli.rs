@@ -37,6 +37,11 @@ pub(crate) enum Command {
     /// It fails with every error when the files do not read, or do not fit each other, and the process then
     /// keeps what it holds.
     Reload(ReloadFlags),
+    /// Ask a process that runs whether every environment that it was started with runs: the health check of a
+    /// container.
+    ///
+    /// It prints each environment with whether it runs, and fails when one does not, or when nothing answers.
+    Health(ControlFlags),
 }
 
 /// The flags of `gmq proxy`.
@@ -276,6 +281,16 @@ mod tests {
             "127.0.0.1:7093",
         ]);
         assert!(both.is_err());
+    }
+
+    #[test]
+    fn a_health_check_asks_the_control_plane_that_the_flags_name() {
+        let gmq = Gmq::try_parse_from(["gmq", "health", "--control", "http://127.0.0.1:7093"]).unwrap();
+
+        let Command::Health(flags) = gmq.command else {
+            panic!("gmq health is the health check");
+        };
+        assert_eq!(flags.address(), "http://127.0.0.1:7093".parse().unwrap());
     }
 
     #[test]

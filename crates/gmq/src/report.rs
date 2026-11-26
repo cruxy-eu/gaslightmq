@@ -6,8 +6,8 @@ use std::fmt;
 use std::net::SocketAddr;
 use std::path::PathBuf;
 
-use gaslightmq_control_api::Reloaded;
 use gaslightmq_control_api::field::Endpoint;
+use gaslightmq_control_api::{Health, Reloaded};
 use gaslightmq_environment::{EnvironmentName, ServerAddress};
 use gaslightmq_host::RunId;
 use gaslightmq_workspace_fs::Access;
@@ -98,10 +98,37 @@ impl fmt::Display for ReloadReport<'_> {
     }
 }
 
+/// The environments that a process was started with: a line for each, which says whether it runs.
+///
+/// ```text
+/// environment "proxy" runs
+/// environment "orders-sim" does not run
+/// ```
+pub(crate) struct HealthReport<'a>(pub(crate) &'a Health);
+
+impl fmt::Display for HealthReport<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let Health { environments } = self.0;
+        if environments.is_empty() {
+            return write!(f, "the process started with no environment");
+        }
+        for (position, environment) in environments.iter().enumerate() {
+            let separator = if position == 0 { "" } else { "\n" };
+            let runs = if environment.running { "runs" } else { "does not run" };
+            write!(
+                f,
+                "{separator}environment {:?} {runs}",
+                environment.environment.as_str()
+            )?;
+        }
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use gaslightmq_control_api::kernel::BrokerId;
-    use gaslightmq_control_api::{DefinitionChange, Revision};
+    use gaslightmq_control_api::{DefinitionChange, EnvironmentHealth, Revision};
 
     use super::*;
 
@@ -165,6 +192,31 @@ mod tests {
         assert_eq!(
             ReloadReport(&reloaded).to_string(),
             "rule \"order-acknowledgements-get-lost\" changed\nreloaded at revision 12"
+        );
+    }
+
+    #[test]
+    fn a_health_check_says_of_each_environment_whether_it_runs() {
+        let health = Health {
+            environments: vec![
+                EnvironmentHealth {
+                    environment: "proxy".parse().unwrap(),
+                    running: true,
+                },
+                EnvironmentHealth {
+                    environment: "orders-sim".parse().unwrap(),
+                    running: false,
+                },
+            ],
+        };
+
+        assert_eq!(
+            HealthReport(&health).to_string(),
+            "environment \"proxy\" runs\nenvironment \"orders-sim\" does not run"
+        );
+        assert_eq!(
+            HealthReport(&Health::default()).to_string(),
+            "the process started with no environment"
         );
     }
 

@@ -4,6 +4,7 @@
 //! |---|---|
 //! | `gmq proxy --upstream <bootstrap>` | Runs a proxy in front of a real cluster, with the control plane and the UI in front of it. |
 //! | `gmq reload` | Asks a process that runs to read the files of its workspace again, and prints what changed. |
+//! | `gmq health` | Asks a process that runs whether every environment that it was started with runs. The health check of a container. |
 //!
 //! `gmq --help` and `gmq <command> --help` name every flag, its environment variable and its default.
 //!
@@ -37,6 +38,7 @@
 mod brokers;
 mod cli;
 mod error;
+mod health;
 mod proxy;
 mod reload;
 mod report;
@@ -47,8 +49,8 @@ use std::process::ExitCode;
 use clap::Parser;
 
 use crate::cli::{Command, Gmq};
-use crate::error::ProxyError;
-use crate::report::ReloadReport;
+use crate::error::{HealthError, ProxyError};
+use crate::report::{HealthReport, ReloadReport};
 
 #[tokio::main]
 async fn main() -> ExitCode {
@@ -61,6 +63,21 @@ async fn main() -> ExitCode {
                 for file in &error.errors {
                     eprintln!("{file}");
                 }
+                ExitCode::FAILURE
+            }
+            Err(error) => {
+                eprintln!("{error}");
+                ExitCode::FAILURE
+            }
+        },
+        Command::Health(flags) => match health::health(&flags).await {
+            Ok(health) => {
+                println!("{}", HealthReport(&health));
+                ExitCode::SUCCESS
+            }
+            Err(HealthError::Unhealthy { error }) => {
+                println!("{}", HealthReport(&error.health));
+                eprintln!("{error}");
                 ExitCode::FAILURE
             }
             Err(error) => {

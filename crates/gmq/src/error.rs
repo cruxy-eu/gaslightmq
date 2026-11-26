@@ -2,7 +2,7 @@
 
 use std::path::PathBuf;
 
-use gaslightmq_control_api::ReloadWorkspaceError;
+use gaslightmq_control_api::{ReloadWorkspaceError, Unhealthy};
 use gaslightmq_control_client::SendError;
 use gaslightmq_control_server::ControlServerError;
 use gaslightmq_environment::{EnvironmentName, ListenersError};
@@ -56,4 +56,16 @@ pub(crate) enum ReloadError {
     /// read or do not fit each other, or a live rule stands in the way.
     #[error("{error}")]
     Refused { error: ReloadWorkspaceError },
+}
+
+/// Why `gmq health` found the process not healthy.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub(crate) enum HealthError {
+    /// No control plane answered the check: nothing listens at the address, or it did not take the request.
+    #[error("{error}")]
+    Unanswered { error: SendError },
+    /// An environment that the process was started with does not run. `error` names each environment of the start,
+    /// with whether it runs, which the command prints.
+    #[error("{error}")]
+    Unhealthy { error: Unhealthy },
 }
