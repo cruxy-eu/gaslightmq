@@ -120,7 +120,7 @@ The standard output holds what the command did, one thing per line, and no log l
 | `--upstream` | `GMQ_UPSTREAM` | Required. | The bootstrap server of the real cluster: `kafka-1.staging:9092`. |
 | `--name` | `GMQ_NAME` | `proxy` | The name of the environment, which the control plane and the UI know it by. |
 | `--listen` | `GMQ_LISTEN` | `0.0.0.0:9092` | The bootstrap listener, where clients connect first. |
-| `--brokers` | `GMQ_BROKERS` | `0.0.0.0:19092-19191` | The listeners of the [brokers](#brokers): a range of ports, or a pin for every broker, `1=0.0.0.0:19092,2=0.0.0.0:19093`. |
+| `--brokers` | `GMQ_BROKERS` | `0.0.0.0:19092-19191` | The listeners of the [brokers](#brokers): a range of ports; port 0, `127.0.0.1:0`, for a free port for each broker; or a pin for every broker, `1=0.0.0.0:19092,2=0.0.0.0:19093`. |
 | `--advertise` | `GMQ_ADVERTISE` | `localhost` | The host that clients see in Metadata. |
 | `--workspace` | `GMQ_WORKSPACE` | None: memory. | The directory of the [workspace](#workspace). |
 | `--read-only` | `GMQ_READ_ONLY` | Off. | The workspace is [read-only](#read-only-workspaces). It needs `--workspace`. |
@@ -531,6 +531,20 @@ discovers the brokers and opens one listener per broker from the port range.
 It assigns ports in the order of the broker IDs,
 so a broker keeps its port for as long as the set of brokers stays the same.
 A cluster with more brokers than the range has ports is an error.
+
+An environment that names port 0 instead of a range gives each broker a free port that the system picks:
+
+```yaml
+listen:
+  brokers: 127.0.0.1:0
+```
+
+Every broker that the proxy discovers gets a listener on that IP address, and so does a broker that joins later.
+Nobody knows the port before the listener is open, so the engine tells the backend the port it got, as [endpoints](backends.md#endpoints) says,
+and clients learn it from Metadata.
+A broker keeps its listener while it stays in the cluster, whichever brokers join or leave.
+The ports change when the proxy starts again, so this suits a test, and not ports that are published.
+
 An environment can pin a broker to a port when the ports are published one by one:
 
 ```yaml
