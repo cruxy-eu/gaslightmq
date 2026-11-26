@@ -1,13 +1,18 @@
 //! The pads of a layout, played live: rows are selectors, columns are presets, and the bottom row picks the layer.
 
 use dioxus::prelude::*;
+use gaslightmq_control_api::environment::EnvironmentName;
 use gaslightmq_control_api::prelude::*;
 use gaslightmq_control_api::rule::{Action, Preset, PresetName, RuleState};
 use gaslightmq_control_api::selector::SelectorName;
-use gaslightmq_control_api::surface::{Column, Encoder, Intent, Layer, LayoutName, PadState, PlayMode, Row, Steps};
+use gaslightmq_control_api::surface::{
+    Column, Encoder, Hold, Intent, Layer, LayoutName, Pad, PadState, PlayMode, Row, Steps,
+};
 use gaslightmq_control_api::trigger::Chance;
+use gaslightmq_control_client::SendError;
 
 use crate::app::Ui;
+use crate::browser;
 use crate::components::LieBadge;
 use crate::components::{Icon, Shape, Tone};
 use crate::style::{CRUMB, EMPTY, HEADER, KEY, SEGMENT, SEGMENT_ON, SEGMENTS};
@@ -234,30 +239,109 @@ fn let_go(ui: &Ui, release: impl FnOnce(&mut Desk) -> Option<SendIntent>) {
     }
 }
 
-/// Sends an intent. The answer to a press in hold goes back to the desk, which keeps the hold for the release,
-/// and sends the release at once when someone let go of the pad before the answer came.
+/// Sends an intent, as a request of the pads.
+///
+/// A press in hold and its release each go their own way: a hold belongs to the presence of the tab,
+/// and its release arrives, or the presence ends.
 fn send(ui: &Ui, send: SendIntent) {
-    let Intent::Hold { pad } = &send.intent else {
-        ui.send_from(RequestSurface::Pad, send, |_| {});
-        return;
-    };
-    let (pad, environment) = (pad.clone(), send.environment.clone());
-    let answered = ui.clone();
-    ui.send_settled(RequestSurface::Pad, send, move |effect| {
-        let hold = effect.and_then(|effect| effect.hold);
-        let mut slot = answered.desk;
-        let mut desk = slot.peek().clone();
-        let release = match desk.as_mut() {
-            Some(desk) => desk.answered(&environment, &pad, hold),
-            // No desk waits for the hold any more, so nobody would release it.
-            None => hold.map(|hold| SendIntent {
-                environment,
-                intent: Intent::Release { pad, hold },
-            }),
+    match &send.intent {
+        Intent::Hold { pad } => hold(ui, pad.clone(), send),
+        Intent::Release { .. } => release(ui, send),
+        Intent::Arm { .. } | Intent::Disarm { .. } | Intent::Turn { .. } => {
+            ui.send_from(RequestSurface::Pad, send, |_| {});
+        }
+    }
+}
+
+/// Sends a press in hold of `pad`. Its answer goes back to the desk, which keeps the hold for the release,
+/// and the release goes out at once when someone let go of the pad before the answer came.
+///
+/// The hold belongs to the presence of the tab, so that it ends when the tab is gone.
+/// A tab that has no presence holds nothing: nothing would end a hold of its.
+/// A press that gets no answer may have added a hold that the tab cannot name, so the tab lets go of its presence,
+/// and the control plane ends whatever that presence held.
+fn hold(ui: &Ui, pad: Pad, send: SendIntent) {
+    let environment = send.environment.clone();
+    let from = ui.source(RequestSurface::Pad);
+    if from.presence.is_none() {
+        ui.notify(
+            "The pads hold nothing until the live stream is open again.".to_owned(),
+            true,
+        );
+        return answered(ui, environment, pad, None);
+    }
+    let ui = ui.clone();
+    spawn(async move {
+        let hold = match ui.client.send_from(from, send).await {
+            Ok(Ok(effect)) => effect.hold,
+            Ok(Err(refused)) => {
+                ui.notify(refused.to_string(), true);
+                None
+            }
+            Err(error) => {
+                ui.notify(error.to_string(), true);
+                if !matches!(error, SendError::Rejected { .. }) {
+                    ui.let_go_of_presence();
+                }
+                None
+            }
         };
-        slot.set(desk);
-        if let Some(release) = release {
-            answered.send_from(RequestSurface::Pad, release, |_| {});
+        answered(&ui, environment, pad, hold);
+    });
+}
+
+/// The answer to a press in hold of `pad` came from `environment`: the hold that it added, or `None` when it failed.
+fn answered(ui: &Ui, environment: EnvironmentName, pad: Pad, hold: Option<Hold>) {
+    let mut slot = ui.desk;
+    let mut desk = slot.peek().clone();
+    let release = match desk.as_mut() {
+        Some(desk) => desk.answered(&environment, &pad, hold),
+        // No desk waits for the hold any more, so nobody would release it.
+        None => hold.map(|hold| SendIntent {
+            environment,
+            intent: Intent::Release { pad, hold },
+        }),
+    };
+    slot.set(desk);
+    if let Some(release) = release {
+        self::release(ui, release);
+    }
+}
+
+/// Sends the release of a hold, and sends it again until the control plane answers it.
+///
+/// A release that does not arrive would leave a rule armed that nobody holds any more.
+/// So the UI sends it again after each [wait](crate::UiConfiguration::reconnect_after), for as long as the tab is
+/// the presence that it held the pad as: once that presence has ended, its holds have ended with it.
+fn release(ui: &Ui, release: SendIntent) {
+    let ui = ui.clone();
+    spawn(async move {
+        let held_as = ui.live.peek().presence();
+        let mut told = false;
+        loop {
+            let sent = ui
+                .client
+                .send_from(ui.source(RequestSurface::Pad), release.clone())
+                .await;
+            match sent {
+                Ok(Ok(_)) => return,
+                Ok(Err(refused)) => return ui.notify(refused.to_string(), true),
+                Err(SendError::Unreachable { reason }) => {
+                    if !told {
+                        ui.notify(
+                            format!("The release of a pad did not arrive, and goes out again: {reason}"),
+                            true,
+                        );
+                        told = true;
+                    }
+                }
+                Err(error) => return ui.notify(error.to_string(), true),
+            }
+            browser::sleep(ui.configuration().reconnect_after).await;
+            if ui.live.peek().presence() != held_as {
+                // The presence that held the pad has ended, and the hold with it.
+                return;
+            }
         }
     });
 }

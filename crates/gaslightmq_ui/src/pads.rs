@@ -19,6 +19,8 @@ use gaslightmq_control_api::trigger::{Lifetime, Trigger};
 /// A press sends the state it wants, and the environment makes the live rule of an empty pad.
 /// A press in hold waits for the hold that the environment answers with, and its release names it.
 /// The desk never makes a rule itself, and never holds the state of one: it reads both from the environment.
+///
+/// The holds of the desk belong to the presence of the UI, and [end with it](Self::presence_ended).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Desk {
     surface: Surface,
@@ -151,6 +153,15 @@ impl Desk {
     /// Whether someone holds a pad of the desk, which keeps ⌘Z from undoing anything.
     pub fn holding(&self) -> bool {
         self.surface.holding()
+    }
+
+    /// The presence that the UI held its pads as has ended, and the control plane ended every hold of it:
+    /// the UI stayed away for longer than the grace period, or it let go of its presence.
+    ///
+    /// No pad is held any more, and the release of a pad that was held gives nothing: its hold is gone already.
+    pub fn presence_ended(&mut self) {
+        self.surface.holds_ended();
+        self.held_in.clear();
     }
 
     /// Whether the encoder turns the rule behind the focused pad: the pad has a live rule, and the encoder changes a

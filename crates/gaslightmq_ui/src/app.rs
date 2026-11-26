@@ -1,7 +1,7 @@
 //! The application: what every view shares, and the views by their path.
 
 use dioxus::prelude::*;
-use gaslightmq_control_api::{Operation, RequestSurface};
+use gaslightmq_control_api::{Operation, RequestSource, RequestSurface};
 use gaslightmq_control_client::{ControlClient, ControlClientConfiguration};
 
 use crate::browser;
@@ -72,6 +72,24 @@ impl Ui {
         self.changes.send(Changed);
     }
 
+    /// Where a request of `surface` comes from: the surface, and the presence of this tab.
+    pub fn source(&self, surface: RequestSurface) -> RequestSource {
+        self.live.peek().source(surface)
+    }
+
+    /// Lets go of the presence of this tab, and of every pad that the tab holds as it.
+    ///
+    /// The live stream opens again as a new presence, and the control plane ends the one that nobody comes back
+    /// as, with every hold of it: also one that the tab does not know of, because the answer to its press got lost.
+    pub fn let_go_of_presence(&self) {
+        let (mut live, mut desk) = (self.live, self.desk);
+        live.write().let_go_of_presence();
+        if let Some(desk) = desk.write().as_mut() {
+            desk.presence_ended();
+        }
+        self.changed();
+    }
+
     /// Sends `operation` to the control plane as a view of the UI does, and shows a notice when it fails.
     pub fn send<O>(&self, operation: O)
     where
@@ -106,6 +124,8 @@ impl Ui {
 
     /// Sends `operation` to the control plane as the request of `surface`, and hands `settled` its answer,
     /// or `None` when it failed. A failure shows a notice.
+    ///
+    /// The request says which presence the tab is, as every request of the UI does.
     pub fn send_settled<O>(
         &self,
         surface: RequestSurface,
@@ -116,8 +136,9 @@ impl Ui {
     {
         let client = self.client.clone();
         let ui = self.clone();
+        let from = self.source(surface);
         spawn(async move {
-            let failed = match client.send_from(surface, operation).await {
+            let failed = match client.send_from(from, operation).await {
                 Ok(Ok(answer)) => return settled(Some(answer)),
                 Ok(Err(error)) => error.to_string(),
                 Err(error) => error.to_string(),
@@ -163,7 +184,7 @@ pub fn App() -> Element {
     let changes = use_coroutine({
         let client = client.clone();
         let configuration = configuration.clone();
-        move |changes| connection::run(live, client.clone(), configuration.clone(), changes)
+        move |changes| connection::run(live, desk, client.clone(), configuration.clone(), changes)
     });
     use_context_provider(|| Ui {
         live,

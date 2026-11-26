@@ -4,6 +4,7 @@ use gaslightmq_control_api::call::{Call, CallId};
 use gaslightmq_control_api::environment::EnvironmentName;
 use gaslightmq_control_api::field::{Field, FieldValue};
 use gaslightmq_control_api::prelude::*;
+use gaslightmq_control_api::surface::PresenceId;
 
 use crate::configuration::UiConfiguration;
 use crate::filter::TrafficFilter;
@@ -33,6 +34,10 @@ pub enum Link {
 /// Whoever holds the stream asks it for the [next subscription](Self::next_subscription) after every change,
 /// and sends what it returns.
 ///
+/// The UI is one [presence](Self::presence) of the control plane, which the live stream names.
+/// Every request of the UI [says so](Self::source), so the pads that it holds end with the presence
+/// when the tab is gone. A stream that ends keeps the presence: the next one asks to come back as it.
+///
 /// ```
 /// use gaslightmq_control_api::prelude::*;
 /// use gaslightmq_ui::{Live, UiConfiguration};
@@ -53,6 +58,7 @@ pub enum Link {
 pub struct Live {
     configuration: UiConfiguration,
     link: Link,
+    presence: Option<PresenceId>,
     process: Option<Process>,
     shown: Option<EnvironmentName>,
     filter: TrafficFilter,
@@ -67,6 +73,7 @@ impl Live {
         Self {
             configuration: configuration.clone(),
             link: Link::Opening,
+            presence: None,
             process: None,
             shown: None,
             filter: TrafficFilter::default(),
@@ -79,6 +86,23 @@ impl Live {
     /// Where the live stream stands.
     pub fn link(&self) -> &Link {
         &self.link
+    }
+
+    /// The presence of this tab: the one that its live stream named last.
+    ///
+    /// The next stream asks to come back as it. `None` before the first stream named one,
+    /// and after the UI [let go](Self::let_go_of_presence) of the one it had.
+    pub fn presence(&self) -> Option<PresenceId> {
+        self.presence
+    }
+
+    /// Where a request of `surface` comes from: the surface, and the presence of this tab once it has one.
+    pub fn source(&self, surface: RequestSurface) -> RequestSource {
+        let source = RequestSource::new(surface);
+        match self.presence {
+            Some(presence) => source.with_presence(presence),
+            None => source,
+        }
     }
 
     /// The process, once the first snapshot came.
@@ -125,6 +149,25 @@ impl Live {
     pub fn opened(&mut self) {
         self.link = Link::Open;
         self.following = Following::default();
+    }
+
+    /// The live stream that opened named `presence` as the presence of this tab.
+    ///
+    /// Returns whether the presence that the tab had before has ended: the stream asked to come back as it,
+    /// and the control plane no longer held it. The pads that the tab held as that presence are held no more.
+    pub fn present_as(&mut self, presence: PresenceId) -> bool {
+        let ended = self.presence.is_some_and(|before| before != presence);
+        self.presence = Some(presence);
+        ended
+    }
+
+    /// The UI lets go of its presence: the next stream asks for none, and gets a new one.
+    ///
+    /// The control plane ends a presence that nobody comes back as, with every hold of it.
+    /// The UI does this when a press in hold got no answer: the control plane may hold the pad for it,
+    /// and the UI does not know which hold to release.
+    pub fn let_go_of_presence(&mut self) {
+        self.presence = None;
     }
 
     /// The live stream ended, or did not open. `reason` says why.

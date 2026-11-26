@@ -23,6 +23,7 @@ use gaslightmq_control_api::kernel::{ApiKey, BrokerId, ClientId};
 use gaslightmq_control_api::prelude::*;
 use gaslightmq_control_api::rule::{PresetName, Rule, RuleState};
 use gaslightmq_control_api::selector::{Condition, Conditions, SelectorName, SelectorRef};
+use gaslightmq_control_api::surface::PresenceId;
 use gaslightmq_ui::{Link, Live, UiConfiguration};
 
 /// The environments of the tests, as the workspace and the control plane describe them.
@@ -472,5 +473,87 @@ mod traffic {
 
         assert_eq!(shown(&live), [2]);
         assert_eq!(live.inspected().map(Call::id), Some(CallId::FIRST));
+    }
+}
+
+mod presence {
+    use super::*;
+
+    /// The presence that the control plane names for this tab, and the one it names once it no longer holds that.
+    const TAB: PresenceId = PresenceId::from_random_bits(0x9f86_d081_884c_7d65_9a2f_eaa0_c55a_d015);
+    const NEW_TAB: PresenceId = PresenceId::from_random_bits(0x2c26_b46b_68ff_c68f_f99b_453c_1d30_4134);
+
+    #[test]
+    fn every_request_of_the_ui_says_its_presence_once_the_stream_named_it() {
+        let mut live = Live::new(&UiConfiguration::default());
+        assert_eq!(live.presence(), None);
+        assert_eq!(
+            live.source(RequestSurface::Pad),
+            RequestSource::new(RequestSurface::Pad)
+        );
+
+        live.opened();
+        let ended = live.present_as(TAB);
+
+        assert!(!ended, "the tab had no presence before");
+        assert_eq!(live.presence(), Some(TAB));
+        assert_eq!(
+            live.source(RequestSurface::Pad),
+            RequestSource::new(RequestSurface::Pad).with_presence(TAB)
+        );
+        assert_eq!(
+            live.source(RequestSurface::QuickInject),
+            RequestSource::new(RequestSurface::QuickInject).with_presence(TAB)
+        );
+    }
+
+    #[test]
+    fn a_stream_that_ends_keeps_the_presence_and_the_next_one_comes_back_as_it() {
+        let mut live = Live::new(&UiConfiguration::default());
+        live.opened();
+        live.present_as(TAB);
+
+        live.lost("the connection broke".to_owned());
+
+        // The tab still is the presence it was, and says so while it has no stream.
+        assert_eq!(live.presence(), Some(TAB));
+        // The control plane still held the presence, so the pads that the tab holds stay held.
+        live.opened();
+        assert!(!live.present_as(TAB));
+    }
+
+    #[test]
+    fn a_stream_that_comes_back_as_another_presence_says_that_the_one_before_ended() {
+        let mut live = Live::new(&UiConfiguration::default());
+        live.opened();
+        live.present_as(TAB);
+        live.lost("the laptop slept".to_owned());
+
+        // The tab stayed away for longer than the grace period, and the control plane names a new presence.
+        live.opened();
+        let ended = live.present_as(NEW_TAB);
+
+        assert!(ended, "the holds of the presence before are gone");
+        assert_eq!(live.presence(), Some(NEW_TAB));
+    }
+
+    #[test]
+    fn a_ui_that_let_go_of_its_presence_names_none_until_a_stream_names_a_new_one() {
+        let mut live = Live::new(&UiConfiguration::default());
+        live.opened();
+        live.present_as(TAB);
+
+        // A press in hold got no answer, and the control plane may hold the pad for the tab.
+        live.let_go_of_presence();
+
+        assert_eq!(live.presence(), None);
+        assert_eq!(
+            live.source(RequestSurface::Pad),
+            RequestSource::new(RequestSurface::Pad)
+        );
+        // The next stream asks for no presence, and the one it gets is no news about any hold.
+        live.opened();
+        assert!(!live.present_as(NEW_TAB));
+        assert_eq!(live.presence(), Some(NEW_TAB));
     }
 }
