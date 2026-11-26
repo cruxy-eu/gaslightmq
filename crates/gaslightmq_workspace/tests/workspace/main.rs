@@ -1,4 +1,4 @@
-//! A workspace over stores in memory: what it lets through, what it refuses, and the UUIDs it gives.
+//! A workspace over stores in memory: what it lets through, what it refuses, and the UUIDs it keeps in memory.
 //!
 //! [`support`] holds the definitions of one workspace, and two sets of stores of which one store fails.
 //! Every test starts its workspace itself, over a context whose stores hold nothing.

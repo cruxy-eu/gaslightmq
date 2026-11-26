@@ -1,14 +1,14 @@
 gaslightmq_resource::uuid! {
-    /// It tells the rules of a workspace apart, and the live rules of an environment, whatever their names are.
-    /// A [`Rule`](crate::Rule) has it as an optional part, next to its name:
-    /// a rule has none until the workspace or the engine gives it one.
+    /// It tells one rule from every other rule that a process holds, or held, in one run.
+    /// It is live state: the workspace keeps the UUID of a rule of the workspace in memory, next to the name,
+    /// and an environment the one of each of its live rules. No [`Rule`](crate::Rule) and no file holds one.
     RuleUuid, RuleUuidError, "rule UUID"
 }
 
 gaslightmq_resource::uuid! {
-    /// It tells the presets of a workspace apart, whatever their names are.
-    /// A [`Preset`](crate::Preset) has it as an optional part, next to its name:
-    /// a preset has none until the workspace gives it one.
+    /// It tells one preset from every other preset that a process holds, or held, in one run.
+    /// It is live state: the workspace gives a preset its UUID when it first holds it, and keeps it in memory,
+    /// next to the name. No [`Preset`](crate::Preset) and no file holds one.
     PresetUuid, PresetUuidError, "preset UUID"
 }
 
@@ -20,7 +20,7 @@ mod tests {
     const CREATED: u64 = 0x0193_b6c2_5f3e;
     /// The random bits of [`SLOW_ORDER_PRODUCERS`].
     const RANDOM: [u8; 10] = [0x0a, 0x41, 0x1c, 0x2d, 0x8e, 0x4b, 0x1f, 0x6a, 0x7d, 0x10];
-    /// The UUID of [`CREATED`] and [`RANDOM`], as a file holds it.
+    /// The UUID of [`CREATED`] and [`RANDOM`], as text.
     const SLOW_ORDER_PRODUCERS: &str = "0193b6c2-5f3e-7a41-9c2d-8e4b1f6a7d10";
 
     #[test]

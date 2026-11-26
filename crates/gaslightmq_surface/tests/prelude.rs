@@ -41,7 +41,7 @@ mod next_to_the_others {
     use gaslightmq_surface::prelude::*;
     use gaslightmq_trigger::prelude::*;
 
-    /// The UUID that a workspace gave the layout `order-desk`.
+    /// The UUID that a workspace gave the layout `order-desk` in one run.
     const ORDER_DESK_UUID: &str = "0193b6c2-5f3e-7a41-9c2d-8e4b1f6a7d10";
 
     /// The layouts with a column for a preset, with their store named by its trait.
@@ -68,7 +68,6 @@ mod next_to_the_others {
             [layer.clone()],
         )
         .unwrap()
-        .with_uuid(layout_uuid)
         .with_title(layout_title.clone());
         let pad: Pad = layout.pad(&layer, row, column).unwrap();
         let shows: PadState = PadState::of(None);

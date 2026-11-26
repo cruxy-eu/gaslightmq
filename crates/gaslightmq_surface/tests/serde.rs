@@ -49,7 +49,7 @@ fn pad() -> Pad {
     )
 }
 
-/// The UUID that a workspace gave the layout `order-desk`.
+/// The UUID that a workspace gave the layout `order-desk` in one run.
 const ORDER_DESK_UUID: &str = "0193b6c2-5f3e-7a41-9c2d-8e4b1f6a7d10";
 
 /// The JSON of [`pad`].
@@ -89,27 +89,9 @@ fn a_layout_without_a_title_writes_none_and_one_without_rows_and_columns_writes_
 }
 
 #[test]
-fn a_layout_writes_its_uuid_when_the_workspace_gave_it_one() {
-    // name: order-desk
-    // uuid: 0193b6c2-5f3e-7a41-9c2d-8e4b1f6a7d10
-    // title: Order desk
-    // rows: [order-producers]
-    // columns: [delay-1s]
-    // layers: [All clients]
+fn a_uuid_is_its_text() {
     let uuid: LayoutUuid = ORDER_DESK_UUID.parse().unwrap();
-    let layout = PadLayout::new(
-        "order-desk".parse().unwrap(),
-        ["order-producers".parse().unwrap()],
-        ["delay-1s".parse().unwrap()],
-        [Layer::all_clients()],
-    )
-    .unwrap()
-    .with_uuid(uuid)
-    .with_title("Order desk".parse().unwrap());
 
-    Form(layout).writes(&format!(
-        r#"{{"name":"order-desk","uuid":"{ORDER_DESK_UUID}","title":"Order desk","rows":["order-producers"],"columns":["delay-1s"],"layers":["All clients"]}}"#
-    ));
     Form(uuid).writes(&format!(r#""{ORDER_DESK_UUID}""#));
 }
 
@@ -145,9 +127,12 @@ fn reading_a_layout_rejects_what_a_layout_never_holds() {
         r#"{"name":"order-desk","title":" Order desk","rows":[],"columns":[],"layers":["All clients"]}"#,
         "layout title \" Order desk\" starts or ends with white space",
     );
+    // No file holds the UUID of a layout: `uuid` is a key that a layout does not have.
     rejects(
-        r#"{"name":"order-desk","uuid":"order-desk","rows":[],"columns":[],"layers":["All clients"]}"#,
-        "layout UUID \"order-desk\" is no UUID of version 7",
+        &format!(
+            r#"{{"name":"order-desk","uuid":"{ORDER_DESK_UUID}","rows":[],"columns":[],"layers":["All clients"]}}"#
+        ),
+        "unknown field `uuid`",
     );
     rejects(
         r#"{"name":"order-desk","rows":["fetch-"],"columns":[],"layers":["All clients"]}"#,

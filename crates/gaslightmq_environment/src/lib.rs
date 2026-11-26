@@ -6,7 +6,7 @@
 //! | Type | Is |
 //! |---|---|
 //! | [`Environment`] | A named definition of instances that run together, with a [`SchemaRegistry`] when it has one. |
-//! | [`EnvironmentUuid`] | The identity of an environment inside the workspace, which gives an environment its UUID. |
+//! | [`EnvironmentUuid`] | What tells one environment from every other in one run. The workspace keeps it in memory, and no environment holds it. |
 //! | [`Instances`] | The shape of an environment: a proxy in front of a real cluster, a proxy in front of a broker, or a broker alone. |
 //! | [`ProxyDefinition`], [`BrokerDefinition`] | What an environment says about its proxy and about its broker. |
 //! | [`Upstream`] | The real cluster behind a proxy: its bootstrap [`ServerAddress`], [`Tls`] and [`Sasl`]. |

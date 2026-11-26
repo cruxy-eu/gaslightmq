@@ -43,7 +43,8 @@ impl UuidSeed {
 /// Where a workspace takes the seeds of new UUIDs from.
 ///
 /// A [`Workspace`](crate::Workspace) asks for one seed for each UUID it makes:
-/// when someone creates a definition, and when someone updates a definition that has no UUID yet.
+/// when someone creates a definition, when it finds a definition in a store that it did not hold yet,
+/// and when someone makes a live rule.
 ///
 /// The IO edge implements this with the clock and the randomness of the system.
 /// A closure that returns seeds is a source too, which is how a test hands in the ones it wrote down:

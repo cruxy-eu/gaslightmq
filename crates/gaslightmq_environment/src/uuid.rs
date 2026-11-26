@@ -1,7 +1,7 @@
 gaslightmq_resource::uuid! {
-    /// It tells the environments of a workspace apart, whatever their names are.
-    /// An [`Environment`](crate::Environment) has it as an optional part, next to its name:
-    /// an environment has none until the workspace gives it one.
+    /// It tells one environment from every other environment that a process holds, or held, in one run.
+    /// It is live state: the workspace gives an environment its UUID when it first holds it, and keeps it in memory,
+    /// next to the name. No [`Environment`](crate::Environment) and no file holds one.
     EnvironmentUuid, EnvironmentUuidError, "environment UUID"
 }
 
@@ -13,7 +13,7 @@ mod tests {
     const CREATED: u64 = 0x0193_b6c2_5f3e;
     /// The random bits of [`STAGING_PROXY`].
     const RANDOM: [u8; 10] = [0x0a, 0x41, 0x1c, 0x2d, 0x8e, 0x4b, 0x1f, 0x6a, 0x7d, 0x10];
-    /// The UUID of [`CREATED`] and [`RANDOM`], as a file holds it.
+    /// The UUID of [`CREATED`] and [`RANDOM`], as text.
     const STAGING_PROXY: &str = "0193b6c2-5f3e-7a41-9c2d-8e4b1f6a7d10";
 
     #[test]

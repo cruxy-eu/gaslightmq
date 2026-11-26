@@ -14,7 +14,7 @@ use crate::{EnvironmentReadError, Operation};
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct RuleStatus {
-    /// The definition of the rule, without its UUID.
+    /// The definition of the rule, as a file holds it.
     pub rule: Rule,
     /// Whether the rule is a live rule: one that a pad or ⌘K made, and that only this environment holds.
     pub live: bool,
@@ -39,7 +39,7 @@ impl Operation for ListEnvironmentRules {
 ///
 /// A live rule stays in the memory of its environment, and never in the workspace, until someone
 /// [keeps](KeepRule) it. Its name is a name that no rule of the workspace and no other live rule has.
-/// The environment gives it its UUID, whatever UUID the request holds.
+/// The rule gets its UUID from the workspace, and the environment keeps it in memory.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct CreateLiveRule {
@@ -88,7 +88,7 @@ impl Operation for DeleteLiveRule {
 
 /// Save a live rule as a rule of the workspace.
 ///
-/// The rule keeps its name and its UUID, and it stays in the state it has.
+/// The rule keeps its name and the UUID that the process gave it, and it stays in the state it has.
 /// From then on it is a rule of the workspace, which every environment holds.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]

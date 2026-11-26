@@ -36,7 +36,7 @@ mod next_to_the_others {
     use gaslightmq_kernel::prelude::*;
     use gaslightmq_selector::prelude::*;
 
-    /// The UUID that a workspace gave the selector `group-orders`.
+    /// The UUID that a workspace gave the selector `group-orders` in one run.
     const GROUP_ORDERS_UUID: &str = "0193b6c2-5f3e-7a41-9c2d-8e4b1f6a7d10";
 
     /// The selectors that include another one, with their store named by its trait.

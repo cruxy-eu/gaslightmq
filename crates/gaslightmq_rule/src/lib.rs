@@ -6,9 +6,9 @@
 //!
 //! | Type | Is |
 //! |---|---|
-//! | [`Rule`] | A rule as a file writes it: a name, a UUID, a title, a selector, a scope, an action, a trigger, a lifetime and a dice key. |
+//! | [`Rule`] | A rule as a file writes it: a name, a title, a selector, a scope, an action, a trigger, a lifetime and a dice key. |
 //! | [`RuleName`], [`PresetName`] | The names that other things reference a rule and a preset by: slugs, and their identity. |
-//! | [`RuleUuid`], [`PresetUuid`] | The identity of a rule and of a preset inside the workspace, which gives each its UUID. |
+//! | [`RuleUuid`], [`PresetUuid`] | What tells one rule or preset from every other in one run. It is live state, and no definition holds it. |
 //! | [`RuleTitle`], [`PresetTitle`] | The free text that says what a rule is for and what a preset does. |
 //! | [`Action`] | What happens when a rule fires: a lie or an incident. |
 //! | [`ActionRef`] | How a rule says it: a preset name, or an inline action. |
@@ -175,8 +175,8 @@
 //! | [`RuleName`], [`PresetName`], [`RuleUuid`], [`PresetUuid`], [`RuleTitle`], [`PresetTitle`] | The text. |
 //! | [`Action`] | The flat map of the lie or of the incident: `{ lie: refusal, error: NOT_LEADER_OR_FOLLOWER }`. |
 //! | [`ActionRef`] | The name of a preset as text, or the map of an inline action. |
-//! | [`Preset`] | The map of its action, with a `name` key next to the others, and a `uuid` and a `title` key when it has them. |
-//! | [`Rule`] | A map with `name`, `selector` and `action`, and with `uuid`, `title`, `scope`, `trigger`, `lifetime` and `dice` when it has them. |
+//! | [`Preset`] | The map of its action, with a `name` key next to the others, and a `title` key when it has one. |
+//! | [`Rule`] | A map with `name`, `selector` and `action`, and with `title`, `scope`, `trigger`, `lifetime` and `dice` when it has them. |
 //! | [`RuleState`] | Its name: `draft`, `armed` or `disarmed`. |
 //!
 //! ```yaml

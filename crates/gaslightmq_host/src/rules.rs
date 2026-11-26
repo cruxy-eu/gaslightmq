@@ -9,7 +9,7 @@ use gaslightmq_rule::{Rule, RuleState};
 /// A live rule belongs to one environment, and no rule of the workspace has its name.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EnvironmentRule {
-    /// The definition of the rule, with its UUID.
+    /// The definition of the rule.
     pub rule: Rule,
     /// Whether the rule is a live rule: one that a pad or ⌘K made, and that only this environment holds.
     pub live: bool,

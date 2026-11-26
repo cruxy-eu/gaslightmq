@@ -7,9 +7,10 @@
 //! A resource keeps its name for as long as it exists.
 //! Whoever wants another name makes a new resource.
 //!
-//! A UUID is the identity of a resource inside the workspace.
-//! It lets the workspace track and store resources without one overwriting another, and nothing else references it.
-//! Nobody writes a UUID by hand: the workspace gives a resource its UUID, and keeps it in the file of the resource.
+//! A UUID tells one resource from every other resource that a process holds, or held, in one run.
+//! A resource that someone deleted and the one that someone made under its name afterwards have different UUIDs.
+//! It is live state, as the armed state of a rule is: the process gives a resource its UUID, and keeps it in memory,
+//! next to the name. No resource and no file holds one, and nothing references a resource by it.
 //!
 //! A title is the free text that says what a resource is for.
 //! It is a part of the resource, next to its name, and never a part of the name.
@@ -60,8 +61,7 @@
 //!
 //! And [`uuid!`] writes the UUID of one kind and its error, around a [`ResourceUuid`]:
 //! `gaslightmq_resource::uuid!(SelectorUuid, SelectorUuidError, "selector UUID");`
-//! The type that holds a resource has the UUID as an optional part too:
-//! a resource that someone writes by hand has none until the workspace gives it one.
+//! The type that holds a resource has no UUID: whoever holds the resource keeps the UUID next to it.
 //!
 //! The crate is internal, and says so in its manifest.
 //! A crate that uses it shows none of its types: not in what it offers, and not in what it documents.

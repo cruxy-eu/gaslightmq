@@ -29,7 +29,7 @@
 use gaslightmq_definition_conformance::{Samples, assert_store_contract};
 use gaslightmq_rule::PresetName;
 use gaslightmq_selector::SelectorName;
-use gaslightmq_surface::{Layer, LayoutStore, LayoutUuid, PadLayout};
+use gaslightmq_surface::{Layer, LayoutStore, PadLayout};
 
 /// Fails when a store of pad layouts does not do what a [`LayoutStore`] does.
 ///
@@ -158,16 +158,9 @@ async fn created<S: LayoutStore>(store: &S, layout: PadLayout) {
 }
 
 /// The layouts that the contract of every store is checked with:
-/// the order desk as someone wrote it, the same with a UUID and a title, and the fetch desk.
+/// the order desk as someone wrote it, the same with a title, and the fetch desk.
 fn samples() -> Samples<PadLayout> {
-    /// The time someone created the layout, in milliseconds since the Unix epoch: 11 December 2024.
-    const CREATED: u64 = 0x0193_b6c2_5f3e;
-    /// The random bits of its UUID.
-    const RANDOM: [u8; 10] = [0x0a, 0x41, 0x1c, 0x2d, 0x8e, 0x4b, 0x1f, 0x6a, 0x7d, 0x10];
-
-    let titled = order_desk()
-        .with_uuid(LayoutUuid::new(CREATED, RANDOM))
-        .with_title("Order desk".parse().expect("a layout title"));
+    let titled = order_desk().with_title("Order desk".parse().expect("a layout title"));
     Samples::new(order_desk(), titled, fetch_desk())
 }
 

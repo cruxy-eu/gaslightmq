@@ -1,5 +1,4 @@
 - name: orders-sometimes-fail
-  uuid: 01a20cc8-8ec1-725c-bf66-fbcb6227d555
   title: Orders sometimes fail
   selector:
     api: Produce

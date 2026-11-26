@@ -10,7 +10,7 @@
 //! | [`Conditions`] | Conditions that combine with **and**, one per field: the `match` of a selector. |
 //! | [`Scope`] | Conditions that only test connection fields: *who* something applies to. |
 //! | [`Selector`] | A named set of conditions, which can include another selector by its [`SelectorName`]. |
-//! | [`SelectorUuid`] | The identity of a selector inside the workspace, which gives a selector its UUID. |
+//! | [`SelectorUuid`] | What tells one selector from every other in one run. The workspace keeps it in memory, and no selector holds it. |
 //! | [`SelectorRef`] | How a rule says which calls it considers: a selector name, or inline conditions. |
 //! | [`SelectorSet`] | The selectors by name. It resolves includes, and refuses a circle of them. |
 //! | [`EffectiveSelector`] | Every condition that applies, after includes and scope. It matches calls. |
@@ -108,7 +108,7 @@
 //! | [`SelectorName`], [`SelectorUuid`], [`SelectorTitle`], [`Glob`] | The text. |
 //! | [`Conditions`], [`Scope`] | A map with one entry per condition: the field, and the form of the condition. |
 //! | [`Condition`] | The same map with one entry. |
-//! | [`Selector`] | A map with `name`, and with `uuid`, `title`, `include` and `match` when it has them. |
+//! | [`Selector`] | A map with `name`, and with `title`, `include` and `match` when it has them. Any other key, such as `uuid`, is an error. |
 //! | [`SelectorRef`] | The name as text, or the map of inline conditions. |
 //!
 //! Under the key of its field, a condition has one of these forms.

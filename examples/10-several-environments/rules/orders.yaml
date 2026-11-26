@@ -1,6 +1,5 @@
 # One rule, available in both environments.
 - name: orders-sometimes-fail
-  uuid: 01a20cc8-9090-7531-8d05-671691d436f8
   title: Orders sometimes fail
   selector:
     api: Produce

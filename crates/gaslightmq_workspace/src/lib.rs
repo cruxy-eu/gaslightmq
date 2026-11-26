@@ -7,7 +7,7 @@
 //!
 //! | Type | Is |
 //! |---|---|
-//! | [`Workspace`] | The door for every change: create, update, delete and validate, and keep what was made outside it under the UUID it stamped. |
+//! | [`Workspace`] | The door for every change: create, update, delete, validate and keep a live rule. It holds the UUID of every definition, in memory. |
 //! | [`WorkspaceContext`] | Everything a workspace is handed, as one type: its stores, and the source of its UUIDs. |
 //! | [`Stores`] | The five stores that a workspace works over, one for each kind. |
 //! | [`WorkspaceDefinition`] | A definition of a kind that a workspace holds. |
@@ -48,8 +48,6 @@
 //! | Every reference names a definition that exists: the selector that a selector includes, the selector and the preset of a rule, and the rows and the columns of a pad layout. | On every create and update, and by [`Workspace::validate`]. |
 //! | No selectors include each other in a circle, and every rule can fire with the selector and the preset it names. | On every create and update, and by [`Workspace::validate`]. |
 //! | A selector or a preset that another definition uses is not deleted. The error names who uses it. | On every delete. |
-//! | Every definition gets a UUID when someone creates it, and keeps it. | On every create and update. |
-//! | No two definitions have the same UUID, whatever their kinds are. | On every create and update, and by [`Workspace::validate`]. |
 //!
 //! A change is refused for what it breaks, and for nothing else.
 //! When something was wrong before, as after someone edited a file, a change to another definition still goes through.
@@ -58,6 +56,15 @@
 //! It asks only the stores whose definitions can refer to the one that goes.
 //!
 //! An environment names a world, and no store holds worlds yet, so nothing checks that name.
+//!
+//! # UUIDs in memory
+//!
+//! No definition, no store and no file holds a UUID.
+//! The UUID of a definition is live state of the process, and the [`Workspace`] keeps it in memory, under the kind
+//! and the name of the definition: [`Workspace::uuid`] gives it.
+//! A definition gets a new one when the workspace first holds it, keeps it for as long as it keeps its name,
+//! and loses it when someone deletes it. A name that comes back is a new definition, with a new UUID.
+//! A live rule gets its UUID from [`Workspace::live_rule_uuid`], and [`Workspace::keep`] keeps it.
 //!
 //! # Errors
 //!
@@ -88,6 +95,7 @@
 mod contents;
 mod context;
 mod error;
+mod held;
 mod kind;
 #[cfg(feature = "memory")]
 mod memory;

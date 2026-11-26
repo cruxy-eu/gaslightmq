@@ -1,7 +1,7 @@
 gaslightmq_resource::uuid! {
-    /// It tells the selectors of a workspace apart, whatever their names are.
-    /// A [`Selector`](crate::Selector) has it as an optional part, next to its name:
-    /// a selector has none until the workspace gives it one.
+    /// It tells one selector from every other selector that a process holds, or held, in one run.
+    /// It is live state: the workspace gives a selector its UUID when it first holds it, and keeps it in memory,
+    /// next to the name. No [`Selector`](crate::Selector) and no file holds one.
     SelectorUuid, SelectorUuidError, "selector UUID"
 }
 
@@ -13,7 +13,7 @@ mod tests {
     const CREATED: u64 = 0x0193_b6c2_5f3e;
     /// The random bits of [`ORDER_PRODUCERS`].
     const RANDOM: [u8; 10] = [0x0a, 0x41, 0x1c, 0x2d, 0x8e, 0x4b, 0x1f, 0x6a, 0x7d, 0x10];
-    /// The UUID of [`CREATED`] and [`RANDOM`], as a file holds it.
+    /// The UUID of [`CREATED`] and [`RANDOM`], as text.
     const ORDER_PRODUCERS: &str = "0193b6c2-5f3e-7a41-9c2d-8e4b1f6a7d10";
 
     #[test]

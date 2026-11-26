@@ -1,6 +1,5 @@
 # An exact test case: the consumer keeps reading while the leader churns.
 name: consumer-survives-leader-churn
-uuid: 01a20cc8-9176-7f6a-ad94-46c36773cec2
 title: Consumer survives leader churn
 mode: sequence
 seed: 7

@@ -2,6 +2,7 @@
 
 use futures::executor::block_on;
 use gaslightmq_definition_api::prelude::*;
+use gaslightmq_environment::prelude::*;
 use gaslightmq_lie::prelude::*;
 use gaslightmq_rule::prelude::*;
 use gaslightmq_selector::prelude::*;
@@ -12,14 +13,14 @@ use crate::support::{Context, OrderDesk, UnreadableRules};
 
 #[test]
 fn a_workspace_without_a_definition_is_valid() {
-    let workspace = Workspace::new(MemoryContext::new());
+    let mut workspace = Workspace::new(MemoryContext::new());
 
     assert_eq!(block_on(workspace.validate()), Ok(()));
 }
 
 #[test]
 fn definitions_that_someone_wrote_by_hand_are_valid_when_they_fit_each_other() -> anyhow::Result<()> {
-    let workspace = Workspace::new(MemoryContext::new());
+    let mut workspace = Workspace::new(MemoryContext::new());
 
     block_on(async {
         // The stores get the order desk as it was written, in an order in which nothing is there before it is named.
@@ -36,54 +37,19 @@ fn definitions_that_someone_wrote_by_hand_are_valid_when_they_fit_each_other() -
         stores.selectors().create(OrderDesk::order_producers()).await?;
         stores.environments().create(OrderDesk::environment()).await?;
 
-        // No definition has a UUID yet, and that is no error.
         assert_eq!(workspace.validate().await, Ok(()));
-        Ok(())
-    })
-}
-
-#[test]
-fn no_two_definitions_share_a_uuid_whatever_their_kinds_are() -> anyhow::Result<()> {
-    let workspace = Workspace::new(MemoryContext::new());
-    let metadata: RuleName = "blackhole-metadata".parse()?;
-    let fetches: RuleName = "blackhole-fetches".parse()?;
-    let blackhole: PresetName = "blackhole".parse()?;
-    let (created, random) = (KnownUuids::CREATED, KnownUuids::RANDOM);
-
-    block_on(async {
-        // Someone copied a rule and gave the copy another name. The UUID came along.
-        let original = OrderDesk::blackhole_metadata().with_uuid(RuleUuid::new(created, random));
-        let copy = Rule::new(fetches.clone(), original.selector().clone(), original.action().clone())
-            .with_uuid(RuleUuid::new(created, random));
-        // A preset has the same UUID too.
-        let preset = OrderDesk::blackhole().with_uuid(PresetUuid::new(created, random));
-        workspace.stores().rules().create(original).await?;
-        workspace.stores().rules().create(copy).await?;
-        workspace.stores().presets().create(preset).await?;
-
-        let error = workspace.validate().await.unwrap_err();
-
-        // Nobody knows which one is the copy. The first in the order of kinds and names holds the UUID.
+        // The workspace found every definition, and gave each one a UUID in the order of their kinds and names.
         assert_eq!(
-            error,
-            ValidationError::Invalid {
-                errors: vec![
-                    WorkspaceError::SharedUuid {
-                        definition: fetches.into(),
-                        holder: blackhole.clone().into(),
-                    },
-                    WorkspaceError::SharedUuid {
-                        definition: metadata.into(),
-                        holder: blackhole.into(),
-                    },
-                ],
-            }
+            workspace
+                .uuid::<Selector>(OrderDesk::order_producers().name())
+                .map(String::from),
+            Some(KnownUuids::nth(1))
         );
         assert_eq!(
-            error.to_string(),
-            "the definitions do not fit each other: \
-             rule \"blackhole-fetches\" has the UUID of preset \"blackhole\"; \
-             rule \"blackhole-metadata\" has the UUID of preset \"blackhole\""
+            workspace
+                .uuid::<Environment>(OrderDesk::environment().name())
+                .map(String::from),
+            Some(KnownUuids::nth(8))
         );
         Ok(())
     })
@@ -91,7 +57,7 @@ fn no_two_definitions_share_a_uuid_whatever_their_kinds_are() -> anyhow::Result<
 
 #[test]
 fn every_reference_names_a_definition_that_exists() -> anyhow::Result<()> {
-    let workspace = Workspace::new(MemoryContext::new());
+    let mut workspace = Workspace::new(MemoryContext::new());
     let layout = PadLayout::new(
         "order-desk".parse()?,
         ["order-producers".parse()?],
@@ -136,7 +102,7 @@ fn every_reference_names_a_definition_that_exists() -> anyhow::Result<()> {
 
 #[test]
 fn selectors_that_include_each_other_in_a_circle_are_not_valid() -> anyhow::Result<()> {
-    let workspace = Workspace::new(MemoryContext::new());
+    let mut workspace = Workspace::new(MemoryContext::new());
     let order_producers: SelectorName = "order-producers".parse()?;
     let from_ingest: SelectorName = "order-producers-from-ingest".parse()?;
 
@@ -179,7 +145,7 @@ fn selectors_that_include_each_other_in_a_circle_are_not_valid() -> anyhow::Resu
 
 #[test]
 fn a_rule_is_checked_with_the_selector_and_the_preset_that_it_names() -> anyhow::Result<()> {
-    let workspace = Workspace::new(MemoryContext::new());
+    let mut workspace = Workspace::new(MemoryContext::new());
     let name: RuleName = "blackhole-what-worked".parse()?;
     let answered: SelectorName = "answered".parse()?;
     let blackhole: PresetName = "blackhole".parse()?;
@@ -214,7 +180,8 @@ fn an_environment_names_a_world_that_nothing_checks_yet() -> anyhow::Result<()> 
 
     block_on(async {
         // No store holds worlds yet, so the world of an environment is a name and no reference.
-        let environment = workspace.create(OrderDesk::environment()).await?;
+        let environment = OrderDesk::environment();
+        workspace.create(environment.clone()).await?;
 
         assert_eq!(
             environment.world().map(ToString::to_string).as_deref(),
@@ -227,7 +194,7 @@ fn an_environment_names_a_world_that_nothing_checks_yet() -> anyhow::Result<()> 
 
 #[test]
 fn a_store_that_cannot_read_is_why_nobody_knows_whether_the_definitions_fit() {
-    let workspace = Workspace::new(Context::over(UnreadableRules::new()));
+    let mut workspace = Workspace::new(Context::over(UnreadableRules::new()));
 
     let error = block_on(workspace.validate()).unwrap_err();
 

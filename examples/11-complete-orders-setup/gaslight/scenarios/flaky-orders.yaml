@@ -1,6 +1,5 @@
 # Steady background trouble on the order topics.
 name: flaky-orders
-uuid: 01a20cc8-917c-7e51-b7e3-3187b321bbd7
 title: Flaky orders
 mode: chain
 seed: 42

@@ -9,7 +9,7 @@
 //! |---|---|
 //! | [`PadLayout`] | A grid that maps rows to selectors, columns to presets and layers to scopes. |
 //! | [`LayoutName`], [`LayoutTitle`] | The identity of a layout, and the free text that says what it is for. |
-//! | [`LayoutUuid`] | The identity of a layout inside the workspace, which gives a layout its UUID. |
+//! | [`LayoutUuid`] | What tells one layout from every other in one run. The workspace keeps it in memory, and no layout holds it. |
 //! | [`Layer`] | A page of the grid for one scope. It is a scope, and it has no name. |
 //! | [`Row`], [`Column`] | The place of a selector and of a preset in the grid. |
 //! | [`Pad`] | A position: a row and a column on a layer of a layout. It points at zero or one rule. |
@@ -120,7 +120,7 @@
 //! | Type | Form |
 //! |---|---|
 //! | [`LayoutName`], [`LayoutUuid`], [`LayoutTitle`] | The text. |
-//! | [`PadLayout`] | A map with `name`, `rows`, `columns` and `layers`, and with `uuid` and `title` when it has them. |
+//! | [`PadLayout`] | A map with `name`, `rows`, `columns` and `layers`, and with `title` when it has one. Any other key, such as `uuid`, is an error. |
 //! | [`Layer`] | `All clients`, the `client.id` of a client, or the map of a scope. |
 //! | [`Row`], [`Column`] | The index, counted from zero. |
 //! | [`Pad`] | A map with `layout`, `layer`, `row` and `column`. |

@@ -692,6 +692,10 @@ It keeps both in memory, under the kind and the name of the definition.
 | Someone keeps a live rule. | The one the live rule had. | Its first. |
 | Someone deletes the definition. | Forgotten. | Forgotten. |
 
+The workspace takes in what the stores hold whenever it reads them: on every change, and when it validates.
+A name that it does not hold yet gets a new UUID, and the UUID of a name that the stores no longer hold is forgotten.
+A live rule gets its UUID from the workspace when someone makes it, and its environment holds that UUID until *keep* hands it back.
+
 A change that names the revision it expects changes nothing when the definition has another one.
 The workspace checks that before it asks a store, so every store is held to it without knowing a revision.
 

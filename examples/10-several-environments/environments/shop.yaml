@@ -1,6 +1,5 @@
 # A fake cluster with a proxy in front of it.
 name: shop
-uuid: 01a20cc8-9063-7011-af7f-219b78e8cf53
 
 # The broker owns the data.
 broker:

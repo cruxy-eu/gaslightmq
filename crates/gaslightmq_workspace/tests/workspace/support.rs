@@ -14,7 +14,7 @@ use gaslightmq_selector::prelude::*;
 use gaslightmq_surface::prelude::*;
 use gaslightmq_workspace::prelude::*;
 
-/// The workspace of an order desk, as someone wrote it: no definition has a UUID yet.
+/// The definitions of an order desk, as someone wrote them.
 pub struct OrderDesk;
 
 impl OrderDesk {

@@ -38,6 +38,11 @@ impl Contents {
         Self { definitions }
     }
 
+    /// The name of every definition, with its kind, in the order of their kinds and names.
+    pub(crate) fn names(&self) -> impl Iterator<Item = DefinitionName> {
+        self.definitions.iter().map(AnyDefinition::name)
+    }
+
     /// The definition of this kind and name.
     pub(crate) fn get(&self, name: &DefinitionName) -> Option<&AnyDefinition> {
         self.definitions.iter().find(|definition| definition.name() == *name)
@@ -60,14 +65,6 @@ impl Contents {
             .map(|(_, error)| error);
         let mut errors: Vec<WorkspaceError> = own.collect();
         for error in after.errors() {
-            // Of two definitions with one UUID, the one that came is the one that is wrong.
-            let error = match error {
-                WorkspaceError::SharedUuid { definition, holder } if holder == name => WorkspaceError::SharedUuid {
-                    definition: holder,
-                    holder: definition,
-                },
-                error => error,
-            };
             if !before.contains(&error) && !errors.contains(&error) {
                 errors.push(error);
             }
@@ -77,7 +74,6 @@ impl Contents {
 
     /// Everything that keeps the definitions from fitting each other.
     ///
-    /// - A UUID that two definitions have, of whichever kinds.
     /// - A reference to a name that no definition of that kind has.
     /// - Selectors that include each other in a circle.
     /// - A rule that names what exists, and could still never work.
@@ -86,30 +82,7 @@ impl Contents {
     pub(crate) fn errors(&self) -> Vec<WorkspaceError> {
         let of_definitions = (self.reference_errors().into_iter()).map(|(_, error)| error);
         let of_rules = self.rule_errors().into_iter().map(|(_, error)| error);
-        (self.uuid_errors().into_iter())
-            .chain(of_definitions)
-            .chain(self.selector_errors())
-            .chain(of_rules)
-            .collect()
-    }
-
-    /// Every definition that has the UUID of a definition before it.
-    fn uuid_errors(&self) -> Vec<WorkspaceError> {
-        let mut holders: BTreeMap<String, DefinitionName> = BTreeMap::new();
-        let mut errors = Vec::new();
-        for definition in &self.definitions {
-            let Some(uuid) = definition.uuid() else { continue };
-            match holders.get(&uuid) {
-                Some(holder) => errors.push(WorkspaceError::SharedUuid {
-                    definition: definition.name(),
-                    holder: holder.clone(),
-                }),
-                None => {
-                    holders.insert(uuid, definition.name());
-                }
-            }
-        }
-        errors
+        of_definitions.chain(self.selector_errors()).chain(of_rules).collect()
     }
 
     /// Every reference to a name that no definition of that kind has, with the definition that refers to it.

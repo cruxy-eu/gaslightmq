@@ -20,33 +20,11 @@ fn an_update_changes_everything_but_the_name_and_keeps_the_uuid() -> anyhow::Res
 
         // The preset becomes a hang-up with a title. Whoever sends the change knows no UUID.
         let change = Preset::new(blackhole.clone(), HangUpLie::new()).with_title("Hang up".parse()?);
-        assert_eq!(change.uuid(), None);
-        let updated = workspace.update(change.clone()).await?;
+        let kept = workspace.update(change.clone()).await?;
 
-        assert_eq!(updated.uuid(), created.uuid());
-        assert_eq!(updated.clone().without_uuid(), change);
-        assert_eq!(workspace.stores().presets().get(&blackhole).await?, Some(updated));
-        Ok(())
-    })
-}
-
-#[test]
-fn an_update_keeps_the_uuid_of_the_store_whatever_uuid_comes_with_it() -> anyhow::Result<()> {
-    let mut workspace = Workspace::new(MemoryContext::new());
-
-    block_on(async {
-        let blackhole = workspace.create(OrderDesk::blackhole()).await?;
-        let delay = workspace.create(OrderDesk::delay_1s()).await?;
-        assert_ne!(blackhole.uuid(), delay.uuid());
-
-        // The change comes with the UUID of another preset.
-        let change = delay
-            .uuid()
-            .map_or(blackhole.clone(), |uuid| blackhole.clone().with_uuid(uuid));
-        let updated = workspace.update(change).await?;
-
-        assert_eq!(updated.uuid(), blackhole.uuid());
-        assert_eq!(workspace.validate().await, Ok(()));
+        assert_eq!(kept, created);
+        assert_eq!(workspace.uuid::<Preset>(&blackhole), Some(created));
+        assert_eq!(workspace.stores().presets().get(&blackhole).await?, Some(change));
         Ok(())
     })
 }
@@ -68,17 +46,28 @@ fn update_needs_a_name_that_exists() -> anyhow::Result<()> {
 }
 
 #[test]
-fn a_definition_that_its_store_holds_without_a_uuid_gets_one_when_it_is_updated() -> anyhow::Result<()> {
+fn a_definition_that_someone_put_into_its_store_keeps_the_uuid_that_the_workspace_found_it_with() -> anyhow::Result<()>
+{
     let mut workspace = Workspace::new(MemoryContext::new());
+    let blackhole: PresetName = "blackhole".parse()?;
 
     block_on(async {
         // Someone put the preset into the store by hand, as a file that someone wrote.
         workspace.stores().presets().create(OrderDesk::blackhole()).await?;
+        assert_eq!(workspace.uuid::<Preset>(&blackhole), None);
 
-        let updated = workspace.update(OrderDesk::blackhole()).await?;
+        // The workspace finds it when it looks, and gives it a UUID then.
+        workspace.validate().await?;
+        let found = workspace.uuid::<Preset>(&blackhole).map(String::from);
+        assert_eq!(found, Some(KnownUuids::nth(1)));
 
-        assert_eq!(updated.uuid().map(String::from), Some(KnownUuids::nth(1)));
-        assert_eq!(workspace.stores().presets().list().await?, [updated]);
+        // Someone edits it behind the workspace, and then through it. It keeps that UUID.
+        let titled = OrderDesk::blackhole().with_title("Blackhole".parse()?);
+        workspace.stores().presets().update(titled.clone()).await?;
+        workspace.validate().await?;
+        let updated = workspace.update(titled.with_action(HangUpLie::new())).await?;
+
+        assert_eq!(Some(String::from(updated)), found);
         Ok(())
     })
 }
@@ -90,10 +79,10 @@ fn an_update_names_what_exists() -> anyhow::Result<()> {
     let blackhole: PresetName = "blackhole".parse()?;
 
     block_on(async {
-        let created = workspace.create(OrderDesk::blackhole_metadata()).await?;
+        workspace.create(OrderDesk::blackhole_metadata()).await?;
 
         // The rule changes its inline silence for a preset that nobody created.
-        let change = created.clone().with_action(blackhole.clone());
+        let change = OrderDesk::blackhole_metadata().with_action(blackhole.clone());
         let error = workspace.update(change).await.unwrap_err();
 
         assert_eq!(
@@ -107,7 +96,10 @@ fn an_update_names_what_exists() -> anyhow::Result<()> {
             }
         );
         // The rule is as it was.
-        assert_eq!(workspace.stores().rules().get(&rule).await?, Some(created));
+        assert_eq!(
+            workspace.stores().rules().get(&rule).await?,
+            Some(OrderDesk::blackhole_metadata())
+        );
         Ok(())
     })
 }
@@ -120,14 +112,14 @@ fn a_selector_does_not_change_into_one_that_a_rule_can_never_fire_with() -> anyh
     let blackhole: PresetName = "blackhole".parse()?;
 
     block_on(async {
-        let selector = workspace.create(OrderDesk::order_producers()).await?;
+        workspace.create(OrderDesk::order_producers()).await?;
         workspace.create(OrderDesk::blackhole()).await?;
         workspace
             .create(Rule::new(name.clone(), order_producers.clone(), blackhole))
             .await?;
 
         // The selector would test a response field, and the silence of the rule acts before the truth is known.
-        let change = selector.clone().with_conditions(OrderDesk::answered_conditions());
+        let change = OrderDesk::order_producers().with_conditions(OrderDesk::answered_conditions());
         let error = workspace.update(change).await.unwrap_err();
 
         // Nothing is wrong with the selector itself. The error is the rule that uses it.
@@ -145,7 +137,7 @@ fn a_selector_does_not_change_into_one_that_a_rule_can_never_fire_with() -> anyh
         );
         assert_eq!(
             workspace.stores().selectors().get(&order_producers).await?,
-            Some(selector)
+            Some(OrderDesk::order_producers())
         );
         Ok(())
     })
@@ -158,12 +150,12 @@ fn a_selector_does_not_change_into_one_that_includes_itself() -> anyhow::Result<
     let from_ingest: SelectorName = "order-producers-from-ingest".parse()?;
 
     block_on(async {
-        let selector = workspace.create(OrderDesk::order_producers()).await?;
+        workspace.create(OrderDesk::order_producers()).await?;
         workspace.create(OrderDesk::order_producers_from_ingest()).await?;
 
         // `order-producers-from-ingest` includes `order-producers`, which would include it back.
         let error = workspace
-            .update(selector.including(from_ingest.clone()))
+            .update(OrderDesk::order_producers().including(from_ingest.clone()))
             .await
             .unwrap_err();
 

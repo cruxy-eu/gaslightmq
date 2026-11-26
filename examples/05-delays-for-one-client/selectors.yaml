@@ -1,6 +1,5 @@
 # A selector has a name, so rules and filters can share it.
 - name: order-fetches
-  uuid: 01a20cc8-8f4e-7e17-b616-ddf7bd996c2d
   title: Order fetches
   match:
     api: Fetch

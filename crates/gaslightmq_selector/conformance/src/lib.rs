@@ -28,7 +28,7 @@
 
 use gaslightmq_definition_conformance::{Samples, assert_store_contract};
 use gaslightmq_kernel::ApiKey;
-use gaslightmq_selector::{Condition, Conditions, Selector, SelectorName, SelectorStore, SelectorUuid};
+use gaslightmq_selector::{Condition, Conditions, Selector, SelectorName, SelectorStore};
 
 /// Fails when a store of selectors does not do what a [`SelectorStore`] does.
 ///
@@ -119,16 +119,9 @@ async fn created<S: SelectorStore>(store: &S, selector: Selector) {
 }
 
 /// The selectors that the contract of every store is checked with:
-/// the producers of orders as someone wrote them, the same with a UUID and a title, and every fetch.
+/// the producers of orders as someone wrote them, the same with a title, and every fetch.
 fn samples() -> Samples<Selector> {
-    /// The time someone created the selector, in milliseconds since the Unix epoch: 11 December 2024.
-    const CREATED: u64 = 0x0193_b6c2_5f3e;
-    /// The random bits of its UUID.
-    const RANDOM: [u8; 10] = [0x0a, 0x41, 0x1c, 0x2d, 0x8e, 0x4b, 0x1f, 0x6a, 0x7d, 0x10];
-
-    let titled = order_producers()
-        .with_uuid(SelectorUuid::new(CREATED, RANDOM))
-        .with_title("Order producers".parse().expect("a selector title"));
+    let titled = order_producers().with_title("Order producers".parse().expect("a selector title"));
     Samples::new(order_producers(), titled, fetches())
 }
 

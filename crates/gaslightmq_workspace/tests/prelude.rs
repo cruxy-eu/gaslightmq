@@ -86,7 +86,7 @@ mod next_to_the_others {
             name.to_string(),
             label.to_owned(),
             next.unix_millis().to_string(),
-            created.uuid().map(String::from).unwrap(),
+            created.to_string(),
             held.iter().map(ToString::to_string).collect(),
         ]
     }

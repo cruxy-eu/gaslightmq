@@ -469,7 +469,7 @@ macro_rules! title {
 /// assert_eq!(uuid.to_string(), "0193b6c2-5f3e-7a41-9c2d-8e4b1f6a7d10");
 /// assert_eq!(format!("{uuid:?}"), "ScenarioUuid(0193b6c2-5f3e-7a41-9c2d-8e4b1f6a7d10)");
 ///
-/// // A file holds the UUID as text.
+/// // A journal entry holds the UUID as text.
 /// assert_eq!("0193b6c2-5f3e-7a41-9c2d-8e4b1f6a7d10".parse::<ScenarioUuid>()?, uuid);
 ///
 /// let error = "black-friday".parse::<ScenarioUuid>().unwrap_err();
@@ -478,10 +478,9 @@ macro_rules! title {
 /// # Ok::<(), ScenarioUuidError>(())
 /// ```
 ///
-/// A UUID is the identity of a resource inside the workspace.
-/// It is a part of the resource, next to its name, and nothing outside the workspace references a resource by it.
-/// A resource that someone writes by hand has no UUID until the workspace gives it one,
-/// so the type that holds the resource has an optional field of the UUID type.
+/// A UUID tells one resource from every other resource that a process holds, or held, in one run.
+/// It is live state: whoever holds the resource keeps the UUID next to it, in memory,
+/// and the type that holds the resource has no UUID. Nothing references a resource by its UUID.
 ///
 /// The call has three arguments:
 ///
@@ -525,9 +524,9 @@ macro_rules! uuid {
         ///
         $(#[$meta])*
         ///
-        /// A UUID is the identity of a thing inside the workspace.
-        /// It lets the workspace track and store things without one overwriting another.
-        /// Nothing else references a thing by its UUID: that is what its name is for.
+        /// A UUID tells one thing from every other thing that a process holds, or held, in one run.
+        /// It is live state: the process keeps it in memory, next to the name, and no file holds it.
+        /// Nothing references a thing by its UUID: that is what its name is for.
         ///
         /// # The rule for UUIDs
         ///
@@ -923,7 +922,7 @@ mod tests {
     const CREATED: u64 = 0x0193_b6c2_5f3e;
     /// The random bits of [`BLACK_FRIDAY`].
     const RANDOM: [u8; 10] = [0x0a, 0x41, 0x1c, 0x2d, 0x8e, 0x4b, 0x1f, 0x6a, 0x7d, 0x10];
-    /// The UUID of [`CREATED`] and [`RANDOM`], as a file holds it.
+    /// The UUID of [`CREATED`] and [`RANDOM`], as text.
     const BLACK_FRIDAY: &str = "0193b6c2-5f3e-7a41-9c2d-8e4b1f6a7d10";
     /// A UUID of version 4, which is no UUID of a resource.
     const VERSION_4: &str = "550e8400-e29b-41d4-a716-446655440000";

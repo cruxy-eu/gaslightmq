@@ -12,14 +12,10 @@ use gaslightmq_workspace::{
     WorkspaceError,
 };
 
-/// A kind of definition that the server reads from the stores of a workspace, and hands out without its UUID.
+/// A kind of definition that the server reads from the stores of a workspace, and hands out as its store holds it.
 pub(crate) trait Stored: Definition {
     /// The store of this kind among the stores of a workspace.
     fn store<S: Stores>(stores: &S) -> &impl Store<Self>;
-
-    /// The definition as the control plane hands it out: without its UUID, which stays inside the workspace.
-    #[must_use]
-    fn without_uuid(self) -> Self;
 }
 
 /// A kind of definition that the control plane lists, gets, creates, updates and deletes.
@@ -35,10 +31,6 @@ macro_rules! stored {
             impl Stored for $definition {
                 fn store<S: Stores>(stores: &S) -> &impl Store<Self> {
                     stores.$store()
-                }
-
-                fn without_uuid(self) -> Self {
-                    $definition::without_uuid(self)
                 }
             }
         )*
@@ -58,19 +50,16 @@ impl Editable for Preset {}
 impl Editable for Rule {}
 impl Editable for PadLayout {}
 
-/// Every definition of the kind `D`, without their UUIDs.
+/// Every definition of the kind `D`.
 ///
 /// # Errors
 ///
 /// What the store said when it could not read, after the word for its kind.
 pub(crate) async fn list<D: Stored, C: WorkspaceContext>(workspace: &Workspace<C>) -> Result<Vec<D>, String> {
-    match D::store(workspace.stores()).list().await {
-        Ok(definitions) => Ok(definitions.into_iter().map(Stored::without_uuid).collect()),
-        Err(error) => Err(unread::<D>(error)),
-    }
+    D::store(workspace.stores()).list().await.map_err(unread::<D>)
 }
 
-/// The definition of the kind `D` with that name, without its UUID, or `None` when no definition has the name.
+/// The definition of the kind `D` with that name, or `None` when no definition has the name.
 ///
 /// # Errors
 ///
@@ -79,13 +68,10 @@ pub(crate) async fn get<D: Stored, C: WorkspaceContext>(
     workspace: &Workspace<C>,
     name: &D::Name,
 ) -> Result<Option<D>, String> {
-    match D::store(workspace.stores()).get(name).await {
-        Ok(definition) => Ok(definition.map(Stored::without_uuid)),
-        Err(error) => Err(unread::<D>(error)),
-    }
+    D::store(workspace.stores()).get(name).await.map_err(unread::<D>)
 }
 
-/// Every definition of the workspace, by kind, without their UUIDs.
+/// Every definition of the workspace, by kind.
 ///
 /// # Errors
 ///
@@ -188,7 +174,7 @@ impl DefinitionOperations {
     }
 }
 
-/// The definition of that name and kind, without its UUID, or `None` when the workspace does not have it.
+/// The definition of that name and kind, or `None` when the workspace does not have it.
 ///
 /// # Errors
 ///

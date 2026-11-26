@@ -54,31 +54,28 @@ async fn a_rule_armed_in_one_environment_leaves_the_other_alone() -> anyhow::Res
     let brokers = BrokerListeners::pinned(cluster.brokers().iter().map(|broker| (broker.id(), any)))?;
     let listen = Listeners::new(any, brokers, LOCALHOST.into())?;
     let upstream = Upstream::new(cluster.brokers()[0].address().to_string().parse()?);
-    let staging = host
-        .create(Environment::new(
-            "staging-proxy".parse()?,
-            Instances::ProxyInFrontOfCluster {
-                proxy: ProxyDefinition::new(listen.clone()),
-                upstream: upstream.clone(),
-            },
-        ))
-        .await?;
-    let canary = host
-        .create(Environment::new(
-            "canary-proxy".parse()?,
-            Instances::ProxyInFrontOfCluster {
-                proxy: ProxyDefinition::new(listen),
-                upstream,
-            },
-        ))
-        .await?;
+    let staging = Environment::new(
+        "staging-proxy".parse()?,
+        Instances::ProxyInFrontOfCluster {
+            proxy: ProxyDefinition::new(listen.clone()),
+            upstream: upstream.clone(),
+        },
+    );
+    let canary = Environment::new(
+        "canary-proxy".parse()?,
+        Instances::ProxyInFrontOfCluster {
+            proxy: ProxyDefinition::new(listen),
+            upstream,
+        },
+    );
+    host.create(staging.clone()).await?;
+    host.create(canary.clone()).await?;
     // The workspace has a preset that both environments can use.
-    let leader_flap = host
-        .create(Preset::new(
-            "leader-flap".parse()?,
-            RefusalLie::new(ErrorCode::NOT_LEADER_OR_FOLLOWER),
-        ))
-        .await?;
+    let leader_flap = Preset::new(
+        "leader-flap".parse()?,
+        RefusalLie::new(ErrorCode::NOT_LEADER_OR_FOLLOWER),
+    );
+    host.create(leader_flap.clone()).await?;
     host.start(EnvironmentConfiguration::new(&staging)?).await?;
     host.start(EnvironmentConfiguration::new(&canary)?).await?;
     // Someone arms a rule in the canary alone: "tell the 1st Produce that its broker no longer leads the partition".

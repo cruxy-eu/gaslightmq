@@ -82,7 +82,7 @@ async fn a_definition_changes_in_the_workspace_and_every_client_of_the_stream_he
             definition: AnyDefinition::Selector(order_producers.clone())
         }
     );
-    // The workspace gave the selector a UUID, and the control plane hands it out without one.
+    // A definition travels as its file holds it: the UUID that the workspace gave it stays in the process.
     assert_eq!(got, Ok(order_producers.clone()));
     assert_eq!(listed, Ok(vec![order_producers.clone()]));
 
@@ -254,7 +254,6 @@ async fn an_environment_that_the_workspace_does_not_have_or_that_runs_a_broker_d
             reason: "it runs a broker, and the host cannot run a broker yet".to_owned(),
         })
     );
-    // The workspace gave the environment a UUID, and the control plane hands it out without one.
     assert_eq!(
         statuses,
         Ok(vec![EnvironmentStatus {

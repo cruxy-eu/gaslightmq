@@ -1,5 +1,7 @@
 //! The kinds of definitions that a workspace holds, and what it needs of each.
 
+use std::fmt;
+
 use gaslightmq_definition_api::Definition;
 use gaslightmq_environment::{Environment, EnvironmentUuid};
 use gaslightmq_rule::{Preset, PresetUuid, Rule, RuleUuid};
@@ -28,26 +30,22 @@ use crate::{DefinitionName, UuidSeed};
 /// ```
 pub trait WorkspaceDefinition: Definition<Name: Into<DefinitionName>> + Kind {}
 
-/// What a workspace needs of a kind, next to its name: its UUID, and its place among the other kinds.
+/// What a workspace needs of a kind, next to its name: the type of its UUID, and its place among the other kinds.
 pub trait Kind: Sized {
-    /// The UUID of a definition of this kind.
-    type Uuid: Copy;
+    /// The UUID of a definition of this kind, which the workspace keeps in memory next to the name.
+    type Uuid: Copy + Eq + fmt::Debug + Send + Sync;
 
     /// The definition, as one of any kind.
     fn into_any(self) -> AnyDefinition;
 
-    /// The definition of this kind that `definition` is, or `None` when it is of another kind.
-    fn of(definition: &AnyDefinition) -> Option<&Self>;
+    /// The UUID of this kind, as one of any kind.
+    fn any_uuid(uuid: Self::Uuid) -> AnyUuid;
 
-    /// The UUID of the definition, when it has one.
-    fn uuid(&self) -> Option<Self::Uuid>;
+    /// The UUID of this kind that `uuid` is, or `None` when it is of another kind.
+    fn uuid_of(uuid: AnyUuid) -> Option<Self::Uuid>;
 
-    /// The same definition with this UUID.
-    #[must_use]
-    fn with_uuid(self, uuid: Self::Uuid) -> Self;
-
-    /// The UUID that `seed` makes.
-    fn uuid_of(seed: UuidSeed) -> Self::Uuid;
+    /// The UUID of this kind that `seed` makes.
+    fn new_uuid(seed: UuidSeed) -> Self::Uuid;
 }
 
 /// One definition of a workspace, of any kind.
@@ -60,6 +58,18 @@ pub enum AnyDefinition {
     Rule(Rule),
     Layout(PadLayout),
     Environment(Environment),
+}
+
+/// The UUID of one definition of a workspace, of any kind.
+///
+/// Each kind keeps the UUID type of its own crate, and this type only says which kind it is.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AnyUuid {
+    Selector(SelectorUuid),
+    Preset(PresetUuid),
+    Rule(RuleUuid),
+    Layout(LayoutUuid),
+    Environment(EnvironmentUuid),
 }
 
 /// Makes a definition type a kind of the workspace: the variant it has, and the UUID it takes.
@@ -75,22 +85,18 @@ macro_rules! kind {
                     AnyDefinition::$variant(self)
                 }
 
-                fn of(definition: &AnyDefinition) -> Option<&Self> {
-                    match definition {
-                        AnyDefinition::$variant(definition) => Some(definition),
+                fn any_uuid(uuid: $uuid) -> AnyUuid {
+                    AnyUuid::$variant(uuid)
+                }
+
+                fn uuid_of(uuid: AnyUuid) -> Option<$uuid> {
+                    match uuid {
+                        AnyUuid::$variant(uuid) => Some(uuid),
                         _ => None,
                     }
                 }
 
-                fn uuid(&self) -> Option<$uuid> {
-                    $definition::uuid(self)
-                }
-
-                fn with_uuid(self, uuid: $uuid) -> Self {
-                    $definition::with_uuid(self, uuid)
-                }
-
-                fn uuid_of(seed: UuidSeed) -> $uuid {
+                fn new_uuid(seed: UuidSeed) -> $uuid {
                     $uuid::new(seed.unix_millis(), seed.random())
                 }
             }
@@ -103,13 +109,13 @@ macro_rules! kind {
                     $(AnyDefinition::$variant(definition) => definition.name().clone().into(),)*
                 }
             }
+        }
 
-            /// The UUID of the definition as text, when the definition has one.
-            ///
-            /// Every kind has a UUID type of its own. The text is what the UUIDs of two kinds compare by.
-            pub(crate) fn uuid(&self) -> Option<String> {
-                match self {
-                    $(AnyDefinition::$variant(definition) => definition.uuid().map(String::from),)*
+        impl AnyUuid {
+            /// The UUID that `seed` makes, of the kind of the definition that `name` names.
+            pub(crate) fn new(name: &DefinitionName, seed: UuidSeed) -> Self {
+                match name {
+                    $(DefinitionName::$variant(_) => AnyUuid::$variant($definition::new_uuid(seed)),)*
                 }
             }
         }

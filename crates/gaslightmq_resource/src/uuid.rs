@@ -5,9 +5,9 @@ use ::uuid::{Builder, Uuid, Variant};
 
 /// The UUID of a resource, such as `0193b6c2-5f3e-7a41-9c2d-8e4b1f6a7d10`.
 ///
-/// A UUID is the identity of a resource inside the workspace.
-/// It lets the workspace track and store resources without one overwriting another.
-/// Nothing else references a resource by its UUID: that is what its name is for.
+/// A UUID tells one resource from every other resource that a process holds, or held, in one run.
+/// It is live state: the process keeps it in memory, next to the name, and no file holds it.
+/// Nothing references a resource by its UUID: that is what its name is for.
 ///
 /// A resource UUID does not say which kind of resource it identifies.
 /// Every kind has a UUID type of its own that wraps this one, and code speaks in those.
@@ -36,7 +36,7 @@ use ::uuid::{Builder, Uuid, Variant};
 /// let uuid = ResourceUuid::new(unix_millis, random);
 /// assert_eq!(uuid.to_string(), "0193b6c2-5f3e-7a41-9c2d-8e4b1f6a7d10");
 ///
-/// // A file holds the UUID as text.
+/// // A journal entry holds the UUID as text.
 /// assert_eq!("0193b6c2-5f3e-7a41-9c2d-8e4b1f6a7d10".parse::<ResourceUuid>()?, uuid);
 ///
 /// // A UUID of another version is no UUID of a resource.

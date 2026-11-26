@@ -26,9 +26,7 @@
 //! It awaits the store it is handed, and nothing else: it has no executor, no IO, no clock and no randomness.
 
 use gaslightmq_definition_conformance::{Samples, assert_store_contract};
-use gaslightmq_environment::{
-    Environment, EnvironmentStore, EnvironmentUuid, Instances, Listeners, ProxyDefinition, Upstream,
-};
+use gaslightmq_environment::{Environment, EnvironmentStore, Instances, Listeners, ProxyDefinition, Upstream};
 
 /// Fails when a store of environments does not do what an [`EnvironmentStore`] does.
 ///
@@ -45,18 +43,12 @@ pub async fn assert_environment_store<S: EnvironmentStore>(empty: impl Fn() -> S
 }
 
 /// The environments that the contract of every store is checked with:
-/// a proxy in front of the cluster of staging as someone wrote it, the same with a UUID and a title,
+/// a proxy in front of the cluster of staging as someone wrote it, the same with a title,
 /// and a proxy in front of a cluster on this machine.
 fn samples() -> Samples<Environment> {
-    /// The time someone created the environment, in milliseconds since the Unix epoch: 11 December 2024.
-    const CREATED: u64 = 0x0193_b6c2_5f3e;
-    /// The random bits of its UUID.
-    const RANDOM: [u8; 10] = [0x0a, 0x41, 0x1c, 0x2d, 0x8e, 0x4b, 0x1f, 0x6a, 0x7d, 0x10];
-
     let staging = proxy("staging-proxy", "gaslight.staging", "kafka-1.staging:9092");
     let titled = staging
         .clone()
-        .with_uuid(EnvironmentUuid::new(CREATED, RANDOM))
         .with_title("Staging, behind the proxy".parse().expect("an environment title"));
     let local = proxy("local-proxy", "localhost", "localhost:9094");
     Samples::new(staging, titled, local)

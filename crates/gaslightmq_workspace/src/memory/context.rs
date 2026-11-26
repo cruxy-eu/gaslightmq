@@ -19,11 +19,11 @@ use crate::{KnownUuids, MemoryStores, UuidSource, WorkspaceContext};
 /// let mut workspace = Workspace::new(MemoryContext::new());
 /// let blackhole = Preset::new("blackhole".parse().expect("a preset name"), LieDefinition::Silence);
 ///
-/// let created = block_on(workspace.create(blackhole))?;
+/// let uuid = block_on(workspace.create(blackhole.clone()))?;
 ///
-/// // The preset got the first UUID of the source, and the store of the presets holds it.
-/// assert_eq!(created.uuid().map(String::from), Some(KnownUuids::nth(1)));
-/// assert_eq!(block_on(workspace.stores().presets().list()).expect("a store in memory reads"), [created]);
+/// // The preset got the first UUID of the source, and the store of the presets holds the preset.
+/// assert_eq!(String::from(uuid), KnownUuids::nth(1));
+/// assert_eq!(block_on(workspace.stores().presets().list()).expect("a store in memory reads"), [blackhole]);
 /// # Ok::<(), CreateError>(())
 /// ```
 #[derive(Debug, Default)]

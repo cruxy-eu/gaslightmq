@@ -1,4 +1,4 @@
-//! Deleting: a definition that another one uses stays, and the error says who uses it.
+//! Deleting: a definition that another one uses stays, the error says who uses it, and its UUID is forgotten.
 
 use futures::executor::block_on;
 use gaslightmq_definition_api::prelude::*;
@@ -146,19 +146,70 @@ fn rules_layouts_and_environments_are_deleted_whenever_someone_asks() -> anyhow:
         workspace.create(OrderDesk::order_producers_from_ingest()).await?;
         workspace.create(OrderDesk::delay_1s()).await?;
         workspace.create(OrderDesk::blackhole()).await?;
-        let rule = workspace.create(OrderDesk::slow_order_producers()).await?;
-        let layout = workspace.create(OrderDesk::layout()).await?;
-        let environment = workspace.create(OrderDesk::environment()).await?;
+        workspace.create(OrderDesk::slow_order_producers()).await?;
+        workspace.create(OrderDesk::layout()).await?;
+        workspace.create(OrderDesk::environment()).await?;
 
         // Nothing refers to a rule, a layout or an environment by name.
-        workspace.delete(rule.name().clone()).await?;
-        workspace.delete(layout.name().clone()).await?;
-        workspace.delete(environment.name().clone()).await?;
+        workspace
+            .delete(OrderDesk::slow_order_producers().name().clone())
+            .await?;
+        workspace.delete(OrderDesk::layout().name().clone()).await?;
+        workspace.delete(OrderDesk::environment().name().clone()).await?;
 
         assert_eq!(workspace.stores().rules().list().await?, []);
         assert_eq!(workspace.stores().layouts().list().await?, []);
         assert_eq!(workspace.stores().environments().list().await?, []);
         assert_eq!(workspace.validate().await, Ok(()));
+        Ok(())
+    })
+}
+
+#[test]
+fn a_name_that_is_deleted_and_created_again_is_a_new_definition_with_a_new_uuid() -> anyhow::Result<()> {
+    let mut workspace = Workspace::new(MemoryContext::new());
+    let blackhole: PresetName = "blackhole".parse()?;
+
+    block_on(async {
+        let created = workspace.create(OrderDesk::blackhole()).await?;
+        let updated = workspace
+            .update(OrderDesk::blackhole().with_title("Blackhole".parse()?))
+            .await?;
+        assert_eq!(updated, created);
+
+        workspace.delete(blackhole.clone()).await?;
+        // The workspace forgot the UUID with the definition.
+        assert_eq!(workspace.uuid::<Preset>(&blackhole), None);
+
+        // The same preset under the same name is another definition.
+        let again = workspace.create(OrderDesk::blackhole()).await?;
+
+        assert_ne!(again, created);
+        assert_eq!(String::from(again), KnownUuids::nth(2));
+        assert_eq!(workspace.uuid::<Preset>(&blackhole), Some(again));
+        Ok(())
+    })
+}
+
+#[test]
+fn a_definition_that_went_behind_the_workspace_is_forgotten() -> anyhow::Result<()> {
+    let mut workspace = Workspace::new(MemoryContext::new());
+    let blackhole: PresetName = "blackhole".parse()?;
+
+    block_on(async {
+        let created = workspace.create(OrderDesk::blackhole()).await?;
+
+        // Someone deletes the preset behind the workspace, as a file that someone removes.
+        workspace.stores().presets().delete(&blackhole).await?;
+        workspace.validate().await?;
+        assert_eq!(workspace.uuid::<Preset>(&blackhole), None);
+
+        // A file that comes back under the name is a new definition.
+        workspace.stores().presets().create(OrderDesk::blackhole()).await?;
+        workspace.validate().await?;
+        let found = workspace.uuid::<Preset>(&blackhole);
+
+        assert!(found.is_some_and(|found| found != created), "{found:?}");
         Ok(())
     })
 }

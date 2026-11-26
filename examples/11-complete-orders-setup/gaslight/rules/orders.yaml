@@ -1,7 +1,6 @@
 # Rules: a selector, a lie and a trigger. They load disarmed.
 
 - name: orders-sometimes-fail
-  uuid: 01a20cc8-910f-7a0d-a585-e928c7be416a
   title: Orders sometimes fail
   selector: order-producers
   action: error-retriable
@@ -9,7 +8,6 @@
     chance: 20%
 
 - name: order-fetches-are-slow-for-analytics
-  uuid: 01a20cc8-9112-7345-866a-0898fe864185
   title: Order fetches are slow for analytics
   selector: order-fetches
   scope:
@@ -19,7 +17,6 @@
     chance: 30%
 
 - name: every-hundredth-order-fetch-hangs
-  uuid: 01a20cc8-9136-7240-891d-f1d7da5a6ec3
   title: Every hundredth order fetch hangs
   selector: order-fetches
   action: blackhole
@@ -27,7 +24,6 @@
     every: 100
 
 - name: refuse-with-not-leader
-  uuid: 01a20cc8-9156-750b-a9b4-19e80f86412e
   title: Refuse with NOT_LEADER
   selector: order-fetches
   action: error-retriable
