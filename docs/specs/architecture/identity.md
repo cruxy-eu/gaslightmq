@@ -177,7 +177,7 @@ The counter starts at 1 with every [run](#run), and every change takes the next 
 | Has a revision | Its revision is the number of |
 |---|---|
 | A definition of the workspace | The change that last created or updated it: the load, a request, or a [reload](storage.md#reloading). |
-| A rule in an environment | The last change of its definition or of its state there. Its state changes when the environment starts, and when the rule arms or disarms, whether a person, a step or a lifetime does it. |
+| A rule in an environment | The last change of its definition or of its state there. Its state changes when the environment starts, and when the rule arms or disarms, whether a person, a step or a lifetime does it. A disarm by a lifetime or a budget takes its number when the process [next looks](control-plane.md#revisions) at the armed rules. |
 | The scenario of an environment | The last time the environment started, someone activated or deactivated a scenario, or a step advanced. |
 
 - **One change takes one number.**

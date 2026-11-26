@@ -705,6 +705,8 @@ The workspace knows no run: the host checks the run of a change before it asks t
 `workspace`, `host` and `control_api` each offer the types they speak in: the workspace its revision and the counter, the host the ID of its run and what a change expects, and the control plane all of them in the form they travel in.
 `resource` writes them, and stays [internal](#internal-crates).
 `control_server` turns one into the other, by the number of a revision and the bits of a run ID.
+`journal` writes a revision of its own the same way, for the revision that each entry holds.
+`control_api` carries the entries of the journal, so it can then offer one revision to the UI: its own, or the one of the journal under its name.
 
 The workspace takes in what its stores hold at the load, and again on every [reload](storage.md#reloading).
 On a reload it asks every store to read again, compares what they read with what it holds, by name, and validates the result as a whole.

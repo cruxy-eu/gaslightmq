@@ -176,6 +176,9 @@ One counter of the process gives all of them, so a revision never comes back wit
 - **A change that nobody asked for takes a number too.**
   A rule whose lifetime ended or whose budget is spent has a higher revision than it had while it was armed.
   Whoever still expects the armed rule changes nothing.
+  The rule disarms inside its proxy, and takes its number when the process next looks at the armed rules:
+  a moment later, or when someone reads or changes a rule of the environment before that.
+  Nobody reads the rule disarmed at the revision it had while it was armed.
 
 A write to a file can also fail because [someone edited the file](storage.md#the-check-before-a-write) while the process ran.
 Its error is `changed-outside`, and no revision is involved: the engine does not hold what the file holds now, until someone asks for a reload.
