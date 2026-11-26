@@ -89,7 +89,8 @@ impl ControlServer {
 
     /// Starts the server as [`start`](Self::start) does, on the clock it is handed.
     ///
-    /// The [grace period](ControlServerConfiguration::presence_grace) of a presence runs on that clock.
+    /// The [grace period](ControlServerConfiguration::presence_grace) of a presence runs on that clock,
+    /// and so do the [pings](ControlServerConfiguration::ping_interval) that find a client which went silent.
     /// A process runs on real time, which [`start`](Self::start) picks.
     /// A test hands over a clock that it steps, so a grace period takes no time.
     ///
@@ -139,7 +140,11 @@ impl ControlServer {
         let plane = Arc::new(ControlPlane::new(host, configuration.stream_backlog));
         // The feed follows the host from before the first client connects, so no change of the host goes past.
         tokio::spawn(Feed::new(Arc::clone(&plane), configuration.stats_interval, stopped.clone()).run());
-        let attendance = Attendance::new(Presences::new(configuration.presence_grace), clock);
+        let attendance = Attendance::new(
+            Presences::new(configuration.presence_grace),
+            configuration.ping_interval,
+            clock,
+        );
         // No client comes back to a server that stopped, so every presence ends then, and its holds with it:
         // the host may live on, and nothing else would end them.
         let ending = tokio::spawn({

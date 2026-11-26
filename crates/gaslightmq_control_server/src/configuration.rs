@@ -7,7 +7,7 @@ use std::net::{Ipv4Addr, SocketAddr};
 
 use gaslightmq_control_api::clock::TimeSpan;
 
-use crate::error::{RequestSizeLimitError, StatsIntervalError, StreamBacklogError};
+use crate::error::{PingIntervalError, RequestSizeLimitError, StatsIntervalError, StreamBacklogError};
 
 /// What a [`ControlServer`](crate::ControlServer) is configured with.
 ///
@@ -44,6 +44,15 @@ pub struct ControlServerConfiguration {
     ///
     /// How often every client of the live stream gets the statistics of every environment that runs.
     pub stats_interval: StatsInterval,
+    /// Ours. Default: 15 seconds.
+    ///
+    /// How often the server pings every client of the live stream, to learn whether it is still there.
+    /// A client that sent nothing between one ping and the next has gone silent, and so has one that takes no
+    /// message for as long: its network dropped, or its laptop sleeps, and its connection closed nothing.
+    /// The server ends the stream of a silent client, as if its connection had closed.
+    /// A client that went away without a word is therefore gone within two intervals, and its presence ends a
+    /// [grace period](Self::presence_grace) later.
+    pub ping_interval: PingInterval,
     /// Ours. Default: 10 seconds.
     ///
     /// How long the server keeps the presence of a client whose live stream ended.
@@ -66,6 +75,7 @@ impl Default for ControlServerConfiguration {
             request_limit: RequestSizeLimit::DEFAULT,
             stream_backlog: StreamBacklog::DEFAULT,
             stats_interval: StatsInterval::DEFAULT,
+            ping_interval: PingInterval::DEFAULT,
             presence_grace: TimeSpan::from_secs(10),
             stop_timeout: TimeSpan::from_secs(5),
         }
@@ -204,6 +214,42 @@ impl StatsInterval {
     }
 }
 
+/// How often a control server pings every client of the live stream: longer than no time at all.
+///
+/// ```
+/// use gaslightmq_control_api::clock::TimeSpan;
+/// use gaslightmq_control_server::prelude::*;
+///
+/// let interval = PingInterval::new(TimeSpan::from_secs(5))?;
+/// assert_eq!(interval.span(), TimeSpan::from_secs(5));
+/// assert_eq!(PingInterval::new(TimeSpan::ZERO), Err(PingIntervalError::Zero));
+/// # Ok::<(), PingIntervalError>(())
+/// ```
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct PingInterval(TimeSpan);
+
+impl PingInterval {
+    /// The default interval: 15 seconds, so a client that went away without a word is gone within half a minute.
+    pub const DEFAULT: Self = Self(TimeSpan::from_secs(15));
+
+    /// Check that `span` is longer than no time at all, and keep it.
+    ///
+    /// # Errors
+    ///
+    /// [`PingIntervalError::Zero`] when `span` is no time at all.
+    pub fn new(span: TimeSpan) -> Result<Self, PingIntervalError> {
+        if span == TimeSpan::ZERO {
+            return Err(PingIntervalError::Zero);
+        }
+        Ok(Self(span))
+    }
+
+    /// The interval as a time span.
+    pub const fn span(self) -> TimeSpan {
+        self.0
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -230,6 +276,10 @@ mod tests {
         assert_eq!(
             RequestSizeLimit::new(RequestSizeLimit::DEFAULT.bytes()),
             Ok(RequestSizeLimit::DEFAULT)
+        );
+        assert_eq!(
+            PingInterval::new(PingInterval::DEFAULT.span()),
+            Ok(PingInterval::DEFAULT)
         );
     }
 }

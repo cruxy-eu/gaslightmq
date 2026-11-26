@@ -9,7 +9,8 @@ use gaslightmq_control_api::surface::PresenceId;
 use gaslightmq_host::Host;
 use gaslightmq_workspace::WorkspaceContext;
 
-use crate::presence::Presences;
+use crate::PingInterval;
+use crate::presence::{Liveness, Presences};
 
 /// The presences of the clients of the live stream, and the clock that their grace period runs on.
 ///
@@ -18,6 +19,8 @@ use crate::presence::Presences;
 /// Every stream of a server shares one attendance.
 pub(crate) struct Attendance<K> {
     presences: Arc<Mutex<Presences>>,
+    /// How often the server pings the client of a stream, to learn whether it is still there.
+    ping_interval: PingInterval,
     clock: Arc<K>,
 }
 
@@ -25,6 +28,7 @@ impl<K> Clone for Attendance<K> {
     fn clone(&self) -> Self {
         Self {
             presences: Arc::clone(&self.presences),
+            ping_interval: self.ping_interval,
             clock: Arc::clone(&self.clock),
         }
     }
@@ -39,12 +43,24 @@ pub(crate) enum NoPresence {
 }
 
 impl<K: WaitableClock> Attendance<K> {
-    /// The attendance of a server that holds `presences`, whose grace period runs on `clock`.
-    pub(crate) fn new(presences: Presences, clock: K) -> Self {
+    /// The attendance of a server that holds `presences` and pings every client at `ping_interval`.
+    /// The grace period and the pings run on `clock`.
+    pub(crate) fn new(presences: Presences, ping_interval: PingInterval, clock: K) -> Self {
         Self {
             presences: Arc::new(Mutex::new(presences)),
+            ping_interval,
             clock: Arc::new(clock),
         }
+    }
+
+    /// The clock of the server.
+    pub(crate) fn clock(&self) -> &K {
+        &self.clock
+    }
+
+    /// The liveness of a client whose stream opens now.
+    pub(crate) fn liveness(&self) -> Liveness {
+        Liveness::new(self.ping_interval.span(), self.clock.now())
     }
 
     /// The presence of a client whose stream opened.
@@ -79,10 +95,10 @@ impl<K: WaitableClock> Attendance<K> {
         Ok(presence)
     }
 
-    /// A stream of `presence` ended. Returns the instant at which the presence ends unless its client comes back,
-    /// or `None` when there is nothing to wait for: another stream of it is open, or the server stops.
-    pub(crate) fn leave(&self, presence: PresenceId) -> Option<Instant> {
-        self.presences().left(presence, self.clock.now())
+    /// A stream of `presence` ended at `left_at`. Returns the instant at which the presence ends unless its client
+    /// comes back, or `None` when there is nothing to wait for: another stream of it is open, or the server stops.
+    pub(crate) fn leave(&self, presence: PresenceId, left_at: Instant) -> Option<Instant> {
+        self.presences().left(presence, left_at)
     }
 
     /// Waits until `ends_at`, and ends `presence` in the host unless its client came back in the meantime.

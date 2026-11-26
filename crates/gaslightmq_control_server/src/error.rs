@@ -40,6 +40,14 @@ pub enum StreamBacklogError {
     TooLarge { messages: usize },
 }
 
+/// Why a time span is no [`PingInterval`](crate::PingInterval).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+pub enum PingIntervalError {
+    /// The server cannot ping all the time: an interval is longer than no time at all.
+    #[error("a ping interval is longer than no time at all")]
+    Zero,
+}
+
 /// Why a time span is no [`StatsInterval`](crate::StatsInterval).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
 pub enum StatsIntervalError {

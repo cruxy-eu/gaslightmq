@@ -185,6 +185,7 @@ The fault would then stay armed against real clients until someone notices.
   The control plane keeps a presence whose connection is gone for a grace period: 10 seconds, until its configuration says otherwise.
   A tab that comes back within it is the presence it was, and the pads that someone holds stay held.
   A tab that stays away is gone, and its holds end.
+  A connection that goes silent without closing counts as one that is gone: the control plane pings every tab, and a tab that answers no ping has dropped.
 - **A reload is a new presence.**
   A page that loads again no longer knows which pads it held, and it keeps its presence nowhere but in its memory.
   The page before it is a tab that stays away, so its holds end with the grace period.

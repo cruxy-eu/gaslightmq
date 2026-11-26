@@ -1,12 +1,16 @@
 //! The live stream of one client: its presence, its snapshot, the changes after it, and the calls it follows.
 
+use std::convert::Infallible;
+use std::pin::pin;
 use std::sync::Arc;
 
+use axum::body::Bytes;
 use axum::extract::ws::{CloseFrame, Message, WebSocket, close_code};
 use futures::stream::{SplitSink, SplitStream};
 use futures::{SinkExt, StreamExt};
 use gaslightmq_clock_waitable::WaitableClock;
 use gaslightmq_control_api::call::Call;
+use gaslightmq_control_api::clock::Instant;
 use gaslightmq_control_api::environment::EnvironmentName;
 use gaslightmq_control_api::prelude::*;
 use gaslightmq_control_api::surface::PresenceId;
@@ -17,6 +21,7 @@ use tokio::sync::watch;
 
 use crate::attendance::{Attendance, NoPresence};
 use crate::plane::{Change, ControlPlane, form};
+use crate::presence::{Liveness, PingDue};
 use crate::server::stopped;
 
 /// The calls that one client follows: those of one environment that one selector matches.
@@ -41,6 +46,9 @@ impl Following {
 enum End {
     /// The client closed it, or its connection went away.
     Client,
+    /// The client went silent: it answered no ping, or took no message, for a whole interval.
+    /// It is silent since that instant, which the grace period of its presence counts from.
+    Silent { since: Instant },
     /// The server stops.
     Stopping,
     /// The workspace could not be read for a snapshot. The text is what the store said.
@@ -87,10 +95,15 @@ impl<C: WorkspaceContext + 'static, K: WaitableClock> ClientStream<C, K> {
             Err(NoPresence::Stopping) => return close(sender, End::Stopping).await,
             Err(NoPresence::NoRandomness { reason }) => return close(sender, End::NoPresence(reason)).await,
         };
-        let end = self.serve(presence, &mut sender, &mut receiver).await;
+        let Err(end) = self.serve(presence, &mut sender, &mut receiver).await;
+        // A client that went silent left when its silence was a whole interval long, whenever the server got to it.
+        let left_at = match end {
+            End::Silent { since } => since,
+            _ => self.attendance.clock().now(),
+        };
         // The server notes that the client left before it lets go of the connection,
         // so a client that closed its stream finds that noted once the connection is gone.
-        let ends_at = self.attendance.leave(presence);
+        let ends_at = self.attendance.leave(presence, left_at);
         // The connection closes behind this task: a client that takes no close frame holds up nothing.
         tokio::spawn(async move {
             close(sender, end).await;
@@ -107,99 +120,129 @@ impl<C: WorkspaceContext + 'static, K: WaitableClock> ClientStream<C, K> {
         }
     }
 
+    /// Serves the stream until it ends, and returns why it ended.
     async fn serve(
         &self,
         presence: PresenceId,
         sender: &mut SplitSink<WebSocket, Message>,
         receiver: &mut SplitStream<WebSocket>,
-    ) -> End {
+    ) -> Result<Infallible, End> {
+        let clock = self.attendance.clock();
         let mut changes = self.plane.changes();
-        if send(sender, &StreamMessage::Present { presence }).await.is_err() {
-            return End::Client;
-        }
-        if let Err(end) = self.snapshot(sender).await {
-            return end;
-        }
+        let mut liveness = self.attendance.liveness();
+        self.tell(sender, &StreamMessage::Present { presence }, &liveness)
+            .await?;
+        self.snapshot(sender, &liveness).await?;
         let mut following: Option<Following> = None;
         let mut stopping = self.stopping.clone();
+        let mut ping_due = pin!(clock.until(liveness.next_ping()));
         loop {
             tokio::select! {
-                () = stopped(&mut stopping) => return End::Stopping,
+                // What the client sent comes before the ping that asks whether it sent anything.
+                biased;
+                () = stopped(&mut stopping) => return Err(End::Stopping),
+                frame = receiver.next() => {
+                    let Some(Ok(frame)) = frame else {
+                        return Err(End::Client);
+                    };
+                    // Whatever the client sends says that it is there: the answer to a ping, or a subscription.
+                    liveness.heard(clock.now());
+                    match frame {
+                        Message::Text(text) => {
+                            let answer = match serde_json::from_str::<Subscription>(text.as_str()) {
+                                Ok(subscription) => match self.follow(subscription.clone()).await {
+                                    Ok(follows) => {
+                                        following = follows;
+                                        StreamMessage::Following { subscription }
+                                    }
+                                    Err(reason) => StreamMessage::SubscriptionRefused { reason },
+                                },
+                                Err(error) => StreamMessage::SubscriptionRefused {
+                                    reason: format!("the frame is no subscription: {error}"),
+                                },
+                            };
+                            if let StreamMessage::SubscriptionRefused { .. } = answer {
+                                following = None;
+                            }
+                            // The calls that the client follows now come after this answer, and none of the others.
+                            self.tell(sender, &answer, &liveness).await?;
+                        }
+                        Message::Binary(_) => {
+                            following = None;
+                            let refused = StreamMessage::SubscriptionRefused {
+                                reason: "the frame is no subscription: a subscription is a text frame".to_owned(),
+                            };
+                            self.tell(sender, &refused, &liveness).await?;
+                        }
+                        // The WebSocket answers a ping itself.
+                        Message::Ping(_) | Message::Pong(_) => {}
+                        Message::Close(_) => return Err(End::Client),
+                    }
+                },
+                () = &mut ping_due => {
+                    match liveness.due(clock.now()) {
+                        PingDue::Ping => self.deliver(sender, Message::Ping(Bytes::new()), &liveness).await?,
+                        PingDue::Silent { since } => return Err(End::Silent { since }),
+                    }
+                    ping_due.set(clock.until(liveness.next_ping()));
+                },
                 change = changes.recv() => match change {
-                    Ok(Change::Message(message)) => {
-                        if send(sender, &message).await.is_err() {
-                            return End::Client;
-                        }
-                    }
+                    Ok(Change::Message(message)) => self.tell(sender, &message, &liveness).await?,
                     // The server missed changes of the host, so the client gets the whole state again.
-                    Ok(Change::Resync) => {
-                        if let Err(end) = self.snapshot(sender).await {
-                            return end;
-                        }
-                    }
+                    Ok(Change::Resync) => self.snapshot(sender, &liveness).await?,
                     // The client missed changes, so it gets the whole state again, and the changes after it.
                     Err(RecvError::Lagged(_)) => {
                         changes = changes.resubscribe();
-                        if let Err(end) = self.snapshot(sender).await {
-                            return end;
-                        }
+                        self.snapshot(sender, &liveness).await?;
                     }
-                    Err(RecvError::Closed) => return End::Stopping,
+                    Err(RecvError::Closed) => return Err(End::Stopping),
                 },
                 call = next_call(&mut following) => match call {
-                    Some(message) => {
-                        if send(sender, &message).await.is_err() {
-                            return End::Client;
-                        }
-                    }
+                    Some(message) => self.tell(sender, &message, &liveness).await?,
                     // The environment stopped, and the client follows no calls.
                     None => following = None,
-                },
-                frame = receiver.next() => match frame {
-                    Some(Ok(Message::Text(text))) => {
-                        let answer = match serde_json::from_str::<Subscription>(text.as_str()) {
-                            Ok(subscription) => match self.follow(subscription.clone()).await {
-                                Ok(follows) => {
-                                    following = follows;
-                                    StreamMessage::Following { subscription }
-                                }
-                                Err(reason) => StreamMessage::SubscriptionRefused { reason },
-                            },
-                            Err(error) => StreamMessage::SubscriptionRefused {
-                                reason: format!("the frame is no subscription: {error}"),
-                            },
-                        };
-                        if let StreamMessage::SubscriptionRefused { .. } = answer {
-                            following = None;
-                        }
-                        // The calls that the client follows now come after this answer, and none of the others.
-                        if send(sender, &answer).await.is_err() {
-                            return End::Client;
-                        }
-                    }
-                    Some(Ok(Message::Binary(_))) => {
-                        following = None;
-                        let refused = StreamMessage::SubscriptionRefused {
-                            reason: "the frame is no subscription: a subscription is a text frame".to_owned(),
-                        };
-                        if send(sender, &refused).await.is_err() {
-                            return End::Client;
-                        }
-                    }
-                    // The WebSocket answers a ping itself.
-                    Some(Ok(Message::Ping(_) | Message::Pong(_))) => {}
-                    Some(Ok(Message::Close(_)) | Err(_)) | None => return End::Client,
                 },
             }
         }
     }
 
     /// Sends the whole state of the process.
-    async fn snapshot(&self, sender: &mut SplitSink<WebSocket, Message>) -> Result<(), End> {
+    async fn snapshot(&self, sender: &mut SplitSink<WebSocket, Message>, liveness: &Liveness) -> Result<(), End> {
         let state = self.plane.state().await.map_err(End::Unreadable)?;
-        send(sender, &StreamMessage::Snapshot(state))
+        self.tell(sender, &StreamMessage::Snapshot(state), liveness).await
+    }
+
+    /// Sends one message as a text frame.
+    async fn tell(
+        &self,
+        sender: &mut SplitSink<WebSocket, Message>,
+        message: &StreamMessage,
+        liveness: &Liveness,
+    ) -> Result<(), End> {
+        self.deliver(sender, Message::Text(form(message).into()), liveness)
             .await
-            .map_err(|()| End::Client)
+    }
+
+    /// Sends one frame to a client that takes it.
+    ///
+    /// # Errors
+    ///
+    /// [`End::Client`] when the client went away, and [`End::Silent`] when it does not take the frame for a whole
+    /// interval: a client that reads nothing any more would hold the stream up for as long as its connection stays.
+    async fn deliver(
+        &self,
+        sender: &mut SplitSink<WebSocket, Message>,
+        frame: Message,
+        liveness: &Liveness,
+    ) -> Result<(), End> {
+        let clock = self.attendance.clock();
+        let taken_by = liveness.taken_by(clock.now());
+        tokio::select! {
+            // A client that is there takes the frame at once, and nobody waits for the clock.
+            biased;
+            sent = sender.send(frame) => sent.map_err(|_| End::Client),
+            () = clock.until(taken_by) => Err(End::Silent { since: taken_by }),
+        }
     }
 
     /// What the client follows from now on, or why it cannot follow it.
@@ -222,6 +265,8 @@ async fn next_call(following: &mut Option<Following>) -> Option<StreamMessage> {
 async fn close(mut sender: SplitSink<WebSocket, Message>, end: End) {
     let frame = match end {
         End::Client => None,
+        // A client that reads nothing gets no word: the connection closes when the server lets go of it.
+        End::Silent { .. } => return,
         End::Stopping => Some(CloseFrame {
             code: close_code::AWAY,
             reason: "the control plane stops".into(),
@@ -241,13 +286,4 @@ async fn close(mut sender: SplitSink<WebSocket, Message>, end: End) {
         // The client closed the stream, and this answers its close.
         None => sender.close().await,
     };
-}
-
-/// Sends one message as a text frame.
-///
-/// # Errors
-///
-/// `()` when the client went away.
-async fn send(sender: &mut SplitSink<WebSocket, Message>, message: &StreamMessage) -> Result<(), ()> {
-    sender.send(Message::Text(form(message).into())).await.map_err(|_| ())
 }
