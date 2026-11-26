@@ -192,6 +192,9 @@ It acts on the rule as the rule is, and it says the state that it wants.
 - **The answer says what the intent did.**
   It holds the rule it acted on, whether it made that rule, whether it changed the state of the rule,
   and the definition, the state and the revision that the rule has now.
+- **An intent that changes a rule takes one number.**
+  A press that makes the live rule of its pad and arms it is one change.
+  An intent that finds the state it wants takes none, and answers with the revision that the rule had.
   A disarm or a release of a pad that points at no rule finds no rule, and changes nothing.
 - **A press in hold answers with its hold.**
   The engine numbers every hold, and no number comes back within a run.
@@ -414,11 +417,6 @@ The server reads it and refuses a request without it. The host takes the surface
 
 The scenario of an environment has no revision yet: no operation activates a scenario or steps one.
 Its revision, and the `expects` of those operations, arrive with them.
-
-A pad intent answers with nothing yet.
-What it did, the rule it acted on and the revision that the rule has now arrive with the presses that say the state they want.
-Until then a surface reads them from the `rule-changed` that follows.
-A press that makes a live rule and arms it takes two numbers, one for each, and the rule has the later one.
 
 The UI sends no `expects` yet.
 It keeps the run and every revision that the stream tells, and sends them with its changes once it keeps an undo history.
