@@ -10,7 +10,7 @@
 //! | [`Operation`] | One thing a client asks, with its answer and its error. |
 //! | [`AnyOperation`] | Any operation, as one value. |
 //! | [`OperationRequest`] | One request: an operation, and where it comes from. |
-//! | [`RequestSource`], [`RequestSurface`], [`RequestCause`] | Where a request comes from: the surface that sends it, and whether it takes back or repeats an earlier change. |
+//! | [`RequestSource`], [`RequestSurface`], [`RequestCause`] | Where a request comes from: the surface that sends it, whether it takes back or repeats an earlier change, and the presence of its sender. |
 //! | [`RequestError`] | Why a request got neither the answer nor the error of its operation. |
 //! | [`EditableDefinition`] | A kind of definition that the control plane lists, gets, creates, updates and deletes. |
 //! | [`ListDefinitions`], [`GetDefinition`], [`CreateDefinition`], [`UpdateDefinition`], [`DeleteDefinition`] | The operations on the definitions of the workspace, for each kind. |
@@ -78,6 +78,10 @@
 //! The control plane has no users, so a [`RequestSource`] is what the sender says about itself.
 //! A request names one of six surfaces. The process names the surface of a change that no request made,
 //! so no request can claim one of those.
+//!
+//! A client that follows the live stream is a presence, whose ID is a [`PresenceId`](surface::PresenceId):
+//! the stream names it [first](StreamMessage::Present). A request of that client says which presence it is,
+//! and a hold that it adds ends with the presence. A request of `gmq` or of a test names none.
 //!
 //! # Revisions
 //!

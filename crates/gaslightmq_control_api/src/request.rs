@@ -1,5 +1,6 @@
 //! One request to the control plane: an operation, and where it comes from.
 
+use gaslightmq_surface::PresenceId;
 use serde::{Deserialize, Serialize};
 
 use crate::AnyOperation;
@@ -65,23 +66,40 @@ impl OperationRequest {
     }
 }
 
-/// Where a request comes from: the surface that sends it, and why, when it takes back or repeats an earlier change.
+/// Where a request comes from: the surface that sends it, why, when it takes back or repeats an earlier change,
+/// and the presence of its sender, when the sender has one.
 ///
 /// The control plane has no users, so this is what the sender says about itself.
 /// It never says who a person is.
 ///
-/// With `serde`, it is a map of its fields, and a request without a cause leaves `cause` out:
-/// `{ "surface": "quick-inject" }`.
+/// A client that follows the live stream is a presence, which the stream [names](crate::StreamMessage::Present).
+/// A request of such a client says so, and a hold that the request adds then ends with the presence:
+/// a client that is gone never sends its release.
+/// A request that names no presence comes from a client that is not there to go away, such as `gmq` or a test,
+/// and its hold ends by its release or by a disarm alone.
+///
+/// With `serde`, it is a map of its fields, and a request leaves out the `cause` and the `presence` it does not
+/// have: `{ "surface": "quick-inject" }`.
 ///
 /// ```
 /// use gaslightmq_control_api::prelude::*;
+/// use gaslightmq_control_api::surface::PresenceId;
 ///
 /// let press = RequestSource::from(RequestSurface::Pad);
 /// assert_eq!(press.cause, None);
+/// assert_eq!(press.presence, None);
 ///
 /// let redo = RequestSource::new(RequestSurface::Ui).with_cause(RequestCause::Redo);
 /// assert_eq!(redo.surface, RequestSurface::Ui);
 /// assert_eq!(redo.cause, Some(RequestCause::Redo));
+///
+/// // A tab of the UI holds a pad, and says which presence it is: the one that its live stream named.
+/// let tab: PresenceId = "9f86d081884c7d659a2feaa0c55ad015".parse().expect("a presence ID");
+/// let hold = RequestSource::new(RequestSurface::Pad).with_presence(tab);
+/// assert_eq!(
+///     serde_json::to_value(hold).expect("a source has a form"),
+///     serde_json::json!({ "surface": "pad", "presence": "9f86d081884c7d659a2feaa0c55ad015" }),
+/// );
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -92,12 +110,20 @@ pub struct RequestSource {
     /// `None` for every other request.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cause: Option<RequestCause>,
+    /// The presence of the client that sends the request, when it has one: the one that its live stream named.
+    /// `None` for a client that follows no live stream, or that says nothing about it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub presence: Option<PresenceId>,
 }
 
 impl RequestSource {
     /// A request of `surface` that neither takes back nor repeats an earlier change.
     pub const fn new(surface: RequestSurface) -> Self {
-        Self { surface, cause: None }
+        Self {
+            surface,
+            cause: None,
+            presence: None,
+        }
     }
 
     /// The same source, for a request that has `cause`.
@@ -106,6 +132,17 @@ impl RequestSource {
         Self {
             surface: self.surface,
             cause: Some(cause),
+            presence: self.presence,
+        }
+    }
+
+    /// The same source, for a request of the client that is `presence`.
+    #[must_use]
+    pub const fn with_presence(self, presence: PresenceId) -> Self {
+        Self {
+            surface: self.surface,
+            cause: self.cause,
+            presence: Some(presence),
         }
     }
 }

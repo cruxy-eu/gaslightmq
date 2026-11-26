@@ -20,6 +20,10 @@ use crate::{Operation, RuleStatus};
 /// A rule that holds armed disarms when its last hold goes, and a release never disarms a rule that something else
 /// armed. A disarm ends every hold, and a release after it changes nothing.
 ///
+/// A hold belongs to the [presence](crate::RequestSource::presence) that its request names, and ends with it:
+/// a client that is gone never sends its release. A hold of a request that names none ends by its release or by a
+/// disarm alone. A hold that names a presence which has ended is [refused](IntentError::Refused).
+///
 /// ```
 /// use gaslightmq_control_api::prelude::*;
 /// use gaslightmq_control_api::surface::{Column, Intent, Pad, Row};
@@ -89,7 +93,8 @@ pub enum IntentError {
     #[error("layout {:?} does not exist", .layout.as_str())]
     UnknownLayout { layout: LayoutName },
     /// The environment cannot act on the intent: the pad lies outside its layout, its rule cannot be made or armed,
-    /// it has no rule to turn, or the rule has nothing for the encoder to change. `reason` says which.
+    /// it has no rule to turn, the rule has nothing for the encoder to change, or the presence that holds the pad
+    /// has ended. `reason` says which.
     /// An intent that finds the state it wants is no error: it changes nothing, and its answer says so.
     #[error("the intent was refused: {reason}")]
     Refused { reason: String },
