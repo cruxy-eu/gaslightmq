@@ -7,7 +7,7 @@
 //!
 //! | Type | Is |
 //! |---|---|
-//! | [`Store`] | The trait: list, get, create, update and delete the definitions of one kind. |
+//! | [`Store`] | The trait: list, get, create, update and delete the definitions of one kind, and read again what someone else changed. |
 //! | [`Definition`] | What a store holds: something with a name, and a word for its kind. |
 //! | [`StoreReadError`] | Why a store has no answer to a list, a get or another question. |
 //! | [`StoreCreateError`] | Why a store did not create a definition. |
@@ -112,8 +112,8 @@
 //! | Error | The store | Its caller |
 //! |---|---|---|
 //! | [`StoreReadError`] | Could not read what it holds, for a [list](Store::list), a [get](Store::get) or a question of its kind. | Keeps what it read before, and reports the error. |
-//! | [`StoreCreateError`] | Did not [create](Store::create) a definition: its name is taken, or the store could not keep it. | Tells whoever asked that the name is taken, or reports the error. |
-//! | [`StoreChangeError`] | Did not [update](Store::update) or [delete](Store::delete) a definition: no definition has the name, or the store could not keep the change. | Tells whoever asked that there is no such definition, or reports the error. |
+//! | [`StoreCreateError`] | Did not [create](Store::create) a definition: its name is taken, someone else changed where it would go, or the store could not keep it. | Tells whoever asked that the name is taken, or that the store has to read again first, or reports the error. |
+//! | [`StoreChangeError`] | Did not [update](Store::update) or [delete](Store::delete) a definition: no definition has the name, someone else changed where it is, or the store could not keep the change. | Tells whoever asked that there is no such definition, or that the store has to read again first, or reports the error. |
 //!
 //! Every store returns these errors and no other, whatever stands behind it.
 //! An error names no definition and no kind: whoever asked knows both, and says them in its own error.

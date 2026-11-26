@@ -22,6 +22,8 @@ use crate::Samples;
 /// | Delete lets go of a definition. | No other definition goes with it. |
 /// | Delete needs a name that exists. | Nothing changed. |
 /// | A name is free again after a delete. | Create takes a definition of that name. |
+/// | What the store wrote loses no comment. | No definition that it created or updated holds a comment that a write would lose. |
+/// | Reading again finds what the store wrote. | It has nothing to read again, or it reads what it lists. After the reading is taken, it lists the same. |
 ///
 /// This crate knows no kind of definition, so the samples come from whoever runs the check.
 /// The crate of a kind has a check of its own for its store trait, which runs this one with the samples of its kind
@@ -44,6 +46,8 @@ where
     delete_lets_go_of_a_definition(&empty(), samples).await;
     delete_needs_a_name_that_exists(&empty(), samples).await;
     a_name_is_free_again_after_a_delete(&empty(), samples).await;
+    what_the_store_wrote_loses_no_comment(&empty(), samples).await;
+    reading_again_finds_what_the_store_wrote(&empty(), samples).await;
 }
 
 async fn a_new_store_holds_nothing<D, S>(store: &S, samples: &Samples<D>)
@@ -234,6 +238,50 @@ where
         listed(store).await,
         [samples.changed().clone()],
         "a store holds what was created last under the name"
+    );
+}
+
+async fn what_the_store_wrote_loses_no_comment<D, S>(store: &S, samples: &Samples<D>)
+where
+    D: Definition + PartialEq + fmt::Debug,
+    S: Store<D>,
+{
+    created(store, samples.definition()).await;
+    created(store, samples.other()).await;
+    assert_eq!(
+        store.update(samples.changed().clone()).await,
+        Ok(()),
+        "update takes a definition whose name the store holds"
+    );
+
+    for definition in [samples.changed(), samples.other()] {
+        assert_eq!(
+            store.would_lose_comment(definition.name()).await,
+            Ok(false),
+            "a definition that the store wrote holds no comment that a write would lose"
+        );
+    }
+}
+
+async fn reading_again_finds_what_the_store_wrote<D, S>(store: &S, samples: &Samples<D>)
+where
+    D: Definition + PartialEq + fmt::Debug,
+    S: Store<D>,
+{
+    created(store, samples.definition()).await;
+    created(store, samples.other()).await;
+
+    let listed_before = listed(store).await;
+    let reading = store.read_again().await.expect("a store reads again what it wrote");
+    if let Some(read) = reading {
+        assert_eq!(read, listed_before, "reading again finds what the store wrote");
+    }
+    store.take_reading().await;
+
+    assert_eq!(
+        listed(store).await,
+        listed_before,
+        "a store that took its reading lists what it wrote"
     );
 }
 

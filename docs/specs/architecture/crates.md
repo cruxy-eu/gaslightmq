@@ -196,6 +196,8 @@ Nothing else in sans-IO code names a future, and no sans-IO code has an async bl
 
 Some sans-IO code awaits a store: the crates `definition_memory` and `workspace`, the conformance crates, and one module of the crate of a definition.
 That module, `store`, holds its store trait, whose methods with a body read what the store lists.
+The module `store` of `definition_api` is such code too: the contract answers there for a store that nobody else changes,
+in the methods with a body that such a store keeps as they are.
 The check lets this code have async functions with a body and await, and no other async code.
 A method of a trait whose whole body is one async block counts as such a function: it is written out so that its signature can say that its future is `Send`.
 This code makes no other future, and it names no task and no runtime, so it starts nothing, waits for no timer and never blocks.

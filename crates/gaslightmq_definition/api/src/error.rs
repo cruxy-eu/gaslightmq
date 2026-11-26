@@ -41,6 +41,10 @@ pub enum StoreCreateError {
     /// A definition of this kind has the name already. Creating never overwrites it.
     #[error("the store holds a definition of that name already")]
     NameTaken,
+    /// Someone else changed where the definition would go, since the store read it, so the store wrote nothing.
+    /// `reason` says what changed, such as a file that appeared. Reading again takes the change in.
+    #[error("the store wrote nothing, because {reason}")]
+    ChangedOutside { reason: String },
     /// The store could not keep the definition. `reason` says what stood in the way.
     #[error("the store could not keep the definition: {reason}")]
     Failed { reason: String },
@@ -48,7 +52,7 @@ pub enum StoreCreateError {
 
 /// Why a store did not [update](crate::Store::update) or [delete](crate::Store::delete) a definition.
 ///
-/// Both change a definition that the store holds, and both fail in the same two ways.
+/// Both change a definition that the store holds, and both fail in the same three ways.
 /// A change that fails changed nothing.
 /// Whoever asked knows which name it handed over, so the error does not name it.
 ///
@@ -63,6 +67,10 @@ pub enum StoreChangeError {
     /// No definition of this kind has the name. Updating never creates one.
     #[error("the store holds no definition of that name")]
     NotFound,
+    /// Someone else changed where the definition is, since the store read it, so the store wrote nothing.
+    /// `reason` says what changed, such as a file that someone edited. Reading again takes the change in.
+    #[error("the store wrote nothing, because {reason}")]
+    ChangedOutside { reason: String },
     /// The store could not change or remove the definition. `reason` says what stood in the way.
     #[error("the store could not change the definition: {reason}")]
     Failed { reason: String },
@@ -95,6 +103,12 @@ mod tests {
                 "the store holds a definition of that name already",
             ),
             (
+                StoreCreateError::ChangedOutside {
+                    reason: "rules/slow.yaml appeared since the store read the rules".to_owned(),
+                },
+                "the store wrote nothing, because rules/slow.yaml appeared since the store read the rules",
+            ),
+            (
                 StoreCreateError::Failed {
                     reason: "the directory is read-only".to_owned(),
                 },
@@ -112,6 +126,12 @@ mod tests {
     fn a_change_error_says_everything_in_one_message() {
         let cases = [
             (StoreChangeError::NotFound, "the store holds no definition of that name"),
+            (
+                StoreChangeError::ChangedOutside {
+                    reason: "selectors.yaml changed since the store read it".to_owned(),
+                },
+                "the store wrote nothing, because selectors.yaml changed since the store read it",
+            ),
             (
                 StoreChangeError::Failed {
                     reason: "the directory is read-only".to_owned(),
