@@ -1,0 +1,35 @@
+[package]
+name = "gaslightmq_test"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lints]
+workspace = true
+
+# The modules that hold values and never wait: `cargo xtask sans-io` holds them to that.
+[package.metadata.gaslightmq]
+sans_io_modules = ["configuration", "error"]
+
+[dependencies]
+gaslightmq_control_api.workspace = true
+gaslightmq_control_client.workspace = true
+gaslightmq_control_server.workspace = true
+gaslightmq_host.workspace = true
+gaslightmq_lie_api.workspace = true
+gaslightmq_lie_refusal.workspace = true
+# The workspace of a test that hands over no context: stores in memory.
+gaslightmq_workspace = { workspace = true, features = ["memory"] }
+# The ID of the run of a test that names none.
+getrandom.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+anyhow.workspace = true
+# The client under test, which knows the bootstrap address of the proxy and nothing else.
+gaslightmq_kafka_client_api.workspace = true
+gaslightmq_kafka_client_native.workspace = true
+# The real cluster behind the proxy.
+gaslightmq_test_kafka.workspace = true
+gaslightmq_wire.workspace = true
+tokio = { workspace = true, features = ["rt", "rt-multi-thread", "macros"] }

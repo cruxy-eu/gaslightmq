@@ -1906,6 +1906,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "gaslightmq_test"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "gaslightmq_control_api",
+ "gaslightmq_control_client",
+ "gaslightmq_control_server",
+ "gaslightmq_host",
+ "gaslightmq_kafka_client_api",
+ "gaslightmq_kafka_client_native",
+ "gaslightmq_lie_api",
+ "gaslightmq_lie_refusal",
+ "gaslightmq_test_kafka",
+ "gaslightmq_wire",
+ "gaslightmq_workspace",
+ "getrandom 0.4.3",
+ "thiserror 2.0.21",
+ "tokio",
+]
+
+[[package]]
 name = "gaslightmq_test_kafka"
 version = "0.1.0"
 dependencies = [
