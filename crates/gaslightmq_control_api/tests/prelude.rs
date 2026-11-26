@@ -95,6 +95,10 @@ mod next_to_std_and_every_domain {
     fn every_other_type_is_named_without_a_path() {
         let _: Option<<Selector as EditableDefinition>::Name> = None::<SelectorName>;
         let _: Option<AnyOperation> = None;
+        let _: Option<OperationRequest> = None;
+        let _: Option<RequestSource> = None;
+        let _: Option<RequestSurface> = None;
+        let _: Option<RequestCause> = None;
         let _: Option<RequestError> = None;
         let _: Option<AnyDefinition> = None;
         let _: Option<DefinitionRef> = None;

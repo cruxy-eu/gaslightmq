@@ -1,7 +1,7 @@
 //! The application: what every view shares, and the views by their path.
 
 use dioxus::prelude::*;
-use gaslightmq_control_api::Operation;
+use gaslightmq_control_api::{Operation, RequestSurface};
 use gaslightmq_control_client::{ControlClient, ControlClientConfiguration};
 
 use crate::browser;
@@ -72,7 +72,7 @@ impl Ui {
         self.changes.send(Changed);
     }
 
-    /// Sends `operation` to the control plane, and shows a notice when it fails.
+    /// Sends `operation` to the control plane as a view of the UI does, and shows a notice when it fails.
     pub fn send<O>(&self, operation: O)
     where
         O: Operation + 'static,
@@ -80,15 +80,27 @@ impl Ui {
         self.send_then(operation, |_| {});
     }
 
-    /// Sends `operation` to the control plane, and hands its answer to `then`. A failure shows a notice.
+    /// Sends `operation` to the control plane as a view of the UI does, and hands its answer to `then`.
+    /// A failure shows a notice.
     pub fn send_then<O>(&self, operation: O, then: impl FnOnce(O::Answer) + 'static)
+    where
+        O: Operation + 'static,
+    {
+        self.send_from(RequestSurface::Ui, operation, then);
+    }
+
+    /// Sends `operation` to the control plane as the request of `surface`, and hands its answer to `then`.
+    /// A failure shows a notice.
+    ///
+    /// The pads and ⌘K are surfaces of their own, so what they send says so.
+    pub fn send_from<O>(&self, surface: RequestSurface, operation: O, then: impl FnOnce(O::Answer) + 'static)
     where
         O: Operation + 'static,
     {
         let client = self.client.clone();
         let ui = self.clone();
         spawn(async move {
-            match client.send(operation).await {
+            match client.send_from(surface, operation).await {
                 Ok(Ok(answer)) => then(answer),
                 Ok(Err(error)) => ui.notify(error.to_string(), true),
                 Err(error) => ui.notify(error.to_string(), true),
@@ -119,7 +131,12 @@ pub fn App() -> Element {
         };
     };
     let configuration = use_hook(UiConfiguration::default);
-    let client = use_hook(|| ControlClient::new(ControlClientConfiguration::new(address)));
+    let client = use_hook(|| {
+        // The UI says that it is the UI. Its pads and ⌘K name themselves with each request.
+        let mut of_the_ui = ControlClientConfiguration::new(address);
+        of_the_ui.surface = RequestSurface::Ui;
+        ControlClient::new(of_the_ui)
+    });
     let live = use_signal(|| Live::new(&configuration));
     let notices = use_signal(Vec::new);
     let desk = use_signal(|| None);

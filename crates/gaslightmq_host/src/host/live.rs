@@ -1,11 +1,12 @@
 //! The rules of an environment: those of the workspace with their state there, and the live rules.
 
 use gaslightmq_definition_api::Store;
+use gaslightmq_engine::ArmError;
 use gaslightmq_environment::EnvironmentName;
-use gaslightmq_rule::{Rule, RuleName, RuleState};
+use gaslightmq_rule::{ArmedRule, ResolvedRule, Rule, RuleName, RuleState};
 use gaslightmq_workspace::{Stores, WorkspaceContext};
 
-use super::{Host, Unresolvable, unread};
+use super::{Host, Running, Unresolvable, unread};
 use crate::{
     CreateLiveRuleError, DeleteLiveRuleError, EnvironmentRule, EnvironmentRulesError, HostChange, KeepRuleError,
     UpdateLiveRuleError,
@@ -92,20 +93,62 @@ impl<C: WorkspaceContext> Host<C> {
         environment: &EnvironmentName,
         rule: Rule,
     ) -> Result<Rule, CreateLiveRuleError> {
-        let name = rule.name().clone();
-        let taken = || CreateLiveRuleError::NameTaken {
-            environment: environment.clone(),
-            rule: name.clone(),
-        };
+        self.resolve_new_live_rule(environment, &rule).await?;
+        self.add_live_rule(environment, rule.clone(), |_| Ok(()))?;
+        Ok(rule)
+    }
+
+    /// Adds a live rule to an environment and arms it, as one step, and returns the rule as it is armed.
+    ///
+    /// The rule is a live rule of the environment and armed, or neither: a rule that does not arm is not added.
+    /// Everything else is as on [`create_live_rule`](Self::create_live_rule), and the rule arms as on
+    /// [`arm`](Self::arm), above every rule that is armed in the environment.
+    ///
+    /// # Errors
+    ///
+    /// The errors of [`create_live_rule`](Self::create_live_rule).
+    /// [`CreateLiveRuleError::NameTaken`] also comes when a rule of that name is armed in the environment already.
+    pub async fn create_live_rule_armed(
+        &self,
+        environment: &EnvironmentName,
+        rule: Rule,
+    ) -> Result<ArmedRule, CreateLiveRuleError> {
+        let resolved = self.resolve_new_live_rule(environment, &rule).await?;
+        self.add_live_rule(environment, rule, |running| {
+            running
+                .engine
+                .rules()
+                .arm(resolved)
+                .map_err(|ArmError::AlreadyArmed { rule }| CreateLiveRuleError::NameTaken {
+                    environment: environment.clone(),
+                    rule,
+                })
+        })
+    }
+
+    /// Resolves a rule that is to become a live rule of an environment against the workspace.
+    ///
+    /// The environment runs, and no rule of the workspace has the name of the rule.
+    async fn resolve_new_live_rule(
+        &self,
+        environment: &EnvironmentName,
+        rule: &Rule,
+    ) -> Result<ResolvedRule, CreateLiveRuleError> {
+        let name = rule.name();
         self.check_running(environment)
             .map_err(|environment| CreateLiveRuleError::NotRunning { environment })?;
         let of_the_workspace = {
             let workspace = self.workspace.lock().await;
-            workspace.stores().rules().get(&name).await
+            workspace.stores().rules().get(name).await
         };
         match of_the_workspace {
             Ok(None) => {}
-            Ok(Some(_)) => return Err(taken()),
+            Ok(Some(_)) => {
+                return Err(CreateLiveRuleError::NameTaken {
+                    environment: environment.clone(),
+                    rule: name.clone(),
+                });
+            }
             Err(error) => {
                 return Err(CreateLiveRuleError::StoreFailed {
                     rule: name.clone(),
@@ -113,7 +156,7 @@ impl<C: WorkspaceContext> Host<C> {
                 });
             }
         }
-        self.resolve(&rule).await.map_err(|unresolvable| match unresolvable {
+        self.resolve(rule).await.map_err(|unresolvable| match unresolvable {
             Unresolvable::StoreFailed { reason } => CreateLiveRuleError::StoreFailed {
                 rule: name.clone(),
                 reason,
@@ -123,8 +166,22 @@ impl<C: WorkspaceContext> Host<C> {
                 reason,
             },
             Unresolvable::Unresolved { error } => CreateLiveRuleError::Unresolved { error },
-        })?;
-        {
+        })
+    }
+
+    /// Puts a rule among the live rules of an environment, once `arm` did what the rule needs there first,
+    /// and tells whoever follows the host. Returns what `arm` returned.
+    ///
+    /// `arm` runs while nobody else reads or changes the environments, so the rule is armed and a live rule from
+    /// the same moment. When it fails, the rule is no live rule.
+    fn add_live_rule<A>(
+        &self,
+        environment: &EnvironmentName,
+        rule: Rule,
+        arm: impl FnOnce(&Running) -> Result<A, CreateLiveRuleError>,
+    ) -> Result<A, CreateLiveRuleError> {
+        let name = rule.name().clone();
+        let armed = {
             let mut environments = self.environments();
             let Some(running) = environments.get_mut(environment) else {
                 return Err(CreateLiveRuleError::NotRunning {
@@ -132,15 +189,20 @@ impl<C: WorkspaceContext> Host<C> {
                 });
             };
             if running.live.contains_key(&name) {
-                return Err(taken());
+                return Err(CreateLiveRuleError::NameTaken {
+                    environment: environment.clone(),
+                    rule: name,
+                });
             }
-            running.live.insert(name.clone(), rule.clone());
-        }
+            let armed = arm(running)?;
+            running.live.insert(name.clone(), rule);
+            armed
+        };
         self.publish(HostChange::RuleChanged {
             environment: environment.clone(),
             rule: name,
         });
-        Ok(rule)
+        Ok(armed)
     }
 
     /// Replaces the live rule of an environment that has the name of `rule`, and returns it as the environment holds

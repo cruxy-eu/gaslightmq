@@ -42,7 +42,7 @@
 //!
 //! | Request | Answer |
 //! |---|---|
-//! | `POST /api/operations` with an `AnyOperation` | `200` with its answer, `422` with its error, `400` with a `RequestError`. |
+//! | `POST /api/operations` with an `OperationRequest` | `200` with its answer, `422` with its error, `400` with a `RequestError`. |
 //! | `GET /api/stream`, a WebSocket | A `StreamMessage` per text frame, the snapshot first. The client sends a `Subscription` per text frame. |
 //! | `GET` of any other path | A file of the web UI, or the page of the UI, which opens the view of the path. |
 //!
@@ -53,11 +53,15 @@
 //! # What the server answers
 //!
 //! The server answers every operation of `gaslightmq_control_api` with the host.
+//! A request says where it comes from, next to its operation: the surface that sends it, and the cause of an undo
+//! or a redo. A request that does not say so, or that claims a surface which only the process names, is unreadable.
+//! Nothing records where a request comes from yet: the journal does, once it exists.
 //!
 //! - **Definitions** change in the workspace, through the host, which checks them first.
 //! - **An environment starts by its name.** The server reads it from the workspace, makes its
 //!   configuration as the environment says, and hands that to the host.
 //! - **A rule of an environment** is a rule of the workspace or a live rule of that environment.
+//!   A live rule that is created armed is there and armed, or neither.
 //!   Pads, live rules, keeping one and the sessions of an environment are the host's.
 //!
 //! # The live stream follows the host

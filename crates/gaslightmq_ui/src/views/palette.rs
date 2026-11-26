@@ -50,7 +50,7 @@ pub fn QuickInject() -> Element {
     let highlighted = current.highlighted();
     drop(current);
 
-    // Asks the control plane to read the sentence, once nobody typed for a moment.
+    // Asks the control plane to read the sentence, once nobody typed for a moment. What ⌘K sends says that it is ⌘K.
     let ask = {
         let ui = ui.clone();
         move |question: Question| {
@@ -68,7 +68,7 @@ pub fn QuickInject() -> Element {
                 let operation = question.operation(running.environment.clone());
                 drop(live);
                 let mut palette = palette;
-                ui.send_then(operation, move |parsed| {
+                ui.send_from(RequestSurface::QuickInject, operation, move |parsed| {
                     palette.write().answered(question.number, parsed);
                 });
             });
@@ -90,13 +90,10 @@ pub fn QuickInject() -> Element {
                         return;
                     };
                     drop(live);
-                    let label = rule_label(&creation.create.rule);
-                    let after = ui.clone();
-                    ui.send_then(creation.create, move |()| {
-                        let done = after.clone();
-                        after.send_then(creation.arm, move |()| {
-                            done.notify(format!("Armed the live rule {label}"), false);
-                        });
+                    let label = rule_label(&creation.rule);
+                    let done = ui.clone();
+                    ui.send_from(RequestSurface::QuickInject, creation, move |()| {
+                        done.notify(format!("Armed the live rule {label}"), false);
                     });
                     palette.set(Palette::default());
                     open.set(false);

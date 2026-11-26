@@ -1,6 +1,6 @@
 //! The control plane without a real cluster, driven through the client as the UI, the CLI and tests drive it:
 //! the definitions of the workspace, what an operation answers about an environment that does not run,
-//! an operation that the server does not serve yet, and the live stream.
+//! a request that does not say where it comes from, and the live stream.
 //!
 //! Each test starts a host whose workspace lives in memory, puts a server in front of it on a free port,
 //! and speaks to that server with a client. The tests in `tests/real_cluster` run environments in front of real
@@ -9,6 +9,7 @@
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::Arc;
 
+use anyhow::Context;
 use gaslightmq_control_api::clock::Duration;
 use gaslightmq_control_api::environment::{
     BrokerDefinition, Environment, EnvironmentName, Instances, Listeners, ProxyDefinition,
@@ -294,6 +295,7 @@ async fn live_rules_pads_and_sessions_need_an_environment_that_runs() -> anyhow:
         .send(CreateLiveRule {
             environment: staging.clone(),
             rule: hold.clone(),
+            armed: true,
         })
         .await?;
     let kept = client
@@ -393,6 +395,67 @@ async fn a_subscription_is_answered_and_a_stop_of_the_server_ends_the_stream() -
     server.stop().await;
     let ended = tokio::time::timeout(PATIENCE, stream.next()).await?;
     assert!(matches!(ended, Err(StreamError::Unreachable { .. })), "{ended:?}");
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_request_says_where_it_comes_from_or_the_server_does_not_read_it() -> anyhow::Result<()> {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    let host = Arc::new(Host::new(
+        HostConfiguration::default(),
+        MemoryContext::new(),
+        Lies::of_every_build(),
+    ));
+    let mut configuration = ControlServerConfiguration::default();
+    configuration.listen = SocketAddr::new(LOCALHOST, ANY_PORT);
+    let server = ControlServer::start(configuration, Arc::clone(&host)).await?;
+    let mut of_the_ui = ControlClientConfiguration::new(server.address().into());
+    of_the_ui.surface = RequestSurface::Ui;
+    let client = ControlClient::new(of_the_ui);
+    // What the server answers to `body`, posted to the operations as it is: the first line, and the body.
+    let post = async |body: &str| -> anyhow::Result<(String, String)> {
+        let request = format!(
+            "POST /api/operations HTTP/1.1\r\nhost: localhost\r\ncontent-type: application/json\r\n\
+             content-length: {}\r\nconnection: close\r\n\r\n{body}",
+            body.len()
+        );
+        let mut connection = tokio::net::TcpStream::connect(server.address()).await?;
+        connection.write_all(request.as_bytes()).await?;
+        let mut answer = String::new();
+        tokio::time::timeout(PATIENCE, connection.read_to_string(&mut answer)).await??;
+        let (head, body) = answer
+            .split_once("\r\n\r\n")
+            .context("an answer has a head and a body")?;
+        let status = head.lines().next().context("an answer has a first line")?;
+        Ok((status.to_owned(), body.to_owned()))
+    };
+
+    // A view of the UI lists the rules, a pad asks the same, and ⌘Z asks it as an undo: each says so, and is answered.
+    let from_a_view = client.send(ListDefinitions::<Rule>::new()).await?;
+    let from_a_pad = client
+        .send_from(RequestSurface::Pad, ListDefinitions::<Rule>::new())
+        .await?;
+    let as_an_undo = client
+        .send_from(
+            RequestSource::new(RequestSurface::Ui).with_cause(RequestCause::Undo),
+            ListDefinitions::<Rule>::new(),
+        )
+        .await?;
+    // An operation alone says nothing about its sender, and no request is a lifetime that ended.
+    let (unsigned_status, unsigned) = post(r#"{ "operation": "list-rules" }"#).await?;
+    let (claimed_status, claimed) = post(r#"{ "from": { "surface": "lifetime" }, "operation": "list-rules" }"#).await?;
+
+    assert_eq!(from_a_view, Ok(Vec::new()));
+    assert_eq!(from_a_pad, Ok(Vec::new()));
+    assert_eq!(as_an_undo, Ok(Vec::new()));
+    // Why a request was not read is text: the status and the error say that it was not.
+    assert_eq!(unsigned_status, "HTTP/1.1 400 Bad Request");
+    let unsigned: RequestError = serde_json::from_str(&unsigned)?;
+    assert!(matches!(unsigned, RequestError::Unreadable { .. }), "{unsigned}");
+    assert_eq!(claimed_status, "HTTP/1.1 400 Bad Request");
+    let claimed: RequestError = serde_json::from_str(&claimed)?;
+    assert!(matches!(claimed, RequestError::Unreadable { .. }), "{claimed}");
+    server.stop().await;
     Ok(())
 }
 

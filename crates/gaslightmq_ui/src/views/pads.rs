@@ -198,7 +198,8 @@ pub fn Pads() -> Element {
     }
 }
 
-/// Changes the desk with `change`, against the environment shown, and sends the intent it gives.
+/// Changes the desk with `change`, against the environment shown, and sends the intent it gives, as a request of
+/// the pads.
 fn play(ui: &Ui, change: impl FnOnce(&mut Desk, &RunningEnvironment) -> Option<SendIntent>) {
     let intent = {
         let live = ui.live.peek();
@@ -214,7 +215,7 @@ fn play(ui: &Ui, change: impl FnOnce(&mut Desk, &RunningEnvironment) -> Option<S
         intent
     };
     if let Some(intent) = intent {
-        ui.send(intent);
+        ui.send_from(RequestSurface::Pad, intent, |()| {});
     }
 }
 

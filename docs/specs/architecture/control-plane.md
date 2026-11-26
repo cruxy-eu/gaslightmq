@@ -89,6 +89,7 @@ and a client and a server share them.
 - **One gesture is one operation.**
   Whatever a surface does in one gesture is one request, so it applies as a whole or not at all.
   A ⌘K sentence creates its live rule armed, with one operation.
+  A rule that does not arm is no live rule either: creating it fails with `name-taken` when a rule of its name is armed in the environment already.
 
 ## Where a request comes from
 
@@ -105,6 +106,10 @@ Every request says which surface sends it.
 
 The [journal](../domains/observation.md#journal) records both with every change that the request makes.
 The control plane has no users, so `from` is what the sender says about itself.
+
+A client says once which surface it is, and every request of it says so.
+One request can name another source: the UI is one client, and its pads and ⌘K name themselves with each request, as an undo names its cause.
+A client that says nothing about itself is `api`.
 
 The engine names three surfaces itself, and a request that claims one is unreadable.
 A change that no request made has the surface `step` or `lifetime`.
@@ -298,7 +303,7 @@ A build without them serves a page that says how to build them.
 ### Operations
 
 A request is one `POST /api/operations`.
-Its body is one object: an `AnyOperation`, with [where the request comes from](#where-a-request-comes-from) next to its keys.
+Its body is one object, an `OperationRequest`: an `AnyOperation`, with [where the request comes from](#where-a-request-comes-from) next to its keys.
 `{ "from": { "surface": "cli" }, "operation": "arm-rule", "environment": "orders-sim", "rule": "slow-order-producers" }`.
 The status of the response says what its body is.
 
@@ -307,7 +312,7 @@ The status of the response says what its body is.
 | `200 OK` | The answer of the operation, in the form of its `Answer`. An answer of `()` is `null`. |
 | `422 Unprocessable Content` | The error of the operation, in the form of its `Error`. |
 | `501 Not Implemented` | A `RequestError::NotServed`: the process does not serve the operation yet. |
-| `400 Bad Request` | A `RequestError::Unreadable`: the body is larger than the server takes, it is no operation that the server knows, or it does not say where it comes from. |
+| `400 Bad Request` | A `RequestError::Unreadable`: the body is larger than the server takes, it is no operation that the server knows, it does not say where it comes from, or it claims a surface that the engine names itself. |
 
 A client knows which operation it sent, so it reads `200` with the type of the answer and `422` with the type of the error.
 A `RequestError` is the same for every operation, and its `error` key names the variant.
@@ -380,8 +385,10 @@ an older process, or one built without a part.
 No operation reloads the workspace yet.
 It arrives with the stores of files: a store in memory has nothing to reload.
 
-A request does not say where it comes from yet, nothing has a revision yet, and the snapshot names no run.
-They arrive with the journal, which records the surface of every change.
+Every request says where it comes from, and nothing records it yet.
+The server reads it and refuses a request without it. The host takes the surface and the cause of every change once the journal exists, which records them.
+
+Nothing has a revision yet, and the snapshot names no run.
 
 No request needs a token yet, and the server allows no request from a page of another origin.
 The `token` of the [process configuration](storage.md#process-configuration) arrives with the binary.

@@ -190,6 +190,12 @@ async fn live_rules_pads_and_sessions_need_an_environment_that_runs() -> anyhow:
         })
     );
     assert_eq!(
+        host.create_live_rule_armed(&staging, silence.clone()).await.map(|_| ()),
+        Err(CreateLiveRuleError::NotRunning {
+            environment: staging.clone()
+        })
+    );
+    assert_eq!(
         host.update_live_rule(&staging, silence.clone()).await,
         Err(UpdateLiveRuleError::NotRunning {
             environment: staging.clone()

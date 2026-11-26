@@ -9,6 +9,8 @@
 //! |---|---|
 //! | [`Operation`] | One thing a client asks, with its answer and its error. |
 //! | [`AnyOperation`] | Any operation, as one value. |
+//! | [`OperationRequest`] | One request: an operation, and where it comes from. |
+//! | [`RequestSource`], [`RequestSurface`], [`RequestCause`] | Where a request comes from: the surface that sends it, and whether it takes back or repeats an earlier change. |
 //! | [`RequestError`] | Why a request got neither the answer nor the error of its operation. |
 //! | [`EditableDefinition`] | A kind of definition that the control plane lists, gets, creates, updates and deletes. |
 //! | [`ListDefinitions`], [`GetDefinition`], [`CreateDefinition`], [`UpdateDefinition`], [`DeleteDefinition`] | The operations on the definitions of the workspace, for each kind. |
@@ -36,10 +38,15 @@
 //!     environment: "orders-sim".parse().expect("an environment name"),
 //!     rule: "delay-1s-on-order-producers".parse().expect("a rule name"),
 //! };
-//! let request = serde_json::to_value(AnyOperation::from(arm)).expect("a request has a form");
+//! let request = serde_json::to_value(OperationRequest::new(RequestSurface::Pad, arm)).expect("a request has a form");
 //! assert_eq!(
 //!     request,
-//!     serde_json::json!({ "operation": "arm-rule", "environment": "orders-sim", "rule": "delay-1s-on-order-producers" }),
+//!     serde_json::json!({
+//!         "from": { "surface": "pad" },
+//!         "operation": "arm-rule",
+//!         "environment": "orders-sim",
+//!         "rule": "delay-1s-on-order-producers",
+//!     }),
 //! );
 //!
 //! // The environment does not run, and the UI offers to start it.
@@ -59,6 +66,14 @@
 //! A definition only holds valid values, so the UI checks a value in a form with the engine's own types.
 //!
 //! A definition travels as its file holds it, in a request as in an answer.
+//!
+//! # Where a request comes from
+//!
+//! An operation travels in an [`OperationRequest`], which says where it comes from: the [surface](RequestSurface) that
+//! sends it, and the [cause](RequestCause) when it takes back or repeats an earlier change of its sender.
+//! The control plane has no users, so a [`RequestSource`] is what the sender says about itself.
+//! A request names one of six surfaces. The process names the surface of a change that no request made,
+//! so no request can claim one of those.
 //!
 //! # Names
 //!
@@ -89,7 +104,8 @@
 //! | [`CloseSession`] | [`CloseSessionError`] | The environment does not run, or no session is open on the connection. |
 //!
 //! A request can also fail before its operation runs, in the same way for every operation:
-//! the process does not serve the operation yet, or reads no operation in the request.
+//! the process does not serve the operation yet, reads no operation in the request,
+//! or does not read where the request comes from.
 //! That is a [`RequestError`].
 //!
 //! The server meets the errors of the crates that do the work, such as the workspace, and turns them into these.
@@ -103,13 +119,14 @@
 //!
 //! | Type | Form |
 //! |---|---|
+//! | [`OperationRequest`] | The map of its [`AnyOperation`], with a `from` key next to its keys: `{ "from": { "surface": "cli" }, "operation": "arm-rule", … }`. |
 //! | [`AnyOperation`] | The map of its operation, with an `operation` key that names it: `arm-rule`, `create-selector`. |
 //! | An operation | A map of its fields. |
 //! | An error | A map of its fields, with an `error` key that names the variant: `{ "error": "not-found", "name": { "rule": "x" } }`. [`EnvironmentNotRunning`] is the map of its field. |
 //! | [`DefinitionRef`], [`AnyDefinition`] | A map with one entry: the kind, and the name or the definition. |
 //! | [`StreamMessage`] | The map of its fields, with a `message` key that names it: `rule-changed`. |
 //! | [`Subscription`] | The map of its fields, with a `follow` key: `calls` or `nothing`. |
-//! | [`BackendKind`], [`SessionCloser`], [`WordKind`] | The name in kebab case. |
+//! | [`BackendKind`], [`SessionCloser`], [`WordKind`], [`RequestSurface`], [`RequestCause`] | The name in kebab case. |
 //! | Every other type | A map of its fields. A field that is `None` or empty is left out. |
 //!
 //! # What the control plane does not hold yet
@@ -139,6 +156,7 @@ mod definitions;
 mod environments;
 mod operation;
 mod pads;
+mod request;
 mod rules;
 mod sentence;
 mod sessions;
@@ -157,6 +175,7 @@ pub use environments::{
 };
 pub use operation::{AnyOperation, Operation, RequestError};
 pub use pads::{IntentError, SendIntent};
+pub use request::{OperationRequest, RequestCause, RequestSource, RequestSurface};
 pub use rules::{
     ArmRule, CreateLiveRule, CreateLiveRuleError, DeleteLiveRule, DeleteLiveRuleError, DisarmRule, FireRule, KeepRule,
     KeepRuleError, ListEnvironmentRules, RuleCommandError, RuleStatus, UpdateLiveRule, UpdateLiveRuleError,
@@ -187,10 +206,11 @@ pub mod prelude {
         DeleteDefinition, DeleteDefinitionError, DeleteLiveRule, DeleteLiveRuleError, DisarmRule, EditableDefinition,
         EnvironmentNotRunning, EnvironmentReadError, EnvironmentStatus, FireRule, GetBackend, GetDefinition,
         GetDefinitionError, GetEnvironment, IntentError, KeepRule, KeepRuleError, ListDefinitions,
-        ListDefinitionsError, ListEnvironmentRules, ListEnvironments, ListSessions, Operation, ParseSentence,
-        ParsedSentence, ProcessState, RequestError, RuleCommandError, RuleStats, RuleStatus, RunningEnvironment,
-        SendIntent, SessionCloser, SessionIdentity, SessionStatus, StartEnvironment, StartEnvironmentError, Stats,
-        StopEnvironment, StreamMessage, Subscription, UnreadWord, UpdateDefinition, UpdateDefinitionError,
-        UpdateLiveRule, UpdateLiveRuleError, WordCompletion, WordKind,
+        ListDefinitionsError, ListEnvironmentRules, ListEnvironments, ListSessions, Operation, OperationRequest,
+        ParseSentence, ParsedSentence, ProcessState, RequestCause, RequestError, RequestSource, RequestSurface,
+        RuleCommandError, RuleStats, RuleStatus, RunningEnvironment, SendIntent, SessionCloser, SessionIdentity,
+        SessionStatus, StartEnvironment, StartEnvironmentError, Stats, StopEnvironment, StreamMessage, Subscription,
+        UnreadWord, UpdateDefinition, UpdateDefinitionError, UpdateLiveRule, UpdateLiveRuleError, WordCompletion,
+        WordKind,
     };
 }

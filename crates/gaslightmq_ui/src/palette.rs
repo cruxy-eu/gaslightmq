@@ -1,4 +1,4 @@
-//! ⌘K: a sentence that someone types, what the control plane reads in it, and the live rule it gives.
+//! ⌘K: a sentence that someone types, what the control plane reads in it, and the armed live rule it gives.
 
 use gaslightmq_control_api::environment::EnvironmentName;
 use gaslightmq_control_api::prelude::*;
@@ -38,15 +38,6 @@ pub enum PaletteItem {
     Complete(WordCompletion),
     /// Show another view.
     Jump(Jump),
-}
-
-/// What someone does with the rule of the sentence: add it as a live rule, then arm it.
-#[derive(Debug, Clone, PartialEq)]
-pub struct Creation {
-    /// Add the rule to the environment as a live rule, disarmed.
-    pub create: CreateLiveRule,
-    /// Arm it once it is there.
-    pub arm: ArmRule,
 }
 
 /// A sentence that the palette asks the control plane to read.
@@ -187,19 +178,15 @@ impl Palette {
         }
     }
 
-    /// The rule of a whole sentence as a live rule of `environment`, and the command that arms it.
-    /// `None` while the sentence is not whole.
-    pub fn creation(&self, environment: &EnvironmentName) -> Option<Creation> {
-        let rule = self.rule()?.clone();
-        Some(Creation {
-            arm: ArmRule {
-                environment: environment.clone(),
-                rule: rule.name().clone(),
-            },
-            create: CreateLiveRule {
-                environment: environment.clone(),
-                rule,
-            },
+    /// What Enter on a whole sentence sends: the one operation that makes the rule of the sentence a live rule of
+    /// `environment`, armed. `None` while the sentence is not whole.
+    ///
+    /// One gesture is one operation, so the rule is there and armed, or neither.
+    pub fn creation(&self, environment: &EnvironmentName) -> Option<CreateLiveRule> {
+        Some(CreateLiveRule {
+            environment: environment.clone(),
+            rule: self.rule()?.clone(),
+            armed: true,
         })
     }
 }

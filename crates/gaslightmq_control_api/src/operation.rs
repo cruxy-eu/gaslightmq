@@ -20,7 +20,8 @@ use crate::{
 /// the error holds only what can go wrong with that operation, so a client decides on every variant of it.
 /// Operations that fail in the same ways share an error.
 ///
-/// An operation travels as an [`AnyOperation`]. Its answer travels as the `serde` form of [`Answer`](Self::Answer),
+/// An operation travels as an [`AnyOperation`], in an [`OperationRequest`](crate::OperationRequest) that says where
+/// it comes from. Its answer travels as the `serde` form of [`Answer`](Self::Answer),
 /// and its failure as the form of [`Error`](Self::Error).
 /// How they travel is up to the client and the server: this crate holds what is asked and answered.
 ///
@@ -186,7 +187,7 @@ impl AnyOperation {
 /// Why the control plane answered a request with neither the answer nor the error of its operation.
 ///
 /// It is the same for every operation: whatever the request asks, the server may not serve it yet,
-/// or read no operation in it.
+/// read no operation in it, or not read where it comes from.
 ///
 /// With `serde`, it is a map with an `error` key that names the variant:
 /// `{ "error": "not-served", "operation": "keep-rule" }`.
@@ -203,7 +204,9 @@ pub enum RequestError {
     /// The process knows the operation, and does not serve it yet. `operation` is its [name](AnyOperation::name).
     #[error("the process does not serve the operation `{operation}` yet")]
     NotServed { operation: String },
-    /// The request holds no operation that the process knows, or it is larger than the process takes.
+    /// The request holds no operation that the process knows, it does not say
+    /// [where it comes from](crate::OperationRequest), it claims a surface that only the process names,
+    /// or it is larger than the process takes.
     /// `reason` says what was wrong with it.
     #[error("the request was not read: {reason}")]
     Unreadable { reason: String },

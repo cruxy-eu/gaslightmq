@@ -8,7 +8,7 @@
 //! |---|---|
 //! | [`ControlClient`] | A client of one control plane. It sends operations and opens live streams. |
 //! | [`LiveStream`] | The snapshot of the process, then every change, and the calls it follows. |
-//! | [`ControlClientConfiguration`] | Where the control plane is, and how long the client waits for it. |
+//! | [`ControlClientConfiguration`] | Where the control plane is, which surface the client is, and how long it waits. |
 //! | [`ControlPlaneAddress`], [`ControlPlaneAddressError`] | Where a control plane listens. |
 //! | [`SendError`] | Why an operation got no answer of its own. |
 //! | [`StreamError`] | Why a live stream did not open, or ended. |
@@ -20,6 +20,10 @@
 //! The error of the operation is an answer too, so the call returns it as its value.
 //! A [`SendError`] says that no answer came, that the control plane did not take the request,
 //! or that the client cannot read what came.
+//!
+//! Every request says [where it comes from](gaslightmq_control_api::OperationRequest).
+//! A client is one surface, which its configuration names, and [`ControlClient::send`] sends from there.
+//! [`ControlClient::send_from`] names the source of one request: another surface, or the cause of an undo or a redo.
 //!
 //! ```no_run
 //! use gaslightmq_control_api::prelude::*;

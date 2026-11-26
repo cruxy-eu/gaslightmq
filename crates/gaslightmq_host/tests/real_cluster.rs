@@ -1,5 +1,6 @@
 //! A host runs several environments in front of real Kafka brokers, each with a proxy of its own,
-//! and reads a ⌘K sentence with the names that the traffic of one of them has seen.
+//! makes a live rule armed in one step, and reads a ⌘K sentence with the names that the traffic of one of them has
+//! seen.
 //!
 //! The tests need Docker.
 //! Each test starts the cluster it needs, and a host whose workspace lives in memory.
@@ -293,6 +294,63 @@ async fn a_rule_fired_by_hand_lies_on_the_next_call_and_an_incident_needs_a_back
         anyhow::bail!("a real cluster applied an incident: {moved:?}");
     };
     assert_eq!(&rule, election.name());
+    host.stop_all().await;
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_live_rule_is_made_armed_in_one_step_or_not_at_all() -> anyhow::Result<()> {
+    let cluster = KafkaCluster::plaintext().start().await?;
+    let host = Host::new(
+        HostConfiguration::default(),
+        MemoryContext::new(),
+        Lies::of_every_build(),
+    );
+    let any = ListenAddress::new(LOCALHOST, 0);
+    let brokers = BrokerListeners::pinned(cluster.brokers().iter().map(|broker| (broker.id(), any)))?;
+    let staging = Environment::new(
+        "staging-proxy".parse()?,
+        Instances::ProxyInFrontOfCluster {
+            proxy: ProxyDefinition::new(Listeners::new(any, brokers, LOCALHOST.into())?),
+            upstream: Upstream::new(cluster.brokers()[0].address().to_string().parse()?),
+        },
+    );
+    host.start(EnvironmentConfiguration::new(&staging)?).await?;
+    // What Enter in ⌘K gives: a rule that no workspace holds.
+    let quiet_produce = Rule::new(
+        "blackhole-on-produce".parse()?,
+        Conditions::from(Condition::is(ApiKey::PRODUCE)),
+        LieDefinition::Silence,
+    );
+    // Someone armed a rule straight in the proxy: no workspace holds it, and it is no live rule.
+    let quiet_fetch = Rule::new(
+        "blackhole-on-fetch".parse()?,
+        Conditions::from(Condition::is(ApiKey::FETCH)),
+        LieDefinition::Silence,
+    );
+    host.arm(staging.name(), &quiet_fetch).await?;
+
+    let made = host.create_live_rule_armed(staging.name(), quiet_produce.clone()).await;
+    let refused = host.create_live_rule_armed(staging.name(), quiet_fetch.clone()).await;
+
+    // The rule is a live rule of the environment, and it is armed.
+    assert_eq!(made.map(|armed| armed.name().clone()), Ok(quiet_produce.name().clone()));
+    // A rule that cannot arm, because one of its name is armed already, is no live rule either.
+    assert_eq!(
+        refused.map(|armed| armed.name().clone()),
+        Err(CreateLiveRuleError::NameTaken {
+            environment: staging.name().clone(),
+            rule: quiet_fetch.name().clone(),
+        })
+    );
+    assert_eq!(
+        host.rules_of(staging.name()).await?,
+        [EnvironmentRule {
+            rule: quiet_produce,
+            live: true,
+            state: RuleState::Armed,
+        }]
+    );
     host.stop_all().await;
     Ok(())
 }
