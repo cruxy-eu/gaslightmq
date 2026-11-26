@@ -591,6 +591,68 @@ async fn a_held_pad_stays_armed_until_its_last_hold_goes_and_a_disarm_ends_every
 }
 
 #[tokio::test]
+async fn a_release_never_disarms_a_rule_that_a_press_in_latch_armed() -> anyhow::Result<()> {
+    let cluster = KafkaCluster::plaintext().start().await?;
+    let host = Host::new(
+        HostConfiguration::default(),
+        MemoryContext::new(),
+        Lies::of_every_build(),
+    );
+    let any = ListenAddress::new(LOCALHOST, 0);
+    let brokers = BrokerListeners::pinned(cluster.brokers().iter().map(|broker| (broker.id(), any)))?;
+    let staging = Environment::new(
+        "staging-proxy".parse()?,
+        Instances::ProxyInFrontOfCluster {
+            proxy: ProxyDefinition::new(Listeners::new(any, brokers, LOCALHOST.into())?),
+            upstream: Upstream::new(cluster.brokers()[0].address().to_string().parse()?),
+        },
+    );
+    // A desk with one pad: a delay of 1 s on the order producers, for every client.
+    let order_producers = Selector::new(
+        "order-producers".parse()?,
+        Conditions::from(Condition::is(ApiKey::PRODUCE)),
+    );
+    let delay = Preset::new("delay-1s".parse()?, TimingLie::new().with_delay(TimeSpan::from_secs(1)));
+    let desk = PadLayout::new(
+        "order-desk".parse()?,
+        [order_producers.name().clone()],
+        [delay.name().clone()],
+        [Layer::all_clients()],
+    )?;
+    host.create(order_producers).await?;
+    host.create(delay).await?;
+    host.create(desk.clone()).await?;
+    host.start(EnvironmentConfiguration::new(&staging)?).await?;
+    let pad = desk
+        .pad(&Layer::all_clients(), Row::from_index(0), Column::from_index(0))
+        .context("the desk has a pad at its first row and column")?;
+    let state = |effect: &IntentEffect| effect.rule.as_ref().map(|rule| rule.state);
+
+    // Ben arms the pad in latch. Ana holds it, which finds it armed, and still answers with a hold.
+    let ben = host
+        .send_intent(staging.name(), &Intent::Arm { pad: pad.clone() })
+        .await?;
+    let ana = host
+        .send_intent(staging.name(), &Intent::Hold { pad: pad.clone() })
+        .await?;
+    let Some(anas_hold) = ana.hold else {
+        anyhow::bail!("a press in hold adds a hold: {ana:?}");
+    };
+    assert!(ben.changed);
+    assert!(!ana.changed);
+
+    // Ana lets go: her hold did not arm the rule, so her release leaves it armed for Ben.
+    let ana_gone = host
+        .send_intent(staging.name(), &Intent::Release { pad, hold: anas_hold })
+        .await?;
+
+    assert!(!ana_gone.changed);
+    assert_eq!(state(&ana_gone), Some(RuleState::Armed));
+    host.stop_all().await;
+    Ok(())
+}
+
+#[tokio::test]
 async fn a_name_that_a_live_rule_of_another_environment_has_is_no_name_for_the_workspace() -> anyhow::Result<()> {
     let cluster = KafkaCluster::plaintext().start().await?;
     let host = Host::new(

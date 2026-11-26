@@ -28,10 +28,12 @@ impl<C: WorkspaceContext> Host<C> {
     /// | [`Arm`](Intent::Arm) | Arms the rule of the pad, unless it is armed. A pad without a rule gets [the rule of its position](PadLayout::rule) as a live rule, made and armed in one step. |
     /// | [`Disarm`](Intent::Disarm) | Disarms the rule of the pad, unless it is not armed or the pad has none. |
     /// | [`Hold`](Intent::Hold) | Arms the rule of the pad as `Arm` does, and adds a [`Hold`] to it, which the answer holds. |
-    /// | [`Release`](Intent::Release) | Takes the hold away, and disarms the rule when that was its last hold. |
+    /// | [`Release`](Intent::Release) | Takes the hold away, and disarms the rule when that was its last hold and holds armed it. |
     /// | [`Turn`](Intent::Turn) | Changes the live rule of the pad as the [encoders](crate::HostConfiguration::encoders) say. An armed rule keeps its counters. |
     ///
     /// The host counts the holds of every rule, and a rule stays armed while anyone holds its pad.
+    /// A release never disarms a rule that something other than holds armed: a press in latch, a command, a scenario
+    /// step or a create armed. A hold of such a rule still answers with its hold, and its release changes nothing.
     /// A disarm ends every hold of the rule, whatever disarms it: a press in latch, a command, a lifetime,
     /// or deleting the rule. A release of a hold that a disarm ended changes nothing,
     /// also when someone armed the rule again since.
@@ -79,7 +81,7 @@ impl<C: WorkspaceContext> Host<C> {
                     true
                 };
                 if matches!(intent, Intent::Hold { .. }) {
-                    hold = self.add_hold(environment, &name)?;
+                    hold = self.add_hold(environment, &name, armed)?;
                 }
                 armed
             }
@@ -183,16 +185,24 @@ impl<C: WorkspaceContext> Host<C> {
 
     /// Adds a hold to the rule `name`, which is armed in the environment. Returns `None` when someone disarmed the
     /// rule since it was armed, so there is nothing to hold.
-    fn add_hold(&self, environment: &EnvironmentName, name: &RuleName) -> Result<Option<Hold>, IntentError> {
+    ///
+    /// `armed_it` says whether the press of the hold armed the rule. Only a rule that holds armed disarms when its last
+    /// hold goes.
+    fn add_hold(
+        &self,
+        environment: &EnvironmentName,
+        name: &RuleName,
+        armed_it: bool,
+    ) -> Result<Option<Hold>, IntentError> {
         self.with_running_rule(environment, |running| {
             let armed = armed_now(running, name)?;
             let hold = Hold::new(self.holds_given.fetch_add(1, Ordering::Relaxed) + 1);
-            running.holds.add(&armed, hold);
+            running.holds.add(&armed, hold, armed_it);
             Some(hold)
         })
     }
 
-    /// Takes `hold` away from the rule `name`, and disarms the rule when that was its last hold.
+    /// Takes `hold` away from the rule `name`, and disarms the rule when that was its last hold and holds armed it.
     /// Returns whether the rule disarmed.
     fn release_hold(&self, environment: &EnvironmentName, name: &RuleName, hold: Hold) -> Result<bool, IntentError> {
         self.with_running_rule(environment, |running| {

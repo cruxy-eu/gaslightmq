@@ -8,7 +8,9 @@ use gaslightmq_surface::Hold;
 /// The holds of the rules of one environment.
 ///
 /// A press in hold adds a hold to the rule of its pad, and its release takes that hold away.
-/// The rule disarms when its last hold goes, so it stays armed while anyone still holds its pad.
+/// A rule that holds armed disarms when its last hold goes, so it stays armed while anyone still holds its pad.
+/// A rule that something else armed, a press in latch, a command, a scenario step or a create armed, stays armed when
+/// its holds go: a release never disarms what a hold did not arm.
 ///
 /// A hold belongs to the arming of its rule.
 /// A disarm ends that arming, whatever disarmed it: a press in latch, a command, a lifetime, or deleting the rule.
@@ -24,14 +26,19 @@ pub(crate) struct Holds {
 struct HeldArming {
     arming: ArmedRule,
     holds: BTreeSet<Hold>,
+    /// Whether a press in hold armed the arming, so it ends when its last hold goes.
+    armed_by_holds: bool,
 }
 
 impl Holds {
-    /// Adds `hold` to the rule that is armed as `armed`.
-    pub(crate) fn add(&mut self, armed: &ArmedRule, hold: Hold) {
+    /// Adds `hold` to the rule that is armed as `armed`. `armed_it` says whether the press of the hold armed the rule.
+    ///
+    /// The arming disarms with its last hold once a press in hold armed it.
+    pub(crate) fn add(&mut self, armed: &ArmedRule, hold: Hold, armed_it: bool) {
         let fresh = || HeldArming {
             arming: armed.clone(),
             holds: BTreeSet::new(),
+            armed_by_holds: false,
         };
         let of_the_rule = self.of.entry(armed.name().clone()).or_insert_with(fresh);
         if !of_the_rule.arming.is(armed) {
@@ -39,12 +46,14 @@ impl Holds {
             *of_the_rule = fresh();
         }
         of_the_rule.holds.insert(hold);
+        of_the_rule.armed_by_holds |= armed_it;
     }
 
     /// Takes `hold` away from the rule `name`, which is armed as `armed` now, or not armed at all.
     ///
-    /// Returns whether that was the last hold of the arming, so the rule disarms.
-    /// A hold that the rule does not have, or that an earlier arming had, changes nothing.
+    /// Returns whether that was the last hold of an arming that holds armed, so the rule disarms.
+    /// A hold that the rule does not have, or that an earlier arming had, changes nothing,
+    /// and so does the last hold of a rule that something else armed.
     pub(crate) fn release(&mut self, name: &RuleName, hold: Hold, armed: Option<&ArmedRule>) -> bool {
         let Some(of_the_rule) = self.of.get_mut(name) else {
             return false;
@@ -57,11 +66,12 @@ impl Holds {
         if !of_the_rule.holds.remove(&hold) {
             return false;
         }
-        let last = of_the_rule.holds.is_empty();
-        if last {
-            self.of.remove(name);
+        if !of_the_rule.holds.is_empty() {
+            return false;
         }
-        last
+        let armed_by_holds = of_the_rule.armed_by_holds;
+        self.of.remove(name);
+        armed_by_holds
     }
 
     /// How many people hold the rule that is armed as `armed`.
@@ -106,8 +116,8 @@ mod tests {
         let mut holds = Holds::default();
         let arming = armed();
         let (mine, theirs) = (Hold::new(1), Hold::new(2));
-        holds.add(&arming, mine);
-        holds.add(&arming, theirs);
+        holds.add(&arming, mine, true);
+        holds.add(&arming, theirs, false);
         assert_eq!(holds.count(&arming), 2);
 
         assert!(!holds.release(arming.name(), mine, Some(&arming)));
@@ -121,8 +131,8 @@ mod tests {
         let mut holds = Holds::default();
         let arming = armed();
         let (mine, theirs) = (Hold::new(1), Hold::new(2));
-        holds.add(&arming, mine);
-        holds.add(&arming, theirs);
+        holds.add(&arming, mine, true);
+        holds.add(&arming, theirs, false);
 
         assert!(!holds.release(arming.name(), mine, Some(&arming)));
         // The second release of the same hold does not take the other one's hold away.
@@ -135,11 +145,11 @@ mod tests {
         let mut holds = Holds::default();
         let before = armed();
         let (mine, theirs) = (Hold::new(1), Hold::new(2));
-        holds.add(&before, mine);
+        holds.add(&before, mine, true);
 
         // Someone disarmed the rule, and someone else holds it again, which arms it anew.
         let again = armed();
-        holds.add(&again, theirs);
+        holds.add(&again, theirs, true);
         assert_eq!(holds.count(&again), 1);
 
         // The release of the hold of the first arming changes nothing.
@@ -153,7 +163,7 @@ mod tests {
         let mut holds = Holds::default();
         let arming = armed();
         let hold = Hold::new(1);
-        holds.add(&arming, hold);
+        holds.add(&arming, hold, true);
 
         // A lifetime ended the arming.
         assert!(!holds.release(arming.name(), hold, None));
@@ -165,11 +175,36 @@ mod tests {
         let mut holds = Holds::default();
         let arming = armed();
         let hold = Hold::new(1);
-        holds.add(&arming, hold);
+        holds.add(&arming, hold, true);
 
         let turned = arming.retuned(arming.rule().clone());
 
         assert_eq!(holds.count(&turned), 1);
         assert!(holds.release(turned.name(), hold, Some(&turned)));
+    }
+
+    #[test]
+    fn the_last_hold_of_a_rule_that_something_else_armed_leaves_it_armed() {
+        let mut holds = Holds::default();
+        // Someone armed the rule in latch, and someone else holds its pad.
+        let latched = armed();
+        let hold = Hold::new(1);
+        holds.add(&latched, hold, false);
+
+        assert!(!holds.release(latched.name(), hold, Some(&latched)));
+        assert_eq!(holds.count(&latched), 0);
+    }
+
+    #[test]
+    fn a_rule_that_one_hold_armed_disarms_with_its_last_hold_whoever_held_it_first() {
+        let mut holds = Holds::default();
+        let arming = armed();
+        let (joined, armed_it) = (Hold::new(1), Hold::new(2));
+        // Two holds come at once: the one that armed the rule adds itself after the other one.
+        holds.add(&arming, joined, false);
+        holds.add(&arming, armed_it, true);
+
+        assert!(!holds.release(arming.name(), armed_it, Some(&arming)));
+        assert!(holds.release(arming.name(), joined, Some(&arming)));
     }
 }

@@ -14,7 +14,7 @@ use crate::{EncoderTurn, Hold, Pad};
 /// | [`Arm`](Self::Arm) | Arms the rule the pad points at, unless it is armed. A pad without a rule gets [the rule of its position](crate::PadLayout::rule) first, as a live rule. |
 /// | [`Disarm`](Self::Disarm) | Disarms the rule the pad points at, unless it is not armed. A disarm ends every hold of the rule. |
 /// | [`Hold`](Self::Hold) | Adds a [`Hold`] to the rule the pad points at, and arms it as `Arm` does. It answers with the hold. |
-/// | [`Release`](Self::Release) | Takes the hold away, and disarms the rule when it was its last hold. A hold that a disarm ended changes nothing. |
+/// | [`Release`](Self::Release) | Takes the hold away, and disarms the rule when it was its last hold and holds armed the rule. A hold that a disarm ended changes nothing, and so does the release of a rule that something else armed. |
 /// | [`Turn`](Self::Turn) | [Applies the turn](crate::EncoderMapping::apply) to the rule the pad points at. |
 ///
 /// A turn says how far an encoder moved, and not the value it reached,

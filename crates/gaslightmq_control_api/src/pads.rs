@@ -16,7 +16,8 @@ use crate::{Operation, RuleStatus};
 /// [`StreamMessage::RuleChanged`](crate::StreamMessage::RuleChanged).
 ///
 /// The environment counts the holds of a rule: a press in hold adds one and answers with it, and its release names it.
-/// The rule disarms when its last hold goes. A disarm ends every hold, and a release after it changes nothing.
+/// A rule that holds armed disarms when its last hold goes, and a release never disarms a rule that something else
+/// armed. A disarm ends every hold, and a release after it changes nothing.
 ///
 /// ```
 /// use gaslightmq_control_api::prelude::*;

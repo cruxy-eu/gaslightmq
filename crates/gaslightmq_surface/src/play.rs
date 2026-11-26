@@ -6,7 +6,7 @@ use std::str::FromStr;
 /// | Mode | Name | A press | A release |
 /// |---|---|---|---|
 /// | [`Latch`](Self::Latch) | `latch` | Wants the other state than the pad shows: armed for a pad that shows no armed rule, and disarmed for one that does. | Nothing. |
-/// | [`Hold`](Self::Hold) | `hold` | Holds the pad, which arms its rule. | Ends the hold. The rule disarms when nobody holds it any more. |
+/// | [`Hold`](Self::Hold) | `hold` | Holds the pad, which arms its rule. | Ends the hold. A rule that holds armed disarms when nobody holds it any more. |
 ///
 /// A surface starts in latch.
 ///

@@ -87,7 +87,7 @@
 //! | Is that rule there, and is it armed? | Whoever holds the rules. |
 //! | What does a press want? | [`Surface`], from the mode of play and from what the pad shows. |
 //! | What did a press do, and which hold did it add? | Whoever holds the rules, in its answer. |
-//! | How many people hold a rule? | Whoever holds the rules. It disarms the rule when its last hold goes, and a disarm ends every hold. |
+//! | How many people hold a rule? | Whoever holds the rules. It disarms a rule that holds armed when its last hold goes, and a disarm ends every hold. |
 //! | What does a turn do to a rule? | [`EncoderMapping::apply`], on the side of whoever holds the rule. |
 //! | Does a selector or a preset of a layout exist? | Whoever holds the whole workspace. |
 //!

@@ -135,8 +135,8 @@ struct LiveRules {
     presets: PresetSet,
     encoders: EncoderMapping,
     by_name: BTreeMap<RuleName, (Rule, RuleState)>,
-    /// The holds of each rule, which end when the rule disarms.
-    holds: BTreeMap<RuleName, BTreeSet<Hold>>,
+    /// The holds of each rule, which end when the rule disarms, and whether a hold armed the rule.
+    holds: BTreeMap<RuleName, (BTreeSet<Hold>, bool)>,
     /// How many holds the engine gave so far.
     holds_given: u64,
 }
@@ -171,15 +171,22 @@ impl LiveRules {
                 None
             }
             Intent::Hold { pad } => {
+                let armed_it = !self.shows(&pad).is_armed();
                 self.arm(&pad, &name);
                 self.holds_given += 1;
                 let hold = Hold::new(self.holds_given);
-                self.holds.entry(name).or_default().insert(hold);
+                let (holds, armed_by_holds) = self.holds.entry(name).or_default();
+                holds.insert(hold);
+                *armed_by_holds |= armed_it;
                 Some(hold)
             }
             Intent::Release { hold, .. } => {
-                let held = self.holds.get_mut(&name).is_some_and(|holds| holds.remove(&hold));
-                if held && self.holds.get(&name).is_some_and(BTreeSet::is_empty) {
+                // Only a rule that holds armed disarms when its last hold goes.
+                let last = self
+                    .holds
+                    .get_mut(&name)
+                    .is_some_and(|(holds, armed_by_holds)| holds.remove(&hold) && holds.is_empty() && *armed_by_holds);
+                if last {
                     self.disarm(&name);
                 }
                 None
@@ -702,6 +709,24 @@ fn a_disarm_ends_every_hold_and_a_release_after_it_changes_nothing() {
     assert_eq!(live.shows(&pad), PadState::Disarmed);
     // They arm it again, and the one who held it lets go: their hold ended with the disarm.
     live.act_on(latching.press(row, column, live.shows(&pad)).unwrap());
+    live.act_on(holding.release(row, column).unwrap());
+
+    assert_eq!(live.shows(&pad), PadState::Armed);
+}
+
+#[test]
+fn a_release_never_disarms_a_rule_that_a_press_in_latch_armed() {
+    let mut latching = Surface::new(OrderDesk::layout());
+    let mut holding = Surface::new(OrderDesk::layout());
+    holding.set_mode(PlayMode::Hold);
+    let mut live = LiveRules::of(OrderDesk::layout());
+    let (row, column) = OrderDesk::slow_order_producers();
+    let pad = latching.pad(row, column).unwrap();
+    live.act_on(latching.press(row, column, live.shows(&pad)).unwrap());
+
+    // Someone holds the pad that someone else armed in latch, and lets go: the rule stays as they found it.
+    let hold = live.act_on(holding.press(row, column, live.shows(&pad)).unwrap());
+    assert_eq!(holding.answered(&pad, hold), None);
     live.act_on(holding.release(row, column).unwrap());
 
     assert_eq!(live.shows(&pad), PadState::Armed);
