@@ -551,41 +551,41 @@ async fn a_held_pad_stays_armed_until_its_last_hold_goes_and_a_disarm_ends_every
     let hold = Intent::Hold { pad: pad.clone() };
     let release = |hold| Intent::Release { pad: pad.clone(), hold };
 
-    // Two people hold the pad. The first hold makes its rule and arms it, and each press adds a hold of its own.
-    let mine = host.send_intent(staging.name(), &hold).await?;
-    let theirs = host.send_intent(staging.name(), &hold).await?;
-    let (Some(my_hold), Some(their_hold)) = (mine.hold, theirs.hold) else {
-        anyhow::bail!("a press in hold adds a hold: {mine:?}, {theirs:?}");
+    // Ana and Dan hold the pad. Ana's hold makes its rule and arms it, and each press adds a hold of its own.
+    let ana = host.send_intent(staging.name(), &hold).await?;
+    let dan = host.send_intent(staging.name(), &hold).await?;
+    let (Some(anas_hold), Some(dans_hold)) = (ana.hold, dan.hold) else {
+        anyhow::bail!("a press in hold adds a hold: {ana:?}, {dan:?}");
     };
-    assert_eq!((mine.made, mine.changed), (true, true));
-    assert_eq!((theirs.made, theirs.changed), (false, false));
-    assert_ne!(my_hold, their_hold);
+    assert_eq!((ana.made, ana.changed), (true, true));
+    assert_eq!((dan.made, dan.changed), (false, false));
+    assert_ne!(anas_hold, dans_hold);
 
-    // I let go, and the rule stays armed while they still hold it.
-    let mine_gone = host.send_intent(staging.name(), &release(my_hold)).await?;
-    assert!(!mine_gone.changed);
-    assert_eq!(state(&mine_gone), Some(RuleState::Armed));
+    // Dan lets go, and the rule stays armed while Ana still holds it.
+    let dan_gone = host.send_intent(staging.name(), &release(dans_hold)).await?;
+    assert!(!dan_gone.changed);
+    assert_eq!(state(&dan_gone), Some(RuleState::Armed));
 
-    // Someone presses the pad in latch to disarm it, which ends their hold too, and holds it again afterwards.
-    assert!(
-        host.send_intent(staging.name(), &Intent::Disarm { pad: pad.clone() })
-            .await?
-            .changed
-    );
-    let anew = host.send_intent(staging.name(), &hold).await?;
-    let Some(new_hold) = anew.hold else {
-        anyhow::bail!("a press in hold adds a hold: {anew:?}");
+    // Ben presses the pad in latch to disarm it, which ends Ana's hold. Cleo holds the pad again, which arms it anew.
+    let ben = host
+        .send_intent(staging.name(), &Intent::Disarm { pad: pad.clone() })
+        .await?;
+    assert!(ben.changed);
+    let cleo = host.send_intent(staging.name(), &hold).await?;
+    let Some(cleos_hold) = cleo.hold else {
+        anyhow::bail!("a press in hold adds a hold: {cleo:?}");
     };
-    assert!(anew.changed);
+    assert!(cleo.changed);
 
-    // Their release comes after the disarm ended their hold: it changes nothing.
-    let late = host.send_intent(staging.name(), &release(their_hold)).await?;
-    assert!(!late.changed);
-    assert_eq!(state(&late), Some(RuleState::Armed));
-    // The last hold goes, and the rule disarms.
-    let last = host.send_intent(staging.name(), &release(new_hold)).await?;
-    assert!(last.changed);
-    assert_eq!(state(&last), Some(RuleState::Disarmed));
+    // Ana lets go after Ben's disarm ended her hold: her release changes nothing, and the rule stays armed for Cleo.
+    // A count of holds alone would take Ana's release for Cleo's hold.
+    let ana_late = host.send_intent(staging.name(), &release(anas_hold)).await?;
+    assert!(!ana_late.changed);
+    assert_eq!(state(&ana_late), Some(RuleState::Armed));
+    // Cleo lets go, the last hold goes, and the rule disarms.
+    let cleo_gone = host.send_intent(staging.name(), &release(cleos_hold)).await?;
+    assert!(cleo_gone.changed);
+    assert_eq!(state(&cleo_gone), Some(RuleState::Disarmed));
     host.stop_all().await;
     Ok(())
 }

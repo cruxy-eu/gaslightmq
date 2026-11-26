@@ -162,6 +162,10 @@ Several people can play one environment, each at a surface of their own.
 - **A disarm ends every hold.**
   When someone disarms a held rule, by a press in latch, by a command, by a lifetime or by deleting it, the rule has no holds left.
   A release that comes after it changes nothing, also when someone held the rule again since.
+  Ana holds a pad, Ben disarms its rule in latch, and Cleo holds the pad again, which arms the rule anew.
+  When Ana lets go, her hold ended with Ben's disarm, so the rule stays armed for Cleo.
+  A count of holds alone would take Ana's release for Cleo's hold, and disarm a rule that Cleo still holds.
+  So a hold belongs to the arming of its rule, and its release names it.
 
 ## Undo and redo
 
