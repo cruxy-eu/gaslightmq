@@ -30,19 +30,23 @@ async fn a_workspace_whose_files_do_not_read_names_each_of_them_on_a_line_of_its
         .output()
         .await?;
 
+    // A line that says which workspace, and one for each file that does not read, with the path of its key.
     let printed = String::from_utf8(gmq.stderr)?;
     let printed: Vec<&str> = printed.lines().collect();
     assert!(!gmq.status.success());
     assert_eq!(
-        printed[0],
-        format!(
-            "the files of the workspace in {} do not read:",
-            workspace.path().display()
-        )
+        printed,
+        [
+            format!(
+                "the files of the workspace in {} do not read:",
+                workspace.path().display()
+            )
+            .as_str(),
+            "selectors.yaml: [0].colour: unknown field `colour`, expected one of name, title, include, match at line 4, \
+             column 3",
+            "rules/orders.yaml: [0].trigger.every: a count is at least one",
+        ]
     );
-    assert!(printed[1].starts_with("selectors.yaml: "), "{printed:?}");
-    assert!(printed[2].starts_with("rules/orders.yaml: "), "{printed:?}");
-    assert_eq!(printed.len(), 3, "{printed:?}");
     assert_eq!(gmq.stdout, b"");
     Ok(())
 }

@@ -51,7 +51,8 @@ impl fmt::Display for Running {
         match &self.holding {
             Holding::Files { directory, access } => {
                 let access = match access {
-                    Access::ReadWrite => "written back",
+                    Access::ReadWrite => "each change written back",
+                    Access::WriteOnSave => "written back on save",
                     Access::ReadOnly => "read-only",
                 };
                 writeln!(f, "workspace {}, {access}", directory.display())?;

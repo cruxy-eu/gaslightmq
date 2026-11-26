@@ -5,7 +5,7 @@
 use std::net::SocketAddr;
 use std::path::PathBuf;
 
-use clap::{Args, Parser, Subcommand};
+use clap::{Args, Parser, Subcommand, ValueEnum};
 use gaslightmq_control_client::ControlPlaneAddress;
 use gaslightmq_control_server::ControlServerConfiguration;
 use gaslightmq_environment::{
@@ -36,7 +36,7 @@ pub(crate) enum Command {
     ///
     /// It fails with every error when the files do not read, or do not fit each other, and the process then
     /// keeps what it holds.
-    Reload(ControlFlags),
+    Reload(ReloadFlags),
 }
 
 /// The flags of `gmq proxy`.
@@ -99,15 +99,34 @@ pub(crate) struct WorkspaceFlags {
     /// definition fails. A reload still reads them again.
     #[arg(long, env = "GMQ_READ_ONLY", requires = "workspace")]
     pub(crate) read_only: bool,
+    /// When an edit of the UI reaches the files: as it happens, or when someone saves every edit that waits, in one
+    /// go. `write_back` of `gaslight.yaml`. Default: `each-change`.
+    #[arg(
+        long,
+        env = "GMQ_WRITE_BACK",
+        value_name = "WHEN",
+        requires = "workspace",
+        conflicts_with = "read_only"
+    )]
+    pub(crate) write_back: Option<WriteBack>,
+}
+
+/// When an edit of the UI reaches the files of the workspace.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub(crate) enum WriteBack {
+    /// Every edit writes its file before it answers.
+    EachChange,
+    /// Every edit waits in memory, and one save writes them all.
+    OnSave,
 }
 
 impl WorkspaceFlags {
-    /// Whether the stores of the workspace write back to its files.
+    /// Whether the stores of the workspace write back to its files, and when.
     pub(crate) fn access(&self) -> Access {
-        if self.read_only {
-            Access::ReadOnly
-        } else {
-            Access::ReadWrite
+        match (self.read_only, self.write_back) {
+            (true, _) => Access::ReadOnly,
+            (false, None | Some(WriteBack::EachChange)) => Access::ReadWrite,
+            (false, Some(WriteBack::OnSave)) => Access::WriteOnSave,
         }
     }
 }
@@ -144,6 +163,17 @@ pub(crate) struct ControlFlags {
     /// unless it names another address.
     #[arg(long, env = "GMQ_CONTROL", value_name = "URL")]
     pub(crate) control: Option<ControlPlaneAddress>,
+}
+
+/// The flags of `gmq reload`.
+#[derive(Debug, Args)]
+pub(crate) struct ReloadFlags {
+    /// Let go of the edits that wait for a save, and take what the files hold. Without it, a reload refuses while
+    /// an edit waits.
+    #[arg(long, env = "GMQ_DISCARD_UNSAVED")]
+    pub(crate) discard_unsaved: bool,
+    #[command(flatten)]
+    pub(crate) control: ControlFlags,
 }
 
 impl ControlFlags {
@@ -209,6 +239,26 @@ mod tests {
     }
 
     #[test]
+    fn a_workspace_writes_each_change_until_the_flags_say_on_save() {
+        let proxy = ["gmq", "proxy", "--upstream", "kafka:9092", "--workspace", "gaslight"];
+        let on_save = Gmq::try_parse_from(proxy.iter().chain(&["--write-back", "on-save"])).unwrap();
+        let Command::Proxy(flags) = on_save.command else {
+            panic!("gmq proxy is the proxy");
+        };
+        assert_eq!(flags.workspace.access(), Access::WriteOnSave);
+
+        let each_change = Gmq::try_parse_from(proxy.iter().chain(&["--write-back", "each-change"])).unwrap();
+        let Command::Proxy(flags) = each_change.command else {
+            panic!("gmq proxy is the proxy");
+        };
+        assert_eq!(flags.workspace.access(), Access::ReadWrite);
+
+        // A read-only workspace writes nothing, so nothing waits for a save either.
+        let both = Gmq::try_parse_from(proxy.iter().chain(&["--read-only", "--write-back", "on-save"]));
+        assert!(both.is_err());
+    }
+
+    #[test]
     fn a_process_without_a_control_plane_names_no_address_for_it() {
         let gmq = Gmq::try_parse_from(["gmq", "proxy", "--upstream", "kafka:9092", "--no-control"]).unwrap();
         let Command::Proxy(flags) = gmq.command else {
@@ -235,6 +285,10 @@ mod tests {
         let Command::Reload(flags) = gmq.command else {
             panic!("gmq reload is the reload");
         };
-        assert_eq!(flags.address(), ControlServerConfiguration::default().listen.into());
+        assert!(!flags.discard_unsaved);
+        assert_eq!(
+            flags.control.address(),
+            ControlServerConfiguration::default().listen.into()
+        );
     }
 }
