@@ -199,7 +199,7 @@ impl<'de> Deserialize<'de> for PlaceText {
     }
 }
 
-/// Writes a range as its text, and pinned brokers as a map from the broker ID to the address.
+/// Writes a range and any port as their text, and pinned brokers as a map from the broker ID to the address.
 impl Serialize for BrokerListeners {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         match self.as_pinned() {
@@ -209,7 +209,7 @@ impl Serialize for BrokerListeners {
     }
 }
 
-/// Reads text as a range, and a map as pinned brokers.
+/// Reads text as a range or any port, and a map as pinned brokers.
 impl<'de> Deserialize<'de> for BrokerListeners {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         struct RangeOrPinned;
@@ -218,7 +218,7 @@ impl<'de> Deserialize<'de> for BrokerListeners {
             type Value = BrokerListeners;
 
             fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-                f.write_str("an IP address and a range of ports, or a map from broker IDs to addresses")
+                f.write_str("an IP address and a range of ports or port 0, or a map from broker IDs to addresses")
             }
 
             fn visit_str<E: Error>(self, text: &str) -> Result<BrokerListeners, E> {
