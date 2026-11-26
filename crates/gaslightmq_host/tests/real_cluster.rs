@@ -2335,7 +2335,7 @@ async fn an_armed_rule_whose_definition_someone_deletes_disarms_and_an_armed_liv
         hold.name().clone(),
     );
     host.create(order_fetches, ChangeSurface::Test).await?;
-    host.create(order_producers.clone(), ChangeSurface::Test).await?;
+    let producers_created = host.create(order_producers.clone(), ChangeSurface::Test).await?;
     host.create(hold, ChangeSurface::Test).await?;
     host.create(of_the_workspace.clone(), ChangeSurface::Test).await?;
     host.start(EnvironmentConfiguration::new(&staging)?).await?;
@@ -2343,6 +2343,24 @@ async fn an_armed_rule_whose_definition_someone_deletes_disarms_and_an_armed_liv
         .await?;
     host.create_live_rule_armed(staging.name(), live.clone(), ChangeSurface::Pad)
         .await?;
+
+    // A delete that expects what is no more is refused for that first, so an undo that came too late drops its step.
+    let earlier = Expects {
+        run: host.run(),
+        revision: host.workspace().await.loaded(),
+    };
+    let stale = host
+        .delete(order_producers.name().clone(), Some(earlier), ChangeSurface::Ui)
+        .await;
+    assert_eq!(
+        stale,
+        Err(DeleteDefinitionError::NotDeleted {
+            error: DeleteError::Changed {
+                name: order_producers.name().clone().into(),
+                revision: producers_created,
+            }
+        })
+    );
 
     // The armed live rule uses the selector, so the selector stays.
     let kept = host

@@ -318,10 +318,13 @@ impl<C: WorkspaceContext> Host<C> {
     /// # Errors
     ///
     /// - [`UpdateDefinitionError::OtherRun`] when the change expects a revision of another run.
-    /// - [`UpdateDefinitionError::Unresolved`] when a live rule that is armed would not resolve with the change.
     /// - [`UpdateDefinitionError::NotUpdated`] with the [`UpdateError`](gaslightmq_workspace::UpdateError) of the
     ///   workspace, which is [`Changed`](gaslightmq_workspace::UpdateError::Changed) when the definition has
     ///   another revision than the change expects.
+    /// - [`UpdateDefinitionError::Unresolved`] when a live rule that is armed would not resolve with the change.
+    ///
+    /// The errors come in that order: a change that expects what is no more is refused for that, whatever else is
+    /// wrong with it.
     pub async fn update<D: WorkspaceDefinition>(
         &self,
         definition: D,
@@ -337,15 +340,15 @@ impl<C: WorkspaceContext> Host<C> {
             // The workspace stays taken until every armed rule follows the change and the journals hold it,
             // so their entries come in its order.
             let mut workspace = self.workspace.lock().await;
-            let followings = match workspace.preview_update(definition.clone()).await {
-                Some(after) => self.followings(
-                    after.definitions::<Rule>(),
-                    &BTreeSet::new(),
-                    after.definitions::<Selector>(),
-                    after.definitions::<Preset>(),
-                ),
-                None => Ok(BTreeMap::new()),
-            };
+            // The workspace checks the update first, so a stale one is refused for being stale.
+            let checked = workspace.check_update(definition.clone(), expects).await;
+            let after = checked.map_err(|error| UpdateDefinitionError::NotUpdated { error })?;
+            let followings = self.followings(
+                after.definitions::<Rule>(),
+                &BTreeSet::new(),
+                after.definitions::<Selector>(),
+                after.definitions::<Preset>(),
+            );
             let followings = followings.map_err(
                 |Unfollowed {
                      environment,
@@ -392,11 +395,14 @@ impl<C: WorkspaceContext> Host<C> {
     /// # Errors
     ///
     /// - [`DeleteDefinitionError::OtherRun`] when the change expects a revision of another run.
-    /// - [`DeleteDefinitionError::Unresolved`] when a live rule that is armed uses the definition, and would not
-    ///   resolve without it.
     /// - [`DeleteDefinitionError::NotDeleted`] with the [`DeleteError`](gaslightmq_workspace::DeleteError) of the
     ///   workspace, which is [`Changed`](gaslightmq_workspace::DeleteError::Changed) when the definition has
     ///   another revision than the change expects.
+    /// - [`DeleteDefinitionError::Unresolved`] when a live rule that is armed uses the definition, and would not
+    ///   resolve without it.
+    ///
+    /// The errors come in that order: a change that expects what is no more is refused for that, whatever else is
+    /// wrong with it.
     pub async fn delete(
         &self,
         name: impl Into<DefinitionName>,
@@ -416,15 +422,15 @@ impl<C: WorkspaceContext> Host<C> {
                 DefinitionName::Rule(rule) => BTreeSet::from([rule.clone()]),
                 _ => BTreeSet::new(),
             };
-            let followings = match workspace.preview_delete(name.clone()).await {
-                Some(after) => self.followings(
-                    after.definitions::<Rule>(),
-                    &gone,
-                    after.definitions::<Selector>(),
-                    after.definitions::<Preset>(),
-                ),
-                None => Ok(BTreeMap::new()),
-            };
+            // The workspace checks the delete first, so a stale one is refused for being stale.
+            let checked = workspace.check_delete(name.clone(), expects).await;
+            let after = checked.map_err(|error| DeleteDefinitionError::NotDeleted { error })?;
+            let followings = self.followings(
+                after.definitions::<Rule>(),
+                &gone,
+                after.definitions::<Selector>(),
+                after.definitions::<Preset>(),
+            );
             let followings = followings.map_err(
                 |Unfollowed {
                      environment,

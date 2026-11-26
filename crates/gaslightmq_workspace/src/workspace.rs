@@ -220,22 +220,7 @@ impl<C: WorkspaceContext> Workspace<C> {
         expects: Option<Revision>,
     ) -> Result<Revision, UpdateError> {
         let name: DefinitionName = definition.name().clone().into();
-        let contents = match self.contents().await {
-            Ok(contents) => contents,
-            Err(Unread { reason }) => return Err(UpdateError::StoreFailed { name, reason }),
-        };
-        if contents.get(&name).is_none() {
-            return Err(UpdateError::NotFound { name });
-        }
-        if let Err(revision) = self.check(&name, expects) {
-            return Err(UpdateError::Changed { name, revision });
-        }
-
-        let errors = contents.errors_with(definition.clone().into_any());
-        if !errors.is_empty() {
-            return Err(UpdateError::DoesNotFit { name, errors });
-        }
-
+        self.check_update(definition.clone(), expects).await?;
         match self.store_update(definition.into_any()).await {
             Ok(()) => Ok(self.count_change_of(name)),
             Err(StoreChangeError::NotFound) => Err(UpdateError::NotFound { name }),
@@ -270,22 +255,7 @@ impl<C: WorkspaceContext> Workspace<C> {
         expects: Option<Revision>,
     ) -> Result<Revision, DeleteError> {
         let name = name.into();
-        match self.holds(&name).await {
-            Ok(true) => {}
-            Ok(false) => return Err(DeleteError::NotFound { name }),
-            Err(Unread { reason }) => return Err(DeleteError::StoreFailed { name, reason }),
-        }
-        if let Err(revision) = self.check(&name, expects) {
-            return Err(DeleteError::Changed { name, revision });
-        }
-        let users = match self.users_of(&name).await {
-            Ok(users) => users,
-            Err(Unread { reason }) => return Err(DeleteError::StoreFailed { name, reason }),
-        };
-        if !users.is_empty() {
-            return Err(DeleteError::InUse { name, users });
-        }
-
+        self.check_delete(name.clone(), expects).await?;
         match self.store_delete(&name).await {
             Ok(()) => {
                 self.changed.remove(&name);
