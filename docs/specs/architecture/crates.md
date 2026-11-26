@@ -810,7 +810,8 @@ The conformance crates are [test support](#test-support-crates): no code that sh
 - **The host names the surface of a change that nobody asked for.**
   A rule whose lifetime ended or whose budget is spent disarmed inside its proxy: the host records it with the surface `lifetime` when it counts the change.
   A rule that disarms because the presence that held its pad ended has the surface `pad`, as the release would have had.
-  A step of a scenario and what a reload takes in get the surfaces `step` and `file`, once the host runs a scenario and reloads the workspace.
+  What a reload takes in has the surface `file`, whoever asked for it, so a reload takes no source.
+  A step of a scenario gets the surface `step`, once the host runs a scenario.
 - **Nobody changes the rules of an environment behind the host.**
   The host hands out the armed rules of an environment to read, and never the handle that arms and disarms.
   Every arming and every disarming therefore goes through the host, and has a surface.
@@ -839,7 +840,10 @@ The conformance crates are [test support](#test-support-crates): no code that sh
   Changes are states, so a follower that reads one late reads the newest state, and one that falls behind learns how
   many it missed and asks for everything again.
   A [reload](storage.md#reloading) is a change like the others.
-  The workspace says which definitions it changed, and the host replaces the armed rules that use them, which keep their counters.
+  The workspace says which definitions it changed and what the stores read, before it takes the reload in.
+  The host checks there what only it knows: that no rule of the files has the name of a live rule, and that every armed rule still resolves.
+  Then it takes the reload in, and replaces every armed rule that resolves to another rule, which keeps its counters.
+  A rule of the workspace that the reload took away disarms.
   A reload that does not fit changes nothing, and the host answers with what does not fit.
 
 Until the [broker](#the-broker-is-a-state-machine-too) exists, the host runs a proxy in front of a real cluster alone,
