@@ -33,6 +33,9 @@ pub trait WorkspaceDefinition: Definition<Name: Into<DefinitionName>> + Kind {}
 pub trait Kind: Sized {
     /// The definition, as one of any kind.
     fn into_any(self) -> AnyDefinition;
+
+    /// The definition of this kind that `definition` is, or `None` when it is one of another kind.
+    fn of(definition: &AnyDefinition) -> Option<&Self>;
 }
 
 /// One definition of a workspace, of any kind.
@@ -57,6 +60,13 @@ macro_rules! kind {
             impl Kind for $definition {
                 fn into_any(self) -> AnyDefinition {
                     AnyDefinition::$variant(self)
+                }
+
+                fn of(definition: &AnyDefinition) -> Option<&Self> {
+                    match definition {
+                        AnyDefinition::$variant(definition) => Some(definition),
+                        _ => None,
+                    }
                 }
             }
         )*

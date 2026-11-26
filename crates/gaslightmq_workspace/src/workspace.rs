@@ -142,6 +142,20 @@ impl<C: WorkspaceContext> Workspace<C> {
         self.context.stores()
     }
 
+    /// Whether a store of the workspace refuses every change, as the files of a workspace that is mounted read-only.
+    ///
+    /// Whoever starts the process says so, and the stores refuse every create, update and delete then.
+    /// A reload still works, because it only reads.
+    pub fn read_only(&self) -> bool {
+        let stores = self.context.stores();
+        stores.selectors().read_only()
+            || stores.presets().read_only()
+            || stores.rules().read_only()
+            || stores.scenarios().read_only()
+            || stores.layouts().read_only()
+            || stores.environments().read_only()
+    }
+
     /// The counter of the process, which gives the revision of every change, whoever makes it.
     ///
     /// A process has one counter, and the workspace holds it.

@@ -18,6 +18,7 @@ use crate::{Definition, StoreChangeError, StoreCreateError, StoreReadError};
 /// | Replaces a definition it holds. | [`update`](Self::update) |
 /// | Lets go of a definition it holds. | [`delete`](Self::delete) |
 /// | Says whether a write of a definition loses a comment of its text. | [`would_lose_comment`](Self::would_lose_comment) |
+/// | Says whether it refuses every change. | [`read_only`](Self::read_only) |
 /// | Reads again what someone else can change, and holds it once it is taken. | [`read_again`](Self::read_again), [`take_reading`](Self::take_reading) |
 ///
 /// # What every store keeps to
@@ -52,6 +53,9 @@ use crate::{Definition, StoreChangeError, StoreCreateError, StoreReadError};
 ///
 /// A store whose definitions only change through it, such as a store in memory, keeps the methods that
 /// say so as the trait writes them: it never loses a comment, and it has nothing to read again.
+///
+/// A store can also be read-only, as the files of a workspace that CI mounts read-only:
+/// it says so with [`read_only`](Self::read_only), and refuses every create, update and delete with `Failed`.
 ///
 /// The trait is a signature, and it has no logic.
 /// It names no runtime: a store waits however it likes, and whoever calls it drives the futures.
@@ -117,6 +121,14 @@ pub trait Store<D: Definition>: Send + Sync {
             let _ = name;
             Ok(false)
         }
+    }
+
+    /// Whether the store refuses every change: it reads, and reads again, and never writes.
+    ///
+    /// Whoever edits the definitions can say so before anyone tries.
+    /// A store that takes changes, such as a store in memory, keeps this method as the trait writes it.
+    fn read_only(&self) -> bool {
+        false
     }
 
     /// Reads again what someone else can change, and gives every definition it read, in the order of their names.
