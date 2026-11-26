@@ -2,7 +2,7 @@
 
 use gaslightmq_definition_api::{Definition, Store, StoreChangeError, StoreCreateError, StoreReadError};
 use gaslightmq_environment::Environment;
-use gaslightmq_rule::{Preset, Rule, RuleStore, RuleUuid};
+use gaslightmq_rule::{Preset, Rule, RuleStore};
 use gaslightmq_selector::{Selector, SelectorStore};
 use gaslightmq_surface::{LayoutStore, PadLayout};
 
@@ -10,8 +10,8 @@ use crate::contents::Contents;
 use crate::held::HeldUuids;
 use crate::kind::{AnyDefinition, Kind};
 use crate::{
-    CreateError, DefinitionName, DeleteError, Stores, UpdateError, UuidSource, ValidationError, WorkspaceContext,
-    WorkspaceDefinition,
+    CreateError, DefinitionName, DeleteError, KeepError, LiveRuleUuid, Stores, UpdateError, UuidSource,
+    ValidationError, WorkspaceContext, WorkspaceDefinition,
 };
 
 /// Every definition of a workspace, as one model that holds together.
@@ -152,21 +152,25 @@ impl<C: WorkspaceContext> Workspace<C> {
         Ok(uuid)
     }
 
-    /// Adds a definition that was made outside the workspace under the UUID that it has there.
+    /// Adds a live rule to the workspace, under the UUID that the workspace gave it when someone made it.
     ///
-    /// A live rule is such a definition: it gets its UUID from [`live_rule_uuid`](Self::live_rule_uuid) when it is
-    /// made, and keeps it when someone keeps it in the workspace.
+    /// A live rule gets its UUID from [`live_rule_uuid`](Self::live_rule_uuid), and only from there,
+    /// so a rule of the workspace never has a UUID that someone made up. Keeping spends it.
     ///
     /// # Errors
     ///
-    /// - [`CreateError::NameTaken`] when a definition of this kind has the name. Nothing overwrites it.
+    /// A [`KeepError`] with the UUID of the live rule, which stays live, and the [`CreateError`] of what went wrong:
+    ///
+    /// - [`CreateError::NameTaken`] when a rule of the workspace has the name. Nothing overwrites it.
     /// - [`CreateError::DoesNotFit`] when the definitions would not fit each other with this one:
     ///   it refers to a name that does not exist, or it is a rule that can never fire.
     /// - [`CreateError::StoreFailed`] when a store could not read its definitions, or could not keep this one.
-    pub async fn keep(&mut self, rule: Rule, uuid: RuleUuid) -> Result<(), CreateError> {
+    pub async fn keep(&mut self, rule: Rule, uuid: LiveRuleUuid) -> Result<(), KeepError> {
         let name: DefinitionName = rule.name().clone().into();
-        self.add(rule, &name).await?;
-        self.uuids.hold::<Rule>(name, uuid);
+        if let Err(error) = self.add(rule, &name).await {
+            return Err(KeepError { error, uuid });
+        }
+        self.uuids.hold::<Rule>(name, uuid.uuid());
         Ok(())
     }
 
@@ -174,8 +178,8 @@ impl<C: WorkspaceContext> Workspace<C> {
     ///
     /// A live rule lives in an environment for a while, and the environment holds its UUID.
     /// It gets the UUID from here when someone makes it, and keeps it once someone [keeps](Self::keep) it.
-    pub fn live_rule_uuid(&mut self) -> RuleUuid {
-        Rule::new_uuid(self.context.uuids().seed())
+    pub fn live_rule_uuid(&mut self) -> LiveRuleUuid {
+        LiveRuleUuid::new(Rule::new_uuid(self.context.uuids().seed()))
     }
 
     /// Replaces the definition of the same kind and name, and returns the UUID that it keeps.

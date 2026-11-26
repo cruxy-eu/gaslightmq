@@ -11,10 +11,11 @@
 //! | [`WorkspaceContext`] | Everything a workspace is handed, as one type: its stores, and the source of its UUIDs. |
 //! | [`Stores`] | The five stores that a workspace works over, one for each kind. |
 //! | [`WorkspaceDefinition`] | A definition of a kind that a workspace holds. |
+//! | [`LiveRuleUuid`] | The UUID of a live rule, which only a workspace issues, and which keeping the rule spends. |
 //! | [`DefinitionName`] | The name of one definition of any kind, such as `rule "slow-order-producers"`. |
 //! | [`UuidSource`], [`UuidSeed`] | Where the UUIDs of a workspace come from: the time and the random bits that its context hands in. |
 //! | [`WorkspaceError`] | One thing that keeps definitions from fitting each other. |
-//! | [`CreateError`], [`UpdateError`], [`DeleteError`] | Why a workspace did not make a change. |
+//! | [`CreateError`], [`KeepError`], [`UpdateError`], [`DeleteError`] | Why a workspace did not make a change. |
 //! | [`ValidationError`] | Why the definitions of a workspace are not valid. |
 //!
 //! The [`prelude`] holds all of them, and those of the `memory` feature when it is on.
@@ -64,7 +65,8 @@
 //! and the name of the definition: [`Workspace::uuid`] gives it.
 //! A definition gets a new one when the workspace first holds it, keeps it for as long as it keeps its name,
 //! and loses it when someone deletes it. A name that comes back is a new definition, with a new UUID.
-//! A live rule gets its UUID from [`Workspace::live_rule_uuid`], and [`Workspace::keep`] keeps it.
+//! A live rule gets its UUID from [`Workspace::live_rule_uuid`], and [`Workspace::keep`] takes that value back:
+//! nothing outside the workspace puts a UUID on a definition.
 //!
 //! # Errors
 //!
@@ -73,7 +75,8 @@
 //!
 //! | Asked | Error | What is wrong |
 //! |---|---|---|
-//! | [`Workspace::create`], [`Workspace::keep`] | [`CreateError`] | The name is taken, the definition does not fit the others, or a store failed. |
+//! | [`Workspace::create`] | [`CreateError`] | The name is taken, the definition does not fit the others, or a store failed. |
+//! | [`Workspace::keep`] | [`KeepError`] | What a create would say, with the UUID of the live rule handed back. |
 //! | [`Workspace::update`] | [`UpdateError`] | No definition has the name, the definition does not fit the others, or a store failed. |
 //! | [`Workspace::delete`] | [`DeleteError`] | No definition has the name, other definitions use it, or a store failed. |
 //! | [`Workspace::validate`] | [`ValidationError`] | The definitions do not fit each other, or a store failed. |
@@ -97,6 +100,7 @@ mod context;
 mod error;
 mod held;
 mod kind;
+mod live;
 #[cfg(feature = "memory")]
 mod memory;
 mod name;
@@ -107,6 +111,7 @@ mod workspace;
 pub use context::WorkspaceContext;
 pub use error::{CreateError, DeleteError, UpdateError, ValidationError, WorkspaceError};
 pub use kind::WorkspaceDefinition;
+pub use live::{KeepError, LiveRuleUuid};
 #[cfg(feature = "memory")]
 pub use memory::{KnownUuids, MemoryContext, MemoryStores};
 pub use name::DefinitionName;
@@ -132,8 +137,8 @@ pub use workspace::Workspace;
 pub mod prelude {
     #[doc(no_inline)]
     pub use crate::{
-        CreateError, DefinitionName, DeleteError, Stores, UpdateError, UuidSeed, UuidSource, ValidationError,
-        Workspace, WorkspaceContext, WorkspaceDefinition, WorkspaceError,
+        CreateError, DefinitionName, DeleteError, KeepError, LiveRuleUuid, Stores, UpdateError, UuidSeed, UuidSource,
+        ValidationError, Workspace, WorkspaceContext, WorkspaceDefinition, WorkspaceError,
     };
     #[cfg(feature = "memory")]
     #[doc(no_inline)]

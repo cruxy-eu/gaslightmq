@@ -3,7 +3,7 @@
 use gaslightmq_definition_api::Store;
 use gaslightmq_environment::EnvironmentName;
 use gaslightmq_rule::{Rule, RuleName, RuleState};
-use gaslightmq_workspace::{Stores, WorkspaceContext};
+use gaslightmq_workspace::{KeepError, Stores, WorkspaceContext};
 
 use super::{Host, LiveRule, Unresolvable, unread};
 use crate::{
@@ -259,33 +259,34 @@ impl<C: WorkspaceContext> Host<C> {
     /// - [`KeepRuleError::NotFound`] when the environment has no live rule of that name.
     /// - [`KeepRuleError::NotKept`] when the workspace did not take the rule.
     pub async fn keep(&self, environment: &EnvironmentName, name: &RuleName) -> Result<Rule, KeepRuleError> {
+        // The UUID of a live rule goes to the workspace and comes back when keeping fails. The workspace stays locked
+        // until then, so no live rule of that name comes meanwhile.
+        let mut workspace = self.workspace.lock().await;
         let live = {
-            let environments = self.environments();
-            let Some(running) = environments.get(environment) else {
+            let mut environments = self.environments();
+            let Some(running) = environments.get_mut(environment) else {
                 return Err(KeepRuleError::NotRunning {
                     environment: environment.clone(),
                 });
             };
-            running.live.get(name).map(|live| (live.rule.clone(), live.uuid))
+            running.live.remove(name)
         };
-        let Some((live, uuid)) = live else {
+        let Some(LiveRule { rule, uuid }) = live else {
             return Err(KeepRuleError::NotFound {
                 environment: environment.clone(),
                 rule: name.clone(),
             });
         };
-        self.workspace
-            .lock()
-            .await
-            .keep(live.clone(), uuid)
-            .await
-            .map_err(|error| KeepRuleError::NotKept {
+        if let Err(KeepError { error, uuid }) = workspace.keep(rule.clone(), uuid).await {
+            if let Some(running) = self.environments().get_mut(environment) {
+                running.live.insert(name.clone(), LiveRule { rule, uuid });
+            }
+            return Err(KeepRuleError::NotKept {
                 rule: name.clone(),
                 error,
-            })?;
-        if let Some(running) = self.environments().get_mut(environment) {
-            running.live.remove(name);
+            });
         }
+        drop(workspace);
         self.publish(HostChange::RuleRemoved {
             environment: environment.clone(),
             rule: name.clone(),
@@ -297,7 +298,7 @@ impl<C: WorkspaceContext> Host<C> {
             environment: environment.clone(),
             rule: name.clone(),
         });
-        Ok(live)
+        Ok(rule)
     }
 
     /// Whether an environment of that name runs. Returns its name when it does not.

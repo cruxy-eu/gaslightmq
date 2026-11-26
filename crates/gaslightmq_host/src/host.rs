@@ -18,12 +18,13 @@ use gaslightmq_field::{ConnectionNumber, Endpoint};
 use gaslightmq_incident::IncidentSupport;
 use gaslightmq_lie_api::Lies;
 use gaslightmq_quick_inject::{KnownNames, QuickInject, Sentence};
-use gaslightmq_rule::{ArmedRule, HandFiring, Preset, PresetSet, ResolvedRule, Rule, RuleError, RuleName, RuleUuid};
+use gaslightmq_rule::{ArmedRule, HandFiring, Preset, PresetSet, ResolvedRule, Rule, RuleError, RuleName};
 use gaslightmq_selector::{Selector, SelectorRef, SelectorSet};
 use gaslightmq_surface::EncoderMapping;
 use gaslightmq_traffic::{Statistics, Traffic, TrafficConfiguration};
 use gaslightmq_workspace::{
-    CreateError, DefinitionName, DeleteError, Stores, UpdateError, Workspace, WorkspaceContext, WorkspaceDefinition,
+    CreateError, DefinitionName, DeleteError, LiveRuleUuid, Stores, UpdateError, Workspace, WorkspaceContext,
+    WorkspaceDefinition,
 };
 use tokio::sync::broadcast;
 use tokio::task::JoinHandle;
@@ -129,7 +130,7 @@ struct Running {
 /// No rule holds its UUID: the environment keeps it next to the rule, as the workspace does for its own rules.
 struct LiveRule {
     rule: Rule,
-    uuid: RuleUuid,
+    uuid: LiveRuleUuid,
 }
 
 impl<C: WorkspaceContext> Host<C> {
