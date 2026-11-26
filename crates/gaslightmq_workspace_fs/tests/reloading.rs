@@ -4,6 +4,7 @@ use std::fs;
 
 use gaslightmq_definition_api::prelude::*;
 use gaslightmq_rule::prelude::*;
+use gaslightmq_scenario::prelude::*;
 use gaslightmq_selector::prelude::*;
 use gaslightmq_workspace::prelude::*;
 use gaslightmq_workspace_fs::prelude::*;
@@ -91,6 +92,55 @@ async fn a_reload_takes_in_what_changed_by_name_and_keeps_the_revision_of_the_re
     workspace
         .update(edited.with_title("Order fetches".parse()?), None)
         .await?;
+    Ok(())
+}
+
+/// A scenario that someone added while the engine ran, which names the new rule.
+const SCENARIO_NEW: &str = "\
+name: fetches-vanish
+mode: chain
+seed: 42
+rules:
+  - blackhole-order-fetches
+";
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_new_scenario_comes_in_with_a_reload_once_the_rule_it_names_is_there_too() -> anyhow::Result<()> {
+    let directory = tempfile::tempdir()?;
+    fs::write(directory.path().join("selectors.yaml"), SELECTORS)?;
+    fs::write(directory.path().join("presets.yaml"), PRESETS)?;
+    let stores = FileStores::open(directory.path(), Access::ReadWrite).await?;
+    let mut workspace = Workspace::new(FileContext::new(stores));
+    let vanish: ScenarioName = "fetches-vanish".parse()?;
+    let blackhole_fetches: RuleName = "blackhole-order-fetches".parse()?;
+
+    fs::create_dir(directory.path().join("scenarios"))?;
+    fs::write(
+        directory.path().join("scenarios").join("fetches-vanish.yaml"),
+        SCENARIO_NEW,
+    )?;
+    let error = workspace.reload().await.expect_err("a rule that does not exist");
+    assert_eq!(
+        error.to_string(),
+        "the definitions that the stores read again do not fit each other: \
+         scenario \"fetches-vanish\" refers to rule \"blackhole-order-fetches\", which does not exist"
+    );
+    assert!(workspace.stores().scenarios().get(&vanish).await?.is_none());
+
+    fs::create_dir(directory.path().join("rules"))?;
+    fs::write(directory.path().join("rules").join("fetches.yaml"), RULES_NEW)?;
+    let reload = workspace.reload().await?;
+    assert_eq!(
+        reload.changes(),
+        [
+            DefinitionChange::Created(blackhole_fetches.into()),
+            DefinitionChange::Created(vanish.clone().into()),
+        ]
+    );
+    let reloaded = reload.take().await;
+
+    assert_eq!(workspace.revision(vanish.clone()), reloaded);
+    assert!(workspace.stores().scenarios().get(&vanish).await?.is_some());
     Ok(())
 }
 

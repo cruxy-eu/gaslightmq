@@ -49,14 +49,20 @@ Two environments can each have a live rule of one name, because each holds its o
 *Keep* saves a live rule in the workspace under the same name.
 It stays in the state it has in its environment, and every other environment holds it disarmed.
 
-A rule of the workspace is in every environment, so it never stands next to a live rule of its name:
+A rule of the workspace is in every environment, so it never stands next to a live rule of its name.
+Rule names are also unique among all rules, so no rule has the name of a rule that a [scenario owns](../domains/scenarios.md#scenario):
 
-- **Creating a live rule refuses a name that a rule of the workspace has.**
-- **Creating a rule of the workspace refuses a name that a live rule has**, in any environment that runs.
-- **Keep refuses a name that a live rule of another environment has.**
+- **Creating a live rule refuses a name that a rule of the workspace or of a scenario has.**
+- **Creating a rule of the workspace refuses a name that a live rule has**, in any environment that runs,
+  **or a rule of a scenario.**
+- **Keep refuses a name that a live rule of another environment, or a rule of a scenario, has.**
 
-Both errors are `name-taken`, with the environment that holds that live rule.
-The same error without an environment says that the workspace has a rule of that name.
+Each error is `name-taken`, and each names what holds the other rule in the same way:
+`{ "holder": { "environment": "canary-proxy" } }` for a live rule of that environment,
+and `{ "holder": { "scenario": "leader-election" } }` for a rule of that scenario.
+A live rule that is not created names its own environment as the holder when a live rule of the environment has the name,
+or a rule of that name is armed there.
+The same error without a holder says that the workspace has a rule of that name.
 Whoever wants the rule in the workspace deletes the other live rule first.
 The check and the write are one step, so a live rule never gets the name in between.
 
@@ -549,7 +555,11 @@ an older process, or one built without a part.
 No operation reloads the workspace yet.
 It arrives with the stores of files: a store in memory has nothing to reload.
 
-The journal has no entry of a scenario, a step or a recording yet: those arrive with their operations.
+No operation lists, gets, creates, updates or deletes a scenario yet.
+So nothing refuses yet a scenario that owns a rule with the name of a live rule: that check arrives with those operations.
+The snapshot holds every scenario of the workspace, and a change of one is a `definition-changed` or a `definition-deleted` message, as for every kind.
+
+The journal has no entry of the activation of a scenario, of a step or of a recording yet: those arrive with their operations.
 No backend applies or emulates an incident yet, so no journal has an entry of one.
 No change has the surface `step` or `file` yet.
 

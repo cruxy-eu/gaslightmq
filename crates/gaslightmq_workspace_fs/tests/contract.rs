@@ -7,6 +7,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use gaslightmq_environment_conformance::assert_environment_store;
 use gaslightmq_rule_conformance::{assert_preset_store, assert_rule_store};
+use gaslightmq_scenario_conformance::assert_scenario_store;
 use gaslightmq_selector_conformance::assert_selector_store;
 use gaslightmq_surface_conformance::assert_layout_store;
 use gaslightmq_workspace_fs::prelude::*;
@@ -47,6 +48,20 @@ async fn a_store_of_rules_in_files_keeps_the_contract_and_says_who_uses_a_select
     };
 
     assert_rule_store(empty).await;
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_store_of_scenarios_in_files_keeps_the_contract_and_says_who_names_a_rule_a_selector_or_a_preset()
+-> anyhow::Result<()> {
+    let workspaces = tempfile::tempdir()?;
+    let made = AtomicUsize::new(0);
+    let empty = || {
+        let workspace = workspaces.path().join(made.fetch_add(1, Ordering::Relaxed).to_string());
+        FileStore::new(workspace, Access::ReadWrite)
+    };
+
+    assert_scenario_store(empty).await;
     Ok(())
 }
 

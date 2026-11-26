@@ -26,6 +26,8 @@
 //! ├── presets.yaml             # every preset, as a list
 //! ├── rules/
 //! │   └── background-noise.yaml  # a list of rules
+//! ├── scenarios/
+//! │   └── leader-election.yaml # one scenario
 //! └── layouts/
 //!     └── order-desk.yaml      # one pad layout
 //! ```
@@ -33,8 +35,7 @@
 //! A file of one definition carries the name of its definition, and a new rule goes to a file of its name.
 //! The name inside the file is the one that counts. A directory reads its files that end in `.yaml`, and none
 //! whose name starts with a `.`. A file or a directory that is not there holds nothing.
-//! The settings in `gaslight.yaml`, the scenarios, the worlds, the templates, the schemas and the data files
-//! are not read here.
+//! The settings in `gaslight.yaml`, the worlds, the templates, the schemas and the data files are not read here.
 //!
 //! # Reading
 //!

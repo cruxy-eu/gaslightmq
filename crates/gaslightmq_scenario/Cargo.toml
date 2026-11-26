@@ -1,0 +1,39 @@
+[package]
+name = "gaslightmq_scenario"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lints]
+workspace = true
+
+[features]
+# The store of scenarios in memory.
+memory = ["dep:gaslightmq_definition_memory"]
+serde = [
+    "dep:serde",
+    "gaslightmq_clock/serde",
+    "gaslightmq_rule/serde",
+    "gaslightmq_selector/serde",
+    "gaslightmq_trigger/serde",
+]
+
+[dependencies]
+gaslightmq_clock.workspace = true
+gaslightmq_definition_api.workspace = true
+gaslightmq_definition_memory = { workspace = true, optional = true }
+gaslightmq_resource.workspace = true
+gaslightmq_rule.workspace = true
+gaslightmq_selector.workspace = true
+gaslightmq_trigger.workspace = true
+serde = { workspace = true, optional = true }
+thiserror.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true
+# What the rules of the tests are made of.
+gaslightmq_kernel.workspace = true
+gaslightmq_lie.workspace = true
+# The preludes that code imports next to this one. `tests/prelude.rs` checks that no name clashes.
+gaslightmq_field.workspace = true
+gaslightmq_incident.workspace = true

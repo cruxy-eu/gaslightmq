@@ -7,6 +7,7 @@ use gaslightmq_control_api::environment::{Environment, EnvironmentName};
 use gaslightmq_control_api::field::{ClientSoftware, ConnectionNumber};
 use gaslightmq_control_api::prelude::*;
 use gaslightmq_control_api::rule::{Preset, Rule, RuleName, RuleState};
+use gaslightmq_control_api::scenario::Scenario;
 use gaslightmq_control_api::selector::Selector;
 use gaslightmq_control_api::surface::PadLayout;
 
@@ -24,6 +25,8 @@ pub struct WorkspaceDefinitions {
     pub presets: Vec<Preset>,
     /// Every rule of the workspace. Live rules belong to an environment, and are not here.
     pub rules: Vec<Rule>,
+    /// Every scenario.
+    pub scenarios: Vec<Scenario>,
     /// Every pad layout.
     pub layouts: Vec<PadLayout>,
     /// Every environment, whether it runs or not.
@@ -69,6 +72,9 @@ impl Process {
                 preset.name().clone().into()
             }),
             rules: held(definitions.rules, &mut revisions, |rule| rule.name().clone().into()),
+            scenarios: held(definitions.scenarios, &mut revisions, |scenario| {
+                scenario.name().clone().into()
+            }),
             layouts: held(definitions.layouts, &mut revisions, |layout| {
                 layout.name().clone().into()
             }),
@@ -253,6 +259,11 @@ impl Process {
                     held.name() == preset.name()
                 });
             }
+            AnyDefinition::Scenario(scenario) => {
+                put(&mut definitions.scenarios, scenario.clone(), |held| {
+                    held.name() == scenario.name()
+                });
+            }
             AnyDefinition::Layout(layout) => {
                 put(&mut definitions.layouts, layout.clone(), |held| {
                     held.name() == layout.name()
@@ -290,6 +301,7 @@ impl Process {
         match name {
             DefinitionRef::Selector(name) => definitions.selectors.retain(|held| held.name() != name),
             DefinitionRef::Preset(name) => definitions.presets.retain(|held| held.name() != name),
+            DefinitionRef::Scenario(name) => definitions.scenarios.retain(|held| held.name() != name),
             DefinitionRef::Layout(name) => definitions.layouts.retain(|held| held.name() != name),
             DefinitionRef::Environment(name) => definitions.environments.retain(|held| held.name() != name),
             DefinitionRef::Rule(name) => {

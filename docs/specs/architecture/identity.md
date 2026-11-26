@@ -67,7 +67,9 @@ See [scenarios](../domains/scenarios.md).
 | Entity   | Type                   | Name           | ID                        | Title           |
 |----------|------------------------|----------------|---------------------------|-----------------|
 | Scenario | User-defined           | `ScenarioName` | —                         | `ScenarioTitle` |
-| Step     | Part of a scenario     | Its name, unique within its scenario | —   | Its title       |
+| Rule, in a scenario | Part of a scenario | `RuleName`, unique among all rules | — | `RuleTitle` |
+| Step     | Part of a scenario     | `StepName`, unique within its scenario | — | `StepTitle`     |
+| Condition that ends a step | Part of a step | —    | —                         | —               |
 | Live set | Part of an environment | —              | Its environment           | —               |
 
 ### Observation
@@ -220,6 +222,8 @@ The UI shows the title when an entity has one, and the name otherwise.
 Domains refer to user-defined entities by name:
 
 - a rule refers to its selector and its preset,
+- a scenario refers to the rules of the workspace that it and its steps arm,
+  and to the selectors and presets that the rules it owns and the conditions of its steps name,
 - the explanation of a call refers to the rules that touched it,
 - statistics count per rule,
 - a pad points at a rule.

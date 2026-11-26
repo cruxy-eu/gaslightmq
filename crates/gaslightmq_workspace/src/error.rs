@@ -1,6 +1,7 @@
 //! Why a workspace did not do what it was asked: create, update, delete, or validate.
 
-use gaslightmq_rule::RuleError;
+use gaslightmq_rule::{RuleError, RuleName};
+use gaslightmq_scenario::ScenarioName;
 use gaslightmq_selector::SelectorSetError;
 
 use crate::{DefinitionName, Revision};
@@ -28,6 +29,7 @@ use crate::{DefinitionName, Revision};
 pub enum WorkspaceError {
     /// A definition refers to a name that no definition of that kind has:
     /// the selector that a selector includes, the selector or the preset of a rule,
+    /// a rule, a selector or a preset that a scenario names,
     /// or the selector of a row or the preset of a column of a pad layout.
     #[error("{definition} refers to {reference}, which does not exist")]
     UnknownReference {
@@ -37,9 +39,20 @@ pub enum WorkspaceError {
     /// The selectors do not hold together: they include each other in a circle.
     #[error("{error}")]
     InvalidSelectors { error: SelectorSetError },
-    /// A rule names what exists, and could still never work. The error names the rule.
+    /// Two rules have the same name: a rule of the workspace and a rule that a scenario owns, or rules that two
+    /// scenarios own. Rule names are unique among all rules, so a name would not say which rule it means.
+    /// `holders` names the definitions that hold them, the rule of the workspace first.
+    #[error("{} each hold a rule named {:?}", all(.holders), .rule.as_str())]
+    SharedRuleName {
+        rule: RuleName,
+        holders: Vec<DefinitionName>,
+    },
+    /// A rule of the workspace names what exists, and could still never work. The error names the rule.
     #[error("{error}")]
     InvalidRule { error: RuleError },
+    /// A rule that a scenario owns names what exists, and could still never work. The error names the rule.
+    #[error("scenario {:?}: {error}", .scenario.as_str())]
+    InvalidOwnedRule { scenario: ScenarioName, error: RuleError },
 }
 
 /// Why a workspace did not [create](crate::Workspace::create) a definition.
@@ -251,6 +264,10 @@ mod tests {
         name.parse::<PresetName>().unwrap().into()
     }
 
+    fn scenario(name: &str) -> DefinitionName {
+        name.parse::<ScenarioName>().unwrap().into()
+    }
+
     /// The rule and the selector of one reference that names nothing.
     fn unknown_selector() -> WorkspaceError {
         WorkspaceError::UnknownReference {
@@ -282,6 +299,21 @@ mod tests {
                     error: never_fires.clone(),
                 },
                 never_fires.to_string(),
+            ),
+            (
+                WorkspaceError::SharedRuleName {
+                    rule: "blackhole-metadata".parse().unwrap(),
+                    holders: vec![rule("blackhole-metadata"), scenario("quiet-metadata")],
+                },
+                "rule \"blackhole-metadata\" and scenario \"quiet-metadata\" each hold a rule named \"blackhole-metadata\""
+                    .to_owned(),
+            ),
+            (
+                WorkspaceError::InvalidOwnedRule {
+                    scenario: "black-friday".parse().unwrap(),
+                    error: never_fires.clone(),
+                },
+                format!("scenario \"black-friday\": {never_fires}"),
             ),
         ];
 

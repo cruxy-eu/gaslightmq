@@ -6,11 +6,12 @@ use std::path::{Path, PathBuf};
 use gaslightmq_definition_api::Definition;
 use gaslightmq_environment::Environment;
 use gaslightmq_rule::{Preset, Rule};
+use gaslightmq_scenario::Scenario;
 use gaslightmq_selector::Selector;
 use gaslightmq_surface::PadLayout;
 
-/// A kind of definition that the files of a workspace hold: a selector, a preset, a rule, a pad layout or an
-/// environment.
+/// A kind of definition that the files of a workspace hold: a selector, a preset, a rule, a scenario, a pad layout
+/// or an environment.
 ///
 /// Each kind has its place in the workspace:
 ///
@@ -19,6 +20,7 @@ use gaslightmq_surface::PadLayout;
 /// | [`Selector`] | `selectors.yaml` | A list of selectors. |
 /// | [`Preset`] | `presets.yaml` | A list of presets. |
 /// | [`Rule`] | `rules/*.yaml` | A list of rules. A new rule goes to `rules/<name>.yaml`. |
+/// | [`Scenario`] | `scenarios/<name>.yaml` | One scenario. |
 /// | [`PadLayout`] | `layouts/<name>.yaml` | One pad layout. |
 /// | [`Environment`] | `environments/<name>.yaml` | One environment. |
 ///
@@ -102,6 +104,7 @@ placed! {
     Selector => Place::File("selectors.yaml");
     Preset => Place::File("presets.yaml");
     Rule => Place::Lists("rules");
+    Scenario => Place::Each("scenarios");
     PadLayout => Place::Each("layouts");
     Environment => Place::Each("environments");
 }

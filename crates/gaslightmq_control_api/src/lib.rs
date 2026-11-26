@@ -182,9 +182,11 @@
 //!
 //! # What the control plane does not hold yet
 //!
-//! Scenarios, recordings and capture arrive with the crates of their domains,
+//! Scenarios travel as definitions: the state of a process holds them, and a change of one is a message of the
+//! live stream. No operation creates, changes, activates or steps a scenario yet.
+//! Recordings and capture arrive with the crates of their domains,
 //! and the World with the broker. Their operations and messages arrive with them,
-//! and so do the entries of the journal for scenarios, steps and recordings.
+//! and so do the entries of the journal for steps and recordings.
 //!
 //! # No IO
 //!
@@ -200,6 +202,7 @@ pub use gaslightmq_journal as journal;
 pub use gaslightmq_kernel as kernel;
 pub use gaslightmq_lie as lie;
 pub use gaslightmq_rule as rule;
+pub use gaslightmq_scenario as scenario;
 pub use gaslightmq_selector as selector;
 pub use gaslightmq_surface as surface;
 pub use gaslightmq_trigger as trigger;
@@ -235,8 +238,8 @@ pub use request::{OperationRequest, RequestCause, RequestSource, RequestSurface}
 pub use revision::{Expects, Revised, Revision, RunId, RunIdError};
 pub use rules::{
     ArmRule, CreateLiveRule, CreateLiveRuleError, DeleteLiveRule, DeleteLiveRuleError, DisarmRule, FireRule,
-    FireRuleError, KeepRule, KeepRuleError, ListEnvironmentRules, RuleCommandError, RuleStatus, UpdateLiveRule,
-    UpdateLiveRuleError,
+    FireRuleError, KeepRule, KeepRuleError, ListEnvironmentRules, RuleCommandError, RuleHolder, RuleStatus,
+    UpdateLiveRule, UpdateLiveRuleError,
 };
 pub use sentence::{ParseSentence, ParsedSentence, UnreadWord, WordCompletion, WordKind};
 pub use sessions::{CloseSession, CloseSessionError, ListSessions, SessionCloser, SessionIdentity, SessionStatus};
@@ -266,9 +269,10 @@ pub mod prelude {
         FireRuleError, GetBackend, GetDefinition, GetDefinitionError, GetEnvironment, IntentEffect, IntentError,
         KeepRule, KeepRuleError, ListDefinitions, ListDefinitionsError, ListEnvironmentRules, ListEnvironments,
         ListSessions, Operation, OperationRequest, ParseSentence, ParsedSentence, ProcessState, QueryJournal,
-        RequestCause, RequestError, RequestSource, RequestSurface, Revised, Revision, RuleCommandError, RuleStats,
-        RuleStatus, RunId, RunIdError, RunningEnvironment, SendIntent, SessionCloser, SessionIdentity, SessionStatus,
-        StartEnvironment, StartEnvironmentError, Stats, StopEnvironment, StreamMessage, Subscription, UnreadWord,
-        UpdateDefinition, UpdateDefinitionError, UpdateLiveRule, UpdateLiveRuleError, WordCompletion, WordKind,
+        RequestCause, RequestError, RequestSource, RequestSurface, Revised, Revision, RuleCommandError, RuleHolder,
+        RuleStats, RuleStatus, RunId, RunIdError, RunningEnvironment, SendIntent, SessionCloser, SessionIdentity,
+        SessionStatus, StartEnvironment, StartEnvironmentError, Stats, StopEnvironment, StreamMessage, Subscription,
+        UnreadWord, UpdateDefinition, UpdateDefinitionError, UpdateLiveRule, UpdateLiveRuleError, WordCompletion,
+        WordKind,
     };
 }

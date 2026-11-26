@@ -24,8 +24,10 @@ use gaslightmq_control_api::journal::{
 use gaslightmq_control_api::kernel::{ApiKey, BrokerId, ClientId};
 use gaslightmq_control_api::prelude::*;
 use gaslightmq_control_api::rule::{PresetName, Rule, RuleName, RuleState};
+use gaslightmq_control_api::scenario::{Mode, Scenario, ScenarioName};
 use gaslightmq_control_api::selector::{Condition, Conditions, Selector, SelectorName, SelectorRef};
 use gaslightmq_control_api::surface::{Column, Hold, Intent, LayoutName, Pad, PadLayout, PresenceId, Row};
+use gaslightmq_control_api::trigger::Seed;
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 use serde_json::{Value, json};
@@ -828,32 +830,47 @@ fn an_error_names_its_variant() {
 }
 
 #[test]
-fn a_name_that_a_live_rule_of_another_environment_has_is_taken_there() {
+fn a_name_that_another_rule_has_is_taken_with_what_holds_it() {
     let name: RuleName = "slow-order-producers".parse().unwrap();
 
     Form(KeepRuleError::NameTaken {
         rule: name.clone(),
-        environment: Some("canary-proxy".parse().unwrap()),
+        holder: Some(RuleHolder::Environment("canary-proxy".parse().unwrap())),
     })
-    .writes(json!({ "error": "name-taken", "rule": "slow-order-producers", "environment": "canary-proxy" }));
+    .writes(json!({
+        "error": "name-taken",
+        "rule": "slow-order-producers",
+        "holder": { "environment": "canary-proxy" },
+    }));
     Form(CreateDefinitionError::NameTaken {
         name: name.clone().into(),
-        environment: Some("canary-proxy".parse().unwrap()),
+        holder: Some(RuleHolder::Scenario("leader-election".parse().unwrap())),
     })
     .writes(json!({
         "error": "name-taken",
         "name": { "rule": "slow-order-producers" },
-        "environment": "canary-proxy",
+        "holder": { "scenario": "leader-election" },
     }));
-    // A name that the workspace has is taken without an environment.
+    Form(CreateLiveRuleError::NameTaken {
+        environment: "orders-sim".parse().unwrap(),
+        rule: name.clone(),
+        holder: Some(RuleHolder::Scenario("leader-election".parse().unwrap())),
+    })
+    .writes(json!({
+        "error": "name-taken",
+        "environment": "orders-sim",
+        "rule": "slow-order-producers",
+        "holder": { "scenario": "leader-election" },
+    }));
+    // A name that the workspace has is taken without a holder.
     Form(KeepRuleError::NameTaken {
         rule: name.clone(),
-        environment: None,
+        holder: None,
     })
     .writes(json!({ "error": "name-taken", "rule": "slow-order-producers" }));
     Form(CreateDefinitionError::NameTaken {
         name: name.into(),
-        environment: None,
+        holder: None,
     })
     .writes(json!({ "error": "name-taken", "name": { "rule": "slow-order-producers" } }));
 }
@@ -1138,6 +1155,7 @@ fn a_client_that_connects_gets_the_state_of_the_process() {
             "selectors": [{ "definition": Form(OrderDesk::selector()).json(), "revision": NOW.number() }],
             "presets": [],
             "rules": [],
+            "scenarios": [],
             "layouts": [],
             "environments": [{ "definition": Form(&environment).json(), "revision": SEEN.number() }],
         },
@@ -1228,6 +1246,7 @@ fn an_environment_with_brokers_travels_inside_a_message() {
             "selectors": [],
             "presets": [],
             "rules": [],
+            "scenarios": [],
             "layouts": [],
             "environments": [{ "definition": staging_json, "revision": SEEN.number() }],
         },
@@ -1299,6 +1318,31 @@ fn a_change_to_the_workspace_names_the_kind_of_its_definition() {
         name: "blackhole".parse::<PresetName>().unwrap().into(),
     })
     .writes(json!({ "message": "definition-deleted", "name": { "preset": "blackhole" } }));
+}
+
+#[test]
+fn a_scenario_travels_as_its_file_holds_it() {
+    let scenario = Scenario::new(
+        "flaky-orders".parse().unwrap(),
+        Mode::Chain,
+        Seed::new(42),
+        [OrderDesk::rule().name().clone().into()],
+    )
+    .unwrap();
+
+    Form(StreamMessage::DefinitionChanged {
+        definition: AnyDefinition::Scenario(scenario.clone()),
+        revision: NOW,
+    })
+    .writes(json!({
+        "message": "definition-changed",
+        "definition": { "scenario": Form(scenario).json() },
+        "revision": NOW.number(),
+    }));
+    Form(StreamMessage::DefinitionDeleted {
+        name: "flaky-orders".parse::<ScenarioName>().unwrap().into(),
+    })
+    .writes(json!({ "message": "definition-deleted", "name": { "scenario": "flaky-orders" } }));
 }
 
 #[test]

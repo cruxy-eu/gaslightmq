@@ -4,6 +4,7 @@ use std::path::PathBuf;
 
 use gaslightmq_environment::Environment;
 use gaslightmq_rule::{Preset, Rule};
+use gaslightmq_scenario::Scenario;
 use gaslightmq_selector::Selector;
 use gaslightmq_surface::PadLayout;
 use gaslightmq_workspace::{Stores, WorkspaceContext};
@@ -19,6 +20,7 @@ pub struct FileStores {
     selectors: FileStore<Selector>,
     presets: FileStore<Preset>,
     rules: FileStore<Rule>,
+    scenarios: FileStore<Scenario>,
     layouts: FileStore<PadLayout>,
     environments: FileStore<Environment>,
 }
@@ -28,7 +30,7 @@ impl FileStores {
     ///
     /// A directory without the files of a kind holds no definition of that kind, so an empty directory is an
     /// empty workspace.
-    /// The scenarios, the worlds, the templates, the schemas and the data files of the workspace are not read here.
+    /// The worlds, the templates, the schemas and the data files of the workspace are not read here.
     ///
     /// # Errors
     ///
@@ -39,6 +41,7 @@ impl FileStores {
             selectors: FileStore::new(directory.clone(), access),
             presets: FileStore::new(directory.clone(), access),
             rules: FileStore::new(directory.clone(), access),
+            scenarios: FileStore::new(directory.clone(), access),
             layouts: FileStore::new(directory.clone(), access),
             environments: FileStore::new(directory, access),
         };
@@ -46,6 +49,7 @@ impl FileStores {
             stores.selectors.load().await,
             stores.presets.load().await,
             stores.rules.load().await,
+            stores.scenarios.load().await,
             stores.layouts.load().await,
             stores.environments.load().await,
         ];
@@ -62,6 +66,7 @@ impl Stores for FileStores {
     type Selectors = FileStore<Selector>;
     type Presets = FileStore<Preset>;
     type Rules = FileStore<Rule>;
+    type Scenarios = FileStore<Scenario>;
     type Layouts = FileStore<PadLayout>;
     type Environments = FileStore<Environment>;
 
@@ -75,6 +80,10 @@ impl Stores for FileStores {
 
     fn rules(&self) -> &FileStore<Rule> {
         &self.rules
+    }
+
+    fn scenarios(&self) -> &FileStore<Scenario> {
+        &self.scenarios
     }
 
     fn layouts(&self) -> &FileStore<PadLayout> {

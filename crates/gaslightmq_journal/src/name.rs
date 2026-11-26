@@ -41,6 +41,8 @@ pub enum RecordedDefinition {
     Preset(RecordedName),
     /// A rule of the workspace.
     Rule(RecordedName),
+    /// A scenario.
+    Scenario(RecordedName),
     /// A pad layout.
     Layout(RecordedName),
     /// An environment.
@@ -54,17 +56,19 @@ impl RecordedDefinition {
             RecordedDefinition::Selector(name)
             | RecordedDefinition::Preset(name)
             | RecordedDefinition::Rule(name)
+            | RecordedDefinition::Scenario(name)
             | RecordedDefinition::Layout(name)
             | RecordedDefinition::Environment(name) => name,
         }
     }
 
-    /// The word for the kind of the definition: `selector`, `preset`, `rule`, `layout` or `environment`.
+    /// The word for the kind of the definition: `selector`, `preset`, `rule`, `scenario`, `layout` or `environment`.
     pub const fn kind(&self) -> &'static str {
         match self {
             RecordedDefinition::Selector(_) => "selector",
             RecordedDefinition::Preset(_) => "preset",
             RecordedDefinition::Rule(_) => "rule",
+            RecordedDefinition::Scenario(_) => "scenario",
             RecordedDefinition::Layout(_) => "layout",
             RecordedDefinition::Environment(_) => "environment",
         }
@@ -111,6 +115,7 @@ mod tests {
             (RecordedDefinition::Selector(name()), "selector \"orders\""),
             (RecordedDefinition::Preset(name()), "preset \"orders\""),
             (RecordedDefinition::Rule(name()), "rule \"orders\""),
+            (RecordedDefinition::Scenario(name()), "scenario \"orders\""),
             (RecordedDefinition::Layout(name()), "layout \"orders\""),
             (RecordedDefinition::Environment(name()), "environment \"orders\""),
         ];

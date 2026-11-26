@@ -13,9 +13,13 @@ A scenario has:
 | **Title** | What the scenario shows, in free text. Optional. |
 | **Mode** | How rules combine: Live, Chain or Sequence. |
 | **Seed** | The root of every die in the run. |
-| **Rules** | The rules the scenario owns, or references by name. They stay armed for the whole run. |
-| **Steps** | Only in Sequence mode: the stages of the story. |
-| **Requirements** | What the backend must support, such as the incidents the scenario uses. |
+| **Rules** | The rules the scenario owns, or references by name, in its order. They stay armed for the whole run. Optional. |
+| **Steps** | Only in Sequence mode: the stages of the story. A Sequence has at least one. |
+| **Requirements** | What the backend must support: the incidents that the scenario's rules fire. Nobody writes them: they follow from the rules. |
+
+A scenario holds [what a person writes](../architecture/identity.md#what-a-definition-holds), so its requirements are no part of the definition.
+The backend of an environment reads them from the rules when someone activates the scenario there.
+See [portability](#portability).
 
 ```yaml
 name: leader-election
@@ -33,8 +37,14 @@ rules:
     trigger: { first: 2, per: session }
 ```
 
+A rule that the scenario owns is a map, as a rule of the workspace is.
+A rule that it references is its name.
+A scenario holds a rule of one name once.
+
 Rule names are unique among all rules,
 whether a scenario owns the rule or the workspace does.
+The workspace checks that, together with every reference of a scenario:
+the rules it names exist, and so do the selectors and presets that the rules it owns name.
 
 The name and the title of a scenario follow the rules for the [name](rules.md#names) and the [title](rules.md#titles) of a rule.
 
@@ -121,13 +131,18 @@ A step has a name, which is a slug and unique among the steps of its scenario.
 The journal and the UI name a step by it.
 A step can have a title too.
 
+A step arms rules of the workspace, by name, each once.
+It arms none of the scenario's own `rules`: those are armed for the whole run already,
+and the end of the step would disarm them.
+A scenario in Live or Chain mode has no steps.
+
 A step ends when its `until` condition holds.
 Then the next step starts, and the rules the previous step armed disarm.
 
 | `until` | The step ends |
 |---|---|
-| `calls`, with a selector | After that many calls matched the selector. |
-| `firings`, with a rule | After that rule's action applied that many times. |
+| `calls`, with a selector | After that many calls matched the selector: a selector of the workspace by name, or conditions of the step's own. |
+| `firings`, with a rule | After that rule's action applied that many times. The rule is armed during the step: the step arms it, or it is one of the scenario's `rules`. |
 | `after` | After that much time on the [engine's clock](../architecture/README.md#clock), measured from the start of the step. |
 | *(none)* | When someone advances or deactivates the scenario. |
 

@@ -61,6 +61,13 @@ async fn a_complete_workspace_holds_every_definition_of_its_files() -> anyhow::R
         .iter()
         .map(|r| r.name().to_string())
         .collect();
+    let scenarios: Vec<String> = stores
+        .scenarios()
+        .list()
+        .await?
+        .iter()
+        .map(|s| s.name().to_string())
+        .collect();
     let environments = stores.environments().list().await?;
 
     assert_eq!(selectors, ["group-coordination", "order-fetches", "order-producers"]);
@@ -73,6 +80,7 @@ async fn a_complete_workspace_holds_every_definition_of_its_files() -> anyhow::R
             "refuse-with-not-leader",
         ]
     );
+    assert_eq!(scenarios, ["consumer-survives-leader-churn", "flaky-orders"]);
     assert_eq!(environments.len(), 2);
     Ok(())
 }
@@ -101,6 +109,40 @@ async fn a_file_that_does_not_read_names_itself_and_the_key_that_failed() -> any
         [FileError {
             file: Path::new("rules").join("orders.yaml"),
             reason: "[0].trigger.every: a count is at least one".to_owned(),
+        }]
+    );
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_scenario_file_that_does_not_read_names_itself_and_the_key_of_the_step_that_failed() -> anyhow::Result<()> {
+    let workspace = tempfile::tempdir()?;
+    fs::create_dir(workspace.path().join("scenarios"))?;
+    fs::write(
+        workspace.path().join("scenarios").join("leader-churn.yaml"),
+        "\
+name: leader-churn
+mode: sequence
+seed: 7
+steps:
+  - name: warm-up
+    until: { calls: 100, selector: order-fetches }
+  - name: churn
+    arm: [refuse-with-not-leader]
+    until: { firings: 0, rule: refuse-with-not-leader }
+",
+    )?;
+
+    let error = FileStores::open(workspace.path(), Access::ReadWrite)
+        .await
+        .expect_err("a count is at least one");
+
+    // A file holds one scenario, so the path starts at its keys.
+    assert_eq!(
+        error.errors,
+        [FileError {
+            file: Path::new("scenarios").join("leader-churn.yaml"),
+            reason: "steps[1].until.firings: a count is at least one".to_owned(),
         }]
     );
     Ok(())

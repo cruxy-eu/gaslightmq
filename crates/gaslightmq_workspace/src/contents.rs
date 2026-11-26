@@ -5,7 +5,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use gaslightmq_environment::Environment;
-use gaslightmq_rule::{Preset, PresetSet, Rule};
+use gaslightmq_rule::{Preset, PresetSet, Rule, RuleName};
+use gaslightmq_scenario::Scenario;
 use gaslightmq_selector::{Selector, SelectorName, SelectorSet};
 use gaslightmq_surface::PadLayout;
 
@@ -20,17 +21,19 @@ pub(crate) struct Contents {
 }
 
 impl Contents {
-    /// The contents of five stores.
+    /// The contents of six stores.
     pub(crate) fn new(
         selectors: Vec<Selector>,
         presets: Vec<Preset>,
         rules: Vec<Rule>,
+        scenarios: Vec<Scenario>,
         layouts: Vec<PadLayout>,
         environments: Vec<Environment>,
     ) -> Self {
         let mut definitions: Vec<AnyDefinition> = (selectors.into_iter().map(AnyDefinition::Selector))
             .chain(presets.into_iter().map(AnyDefinition::Preset))
             .chain(rules.into_iter().map(AnyDefinition::Rule))
+            .chain(scenarios.into_iter().map(AnyDefinition::Scenario))
             .chain(layouts.into_iter().map(AnyDefinition::Layout))
             .chain(environments.into_iter().map(AnyDefinition::Environment))
             .collect();
@@ -98,13 +101,19 @@ impl Contents {
     ///
     /// - A reference to a name that no definition of that kind has.
     /// - Selectors that include each other in a circle.
-    /// - A rule that names what exists, and could still never work.
+    /// - A rule name that two rules have: a rule of the workspace and a rule that a scenario owns,
+    ///   or rules that two scenarios own.
+    /// - A rule that names what exists, and could still never work, of the workspace or of a scenario.
     ///
     /// The errors come in that order, and those of one sort in the order of the kinds and names of their definitions.
     pub(crate) fn errors(&self) -> Vec<WorkspaceError> {
         let of_definitions = (self.reference_errors().into_iter()).map(|(_, error)| error);
         let of_rules = self.rule_errors().into_iter().map(|(_, error)| error);
-        of_definitions.chain(self.selector_errors()).chain(of_rules).collect()
+        of_definitions
+            .chain(self.selector_errors())
+            .chain(self.rule_name_errors())
+            .chain(of_rules)
+            .collect()
     }
 
     /// Every reference to a name that no definition of that kind has, with the definition that refers to it.
@@ -159,6 +168,41 @@ impl Contents {
         })
     }
 
+    fn scenarios(&self) -> impl Iterator<Item = &Scenario> {
+        self.definitions.iter().filter_map(|definition| match definition {
+            AnyDefinition::Scenario(scenario) => Some(scenario),
+            _ => None,
+        })
+    }
+
+    /// Every rule name that more than one rule has, with the definitions that hold those rules:
+    /// the rule of the workspace, and the scenarios that own a rule of that name.
+    ///
+    /// A store keeps every name once within its kind, and a scenario every name of its rules once,
+    /// so each definition holds a rule of one name once.
+    fn rule_name_errors(&self) -> Vec<WorkspaceError> {
+        let mut holders: BTreeMap<&RuleName, Vec<DefinitionName>> = BTreeMap::new();
+        for rule in self.rules() {
+            holders.entry(rule.name()).or_default().push(rule.name().clone().into());
+        }
+        for scenario in self.scenarios() {
+            for rule in scenario.owned_rules() {
+                holders
+                    .entry(rule.name())
+                    .or_default()
+                    .push(scenario.name().clone().into());
+            }
+        }
+        holders
+            .into_iter()
+            .filter(|(_, holders)| holders.len() > 1)
+            .map(|(rule, holders)| WorkspaceError::SharedRuleName {
+                rule: rule.clone(),
+                holders,
+            })
+            .collect()
+    }
+
     /// What is wrong with the selectors as a set, other than an include that names nothing:
     /// they include each other in a circle.
     fn selector_errors(&self) -> Option<WorkspaceError> {
@@ -174,7 +218,8 @@ impl Contents {
             .map(|error| WorkspaceError::InvalidSelectors { error })
     }
 
-    /// The rules that name what exists, and could still never work, each with the name of its rule.
+    /// The rules that name what exists, and could still never work, each with the name of the definition that holds
+    /// it: the rule itself, or the scenario that owns it.
     ///
     /// A rule is resolved against the selectors that resolve themselves, and against the presets.
     /// A rule that names something else is left alone: what it names is what is wrong, and that is said already.
@@ -189,14 +234,25 @@ impl Contents {
             // A name is there twice, which no store allows. Nothing resolves against that.
             return Vec::new();
         };
-        self.rules()
-            .filter(|rule| rule.selector().name().is_none_or(|name| selectors.contains(name)))
-            .filter(|rule| rule.action().preset().is_none_or(|name| presets.contains(name)))
-            .filter_map(|rule| {
+        let resolvable = |rule: &&Rule| {
+            rule.selector().name().is_none_or(|name| selectors.contains(name))
+                && rule.action().preset().is_none_or(|name| presets.contains(name))
+        };
+        let of_the_workspace = self.rules().filter(resolvable).filter_map(|rule| {
+            let error = rule.resolve(&selectors, &presets).err()?;
+            Some((rule.name().clone().into(), WorkspaceError::InvalidRule { error }))
+        });
+        let of_scenarios = self.scenarios().flat_map(|scenario| {
+            scenario.owned_rules().filter(resolvable).filter_map(|rule| {
                 let error = rule.resolve(&selectors, &presets).err()?;
-                Some((rule.name().clone().into(), WorkspaceError::InvalidRule { error }))
+                let invalid = WorkspaceError::InvalidOwnedRule {
+                    scenario: scenario.name().clone(),
+                    error,
+                };
+                Some((scenario.name().clone().into(), invalid))
             })
-            .collect()
+        });
+        of_the_workspace.chain(of_scenarios).collect()
     }
 }
 

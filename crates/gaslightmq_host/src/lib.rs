@@ -192,8 +192,8 @@ pub use configuration::{
 pub use error::{
     ArmRuleError, CloseSessionError, CreateDefinitionError, CreateLiveRuleError, DeleteDefinitionError,
     DeleteLiveRuleError, DisarmRuleError, EnvironmentRulesError, EnvironmentStartError, FireRuleError,
-    FollowCallsError, IntentError, KeepRuleError, NotRunningError, ReadSentenceError, UpdateDefinitionError,
-    UpdateLiveRuleError,
+    FollowCallsError, IntentError, KeepRuleError, NotRunningError, ReadSentenceError, RuleHolder,
+    UpdateDefinitionError, UpdateLiveRuleError,
 };
 pub use host::Host;
 pub use rules::{EnvironmentRule, IntentEffect};
@@ -221,6 +221,6 @@ pub mod prelude {
         DisarmRuleError, EnvironmentConfiguration, EnvironmentConfigurationError, EnvironmentRule,
         EnvironmentRulesError, EnvironmentStartError, Expects, FireRuleError, FollowCallsError, Host, HostChange,
         HostChanges, HostChangesError, HostConfiguration, IntentEffect, IntentError, KeepRuleError, NotRunningError,
-        ReadSentenceError, RunId, RunIdError, UpdateDefinitionError, UpdateLiveRuleError,
+        ReadSentenceError, RuleHolder, RunId, RunIdError, UpdateDefinitionError, UpdateLiveRuleError,
     };
 }

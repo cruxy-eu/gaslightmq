@@ -1,6 +1,6 @@
 //! The workspace: the definitions of every kind as one model, and the rules that span them.
 //!
-//! A workspace holds selectors, presets, rules, pad layouts and environments.
+//! A workspace holds selectors, presets, rules, scenarios, pad layouts and environments.
 //! Each kind lives in a store of its own, behind the store trait that the crate of its kind holds,
 //! and a store can be anything: files, memory, or a service somewhere else.
 //! This crate knows no files. It works over the stores, and holds what no single store can check.
@@ -10,7 +10,7 @@
 //! | [`Workspace`] | The door for every change: create, update, delete, validate and reload. |
 //! | [`Reload`], [`DefinitionChange`] | A reload that fits and is not taken in yet, and what it changes in one definition. |
 //! | [`WorkspaceContext`] | Everything a workspace is handed, as one type: its stores. |
-//! | [`Stores`] | The five stores that a workspace works over, one for each kind. |
+//! | [`Stores`] | The six stores that a workspace works over, one for each kind. |
 //! | [`WorkspaceDefinition`] | A definition of a kind that a workspace holds. |
 //! | [`DefinitionName`] | The name of one definition of any kind, such as `rule "slow-order-producers"`. |
 //! | [`Revision`] | Which state of a definition someone saw: the number of the change that last created or updated it. |
@@ -47,9 +47,9 @@
 //!
 //! | Rule | Checked |
 //! |---|---|
-//! | Every reference names a definition that exists: the selector that a selector includes, the selector and the preset of a rule, and the rows and the columns of a pad layout. | On every create and update, and by [`Workspace::validate`]. |
-//! | No selectors include each other in a circle, and every rule can fire with the selector and the preset it names. | On every create and update, and by [`Workspace::validate`]. |
-//! | A selector or a preset that another definition uses is not deleted. The error names who uses it. | On every delete. |
+//! | Every reference names a definition that exists: the selector that a selector includes, the selector and the preset of a rule, the rules, the selectors and the presets that a scenario names, and the rows and the columns of a pad layout. | On every create and update, and by [`Workspace::validate`]. |
+//! | No selectors include each other in a circle, no two rules share a name, whether the workspace or a scenario holds them, and every rule can fire with the selector and the preset it names. | On every create and update, and by [`Workspace::validate`]. |
+//! | A selector, a preset or a rule that another definition uses is not deleted. The error names who uses it. | On every delete. |
 //!
 //! A change is refused for what it breaks, and for nothing else.
 //! When something was wrong before, as after someone edited a file, a change to another definition still goes through.
@@ -58,6 +58,8 @@
 //! It asks only the stores whose definitions can refer to the one that goes.
 //!
 //! An environment names a world, and no store holds worlds yet, so nothing checks that name.
+//! Whether a backend supports the incidents of a scenario is no question of the workspace:
+//! the backend of an environment answers it when someone activates the scenario there.
 //!
 //! # Revisions
 //!

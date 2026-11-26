@@ -1418,6 +1418,7 @@ dependencies = [
  "gaslightmq_lie",
  "gaslightmq_resource",
  "gaslightmq_rule",
+ "gaslightmq_scenario",
  "gaslightmq_selector",
  "gaslightmq_surface",
  "gaslightmq_trigger",
@@ -1602,6 +1603,7 @@ dependencies = [
  "gaslightmq_quick_inject",
  "gaslightmq_resource",
  "gaslightmq_rule",
+ "gaslightmq_scenario",
  "gaslightmq_selector",
  "gaslightmq_surface",
  "gaslightmq_test_kafka",
@@ -1834,6 +1836,39 @@ dependencies = [
 ]
 
 [[package]]
+name = "gaslightmq_scenario"
+version = "0.1.0"
+dependencies = [
+ "gaslightmq_clock",
+ "gaslightmq_definition_api",
+ "gaslightmq_definition_memory",
+ "gaslightmq_field",
+ "gaslightmq_incident",
+ "gaslightmq_kernel",
+ "gaslightmq_lie",
+ "gaslightmq_resource",
+ "gaslightmq_rule",
+ "gaslightmq_selector",
+ "gaslightmq_trigger",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.21",
+]
+
+[[package]]
+name = "gaslightmq_scenario_conformance"
+version = "0.1.0"
+dependencies = [
+ "futures",
+ "gaslightmq_definition_conformance",
+ "gaslightmq_definition_memory",
+ "gaslightmq_rule",
+ "gaslightmq_scenario",
+ "gaslightmq_selector",
+ "gaslightmq_trigger",
+]
+
+[[package]]
 name = "gaslightmq_selector"
 version = "0.1.0"
 dependencies = [
@@ -2019,6 +2054,7 @@ dependencies = [
  "gaslightmq_lie",
  "gaslightmq_resource",
  "gaslightmq_rule",
+ "gaslightmq_scenario",
  "gaslightmq_selector",
  "gaslightmq_surface",
  "gaslightmq_trigger",
@@ -2039,10 +2075,13 @@ dependencies = [
  "gaslightmq_lie",
  "gaslightmq_rule",
  "gaslightmq_rule_conformance",
+ "gaslightmq_scenario",
+ "gaslightmq_scenario_conformance",
  "gaslightmq_selector",
  "gaslightmq_selector_conformance",
  "gaslightmq_surface",
  "gaslightmq_surface_conformance",
+ "gaslightmq_trigger",
  "gaslightmq_workspace",
  "serde",
  "serde-saphyr",

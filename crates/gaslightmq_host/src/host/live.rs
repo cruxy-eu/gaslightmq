@@ -1,16 +1,17 @@
 //! The rules of an environment: those of the workspace with their state there, and the live rules.
 
-use gaslightmq_definition_api::Store;
+use gaslightmq_definition_api::{Store, StoreReadError};
 use gaslightmq_engine::ArmError;
 use gaslightmq_environment::EnvironmentName;
 use gaslightmq_journal::{Change, ChangeSource, Parameter, RecordedDefinition};
 use gaslightmq_rule::{Rule, RuleName, RuleState};
-use gaslightmq_workspace::{Revision, Stores, WorkspaceContext};
+use gaslightmq_scenario::{Scenario, ScenarioName};
+use gaslightmq_workspace::{Revision, Stores, Workspace, WorkspaceContext};
 
 use super::{Host, Unresolvable, resolve, unread};
 use crate::{
     CreateLiveRuleError, DeleteLiveRuleError, EnvironmentRule, EnvironmentRulesError, Expects, HostChange,
-    KeepRuleError, UpdateLiveRuleError, journaling,
+    KeepRuleError, RuleHolder, UpdateLiveRuleError, journaling,
 };
 
 /// What changes about a live rule when its definition is replaced, as the journal records it.
@@ -96,8 +97,8 @@ impl<C: WorkspaceContext> Host<C> {
     /// # Errors
     ///
     /// - [`CreateLiveRuleError::NotRunning`] when no environment of that name runs.
-    /// - [`CreateLiveRuleError::NameTaken`] when a rule of the workspace or a live rule of the environment has the
-    ///   name.
+    /// - [`CreateLiveRuleError::NameTaken`] when a rule of the workspace, a live rule of the environment or a rule
+    ///   that a scenario owns has the name. Rule names are unique among all rules.
     /// - [`CreateLiveRuleError::StoreFailed`], [`CreateLiveRuleError::WorkspaceInvalid`] and
     ///   [`CreateLiveRuleError::Unresolved`] when the rule does not resolve against the workspace, as on
     ///   [`arm`](Self::arm).
@@ -147,9 +148,10 @@ impl<C: WorkspaceContext> Host<C> {
         from: ChangeSource,
     ) -> Result<Revision, CreateLiveRuleError> {
         let name = rule.name().clone();
-        let taken = || CreateLiveRuleError::NameTaken {
+        let taken = |holder: Option<RuleHolder>| CreateLiveRuleError::NameTaken {
             environment: environment.clone(),
             rule: name.clone(),
+            holder,
         };
         self.check_running(environment)
             .map_err(|environment| CreateLiveRuleError::NotRunning { environment })?;
@@ -158,11 +160,21 @@ impl<C: WorkspaceContext> Host<C> {
         let workspace = self.workspace.lock().await;
         match workspace.stores().rules().get(&name).await {
             Ok(None) => {}
-            Ok(Some(_)) => return Err(taken()),
+            Ok(Some(_)) => return Err(taken(None)),
             Err(error) => {
                 return Err(CreateLiveRuleError::StoreFailed {
                     rule: name.clone(),
                     reason: unread::<Rule>(error),
+                });
+            }
+        }
+        match scenario_owning(&workspace, &name).await {
+            Ok(None) => {}
+            Ok(Some(scenario)) => return Err(taken(Some(RuleHolder::Scenario(scenario)))),
+            Err(error) => {
+                return Err(CreateLiveRuleError::StoreFailed {
+                    rule: name.clone(),
+                    reason: unread::<Scenario>(error),
                 });
             }
         }
@@ -181,12 +193,13 @@ impl<C: WorkspaceContext> Host<C> {
             })?;
         let not_running = |environment| CreateLiveRuleError::NotRunning { environment };
         let revision = self.change_rules(environment, not_running, |running, revisions| {
+            let here = || taken(Some(RuleHolder::Environment(environment.clone())));
             if running.live.contains_key(&name) {
-                return Err(taken());
+                return Err(here());
             }
             let rules = running.engine.rules();
             if armed {
-                rules.arm(resolved).map_err(|ArmError::AlreadyArmed { .. }| taken())?;
+                rules.arm(resolved).map_err(|ArmError::AlreadyArmed { .. }| here())?;
             }
             running.live.insert(name.clone(), rule);
             // Making the rule and arming it are one change, and take one number.
@@ -397,7 +410,8 @@ impl<C: WorkspaceContext> Host<C> {
     /// - [`KeepRuleError::NotRunning`] when no environment of that name runs.
     /// - [`KeepRuleError::NotFound`] when the environment has no live rule of that name.
     /// - [`KeepRuleError::Changed`] when the live rule has another revision than the change expects.
-    /// - [`KeepRuleError::NameTaken`] when a live rule of another environment that runs has the name.
+    /// - [`KeepRuleError::NameTaken`] when a live rule of another environment that runs, or a rule that a scenario
+    ///   owns, has the name.
     ///   Whoever wants the rule in the workspace deletes that live rule first.
     /// - [`KeepRuleError::NotKept`] when the workspace did not take the rule.
     pub async fn keep(
@@ -431,10 +445,10 @@ impl<C: WorkspaceContext> Host<C> {
             }
             Ok(rule.clone())
         })?;
-        if let Some(holder) = self.live_rule_of_another(name, Some(environment)) {
+        if let Some(holder) = self.holder_of(&workspace, name, Some(environment)).await {
             return Err(KeepRuleError::NameTaken {
                 rule: name.clone(),
-                environment: holder,
+                holder,
             });
         }
         // The keep is one change: the rule has its number in the workspace, and in the environment that held it.
@@ -470,6 +484,27 @@ impl<C: WorkspaceContext> Host<C> {
     }
 
     /// The environment that runs and holds a live rule of that name, other than `except`.
+    /// What holds a rule of this name outside the workspace: a live rule of an environment that runs, other than
+    /// `except`, or a rule that a scenario of the workspace owns. `None` when nothing does.
+    ///
+    /// A store of scenarios that cannot be read holds nothing here: the workspace reads it again for the change that
+    /// asks, and fails with what the store said.
+    pub(super) async fn holder_of(
+        &self,
+        workspace: &Workspace<C>,
+        name: &RuleName,
+        except: Option<&EnvironmentName>,
+    ) -> Option<RuleHolder> {
+        if let Some(environment) = self.live_rule_of_another(name, except) {
+            return Some(RuleHolder::Environment(environment));
+        }
+        scenario_owning(workspace, name)
+            .await
+            .ok()
+            .flatten()
+            .map(RuleHolder::Scenario)
+    }
+
     pub(super) fn live_rule_of_another(
         &self,
         name: &RuleName,
@@ -489,4 +524,20 @@ impl<C: WorkspaceContext> Host<C> {
             Err(environment.clone())
         }
     }
+}
+
+/// The scenario of the workspace that owns a rule of this name, or `None` when no scenario does.
+///
+/// # Errors
+///
+/// What the store of the scenarios said when it could not read.
+async fn scenario_owning<C: WorkspaceContext>(
+    workspace: &Workspace<C>,
+    name: &RuleName,
+) -> Result<Option<ScenarioName>, StoreReadError> {
+    let scenarios = workspace.stores().scenarios().list().await?;
+    Ok(scenarios
+        .into_iter()
+        .find(|scenario| scenario.owned_rules().any(|rule| rule.name() == name))
+        .map(|scenario| scenario.name().clone()))
 }

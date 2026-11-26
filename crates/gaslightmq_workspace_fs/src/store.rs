@@ -7,6 +7,7 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use gaslightmq_definition_api::{Store, StoreChangeError, StoreCreateError, StoreReadError};
 use gaslightmq_environment::{Environment, EnvironmentStore};
 use gaslightmq_rule::{Preset, PresetStore, Rule, RuleStore};
+use gaslightmq_scenario::{Scenario, ScenarioStore};
 use gaslightmq_selector::{Selector, SelectorStore};
 use gaslightmq_surface::{LayoutStore, PadLayout};
 
@@ -259,6 +260,9 @@ impl PresetStore for FileStore<Preset> {}
 
 /// A store of rules in the files is a [`RuleStore`], with the answers of the trait.
 impl RuleStore for FileStore<Rule> {}
+
+/// A store of scenarios in the files is a [`ScenarioStore`], with the answers of the trait.
+impl ScenarioStore for FileStore<Scenario> {}
 
 /// A store of pad layouts in the files is a [`LayoutStore`], with the answers of the trait.
 impl LayoutStore for FileStore<PadLayout> {}

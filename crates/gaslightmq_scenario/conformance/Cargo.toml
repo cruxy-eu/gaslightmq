@@ -1,0 +1,28 @@
+[package]
+name = "gaslightmq_scenario_conformance"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lints]
+workspace = true
+
+# Only the tests of a crate depend on this one: `cargo xtask test-support` holds every crate to that.
+[package.metadata.gaslightmq]
+test_support = true
+
+[dependencies]
+gaslightmq_definition_conformance.workspace = true
+gaslightmq_scenario.workspace = true
+# What the scenarios of the check are made of: the rules they name and own, the selectors and presets those name,
+# and the seed and the counts of a scenario.
+gaslightmq_rule.workspace = true
+gaslightmq_selector.workspace = true
+gaslightmq_trigger.workspace = true
+
+[dev-dependencies]
+# The executor that drives the check in the tests and the example. The crate itself needs no runtime.
+futures.workspace = true
+# The store in memory, which the tests and the example hold to the check.
+gaslightmq_definition_memory.workspace = true
+gaslightmq_scenario = { workspace = true, features = ["memory"] }

@@ -5,6 +5,7 @@ use std::fmt;
 use gaslightmq_definition_api::Definition;
 use gaslightmq_environment::{Environment, EnvironmentName};
 use gaslightmq_rule::{Preset, PresetName, Rule, RuleName};
+use gaslightmq_scenario::{Scenario, ScenarioName};
 use gaslightmq_selector::{Selector, SelectorName};
 use gaslightmq_surface::{LayoutName, PadLayout};
 
@@ -36,6 +37,8 @@ pub enum DefinitionName {
     Preset(PresetName),
     /// The name of a rule.
     Rule(RuleName),
+    /// The name of a scenario.
+    Scenario(ScenarioName),
     /// The name of a pad layout.
     Layout(LayoutName),
     /// The name of an environment.
@@ -49,6 +52,7 @@ impl fmt::Display for DefinitionName {
             DefinitionName::Selector(name) => (Selector::LABEL, name.as_str()),
             DefinitionName::Preset(name) => (Preset::LABEL, name.as_str()),
             DefinitionName::Rule(name) => (Rule::LABEL, name.as_str()),
+            DefinitionName::Scenario(name) => (Scenario::LABEL, name.as_str()),
             DefinitionName::Layout(name) => (PadLayout::LABEL, name.as_str()),
             DefinitionName::Environment(name) => (Environment::LABEL, name.as_str()),
         };
@@ -71,6 +75,12 @@ impl From<PresetName> for DefinitionName {
 impl From<RuleName> for DefinitionName {
     fn from(name: RuleName) -> Self {
         DefinitionName::Rule(name)
+    }
+}
+
+impl From<ScenarioName> for DefinitionName {
+    fn from(name: ScenarioName) -> Self {
+        DefinitionName::Scenario(name)
     }
 }
 
@@ -108,6 +118,7 @@ mod tests {
             DefinitionName::from("metadata".parse::<SelectorName>().unwrap()),
             DefinitionName::from("orders-sim".parse::<EnvironmentName>().unwrap()),
             DefinitionName::from("blackhole".parse::<PresetName>().unwrap()),
+            DefinitionName::from("leader-election".parse::<ScenarioName>().unwrap()),
             DefinitionName::from("fetches".parse::<SelectorName>().unwrap()),
         ];
 
@@ -121,6 +132,7 @@ mod tests {
                 "selector \"metadata\"",
                 "preset \"blackhole\"",
                 "rule \"blackhole\"",
+                "scenario \"leader-election\"",
                 "layout \"order-desk\"",
                 "environment \"orders-sim\"",
             ]

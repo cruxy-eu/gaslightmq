@@ -6,7 +6,9 @@ use gaslightmq_definition_api::prelude::*;
 use gaslightmq_kernel::prelude::*;
 use gaslightmq_lie::prelude::*;
 use gaslightmq_rule::prelude::*;
+use gaslightmq_scenario::prelude::*;
 use gaslightmq_selector::prelude::*;
+use gaslightmq_trigger::prelude::*;
 use gaslightmq_workspace::prelude::*;
 use gaslightmq_workspace_fs::prelude::*;
 
@@ -147,6 +149,74 @@ async fn a_new_rule_gets_a_file_of_its_name_and_goes_with_it() -> anyhow::Result
 
     // The file held nothing but the rule, so it goes too.
     stores.rules().delete(&name).await?;
+    assert!(!file.exists());
+    Ok(())
+}
+
+/// A scenario as someone wrote it: with a comment, and its rules indented below their key.
+const FLAKY_ORDERS: &str = "\
+# Steady background trouble on the order topics.
+name: flaky-orders
+title: Flaky orders
+mode: chain
+seed: 42
+rules:
+  - orders-sometimes-fail
+";
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_new_scenario_gets_a_file_of_its_name_and_leaves_the_file_of_every_other() -> anyhow::Result<()> {
+    let workspace = tempfile::tempdir()?;
+    let scenarios = workspace.path().join("scenarios");
+    fs::create_dir(&scenarios)?;
+    fs::write(scenarios.join("flaky-orders.yaml"), FLAKY_ORDERS)?;
+    let stores = FileStores::open(workspace.path(), Access::ReadWrite).await?;
+    let name: ScenarioName = "leader-churn".parse()?;
+    let refuse: RuleName = "refuse-with-not-leader".parse()?;
+    let churn = Scenario::new(
+        name.clone(),
+        Mode::Sequence(vec![
+            Step::new("warm-up".parse()?).ending_on(Until::Calls {
+                count: Count::new(100)?,
+                selector: "order-fetches".parse::<SelectorName>()?.into(),
+            }),
+            Step::new("churn".parse()?)
+                .arming([refuse.clone()])
+                .ending_on(Until::Firings {
+                    count: Count::new(3)?,
+                    rule: refuse,
+                }),
+        ]),
+        Seed::new(7),
+        [],
+    )?;
+    let file = scenarios.join("leader-churn.yaml");
+
+    stores.scenarios().create(churn.clone()).await?;
+    assert_eq!(
+        fs::read_to_string(&file)?,
+        "\
+name: leader-churn
+mode: sequence
+seed: 7
+steps:
+- name: warm-up
+  until:
+    calls: 100
+    selector: order-fetches
+- name: churn
+  arm:
+  - refuse-with-not-leader
+  until:
+    firings: 3
+    rule: refuse-with-not-leader
+"
+    );
+    assert_eq!(stores.scenarios().get(&name).await?, Some(churn));
+    assert_eq!(fs::read_to_string(scenarios.join("flaky-orders.yaml"))?, FLAKY_ORDERS);
+
+    // The file held nothing but the scenario, so it goes too.
+    stores.scenarios().delete(&name).await?;
     assert!(!file.exists());
     Ok(())
 }

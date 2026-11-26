@@ -41,6 +41,7 @@ mod next_to_the_others {
     use gaslightmq_kernel::prelude::*;
     use gaslightmq_lie::prelude::*;
     use gaslightmq_rule::prelude::*;
+    use gaslightmq_scenario::prelude::*;
     use gaslightmq_selector::prelude::*;
     use gaslightmq_surface::prelude::*;
     use gaslightmq_trigger::prelude::*;

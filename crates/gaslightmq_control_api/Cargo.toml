@@ -20,6 +20,7 @@ gaslightmq_kernel = { workspace = true, features = ["serde"] }
 gaslightmq_lie = { workspace = true, features = ["serde"] }
 gaslightmq_resource.workspace = true
 gaslightmq_rule = { workspace = true, features = ["serde"] }
+gaslightmq_scenario = { workspace = true, features = ["serde"] }
 gaslightmq_selector = { workspace = true, features = ["serde"] }
 gaslightmq_surface = { workspace = true, features = ["serde"] }
 gaslightmq_trigger = { workspace = true, features = ["serde"] }

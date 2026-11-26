@@ -128,7 +128,7 @@ gaslight/
 `gmq init` creates this layout with a `.gitignore` for the three ignored directories.
 
 `selectors.yaml` and `presets.yaml` hold a list each, and so does every file in `rules/`.
-A file in `environments/` or `layouts/` holds one definition.
+A file in `environments/`, `scenarios/` or `layouts/` holds one definition.
 A directory holds the files in it that end in `.yaml` and whose name does not start with a `.`, and no file below them.
 A file or a directory that is not there holds nothing, so an empty directory is an empty workspace.
 
@@ -203,7 +203,9 @@ See [secrets](#secrets).
 The engine validates the whole workspace when it loads it, when it [reloads](#reloading) it, and before every change:
 
 - every reference resolves: the selector and the preset of a rule, the rules of a scenario and of its steps,
+  the selectors and presets of the rules a scenario owns, the selector of a step that ends on calls,
   and the rows and columns of a pad layout,
+- no two rules share a name, whether the workspace or a scenario holds them,
 - every selector uses known fields,
 - every secret is a reference, not a value.
 
@@ -281,7 +283,7 @@ So what it writes has to read well in a diff.
 - **A new definition goes where its kind goes.**
   A selector or a preset comes after the last one of its file, with an empty line before it when the first two have one between them.
   A rule goes to `rules/<name>.yaml`, after the rules that the file holds already.
-  A pad layout and an environment get a file of their own name.
+  A scenario, a pad layout and an environment get a file of their own name.
 - **A delete takes the lines of the definition away**, with one empty line next to them.
   A file that holds nothing else after it goes too.
 - **A list in flow style is not edited.**

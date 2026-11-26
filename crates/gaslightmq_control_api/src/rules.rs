@@ -2,6 +2,7 @@
 
 use gaslightmq_environment::EnvironmentName;
 use gaslightmq_rule::{Rule, RuleName, RuleState};
+use gaslightmq_scenario::ScenarioName;
 use serde::{Deserialize, Serialize};
 
 use crate::{EnvironmentReadError, Expects, Operation, Revised, Revision, RunId};
@@ -236,6 +237,7 @@ impl Operation for FireRule {
 /// let error = CreateLiveRuleError::NameTaken {
 ///     environment: "orders-sim".parse().expect("an environment name"),
 ///     rule: "delay-1s-on-order-producers".parse().expect("a rule name"),
+///     holder: Some(RuleHolder::Environment("orders-sim".parse().expect("an environment name"))),
 /// };
 /// assert_eq!(error.to_string(), "environment \"orders-sim\" has a rule \"delay-1s-on-order-producers\" already");
 /// ```
@@ -245,12 +247,16 @@ pub enum CreateLiveRuleError {
     /// The environment does not run.
     #[error("environment {:?} does not run", .environment.as_str())]
     NotRunning { environment: EnvironmentName },
-    /// A rule of the workspace or a live rule of the environment has the name already,
-    /// or a rule of that name is armed there, so the new one cannot be.
-    #[error("environment {:?} has a rule {:?} already", .environment.as_str(), .rule.as_str())]
+    /// Another rule has the name, and `holder` says which: a rule of the workspace when it is `None`,
+    /// a live rule of the environment or a rule of that name that is armed there, or a rule that a scenario owns.
+    /// Rule names are unique among all rules, so the new one cannot have it.
+    #[error("{}", live_rule_taken(.environment, .rule, .holder.as_ref()))]
     NameTaken {
         environment: EnvironmentName,
         rule: RuleName,
+        /// What holds a rule of the name outside the workspace, or `None` when the workspace has a rule of the name.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        holder: Option<RuleHolder>,
     },
     /// The rule does not fit the workspace: it names a selector or a preset that does not exist, or it could never
     /// work. `reason` says what is wrong.
@@ -341,7 +347,7 @@ pub enum DeleteLiveRuleError {
 ///
 /// let error = KeepRuleError::NameTaken {
 ///     rule: "slow-order-producers".parse().expect("a rule name"),
-///     environment: Some("canary-proxy".parse().expect("an environment name")),
+///     holder: Some(RuleHolder::Environment("canary-proxy".parse().expect("an environment name"))),
 /// };
 /// assert_eq!(
 ///     error.to_string(),
@@ -360,15 +366,15 @@ pub enum KeepRuleError {
         environment: EnvironmentName,
         rule: RuleName,
     },
-    /// Another rule has the name: a rule of the workspace, or a live rule of the environment `environment`.
-    /// A rule of the workspace is in every environment, so it never stands next to a live rule of its name:
-    /// whoever wants the rule in the workspace deletes that live rule first.
-    #[error("rule {:?} was not kept: {}", .rule.as_str(), taken_by(.environment.as_ref()))]
+    /// Another rule has the name: a rule of the workspace, a live rule of another environment, or a rule that a
+    /// scenario owns. A rule of the workspace is in every environment, so it never stands next to a live rule of its
+    /// name: whoever wants the rule in the workspace deletes that live rule first.
+    #[error("rule {:?} was not kept: {}", .rule.as_str(), taken_by(.holder.as_ref()))]
     NameTaken {
         rule: RuleName,
-        /// The environment whose live rule has the name, or `None` when the workspace has a rule of the name.
+        /// What holds a rule of the name outside the workspace, or `None` when the workspace has a rule of the name.
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        environment: Option<EnvironmentName>,
+        holder: Option<RuleHolder>,
     },
     /// The rule does not fit the workspace any more. `reason` says what is wrong.
     #[error("rule {:?} does not fit the workspace: {reason}", .rule.as_str())]
@@ -495,10 +501,48 @@ pub enum FireRuleError {
     StoreFailed { rule: RuleName, reason: String },
 }
 
-/// Who has the name of a rule: a live rule of an environment, or the workspace.
-pub(crate) fn taken_by(environment: Option<&EnvironmentName>) -> String {
-    match environment {
-        Some(environment) => format!("environment {:?} has a live rule of that name", environment.as_str()),
+/// What holds a rule of a name outside the workspace, so that no other rule can have that name.
+///
+/// Rule names are unique among all rules: those of the workspace, the live rules of every environment that runs,
+/// and the rules that scenarios own.
+///
+/// With `serde`, it is a map with one entry: `{ "environment": "canary-proxy" }` or
+/// `{ "scenario": "leader-election" }`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum RuleHolder {
+    /// A live rule of this environment has the name.
+    Environment(EnvironmentName),
+    /// A rule that this scenario of the workspace owns has the name.
+    Scenario(ScenarioName),
+}
+
+/// Who has the name of a rule: a live rule of an environment, a rule of a scenario, or the workspace.
+pub(crate) fn taken_by(holder: Option<&RuleHolder>) -> String {
+    match holder {
+        Some(RuleHolder::Environment(environment)) => {
+            format!("environment {:?} has a live rule of that name", environment.as_str())
+        }
+        Some(RuleHolder::Scenario(scenario)) => format!("scenario {:?} owns a rule of that name", scenario.as_str()),
         None => "the workspace has a rule of that name".to_owned(),
+    }
+}
+
+/// The message of a live rule whose name is taken: by the workspace, by the environment, or by a scenario.
+fn live_rule_taken(environment: &EnvironmentName, rule: &RuleName, holder: Option<&RuleHolder>) -> String {
+    let not_added = format!(
+        "rule {:?} was not added to environment {:?}",
+        rule.as_str(),
+        environment.as_str()
+    );
+    match holder {
+        Some(RuleHolder::Environment(_)) => {
+            format!(
+                "environment {:?} has a rule {:?} already",
+                environment.as_str(),
+                rule.as_str()
+            )
+        }
+        other => format!("{not_added}: {}", taken_by(other)),
     }
 }

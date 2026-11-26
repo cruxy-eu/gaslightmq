@@ -28,6 +28,8 @@ members = [
     "crates/gaslightmq_resource",
     "crates/gaslightmq_rule",
     "crates/gaslightmq_rule/conformance",
+    "crates/gaslightmq_scenario",
+    "crates/gaslightmq_scenario/conformance",
     "crates/gaslightmq_selector",
     "crates/gaslightmq_selector/conformance",
     "crates/gaslightmq_session",
@@ -86,6 +88,8 @@ gaslightmq_quick_inject = { path = "crates/gaslightmq_quick_inject" }
 gaslightmq_resource = { path = "crates/gaslightmq_resource" }
 gaslightmq_rule = { path = "crates/gaslightmq_rule" }
 gaslightmq_rule_conformance = { path = "crates/gaslightmq_rule/conformance" }
+gaslightmq_scenario = { path = "crates/gaslightmq_scenario" }
+gaslightmq_scenario_conformance = { path = "crates/gaslightmq_scenario/conformance" }
 gaslightmq_selector = { path = "crates/gaslightmq_selector" }
 gaslightmq_selector_conformance = { path = "crates/gaslightmq_selector/conformance" }
 gaslightmq_session = { path = "crates/gaslightmq_session" }

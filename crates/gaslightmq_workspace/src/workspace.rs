@@ -9,6 +9,7 @@ use std::collections::BTreeMap;
 use gaslightmq_definition_api::{Definition, Store, StoreChangeError, StoreCreateError, StoreReadError};
 use gaslightmq_environment::Environment;
 use gaslightmq_rule::{Preset, Rule, RuleStore};
+use gaslightmq_scenario::{Scenario, ScenarioStore};
 use gaslightmq_selector::{Selector, SelectorStore};
 use gaslightmq_surface::{LayoutStore, PadLayout};
 
@@ -26,9 +27,11 @@ use crate::{
 /// What it holds is the rules that no single store can keep, because they span the kinds:
 ///
 /// - every reference names a definition that exists: the selector that a selector includes,
-///   the selector and the preset of a rule, and the rows and the columns of a pad layout,
-/// - no selectors include each other in a circle, and every rule can fire,
-/// - a selector or a preset that another definition uses stays.
+///   the selector and the preset of a rule, the rules, the selectors and the presets that a scenario names,
+///   and the rows and the columns of a pad layout,
+/// - no selectors include each other in a circle, no two rules share a name, whether the workspace or a scenario
+///   holds them, and every rule can fire,
+/// - a selector, a preset or a rule that another definition uses stays.
 ///
 /// Every change goes through the workspace, which checks it against the definitions of every store
 /// and then asks one store for it.
@@ -242,7 +245,7 @@ impl<C: WorkspaceContext> Workspace<C> {
     /// - [`DeleteError::Changed`] when the definition has another revision than `expects`. It says which.
     /// - [`DeleteError::InUse`] when other definitions refer to this one. It names them:
     ///   the selectors that include a selector, the rules that use a selector or a preset,
-    ///   and the pad layouts with a row or a column for it.
+    ///   the scenarios that name a rule, a selector or a preset, and the pad layouts with a row or a column for it.
     /// - [`DeleteError::ChangedOutside`] when someone changed where the store keeps it, since the store read it.
     /// - [`DeleteError::StoreFailed`] when a store could not read its definitions, or could not remove this one.
     pub async fn delete(
@@ -363,6 +366,7 @@ impl<C: WorkspaceContext> Workspace<C> {
             stores.selectors().list().await.map_err(Unread::by::<Selector>)?,
             stores.presets().list().await.map_err(Unread::by::<Preset>)?,
             stores.rules().list().await.map_err(Unread::by::<Rule>)?,
+            stores.scenarios().list().await.map_err(Unread::by::<Scenario>)?,
             stores.layouts().list().await.map_err(Unread::by::<PadLayout>)?,
             stores.environments().list().await.map_err(Unread::by::<Environment>)?,
         ))
@@ -375,6 +379,7 @@ impl<C: WorkspaceContext> Workspace<C> {
             DefinitionName::Selector(name) => held(stores.selectors().get(name).await),
             DefinitionName::Preset(name) => held(stores.presets().get(name).await),
             DefinitionName::Rule(name) => held(stores.rules().get(name).await),
+            DefinitionName::Scenario(name) => held(stores.scenarios().get(name).await),
             DefinitionName::Layout(name) => held(stores.layouts().get(name).await),
             DefinitionName::Environment(name) => held(stores.environments().get(name).await),
         }
@@ -383,7 +388,7 @@ impl<C: WorkspaceContext> Workspace<C> {
     /// The definitions that refer to the one of this name, in the order of their kinds and names.
     ///
     /// A selector that includes itself is not among them: it goes with what it includes.
-    /// Nothing refers to a rule, a pad layout or an environment by name.
+    /// Only a scenario refers to a rule by name, and nothing refers to a scenario, a pad layout or an environment.
     async fn users_of(&self, name: &DefinitionName) -> Result<Vec<DefinitionName>, Unread> {
         let stores = self.context.stores();
         match name {
@@ -391,15 +396,18 @@ impl<C: WorkspaceContext> Workspace<C> {
                 let mut users = names(stores.selectors().using_selector(selector).await)?;
                 users.retain(|user| user != name);
                 users.extend(names(stores.rules().using_selector(selector).await)?);
+                users.extend(names(stores.scenarios().using_selector(selector).await)?);
                 users.extend(names(stores.layouts().using_selector(selector).await)?);
                 Ok(users)
             }
             DefinitionName::Preset(preset) => {
                 let mut users = names(stores.rules().using_preset(preset).await)?;
+                users.extend(names(stores.scenarios().using_preset(preset).await)?);
                 users.extend(names(stores.layouts().using_preset(preset).await)?);
                 Ok(users)
             }
-            DefinitionName::Rule(_) | DefinitionName::Layout(_) | DefinitionName::Environment(_) => Ok(Vec::new()),
+            DefinitionName::Rule(rule) => names(stores.scenarios().using_rule(rule).await),
+            DefinitionName::Scenario(_) | DefinitionName::Layout(_) | DefinitionName::Environment(_) => Ok(Vec::new()),
         }
     }
 
@@ -410,6 +418,7 @@ impl<C: WorkspaceContext> Workspace<C> {
             AnyDefinition::Selector(selector) => stores.selectors().create(selector).await,
             AnyDefinition::Preset(preset) => stores.presets().create(preset).await,
             AnyDefinition::Rule(rule) => stores.rules().create(rule).await,
+            AnyDefinition::Scenario(scenario) => stores.scenarios().create(scenario).await,
             AnyDefinition::Layout(layout) => stores.layouts().create(layout).await,
             AnyDefinition::Environment(environment) => stores.environments().create(environment).await,
         }
@@ -422,6 +431,7 @@ impl<C: WorkspaceContext> Workspace<C> {
             AnyDefinition::Selector(selector) => stores.selectors().update(selector).await,
             AnyDefinition::Preset(preset) => stores.presets().update(preset).await,
             AnyDefinition::Rule(rule) => stores.rules().update(rule).await,
+            AnyDefinition::Scenario(scenario) => stores.scenarios().update(scenario).await,
             AnyDefinition::Layout(layout) => stores.layouts().update(layout).await,
             AnyDefinition::Environment(environment) => stores.environments().update(environment).await,
         }
@@ -434,6 +444,7 @@ impl<C: WorkspaceContext> Workspace<C> {
             DefinitionName::Selector(name) => stores.selectors().delete(name).await,
             DefinitionName::Preset(name) => stores.presets().delete(name).await,
             DefinitionName::Rule(name) => stores.rules().delete(name).await,
+            DefinitionName::Scenario(name) => stores.scenarios().delete(name).await,
             DefinitionName::Layout(name) => stores.layouts().delete(name).await,
             DefinitionName::Environment(name) => stores.environments().delete(name).await,
         }

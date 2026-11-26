@@ -75,6 +75,10 @@ fn a_recorded_name_is_its_text_and_a_definition_is_its_kind_and_its_name() {
         r#"{"rule":"slow-order-producers"}"#,
     );
     writes(
+        &RecordedDefinition::Scenario("black-friday".parse().unwrap()),
+        r#"{"scenario":"black-friday"}"#,
+    );
+    writes(
         &RecordedDefinition::Layout("order-desk".parse().unwrap()),
         r#"{"layout":"order-desk"}"#,
     );
@@ -82,7 +86,7 @@ fn a_recorded_name_is_its_text_and_a_definition_is_its_kind_and_its_name() {
         &RecordedDefinition::Environment("orders-sim".parse().unwrap()),
         r#"{"environment":"orders-sim"}"#,
     );
-    rejects::<RecordedDefinition>(r#"{"scenario":"black-friday"}"#, "unknown variant");
+    rejects::<RecordedDefinition>(r#"{"world":"shop"}"#, "unknown variant");
 }
 
 #[test]
