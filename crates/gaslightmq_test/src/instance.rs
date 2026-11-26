@@ -1,27 +1,19 @@
 //! GaslightMQ that runs in the process of a test, and how it starts and stops.
 
-use std::collections::BTreeSet;
-use std::net::{IpAddr, SocketAddr};
+use std::net::SocketAddr;
 use std::sync::Arc;
 
-use gaslightmq_control_api::environment::{
-    BrokerListeners, Environment, EnvironmentName, HostName, Instances, ListenAddress, Listeners, ProxyDefinition,
-    ServerAddress,
-};
+use gaslightmq_control_api::environment::{EnvironmentName, ServerAddress};
 use gaslightmq_control_api::field::Endpoint;
-use gaslightmq_control_api::kernel::BrokerId;
 use gaslightmq_control_api::{RequestSurface, RunId};
 use gaslightmq_control_client::{ControlClient, ControlClientConfiguration, ControlPlaneAddress};
 use gaslightmq_control_server::ControlServer;
-use gaslightmq_host::{EnvironmentConfiguration, Host};
+use gaslightmq_host::Host;
 use gaslightmq_lie_api::Lies;
 use gaslightmq_lie_refusal::Refusal;
 use gaslightmq_workspace::{MemoryContext, WorkspaceContext};
 
 use crate::{GaslightMqConfiguration, GaslightMqStartError};
-
-/// Port 0: the system picks a free port.
-const ANY_PORT: u16 = 0;
 
 /// GaslightMQ in the process of a test: a proxy in front of a real cluster, and a control plane in front of it.
 ///
@@ -53,8 +45,8 @@ impl GaslightMq {
 impl<C: WorkspaceContext + 'static> GaslightMq<C> {
     /// The address that a client of the test bootstraps from: the bootstrap listener of the proxy.
     ///
-    /// The proxy names its brokers to the client under the
-    /// [advertised host](GaslightMqConfiguration::advertised_host), each on a free port of its own.
+    /// The proxy names its brokers to the client under the host that its listeners advertise, each on a free port of
+    /// its own: see [`GaslightMqConfiguration::listening_on`].
     pub fn bootstrap(&self) -> SocketAddr {
         self.bootstrap
     }
@@ -101,24 +93,20 @@ impl<C: WorkspaceContext + 'static> GaslightMq<C> {
 impl<C: WorkspaceContext + 'static> GaslightMqConfiguration<C> {
     /// Starts GaslightMQ in the process of the test, on the runtime that the test runs on.
     ///
-    /// The workspace gets the environment of the proxy, the proxy starts and the control plane starts in front of it.
-    /// The proxy tells every lie that GaslightMQ has.
+    /// The workspace gets the environment of the proxy, the proxy starts with the [configuration](Self::proxy) of its
+    /// environment, and the control plane starts in front of it. The proxy tells every lie that GaslightMQ has.
     ///
     /// # Errors
     ///
     /// - [`GaslightMqStartError::NoRandomness`] when the test names no run, and the system gives no randomness.
-    /// - [`GaslightMqStartError::NoBroker`] when the configuration names no broker of the cluster.
     /// - [`GaslightMqStartError::EnvironmentNotCreated`] when the workspace does not take the environment.
     /// - [`GaslightMqStartError::ProxyNotStarted`] when the proxy does not reach the cluster, or a broker of the
     ///   cluster gets no listener.
     /// - [`GaslightMqStartError::ControlPlaneNotStarted`] when the control plane cannot listen.
     pub async fn start(self) -> Result<GaslightMq<C>, GaslightMqStartError> {
+        let proxy = self.environment();
         let Self {
-            upstream,
-            brokers,
-            environment,
-            listen,
-            advertised_host,
+            proxy: configuration,
             run,
             host,
             control_plane,
@@ -128,18 +116,7 @@ impl<C: WorkspaceContext + 'static> GaslightMqConfiguration<C> {
             Some(run) => run,
             None => random_run()?,
         };
-        if brokers.is_empty() {
-            return Err(GaslightMqStartError::NoBroker);
-        }
-        let proxy = Environment::new(
-            environment,
-            Instances::ProxyInFrontOfCluster {
-                proxy: ProxyDefinition::new(on_free_ports(listen, brokers, advertised_host)),
-                upstream,
-            },
-        );
-        let environment = proxy.name().clone();
-        let configuration = configured(&proxy);
+        let environment = configuration.name().clone();
 
         let host = Arc::new(Host::new(
             host,
@@ -172,20 +149,6 @@ impl<C: WorkspaceContext + 'static> GaslightMqConfiguration<C> {
             run,
         })
     }
-}
-
-/// Listeners on free ports of `listen`: one for the bootstrap, and one for each of `brokers`, which are at least one.
-fn on_free_ports(listen: IpAddr, brokers: BTreeSet<BrokerId>, advertised_host: HostName) -> Listeners {
-    // Each broker is in the set once, and a listener on port 0 shares its port with no other listener.
-    let any = ListenAddress::new(listen, ANY_PORT);
-    let brokers = BrokerListeners::pinned(brokers.into_iter().map(|broker| (broker, any)))
-        .expect("at least one broker, each on a free port of its own");
-    Listeners::new(any, brokers, advertised_host).expect("listeners on free ports share no port")
-}
-
-/// What the host starts the proxy with: what the environment says, and the defaults for everything else.
-fn configured(proxy: &Environment) -> EnvironmentConfiguration {
-    EnvironmentConfiguration::new(proxy).expect("a host configures a proxy in front of a real cluster")
 }
 
 /// The address of the bootstrap listener of `environment`, which runs.

@@ -89,7 +89,7 @@ async fn a_proxy_in_front_of_several_brokers_runs_in_the_run_that_the_test_names
     // The proxy gives each broker of the cluster a listener of its own.
     let run = RunId::from_random_bits(0x4be0_643f_1d98_573b_97cd_ca98_a653_47dd);
     let gaslight = GaslightMq::proxy_in_front_of(cluster.brokers()[0].address().to_string().parse()?)
-        .with_brokers(cluster.brokers().iter().map(Broker::id))
+        .with_brokers(cluster.brokers().iter().map(Broker::id))?
         .with_run(run)
         .start()
         .await?;

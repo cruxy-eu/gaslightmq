@@ -65,6 +65,9 @@
 //!   It holds nothing but the environment of the proxy, until the test creates definitions through the control
 //!   plane. A test that wants other stores, or stores that hold definitions already, hands over their
 //!   [context](GaslightMqConfiguration::with_context).
+//! - **What the proxy runs with is a property.**
+//!   The [configuration of its environment](GaslightMqConfiguration::proxy) holds its engine and its backend in front
+//!   of the cluster, each with its defaults, and a test changes what it wants to: a timeout, a size or a seed.
 //! - **A run of its own.**
 //!   A test that names no [run](GaslightMqConfiguration::with_run) gets one from the randomness of the system.
 //!   A test that has the process to itself leaves `expects` out of its changes, and the last change wins.
@@ -74,7 +77,7 @@
 //! - **Brokers.** GaslightMQ runs no broker yet, so a test starts a proxy in front of a real cluster alone.
 //!   A broker, and a proxy in front of one, arrive with the crate `broker`.
 //! - **Brokers that the test does not list.** The proxy gives each broker of the cluster a listener of its own, and
-//!   it needs the IDs of the brokers to give each one a free port: see [`GaslightMqConfiguration::brokers`].
+//!   it needs the IDs of the brokers to give each one a free port: see [`GaslightMqConfiguration::with_brokers`].
 //! - **Scenarios and recordings.** A test arms its rules one by one. Activating a scenario and asserting on the
 //!   recording arrive with the crates `scenario` and `recording`.
 //!

@@ -988,7 +988,7 @@ That needs scenarios and recordings, which do not exist yet, so no test does it 
   A test that lets go of the value without a stop stops it a moment later, and waits for nothing.
 - **It runs one environment.**
   The workspace gets the environment of the instance, under a name that the test may pick, so the control plane knows it by that name.
-  `test` starts it, so it configures it: every instance runs with its defaults, on the listeners of the test.
+  `test` starts it, so it configures it: every instance runs with the defaults of its configuration, on the listeners of the test, unless the test changes them.
 - **The proxy tells every lie that GaslightMQ has.**
   A test of a user arms whatever lie it needs, without naming the lies of its build.
 - **Its client is the surface `test`.**
@@ -999,7 +999,8 @@ That needs scenarios and recordings, which do not exist yet, so no test does it 
   A test may name the [run ID](identity.md#run), and compare it with what it reads.
   A test that names none gets one from the randomness of the system.
 - **Everything tunable is a property.**
-  The address that the listeners listen on, the host that clients reach the brokers under,
+  The configuration of the environment, with the engine of the proxy and its backend in front of the cluster,
+  the address that the listeners listen on, the host that clients reach the brokers under,
   the configuration of the host and the one of the control server each have a default, which a test may change.
 
 Until `scenario` and `recording` arrive, a test cannot activate a scenario or assert on a recording.

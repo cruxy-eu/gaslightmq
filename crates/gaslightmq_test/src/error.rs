@@ -11,20 +11,14 @@ use gaslightmq_host::{CreateDefinitionError, EnvironmentStartError};
 /// ```
 /// use gaslightmq_test::GaslightMqStartError;
 ///
-/// let error = GaslightMqStartError::NoBroker;
-/// assert_eq!(
-///     error.to_string(),
-///     "a proxy in front of a cluster gives at least one broker of the cluster a listener"
-/// );
+/// let error = GaslightMqStartError::NoRandomness { reason: "no entropy source".to_owned() };
+/// assert_eq!(error.to_string(), "the system gave no randomness for the ID of the run: no entropy source");
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum GaslightMqStartError {
     /// The test named no run, and the system gave no randomness to make one from. `reason` is what the system said.
     #[error("the system gave no randomness for the ID of the run: {reason}")]
     NoRandomness { reason: String },
-    /// The test named no broker of the cluster, so the proxy would give none a listener.
-    #[error("a proxy in front of a cluster gives at least one broker of the cluster a listener")]
-    NoBroker,
     /// The workspace did not take the environment of the test: it holds one of the name, or a store failed.
     #[error("{error}")]
     EnvironmentNotCreated { error: CreateDefinitionError },
