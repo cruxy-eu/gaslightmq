@@ -274,6 +274,12 @@ fn a_turn_writes_its_encoder_and_its_steps() {
 fn an_intent_writes_what_it_asks_for_and_the_pad_it_is_about() {
     Form(Intent::Arm { pad: pad() }).writes(&format!(r#"{{"intent":"arm","pad":{PAD}}}"#));
     Form(Intent::Disarm { pad: pad() }).writes(&format!(r#"{{"intent":"disarm","pad":{PAD}}}"#));
+    Form(Intent::Hold { pad: pad() }).writes(&format!(r#"{{"intent":"hold","pad":{PAD}}}"#));
+    Form(Intent::Release {
+        pad: pad(),
+        hold: Hold::new(7),
+    })
+    .writes(&format!(r#"{{"intent":"release","pad":{PAD},"hold":7}}"#));
 
     let turn = EncoderTurn::new(Encoder::Probability, Steps::new(3));
     Form(Intent::Turn { pad: pad(), turn }).writes(&format!(
@@ -294,7 +300,21 @@ fn reading_an_intent_rejects_what_no_surface_sends() {
     rejects(&format!(r#"{{"pad":{PAD}}}"#), "missing field `intent`");
     rejects(r#"{"intent":"arm"}"#, "missing field `pad`");
     rejects(&format!(r#"{{"intent":"turn","pad":{PAD}}}"#), "missing field `turn`");
-    // A surface sends how far an encoder turned, and never the state a rule should have.
+    // A release names the hold that its press added.
+    rejects(
+        &format!(r#"{{"intent":"release","pad":{PAD}}}"#),
+        "missing field `hold`",
+    );
+    rejects(
+        &format!(r#"{{"intent":"release","pad":{PAD},"hold":-1}}"#),
+        "invalid value: integer `-1`",
+    );
+    // A press says the state it wants, and never that the pad toggles.
+    rejects(
+        &format!(r#"{{"intent":"toggle","pad":{PAD}}}"#),
+        "unknown variant `toggle`",
+    );
+    // A surface says the state it wants by the intent, and never in a key of its own.
     rejects(
         &format!(r#"{{"intent":"arm","pad":{PAD},"state":"armed"}}"#),
         "unknown field `state`",

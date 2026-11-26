@@ -391,9 +391,9 @@ pub enum IntentError {
     /// A store of the workspace could not be read. `reason` says which store, and what it said.
     #[error("the intent was not acted on: {reason}")]
     StoreFailed { reason: String },
-    /// The intent changed nothing: the pad lies outside its layout, it has no rule to disarm or to turn,
-    /// its rule cannot be made, armed or disarmed, or the turn has nothing to change. `reason` says which.
-    #[error("the intent changed nothing: {reason}")]
+    /// The host cannot act on the intent: the pad lies outside its layout, its rule cannot be made or armed,
+    /// it has no rule to turn, or the turn cannot change the rule. `reason` says which.
+    #[error("the intent was refused: {reason}")]
     Refused { reason: String },
 }
 

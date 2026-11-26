@@ -1,6 +1,6 @@
 //! A host runs several environments in front of real Kafka brokers, each with a proxy of its own,
 //! makes a live rule armed in one step, reads a ⌘K sentence with the names that the traffic of one of them has
-//! seen, and keeps a live rule only under a name that no other one has.
+//! seen, acts on the presses and the holds of a pad, and keeps a live rule only under a name that no other one has.
 //!
 //! The tests need Docker.
 //! Each test starts the cluster it needs, and a host whose workspace lives in memory.
@@ -26,6 +26,7 @@ use gaslightmq_lie_refusal::prelude::*;
 use gaslightmq_quick_inject::prelude::*;
 use gaslightmq_rule::prelude::*;
 use gaslightmq_selector::prelude::*;
+use gaslightmq_surface::{Column, Intent, Layer, PadLayout, Row};
 use gaslightmq_test_kafka::KafkaCluster;
 use gaslightmq_trigger::prelude::*;
 use gaslightmq_wire::{Offset, Partition, Record};
@@ -446,6 +447,145 @@ async fn a_sentence_knows_the_names_of_the_workspace_and_those_the_traffic_has_s
         .map(Completion::sentence)
         .collect();
     assert_eq!(selectors, ["leader-flap order-producers "]);
+    host.stop_all().await;
+    Ok(())
+}
+
+#[tokio::test]
+async fn two_presses_that_want_a_pad_armed_arm_it_once() -> anyhow::Result<()> {
+    let cluster = KafkaCluster::plaintext().start().await?;
+    let host = Host::new(
+        HostConfiguration::default(),
+        MemoryContext::new(),
+        Lies::of_every_build(),
+    );
+    let any = ListenAddress::new(LOCALHOST, 0);
+    let brokers = BrokerListeners::pinned(cluster.brokers().iter().map(|broker| (broker.id(), any)))?;
+    let staging = Environment::new(
+        "staging-proxy".parse()?,
+        Instances::ProxyInFrontOfCluster {
+            proxy: ProxyDefinition::new(Listeners::new(any, brokers, LOCALHOST.into())?),
+            upstream: Upstream::new(cluster.brokers()[0].address().to_string().parse()?),
+        },
+    );
+    // A desk with one pad: a delay of 1 s on the order producers, for every client.
+    let order_producers = Selector::new(
+        "order-producers".parse()?,
+        Conditions::from(Condition::is(ApiKey::PRODUCE)),
+    );
+    let delay = Preset::new("delay-1s".parse()?, TimingLie::new().with_delay(TimeSpan::from_secs(1)));
+    let desk = PadLayout::new(
+        "order-desk".parse()?,
+        [order_producers.name().clone()],
+        [delay.name().clone()],
+        [Layer::all_clients()],
+    )?;
+    host.create(order_producers).await?;
+    host.create(delay).await?;
+    host.create(desk.clone()).await?;
+    host.start(EnvironmentConfiguration::new(&staging)?).await?;
+    let pad = desk
+        .pad(&Layer::all_clients(), Row::from_index(0), Column::from_index(0))
+        .context("the desk has a pad at its first row and column")?;
+    let state = |effect: &IntentEffect| effect.rule.as_ref().map(|rule| rule.state);
+
+    // Two people see the pad empty, and both press it to arm it.
+    let arm = Intent::Arm { pad: pad.clone() };
+    let first = host.send_intent(staging.name(), &arm).await?;
+    let second = host.send_intent(staging.name(), &arm).await?;
+
+    assert_eq!((first.made, first.changed), (true, true));
+    // The second press finds the rule armed and changes nothing, so it leaves nothing to undo.
+    assert_eq!((second.made, second.changed), (false, false));
+    assert_eq!(state(&second), Some(RuleState::Armed));
+
+    // Two people who press it to disarm it both find it disarmed.
+    let disarm = Intent::Disarm { pad };
+    let disarmed = host.send_intent(staging.name(), &disarm).await?;
+    let again = host.send_intent(staging.name(), &disarm).await?;
+
+    assert!(disarmed.changed);
+    assert!(!again.changed);
+    assert_eq!(state(&again), Some(RuleState::Disarmed));
+    host.stop_all().await;
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_held_pad_stays_armed_until_its_last_hold_goes_and_a_disarm_ends_every_hold() -> anyhow::Result<()> {
+    let cluster = KafkaCluster::plaintext().start().await?;
+    let host = Host::new(
+        HostConfiguration::default(),
+        MemoryContext::new(),
+        Lies::of_every_build(),
+    );
+    let any = ListenAddress::new(LOCALHOST, 0);
+    let brokers = BrokerListeners::pinned(cluster.brokers().iter().map(|broker| (broker.id(), any)))?;
+    let staging = Environment::new(
+        "staging-proxy".parse()?,
+        Instances::ProxyInFrontOfCluster {
+            proxy: ProxyDefinition::new(Listeners::new(any, brokers, LOCALHOST.into())?),
+            upstream: Upstream::new(cluster.brokers()[0].address().to_string().parse()?),
+        },
+    );
+    // A desk with one pad: a delay of 1 s on the order producers, for every client.
+    let order_producers = Selector::new(
+        "order-producers".parse()?,
+        Conditions::from(Condition::is(ApiKey::PRODUCE)),
+    );
+    let delay = Preset::new("delay-1s".parse()?, TimingLie::new().with_delay(TimeSpan::from_secs(1)));
+    let desk = PadLayout::new(
+        "order-desk".parse()?,
+        [order_producers.name().clone()],
+        [delay.name().clone()],
+        [Layer::all_clients()],
+    )?;
+    host.create(order_producers).await?;
+    host.create(delay).await?;
+    host.create(desk.clone()).await?;
+    host.start(EnvironmentConfiguration::new(&staging)?).await?;
+    let pad = desk
+        .pad(&Layer::all_clients(), Row::from_index(0), Column::from_index(0))
+        .context("the desk has a pad at its first row and column")?;
+    let state = |effect: &IntentEffect| effect.rule.as_ref().map(|rule| rule.state);
+    let hold = Intent::Hold { pad: pad.clone() };
+    let release = |hold| Intent::Release { pad: pad.clone(), hold };
+
+    // Two people hold the pad. The first hold makes its rule and arms it, and each press adds a hold of its own.
+    let mine = host.send_intent(staging.name(), &hold).await?;
+    let theirs = host.send_intent(staging.name(), &hold).await?;
+    let (Some(my_hold), Some(their_hold)) = (mine.hold, theirs.hold) else {
+        anyhow::bail!("a press in hold adds a hold: {mine:?}, {theirs:?}");
+    };
+    assert_eq!((mine.made, mine.changed), (true, true));
+    assert_eq!((theirs.made, theirs.changed), (false, false));
+    assert_ne!(my_hold, their_hold);
+
+    // I let go, and the rule stays armed while they still hold it.
+    let mine_gone = host.send_intent(staging.name(), &release(my_hold)).await?;
+    assert!(!mine_gone.changed);
+    assert_eq!(state(&mine_gone), Some(RuleState::Armed));
+
+    // Someone presses the pad in latch to disarm it, which ends their hold too, and holds it again afterwards.
+    assert!(
+        host.send_intent(staging.name(), &Intent::Disarm { pad: pad.clone() })
+            .await?
+            .changed
+    );
+    let anew = host.send_intent(staging.name(), &hold).await?;
+    let Some(new_hold) = anew.hold else {
+        anyhow::bail!("a press in hold adds a hold: {anew:?}");
+    };
+    assert!(anew.changed);
+
+    // Their release comes after the disarm ended their hold: it changes nothing.
+    let late = host.send_intent(staging.name(), &release(their_hold)).await?;
+    assert!(!late.changed);
+    assert_eq!(state(&late), Some(RuleState::Armed));
+    // The last hold goes, and the rule disarms.
+    let last = host.send_intent(staging.name(), &release(new_hold)).await?;
+    assert!(last.changed);
+    assert_eq!(state(&last), Some(RuleState::Disarmed));
     host.stop_all().await;
     Ok(())
 }

@@ -4,6 +4,7 @@ use std::collections::BTreeMap;
 use std::fmt;
 use std::net::SocketAddr;
 use std::ops::Deref;
+use std::sync::atomic::AtomicU64;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use futures::future::join_all;
@@ -29,6 +30,7 @@ use tokio::sync::broadcast;
 use tokio::task::JoinHandle;
 
 use crate::calls::{Watched, lock};
+use crate::holds::Holds;
 use crate::{
     ArmRuleError, CallBacklog, CallSubscription, CloseSessionError, CreateDefinitionError, EnvironmentConfiguration,
     EnvironmentStartError, FireRuleError, FollowCallsError, HostChange, HostChanges, HostConfiguration,
@@ -108,6 +110,8 @@ pub struct Host<C: WorkspaceContext> {
     traffic: TrafficConfiguration,
     /// How many calls a follower of the calls of an environment may fall behind.
     call_backlog: CallBacklog,
+    /// How many holds the presses of every environment added, which numbers the next one.
+    holds_given: AtomicU64,
 }
 
 /// One environment that runs: its proxy, the backend behind it, the listeners it was started with, and what lives in
@@ -119,6 +123,8 @@ struct Running {
     listeners: Listeners,
     /// The live rules, by name. They stay in memory until someone keeps or deletes them, or the environment stops.
     live: BTreeMap<RuleName, Rule>,
+    /// Who holds the pad of a rule, by the arming of the rule.
+    holds: Holds,
     /// The calls of the environment, as the task that watches it counts them and hands them to their followers.
     traffic: Arc<Mutex<Watched>>,
     /// The task that watches the environment, which ends a moment after its proxy stopped.
@@ -140,6 +146,7 @@ impl<C: WorkspaceContext> Host<C> {
             encoders: configuration.encoders,
             traffic: configuration.traffic,
             call_backlog: configuration.call_backlog,
+            holds_given: AtomicU64::new(0),
         }
     }
 
@@ -267,6 +274,7 @@ impl<C: WorkspaceContext> Host<C> {
                 backend,
                 listeners,
                 live: BTreeMap::new(),
+                holds: Holds::default(),
                 traffic,
                 watching,
             },

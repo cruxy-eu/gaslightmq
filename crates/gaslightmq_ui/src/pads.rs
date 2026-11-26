@@ -1,11 +1,12 @@
 //! The pads that someone plays in the UI: a surface on a layout of the workspace, against the rules of the
 //! environment shown.
 
+use gaslightmq_control_api::environment::EnvironmentName;
 use gaslightmq_control_api::lie::LieDefinition;
 use gaslightmq_control_api::prelude::*;
 use gaslightmq_control_api::rule::{Action, ActionRef, Preset, Rule};
 use gaslightmq_control_api::surface::{
-    Column, Encoder, EncoderTurn, Layer, PadLayout, PadState, PlayMode, Row, Steps, Surface,
+    Column, Encoder, EncoderTurn, Hold, Layer, Pad, PadLayout, PadState, PlayMode, Row, Steps, Surface,
 };
 use gaslightmq_control_api::trigger::{Lifetime, Trigger};
 
@@ -13,7 +14,8 @@ use gaslightmq_control_api::trigger::{Lifetime, Trigger};
 /// point at.
 ///
 /// A pad is a position, and the rule it points at is the rule that has the name of the pad in the environment.
-/// A press sends an intent, and the environment makes the live rule of an empty pad.
+/// A press sends the state it wants, and the environment makes the live rule of an empty pad.
+/// A press in hold waits for the hold that the environment answers with, and its release names it.
 /// The desk never makes a rule itself, and never holds the state of one: it reads both from the environment.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Desk {
@@ -107,13 +109,33 @@ impl Desk {
         })
     }
 
-    /// Someone released the pad at that row and column: in hold, the intent that disarms its rule.
+    /// Someone released the pad at that row and column: in hold, the intent that ends the hold of its press.
+    ///
+    /// When the answer to the press has not come yet, the release goes out with [`answered`](Self::answered).
     pub fn release(&mut self, row: Row, column: Column, running: &RunningEnvironment) -> Option<SendIntent> {
         let intent = self.surface.release(row, column)?;
         Some(SendIntent {
             environment: running.environment.clone(),
             intent,
         })
+    }
+
+    /// The answer to a press in hold of `pad` came from `environment`: the hold that the press added,
+    /// or `None` when the press failed.
+    ///
+    /// Returns the release of the hold, for the same environment, when someone let go of the pad before the answer
+    /// came.
+    pub fn answered(&mut self, environment: &EnvironmentName, pad: &Pad, hold: Option<Hold>) -> Option<SendIntent> {
+        let intent = self.surface.answered(pad, hold)?;
+        Some(SendIntent {
+            environment: environment.clone(),
+            intent,
+        })
+    }
+
+    /// Whether someone holds a pad of the desk, which keeps ⌘Z from undoing anything.
+    pub fn holding(&self) -> bool {
+        self.surface.holding()
     }
 
     /// Whether the encoder turns the rule behind the focused pad: the pad has a live rule, and the encoder changes a

@@ -97,14 +97,33 @@ impl Ui {
     where
         O: Operation + 'static,
     {
+        self.send_settled(surface, operation, |answer| {
+            if let Some(answer) = answer {
+                then(answer);
+            }
+        });
+    }
+
+    /// Sends `operation` to the control plane as the request of `surface`, and hands `settled` its answer,
+    /// or `None` when it failed. A failure shows a notice.
+    pub fn send_settled<O>(
+        &self,
+        surface: RequestSurface,
+        operation: O,
+        settled: impl FnOnce(Option<O::Answer>) + 'static,
+    ) where
+        O: Operation + 'static,
+    {
         let client = self.client.clone();
         let ui = self.clone();
         spawn(async move {
-            match client.send_from(surface, operation).await {
-                Ok(Ok(answer)) => then(answer),
-                Ok(Err(error)) => ui.notify(error.to_string(), true),
-                Err(error) => ui.notify(error.to_string(), true),
-            }
+            let failed = match client.send_from(surface, operation).await {
+                Ok(Ok(answer)) => return settled(Some(answer)),
+                Ok(Err(error)) => error.to_string(),
+                Err(error) => error.to_string(),
+            };
+            ui.notify(failed, true);
+            settled(None);
         });
     }
 

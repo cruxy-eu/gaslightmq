@@ -446,10 +446,15 @@ impl<C: WorkspaceContext + 'static> ControlPlane<C> {
 
     // Pads
 
-    async fn intent(&self, environment: EnvironmentName, intent: &Intent) -> Result<(), IntentError> {
+    async fn intent(&self, environment: EnvironmentName, intent: &Intent) -> Result<IntentEffect, IntentError> {
         use gaslightmq_host::IntentError as Host;
         match self.host.send_intent(&environment, intent).await {
-            Ok(()) => Ok(()),
+            Ok(effect) => Ok(IntentEffect {
+                rule: effect.rule.map(status),
+                made: effect.made,
+                changed: effect.changed,
+                hold: effect.hold,
+            }),
             Err(Host::NotRunning { environment }) => Err(IntentError::NotRunning { environment }),
             Err(Host::UnknownLayout { layout }) => Err(IntentError::UnknownLayout { layout }),
             Err(Host::StoreFailed { reason }) => Err(IntentError::StoreFailed { reason }),

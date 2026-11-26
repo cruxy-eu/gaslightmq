@@ -20,7 +20,7 @@
 //! | [`ListEnvironmentRules`], [`RuleStatus`] | The rules of an environment, each with its state there. |
 //! | [`CreateLiveRule`], [`UpdateLiveRule`], [`DeleteLiveRule`], [`KeepRule`] | The live rules of an environment, and keeping one in the workspace. |
 //! | [`ArmRule`], [`DisarmRule`], [`FireRule`] | Commands on a rule of an environment. |
-//! | [`SendIntent`] | What someone did at a pad. |
+//! | [`SendIntent`], [`IntentEffect`] | What someone did at a pad, and what that did to the rule of the pad. |
 //! | [`ListSessions`], [`CloseSession`], [`SessionStatus`], [`SessionIdentity`], [`SessionCloser`] | The sessions of an environment. |
 //! | [`GetBackend`], [`BackendStatus`], [`BackendKind`] | The backend of an environment: its kind, its endpoints and the incidents it can do. |
 //! | [`ParseSentence`], [`ParsedSentence`], [`WordCompletion`], [`WordKind`], [`UnreadWord`] | A ⌘K sentence that is still being typed, and the rule it gives. |
@@ -100,7 +100,7 @@
 //! | [`DeleteLiveRule`] | [`DeleteLiveRuleError`] | The environment does not run, or no live rule has the name. |
 //! | [`KeepRule`] | [`KeepRuleError`] | The environment does not run, no live rule has the name, the workspace has a rule of that name, the rule does not fit the workspace, or a store failed. |
 //! | [`ArmRule`], [`DisarmRule`], [`FireRule`] | [`RuleCommandError`] | The environment does not run, no rule has the name, the rule cannot do this from where it stands, or a store could not read. |
-//! | [`SendIntent`] | [`IntentError`] | The environment does not run, the layout does not exist, the intent changed nothing, or a store could not read. |
+//! | [`SendIntent`] | [`IntentError`] | The environment does not run, the layout does not exist, the environment cannot act on the intent, or a store could not read. |
 //! | [`CloseSession`] | [`CloseSessionError`] | The environment does not run, or no session is open on the connection. |
 //!
 //! A request can also fail before its operation runs, in the same way for every operation:
@@ -174,7 +174,7 @@ pub use environments::{
     StartEnvironmentError, StopEnvironment,
 };
 pub use operation::{AnyOperation, Operation, RequestError};
-pub use pads::{IntentError, SendIntent};
+pub use pads::{IntentEffect, IntentError, SendIntent};
 pub use request::{OperationRequest, RequestCause, RequestSource, RequestSurface};
 pub use rules::{
     ArmRule, CreateLiveRule, CreateLiveRuleError, DeleteLiveRule, DeleteLiveRuleError, DisarmRule, FireRule, KeepRule,
@@ -205,7 +205,7 @@ pub mod prelude {
         CreateDefinition, CreateDefinitionError, CreateLiveRule, CreateLiveRuleError, DefinitionRef, Definitions,
         DeleteDefinition, DeleteDefinitionError, DeleteLiveRule, DeleteLiveRuleError, DisarmRule, EditableDefinition,
         EnvironmentNotRunning, EnvironmentReadError, EnvironmentStatus, FireRule, GetBackend, GetDefinition,
-        GetDefinitionError, GetEnvironment, IntentError, KeepRule, KeepRuleError, ListDefinitions,
+        GetDefinitionError, GetEnvironment, IntentEffect, IntentError, KeepRule, KeepRuleError, ListDefinitions,
         ListDefinitionsError, ListEnvironmentRules, ListEnvironments, ListSessions, Operation, OperationRequest,
         ParseSentence, ParsedSentence, ProcessState, RequestCause, RequestError, RequestSource, RequestSurface,
         RuleCommandError, RuleStats, RuleStatus, RunningEnvironment, SendIntent, SessionCloser, SessionIdentity,

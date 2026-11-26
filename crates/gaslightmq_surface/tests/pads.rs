@@ -9,7 +9,7 @@
     reason = "a panic is how a test fails, also in a helper outside a `#[test]` function"
 )]
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use gaslightmq_clock::TimeSpan;
 use gaslightmq_kernel::prelude::*;
@@ -135,6 +135,10 @@ struct LiveRules {
     presets: PresetSet,
     encoders: EncoderMapping,
     by_name: BTreeMap<RuleName, (Rule, RuleState)>,
+    /// The holds of each rule, which end when the rule disarms.
+    holds: BTreeMap<RuleName, BTreeSet<Hold>>,
+    /// How many holds the engine gave so far.
+    holds_given: u64,
 }
 
 impl LiveRules {
@@ -146,27 +150,68 @@ impl LiveRules {
             presets: OrderDesk::presets(),
             encoders: EncoderMapping::new(),
             by_name: BTreeMap::new(),
+            holds: BTreeMap::new(),
+            holds_given: 0,
         }
     }
 
-    /// Does what the intent asks for, as the engine does when a surface sends it.
-    fn act_on(&mut self, intent: Intent) {
+    /// Does what the intent asks for, as the engine does when a surface sends it, and answers with the hold that
+    /// a press in hold added.
+    ///
+    /// A press that wants the state that the rule has already changes nothing.
+    fn act_on(&mut self, intent: Intent) -> Option<Hold> {
         let name = self.layout.rule_name(intent.pad()).unwrap();
         match intent {
             Intent::Arm { pad } => {
-                let of_the_position = self.layout.rule(&pad, &self.selectors, &self.presets).unwrap();
-                let (_, state) = self.by_name.entry(name).or_insert((of_the_position, RuleState::Draft));
-                *state = state.arm().unwrap();
+                self.arm(&pad, &name);
+                None
             }
             Intent::Disarm { .. } => {
-                let (_, state) = self.by_name.get_mut(&name).unwrap();
-                *state = state.disarm().unwrap();
+                self.disarm(&name);
+                None
+            }
+            Intent::Hold { pad } => {
+                self.arm(&pad, &name);
+                self.holds_given += 1;
+                let hold = Hold::new(self.holds_given);
+                self.holds.entry(name).or_default().insert(hold);
+                Some(hold)
+            }
+            Intent::Release { hold, .. } => {
+                let held = self.holds.get_mut(&name).is_some_and(|holds| holds.remove(&hold));
+                if held && self.holds.get(&name).is_some_and(BTreeSet::is_empty) {
+                    self.disarm(&name);
+                }
+                None
             }
             Intent::Turn { turn, .. } => {
                 let (rule, _) = self.by_name.get_mut(&name).unwrap();
                 *rule = self.encoders.apply(turn, rule, &self.presets).unwrap();
+                None
             }
         }
+    }
+
+    /// Arms the rule of the pad unless it is armed, and makes the rule of its position first when it has none.
+    fn arm(&mut self, pad: &Pad, name: &RuleName) {
+        let of_the_position = self.layout.rule(pad, &self.selectors, &self.presets).unwrap();
+        let (_, state) = self
+            .by_name
+            .entry(name.clone())
+            .or_insert((of_the_position, RuleState::Draft));
+        if !state.is_armed() {
+            *state = state.arm().unwrap();
+        }
+    }
+
+    /// Disarms the rule unless it is not armed. A disarm ends every hold of the rule.
+    fn disarm(&mut self, name: &RuleName) {
+        if let Some((_, state)) = self.by_name.get_mut(name)
+            && state.is_armed()
+        {
+            *state = state.disarm().unwrap();
+        }
+        self.holds.remove(name);
     }
 
     /// Someone gives the rule behind the pad another title, in the list of rules.
@@ -224,7 +269,7 @@ fn a_press_of_an_empty_pad_arms_the_rule_of_its_row_its_column_and_its_layer() {
 }
 
 #[test]
-fn in_latch_a_press_toggles_the_pad_and_a_release_does_nothing() {
+fn in_latch_a_press_wants_the_other_state_than_the_pad_shows_and_a_release_does_nothing() {
     let mut surface = Surface::new(OrderDesk::layout());
     let (row, column) = OrderDesk::slow_order_producers();
     let pad = surface.pad(row, column).unwrap();
@@ -244,74 +289,145 @@ fn in_latch_a_press_toggles_the_pad_and_a_release_does_nothing() {
         surface.press(row, column, PadState::Disarmed),
         Some(Intent::Arm { pad })
     );
+    assert!(!surface.holding());
 }
 
 #[test]
-fn in_hold_a_pad_is_armed_while_pressed_and_disarms_on_release() {
+fn in_hold_a_press_holds_the_pad_and_its_release_ends_the_hold_that_the_press_added() {
     let mut surface = Surface::new(OrderDesk::layout());
     surface.set_mode(PlayMode::Hold);
     let (row, column) = OrderDesk::slow_order_producers();
     let pad = surface.pad(row, column).unwrap();
 
-    for shows in [PadState::Empty, PadState::Disarmed] {
+    // Whatever the pad shows, a press holds it: a rule that is armed already stays armed while someone holds it.
+    for (number, shows) in (1..).zip([PadState::Empty, PadState::Disarmed, PadState::Armed]) {
+        let hold = Hold::new(number);
         assert_eq!(
             surface.press(row, column, shows),
-            Some(Intent::Arm { pad: pad.clone() })
+            Some(Intent::Hold { pad: pad.clone() })
         );
-        assert_eq!(surface.release(row, column), Some(Intent::Disarm { pad: pad.clone() }));
-        // The pad is not held any more, so a second release has nothing to disarm.
+        assert!(surface.holding());
+        // The engine answers with the hold that the press added, and the surface keeps it for the release.
+        assert_eq!(surface.answered(&pad, Some(hold)), None);
+
+        assert_eq!(
+            surface.release(row, column),
+            Some(Intent::Release { pad: pad.clone(), hold })
+        );
+        assert!(!surface.holding());
+        // The pad is not held any more, so a second release has no hold to end.
         assert_eq!(surface.release(row, column), None);
     }
 }
 
 #[test]
-fn a_pad_that_is_armed_already_stays_armed_while_held_and_disarms_on_release() {
+fn a_release_before_the_answer_to_its_press_goes_out_with_the_answer() {
+    let mut surface = Surface::new(OrderDesk::layout());
+    surface.set_mode(PlayMode::Hold);
+    let (row, column) = OrderDesk::slow_order_producers();
+    let pad = surface.pad(row, column).unwrap();
+    let hold = Hold::new(1);
+
+    // Someone taps the pad: the release comes before the engine answered the press.
+    assert_eq!(
+        surface.press(row, column, PadState::Empty),
+        Some(Intent::Hold { pad: pad.clone() })
+    );
+    assert_eq!(surface.release(row, column), None);
+    assert!(!surface.holding());
+
+    assert_eq!(
+        surface.answered(&pad, Some(hold)),
+        Some(Intent::Release { pad: pad.clone(), hold })
+    );
+    assert_eq!(surface.release(row, column), None);
+}
+
+#[test]
+fn a_press_in_hold_that_failed_has_no_hold_to_end() {
     let mut surface = Surface::new(OrderDesk::layout());
     surface.set_mode(PlayMode::Hold);
     let (row, column) = OrderDesk::slow_order_producers();
     let pad = surface.pad(row, column).unwrap();
 
-    assert_eq!(surface.press(row, column, PadState::Armed), None);
-    assert_eq!(surface.release(row, column), Some(Intent::Disarm { pad }));
+    assert_eq!(
+        surface.press(row, column, PadState::Empty),
+        Some(Intent::Hold { pad: pad.clone() })
+    );
+    assert_eq!(surface.answered(&pad, None), None);
+
+    assert!(!surface.holding());
+    assert_eq!(surface.release(row, column), None);
 }
 
 #[test]
-fn a_release_disarms_the_pad_that_was_pressed_whatever_the_surface_shows_by_then() {
+fn a_hold_that_no_pad_waits_for_ends_at_once() {
+    let mut surface = Surface::new(OrderDesk::layout());
+    let (row, column) = OrderDesk::slow_order_producers();
+    let pad = surface.pad(row, column).unwrap();
+    let hold = Hold::new(1);
+
+    // The surface holds nothing, so nobody would ever release the hold.
+    assert_eq!(surface.answered(&pad, Some(hold)), Some(Intent::Release { pad, hold }));
+}
+
+#[test]
+fn a_release_ends_the_hold_of_the_pad_that_was_pressed_whatever_the_surface_shows_by_then() {
     let mut surface = Surface::new(OrderDesk::layout());
     surface.set_mode(PlayMode::Hold);
     assert!(surface.switch_to(&OrderDesk::order_ingest()));
     let (row, column) = OrderDesk::slow_order_producers();
     let pressed = surface.pad(row, column).unwrap();
+    let hold = Hold::new(1);
     assert_eq!(
         surface.press(row, column, PadState::Empty),
-        Some(Intent::Arm { pad: pressed.clone() })
+        Some(Intent::Hold { pad: pressed.clone() })
     );
+    assert_eq!(surface.answered(&pressed, Some(hold)), None);
 
     // With the pad still down, someone switches the layer and the mode.
     assert!(surface.switch_to(&OrderDesk::payments()));
     surface.set_mode(PlayMode::Latch);
 
     assert_eq!(pressed.layer(), &OrderDesk::order_ingest());
-    assert_eq!(surface.release(row, column), Some(Intent::Disarm { pad: pressed }));
+    assert_eq!(
+        surface.release(row, column),
+        Some(Intent::Release { pad: pressed, hold })
+    );
 }
 
 #[test]
-fn two_held_pads_disarm_one_by_one() {
+fn two_held_pads_end_their_holds_one_by_one() {
     let mut surface = Surface::new(OrderDesk::layout());
     surface.set_mode(PlayMode::Hold);
     let (slow, silent) = (OrderDesk::slow_order_producers(), OrderDesk::silent_metadata());
     let slow_pad = surface.pad(slow.0, slow.1).unwrap();
     let silent_pad = surface.pad(silent.0, silent.1).unwrap();
+    let (slow_hold, silent_hold) = (Hold::new(1), Hold::new(2));
 
     assert!(surface.press(slow.0, slow.1, PadState::Empty).is_some());
     assert!(surface.press(silent.0, silent.1, PadState::Empty).is_some());
+    // The answers come in another order than the presses.
+    assert_eq!(surface.answered(&silent_pad, Some(silent_hold)), None);
+    assert_eq!(surface.answered(&slow_pad, Some(slow_hold)), None);
 
-    assert_eq!(surface.release(slow.0, slow.1), Some(Intent::Disarm { pad: slow_pad }));
+    assert_eq!(
+        surface.release(slow.0, slow.1),
+        Some(Intent::Release {
+            pad: slow_pad,
+            hold: slow_hold
+        })
+    );
+    assert!(surface.holding());
     assert_eq!(
         surface.release(silent.0, silent.1),
-        Some(Intent::Disarm { pad: silent_pad })
+        Some(Intent::Release {
+            pad: silent_pad,
+            hold: silent_hold
+        })
     );
     assert_eq!(surface.release(silent.0, silent.1), None);
+    assert!(!surface.holding());
 }
 
 #[test]
@@ -524,4 +640,69 @@ fn the_same_position_holds_another_rule_on_another_layer() {
     );
     assert_eq!(live.shows(&for_everyone), PadState::Armed);
     assert_eq!(live.shows(&for_ingest), PadState::Armed);
+}
+
+#[test]
+fn two_people_who_press_one_pad_to_arm_it_both_find_it_armed() {
+    let mut mine = Surface::new(OrderDesk::layout());
+    let mut theirs = Surface::new(OrderDesk::layout());
+    let mut live = LiveRules::of(OrderDesk::layout());
+    let (row, column) = OrderDesk::slow_order_producers();
+    let pad = mine.pad(row, column).unwrap();
+
+    // Both see a pad that is not armed, and both press it before either press arrives.
+    let my_press = mine.press(row, column, live.shows(&pad)).unwrap();
+    let their_press = theirs.press(row, column, live.shows(&pad)).unwrap();
+    assert_eq!(my_press, Intent::Arm { pad: pad.clone() });
+    assert_eq!(their_press, my_press);
+
+    live.act_on(my_press);
+    live.act_on(their_press);
+
+    // The second press found the rule armed, and did not take the first one back.
+    assert_eq!(live.shows(&pad), PadState::Armed);
+}
+
+#[test]
+fn a_pad_that_two_people_hold_stays_armed_until_the_last_one_lets_go() {
+    let mut mine = Surface::new(OrderDesk::layout());
+    let mut theirs = Surface::new(OrderDesk::layout());
+    mine.set_mode(PlayMode::Hold);
+    theirs.set_mode(PlayMode::Hold);
+    let mut live = LiveRules::of(OrderDesk::layout());
+    let (row, column) = OrderDesk::slow_order_producers();
+    let pad = mine.pad(row, column).unwrap();
+
+    let my_hold = live.act_on(mine.press(row, column, live.shows(&pad)).unwrap());
+    assert_eq!(mine.answered(&pad, my_hold), None);
+    let their_hold = live.act_on(theirs.press(row, column, live.shows(&pad)).unwrap());
+    assert_eq!(theirs.answered(&pad, their_hold), None);
+    assert_eq!(live.shows(&pad), PadState::Armed);
+
+    live.act_on(mine.release(row, column).unwrap());
+    assert_eq!(live.shows(&pad), PadState::Armed);
+
+    live.act_on(theirs.release(row, column).unwrap());
+    assert_eq!(live.shows(&pad), PadState::Disarmed);
+}
+
+#[test]
+fn a_disarm_ends_every_hold_and_a_release_after_it_changes_nothing() {
+    let mut holding = Surface::new(OrderDesk::layout());
+    holding.set_mode(PlayMode::Hold);
+    let mut latching = Surface::new(OrderDesk::layout());
+    let mut live = LiveRules::of(OrderDesk::layout());
+    let (row, column) = OrderDesk::slow_order_producers();
+    let pad = holding.pad(row, column).unwrap();
+    let hold = live.act_on(holding.press(row, column, live.shows(&pad)).unwrap());
+    assert_eq!(holding.answered(&pad, hold), None);
+
+    // Someone else presses the held pad in latch: it shows an armed rule, so they want it disarmed.
+    live.act_on(latching.press(row, column, live.shows(&pad)).unwrap());
+    assert_eq!(live.shows(&pad), PadState::Disarmed);
+    // They arm it again, and the one who held it lets go: their hold ended with the disarm.
+    live.act_on(latching.press(row, column, live.shows(&pad)).unwrap());
+    live.act_on(holding.release(row, column).unwrap());
+
+    assert_eq!(live.shows(&pad), PadState::Armed);
 }

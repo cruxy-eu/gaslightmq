@@ -22,7 +22,7 @@ use gaslightmq_control_api::kernel::{ApiKey, BrokerId, ClientId};
 use gaslightmq_control_api::prelude::*;
 use gaslightmq_control_api::rule::{PresetName, Rule, RuleName, RuleState};
 use gaslightmq_control_api::selector::{Condition, Conditions, Selector, SelectorName, SelectorRef};
-use gaslightmq_control_api::surface::{Column, Intent, LayoutName, Pad, PadLayout, Row};
+use gaslightmq_control_api::surface::{Column, Hold, Intent, LayoutName, Pad, PadLayout, Row};
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 use serde_json::{Value, json};
@@ -324,6 +324,66 @@ fn a_pad_press_sends_its_intent() {
             "pad": { "layout": "order-desk", "layer": "order-ingest", "row": 0, "column": 3 },
         },
     }));
+}
+
+#[test]
+fn a_release_names_the_hold_that_its_press_added() {
+    Form(AnyOperation::from(SendIntent {
+        environment: "orders-sim".parse().unwrap(),
+        intent: Intent::Release {
+            pad: Pad::new(
+                "order-desk".parse().unwrap(),
+                "order-ingest".parse().unwrap(),
+                Row::from_index(0),
+                Column::from_index(3),
+            ),
+            hold: Hold::new(7),
+        },
+    }))
+    .writes(json!({
+        "operation": "send-intent",
+        "environment": "orders-sim",
+        "intent": {
+            "intent": "release",
+            "pad": { "layout": "order-desk", "layer": "order-ingest", "row": 0, "column": 3 },
+            "hold": 7,
+        },
+    }));
+}
+
+#[test]
+fn a_press_answers_with_the_rule_whether_it_made_or_changed_it_and_its_hold() {
+    let armed = RuleStatus {
+        rule: OrderDesk::rule(),
+        live: true,
+        state: RuleState::Armed,
+    };
+    let rule = json!({ "rule": Form(OrderDesk::rule()).json(), "live": true, "state": "armed" });
+
+    // A press in hold of an empty pad made its live rule, armed it, and added a hold.
+    Form(IntentEffect {
+        rule: Some(armed.clone()),
+        made: true,
+        changed: true,
+        hold: Some(Hold::new(7)),
+    })
+    .writes(json!({ "rule": rule, "made": true, "changed": true, "hold": 7 }));
+    // A press in latch that found the rule armed changed nothing, and holds nothing.
+    Form(IntentEffect {
+        rule: Some(armed),
+        made: false,
+        changed: false,
+        hold: None,
+    })
+    .writes(json!({ "rule": rule, "made": false, "changed": false }));
+    // A disarm of a pad that points at no rule finds it as it wants it.
+    Form(IntentEffect {
+        rule: None,
+        made: false,
+        changed: false,
+        hold: None,
+    })
+    .writes(json!({ "rule": null, "made": false, "changed": false }));
 }
 
 #[test]

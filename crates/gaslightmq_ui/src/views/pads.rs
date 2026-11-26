@@ -4,7 +4,7 @@ use dioxus::prelude::*;
 use gaslightmq_control_api::prelude::*;
 use gaslightmq_control_api::rule::{Action, Preset, PresetName, RuleState};
 use gaslightmq_control_api::selector::SelectorName;
-use gaslightmq_control_api::surface::{Column, Encoder, Layer, LayoutName, PadState, PlayMode, Row, Steps};
+use gaslightmq_control_api::surface::{Column, Encoder, Intent, Layer, LayoutName, PadState, PlayMode, Row, Steps};
 use gaslightmq_control_api::trigger::Chance;
 
 use crate::app::Ui;
@@ -215,8 +215,36 @@ fn play(ui: &Ui, change: impl FnOnce(&mut Desk, &RunningEnvironment) -> Option<S
         intent
     };
     if let Some(intent) = intent {
-        ui.send_from(RequestSurface::Pad, intent, |()| {});
+        send(ui, intent);
     }
+}
+
+/// Sends an intent. The answer to a press in hold goes back to the desk, which keeps the hold for the release,
+/// and sends the release at once when someone let go of the pad before the answer came.
+fn send(ui: &Ui, send: SendIntent) {
+    let Intent::Hold { pad } = &send.intent else {
+        ui.send_from(RequestSurface::Pad, send, |_| {});
+        return;
+    };
+    let (pad, environment) = (pad.clone(), send.environment.clone());
+    let answered = ui.clone();
+    ui.send_settled(RequestSurface::Pad, send, move |effect| {
+        let hold = effect.and_then(|effect| effect.hold);
+        let mut slot = answered.desk;
+        let mut desk = slot.peek().clone();
+        let release = match desk.as_mut() {
+            Some(desk) => desk.answered(&environment, &pad, hold),
+            // No desk waits for the hold any more, so nobody would release it.
+            None => hold.map(|hold| SendIntent {
+                environment,
+                intent: Intent::Release { pad, hold },
+            }),
+        };
+        slot.set(desk);
+        if let Some(release) = release {
+            answered.send_from(RequestSurface::Pad, release, |_| {});
+        }
+    });
 }
 
 /// How many pads of a layer point at an armed rule.
@@ -283,7 +311,7 @@ fn ModeButton(mode: PlayMode, on: bool) -> Element {
     rsx! {
         button {
             class: if on { SEGMENT_ON } else { SEGMENT },
-            title: if mode == PlayMode::Latch { "A press toggles the pad" } else { "The pad is armed while pressed" },
+            title: if mode == PlayMode::Latch { "A press arms a pad that is not armed, and disarms one that is" } else { "The pad is armed while anyone holds it" },
             onclick: move |_| play(&ui, |desk, _| {
                 desk.set_mode(mode);
                 None

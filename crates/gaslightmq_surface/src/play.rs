@@ -5,8 +5,8 @@ use std::str::FromStr;
 ///
 /// | Mode | Name | A press | A release |
 /// |---|---|---|---|
-/// | [`Latch`](Self::Latch) | `latch` | Toggles the pad: it arms a rule that is not armed, and disarms an armed one. | Nothing. |
-/// | [`Hold`](Self::Hold) | `hold` | Arms the pad. | Disarms it. |
+/// | [`Latch`](Self::Latch) | `latch` | Wants the other state than the pad shows: armed for a pad that shows no armed rule, and disarmed for one that does. | Nothing. |
+/// | [`Hold`](Self::Hold) | `hold` | Holds the pad, which arms its rule. | Ends the hold. The rule disarms when nobody holds it any more. |
 ///
 /// A surface starts in latch.
 ///
@@ -21,10 +21,10 @@ use std::str::FromStr;
 /// With the `serde` feature, a mode serializes as its name.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
 pub enum PlayMode {
-    /// A press toggles the pad.
+    /// A press wants the pad armed when it shows no armed rule, and disarmed when it does.
     #[default]
     Latch,
-    /// The pad is armed while pressed, and disarms on release.
+    /// The pad is armed while anyone holds it, and disarms when the last one lets go.
     Hold,
 }
 

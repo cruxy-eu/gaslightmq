@@ -15,7 +15,7 @@ use gaslightmq_control_api::lie::{RefusalLie, TimingLie};
 use gaslightmq_control_api::prelude::*;
 use gaslightmq_control_api::rule::{Preset, PresetSet, Rule, RuleState};
 use gaslightmq_control_api::selector::{Condition, Conditions, Selector, SelectorSet};
-use gaslightmq_control_api::surface::{Column, Encoder, Intent, Layer, PadLayout, PlayMode, Row, Steps};
+use gaslightmq_control_api::surface::{Column, Encoder, Hold, Intent, Layer, PadLayout, PlayMode, Row, Steps};
 use gaslightmq_ui::pads::{Desk, Move};
 
 /// The order desk of the specs, cut down: two rows, a delay and a refusal, and two layers.
@@ -108,16 +108,53 @@ fn a_press_of_an_empty_pad_arms_it_and_a_press_of_an_armed_pad_disarms_it() {
 }
 
 #[test]
-fn in_hold_a_pad_is_armed_while_pressed_and_disarms_on_release() {
+fn in_hold_a_press_holds_the_pad_and_its_release_ends_the_hold_that_the_environment_answered_with() {
     let mut desk = Desk::new(OrderDesk::layout());
     desk.set_mode(PlayMode::Hold);
     let empty = OrderDesk::running(Vec::new());
+    let (row, column) = (Row::from_index(1), Column::from_index(0));
+    let hold = Hold::new(1);
 
-    let pressed = desk.press(Row::from_index(1), Column::from_index(0), &empty).unwrap();
-    let released = desk.release(Row::from_index(1), Column::from_index(0), &empty).unwrap();
+    let pressed = desk.press(row, column, &empty).unwrap();
+    let Intent::Hold { pad } = &pressed.intent else {
+        panic!("a press in hold holds the pad: {pressed:?}");
+    };
+    assert!(desk.holding());
+    assert_eq!(desk.answered(&pressed.environment, pad, Some(hold)), None);
+    let released = desk.release(row, column, &empty).unwrap();
 
-    assert!(matches!(pressed.intent, Intent::Arm { .. }), "{pressed:?}");
-    assert!(matches!(released.intent, Intent::Disarm { .. }), "{released:?}");
+    assert_eq!(
+        released,
+        SendIntent {
+            environment: empty.environment.clone(),
+            intent: Intent::Release { pad: pad.clone(), hold },
+        }
+    );
+    assert!(!desk.holding());
+}
+
+#[test]
+fn a_tap_in_hold_releases_the_pad_once_the_answer_to_its_press_came() {
+    let mut desk = Desk::new(OrderDesk::layout());
+    desk.set_mode(PlayMode::Hold);
+    let empty = OrderDesk::running(Vec::new());
+    let (row, column) = (Row::from_index(1), Column::from_index(0));
+    let hold = Hold::new(1);
+
+    // Space presses and releases the pad at once, before the environment answered the press.
+    let pressed = desk.press(row, column, &empty).unwrap();
+    assert_eq!(desk.release(row, column, &empty), None);
+    let Intent::Hold { pad } = &pressed.intent else {
+        panic!("a press in hold holds the pad: {pressed:?}");
+    };
+
+    assert_eq!(
+        desk.answered(&pressed.environment, pad, Some(hold)),
+        Some(SendIntent {
+            environment: pressed.environment.clone(),
+            intent: Intent::Release { pad: pad.clone(), hold },
+        })
+    );
 }
 
 #[test]
