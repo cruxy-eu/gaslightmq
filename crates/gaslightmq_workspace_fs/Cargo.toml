@@ -1,0 +1,43 @@
+[package]
+name = "gaslightmq_workspace_fs"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lints]
+workspace = true
+
+[package.metadata.gaslightmq]
+# The layout of a file, what its text reads as, and what a store holds: plain functions over text.
+# The stores and the files themselves do IO.
+sans_io_modules = ["access", "document", "error", "held", "kind", "text"]
+
+[dependencies]
+gaslightmq_definition_api.workspace = true
+gaslightmq_environment = { workspace = true, features = ["serde"] }
+gaslightmq_rule = { workspace = true, features = ["serde"] }
+gaslightmq_selector = { workspace = true, features = ["serde"] }
+gaslightmq_surface = { workspace = true, features = ["serde"] }
+gaslightmq_workspace.workspace = true
+serde.workspace = true
+# Reads the files and writes the one form of a definition. Its parser says where each definition and each
+# comment is, so a write replaces one definition and leaves every other byte.
+serde-saphyr = { workspace = true, features = ["serialize", "comments"] }
+serde_path_to_error.workspace = true
+thiserror.workspace = true
+# The blocking pool, on which every reading and every change of the files runs as one step.
+tokio = { workspace = true, features = ["rt"] }
+
+[dev-dependencies]
+anyhow.workspace = true
+# What every store of each kind does, which the tests hold these stores to.
+gaslightmq_environment_conformance.workspace = true
+gaslightmq_rule_conformance.workspace = true
+gaslightmq_selector_conformance.workspace = true
+gaslightmq_surface_conformance.workspace = true
+# What the definitions of the tests are made of.
+gaslightmq_clock.workspace = true
+gaslightmq_kernel.workspace = true
+gaslightmq_lie.workspace = true
+tempfile.workspace = true
+tokio = { workspace = true, features = ["rt", "rt-multi-thread", "macros"] }
