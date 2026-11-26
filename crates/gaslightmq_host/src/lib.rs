@@ -86,6 +86,17 @@
 //!   every rule in an environment. A change answers with the revision it left, and it can say what it [`Expects`]:
 //!   a change that expects another revision, or a revision of another [run](RunId), changes nothing.
 //!
+//! # Presences
+//!
+//! A presence is one client of a control surface that is there, such as a tab of the UI.
+//! Whoever lets clients connect [opens](Host::open_presence) a presence for a client that came,
+//! and [ends](Host::end_presence) it once the client is gone.
+//! A hold of a pad belongs to the presence that its press [came from](Host::send_intent_from), and ends with it:
+//! a client that is gone never sends its release.
+//! The host knows no connection, and waits for no client that may come back: when a presence ends is up to whoever
+//! opened it. An intent that comes from [no presence](Host::send_intent) adds a hold that ends by its release or by a
+//! disarm alone.
+//!
 //! The host does not care where an environment comes from.
 //! [`EnvironmentConfiguration::new`] takes an environment of the workspace as well as one that the flags of a
 //! command describe, and whoever starts it sets what a flag, a variable or a file says first.
@@ -127,7 +138,7 @@
 //! | [`Host::delete_live_rule`] | [`DeleteLiveRuleError`] | The environment does not run, it has no live rule of the name, or it changed since. |
 //! | [`Host::create`] | [`CreateDefinitionError`] | A live rule of an environment that runs has the name of the rule, or the workspace did not take the definition. |
 //! | [`Host::keep`] | [`KeepRuleError`] | The environment does not run, it has no live rule of the name, it changed since, a live rule of another environment has the name, or the workspace did not take it. |
-//! | [`Host::send_intent`] | [`IntentError`] | The environment does not run, the layout does not exist, a store could not read, or the host cannot act on the intent. An intent that finds the state it wants changes nothing, and is no error. |
+//! | [`Host::send_intent`], [`Host::send_intent_from`] | [`IntentError`] | The environment does not run, the layout does not exist, a store could not read, or the host cannot act on the intent: a hold of a presence that is not open is one such intent. An intent that finds the state it wants changes nothing, and is no error. |
 //! | [`Host::close_session`] | [`CloseSessionError`] | The environment does not run, or no session is open on the connection. |
 //! | [`Host::follow_calls`] | [`FollowCallsError`] | The environment does not run, the selectors could not be read, or the selector does not resolve. |
 //! | [`CallBacklog::new`] | [`CallBacklogError`] | The backlog is zero, or larger than the largest. |
