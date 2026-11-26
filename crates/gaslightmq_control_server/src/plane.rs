@@ -538,6 +538,7 @@ impl<C: WorkspaceContext + 'static> ControlPlane<C> {
         match acted {
             Ok(effect) => Ok(IntentEffect {
                 rule: effect.rule.map(status),
+                found: effect.found.map(revision),
                 made: effect.made,
                 changed: effect.changed,
                 hold: effect.hold,

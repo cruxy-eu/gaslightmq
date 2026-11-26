@@ -4,7 +4,7 @@ use gaslightmq_environment::EnvironmentName;
 use gaslightmq_surface::{Hold, Intent, LayoutName};
 use serde::{Deserialize, Serialize};
 
-use crate::{Operation, RuleStatus};
+use crate::{Operation, Revision, RuleStatus};
 
 /// Send what someone did at a pad of a layout to an environment.
 ///
@@ -56,8 +56,8 @@ impl Operation for SendIntent {
 /// A surface reads from it what to take back on an undo, and never works out itself what a press did:
 /// a press that made the rule is undone by deleting it, and a press that changed nothing leaves nothing to undo.
 ///
-/// With `serde`, it is a map with `rule`, `made` and `changed`, and with `hold` after a press in hold:
-/// `{ "rule": { … }, "made": true, "changed": true, "hold": 7 }`.
+/// With `serde`, it is a map with `rule`, `made` and `changed`, with `found` when the pad pointed at a rule,
+/// and with `hold` after a press in hold: `{ "rule": { … }, "found": 7, "made": false, "changed": true, "hold": 9 }`.
 /// `rule` is `null` when the pad points at no rule.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -66,6 +66,11 @@ pub struct IntentEffect {
     /// An undo of the intent expects that revision.
     /// `None` when the pad points at no rule, which a disarm and a release of such a pad leave as it is.
     pub rule: Option<RuleStatus>,
+    /// The revision of the rule that the intent acted on, as it was before the intent: what a surface compares
+    /// with the revision it showed, to know that the rule before is the one it held.
+    /// `None` when the pad pointed at no rule, so the intent made it or found nothing.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub found: Option<Revision>,
     /// Whether the intent made the rule: the pad had none, so it got the live rule of its position.
     pub made: bool,
     /// Whether the intent changed the rule: its state, or for a turn its definition.

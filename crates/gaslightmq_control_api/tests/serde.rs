@@ -517,7 +517,7 @@ fn a_release_names_the_hold_that_its_press_added() {
 }
 
 #[test]
-fn a_press_answers_with_the_rule_whether_it_made_or_changed_it_and_its_hold() {
+fn a_press_answers_with_the_rule_the_revision_it_found_whether_it_made_or_changed_it_and_its_hold() {
     let armed = RuleStatus {
         rule: OrderDesk::rule(),
         live: true,
@@ -535,22 +535,26 @@ fn a_press_answers_with_the_rule_whether_it_made_or_changed_it_and_its_hold() {
     // A press in hold of an empty pad made its live rule, armed it, and added a hold.
     Form(IntentEffect {
         rule: Some(armed.clone()),
+        found: None,
         made: true,
         changed: true,
         hold: Some(Hold::new(7)),
     })
     .writes(json!({ "rule": rule, "made": true, "changed": true, "hold": 7 }));
     // A press in latch that found the rule armed changed nothing, and holds nothing.
+    // It found the rule at the revision that the rule still has.
     Form(IntentEffect {
         rule: Some(armed),
+        found: Some(NOW),
         made: false,
         changed: false,
         hold: None,
     })
-    .writes(json!({ "rule": rule, "made": false, "changed": false }));
+    .writes(json!({ "rule": rule, "found": NOW.number(), "made": false, "changed": false }));
     // A disarm of a pad that points at no rule finds it as it wants it.
     Form(IntentEffect {
         rule: None,
+        found: None,
         made: false,
         changed: false,
         hold: None,

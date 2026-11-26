@@ -258,7 +258,9 @@ It acts on the rule as the rule is, and it says the state that it wants.
   Two people who press the same pad to arm it both find it armed, and the second press changes nothing.
 - **The answer says what the intent did.**
   It holds the rule it acted on, whether it made that rule, whether it changed the state of the rule,
-  and the definition, the state and the revision that the rule has now.
+  the definition, the state and the revision that the rule has now,
+  and the revision that the intent found the rule at, before it changed it: `found`, which a press that made the rule leaves out.
+  A surface compares `found` with the revision it showed, and so knows that the rule it held is the one that the intent changed.
 - **An intent that changes a rule takes one number.**
   A press that makes the live rule of its pad and arms it is one change.
   An intent that finds the state it wants takes none, and answers with the revision that the rule had.

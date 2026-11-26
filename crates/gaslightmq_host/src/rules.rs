@@ -35,6 +35,9 @@ pub struct IntentEffect {
     /// The rule of the pad as the environment holds it now, with its state and its revision there.
     /// `None` when the pad points at no rule, which a disarm and a release of such a pad leave as it is.
     pub rule: Option<EnvironmentRule>,
+    /// The revision that the rule of the pad had when the intent acted on it, before the intent changed it.
+    /// `None` when the pad pointed at no rule.
+    pub found: Option<Revision>,
     /// Whether the intent made the rule: the pad had none, so the intent gave it the live rule of its position.
     pub made: bool,
     /// Whether the intent changed the rule: its state, or for a turn its definition.
