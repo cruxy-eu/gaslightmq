@@ -13,6 +13,7 @@ use crate::{DefinitionName, WorkspaceContext, WorkspaceDefinition};
 ///
 /// ```
 /// use futures::executor::block_on;
+/// use gaslightmq_definition_api::prelude::*;
 /// use gaslightmq_lie::prelude::*;
 /// use gaslightmq_rule::prelude::*;
 /// use gaslightmq_workspace::prelude::*;
