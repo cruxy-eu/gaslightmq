@@ -11,7 +11,7 @@ use crate::{Column, EncoderTurn, Hold, Intent, Layer, Pad, PadLayout, PadState, 
 /// | The layer it shows, which is the page of the grid. | The first layer of the layout. | [`switch_to`](Self::switch_to) |
 /// | The [mode of play](PlayMode). | Latch. | [`set_mode`](Self::set_mode) |
 /// | The focused pad, which the encoders tune. | None. | [`focus`](Self::focus), and every press of a pad. |
-/// | The pads that someone holds, with the [`Hold`] of each. | None. | A press and a release in hold, and [`answered`](Self::answered). |
+/// | The pads that someone holds, with the [`Hold`] of each. | None. | A press and a release in hold, [`answered`](Self::answered), and [`holds_ended`](Self::holds_ended). |
 ///
 /// A position without a pad is dead: a press there gives no intent.
 /// A surface that draws a grid of a fixed size therefore passes on every press, whatever the size of the layout.
@@ -224,6 +224,16 @@ impl Surface {
     /// Whether someone holds a pad of the surface: they pressed it in hold, and did not let go of it yet.
     pub fn holding(&self) -> bool {
         self.held.iter().any(|held| !held.released)
+    }
+
+    /// Every hold of the surface ended without its release: whoever holds the rules ended them,
+    /// because the [presence](crate::PresenceId) that the surface played as has ended.
+    ///
+    /// No pad is held any more, and the release of a pad that was held gives nothing.
+    /// A press whose answer comes later holds a pad that nobody waits for, so its hold
+    /// [ends at once](Self::answered).
+    pub fn holds_ended(&mut self) {
+        self.held.clear();
     }
 
     /// Someone turned an encoder.

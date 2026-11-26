@@ -1,6 +1,7 @@
 //! A host runs several environments in front of real Kafka brokers, each with a proxy of its own,
 //! makes a live rule armed in one step, reads a ⌘K sentence with the names that the traffic of one of them has
-//! seen, acts on the presses and the holds of a pad, and keeps a live rule only under a name that no other one has.
+//! seen, acts on the presses and the holds of a pad, ends the holds of a presence that ended, and keeps a live rule
+//! only under a name that no other one has.
 //! Whatever someone changes has a revision, and a change says what it expects.
 //!
 //! The tests need Docker.
@@ -27,7 +28,7 @@ use gaslightmq_lie_refusal::prelude::*;
 use gaslightmq_quick_inject::prelude::*;
 use gaslightmq_rule::prelude::*;
 use gaslightmq_selector::prelude::*;
-use gaslightmq_surface::{Column, Intent, Layer, PadLayout, Row};
+use gaslightmq_surface::{Column, Intent, Layer, PadLayout, PresenceId, Row};
 use gaslightmq_test_kafka::KafkaCluster;
 use gaslightmq_trigger::prelude::*;
 use gaslightmq_wire::{Offset, Partition, Record};
@@ -39,6 +40,13 @@ const PATIENCE: Duration = Duration::from_secs(30);
 /// When the orders of these tests were placed, in milliseconds since 1970.
 /// A record with a timestamp of its own reads back as it was written.
 const PLACED_AT: i64 = 1_700_000_000_000;
+
+/// The presence of Ana's tab of the UI. Whoever lets clients connect makes one from the randomness of the system for
+/// each client that comes, and a test names its own.
+const ANAS_TAB: PresenceId = PresenceId::from_random_bits(0xa);
+
+/// The presence of Dan's tab.
+const DANS_TAB: PresenceId = PresenceId::from_random_bits(0xd);
 
 /// The address that the listeners of a test listen on, and that its clients connect to.
 const LOCALHOST: IpAddr = IpAddr::V4(Ipv4Addr::LOCALHOST);
@@ -1017,6 +1025,269 @@ async fn a_release_never_disarms_a_rule_that_a_press_in_latch_armed() -> anyhow:
 
     assert!(!ana_gone.changed);
     assert_eq!(state(&ana_gone), Some(RuleState::Armed));
+    host.stop_all().await;
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_presence_that_ends_takes_its_holds_away_and_the_rule_stays_armed_while_another_presence_holds_it()
+-> anyhow::Result<()> {
+    let cluster = KafkaCluster::plaintext().start().await?;
+    let host = Host::new(
+        HostConfiguration::default(),
+        MemoryContext::new(),
+        Lies::of_every_build(),
+        RUN,
+    );
+    let any = ListenAddress::new(LOCALHOST, 0);
+    let brokers = BrokerListeners::pinned(cluster.brokers().iter().map(|broker| (broker.id(), any)))?;
+    let staging = Environment::new(
+        "staging-proxy".parse()?,
+        Instances::ProxyInFrontOfCluster {
+            proxy: ProxyDefinition::new(Listeners::new(any, brokers, LOCALHOST.into())?),
+            upstream: Upstream::new(cluster.brokers()[0].address().to_string().parse()?),
+        },
+    );
+    // A desk with one pad: a delay of 1 s on the order producers, for every client.
+    let order_producers = Selector::new(
+        "order-producers".parse()?,
+        Conditions::from(Condition::is(ApiKey::PRODUCE)),
+    );
+    let delay = Preset::new("delay-1s".parse()?, TimingLie::new().with_delay(TimeSpan::from_secs(1)));
+    let desk = PadLayout::new(
+        "order-desk".parse()?,
+        [order_producers.name().clone()],
+        [delay.name().clone()],
+        [Layer::all_clients()],
+    )?;
+    host.create(order_producers).await?;
+    host.create(delay).await?;
+    host.create(desk.clone()).await?;
+    host.start(EnvironmentConfiguration::new(&staging)?).await?;
+    let pad = desk
+        .pad(&Layer::all_clients(), Row::from_index(0), Column::from_index(0))
+        .context("the desk has a pad at its first row and column")?;
+    let rule = desk.rule_name(&pad).context("the pad points at a rule by its name")?;
+    let hold = Intent::Hold { pad };
+
+    // Ana and Dan each play at a tab of their own, and each tab is a presence.
+    host.open_presence(ANAS_TAB);
+    host.open_presence(DANS_TAB);
+    // Both hold the pad. Ana's hold makes its rule and arms it, and each hold belongs to the presence of its press.
+    let ana = host.send_intent_from(ANAS_TAB, staging.name(), &hold).await?;
+    let dan = host.send_intent_from(DANS_TAB, staging.name(), &hold).await?;
+    assert!(ana.hold.is_some(), "{ana:?}");
+    assert!(dan.hold.is_some(), "{dan:?}");
+    assert_eq!((ana.made, ana.changed), (true, true));
+
+    // Ana's tab closes while she holds the pad, so her release never comes. Her presence ends, and her hold with it.
+    host.end_presence(ANAS_TAB);
+    // The rule stays armed while Dan still holds the pad.
+    let for_dan = host.rule_of(staging.name(), &rule).await?;
+    assert_eq!(for_dan.map(|rule| rule.state), Some(RuleState::Armed));
+
+    // Dan's tab is gone too. That was the last hold of the rule, and holds armed it, so it disarms.
+    host.end_presence(DANS_TAB);
+    let for_nobody = host.rule_of(staging.name(), &rule).await?;
+    assert_eq!(for_nobody.map(|rule| rule.state), Some(RuleState::Disarmed));
+
+    // A presence that ended holds nothing any more: nothing would end the hold of a client that is gone.
+    let late = host.send_intent_from(ANAS_TAB, staging.name(), &hold).await;
+    assert_eq!(
+        late,
+        Err(IntentError::Refused {
+            reason: format!("presence {ANAS_TAB} is not open, so nothing would end its hold"),
+        })
+    );
+    let after = host.rule_of(staging.name(), &rule).await?;
+    assert_eq!(after.map(|rule| rule.state), Some(RuleState::Disarmed));
+    host.stop_all().await;
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_presence_that_ends_the_last_hold_of_a_rule_gives_the_rule_a_later_revision() -> anyhow::Result<()> {
+    let cluster = KafkaCluster::plaintext().start().await?;
+    let host = Host::new(
+        HostConfiguration::default(),
+        MemoryContext::new(),
+        Lies::of_every_build(),
+        RUN,
+    );
+    let any = ListenAddress::new(LOCALHOST, 0);
+    let brokers = BrokerListeners::pinned(cluster.brokers().iter().map(|broker| (broker.id(), any)))?;
+    let staging = Environment::new(
+        "staging-proxy".parse()?,
+        Instances::ProxyInFrontOfCluster {
+            proxy: ProxyDefinition::new(Listeners::new(any, brokers, LOCALHOST.into())?),
+            upstream: Upstream::new(cluster.brokers()[0].address().to_string().parse()?),
+        },
+    );
+    // A desk with one pad: a delay of 1 s on the order producers, for every client.
+    let order_producers = Selector::new(
+        "order-producers".parse()?,
+        Conditions::from(Condition::is(ApiKey::PRODUCE)),
+    );
+    let delay = Preset::new("delay-1s".parse()?, TimingLie::new().with_delay(TimeSpan::from_secs(1)));
+    let desk = PadLayout::new(
+        "order-desk".parse()?,
+        [order_producers.name().clone()],
+        [delay.name().clone()],
+        [Layer::all_clients()],
+    )?;
+    host.create(order_producers).await?;
+    host.create(delay).await?;
+    host.create(desk.clone()).await?;
+    host.start(EnvironmentConfiguration::new(&staging)?).await?;
+    let pad = desk
+        .pad(&Layer::all_clients(), Row::from_index(0), Column::from_index(0))
+        .context("the desk has a pad at its first row and column")?;
+    let rule = desk.rule_name(&pad).context("the pad points at a rule by its name")?;
+    let hold = Intent::Hold { pad };
+    host.open_presence(ANAS_TAB);
+    host.open_presence(DANS_TAB);
+
+    // Ana's hold makes the rule of the pad and arms it, which is one change. Dan's hold changes nothing.
+    let ana = host.send_intent_from(ANAS_TAB, staging.name(), &hold).await?;
+    let dan = host.send_intent_from(DANS_TAB, staging.name(), &hold).await?;
+    let armed = ana.rule.context("a press in hold answers with its rule")?.revision;
+    assert_eq!(dan.rule.map(|rule| rule.revision), Some(armed));
+    let mut changes = host.changes();
+
+    // Ana's presence ends while Dan still holds the pad: the rule did not change, and keeps its revision.
+    host.end_presence(ANAS_TAB);
+    let for_dan = host
+        .rule_of(staging.name(), &rule)
+        .await?
+        .context("the environment holds the rule of the pad")?;
+    assert_eq!((for_dan.state, for_dan.revision), (RuleState::Armed, armed));
+
+    // Dan's presence ends too, and with it the last hold: the rule disarms.
+    // Nobody released anything, and the change is one like any other: whoever follows the host learns of it,
+    host.end_presence(DANS_TAB);
+    let disarmed = HostChange::RuleChanged {
+        environment: staging.name().clone(),
+        rule: rule.clone(),
+    };
+    while tokio::time::timeout(PATIENCE, changes.next()).await?? != disarmed {}
+    // and it took the next number.
+    let for_nobody = host
+        .rule_of(staging.name(), &rule)
+        .await?
+        .context("the environment still holds its live rule")?;
+    assert_eq!(for_nobody.state, RuleState::Disarmed);
+    assert!(armed < for_nobody.revision, "{armed} and then {}", for_nobody.revision);
+    // Whoever still sees the rule as Ana and Dan held it arms nothing over it.
+    let seen_armed = Expects {
+        run: host.run(),
+        revision: armed,
+    };
+    assert_eq!(
+        host.arm(staging.name(), &for_nobody.rule, Some(seen_armed)).await,
+        Err(ArmRuleError::Changed {
+            environment: staging.name().clone(),
+            rule,
+            revision: for_nobody.revision,
+        })
+    );
+    host.stop_all().await;
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_presence_that_ends_leaves_a_hold_of_no_presence_and_a_rule_that_a_press_in_latch_armed() -> anyhow::Result<()>
+{
+    let cluster = KafkaCluster::plaintext().start().await?;
+    let host = Host::new(
+        HostConfiguration::default(),
+        MemoryContext::new(),
+        Lies::of_every_build(),
+        RUN,
+    );
+    let any = ListenAddress::new(LOCALHOST, 0);
+    let brokers = BrokerListeners::pinned(cluster.brokers().iter().map(|broker| (broker.id(), any)))?;
+    let staging = Environment::new(
+        "staging-proxy".parse()?,
+        Instances::ProxyInFrontOfCluster {
+            proxy: ProxyDefinition::new(Listeners::new(any, brokers, LOCALHOST.into())?),
+            upstream: Upstream::new(cluster.brokers()[0].address().to_string().parse()?),
+        },
+    );
+    // A desk with two pads: a delay of 1 s on the order producers and one on the fetches, for every client.
+    let order_producers = Selector::new(
+        "order-producers".parse()?,
+        Conditions::from(Condition::is(ApiKey::PRODUCE)),
+    );
+    let fetches = Selector::new("fetches".parse()?, Conditions::from(Condition::is(ApiKey::FETCH)));
+    let delay = Preset::new("delay-1s".parse()?, TimingLie::new().with_delay(TimeSpan::from_secs(1)));
+    let desk = PadLayout::new(
+        "order-desk".parse()?,
+        [order_producers.name().clone(), fetches.name().clone()],
+        [delay.name().clone()],
+        [Layer::all_clients()],
+    )?;
+    host.create(order_producers).await?;
+    host.create(fetches).await?;
+    host.create(delay).await?;
+    host.create(desk.clone()).await?;
+    host.start(EnvironmentConfiguration::new(&staging)?).await?;
+    let slow_producers = desk
+        .pad(&Layer::all_clients(), Row::from_index(0), Column::from_index(0))
+        .context("the desk has a pad at its first row")?;
+    let slow_fetches = desk
+        .pad(&Layer::all_clients(), Row::from_index(1), Column::from_index(0))
+        .context("the desk has a pad at its second row")?;
+    let state = |effect: &IntentEffect| effect.rule.as_ref().map(|rule| rule.state);
+    host.open_presence(ANAS_TAB);
+
+    // `gmq` holds the pad of the order producers, and it is no presence. Ana holds the same pad at her tab.
+    let hold_producers = Intent::Hold {
+        pad: slow_producers.clone(),
+    };
+    let of_the_cli = host.send_intent(staging.name(), &hold_producers).await?;
+    let Some(hold_of_the_cli) = of_the_cli.hold else {
+        anyhow::bail!("a press in hold adds a hold: {of_the_cli:?}");
+    };
+    host.send_intent_from(ANAS_TAB, staging.name(), &hold_producers).await?;
+    // Ben arms the pad of the fetches in latch, and Ana holds that pad too.
+    host.send_intent(
+        staging.name(),
+        &Intent::Arm {
+            pad: slow_fetches.clone(),
+        },
+    )
+    .await?;
+    host.send_intent_from(
+        ANAS_TAB,
+        staging.name(),
+        &Intent::Hold {
+            pad: slow_fetches.clone(),
+        },
+    )
+    .await?;
+
+    // Ana's tab closes, and her presence ends with both her holds.
+    host.end_presence(ANAS_TAB);
+
+    // The pad of the fetches stays armed for Ben: holds did not arm its rule, so no hold that ends disarms it.
+    let fetches_now = host
+        .send_intent(staging.name(), &Intent::Arm { pad: slow_fetches })
+        .await?;
+    assert_eq!(
+        (fetches_now.changed, state(&fetches_now)),
+        (false, Some(RuleState::Armed))
+    );
+    // The pad of the order producers stays armed for `gmq`, whose hold ends by its release alone.
+    let released = host
+        .send_intent(
+            staging.name(),
+            &Intent::Release {
+                pad: slow_producers,
+                hold: hold_of_the_cli,
+            },
+        )
+        .await?;
+    assert_eq!((released.changed, state(&released)), (true, Some(RuleState::Disarmed)));
     host.stop_all().await;
     Ok(())
 }

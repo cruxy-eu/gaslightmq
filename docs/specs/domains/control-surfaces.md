@@ -170,6 +170,35 @@ Several people can play one environment, each at a surface of their own.
   A count of holds alone would take Ana's release for Cleo's hold, and disarm a rule that Cleo still holds.
   So a hold belongs to the arming of its rule, and its release names it.
 
+A release can fail to come.
+Someone closes the tab with a pad down, the browser crashes, or the network drops.
+The fault would then stay armed against real clients until someone notices.
+
+- **A hold belongs to the presence of its press.**
+  A surface that someone plays is a [presence](../architecture/control-plane.md#presence) of the control plane: one client that is there.
+  A tab of the UI is one, and every request of the tab says so.
+- **A presence that ends takes its holds with it.**
+  The engine ends every hold of a presence that ended, in every environment.
+  A rule disarms when that was its last hold, and it stays armed while another presence still holds its pad.
+  A hold that ends this way is a hold that goes: it never disarms a rule that holds did not arm.
+- **A presence outlives a connection that drops.**
+  The control plane keeps a presence whose connection is gone for a grace period: 10 seconds, until its configuration says otherwise.
+  A tab that comes back within it is the presence it was, and the pads that someone holds stay held.
+  A tab that stays away is gone, and its holds end.
+- **A reload is a new presence.**
+  A page that loads again no longer knows which pads it held, and it keeps its presence nowhere but in its memory.
+  The page before it is a tab that stays away, so its holds end with the grace period.
+- **A release that does not arrive goes out again.**
+  Someone can let go of a pad while the connection is down.
+  The UI sends the release again until the control plane answers it,
+  or until the UI is another presence, because the one that held the pad has ended, and the hold with it.
+- **A press that gets no answer may have added a hold.**
+  The UI cannot name that hold, so it cannot release it.
+  It lets go of its presence instead, and opens its stream again as a new one.
+  The control plane ends the presence that nobody comes back as, with every hold of it.
+- **A hold of no presence ends by its release or by a disarm.**
+  `gmq`, a test or another program that names no presence is not there to go away.
+
 ## Undo and redo
 
 ⌘Z takes back the last change that someone made in this tab, and ⇧⌘Z makes it again.
@@ -199,7 +228,7 @@ The undo history belongs to the UI, and the engine keeps none.
   That is a property of the UI's configuration, and 100 unless someone sets it.
   The oldest step goes when a new one would be one too many.
 - **It lives as long as the tab.**
-  A live stream that drops and opens again keeps it.
+  A live stream that drops and opens again keeps it, whether the tab comes back as the [presence](../architecture/control-plane.md#presence) it was or as a new one.
   Closing or reloading the tab ends it.
 - **It ends with the run of the process.**
   When the stream opens again and its snapshot names another [run](../architecture/identity.md#run), the tab drops every step.

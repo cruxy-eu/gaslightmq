@@ -44,6 +44,14 @@ pub struct ControlServerConfiguration {
     ///
     /// How often every client of the live stream gets the statistics of every environment that runs.
     pub stats_interval: StatsInterval,
+    /// Ours. Default: 10 seconds.
+    ///
+    /// How long the server keeps the presence of a client whose live stream ended.
+    /// A client that comes back within it goes on as that presence, and the pads it holds stay held.
+    /// A client that stays away for longer is gone: its presence ends, and its holds with it.
+    /// A longer grace period rides out a longer break of a connection, and leaves a rule armed for as much longer
+    /// when someone closes a tab that holds its pad. With no time at all, a presence ends with its stream.
+    pub presence_grace: TimeSpan,
     /// Ours. Default: 5 seconds.
     ///
     /// How long [`stop`](crate::ControlServer::stop) waits for the requests that are being answered.
@@ -58,6 +66,7 @@ impl Default for ControlServerConfiguration {
             request_limit: RequestSizeLimit::DEFAULT,
             stream_backlog: StreamBacklog::DEFAULT,
             stats_interval: StatsInterval::DEFAULT,
+            presence_grace: TimeSpan::from_secs(10),
             stop_timeout: TimeSpan::from_secs(5),
         }
     }

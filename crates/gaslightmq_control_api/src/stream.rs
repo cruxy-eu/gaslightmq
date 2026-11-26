@@ -5,6 +5,7 @@ use gaslightmq_environment::EnvironmentName;
 use gaslightmq_field::{ClientSoftware, ConnectionNumber};
 use gaslightmq_rule::RuleName;
 use gaslightmq_selector::SelectorRef;
+use gaslightmq_surface::PresenceId;
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -14,7 +15,8 @@ use crate::{
 
 /// One message of the live stream, from the control plane to a client.
 ///
-/// The first message is the [`Snapshot`](Self::Snapshot): the whole state of the process.
+/// The first message is [`Present`](Self::Present): the presence of the client.
+/// The [`Snapshot`](Self::Snapshot) comes next: the whole state of the process.
 /// Every message after it is one change to that state, or one call.
 /// A message about something live names its environment.
 /// A client that applies every change to the snapshot holds what the process holds.
@@ -29,6 +31,15 @@ use crate::{
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "message", rename_all = "kebab-case", deny_unknown_fields)]
 pub enum StreamMessage {
+    /// The presence of the client of this stream, which comes first, and once.
+    ///
+    /// A client that is there is a presence. A stream that asks for none opens a new one, and a client that comes
+    /// back asks for the one it had: the control plane keeps a presence whose stream ended for a grace period.
+    /// The stream goes on as that presence when the control plane still holds it, and its holds stay.
+    /// A stream that gets another presence than it asked for knows that the one it had ended, with its holds.
+    /// A request of the client [names](crate::RequestSource::presence) its presence.
+    /// Only the client whose presence it is gets this message.
+    Present { presence: PresenceId },
     /// The whole state, sent when a client connects.
     Snapshot(ProcessState),
     /// A call that ended, which the client's [subscription](Subscription) follows.

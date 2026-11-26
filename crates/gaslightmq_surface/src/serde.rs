@@ -11,7 +11,7 @@ use serde::de::value::MapAccessDeserializer;
 use serde::de::{self, Deserialize, Deserializer, MapAccess, Visitor};
 use serde::ser::{Serialize, Serializer};
 
-use crate::{Encoder, Layer, LayoutName, LayoutTitle, PadLayout, PadLayoutError, PlayMode};
+use crate::{Encoder, Layer, LayoutName, LayoutTitle, PadLayout, PadLayoutError, PlayMode, PresenceId};
 
 /// A layout as a file writes it, before anyone checked that every layer and every name stands in it once.
 #[derive(serde::Serialize, serde::Deserialize)]
@@ -108,6 +108,20 @@ impl Serialize for PlayMode {
 
 /// Reads the name of a mode.
 impl<'de> Deserialize<'de> for PlayMode {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        String::deserialize(deserializer)?.parse().map_err(de::Error::custom)
+    }
+}
+
+/// Writes the 32 hexadecimal digits of the ID.
+impl Serialize for PresenceId {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.collect_str(self)
+    }
+}
+
+/// Reads the 32 hexadecimal digits of a presence ID.
+impl<'de> Deserialize<'de> for PresenceId {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         String::deserialize(deserializer)?.parse().map_err(de::Error::custom)
     }

@@ -30,7 +30,8 @@ pub struct UiConfiguration {
     pub stats_kept: NonZeroUsize,
     /// Ours. Default: 1 second.
     ///
-    /// How long the UI waits to open a new live stream, after one ended or did not open.
+    /// How long the UI waits before it reaches for the control plane again: to open a new live stream, after one
+    /// ended or did not open, and to send the release of a pad again that did not arrive.
     pub reconnect_after: TimeSpan,
     /// Ours. Default: 100 milliseconds.
     ///

@@ -555,7 +555,8 @@ pub enum IntentError {
     #[error("the intent was not acted on: {reason}")]
     StoreFailed { reason: String },
     /// The host cannot act on the intent: the pad lies outside its layout, its rule cannot be made or armed,
-    /// it has no rule to turn, or the turn cannot change the rule. `reason` says which.
+    /// it has no rule to turn, the turn cannot change the rule, or the presence that holds the pad is not open.
+    /// `reason` says which.
     #[error("the intent was refused: {reason}")]
     Refused { reason: String },
 }

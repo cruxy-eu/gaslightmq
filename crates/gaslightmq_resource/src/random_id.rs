@@ -1,12 +1,15 @@
-/// Write the ID of a run, and its error, into the crate that calls it.
+/// Write an ID of 128 random bits, and its error, into the crate that calls it.
 ///
-/// A run is one life of a process, from its start to its stop.
-/// Its ID is 128 random bits, written as 32 hexadecimal digits in lower case.
-/// A revision means something only together with the run that gave it, so whatever names a revision that it
-/// expects names the run too.
+/// Some things have an ID that nobody counts: a run of a process, and a presence of a client of the control plane.
+/// Such an ID is 128 random bits, written as 32 hexadecimal digits in lower case.
+/// No two of them are the same by accident, in one run of a process or in two,
+/// so whoever names a thing by such an ID never names another thing that a counter would have given the same number.
 ///
 /// ```
-/// gaslightmq_resource::run_id!(RunId, RunIdError);
+/// gaslightmq_resource::random_id! {
+///     /// A run is one life of a process, from its start to its stop.
+///     RunId, RunIdError, "run ID"
+/// }
 ///
 /// // Whoever puts a process together reads the randomness of the system once, and hands the bits in.
 /// let run = RunId::from_random_bits(0x4be0_643f_1d98_573b_97cd_ca98_a653_47dd);
@@ -25,41 +28,42 @@
 /// # Ok::<(), RunIdError>(())
 /// ```
 ///
-/// The call has up to three arguments:
+/// The call has up to four arguments:
 ///
 /// - The type of the ID. It checks its text in `new`, in `FromStr` and in `TryFrom`.
 ///   This crate reads no randomness: `from_random_bits` takes the bits from its caller.
 /// - The type of its error, an enum with one variant for each part of the rule.
-/// - The word `serde`, as the last argument, for a crate whose run IDs travel.
+/// - The words that a message calls the ID by, such as `"run ID"` or `"presence ID"`.
+/// - The word `serde`, as the last argument, for a crate whose IDs travel.
 ///   The ID then serializes as its text, and the calling crate depends on `serde`:
-///   `gaslightmq_resource::run_id!(RunId, RunIdError, serde);`
+///   `gaslightmq_resource::random_id!(RunId, RunIdError, "run ID", serde);`
 ///
 /// The error derives its message, so the calling crate depends on `thiserror`.
 /// The documentation that the macro writes names neither this crate nor a type of it.
-/// Doc comments in front of the arguments join the documentation of the ID, after its first line.
+/// Doc comments in front of the arguments say what the ID is the ID of, and who makes it:
+/// they join the documentation of the ID, after its first line.
 #[macro_export]
-macro_rules! run_id {
+macro_rules! random_id {
     (
         $(#[$meta:meta])*
-        $run:ident, $error:ident $(,)?
+        $run:ident, $error:ident, $label:literal $(,)?
     ) => {
-        /// The ID of a run: of one life of a process, from its start to its stop.
+        #[doc = concat!("A ", $label, ": 128 random bits, which nobody counts.")]
         ///
         $(#[$meta])*
         ///
-        /// # The rule for run IDs
+        /// # The rule for the ID
         ///
-        /// A run ID is 128 random bits.
+        #[doc = concat!("A ", $label, " is 128 random bits.")]
         /// Its text is 32 hexadecimal digits in lower case: the digits `0` to `9` and the letters `a` to `f`.
         ///
-        /// Whoever puts a process together reads the randomness of the system once, at the start,
-        /// and makes the ID [from those bits](Self::from_random_bits). A test names its own.
-        /// No file holds a run ID, and nothing refers to a run after it ended.
+        /// Whoever makes the ID reads the randomness of the system, and makes it
+        /// [from those bits](Self::from_random_bits). A test names its own.
         #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
         pub struct $run(u128);
 
         impl $run {
-            /// The number of hexadecimal digits that the text of a run ID has.
+            /// The number of hexadecimal digits that the text of the ID has.
             pub const LENGTH: usize = 32;
 
             /// The ID that those 128 random bits make.
@@ -74,7 +78,7 @@ macro_rules! run_id {
                 self.0
             }
 
-            /// Checks the [rule for run IDs](Self#the-rule-for-run-ids), and reads the ID that the text writes.
+            /// Checks the [rule for the ID](Self#the-rule-for-the-id), and reads the ID that the text writes.
             ///
             /// # Errors
             ///
@@ -150,18 +154,19 @@ macro_rules! run_id {
         }
 
         #[doc = concat!(
-            "Why a text is not a [`", stringify!($run), "`]: the part of the [rule for run IDs](",
-            stringify!($run), "#the-rule-for-run-ids) it breaks."
+            "Why a text is not a [`", stringify!($run), "`]: the part of the [rule for the ID](",
+            stringify!($run), "#the-rule-for-the-id) it breaks."
         )]
         #[derive(Debug, Clone, PartialEq, Eq, ::thiserror::Error)]
         pub enum $error {
-            /// The text has `length` characters, and a run ID has 32.
-            #[error("a run ID has {} hexadecimal digits, and not {length} characters", $run::LENGTH)]
+            /// The text has `length` characters, and the ID has 32.
+            #[error("a {} has {} hexadecimal digits, and not {length} characters", $label, $run::LENGTH)]
             WrongLength { length: usize },
             /// The text holds a character that is no hexadecimal digit in lower case, such as `G` or `B`.
             /// It is the first such character, and `position` counts characters from zero.
             #[error(
-                "run ID {input:?} holds {character:?} at position {position}, which is no digit and no letter from a to f"
+                "{} {input:?} holds {character:?} at position {position}, which is no digit and no letter from a to f",
+                $label
             )]
             InvalidCharacter {
                 input: ::std::string::String,
@@ -172,13 +177,13 @@ macro_rules! run_id {
     };
     (
         $(#[$meta:meta])*
-        $run:ident, $error:ident, serde $(,)?
+        $run:ident, $error:ident, $label:literal, serde $(,)?
     ) => {
-        $crate::run_id! {
+        $crate::random_id! {
             $(#[$meta])*
             ///
-            /// With `serde`, a run ID is its text.
-            $run, $error
+            /// With `serde`, the ID is its text.
+            $run, $error, $label
         }
 
         impl ::serde::Serialize for $run {
@@ -198,11 +203,15 @@ macro_rules! run_id {
 
 #[cfg(test)]
 mod tests {
-    crate::run_id!(RunId, RunIdError);
+    crate::random_id!(RunId, RunIdError, "run ID");
 
     mod travelling {
         #[cfg(feature = "serde")]
-        crate::run_id!(RunId, RunIdError, serde);
+        crate::random_id!(RunId, RunIdError, "run ID", serde);
+    }
+
+    mod of_a_presence {
+        crate::random_id!(PresenceId, PresenceIdError, "presence ID");
     }
 
     /// The text of a run ID, as a snapshot of the control plane names it.
@@ -282,6 +291,26 @@ mod tests {
             assert_eq!(text.parse::<RunId>(), Err(error.clone()), "{text:?}");
             assert_eq!(error.to_string(), message);
         }
+    }
+
+    #[test]
+    fn the_error_calls_the_id_by_the_words_of_its_kind() {
+        use of_a_presence::{PresenceId, PresenceIdError};
+
+        let upper = TEXT.to_uppercase();
+
+        assert_eq!(
+            PresenceIdError::WrongLength { length: 5 }.to_string(),
+            "a presence ID has 32 hexadecimal digits, and not 5 characters"
+        );
+        assert_eq!(
+            PresenceId::new(&upper).unwrap_err().to_string(),
+            format!("presence ID {upper:?} holds 'B' at position 1, which is no digit and no letter from a to f")
+        );
+        assert_eq!(
+            format!("{:?}", PresenceId::from_random_bits(BITS)),
+            format!("PresenceId({TEXT})")
+        );
     }
 
     #[test]

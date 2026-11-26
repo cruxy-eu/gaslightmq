@@ -221,6 +221,26 @@ fn a_release_needs_no_environment_that_the_ui_shows() {
 }
 
 #[test]
+fn a_presence_that_ended_leaves_no_pad_held_and_no_release_to_send() {
+    let mut desk = Desk::new(OrderDesk::layout());
+    desk.set_mode(PlayMode::Hold);
+    let orders = OrderDesk::running(Vec::new());
+    let (row, column) = (Row::from_index(1), Column::from_index(0));
+    let pressed = desk.press(row, column, &orders).unwrap();
+    let Intent::Hold { pad } = &pressed.intent else {
+        panic!("a press in hold holds the pad: {pressed:?}");
+    };
+    assert_eq!(desk.answered(&orders.environment, pad, Some(Hold::new(1))), None);
+
+    // The laptop slept with the pad down, for longer than the grace period of the control plane.
+    // The live stream opens again as a new presence: the control plane ended the holds of the one before.
+    desk.presence_ended();
+
+    assert!(!desk.holding());
+    assert_eq!(desk.release(row, column), None);
+}
+
+#[test]
 fn an_encoder_turns_a_live_rule_whose_action_has_its_parameter() {
     let mut desk = Desk::new(OrderDesk::layout());
     let presets = OrderDesk::presets();

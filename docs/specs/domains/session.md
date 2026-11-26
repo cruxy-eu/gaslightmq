@@ -4,6 +4,9 @@ A session is the runtime of one client connection.
 Every call travels through exactly one session.
 The session holds everything rules need to decide about that call.
 
+A session belongs to a Kafka client.
+A client of the control plane, such as a tab of the UI, has no session: it is a [presence](../architecture/control-plane.md#presence).
+
 ## Parts
 
 A session has two parts.

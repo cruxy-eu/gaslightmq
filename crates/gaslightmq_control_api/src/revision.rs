@@ -19,7 +19,10 @@ gaslightmq_resource::revision! {
     Revision, serde
 }
 
-gaslightmq_resource::run_id! {
+gaslightmq_resource::random_id! {
+    /// A run is one life of a process, from its start to its stop.
+    /// The process makes the ID once, at the start, and no file holds it.
+    ///
     /// The [snapshot](crate::ProcessState) names the run of the process, so a client learns it when it connects,
     /// and learns of a restart when the next snapshot names another one.
     /// A change that names the revision it [expects](Expects) names the run that gave it.
@@ -31,7 +34,7 @@ gaslightmq_resource::run_id! {
     /// assert_eq!(run.to_string(), "4be0643f1d98573b97cdca98a65347dd");
     /// # Ok::<(), serde_json::Error>(())
     /// ```
-    RunId, RunIdError, serde
+    RunId, RunIdError, "run ID", serde
 }
 
 /// What a change expects of what it changes: the run that its sender read from, and the revision that it saw.

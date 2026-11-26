@@ -4,9 +4,10 @@ use std::pin::pin;
 
 use futures::future::{Either, select};
 use gaslightmq_control_api::clock::TimeSpan;
+use gaslightmq_control_api::surface::PresenceId;
 use gaslightmq_control_api::{Operation, RequestSource};
 
-use crate::exchange::{OPERATIONS_PATH, RequestText, STREAM_PATH};
+use crate::exchange::{OPERATIONS_PATH, RequestText, read_presence, stream_path};
 use crate::transport::{self, Http, Socket};
 use crate::{ControlClientConfiguration, LiveStream, SendError, StreamError};
 
@@ -93,10 +94,11 @@ impl ControlClient {
         request.read::<O>(&reply)
     }
 
-    /// Opens a live stream, and returns once the control plane took it.
+    /// Opens a live stream, and returns once the control plane took it and named the presence of the client.
     ///
-    /// The control plane sends the [snapshot](gaslightmq_control_api::StreamMessage::Snapshot) first,
-    /// and every change after it. The stream follows no calls until it [follows](LiveStream::follow) some.
+    /// The client is a new [presence](LiveStream::presence): the control plane opens one for the stream.
+    /// The [snapshot](gaslightmq_control_api::StreamMessage::Snapshot) is the first message that the stream
+    /// [hands over](LiveStream::next), and every change comes after it. The stream follows no calls until it [follows](LiveStream::follow) some.
     ///
     /// # Errors
     ///
@@ -104,19 +106,58 @@ impl ControlClient {
     /// [request timeout](ControlClientConfiguration::request_timeout), and [`StreamError::Unreadable`] when
     /// something else than a control plane answered.
     pub async fn live_stream(&self) -> Result<LiveStream, StreamError> {
-        let url = self.configuration.address.websocket(STREAM_PATH);
+        self.open(None).await
+    }
+
+    /// Opens a live stream for a client that comes back as `presence`: the presence of the stream it had before.
+    ///
+    /// The control plane keeps a presence whose stream ended for a grace period.
+    /// A client that comes back within it goes on as that presence, and the pads it holds stay held.
+    /// A client that comes back later, or to another process, gets a new presence,
+    /// and the holds of the one it had have ended: the [presence of the stream](LiveStream::presence) says which.
+    ///
+    /// ```no_run
+    /// use gaslightmq_control_client::{ControlClient, StreamError};
+    ///
+    /// # async fn follow(client: ControlClient) -> Result<(), StreamError> {
+    /// let stream = client.live_stream().await?;
+    /// let presence = stream.presence();
+    /// // The stream breaks, and the client opens a new one as the same presence.
+    /// drop(stream);
+    /// let again = client.live_stream_as(presence).await?;
+    /// if again.presence() != presence {
+    ///     // The control plane no longer held the presence: its holds have ended.
+    /// }
+    /// # Ok(())
+    /// # }
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// The errors of [`live_stream`](Self::live_stream).
+    pub async fn live_stream_as(&self, presence: PresenceId) -> Result<LiveStream, StreamError> {
+        self.open(Some(presence)).await
+    }
+
+    /// Opens a live stream for a new client, or for one that comes back as `presence`.
+    async fn open(&self, presence: Option<PresenceId>) -> Result<LiveStream, StreamError> {
+        let url = self.configuration.address.websocket(&stream_path(presence));
         let timeout = self.configuration.request_timeout;
-        let socket = within(timeout, Socket::open(&url)).await.unwrap_or_else(|| {
+        let opening = async {
+            let mut socket = Socket::open(&url).await?;
+            let presence = read_presence(&socket.receive().await?)?;
+            Ok(LiveStream::new(socket, presence, timeout))
+        };
+        within(timeout, opening).await.unwrap_or_else(|| {
             Err(StreamError::Unreachable {
                 reason: no_answer(timeout),
             })
-        })?;
-        Ok(LiveStream::new(socket))
+        })
     }
 }
 
 /// What `work` returns, or nothing once `span` passed.
-async fn within<T>(span: TimeSpan, work: impl Future<Output = T>) -> Option<T> {
+pub(crate) async fn within<T>(span: TimeSpan, work: impl Future<Output = T>) -> Option<T> {
     match select(pin!(work), pin!(transport::sleep(span))).await {
         Either::Left((outcome, _)) => Some(outcome),
         Either::Right(((), _)) => None,

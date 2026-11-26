@@ -55,6 +55,7 @@ Workspace, Environment, Secret and Scratch file belong to [storage](../architect
 | **Overlay** | The Upstream backend's layer over the real cluster: address translation and emulated incidents. Part of the truth. |
 | **Pad layout** | A grid that maps rows to selectors, columns to presets and layers to scopes. |
 | **Pre-empted** | A lie that fired but had nothing left to change, because another lie ended the call or replaced its target. |
+| **Presence** | One client of the control plane that is there, such as a tab of the UI. It outlives a connection that drops while the client comes back, and ends when the client stays away. The holds of its pads end with it. |
 | **Proxy** | The instance that stands in front of a cluster or a broker. It runs sessions, rules and scenarios, and it is the only place where lies happen. |
 | **Preset** | A named, reusable lie or incident with its parameters, such as `delay-1s`. |
 | **Priority** | Where a rule stands among the armed rules. When two lies conflict, the lie of the rule with the higher priority wins. |

@@ -22,7 +22,7 @@ use gaslightmq_control_api::kernel::{ApiKey, BrokerId, ClientId};
 use gaslightmq_control_api::prelude::*;
 use gaslightmq_control_api::rule::{PresetName, Rule, RuleName, RuleState};
 use gaslightmq_control_api::selector::{Condition, Conditions, Selector, SelectorName, SelectorRef};
-use gaslightmq_control_api::surface::{Column, Hold, Intent, LayoutName, Pad, PadLayout, Row};
+use gaslightmq_control_api::surface::{Column, Hold, Intent, LayoutName, Pad, PadLayout, PresenceId, Row};
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 use serde_json::{Value, json};
@@ -165,6 +165,49 @@ fn an_undo_and_a_redo_say_their_cause() {
         "environment": "orders-sim",
         "rule": "slow-order-producers",
     }));
+}
+
+#[test]
+fn a_request_of_a_presence_says_which_one_and_a_hold_it_adds_ends_with_it() {
+    // A tab of the UI holds a pad. Its live stream named its presence, and the request of the hold says so.
+    let tab = PresenceId::from_random_bits(0x9f86_d081_884c_7d65_9a2f_eaa0_c55a_d015);
+    let hold = SendIntent {
+        environment: "orders-sim".parse().unwrap(),
+        intent: Intent::Hold {
+            pad: Pad::new(
+                "order-desk".parse().unwrap(),
+                "order-ingest".parse().unwrap(),
+                Row::from_index(0),
+                Column::from_index(3),
+            ),
+        },
+    };
+
+    Form(OperationRequest::new(
+        RequestSource::new(RequestSurface::Pad).with_presence(tab),
+        hold,
+    ))
+    .writes(json!({
+        "from": { "surface": "pad", "presence": "9f86d081884c7d659a2feaa0c55ad015" },
+        "operation": "send-intent",
+        "environment": "orders-sim",
+        "intent": {
+            "intent": "hold",
+            "pad": { "layout": "order-desk", "layer": "order-ingest", "row": 0, "column": 3 },
+        },
+    }));
+    // An undo of the same tab says its cause and its presence.
+    Form(
+        RequestSource::new(RequestSurface::Ui)
+            .with_presence(tab)
+            .with_cause(RequestCause::Undo),
+    )
+    .writes(json!({ "surface": "ui", "cause": "undo", "presence": "9f86d081884c7d659a2feaa0c55ad015" }));
+    // No request names a presence by anything but its ID.
+    Form::<OperationRequest>::rejects(
+        json!({ "from": { "surface": "pad", "presence": "tab-7" }, "operation": "list-rules" }),
+        "a presence ID has 32 hexadecimal digits, and not 5 characters",
+    );
 }
 
 #[test]
@@ -1013,6 +1056,14 @@ fn an_error_of_another_operation_does_not_read() {
 }
 
 // The live stream
+
+#[test]
+fn the_stream_names_the_presence_of_its_client() {
+    Form(StreamMessage::Present {
+        presence: PresenceId::from_random_bits(0x9f86_d081_884c_7d65_9a2f_eaa0_c55a_d015),
+    })
+    .writes(json!({ "message": "present", "presence": "9f86d081884c7d659a2feaa0c55ad015" }));
+}
 
 #[test]
 fn an_accepted_subscription_says_what_the_client_follows() {

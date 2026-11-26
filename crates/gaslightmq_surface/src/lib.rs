@@ -19,6 +19,7 @@
 //! | [`EncoderMapping`] | What one step of each encoder is worth, and what a turn does to a rule. |
 //! | [`Intent`] | What a surface sends: the state it wants for a rule, a hold of a pad and its release, or a change of a parameter by a turn. |
 //! | [`Hold`] | One hold of a pad, which a press in hold adds and its release takes away. |
+//! | [`PresenceId`] | The ID of a presence: of one client of a surface that is there, and whose holds end when it is gone. |
 //! | [`Surface`] | One surface: its layout, the layer it shows, its mode and its focus. It turns presses and turns into intents. |
 //! | [`LayoutStore`] | What keeps the pad layouts: the store contract, and which layouts use a selector or a preset. |
 //!
@@ -88,6 +89,7 @@
 //! | What does a press want? | [`Surface`], from the mode of play and from what the pad shows. |
 //! | What did a press do, and which hold did it add? | Whoever holds the rules, in its answer. |
 //! | How many people hold a rule? | Whoever holds the rules. It disarms a rule that holds armed when its last hold goes, and a disarm ends every hold. |
+//! | Whose hold is it, and is its holder still there? | Whoever holds the rules. It gives a hold to the presence that its press came from, and ends the holds of a presence that ended. |
 //! | What does a turn do to a rule? | [`EncoderMapping::apply`], on the side of whoever holds the rule. |
 //! | Does a selector or a preset of a layout exist? | Whoever holds the whole workspace. |
 //!
@@ -103,6 +105,7 @@
 //! | [`PadLayout`] | [`PadLayoutError`] | The layout has no layer, or it holds a layer, a selector or a preset twice. |
 //! | [`Encoder`] | [`EncoderError`] | No encoder has this name. |
 //! | [`PlayMode`] | [`PlayModeError`] | No mode of play has this name. |
+//! | [`PresenceId`] | [`PresenceIdError`] | The text breaks a part of the [rule for the ID](PresenceId#the-rule-for-the-id). |
 //!
 //! What the crate does has one error, [`TurnError`]: a turn of an encoder does not change a rule,
 //! because the rule has nothing for that encoder to change, or because it names a preset that does not exist.
@@ -127,6 +130,7 @@
 //! | [`Pad`] | A map with `layout`, `layer`, `row` and `column`. |
 //! | [`Encoder`], [`PlayMode`] | The name. |
 //! | [`Steps`], [`Hold`] | The number. |
+//! | [`PresenceId`] | The text: 32 hexadecimal digits. |
 //! | [`EncoderTurn`] | A map with `encoder` and `steps`. |
 //! | [`EncoderMapping`] | A map of its properties. It leaves none out, and reads the default of one that is missing. |
 //! | [`Intent`] | A map whose `intent` key is `arm`, `disarm`, `hold`, `release` or `turn`, with a `pad`, with a `hold` for a release, and with a `turn` for a turn. |
@@ -173,6 +177,7 @@ mod mapping;
 mod name;
 mod pad;
 mod play;
+mod presence;
 #[cfg(feature = "serde")]
 mod serde;
 mod store;
@@ -187,6 +192,7 @@ pub use mapping::{EncoderMapping, TurnError};
 pub use name::{LayoutName, LayoutNameError, LayoutTitle, LayoutTitleError};
 pub use pad::{Column, Pad, PadState, Row};
 pub use play::{PlayMode, PlayModeError};
+pub use presence::{PresenceId, PresenceIdError};
 pub use store::LayoutStore;
 pub use surface::Surface;
 
@@ -207,6 +213,6 @@ pub mod prelude {
     pub use crate::{
         Column, Encoder, EncoderError, EncoderMapping, EncoderTurn, Hold, Intent, Layer, LayerError, LayoutName,
         LayoutNameError, LayoutStore, LayoutTitle, LayoutTitleError, Pad, PadLayout, PadLayoutError, PadState,
-        PlayMode, PlayModeError, Row, Steps, Surface, TurnError,
+        PlayMode, PlayModeError, PresenceId, PresenceIdError, Row, Steps, Surface, TurnError,
     };
 }

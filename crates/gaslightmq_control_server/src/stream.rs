@@ -1,18 +1,21 @@
-//! The live stream of one client: its snapshot, the changes after it, and the calls it follows.
+//! The live stream of one client: its presence, its snapshot, the changes after it, and the calls it follows.
 
 use std::sync::Arc;
 
 use axum::extract::ws::{CloseFrame, Message, WebSocket, close_code};
 use futures::stream::{SplitSink, SplitStream};
 use futures::{SinkExt, StreamExt};
+use gaslightmq_clock_waitable::WaitableClock;
 use gaslightmq_control_api::call::Call;
 use gaslightmq_control_api::environment::EnvironmentName;
 use gaslightmq_control_api::prelude::*;
+use gaslightmq_control_api::surface::PresenceId;
 use gaslightmq_host::CallSubscription;
 use gaslightmq_workspace::WorkspaceContext;
 use tokio::sync::broadcast::error::RecvError;
 use tokio::sync::watch;
 
+use crate::attendance::{Attendance, NoPresence};
 use crate::plane::{Change, ControlPlane, form};
 use crate::server::stopped;
 
@@ -42,43 +45,78 @@ enum End {
     Stopping,
     /// The workspace could not be read for a snapshot. The text is what the store said.
     Unreadable(String),
+    /// The client got no presence: the system gave no randomness for its ID. The text is what the system said.
+    NoPresence(String),
 }
 
-/// The live stream of one client, from its snapshot until one side ends it.
-pub(crate) struct ClientStream<C: WorkspaceContext> {
+/// The live stream of one client, from its presence and its snapshot until one side ends it.
+pub(crate) struct ClientStream<C: WorkspaceContext, K> {
     plane: Arc<ControlPlane<C>>,
     stopping: watch::Receiver<bool>,
+    attendance: Attendance<K>,
+    /// The presence that the client comes back as, when it named one.
+    comes_back_as: Option<PresenceId>,
 }
 
-impl<C: WorkspaceContext + 'static> ClientStream<C> {
+impl<C: WorkspaceContext + 'static, K: WaitableClock> ClientStream<C, K> {
     /// The stream of a client of `plane`, which ends when `stopping` turns true.
-    pub(crate) fn new(plane: Arc<ControlPlane<C>>, stopping: watch::Receiver<bool>) -> Self {
-        Self { plane, stopping }
-    }
-
-    /// Sends the snapshot, then every change and every call that the client follows, until one side ends the stream.
-    pub(crate) async fn run(self, socket: WebSocket) {
-        let (mut sender, mut receiver) = socket.split();
-        let end = self.serve(&mut sender, &mut receiver).await;
-        let close = match end {
-            End::Client => None,
-            End::Stopping => Some(CloseFrame {
-                code: close_code::AWAY,
-                reason: "the control plane stops".into(),
-            }),
-            End::Unreadable(reason) => Some(CloseFrame {
-                code: close_code::ERROR,
-                reason: reason.into(),
-            }),
-        };
-        if let Some(close) = close {
-            // A client that went away hears nothing, and there is nothing else to tell it.
-            let _ = sender.send(Message::Close(Some(close))).await;
+    ///
+    /// The client is new, or it comes back as the presence that it had on an earlier stream.
+    pub(crate) fn new(
+        plane: Arc<ControlPlane<C>>,
+        stopping: watch::Receiver<bool>,
+        attendance: Attendance<K>,
+        comes_back_as: Option<PresenceId>,
+    ) -> Self {
+        Self {
+            plane,
+            stopping,
+            attendance,
+            comes_back_as,
         }
     }
 
-    async fn serve(&self, sender: &mut SplitSink<WebSocket, Message>, receiver: &mut SplitStream<WebSocket>) -> End {
+    /// Sends the presence of the client and the snapshot, then every change and every call that the client follows,
+    /// until one side ends the stream. Then it keeps the presence for its grace period, and ends it in the host
+    /// unless the client comes back.
+    pub(crate) async fn run(self, socket: WebSocket) {
+        let (mut sender, mut receiver) = socket.split();
+        let host = self.plane.host();
+        let presence = match self.attendance.arrive(host, self.comes_back_as) {
+            Ok(presence) => presence,
+            Err(NoPresence::Stopping) => return close(sender, End::Stopping).await,
+            Err(NoPresence::NoRandomness { reason }) => return close(sender, End::NoPresence(reason)).await,
+        };
+        let end = self.serve(presence, &mut sender, &mut receiver).await;
+        // The server notes that the client left before it lets go of the connection,
+        // so a client that closed its stream finds that noted once the connection is gone.
+        let ends_at = self.attendance.leave(presence);
+        // The connection closes behind this task: a client that takes no close frame holds up nothing.
+        tokio::spawn(async move {
+            close(sender, end).await;
+            drop(receiver);
+        });
+        let Some(ends_at) = ends_at else {
+            return;
+        };
+        let mut stopping = self.stopping.clone();
+        tokio::select! {
+            () = self.attendance.end_unless_back(host, presence, ends_at) => {}
+            // A server that stops ends every presence itself.
+            () = stopped(&mut stopping) => {}
+        }
+    }
+
+    async fn serve(
+        &self,
+        presence: PresenceId,
+        sender: &mut SplitSink<WebSocket, Message>,
+        receiver: &mut SplitStream<WebSocket>,
+    ) -> End {
         let mut changes = self.plane.changes();
+        if send(sender, &StreamMessage::Present { presence }).await.is_err() {
+            return End::Client;
+        }
         if let Err(end) = self.snapshot(sender).await {
             return end;
         }
@@ -178,6 +216,31 @@ async fn next_call(following: &mut Option<Following>) -> Option<StreamMessage> {
         Some(following) => following.next().await,
         None => std::future::pending().await,
     }
+}
+
+/// Closes the stream of a client, with a close frame that says why when the server ends it.
+async fn close(mut sender: SplitSink<WebSocket, Message>, end: End) {
+    let frame = match end {
+        End::Client => None,
+        End::Stopping => Some(CloseFrame {
+            code: close_code::AWAY,
+            reason: "the control plane stops".into(),
+        }),
+        End::Unreadable(reason) => Some(CloseFrame {
+            code: close_code::ERROR,
+            reason: reason.into(),
+        }),
+        End::NoPresence(reason) => Some(CloseFrame {
+            code: close_code::ERROR,
+            reason: format!("the system gave no randomness for a presence: {reason}").into(),
+        }),
+    };
+    // A client that went away hears nothing, and there is nothing else to tell it.
+    let _ = match frame {
+        Some(frame) => sender.send(Message::Close(Some(frame))).await,
+        // The client closed the stream, and this answers its close.
+        None => sender.close().await,
+    };
 }
 
 /// Sends one message as a text frame.

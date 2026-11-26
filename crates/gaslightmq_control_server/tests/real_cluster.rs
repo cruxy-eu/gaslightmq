@@ -1,5 +1,6 @@
 //! The control plane runs environments of the workspace in front of real Kafka brokers, streams what happens in
-//! them: their calls, their rules, their sessions and their statistics, and reads ⌘K sentences with their names.
+//! them: their calls, their rules, their sessions and their statistics, reads ⌘K sentences with their names,
+//! and ends the holds of a client that stayed away.
 //!
 //! The tests need Docker.
 //! Each test starts the cluster it needs, a host whose workspace lives in memory, and a server in front of the host,
@@ -11,6 +12,7 @@ use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::Arc;
 
 use anyhow::Context;
+use gaslightmq_clock_waitable::SteppedClock;
 use gaslightmq_control_api::clock::{Duration, TimeSpan};
 use gaslightmq_control_api::environment::{
     BrokerListeners, Environment, Instances, ListenAddress, Listeners, ProxyDefinition, Upstream,
@@ -24,7 +26,7 @@ use gaslightmq_control_api::Revision;
 use gaslightmq_control_api::rule::{Preset, PresetSet, Rule, RuleState};
 use gaslightmq_control_api::selector::{Condition, Conditions, Selector, SelectorRef, SelectorSet};
 use gaslightmq_control_api::surface::{
-    Column, Encoder, EncoderMapping, EncoderTurn, Intent, Layer, PadLayout, Row, Steps,
+    Column, Encoder, EncoderMapping, EncoderTurn, Intent, Layer, Pad, PadLayout, PresenceId, Row, Steps,
 };
 use gaslightmq_control_api::trigger::{Count, Lifetime, Trigger};
 use gaslightmq_control_client::{ControlClient, ControlClientConfiguration, LiveStream};
@@ -1038,6 +1040,218 @@ async fn a_sentence_knows_the_client_that_wrote_through_the_environment_and_ente
     };
     stream.next_where(|message| *message == armed_rule).await?;
     server.stop().await;
+    host.stop_all().await;
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_client_that_stays_away_for_the_grace_period_loses_its_holds() -> anyhow::Result<()> {
+    let cluster = KafkaCluster::plaintext().start().await?;
+    let host = Arc::new(Host::new(
+        HostConfiguration::default(),
+        MemoryContext::new(),
+        Lies::of_every_build(),
+        RUN.parse()?,
+    ));
+    let any = ListenAddress::new(LOCALHOST, ANY_PORT);
+    let brokers = BrokerListeners::pinned(cluster.brokers().iter().map(|broker| (broker.id(), any)))?;
+    let staging = Environment::new(
+        "staging-proxy".parse()?,
+        Instances::ProxyInFrontOfCluster {
+            proxy: ProxyDefinition::new(Listeners::new(any, brokers, LOCALHOST.into())?),
+            upstream: Upstream::new(cluster.brokers()[0].address().to_string().parse()?),
+        },
+    );
+    // A desk with one pad: a delay of 1 s on the order producers, for every client.
+    let order_producers = Selector::new(
+        "order-producers".parse()?,
+        Conditions::from(Condition::is(ApiKey::PRODUCE)),
+    );
+    let delay = Preset::new("delay-1s".parse()?, TimingLie::new().with_delay(TimeSpan::from_secs(1)));
+    let desk = PadLayout::new(
+        "order-desk".parse()?,
+        [order_producers.name().clone()],
+        [delay.name().clone()],
+        [Layer::all_clients()],
+    )?;
+    host.create(staging.clone()).await?;
+    host.create(order_producers).await?;
+    host.create(delay).await?;
+    host.create(desk.clone()).await?;
+    let mut configuration = ControlServerConfiguration::default();
+    configuration.listen = SocketAddr::new(LOCALHOST, ANY_PORT);
+    configuration.stats_interval = StatsInterval::new(QUIET)?;
+    let grace = configuration.presence_grace;
+    // The grace period of a presence runs on the clock of the server, which the test steps.
+    let clock = SteppedClock::new();
+    let server = ControlServer::start_on(configuration, Arc::clone(&host), clock.clone()).await?;
+    let client = ControlClient::new(ControlClientConfiguration::new(server.address().into()));
+    client
+        .send(StartEnvironment {
+            environment: staging.name().clone(),
+        })
+        .await??;
+    let pad = desk
+        .pad(&Layer::all_clients(), Row::from_index(0), Column::from_index(0))
+        .context("the desk has a pad at its first row and column")?;
+    let rule = desk.rule_name(&pad).context("the pad points at a rule by its name")?;
+    let state_of_the_rule = async || -> anyhow::Result<Option<RuleState>> {
+        let rules = client
+            .send(ListEnvironmentRules {
+                environment: staging.name().clone(),
+            })
+            .await??;
+        let of_the_pad = rules.into_iter().find(|status| status.rule.name() == &rule);
+        Ok(of_the_pad.map(|status| status.state))
+    };
+
+    // Ana plays at a tab of the UI, and Dan watches at another one. Each tab is a presence.
+    let anas_tab = client.live_stream().await?;
+    let mut dans_tab = Watched {
+        stream: client.live_stream().await?,
+    };
+    // Ana holds the pad. Her request says which presence it comes from, so her hold belongs to that presence.
+    let from_ana = RequestSource::new(RequestSurface::Pad).with_presence(anas_tab.presence());
+    let held = client
+        .send_from(
+            from_ana,
+            SendIntent {
+                environment: staging.name().clone(),
+                intent: Intent::Hold { pad },
+            },
+        )
+        .await??;
+    assert!(held.hold.is_some(), "{held:?}");
+    assert_eq!(state_of_the_rule().await?, Some(RuleState::Armed));
+
+    // Ana closes her tab while she holds the pad, so her release never comes.
+    anas_tab.close().await;
+    // The server keeps her presence for the grace period, in case her tab comes back, and the rule stays armed.
+    clock.advance(grace.duration() / 2);
+    assert_eq!(state_of_the_rule().await?, Some(RuleState::Armed));
+
+    // Her tab stays away until the grace period is over. Her presence ends, her hold with it, and the rule disarms.
+    clock.advance(grace.duration());
+    dans_tab
+        .next_where(|message| {
+            matches!(
+                message,
+                StreamMessage::RuleChanged { rule: status, .. }
+                    if status.rule.name() == &rule && status.state == RuleState::Disarmed
+            )
+        })
+        .await?;
+    assert_eq!(state_of_the_rule().await?, Some(RuleState::Disarmed));
+    server.stop().await;
+    host.stop_all().await;
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_client_that_comes_back_within_the_grace_period_keeps_its_holds_until_the_control_plane_stops()
+-> anyhow::Result<()> {
+    let cluster = KafkaCluster::plaintext().start().await?;
+    let host = Arc::new(Host::new(
+        HostConfiguration::default(),
+        MemoryContext::new(),
+        Lies::of_every_build(),
+        RUN.parse()?,
+    ));
+    let any = ListenAddress::new(LOCALHOST, ANY_PORT);
+    let brokers = BrokerListeners::pinned(cluster.brokers().iter().map(|broker| (broker.id(), any)))?;
+    let staging = Environment::new(
+        "staging-proxy".parse()?,
+        Instances::ProxyInFrontOfCluster {
+            proxy: ProxyDefinition::new(Listeners::new(any, brokers, LOCALHOST.into())?),
+            upstream: Upstream::new(cluster.brokers()[0].address().to_string().parse()?),
+        },
+    );
+    // A desk with two pads: a delay of 1 s on the order producers and one on the fetches, for every client.
+    let order_producers = Selector::new(
+        "order-producers".parse()?,
+        Conditions::from(Condition::is(ApiKey::PRODUCE)),
+    );
+    let fetches = Selector::new("fetches".parse()?, Conditions::from(Condition::is(ApiKey::FETCH)));
+    let delay = Preset::new("delay-1s".parse()?, TimingLie::new().with_delay(TimeSpan::from_secs(1)));
+    let desk = PadLayout::new(
+        "order-desk".parse()?,
+        [order_producers.name().clone(), fetches.name().clone()],
+        [delay.name().clone()],
+        [Layer::all_clients()],
+    )?;
+    host.create(staging.clone()).await?;
+    host.create(order_producers).await?;
+    host.create(fetches).await?;
+    host.create(delay).await?;
+    host.create(desk.clone()).await?;
+    let mut configuration = ControlServerConfiguration::default();
+    configuration.listen = SocketAddr::new(LOCALHOST, ANY_PORT);
+    configuration.stats_interval = StatsInterval::new(QUIET)?;
+    let grace = configuration.presence_grace;
+    // The grace period of a presence runs on the clock of the server, which the test steps.
+    let clock = SteppedClock::new();
+    let server = ControlServer::start_on(configuration, Arc::clone(&host), clock.clone()).await?;
+    let client = ControlClient::new(ControlClientConfiguration::new(server.address().into()));
+    client
+        .send(StartEnvironment {
+            environment: staging.name().clone(),
+        })
+        .await??;
+    let slow_producers = desk
+        .pad(&Layer::all_clients(), Row::from_index(0), Column::from_index(0))
+        .context("the desk has a pad at its first row")?;
+    let slow_fetches = desk
+        .pad(&Layer::all_clients(), Row::from_index(1), Column::from_index(0))
+        .context("the desk has a pad at its second row")?;
+    let rule_of = |pad: &Pad| desk.rule_name(pad).context("the pad points at a rule by its name");
+    let (anas_rule, dans_rule) = (rule_of(&slow_producers)?, rule_of(&slow_fetches)?);
+    // A press in hold of a tab says which presence it comes from, so its hold belongs to that presence.
+    let hold = async |presence: PresenceId, pad: Pad| {
+        let from = RequestSource::new(RequestSurface::Pad).with_presence(presence);
+        let environment = staging.name().clone();
+        let intent = Intent::Hold { pad };
+        client.send_from(from, SendIntent { environment, intent }).await
+    };
+
+    // Ana and Dan each play at a tab of their own, and Cleo watches at a third. Each tab is a presence.
+    let anas_tab = client.live_stream().await?;
+    let dans_tab = client.live_stream().await?;
+    let mut cleos_tab = Watched {
+        stream: client.live_stream().await?,
+    };
+    let ana = anas_tab.presence();
+    // Ana holds the pad of the order producers, and Dan the pad of the fetches.
+    hold(ana, slow_producers).await??;
+    hold(dans_tab.presence(), slow_fetches).await??;
+
+    // The streams of both end while they hold their pads.
+    anas_tab.close().await;
+    dans_tab.close().await;
+    // Ana's tab comes back before the grace period is over, as the presence it was. Dan's tab stays away.
+    clock.advance(grace.duration() / 2);
+    let anas_tab = client.live_stream_as(ana).await?;
+    assert_eq!(anas_tab.presence(), ana);
+
+    // The grace period of both streams is over. Dan's presence ends, and the pad he held disarms.
+    clock.advance(grace.duration());
+    cleos_tab
+        .next_where(|message| {
+            matches!(
+                message,
+                StreamMessage::RuleChanged { rule: status, .. }
+                    if status.rule.name() == &dans_rule && status.state == RuleState::Disarmed
+            )
+        })
+        .await?;
+    // Ana's presence went on, and her hold with it: her pad stays armed.
+    let still_held = host.rule_of(staging.name(), &anas_rule).await?;
+    assert_eq!(still_held.map(|rule| rule.state), Some(RuleState::Armed));
+
+    // The control plane stops while Ana holds her pad. No client comes back to a control plane that stopped,
+    // so her presence ends at once, and the host that lives on holds the pad no more.
+    server.stop().await;
+    let after_the_stop = host.rule_of(staging.name(), &anas_rule).await?;
+    assert_eq!(after_the_stop.map(|rule| rule.state), Some(RuleState::Disarmed));
     host.stop_all().await;
     Ok(())
 }

@@ -9,9 +9,10 @@ workspace = true
 
 # The modules that hold values and never wait: `cargo xtask sans-io` holds them to that.
 [package.metadata.gaslightmq]
-sans_io_modules = ["configuration", "error"]
+sans_io_modules = ["configuration", "error", "presence"]
 
 [dependencies]
+gaslightmq_clock_waitable.workspace = true
 gaslightmq_control_api.workspace = true
 gaslightmq_definition_api.workspace = true
 gaslightmq_engine.workspace = true
@@ -21,6 +22,8 @@ gaslightmq_session.workspace = true
 gaslightmq_workspace.workspace = true
 axum.workspace = true
 futures.workspace = true
+# The ID of each presence, and in the demo, which is a process of its own, the ID of its run.
+getrandom.workspace = true
 rust-embed.workspace = true
 serde.workspace = true
 serde_json.workspace = true
@@ -35,8 +38,6 @@ gaslightmq_control_client.workspace = true
 gaslightmq_workspace = { workspace = true, features = ["memory"] }
 # The lies that the host of a test tells.
 gaslightmq_lie_api.workspace = true
-# The demo is a process of its own: it reads the randomness of the system once, for the ID of its run.
-getrandom.workspace = true
 # The environment of `tests/real_cluster`: a real client in front, and real Kafka brokers behind.
 gaslightmq_kafka_client_native.workspace = true
 gaslightmq_test_kafka.workspace = true

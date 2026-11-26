@@ -9,6 +9,7 @@ use futures::{SinkExt, StreamExt};
 use gaslightmq_control_api::clock::TimeSpan;
 use gaslightmq_control_api::prelude::*;
 use gaslightmq_control_api::selector::{Conditions, SelectorRef};
+use gaslightmq_control_api::surface::PresenceId;
 use gaslightmq_control_client::{
     ControlClient, ControlClientConfiguration, ControlPlaneAddress, SendError, StreamError,
 };
@@ -17,6 +18,7 @@ use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
 use tokio::net::{TcpListener, TcpStream};
 use tokio_tungstenite::WebSocketStream;
 use tokio_tungstenite::tungstenite::Message;
+use tokio_tungstenite::tungstenite::handshake::server::{Request, Response};
 use tokio_tungstenite::tungstenite::protocol::CloseFrame;
 use tokio_tungstenite::tungstenite::protocol::frame::coding::CloseCode;
 
@@ -27,6 +29,11 @@ const RUN: &str = "4be0643f1d98573b97cdca98a65347dd";
 const LEFT: Revised = Revised {
     revision: Revision::new(8),
 };
+
+/// The presence that the control plane of a test names for a tab of the UI, and the one it names for a client
+/// whose presence it no longer holds.
+const TAB: PresenceId = PresenceId::from_random_bits(0x9f86_d081_884c_7d65_9a2f_eaa0_c55a_d015);
+const NEW_TAB: PresenceId = PresenceId::from_random_bits(0x2c26_b46b_68ff_c68f_f99b_453c_1d30_4134);
 
 mod operations {
     use super::*;
@@ -266,7 +273,7 @@ mod live_stream {
     async fn a_stream_starts_with_the_snapshot_and_follows_the_calls_of_its_subscription() -> anyhow::Result<()> {
         let control_plane = ScriptedControlPlane::start().await?;
         let client = ControlClient::new(ControlClientConfiguration::new(control_plane.address()?));
-        let (stream, server_side) = tokio::join!(client.live_stream(), control_plane.take_stream());
+        let (stream, server_side) = tokio::join!(client.live_stream(), control_plane.take_stream(TAB));
         let (mut stream, mut server_side) = (stream?, server_side?);
         let every_call = Subscription::Calls {
             environment: "orders-sim".parse()?,
@@ -287,10 +294,70 @@ mod live_stream {
     }
 
     #[tokio::test]
+    async fn a_stream_names_the_presence_of_its_client_and_a_client_that_comes_back_asks_for_it() -> anyhow::Result<()>
+    {
+        let control_plane = ScriptedControlPlane::start().await?;
+        let client = ControlClient::new(ControlClientConfiguration::new(control_plane.address()?));
+
+        // A client that is new asks for no presence, and the control plane opens one for it.
+        let (stream, server_side) = tokio::join!(client.live_stream(), control_plane.take_stream(TAB));
+        let (stream, server_side) = (stream?, server_side?);
+        assert_eq!(server_side.path, "/api/stream");
+        assert_eq!(stream.presence(), TAB);
+
+        // The stream breaks. The client comes back as the presence it had, and the control plane still holds it.
+        drop((stream, server_side));
+        let (again, server_side) = tokio::join!(client.live_stream_as(TAB), control_plane.take_stream(TAB));
+        let (again, server_side) = (again?, server_side?);
+        assert_eq!(server_side.path, format!("/api/stream?presence={TAB}"));
+        assert_eq!(again.presence(), TAB);
+
+        // It comes back once more, too late: the control plane names another presence, and the client knows that
+        // the holds of the one it had have ended.
+        drop((again, server_side));
+        let (late, server_side) = tokio::join!(client.live_stream_as(TAB), control_plane.take_stream(NEW_TAB));
+        assert_eq!(late?.presence(), NEW_TAB);
+        drop(server_side?);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn a_stream_that_does_not_start_with_the_presence_of_its_client_is_unreadable() -> anyhow::Result<()> {
+        let control_plane = ScriptedControlPlane::start().await?;
+        let client = ControlClient::new(ControlClientConfiguration::new(control_plane.address()?));
+
+        let (stream, server_side) = tokio::join!(client.live_stream(), control_plane.take_stream_without_a_presence());
+
+        let error = stream.err().context("the stream opened without a presence")?;
+        assert_eq!(
+            error,
+            StreamError::Unreadable {
+                reason: "the live stream did not start with the presence of its client".to_owned()
+            }
+        );
+        drop(server_side?);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn a_stream_that_closes_tells_the_control_plane_and_waits_until_it_let_go() -> anyhow::Result<()> {
+        let control_plane = ScriptedControlPlane::start().await?;
+        let client = ControlClient::new(ControlClientConfiguration::new(control_plane.address()?));
+        let (stream, server_side) = tokio::join!(client.live_stream(), control_plane.take_stream(TAB));
+        let (stream, server_side) = (stream?, server_side?);
+
+        // The control plane reads that the client closes the stream, and only then lets go of it.
+        let ((), told) = tokio::join!(stream.close(), server_side.let_go_once_closed());
+
+        told?;
+        Ok(())
+    }
+
+    #[tokio::test]
     async fn a_stream_of_a_control_plane_that_stops_ends_and_stays_ended() -> anyhow::Result<()> {
         let control_plane = ScriptedControlPlane::start().await?;
         let client = ControlClient::new(ControlClientConfiguration::new(control_plane.address()?));
-        let (stream, server_side) = tokio::join!(client.live_stream(), control_plane.take_stream());
+        let (stream, server_side) = tokio::join!(client.live_stream(), control_plane.take_stream(TAB));
         let (mut stream, mut server_side) = (stream?, server_side?);
 
         server_side.stop().await?;
@@ -310,7 +377,7 @@ mod live_stream {
     async fn a_message_that_is_none_of_the_live_stream_is_unreadable() -> anyhow::Result<()> {
         let control_plane = ScriptedControlPlane::start().await?;
         let client = ControlClient::new(ControlClientConfiguration::new(control_plane.address()?));
-        let (stream, server_side) = tokio::join!(client.live_stream(), control_plane.take_stream());
+        let (stream, server_side) = tokio::join!(client.live_stream(), control_plane.take_stream(TAB));
         let (mut stream, mut server_side) = (stream?, server_side?);
 
         server_side.send_a_message_of_another_version().await?;
@@ -377,12 +444,40 @@ impl ScriptedControlPlane {
         Ok(connection)
     }
 
-    /// Takes the next live stream, and returns the side of the control plane.
-    async fn take_stream(&self) -> anyhow::Result<ScriptedStream> {
+    /// Takes the next live stream, names `presence` as the presence of its client, and returns the side of the
+    /// control plane.
+    async fn take_stream(&self, presence: PresenceId) -> anyhow::Result<ScriptedStream> {
+        let mut stream = self.accept_stream().await?;
+        stream.send(&StreamMessage::Present { presence }).await?;
+        Ok(stream)
+    }
+
+    /// Takes the next live stream as a control plane that knows no presences, and starts with the snapshot.
+    async fn take_stream_without_a_presence(&self) -> anyhow::Result<ScriptedStream> {
+        let mut stream = self.accept_stream().await?;
+        let snapshot = StreamMessage::Snapshot(ProcessState {
+            run: RUN.parse()?,
+            definitions: Definitions::default(),
+            environments: Vec::new(),
+        });
+        stream.send(&snapshot).await?;
+        Ok(stream)
+    }
+
+    /// Takes the next live stream, and sends nothing on it yet.
+    async fn accept_stream(&self) -> anyhow::Result<ScriptedStream> {
         let (connection, _) = self.listener.accept().await?;
-        Ok(ScriptedStream {
-            socket: tokio_tungstenite::accept_async(connection).await?,
+        let mut path = String::new();
+        #[expect(
+            clippy::result_large_err,
+            reason = "the library names what a handshake answers when it is refused, and this one refuses none"
+        )]
+        let socket = tokio_tungstenite::accept_hdr_async(connection, |request: &Request, response: Response| {
+            path = request.uri().to_string();
+            Ok(response)
         })
+        .await?;
+        Ok(ScriptedStream { socket, path })
     }
 
     /// Reads the next request, and answers it with `status` and `body`.
@@ -403,6 +498,8 @@ impl ScriptedControlPlane {
 /// The side of the control plane of one live stream, which sends what a test tells it to.
 struct ScriptedStream {
     socket: WebSocketStream<TcpStream>,
+    /// The path that the client opened the stream at, with its query.
+    path: String,
 }
 
 impl ScriptedStream {
@@ -422,6 +519,13 @@ impl ScriptedStream {
     async fn next_subscription(&mut self) -> anyhow::Result<Subscription> {
         let message = self.socket.next().await.context("a subscription")??;
         Ok(serde_json::from_str(message.to_text()?)?)
+    }
+
+    /// Reads that the client closes the stream, and lets go of the stream.
+    async fn let_go_once_closed(mut self) -> anyhow::Result<()> {
+        let message = self.socket.next().await.context("a close of the stream")??;
+        anyhow::ensure!(message.is_close(), "the client sent {message:?}, and no close");
+        Ok(())
     }
 
     /// Closes the stream as a control plane that stops.

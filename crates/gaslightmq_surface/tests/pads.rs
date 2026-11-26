@@ -368,6 +368,33 @@ fn a_press_in_hold_that_failed_has_no_hold_to_end() {
 }
 
 #[test]
+fn holds_that_ended_with_the_presence_of_the_surface_leave_no_pad_held_and_nothing_to_release() {
+    let mut surface = Surface::new(OrderDesk::layout());
+    surface.set_mode(PlayMode::Hold);
+    let (row, column) = OrderDesk::slow_order_producers();
+    let pad = surface.pad(row, column).unwrap();
+    surface.press(row, column, PadState::Empty);
+    assert_eq!(surface.answered(&pad, Some(Hold::new(1))), None);
+    // Someone presses the pad again, and the answer to that press is still on its way.
+    surface.press(row, column, PadState::Armed);
+    let on_its_way = Hold::new(2);
+
+    // The tab stayed away for too long: its presence ended, and whoever holds the rules ended its holds.
+    surface.holds_ended();
+
+    assert!(!surface.holding());
+    assert_eq!(surface.release(row, column), None);
+    // The press that was on its way added a hold that no pad waits for, so it ends at once.
+    assert_eq!(
+        surface.answered(&pad, Some(on_its_way)),
+        Some(Intent::Release {
+            pad: pad.clone(),
+            hold: on_its_way
+        })
+    );
+}
+
+#[test]
 fn a_hold_that_no_pad_waits_for_ends_at_once() {
     let mut surface = Surface::new(OrderDesk::layout());
     let (row, column) = OrderDesk::slow_order_producers();

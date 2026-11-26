@@ -8,7 +8,7 @@ use gaslightmq_control_api::field::ConnectionNumber;
 use gaslightmq_control_api::prelude::*;
 use gaslightmq_control_api::rule::{Preset, Rule, RuleName};
 use gaslightmq_control_api::selector::Selector;
-use gaslightmq_control_api::surface::{Intent, PadLayout};
+use gaslightmq_control_api::surface::{Intent, PadLayout, PresenceId};
 use gaslightmq_engine::OpenSession;
 use gaslightmq_host::{
     ArmRuleError, CallSubscription, DisarmRuleError, EnvironmentConfiguration, EnvironmentConfigurationError,
@@ -93,10 +93,11 @@ impl<C: WorkspaceContext + 'static> ControlPlane<C> {
 
     /// Answers one request.
     ///
-    /// The request says where it comes from, and nothing records that yet:
+    /// The request says where it comes from. The presence of its sender goes to the host with an intent,
+    /// so a hold ends with the presence. Nothing records the surface and the cause yet:
     /// the journal of an environment does, once the engine has one.
     pub(crate) async fn answer(&self, request: OperationRequest) -> Reply {
-        let OperationRequest { from: _, operation } = request;
+        let OperationRequest { from, operation } = request;
         match operation {
             AnyOperation::ListSelectors(_) => Reply::of::<ListDefinitions<Selector>>(self.list().await),
             AnyOperation::GetSelector(get) => Reply::of::<GetDefinition<Selector>>(self.get(get.name).await),
@@ -143,7 +144,7 @@ impl<C: WorkspaceContext + 'static> ControlPlane<C> {
             AnyOperation::DisarmRule(disarm) => Reply::of::<DisarmRule>(self.disarm(disarm).await),
             AnyOperation::FireRule(fire) => Reply::of::<FireRule>(self.fire(fire.environment, fire.rule).await),
             AnyOperation::SendIntent(send) => {
-                Reply::of::<SendIntent>(self.intent(send.environment, &send.intent).await)
+                Reply::of::<SendIntent>(self.intent(from.presence, send.environment, &send.intent).await)
             }
             AnyOperation::ListSessions(list) => Reply::of::<ListSessions>(self.sessions(list.environment)),
             AnyOperation::CloseSession(close) => {
@@ -522,9 +523,19 @@ impl<C: WorkspaceContext + 'static> ControlPlane<C> {
 
     // Pads
 
-    async fn intent(&self, environment: EnvironmentName, intent: &Intent) -> Result<IntentEffect, IntentError> {
+    /// Hands an intent to the host, as one of `presence` when the request names the presence of its sender.
+    async fn intent(
+        &self,
+        presence: Option<PresenceId>,
+        environment: EnvironmentName,
+        intent: &Intent,
+    ) -> Result<IntentEffect, IntentError> {
         use gaslightmq_host::IntentError as Host;
-        match self.host.send_intent(&environment, intent).await {
+        let acted = match presence {
+            Some(presence) => self.host.send_intent_from(presence, &environment, intent).await,
+            None => self.host.send_intent(&environment, intent).await,
+        };
+        match acted {
             Ok(effect) => Ok(IntentEffect {
                 rule: effect.rule.map(status),
                 made: effect.made,

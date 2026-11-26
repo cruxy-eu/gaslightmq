@@ -5,6 +5,7 @@
 //! and turns pad presses into intents with `gaslightmq_surface`. It runs none of the engine's behaviour,
 //! and the Kafka codec never reaches the browser.
 //! Every request says which surface of the UI sends it: the pads, ⌘K, or any other view.
+//! It also says which presence the tab is, so the pads that someone holds end with the tab.
 //!
 //! The control server serves the UI from the address of the control plane, so the page and `/api/…` share one origin.
 //!
@@ -41,6 +42,17 @@
 //! with its filter as the selector of the subscription, so it only receives the calls it shows.
 //! A stream that ends leaves what the UI knew on the screen, and the UI opens a new one, which starts with a new
 //! snapshot.
+//!
+//! # The presence of a tab
+//!
+//! The live stream names the presence of the tab, and the tab keeps it in memory.
+//! A stream that opens again comes back as that presence, so the pads that someone holds stay held across a
+//! connection that dropped. When the control plane no longer held the presence, it ended its holds,
+//! and the [`Desk`](pads::Desk) holds no pad any more.
+//! A release that does not arrive goes out again until the control plane answers it.
+//! A press in hold that gets no answer may have added a hold that the tab cannot name,
+//! so the tab lets go of its presence, and the control plane ends whatever it held.
+//! A page that loads again is a new presence: it knows nothing of the pads that the page before it held.
 
 mod configuration;
 mod filter;

@@ -1,6 +1,6 @@
 //! One process with several environments.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 use std::net::SocketAddr;
 use std::ops::Deref;
@@ -21,7 +21,7 @@ use gaslightmq_lie_api::Lies;
 use gaslightmq_quick_inject::{KnownNames, QuickInject, Sentence};
 use gaslightmq_rule::{HandFiring, Preset, PresetSet, ResolvedRule, Rule, RuleError, RuleName};
 use gaslightmq_selector::{Selector, SelectorRef, SelectorSet};
-use gaslightmq_surface::EncoderMapping;
+use gaslightmq_surface::{EncoderMapping, PresenceId};
 use gaslightmq_traffic::{Statistics, Traffic, TrafficConfiguration};
 use gaslightmq_workspace::{
     DefinitionName, Revision, RevisionCounter, Stores, Workspace, WorkspaceContext, WorkspaceDefinition,
@@ -51,6 +51,7 @@ mod watch;
 /// | The lies of the build | One behaviour per kind, which the proxy of every environment tells. |
 /// | Quick inject | Reads a ⌘K sentence with the names of the workspace, and those that the traffic of an environment has seen. |
 /// | The [run](Self::run) | The ID of this life of the process, which the host is handed when it is made. |
+/// | The presences that are open | The clients of a control surface that are there. The holds of a presence end with it. |
 ///
 /// # Environments
 ///
@@ -153,6 +154,9 @@ pub struct Host<C: WorkspaceContext> {
     call_backlog: CallBacklog,
     /// How many holds the presses of every environment added, which numbers the next one.
     holds_given: AtomicU64,
+    /// The presences that are open: the clients of a control surface that are there, whose holds end with them.
+    /// Whoever takes it holds the environments already, or needs them for nothing.
+    presences: Mutex<BTreeSet<PresenceId>>,
 }
 
 /// One environment that runs: its proxy, the backend behind it, the listeners it was started with, and what lives in
@@ -196,6 +200,7 @@ impl<C: WorkspaceContext> Host<C> {
             traffic: configuration.traffic,
             call_backlog: configuration.call_backlog,
             holds_given: AtomicU64::new(0),
+            presences: Mutex::new(BTreeSet::new()),
         }
     }
 
@@ -856,10 +861,7 @@ impl<C: WorkspaceContext> Host<C> {
             let Some(running) = environments.get_mut(environment) else {
                 return Err(not_running(environment.clone()));
             };
-            let revisions = Arc::clone(&running.revisions);
-            let mut revisions = crate::revisions::lock(&revisions);
-            let uncounted = revisions.catch_up(&running.engine.rules().snapshot());
-            (change(running, &mut revisions), uncounted)
+            caught_up(running, change)
         };
         for rule in uncounted {
             self.publish(HostChange::RuleChanged {
@@ -910,6 +912,26 @@ impl<C: WorkspaceContext> Host<C> {
     fn environments(&self) -> MutexGuard<'_, BTreeMap<EnvironmentName, Running>> {
         self.environments.lock().unwrap_or_else(PoisonError::into_inner)
     }
+
+    /// The presences that are open. A task that panicked while it held them left nothing half done:
+    /// every change is one insert or one remove.
+    fn presences(&self) -> MutexGuard<'_, BTreeSet<PresenceId>> {
+        self.presences.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+}
+
+/// Runs `change` on an environment and the revisions of its rules, which are caught up with the armed rules first.
+///
+/// Returns what `change` returns, and the rules that the look counted: those that armed or disarmed since the last
+/// look without anyone counting it. Whoever calls this tells the followers of the host of them.
+fn caught_up<T>(
+    running: &mut Running,
+    change: impl FnOnce(&mut Running, &mut RuleRevisions) -> T,
+) -> (T, Vec<RuleName>) {
+    let revisions = Arc::clone(&running.revisions);
+    let mut revisions = crate::revisions::lock(&revisions);
+    let uncounted = revisions.catch_up(&running.engine.rules().snapshot());
+    (change(running, &mut revisions), uncounted)
 }
 
 /// Writes which environments run.

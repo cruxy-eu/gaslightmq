@@ -2,6 +2,7 @@
 //!
 //! Each transport moves text, and this module says what the text is and what it means.
 
+use gaslightmq_control_api::surface::PresenceId;
 use gaslightmq_control_api::{Operation, OperationRequest, RequestError, RequestSource, StreamMessage, Subscription};
 use serde::de::DeserializeOwned;
 
@@ -11,7 +12,18 @@ use crate::error::{SendError, StreamError};
 pub(crate) const OPERATIONS_PATH: &str = "api/operations";
 
 /// The path below the address of the live stream, which a `GET` upgrades to a WebSocket.
-pub(crate) const STREAM_PATH: &str = "api/stream";
+const STREAM_PATH: &str = "api/stream";
+
+/// The key of the query of the live stream that names the presence a client comes back as.
+const PRESENCE_KEY: &str = "presence";
+
+/// The path of the live stream below the address, for a client that is new, or that comes back as `presence`.
+pub(crate) fn stream_path(presence: Option<PresenceId>) -> String {
+    match presence {
+        Some(presence) => format!("{STREAM_PATH}?{PRESENCE_KEY}={presence}"),
+        None => STREAM_PATH.to_owned(),
+    }
+}
 
 /// The content type of every request and of every answer.
 pub(crate) const JSON: &str = "application/json";
@@ -84,6 +96,16 @@ pub(crate) fn read_message(text: &str) -> Result<StreamMessage, StreamError> {
     serde_json::from_str(text).map_err(|error| StreamError::Unreadable {
         reason: format!("no message of the live stream: {error}"),
     })
+}
+
+/// Reads the first message of the live stream, which names the presence of its client.
+pub(crate) fn read_presence(text: &str) -> Result<PresenceId, StreamError> {
+    match read_message(text)? {
+        StreamMessage::Present { presence } => Ok(presence),
+        _ => Err(StreamError::Unreadable {
+            reason: "the live stream did not start with the presence of its client".to_owned(),
+        }),
+    }
 }
 
 /// The control plane closed the live stream with `code`, and maybe said why in `reason`.
@@ -201,6 +223,36 @@ mod tests {
                 error: RequestError::NotServed {
                     operation: "arm-rule".to_owned()
                 }
+            }
+        );
+    }
+
+    #[test]
+    fn a_client_that_comes_back_asks_for_its_presence_in_the_query_of_the_stream() {
+        let presence: PresenceId = "9f86d081884c7d659a2feaa0c55ad015".parse().expect("a presence ID");
+
+        assert_eq!(stream_path(None), "api/stream");
+        assert_eq!(
+            stream_path(Some(presence)),
+            "api/stream?presence=9f86d081884c7d659a2feaa0c55ad015"
+        );
+    }
+
+    #[test]
+    fn the_first_message_of_a_stream_names_the_presence_of_its_client() {
+        let presence: PresenceId = "9f86d081884c7d659a2feaa0c55ad015".parse().expect("a presence ID");
+
+        assert_eq!(
+            read_presence(r#"{ "message": "present", "presence": "9f86d081884c7d659a2feaa0c55ad015" }"#),
+            Ok(presence)
+        );
+        // A control plane that knows no presences starts with the snapshot.
+        let error = read_presence(r#"{ "message": "environment-stopped", "environment": "orders-sim" }"#)
+            .expect_err("no presence");
+        assert_eq!(
+            error,
+            StreamError::Unreadable {
+                reason: "the live stream did not start with the presence of its client".to_owned()
             }
         );
     }

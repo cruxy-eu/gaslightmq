@@ -2,7 +2,11 @@
 
 use gaslightmq_workspace::Revision;
 
-gaslightmq_resource::run_id! {
+gaslightmq_resource::random_id! {
+    /// A run is one life of a process, from its start to its stop.
+    /// Whoever puts a process together reads the randomness of the system once, at the start, and makes the ID.
+    /// No file holds a run ID, and nothing refers to a run after it ended.
+    ///
     /// A host holds the ID of its run, which it is handed when it is made: see [`Host::new`](crate::Host::new).
     /// Revisions start again with every run, so a change that names the revision it expects names its run too:
     /// see [`Expects`].
@@ -19,7 +23,7 @@ gaslightmq_resource::run_id! {
     /// assert_eq!(named, run);
     /// # Ok::<(), RunIdError>(())
     /// ```
-    RunId, RunIdError
+    RunId, RunIdError, "run ID"
 }
 
 /// What a change expects of what it changes: the run that its sender read from, and the revision that it saw.

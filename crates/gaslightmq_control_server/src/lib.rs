@@ -7,7 +7,7 @@
 //! | Type | Is |
 //! |---|---|
 //! | [`ControlServer`] | The server, from the moment it listens until someone stops it. |
-//! | [`ControlServerConfiguration`] | Where it listens, and its limits and waits. |
+//! | [`ControlServerConfiguration`] | Where it listens, its limits and waits, and how long it keeps the presence of a client that went away. |
 //! | [`RequestSizeLimit`], [`StreamBacklog`], [`StatsInterval`] | The largest request it reads, how many changes it keeps for a client of the stream, and how often the statistics come. |
 //! | [`ControlServerError`] | Why it did not start. |
 //!
@@ -45,7 +45,7 @@
 //! | Request | Answer |
 //! |---|---|
 //! | `POST /api/operations` with an `OperationRequest` | `200` with its answer, `422` with its error, `400` with a `RequestError`. |
-//! | `GET /api/stream`, a WebSocket | A `StreamMessage` per text frame, the snapshot first. The client sends a `Subscription` per text frame. |
+//! | `GET /api/stream`, a WebSocket | A `StreamMessage` per text frame: the presence of the client first, and the snapshot next. The client sends a `Subscription` per text frame. A client that comes back names the presence it was in the query: `?presence=…`. |
 //! | `GET` of any other path | A file of the web UI, or the page of the UI, which opens the view of the path. |
 //!
 //! Every body and every frame is the JSON form of a type of `gaslightmq_control_api`.
@@ -80,6 +80,24 @@
 //! A server that falls behind the host sends every client a new snapshot.
 //! A store that changes behind the workspace, as a file that someone edits, sends nothing yet.
 //!
+//! # The presence of a client
+//!
+//! A client that follows the live stream is there, and the server holds a presence for it.
+//! The server makes the ID of a presence from the randomness of the system, names it in the first message of the
+//! stream, and opens it in the host. A request that names the presence adds holds that belong to it.
+//!
+//! - **A presence outlives its stream.** When the last stream of a presence ends, the server keeps the presence
+//!   for the [grace period](ControlServerConfiguration::presence_grace) of its configuration.
+//!   A client that opens a stream as that presence within it goes on as it, and the pads it holds stay held.
+//! - **A client that stays away is gone.** The server ends its presence in the host, which ends every hold of it:
+//!   a tab that closed never sends its release.
+//! - **A server that stops ends every presence at once.** No client comes back to it.
+//!
+//! The grace period runs on the clock of the server: real time for [`ControlServer::start`],
+//! and the clock that [`ControlServer::start_on`] is handed, which a test steps.
+//! The server learns from the connection that a stream ended, and sends no ping:
+//! a connection that goes silent without closing ends when the system gives up on it.
+//!
 //! # Errors
 //!
 //! | What fails | Error | What is wrong |
@@ -94,14 +112,18 @@
 //!
 //! # IO
 //!
-//! This crate is part of the IO edge: it is async, it runs on Tokio, and it opens a socket.
-//! Its configuration and its errors are plain values that never wait.
+//! This crate is part of the IO edge: it is async, it runs on Tokio, it opens a socket,
+//! and it reads the randomness of the system for the ID of each presence.
+//! Its configuration and its errors are plain values that never wait, and so is what it decides about a presence:
+//! which one a client is, and when one has ended.
 
+mod attendance;
 mod configuration;
 mod definitions;
 mod error;
 mod feed;
 mod plane;
+mod presence;
 mod revisions;
 mod server;
 mod stream;

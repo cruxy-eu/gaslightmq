@@ -76,6 +76,7 @@ mod next_to_the_others {
         let arm: Intent = surface.press(row, column, shows).unwrap();
         let change: Intent = surface.turn(turn).unwrap();
         let hold: Hold = Hold::new(1);
+        let presence: PresenceId = PresenceId::from_random_bits(1);
 
         vec![
             layout_name.to_string(),
@@ -95,6 +96,7 @@ mod next_to_the_others {
             arm.to_string(),
             change.to_string(),
             hold.to_string(),
+            presence.to_string(),
         ]
     }
 
@@ -140,6 +142,7 @@ mod next_to_the_others {
             message_of(PlayModeError::Unknown {
                 name: "toggle".to_owned(),
             }),
+            message_of(PresenceIdError::WrongLength { length: 5 }),
             message_of(TurnError::Disabled {
                 encoder: Encoder::Jitter,
                 rule: rule.clone(),
@@ -156,7 +159,7 @@ mod next_to_the_others {
 fn the_prelude_names_every_item_next_to_the_other_preludes() {
     let items = next_to_the_others::every_item();
 
-    assert_eq!(items.len(), 17);
+    assert_eq!(items.len(), 18);
     assert!(items.iter().all(|item| !item.is_empty()));
 }
 
@@ -174,6 +177,7 @@ fn the_prelude_names_the_error_of_every_type() {
             "layout \"order-desk\" has two columns for preset \"delay-1s\"",
             "no encoder is called \"volume\"",
             "no mode of play is called \"toggle\"",
+            "a presence ID has 32 hexadecimal digits, and not 5 characters",
             "the jitter encoder changes the jitter of a timing lie, and rule \"leader-flap\" has none",
             "rule \"leader-flap\": no preset is named \"delay-30s\"",
         ]

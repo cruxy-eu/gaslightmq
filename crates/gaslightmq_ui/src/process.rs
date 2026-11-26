@@ -130,8 +130,8 @@ impl Process {
         self.workspace_invalid.as_deref()
     }
 
-    /// Applies one change of the live stream. A call, the answer to a subscription and a snapshot are no change of
-    /// the process, and change nothing here.
+    /// Applies one change of the live stream. A call, the answer to a subscription, a snapshot and the presence of
+    /// the client are no change of the process, and change nothing here.
     pub fn apply(&mut self, message: &StreamMessage) {
         match message {
             StreamMessage::Stats { environment, stats } => {
@@ -203,7 +203,8 @@ impl Process {
                 self.stats.remove(environment);
             }
             StreamMessage::WorkspaceInvalid { reason } => self.workspace_invalid = Some(reason.clone()),
-            StreamMessage::Snapshot(_)
+            StreamMessage::Present { .. }
+            | StreamMessage::Snapshot(_)
             | StreamMessage::Call { .. }
             | StreamMessage::Following { .. }
             | StreamMessage::SubscriptionRefused { .. } => {}
