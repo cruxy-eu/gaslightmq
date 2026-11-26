@@ -3,7 +3,7 @@
 use dioxus::prelude::*;
 use gaslightmq_control_api::environment::EnvironmentName;
 use gaslightmq_control_api::prelude::*;
-use gaslightmq_control_api::rule::{Action, Preset, PresetName, Rule, RuleState};
+use gaslightmq_control_api::rule::{Action, Preset, PresetName, RuleState};
 use gaslightmq_control_api::selector::SelectorName;
 use gaslightmq_control_api::surface::{
     Column, Encoder, Hold, Intent, Layer, LayoutName, Pad, PadState, PlayMode, Row, Steps,
@@ -262,7 +262,8 @@ fn send(ui: &Ui, send: SendIntent) {
             });
         }
         Intent::Turn { pad, turn } => {
-            // The rule before the turn, as the tab shows it: its undo sets the rule back to it.
+            // The rule before the turn, as the tab shows it: its undo sets the rule back to it,
+            // when the answer says that the turn found that rule.
             let was = turned(ui, &environment, pad);
             let encoder = turn.encoder();
             let recorder = ui.clone();
@@ -277,12 +278,12 @@ fn send(ui: &Ui, send: SendIntent) {
     }
 }
 
-/// The rule that a turn of `pad` changes in `environment`, as the tab shows it before the turn.
-fn turned(ui: &Ui, environment: &EnvironmentName, pad: &Pad) -> Option<Rule> {
+/// The rule that a turn of `pad` changes in `environment`, with its revision, as the tab shows it before the turn.
+fn turned(ui: &Ui, environment: &EnvironmentName, pad: &Pad) -> Option<RuleStatus> {
     let live = ui.live.peek();
     let running = live.process()?.environment(environment)?;
     let name = ui.desk.peek().as_ref()?.layout().rule_name(pad)?;
-    rule_status(running, &name).map(|status| status.rule.clone())
+    rule_status(running, &name).cloned()
 }
 
 /// Sends a press in hold of `pad`. Its answer goes back to the desk, which keeps the hold for the release,

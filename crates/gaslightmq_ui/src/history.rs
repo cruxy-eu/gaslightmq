@@ -179,8 +179,19 @@ pub struct Step {
     again: Change,
     /// The revision that the change left.
     left: Revision,
-    /// The encoder whose next turn of the same rule joins this step.
-    turning: Option<Encoder>,
+    /// The turn that made the step, when a turn made it.
+    turn: Option<Turn>,
+}
+
+/// What a turn found, which decides whether its step holds the rule before it, and whether it joins the turn before.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct Turn {
+    /// The encoder that turned.
+    encoder: Encoder,
+    /// The revision of the rule that the turn acted on, as its answer says.
+    found: Option<Revision>,
+    /// The revision of the rule that the tab showed when someone turned.
+    shown: Revision,
 }
 
 impl Step {
@@ -190,7 +201,7 @@ impl Step {
             back: back.expecting_nothing(),
             again: again.expecting_nothing(),
             left,
-            turning: None,
+            turn: None,
         }
     }
 
@@ -308,15 +319,23 @@ impl Step {
         Some(Self::new(back, again, status.revision))
     }
 
-    /// A turn of `encoder` changed the live rule `was` of `environment` as `effect` says.
+    /// A turn of `encoder` changed the live rule of `environment` that the tab showed as `was`, as `effect` says.
     ///
     /// The turns of one encoder on one rule, one after another, are one step: the history keeps the rule before the
-    /// first of them. Returns `None` when the turn changed nothing, because the parameter stood at its bound.
-    pub fn turned(environment: &EnvironmentName, encoder: Encoder, was: &Rule, effect: &IntentEffect) -> Option<Self> {
+    /// first of them. A turn expects nothing, so the answer says which revision of the rule it found:
+    /// the [history](History::record) keeps the step only when that is the rule the tab showed,
+    /// and joins it to the turn before only when it found what that turn left.
+    /// Returns `None` when the turn changed nothing, because the parameter stood at its bound.
+    pub fn turned(
+        environment: &EnvironmentName,
+        encoder: Encoder,
+        was: &RuleStatus,
+        effect: &IntentEffect,
+    ) -> Option<Self> {
         let status = effect.rule.as_ref().filter(|_| effect.changed)?;
         let back = UpdateLiveRule {
             environment: environment.clone(),
-            rule: was.clone(),
+            rule: was.rule.clone(),
             expects: None,
         };
         let again = UpdateLiveRule {
@@ -325,7 +344,11 @@ impl Step {
             expects: None,
         };
         Some(Self {
-            turning: Some(encoder),
+            turn: Some(Turn {
+                encoder,
+                found: effect.found,
+                shown: was.revision,
+            }),
             ..Self::new(
                 Change::UpdateLiveRule(back),
                 Change::UpdateLiveRule(again),
@@ -568,17 +591,27 @@ impl History {
 
     /// The tab made a change, and the control plane answered: `step` takes it back.
     ///
-    /// A turn that follows a turn of the same encoder on the same rule joins its step.
+    /// A turn that follows a turn of the same encoder on the same rule joins its step, when it found the rule as that
+    /// turn left it. Any other turn makes a step of its own, when it found the rule that the tab showed.
+    /// A turn that found neither leaves no step: someone else changed the rule just before it, and setting the rule
+    /// back would take their change too. An earlier step of the rule then expects a revision that is gone,
+    /// so its undo changes nothing either.
     pub fn record(&mut self, step: Step) {
         let (subject, left) = (step.subject(), step.left);
         self.ended_redo();
-        let joins = step
-            .turning
-            .is_some_and(|encoder| self.turning.as_ref() == Some(&(subject.clone(), encoder)));
+        let joins = step.turn.is_some_and(|turn| {
+            self.turning.as_ref() == Some(&(subject.clone(), turn.encoder))
+                && turn.found.is_some()
+                && turn.found == self.left.get(&subject).copied()
+        });
         match self.to_undo.back_mut() {
             Some(last) if joins => last.again = step.again,
+            _ if step.turn.is_some_and(|turn| turn.found != Some(turn.shown)) => {
+                self.turning = None;
+                return;
+            }
             _ => {
-                self.turning = step.turning.map(|encoder| (subject.clone(), encoder));
+                self.turning = step.turn.map(|turn| (subject.clone(), turn.encoder));
                 self.push(step);
             }
         }

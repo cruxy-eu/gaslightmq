@@ -266,7 +266,10 @@ While a text field has the focus, and in the ⌘K palette, ⌘Z and ⇧⌘Z belo
 An undo is an ordinary operation of the [control plane](../architecture/control-plane.md#undo).
 The UI works out the inverse of each change from what the control plane answered to it, and never from what it expects a press or a turn to do.
 An update expects the revision of the rule that the tab showed, so its success says that the rule before is the one the tab held.
-A turn expects nothing, so the rule before the first turn is the rule as the tab showed it.
+A turn expects nothing, but its answer says the revision that it found the rule at.
+The tab keeps the rule that it showed as the rule before the turn, when the turn found it at the revision that the tab showed.
+A turn that found another revision leaves no step: someone else changed the rule just before, and setting it back would take their change too.
+A turn joins the turns before it when it found the rule as the last of them left it.
 
 Every undo and every redo is a request of the surface `ui`, with its cause, whichever surface made the change:
 ⌘Z is a key of the UI, and neither a press at the pads nor a ⌘K sentence.

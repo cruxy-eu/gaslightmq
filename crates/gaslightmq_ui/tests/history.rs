@@ -1,33 +1,34 @@
 //! The undo history of a tab: ⌘Z takes back the last change that the tab made, ⇧⌘Z makes it again, and an undo
 //! that would overwrite what someone else changed is refused.
 //!
-//! The tests play each tab as the UI does: a [`Live`] applies what the live stream sends, and its [`History`]
-//! records the answers to the changes of the tab. What the control plane answers is a plain value.
+//! A tab is a [`Live`], which applies what the live stream sends and keeps the [`History`] of the tab.
+//! The history records the answers to the changes of the tab. What the control plane answers is a plain value.
 //! No browser and no server take part.
-//!
-//! [`History`]: gaslightmq_ui::history::History
-
-#![expect(
-    clippy::unwrap_used,
-    reason = "a panic is how a test fails, also in a helper outside a `#[test]` function"
-)]
 
 use std::collections::BTreeMap;
 use std::num::NonZeroUsize;
 
-use gaslightmq_control_api::environment::{
-    BrokerListeners, Environment, EnvironmentName, Instances, Listeners, ProxyDefinition, Upstream,
-};
-use gaslightmq_control_api::field::Endpoint;
+use gaslightmq_control_api::environment::EnvironmentName;
 use gaslightmq_control_api::incident::IncidentSupport;
-use gaslightmq_control_api::kernel::BrokerId;
 use gaslightmq_control_api::prelude::*;
 use gaslightmq_control_api::rule::{PresetName, Rule, RuleName, RuleState};
 use gaslightmq_control_api::selector::SelectorName;
 use gaslightmq_control_api::surface::{Encoder, Hold};
 use gaslightmq_control_api::trigger::{Chance, Trigger, TriggerParts};
-use gaslightmq_ui::history::{Change, Outcome, Report, Step, Subject};
-use gaslightmq_ui::{Live, UiConfiguration};
+use gaslightmq_ui::history::{Change, History, Outcome, Report, Step, Subject};
+use gaslightmq_ui::{Live, UiConfiguration, rule_status};
+
+/// The environment that the tabs show.
+const ENVIRONMENT: &str = "orders-sim";
+
+/// The rule that the tabs change: the delay of 1 s on the order producers.
+const RULE: &str = "slow-order-producers";
+
+/// The selector of the rule.
+const SELECTOR: &str = "order-producers";
+
+/// The preset of the rule.
+const PRESET: &str = "delay-1s";
 
 /// The run of the process, as its snapshot names it.
 const RUN: &str = "4be0643f1d98573b97cdca98a65347dd";
@@ -35,223 +36,123 @@ const RUN: &str = "4be0643f1d98573b97cdca98a65347dd";
 /// The run of the process after it started again.
 const NEXT_RUN: &str = "9f86d081884c7d659a2feaa0c55ad015";
 
-/// The revision that the snapshot tells beside the rule.
-const READ: Revision = Revision::new(7);
-
-/// The environment of the tests, as the workspace and the control plane describe it.
-struct OrdersSim;
-
-impl OrdersSim {
-    fn name() -> EnvironmentName {
-        "orders-sim".parse().unwrap()
-    }
-
-    /// A proxy in front of a real cluster, with a port pinned for its one broker.
-    fn definition() -> Environment {
-        let brokers = BrokerListeners::pinned([(BrokerId::from(1), "0.0.0.0:19092".parse().unwrap())]).unwrap();
-        let listen = Listeners::new("0.0.0.0:9092".parse().unwrap(), brokers, "localhost".parse().unwrap()).unwrap();
-        Environment::new(
-            Self::name(),
-            Instances::ProxyInFrontOfCluster {
-                proxy: ProxyDefinition::new(listen),
-                upstream: Upstream::new("kafka-1.staging:9092".parse().unwrap()),
-            },
-        )
-    }
-
-    /// The snapshot of a process of `run` in which the environment runs with `rules`.
-    fn snapshot(run: &str, rules: Vec<RuleStatus>) -> StreamMessage {
-        StreamMessage::Snapshot(ProcessState {
-            run: run.parse().unwrap(),
-            definitions: Definitions {
-                environments: vec![DefinitionStatus {
-                    definition: Self::definition(),
-                    revision: READ,
-                }],
-                ..Definitions::default()
-            },
-            environments: vec![RunningEnvironment {
-                environment: Self::name(),
-                backend: BackendStatus {
-                    kind: BackendKind::Upstream,
-                    endpoints: BTreeMap::from([(Endpoint::Bootstrap, Some("127.0.0.1:9092".parse().unwrap()))]),
-                    incidents: IncidentSupport::none(),
-                },
-                rules,
-                sessions: Vec::new(),
-            }],
-        })
-    }
-}
-
-/// The rule `slow-order-producers` of the specs: the selector `order-producers`, and the preset `delay-1s`.
-fn slow_order_producers() -> Rule {
-    Rule::new(
-        rule_name(),
-        "order-producers".parse::<SelectorName>().unwrap(),
-        "delay-1s".parse::<PresetName>().unwrap(),
-    )
-}
-
-fn rule_name() -> RuleName {
-    "slow-order-producers".parse().unwrap()
-}
-
-/// What a change of the rule tells every tab: the rule in the state and at the revision it has now.
-fn rule_changed(state: RuleState, revision: Revision, live: bool) -> StreamMessage {
-    StreamMessage::RuleChanged {
-        environment: OrdersSim::name(),
-        rule: RuleStatus {
-            rule: slow_order_producers(),
-            live,
-            state,
-            revision,
-        },
-    }
-}
-
-/// The rule as a tab shows it.
-fn shown(tab: &Live) -> &RuleStatus {
-    gaslightmq_ui::rule_status(tab.shown_running().unwrap(), &rule_name()).unwrap()
-}
-
-/// The rule of the tests in the environment of the tests.
-fn the_rule() -> Subject {
-    Subject::rule(&OrdersSim::name(), &rule_name())
-}
-
-/// What a change of the tests expects: revision `revision` of `run`.
-fn seen(run: &str, revision: u64) -> Expects {
-    Expects {
-        run: run.parse().unwrap(),
-        revision: Revision::new(revision),
-    }
-}
-
-/// A tab of the UI with its live stream open, which read `snapshot`.
-fn tab_that_read(snapshot: StreamMessage) -> Live {
-    let mut tab = Live::new(&UiConfiguration::default());
-    tab.opened();
-    tab.apply(snapshot);
-    tab
-}
-
-/// What a change answers: the revision that it left.
-fn left(revision: u64) -> Revised {
-    Revised {
-        revision: Revision::new(revision),
-    }
-}
-
-/// What the control plane answers to an undo or a redo that applied.
-fn applied(revision: u64) -> Outcome {
-    Outcome::Applied {
-        revision: Revision::new(revision),
-    }
-}
-
-/// What a pad intent did to the rule of its pad: the rule as it is now, whether the intent made it, and whether it
-/// changed it.
-fn effect(state: RuleState, revision: u64, made: bool, changed: bool) -> IntentEffect {
-    IntentEffect {
-        rule: Some(RuleStatus {
-            rule: slow_order_producers(),
-            live: true,
-            state,
-            revision: Revision::new(revision),
-        }),
-        made,
-        changed,
-        hold: None,
-    }
-}
-
-fn arm(expects: Option<Expects>) -> ArmRule {
-    ArmRule {
-        environment: OrdersSim::name(),
-        rule: rule_name(),
-        expects,
-    }
-}
-
-fn disarm(expects: Option<Expects>) -> DisarmRule {
-    DisarmRule {
-        environment: OrdersSim::name(),
-        rule: rule_name(),
-        expects,
-    }
-}
-
-fn delete(expects: Option<Expects>) -> DeleteLiveRule {
-    DeleteLiveRule {
-        environment: OrdersSim::name(),
-        rule: rule_name(),
-        expects,
-    }
-}
-
-fn disarmed_rule() -> RuleStatus {
-    RuleStatus {
-        rule: slow_order_producers(),
+#[test]
+#[expect(
+    clippy::too_many_lines,
+    reason = "one story of two tabs, from the snapshot they read to the undo that is refused"
+)]
+fn an_undo_after_another_tab_changed_the_rule_is_refused_and_changes_nothing() {
+    const SHOWN: Revision = Revision::new(7);
+    const LEFT_BY_THE_ARM: Revision = Revision::new(8);
+    const LEFT_BY_THE_OTHER_TAB: Revision = Revision::new(9);
+    let environment: EnvironmentName = ENVIRONMENT.parse().unwrap();
+    let rule: RuleName = RULE.parse().unwrap();
+    let run: RunId = RUN.parse().unwrap();
+    let disarmed = RuleStatus {
+        rule: Rule::new(
+            rule.clone(),
+            SELECTOR.parse::<SelectorName>().unwrap(),
+            PRESET.parse::<PresetName>().unwrap(),
+        ),
         live: false,
         state: RuleState::Disarmed,
-        revision: READ,
-    }
-}
-
-#[test]
-fn an_undo_after_another_tab_changed_the_rule_is_refused_and_changes_nothing() {
-    let snapshot = OrdersSim::snapshot(RUN, vec![disarmed_rule()]);
-    let mut first = tab_that_read(snapshot.clone());
-    let mut second = tab_that_read(snapshot);
-
-    // The first tab arms the rule, and the arm leaves revision 8, which both tabs read.
-    let arm = ArmRule {
-        environment: OrdersSim::name(),
-        rule: rule_name(),
-        expects: first.expects(&the_rule()),
+        revision: SHOWN,
     };
-    assert_eq!(arm.expects, Some(seen(RUN, 7)), "a change expects what the tab shows");
+    let snapshot = StreamMessage::Snapshot(ProcessState {
+        run,
+        definitions: Definitions::default(),
+        environments: vec![RunningEnvironment {
+            environment: environment.clone(),
+            backend: BackendStatus {
+                kind: BackendKind::Upstream,
+                endpoints: BTreeMap::new(),
+                incidents: IncidentSupport::none(),
+            },
+            rules: vec![disarmed.clone()],
+            sessions: Vec::new(),
+        }],
+    });
+    let configuration = UiConfiguration::default();
+    let mut first = Live::new(&configuration);
+    first.opened();
+    first.apply(snapshot.clone());
+    let mut second = Live::new(&configuration);
+    second.opened();
+    second.apply(snapshot);
+    let the_rule = Subject::rule(&environment, &rule);
+
+    // The first tab arms the rule, expecting what it shows, and both tabs read what the arm left.
+    let arm = ArmRule {
+        environment: environment.clone(),
+        rule: rule.clone(),
+        expects: first.expects(&the_rule),
+    };
+    assert_eq!(arm.expects, Some(Expects { run, revision: SHOWN }));
     first.history_mut().record(Step::armed(
         arm,
         Revised {
-            revision: Revision::new(8),
+            revision: LEFT_BY_THE_ARM,
         },
     ));
-    first.apply(rule_changed(RuleState::Armed, Revision::new(8), false));
-    second.apply(rule_changed(RuleState::Armed, Revision::new(8), false));
-
-    // The second tab disarms it again, and the disarm leaves revision 9.
-    let disarm = DisarmRule {
-        environment: OrdersSim::name(),
-        rule: rule_name(),
-        expects: second.expects(&the_rule()),
+    let armed = StreamMessage::RuleChanged {
+        environment: environment.clone(),
+        rule: RuleStatus {
+            state: RuleState::Armed,
+            revision: LEFT_BY_THE_ARM,
+            ..disarmed.clone()
+        },
     };
+    first.apply(armed.clone());
+    second.apply(armed);
+
+    // The second tab disarms it again, expecting what it shows: what the arm left.
+    let disarm = DisarmRule {
+        environment: environment.clone(),
+        rule: rule.clone(),
+        expects: second.expects(&the_rule),
+    };
+    assert_eq!(
+        disarm.expects,
+        Some(Expects {
+            run,
+            revision: LEFT_BY_THE_ARM,
+        })
+    );
     second.history_mut().record(Step::disarmed(
         disarm,
         Revised {
-            revision: Revision::new(9),
+            revision: LEFT_BY_THE_OTHER_TAB,
         },
     ));
-    first.apply(rule_changed(RuleState::Disarmed, Revision::new(9), false));
-    second.apply(rule_changed(RuleState::Disarmed, Revision::new(9), false));
+    let disarmed_again = StreamMessage::RuleChanged {
+        environment: environment.clone(),
+        rule: RuleStatus {
+            revision: LEFT_BY_THE_OTHER_TAB,
+            ..disarmed
+        },
+    };
+    first.apply(disarmed_again.clone());
+    second.apply(disarmed_again);
 
     // ⌘Z in the first tab takes back its own arm, and expects what that arm left.
     let undo = first.history_mut().undo().unwrap();
     assert_eq!(
         undo,
         Change::DisarmRule(DisarmRule {
-            environment: OrdersSim::name(),
-            rule: rule_name(),
-            expects: Some(seen(RUN, 8)),
+            environment: environment.clone(),
+            rule: rule.clone(),
+            expects: Some(Expects {
+                run,
+                revision: LEFT_BY_THE_ARM,
+            }),
         }),
     );
 
-    // The rule has revision 9 now, so the control plane refuses, and changes nothing.
+    // The other tab changed the rule since, so the control plane refuses, and changes nothing.
     let refused = RuleCommandError::Changed {
-        environment: OrdersSim::name(),
-        rule: rule_name(),
-        revision: Revision::new(9),
+        environment,
+        rule: rule.clone(),
+        revision: LEFT_BY_THE_OTHER_TAB,
     };
     let report = first.history_mut().settled(Outcome::from(refused)).unwrap();
 
@@ -264,253 +165,646 @@ fn an_undo_after_another_tab_changed_the_rule_is_refused_and_changes_nothing() {
     );
     assert!(!first.history().can_undo(), "the step that did not fit is gone");
     assert!(!first.history().can_redo(), "a refused undo leaves nothing to redo");
+    let shown = rule_status(first.shown_running().unwrap(), &rule).unwrap();
     assert_eq!(
-        shown(&first).state,
-        RuleState::Disarmed,
-        "the rule stays as the second tab left it"
+        (shown.state, shown.revision),
+        (RuleState::Disarmed, LEFT_BY_THE_OTHER_TAB),
+        "the rule stays as the other tab left it"
     );
-    assert_eq!(shown(&first).revision, Revision::new(9));
-    assert!(second.history().can_undo(), "the second tab keeps its own step");
+    assert!(second.history().can_undo(), "the other tab keeps its own step");
 }
 
 #[test]
 fn an_undo_says_what_it_did_and_a_redo_expects_what_the_undo_left() {
-    let mut tab = tab_that_read(OrdersSim::snapshot(RUN, vec![disarmed_rule()]));
-    tab.history_mut()
-        .record(Step::disarmed(disarm(Some(seen(RUN, 7))), left(8)));
+    const SHOWN: Revision = Revision::new(7);
+    const LEFT_BY_THE_DISARM: Revision = Revision::new(8);
+    const LEFT_BY_THE_UNDO: Revision = Revision::new(9);
+    const LEFT_BY_THE_REDO: Revision = Revision::new(10);
+    let run: RunId = RUN.parse().unwrap();
+    let mut history = History::new(UiConfiguration::default().undo_depth);
+    history.apply(&StreamMessage::Snapshot(ProcessState {
+        run,
+        definitions: Definitions::default(),
+        environments: Vec::new(),
+    }));
+    let disarm = DisarmRule {
+        environment: ENVIRONMENT.parse().unwrap(),
+        rule: RULE.parse().unwrap(),
+        expects: Some(Expects { run, revision: SHOWN }),
+    };
+    history.record(Step::disarmed(
+        disarm.clone(),
+        Revised {
+            revision: LEFT_BY_THE_DISARM,
+        },
+    ));
+    let arm = ArmRule {
+        environment: ENVIRONMENT.parse().unwrap(),
+        rule: RULE.parse().unwrap(),
+        expects: Some(Expects {
+            run,
+            revision: LEFT_BY_THE_DISARM,
+        }),
+    };
 
-    assert_eq!(tab.history_mut().undo(), Some(Change::ArmRule(arm(Some(seen(RUN, 8))))));
-    let report = tab.history_mut().settled(applied(9)).unwrap();
+    assert_eq!(history.undo(), Some(Change::ArmRule(arm.clone())));
+    let report = history
+        .settled(Outcome::Applied {
+            revision: LEFT_BY_THE_UNDO,
+        })
+        .unwrap();
     assert_eq!(
-        report.text, "Armed slow-order-producers again",
+        report,
+        Report {
+            text: "Armed slow-order-producers again".to_owned(),
+            refused: false,
+        },
         "an undo that arms a fault says so"
     );
-    assert!(!report.refused);
 
-    assert_eq!(
-        tab.history_mut().redo(),
-        Some(Change::DisarmRule(disarm(Some(seen(RUN, 9)))))
-    );
-    tab.history_mut().settled(applied(10)).unwrap();
-    assert_eq!(
-        tab.history_mut().undo(),
-        Some(Change::ArmRule(arm(Some(seen(RUN, 10)))))
-    );
+    let redo = DisarmRule {
+        expects: Some(Expects {
+            run,
+            revision: LEFT_BY_THE_UNDO,
+        }),
+        ..disarm
+    };
+    assert_eq!(history.redo(), Some(Change::DisarmRule(redo)));
+    history.settled(Outcome::Applied {
+        revision: LEFT_BY_THE_REDO,
+    });
+    let undo_again = ArmRule {
+        expects: Some(Expects {
+            run,
+            revision: LEFT_BY_THE_REDO,
+        }),
+        ..arm
+    };
+    assert_eq!(history.undo(), Some(Change::ArmRule(undo_again)));
 }
 
 #[test]
 fn two_changes_of_one_rule_undo_one_after_the_other() {
-    let mut tab = tab_that_read(OrdersSim::snapshot(RUN, vec![disarmed_rule()]));
-    let sometimes = slow_order_producers().with_trigger(Trigger::from(
+    const SHOWN: Revision = Revision::new(7);
+    const LEFT_BY_THE_ARM: Revision = Revision::new(8);
+    const LEFT_BY_THE_UPDATE: Revision = Revision::new(9);
+    const LEFT_BY_ITS_UNDO: Revision = Revision::new(10);
+    let run: RunId = RUN.parse().unwrap();
+    let mut history = History::new(UiConfiguration::default().undo_depth);
+    history.apply(&StreamMessage::Snapshot(ProcessState {
+        run,
+        definitions: Definitions::default(),
+        environments: Vec::new(),
+    }));
+    let always = Rule::new(
+        RULE.parse().unwrap(),
+        SELECTOR.parse::<SelectorName>().unwrap(),
+        PRESET.parse::<PresetName>().unwrap(),
+    );
+    let sometimes = always.clone().with_trigger(Trigger::from(
         TriggerParts::new().with_chance(Chance::from_percent(40).unwrap()),
     ));
-    tab.history_mut().record(Step::armed(arm(Some(seen(RUN, 7))), left(8)));
-    let update = UpdateLiveRule {
-        environment: OrdersSim::name(),
-        rule: sometimes,
-        expects: Some(seen(RUN, 8)),
+    let arm = ArmRule {
+        environment: ENVIRONMENT.parse().unwrap(),
+        rule: RULE.parse().unwrap(),
+        expects: Some(Expects { run, revision: SHOWN }),
     };
-    tab.history_mut()
-        .record(Step::updated_live(update, slow_order_producers(), left(9)));
+    history.record(Step::armed(
+        arm,
+        Revised {
+            revision: LEFT_BY_THE_ARM,
+        },
+    ));
+    let update = UpdateLiveRule {
+        environment: ENVIRONMENT.parse().unwrap(),
+        rule: sometimes,
+        expects: Some(Expects {
+            run,
+            revision: LEFT_BY_THE_ARM,
+        }),
+    };
+    history.record(Step::updated_live(
+        update,
+        always.clone(),
+        Revised {
+            revision: LEFT_BY_THE_UPDATE,
+        },
+    ));
 
     // The undo of the update sets the rule back to what it was before.
     let back = UpdateLiveRule {
-        environment: OrdersSim::name(),
-        rule: slow_order_producers(),
-        expects: Some(seen(RUN, 9)),
+        environment: ENVIRONMENT.parse().unwrap(),
+        rule: always,
+        expects: Some(Expects {
+            run,
+            revision: LEFT_BY_THE_UPDATE,
+        }),
     };
-    assert_eq!(tab.history_mut().undo(), Some(Change::UpdateLiveRule(back)));
-    tab.history_mut().settled(applied(10)).unwrap();
+    assert_eq!(history.undo(), Some(Change::UpdateLiveRule(back)));
+    history.settled(Outcome::Applied {
+        revision: LEFT_BY_ITS_UNDO,
+    });
 
-    // The undo of the arm expects what the undo of the update left, which the tab did itself.
-    assert_eq!(
-        tab.history_mut().undo(),
-        Some(Change::DisarmRule(disarm(Some(seen(RUN, 10)))))
-    );
+    // The undo of the arm expects what the undo of the update left: the tab did that itself.
+    let disarm = DisarmRule {
+        environment: ENVIRONMENT.parse().unwrap(),
+        rule: RULE.parse().unwrap(),
+        expects: Some(Expects {
+            run,
+            revision: LEFT_BY_ITS_UNDO,
+        }),
+    };
+    assert_eq!(history.undo(), Some(Change::DisarmRule(disarm)));
 }
 
 #[test]
 fn a_rule_that_comes_back_is_made_again_armed_when_it_was_armed() {
+    const SHOWN: Revision = Revision::new(7);
+    const LEFT_BY_THE_DELETE: Revision = Revision::new(8);
+    const LEFT_BY_THE_CREATE: Revision = Revision::new(9);
+    let run: RunId = RUN.parse().unwrap();
+    let mut history = History::new(UiConfiguration::default().undo_depth);
+    history.apply(&StreamMessage::Snapshot(ProcessState {
+        run,
+        definitions: Definitions::default(),
+        environments: Vec::new(),
+    }));
+    let definition = Rule::new(
+        RULE.parse().unwrap(),
+        SELECTOR.parse::<SelectorName>().unwrap(),
+        PRESET.parse::<PresetName>().unwrap(),
+    );
     let armed = RuleStatus {
+        rule: definition.clone(),
         live: true,
         state: RuleState::Armed,
-        ..disarmed_rule()
+        revision: SHOWN,
     };
-    let mut tab = tab_that_read(OrdersSim::snapshot(RUN, vec![armed.clone()]));
-    tab.history_mut()
-        .record(Step::deleted(delete(Some(seen(RUN, 7))), &armed, left(8)));
+    let delete = DeleteLiveRule {
+        environment: ENVIRONMENT.parse().unwrap(),
+        rule: RULE.parse().unwrap(),
+        expects: Some(Expects { run, revision: SHOWN }),
+    };
+    history.record(Step::deleted(
+        delete.clone(),
+        &armed,
+        Revised {
+            revision: LEFT_BY_THE_DELETE,
+        },
+    ));
 
     let create = CreateLiveRule {
-        environment: OrdersSim::name(),
-        rule: slow_order_producers(),
+        environment: ENVIRONMENT.parse().unwrap(),
+        rule: definition,
         armed: true,
     };
     assert_eq!(
-        tab.history_mut().undo(),
+        history.undo(),
         Some(Change::CreateLiveRule(create)),
-        "a create expects nothing"
+        "a create expects nothing: it refuses a name that is taken"
     );
-    let report = tab.history_mut().settled(applied(9)).unwrap();
+    let report = history
+        .settled(Outcome::Applied {
+            revision: LEFT_BY_THE_CREATE,
+        })
+        .unwrap();
     assert_eq!(report.text, "Armed the live rule slow-order-producers again");
 
     // The rule that came back is a new one: the redo deletes it, expecting what the create left.
-    assert_eq!(
-        tab.history_mut().redo(),
-        Some(Change::DeleteLiveRule(delete(Some(seen(RUN, 9)))))
-    );
+    let redo = DeleteLiveRule {
+        expects: Some(Expects {
+            run,
+            revision: LEFT_BY_THE_CREATE,
+        }),
+        ..delete
+    };
+    assert_eq!(history.redo(), Some(Change::DeleteLiveRule(redo)));
 }
 
 #[test]
 fn a_press_that_changed_nothing_leaves_no_step() {
-    let found_armed = effect(RuleState::Armed, 7, false, false);
+    const SHOWN: Revision = Revision::new(7);
+    // Someone pressed the pad to arm its rule, and found it armed already.
+    let found_armed = IntentEffect {
+        rule: Some(RuleStatus {
+            rule: Rule::new(
+                RULE.parse().unwrap(),
+                SELECTOR.parse::<SelectorName>().unwrap(),
+                PRESET.parse::<PresetName>().unwrap(),
+            ),
+            live: true,
+            state: RuleState::Armed,
+            revision: SHOWN,
+        }),
+        found: Some(SHOWN),
+        made: false,
+        changed: false,
+        hold: None,
+    };
 
-    assert_eq!(Step::pressed(&OrdersSim::name(), &found_armed), None);
+    assert_eq!(Step::pressed(&ENVIRONMENT.parse().unwrap(), &found_armed), None);
 }
 
 #[test]
 fn a_press_that_made_the_rule_of_its_pad_is_undone_by_deleting_it() {
-    let mut tab = tab_that_read(OrdersSim::snapshot(RUN, Vec::new()));
-    let made = effect(RuleState::Armed, 8, true, true);
-    tab.history_mut()
-        .record(Step::pressed(&OrdersSim::name(), &made).unwrap());
-
-    assert_eq!(
-        tab.history_mut().undo(),
-        Some(Change::DeleteLiveRule(delete(Some(seen(RUN, 8)))))
+    const LEFT_BY_THE_PRESS: Revision = Revision::new(8);
+    const LEFT_BY_THE_UNDO: Revision = Revision::new(9);
+    let run: RunId = RUN.parse().unwrap();
+    let mut history = History::new(UiConfiguration::default().undo_depth);
+    history.apply(&StreamMessage::Snapshot(ProcessState {
+        run,
+        definitions: Definitions::default(),
+        environments: Vec::new(),
+    }));
+    let made = Rule::new(
+        RULE.parse().unwrap(),
+        SELECTOR.parse::<SelectorName>().unwrap(),
+        PRESET.parse::<PresetName>().unwrap(),
     );
-    tab.history_mut().settled(applied(9)).unwrap();
+    // The pad pointed at no rule, so the press found none, made the live rule of the pad and armed it.
+    let pressed = IntentEffect {
+        rule: Some(RuleStatus {
+            rule: made.clone(),
+            live: true,
+            state: RuleState::Armed,
+            revision: LEFT_BY_THE_PRESS,
+        }),
+        found: None,
+        made: true,
+        changed: true,
+        hold: None,
+    };
+    history.record(Step::pressed(&ENVIRONMENT.parse().unwrap(), &pressed).unwrap());
+
+    let delete = DeleteLiveRule {
+        environment: ENVIRONMENT.parse().unwrap(),
+        rule: RULE.parse().unwrap(),
+        expects: Some(Expects {
+            run,
+            revision: LEFT_BY_THE_PRESS,
+        }),
+    };
+    assert_eq!(history.undo(), Some(Change::DeleteLiveRule(delete)));
+    history.settled(Outcome::Applied {
+        revision: LEFT_BY_THE_UNDO,
+    });
 
     // The redo makes the rule of the pad again, armed, as the press left it.
     let create = CreateLiveRule {
-        environment: OrdersSim::name(),
-        rule: slow_order_producers(),
+        environment: ENVIRONMENT.parse().unwrap(),
+        rule: made,
         armed: true,
     };
-    assert_eq!(tab.history_mut().redo(), Some(Change::CreateLiveRule(create)));
+    assert_eq!(history.redo(), Some(Change::CreateLiveRule(create)));
 }
 
 #[test]
 fn a_hold_leaves_a_step_only_when_its_press_made_the_rule() {
-    let mut tab = tab_that_read(OrdersSim::snapshot(RUN, Vec::new()));
-    let (making, arming) = (Hold::new(1), Hold::new(2));
+    const SHOWN: Revision = Revision::new(7);
+    const LEFT_BY_THE_FIRST_PRESS: Revision = Revision::new(8);
+    const LEFT_BY_THE_FIRST_RELEASE: Revision = Revision::new(9);
+    const LEFT_BY_THE_SECOND_PRESS: Revision = Revision::new(10);
+    const LEFT_BY_THE_SECOND_RELEASE: Revision = Revision::new(11);
+    let run: RunId = RUN.parse().unwrap();
+    let environment: EnvironmentName = ENVIRONMENT.parse().unwrap();
+    let mut history = History::new(UiConfiguration::default().undo_depth);
+    history.apply(&StreamMessage::Snapshot(ProcessState {
+        run,
+        definitions: Definitions::default(),
+        environments: Vec::new(),
+    }));
+    let armed = RuleStatus {
+        rule: Rule::new(
+            RULE.parse().unwrap(),
+            SELECTOR.parse::<SelectorName>().unwrap(),
+            PRESET.parse::<PresetName>().unwrap(),
+        ),
+        live: true,
+        state: RuleState::Armed,
+        revision: LEFT_BY_THE_FIRST_PRESS,
+    };
+    let (arming, making) = (Hold::new(1), Hold::new(2));
 
     // A hold of a pad whose rule exists arms it while held, and its release disarms it: nothing is left to undo.
-    tab.history_mut().held(&IntentEffect {
+    history.held(&IntentEffect {
+        rule: Some(armed.clone()),
+        found: Some(SHOWN),
+        made: false,
+        changed: true,
         hold: Some(arming),
-        ..effect(RuleState::Armed, 8, false, true)
     });
-    tab.history_mut()
-        .released(&OrdersSim::name(), arming, &effect(RuleState::Disarmed, 9, false, true));
-    assert!(!tab.history().can_undo());
+    history.released(
+        &environment,
+        arming,
+        &IntentEffect {
+            rule: Some(RuleStatus {
+                state: RuleState::Disarmed,
+                revision: LEFT_BY_THE_FIRST_RELEASE,
+                ..armed.clone()
+            }),
+            found: Some(LEFT_BY_THE_FIRST_PRESS),
+            made: false,
+            changed: true,
+            hold: None,
+        },
+    );
+    assert!(!history.can_undo());
 
     // A hold that made the rule is one step with its release, and its undo deletes the rule.
-    tab.history_mut().held(&IntentEffect {
+    history.held(&IntentEffect {
+        rule: Some(RuleStatus {
+            revision: LEFT_BY_THE_SECOND_PRESS,
+            ..armed.clone()
+        }),
+        found: None,
+        made: true,
+        changed: true,
         hold: Some(making),
-        ..effect(RuleState::Armed, 10, true, true)
     });
-    assert!(!tab.history().can_undo(), "the step waits for the release");
-    tab.history_mut().released(
-        &OrdersSim::name(),
+    assert!(!history.can_undo(), "the step waits for the release");
+    history.released(
+        &environment,
         making,
-        &effect(RuleState::Disarmed, 11, false, true),
+        &IntentEffect {
+            rule: Some(RuleStatus {
+                state: RuleState::Disarmed,
+                revision: LEFT_BY_THE_SECOND_RELEASE,
+                ..armed
+            }),
+            found: Some(LEFT_BY_THE_SECOND_PRESS),
+            made: false,
+            changed: true,
+            hold: None,
+        },
     );
-    assert_eq!(
-        tab.history_mut().undo(),
-        Some(Change::DeleteLiveRule(delete(Some(seen(RUN, 11)))))
-    );
+    let delete = DeleteLiveRule {
+        environment,
+        rule: RULE.parse().unwrap(),
+        expects: Some(Expects {
+            run,
+            revision: LEFT_BY_THE_SECOND_RELEASE,
+        }),
+    };
+    assert_eq!(history.undo(), Some(Change::DeleteLiveRule(delete)));
 }
 
 #[test]
 fn turns_of_one_encoder_are_one_step_back_to_the_rule_before_the_first() {
-    let mut tab = tab_that_read(OrdersSim::snapshot(RUN, Vec::new()));
-    let with_chance = |percent| {
-        slow_order_producers().with_trigger(Trigger::from(
-            TriggerParts::new().with_chance(Chance::from_percent(percent).unwrap()),
-        ))
+    const SHOWN: Revision = Revision::new(7);
+    const LEFT_BY_THE_FIRST_TURN: Revision = Revision::new(8);
+    const LEFT_BY_THE_SECOND_TURN: Revision = Revision::new(9);
+    const LEFT_BY_THE_DELAY: Revision = Revision::new(10);
+    const LEFT_BY_THE_UNDO_OF_THE_DELAY: Revision = Revision::new(11);
+    const LEFT_BY_THE_UNDO_OF_THE_TURNS: Revision = Revision::new(12);
+    let run: RunId = RUN.parse().unwrap();
+    let environment: EnvironmentName = ENVIRONMENT.parse().unwrap();
+    let mut history = History::new(UiConfiguration::default().undo_depth);
+    history.apply(&StreamMessage::Snapshot(ProcessState {
+        run,
+        definitions: Definitions::default(),
+        environments: Vec::new(),
+    }));
+    let always = RuleStatus {
+        rule: Rule::new(
+            RULE.parse().unwrap(),
+            SELECTOR.parse::<SelectorName>().unwrap(),
+            PRESET.parse::<PresetName>().unwrap(),
+        ),
+        live: true,
+        state: RuleState::Armed,
+        revision: SHOWN,
     };
-    let turned_to = |percent, revision| IntentEffect {
-        rule: Some(RuleStatus {
-            rule: with_chance(percent),
-            live: true,
-            state: RuleState::Armed,
-            revision: Revision::new(revision),
-        }),
+    let at_90_percent = RuleStatus {
+        rule: always.rule.clone().with_trigger(Trigger::from(
+            TriggerParts::new().with_chance(Chance::from_percent(90).unwrap()),
+        )),
+        revision: LEFT_BY_THE_FIRST_TURN,
+        ..always.clone()
+    };
+    let at_80_percent = RuleStatus {
+        rule: always.rule.clone().with_trigger(Trigger::from(
+            TriggerParts::new().with_chance(Chance::from_percent(80).unwrap()),
+        )),
+        revision: LEFT_BY_THE_SECOND_TURN,
+        ..always.clone()
+    };
+
+    // Two turns of the probability. The second found what the first left, while the tab still showed the rule
+    // before the first.
+    let first = IntentEffect {
+        rule: Some(at_90_percent),
+        found: Some(SHOWN),
         made: false,
         changed: true,
         hold: None,
     };
-    let environment = OrdersSim::name();
-    for (was, now, revision) in [(100, 90, 8), (90, 80, 9), (80, 70, 10)] {
-        let step = Step::turned(
-            &environment,
-            Encoder::Probability,
-            &with_chance(was),
-            &turned_to(now, revision),
-        );
-        tab.history_mut().record(step.unwrap());
-    }
-    // A turn of another encoder is a step of its own.
-    let delay = Step::turned(&environment, Encoder::Delay, &with_chance(70), &turned_to(70, 11));
-    tab.history_mut().record(delay.unwrap());
-
-    tab.history_mut().undo().unwrap();
-    tab.history_mut().settled(applied(12)).unwrap();
-    let back = UpdateLiveRule {
-        environment: OrdersSim::name(),
-        rule: with_chance(100),
-        expects: Some(seen(RUN, 12)),
+    history.record(Step::turned(&environment, Encoder::Probability, &always, &first).unwrap());
+    let second = IntentEffect {
+        rule: Some(at_80_percent.clone()),
+        found: Some(LEFT_BY_THE_FIRST_TURN),
+        made: false,
+        changed: true,
+        hold: None,
     };
-    assert_eq!(tab.history_mut().undo(), Some(Change::UpdateLiveRule(back)));
-    tab.history_mut().settled(applied(13)).unwrap();
-    assert!(!tab.history().can_undo(), "the three turns were one step");
+    history.record(Step::turned(&environment, Encoder::Probability, &always, &second).unwrap());
+    // A turn of another encoder is a step of its own.
+    let delay = IntentEffect {
+        rule: Some(RuleStatus {
+            revision: LEFT_BY_THE_DELAY,
+            ..at_80_percent.clone()
+        }),
+        found: Some(LEFT_BY_THE_SECOND_TURN),
+        made: false,
+        changed: true,
+        hold: None,
+    };
+    history.record(Step::turned(&environment, Encoder::Delay, &at_80_percent, &delay).unwrap());
+
+    history.undo().unwrap();
+    history.settled(Outcome::Applied {
+        revision: LEFT_BY_THE_UNDO_OF_THE_DELAY,
+    });
+    let back = UpdateLiveRule {
+        environment,
+        rule: always.rule,
+        expects: Some(Expects {
+            run,
+            revision: LEFT_BY_THE_UNDO_OF_THE_DELAY,
+        }),
+    };
+    assert_eq!(history.undo(), Some(Change::UpdateLiveRule(back)));
+    history.settled(Outcome::Applied {
+        revision: LEFT_BY_THE_UNDO_OF_THE_TURNS,
+    });
+    assert!(!history.can_undo(), "the two turns of the probability were one step");
+}
+
+#[test]
+fn a_turn_that_found_another_rule_than_the_tab_showed_leaves_no_step() {
+    const SHOWN: Revision = Revision::new(7);
+    const LEFT_BY_THE_OTHER_TAB: Revision = Revision::new(8);
+    const LEFT_BY_THE_TURN: Revision = Revision::new(9);
+    let mut history = History::new(UiConfiguration::default().undo_depth);
+    history.apply(&StreamMessage::Snapshot(ProcessState {
+        run: RUN.parse().unwrap(),
+        definitions: Definitions::default(),
+        environments: Vec::new(),
+    }));
+    let shown = RuleStatus {
+        rule: Rule::new(
+            RULE.parse().unwrap(),
+            SELECTOR.parse::<SelectorName>().unwrap(),
+            PRESET.parse::<PresetName>().unwrap(),
+        ),
+        live: true,
+        state: RuleState::Armed,
+        revision: SHOWN,
+    };
+    // Another tab changed the rule a moment before the turn, and the stream had not told this tab yet.
+    let turned = IntentEffect {
+        rule: Some(RuleStatus {
+            revision: LEFT_BY_THE_TURN,
+            ..shown.clone()
+        }),
+        found: Some(LEFT_BY_THE_OTHER_TAB),
+        made: false,
+        changed: true,
+        hold: None,
+    };
+
+    history.record(Step::turned(&ENVIRONMENT.parse().unwrap(), Encoder::Delay, &shown, &turned).unwrap());
+
+    assert!(
+        !history.can_undo(),
+        "setting the rule back to what the tab showed would take the change of the other tab too"
+    );
 }
 
 #[test]
 fn a_new_change_ends_what_could_be_redone() {
-    let mut tab = tab_that_read(OrdersSim::snapshot(RUN, vec![disarmed_rule()]));
-    tab.history_mut().record(Step::armed(arm(Some(seen(RUN, 7))), left(8)));
-    tab.history_mut().undo().unwrap();
-    tab.history_mut().settled(applied(9)).unwrap();
-    assert!(tab.history().can_redo());
+    const SHOWN: Revision = Revision::new(7);
+    const LEFT_BY_THE_ARM: Revision = Revision::new(8);
+    const LEFT_BY_THE_UNDO: Revision = Revision::new(9);
+    const LEFT_BY_THE_NEW_ARM: Revision = Revision::new(10);
+    let run: RunId = RUN.parse().unwrap();
+    let mut history = History::new(UiConfiguration::default().undo_depth);
+    history.apply(&StreamMessage::Snapshot(ProcessState {
+        run,
+        definitions: Definitions::default(),
+        environments: Vec::new(),
+    }));
+    let arm = ArmRule {
+        environment: ENVIRONMENT.parse().unwrap(),
+        rule: RULE.parse().unwrap(),
+        expects: Some(Expects { run, revision: SHOWN }),
+    };
+    history.record(Step::armed(
+        arm.clone(),
+        Revised {
+            revision: LEFT_BY_THE_ARM,
+        },
+    ));
+    history.undo().unwrap();
+    history.settled(Outcome::Applied {
+        revision: LEFT_BY_THE_UNDO,
+    });
+    assert!(history.can_redo());
 
-    tab.history_mut().record(Step::armed(arm(Some(seen(RUN, 9))), left(10)));
+    let arm_again = ArmRule {
+        expects: Some(Expects {
+            run,
+            revision: LEFT_BY_THE_UNDO,
+        }),
+        ..arm
+    };
+    history.record(Step::armed(
+        arm_again,
+        Revised {
+            revision: LEFT_BY_THE_NEW_ARM,
+        },
+    ));
 
-    assert!(!tab.history().can_redo());
+    assert!(!history.can_redo());
 }
 
 #[test]
 fn the_history_holds_as_many_steps_as_its_depth_says() {
+    const SHOWN: Revision = Revision::new(7);
+    let run: RunId = RUN.parse().unwrap();
     let mut configuration = UiConfiguration::default();
     configuration.undo_depth = NonZeroUsize::new(2).unwrap();
-    let mut tab = Live::new(&configuration);
-    tab.opened();
-    tab.apply(OrdersSim::snapshot(RUN, vec![disarmed_rule()]));
-    tab.history_mut().record(Step::armed(arm(Some(seen(RUN, 7))), left(8)));
-    tab.history_mut()
-        .record(Step::disarmed(disarm(Some(seen(RUN, 8))), left(9)));
-    tab.history_mut().record(Step::armed(arm(Some(seen(RUN, 9))), left(10)));
-
-    for revision in [11, 12] {
-        tab.history_mut().undo().unwrap();
-        tab.history_mut().settled(applied(revision)).unwrap();
+    let mut history = History::new(configuration.undo_depth);
+    history.apply(&StreamMessage::Snapshot(ProcessState {
+        run,
+        definitions: Definitions::default(),
+        environments: Vec::new(),
+    }));
+    // The tab arms three rules, one after the other, and each arm takes the next revision.
+    let mut left = SHOWN;
+    for rule in ["slow-order-producers", "slow-order-consumers", "slow-payments"] {
+        let arm = ArmRule {
+            environment: ENVIRONMENT.parse().unwrap(),
+            rule: rule.parse().unwrap(),
+            expects: Some(Expects { run, revision: SHOWN }),
+        };
+        left = Revision::new(left.number() + 1);
+        history.record(Step::armed(arm, Revised { revision: left }));
     }
 
-    assert!(!tab.history().can_undo(), "the oldest step went when the third came");
+    let mut undone = Vec::new();
+    while let Some(Change::DisarmRule(disarm)) = history.undo() {
+        undone.push(disarm.rule.to_string());
+        left = Revision::new(left.number() + 1);
+        history.settled(Outcome::Applied { revision: left });
+    }
+
+    assert_eq!(
+        undone,
+        ["slow-payments", "slow-order-consumers"],
+        "the oldest step went when the third came"
+    );
 }
 
 #[test]
 fn the_history_lasts_across_a_stream_that_opens_again_and_ends_with_the_run() {
-    let mut tab = tab_that_read(OrdersSim::snapshot(RUN, vec![disarmed_rule()]));
-    tab.history_mut().record(Step::armed(arm(Some(seen(RUN, 7))), left(8)));
+    const SHOWN: Revision = Revision::new(7);
+    const LEFT_BY_THE_ARM: Revision = Revision::new(8);
+    let run: RunId = RUN.parse().unwrap();
+    let mut tab = Live::new(&UiConfiguration::default());
+    tab.opened();
+    tab.apply(StreamMessage::Snapshot(ProcessState {
+        run,
+        definitions: Definitions::default(),
+        environments: Vec::new(),
+    }));
+    let arm = ArmRule {
+        environment: ENVIRONMENT.parse().unwrap(),
+        rule: RULE.parse().unwrap(),
+        expects: Some(Expects { run, revision: SHOWN }),
+    };
+    tab.history_mut().record(Step::armed(
+        arm,
+        Revised {
+            revision: LEFT_BY_THE_ARM,
+        },
+    ));
 
     tab.lost("the connection dropped".to_owned());
     tab.opened();
-    tab.apply(OrdersSim::snapshot(RUN, vec![disarmed_rule()]));
+    tab.apply(StreamMessage::Snapshot(ProcessState {
+        run,
+        definitions: Definitions::default(),
+        environments: Vec::new(),
+    }));
     assert!(tab.history().can_undo(), "a stream of the same run keeps the steps");
 
     tab.lost("the process stopped".to_owned());
     tab.opened();
-    tab.apply(OrdersSim::snapshot(NEXT_RUN, vec![disarmed_rule()]));
+    tab.apply(StreamMessage::Snapshot(ProcessState {
+        run: NEXT_RUN.parse().unwrap(),
+        definitions: Definitions::default(),
+        environments: Vec::new(),
+    }));
     assert!(
         !tab.history().can_undo(),
         "nothing of an earlier run fits a process that started again"
@@ -519,92 +813,209 @@ fn the_history_lasts_across_a_stream_that_opens_again_and_ends_with_the_run() {
 
 #[test]
 fn an_undo_refused_with_another_run_drops_every_step() {
-    let mut tab = tab_that_read(OrdersSim::snapshot(RUN, vec![disarmed_rule()]));
-    tab.history_mut().record(Step::armed(arm(Some(seen(RUN, 7))), left(8)));
-    tab.history_mut()
-        .record(Step::disarmed(disarm(Some(seen(RUN, 8))), left(9)));
+    const SHOWN: Revision = Revision::new(7);
+    const LEFT_BY_THE_ARM: Revision = Revision::new(8);
+    const LEFT_BY_THE_DISARM: Revision = Revision::new(9);
+    let run: RunId = RUN.parse().unwrap();
+    let mut history = History::new(UiConfiguration::default().undo_depth);
+    history.apply(&StreamMessage::Snapshot(ProcessState {
+        run,
+        definitions: Definitions::default(),
+        environments: Vec::new(),
+    }));
+    let arm = ArmRule {
+        environment: ENVIRONMENT.parse().unwrap(),
+        rule: RULE.parse().unwrap(),
+        expects: Some(Expects { run, revision: SHOWN }),
+    };
+    history.record(Step::armed(
+        arm,
+        Revised {
+            revision: LEFT_BY_THE_ARM,
+        },
+    ));
+    let disarm = DisarmRule {
+        environment: ENVIRONMENT.parse().unwrap(),
+        rule: RULE.parse().unwrap(),
+        expects: Some(Expects {
+            run,
+            revision: LEFT_BY_THE_ARM,
+        }),
+    };
+    history.record(Step::disarmed(
+        disarm,
+        Revised {
+            revision: LEFT_BY_THE_DISARM,
+        },
+    ));
 
-    tab.history_mut().undo().unwrap();
+    history.undo().unwrap();
     let refused = RuleCommandError::OtherRun {
         run: NEXT_RUN.parse().unwrap(),
     };
-    let report = tab.history_mut().settled(Outcome::from(refused)).unwrap();
+    let report = history.settled(Outcome::from(refused)).unwrap();
 
     assert!(report.refused);
-    assert!(!tab.history().can_undo());
+    assert!(
+        !history.can_undo(),
+        "no step of an earlier run arms a fault in a process that started again"
+    );
 }
 
 #[test]
-fn a_step_goes_with_its_environment() {
-    let mut tab = tab_that_read(OrdersSim::snapshot(RUN, vec![disarmed_rule()]));
-    let sometimes = slow_order_producers().with_trigger(Trigger::from(
-        TriggerParts::new().with_chance(Chance::from_percent(40).unwrap()),
-    ));
+fn a_step_goes_with_its_environment_and_a_change_of_the_workspace_stays() {
+    const SHOWN: Revision = Revision::new(7);
+    const LEFT_BY_THE_UPDATE: Revision = Revision::new(8);
+    const LEFT_BY_THE_ARM: Revision = Revision::new(9);
+    let run: RunId = RUN.parse().unwrap();
+    let mut history = History::new(UiConfiguration::default().undo_depth);
+    history.apply(&StreamMessage::Snapshot(ProcessState {
+        run,
+        definitions: Definitions::default(),
+        environments: Vec::new(),
+    }));
+    let always = Rule::new(
+        RULE.parse().unwrap(),
+        SELECTOR.parse::<SelectorName>().unwrap(),
+        PRESET.parse::<PresetName>().unwrap(),
+    );
     let update = UpdateDefinition {
-        expects: Some(seen(RUN, 7)),
-        definition: sometimes,
+        expects: Some(Expects { run, revision: SHOWN }),
+        definition: always.clone().with_trigger(Trigger::from(
+            TriggerParts::new().with_chance(Chance::from_percent(40).unwrap()),
+        )),
     };
-    tab.history_mut()
-        .record(Step::updated_rule(update, slow_order_producers(), left(8)));
-    tab.history_mut().record(Step::armed(arm(Some(seen(RUN, 8))), left(9)));
+    history.record(Step::updated_rule(
+        update,
+        always.clone(),
+        Revised {
+            revision: LEFT_BY_THE_UPDATE,
+        },
+    ));
+    let arm = ArmRule {
+        environment: ENVIRONMENT.parse().unwrap(),
+        rule: RULE.parse().unwrap(),
+        expects: Some(Expects {
+            run,
+            revision: LEFT_BY_THE_UPDATE,
+        }),
+    };
+    history.record(Step::armed(
+        arm,
+        Revised {
+            revision: LEFT_BY_THE_ARM,
+        },
+    ));
 
-    tab.apply(StreamMessage::EnvironmentStopped {
-        environment: OrdersSim::name(),
+    history.apply(&StreamMessage::EnvironmentStopped {
+        environment: ENVIRONMENT.parse().unwrap(),
     });
 
     // The arm went with the environment, and the change of the rule of the workspace stays.
     let back = UpdateDefinition {
-        expects: Some(seen(RUN, 8)),
-        definition: slow_order_producers(),
+        expects: Some(Expects {
+            run,
+            revision: LEFT_BY_THE_UPDATE,
+        }),
+        definition: always,
     };
-    assert_eq!(tab.history_mut().undo(), Some(Change::UpdateRule(back)));
+    assert_eq!(history.undo(), Some(Change::UpdateRule(back)));
 }
 
 #[test]
 fn a_change_of_a_rule_of_the_workspace_is_a_change_of_it_in_every_environment() {
-    let mut tab = tab_that_read(OrdersSim::snapshot(RUN, vec![disarmed_rule()]));
-    let sometimes = slow_order_producers().with_trigger(Trigger::from(
-        TriggerParts::new().with_chance(Chance::from_percent(40).unwrap()),
-    ));
-    tab.history_mut().record(Step::armed(arm(Some(seen(RUN, 7))), left(8)));
-    let update = UpdateDefinition {
-        expects: Some(seen(RUN, 7)),
-        definition: sometimes,
-    };
-    tab.history_mut()
-        .record(Step::updated_rule(update, slow_order_producers(), left(9)));
-
-    tab.history_mut().undo().unwrap();
-    tab.history_mut().settled(applied(10)).unwrap();
-
-    // Setting the definition back left revision 10 on the rule in the environment too.
-    assert_eq!(
-        tab.history_mut().undo(),
-        Some(Change::DisarmRule(disarm(Some(seen(RUN, 10)))))
+    const SHOWN: Revision = Revision::new(7);
+    const LEFT_BY_THE_ARM: Revision = Revision::new(8);
+    const LEFT_BY_THE_UPDATE: Revision = Revision::new(9);
+    const LEFT_BY_ITS_UNDO: Revision = Revision::new(10);
+    let run: RunId = RUN.parse().unwrap();
+    let mut history = History::new(UiConfiguration::default().undo_depth);
+    history.apply(&StreamMessage::Snapshot(ProcessState {
+        run,
+        definitions: Definitions::default(),
+        environments: Vec::new(),
+    }));
+    let always = Rule::new(
+        RULE.parse().unwrap(),
+        SELECTOR.parse::<SelectorName>().unwrap(),
+        PRESET.parse::<PresetName>().unwrap(),
     );
+    let arm = ArmRule {
+        environment: ENVIRONMENT.parse().unwrap(),
+        rule: RULE.parse().unwrap(),
+        expects: Some(Expects { run, revision: SHOWN }),
+    };
+    history.record(Step::armed(
+        arm,
+        Revised {
+            revision: LEFT_BY_THE_ARM,
+        },
+    ));
+    // The definition has a revision of its own, which the arm in the environment did not change.
+    let update = UpdateDefinition {
+        expects: Some(Expects { run, revision: SHOWN }),
+        definition: always.clone().with_trigger(Trigger::from(
+            TriggerParts::new().with_chance(Chance::from_percent(40).unwrap()),
+        )),
+    };
+    history.record(Step::updated_rule(
+        update,
+        always,
+        Revised {
+            revision: LEFT_BY_THE_UPDATE,
+        },
+    ));
+
+    history.undo().unwrap();
+    history.settled(Outcome::Applied {
+        revision: LEFT_BY_ITS_UNDO,
+    });
+
+    // Setting the definition back left its revision on the rule in the environment too.
+    let disarm = DisarmRule {
+        environment: ENVIRONMENT.parse().unwrap(),
+        rule: RULE.parse().unwrap(),
+        expects: Some(Expects {
+            run,
+            revision: LEFT_BY_ITS_UNDO,
+        }),
+    };
+    assert_eq!(history.undo(), Some(Change::DisarmRule(disarm)));
 }
 
 #[test]
 fn an_undo_that_got_no_answer_stays_and_one_goes_out_at_a_time() {
-    let mut tab = tab_that_read(OrdersSim::snapshot(RUN, vec![disarmed_rule()]));
-    tab.history_mut().record(Step::armed(arm(Some(seen(RUN, 7))), left(8)));
-    tab.history_mut()
-        .record(Step::disarmed(disarm(Some(seen(RUN, 8))), left(9)));
+    const SHOWN: Revision = Revision::new(7);
+    const LEFT_BY_THE_ARM: Revision = Revision::new(8);
+    let run: RunId = RUN.parse().unwrap();
+    let mut history = History::new(UiConfiguration::default().undo_depth);
+    history.apply(&StreamMessage::Snapshot(ProcessState {
+        run,
+        definitions: Definitions::default(),
+        environments: Vec::new(),
+    }));
+    let arm = ArmRule {
+        environment: ENVIRONMENT.parse().unwrap(),
+        rule: RULE.parse().unwrap(),
+        expects: Some(Expects { run, revision: SHOWN }),
+    };
+    history.record(Step::armed(
+        arm,
+        Revised {
+            revision: LEFT_BY_THE_ARM,
+        },
+    ));
 
-    let undo = tab.history_mut().undo().unwrap();
-    assert_eq!(
-        tab.history_mut().undo(),
-        None,
-        "a second ⌘Z waits for the answer to the first"
-    );
+    let undo = history.undo().unwrap();
+    assert_eq!(history.undo(), None, "a second ⌘Z waits for the answer to the first");
     let unanswered = Outcome::Unanswered {
         reason: "the connection dropped".to_owned(),
     };
-    assert!(tab.history_mut().settled(unanswered).unwrap().refused);
+    assert!(history.settled(unanswered).unwrap().refused);
 
     assert_eq!(
-        tab.history_mut().undo(),
+        history.undo(),
         Some(undo),
-        "the step that may not have applied goes out again"
+        "the undo that may not have applied goes out again"
     );
 }
