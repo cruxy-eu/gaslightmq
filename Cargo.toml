@@ -33,6 +33,7 @@ members = [
     "crates/gaslightmq_session",
     "crates/gaslightmq_surface",
     "crates/gaslightmq_surface/conformance",
+    "crates/gaslightmq_test",
     "crates/gaslightmq_test_kafka",
     "crates/gaslightmq_traffic",
     "crates/gaslightmq_trigger",
@@ -61,6 +62,7 @@ gaslightmq_clock_waitable = { path = "crates/gaslightmq_clock_waitable" }
 gaslightmq_combine = { path = "crates/gaslightmq_combine" }
 gaslightmq_control_api = { path = "crates/gaslightmq_control_api" }
 gaslightmq_control_client = { path = "crates/gaslightmq_control_client" }
+gaslightmq_control_server = { path = "crates/gaslightmq_control_server" }
 gaslightmq_definition_api = { path = "crates/gaslightmq_definition/api" }
 gaslightmq_definition_conformance = { path = "crates/gaslightmq_definition/conformance" }
 gaslightmq_definition_memory = { path = "crates/gaslightmq_definition/memory" }
