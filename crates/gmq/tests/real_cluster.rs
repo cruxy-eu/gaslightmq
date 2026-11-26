@@ -42,11 +42,10 @@ const PLACED_AT: i64 = 1_700_000_000_000;
 async fn a_proxy_of_the_command_line_tells_a_real_client_that_a_record_it_wrote_was_lost() -> anyhow::Result<()> {
     let cluster = KafkaCluster::plaintext().start().await?;
     let orders = cluster.topics().create("orders.eu").await?;
-    let broker = cluster.brokers()[0].id();
     // The proxy reads the files of example 09, and never writes them. Every listener takes a free port.
     let mut gmq = Command::new(GMQ)
         .args(["proxy", "--upstream", &cluster.bootstrap_servers()])
-        .args(["--listen", "127.0.0.1:0", "--brokers", &format!("{broker}=127.0.0.1:0")])
+        .args(["--listen", "127.0.0.1:0", "--brokers", "127.0.0.1:0"])
         .args(["--advertise", "127.0.0.1", "--control-listen", "127.0.0.1:0"])
         .args(["--workspace", EXAMPLE_09, "--read-only"])
         .stdout(Stdio::piped())
@@ -115,7 +114,6 @@ async fn a_proxy_of_the_command_line_tells_a_real_client_that_a_record_it_wrote_
 #[tokio::test]
 async fn a_reload_of_the_command_line_takes_in_a_rule_that_someone_edited() -> anyhow::Result<()> {
     let cluster = KafkaCluster::plaintext().start().await?;
-    let broker = cluster.brokers()[0].id();
     // A workspace of its own, with the rules of example 09, which the test edits.
     let workspace = tempfile::tempdir()?;
     let rules = workspace.path().join("rules");
@@ -124,7 +122,7 @@ async fn a_reload_of_the_command_line_takes_in_a_rule_that_someone_edited() -> a
     std::fs::copy(&orders, rules.join("orders.yaml"))?;
     let mut gmq = Command::new(GMQ)
         .args(["proxy", "--upstream", &cluster.bootstrap_servers()])
-        .args(["--listen", "127.0.0.1:0", "--brokers", &format!("{broker}=127.0.0.1:0")])
+        .args(["--listen", "127.0.0.1:0", "--brokers", "127.0.0.1:0"])
         .args(["--advertise", "127.0.0.1", "--control-listen", "127.0.0.1:0"])
         .arg("--workspace")
         .arg(workspace.path())
@@ -164,10 +162,9 @@ async fn a_reload_of_the_command_line_takes_in_a_rule_that_someone_edited() -> a
 #[tokio::test]
 async fn a_health_check_of_the_command_line_says_that_the_proxy_runs_until_someone_stops_it() -> anyhow::Result<()> {
     let cluster = KafkaCluster::plaintext().start().await?;
-    let broker = cluster.brokers()[0].id();
     let mut gmq = Command::new(GMQ)
         .args(["proxy", "--upstream", &cluster.bootstrap_servers()])
-        .args(["--listen", "127.0.0.1:0", "--brokers", &format!("{broker}=127.0.0.1:0")])
+        .args(["--listen", "127.0.0.1:0", "--brokers", "127.0.0.1:0"])
         .args(["--advertise", "127.0.0.1", "--control-listen", "127.0.0.1:0"])
         .stdout(Stdio::piped())
         .kill_on_drop(true)

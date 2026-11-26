@@ -77,7 +77,8 @@ pub(crate) struct ProxyFlags {
     #[arg(long, env = "GMQ_LISTEN", value_name = "IP:PORT", default_value = "0.0.0.0:9092")]
     pub(crate) listen: ListenAddress,
     /// Where the brokers of the cluster listen in the proxy: a range of ports, one for each broker that the proxy
-    /// discovers, or a pin for every broker, such as `1=0.0.0.0:19092,2=0.0.0.0:19093`. Port 0 takes a free port.
+    /// discovers; port 0, such as `127.0.0.1:0`, for a free port for each broker that the proxy discovers; or a pin
+    /// for every broker, such as `1=0.0.0.0:19092,2=0.0.0.0:19093`.
     #[arg(
         long,
         env = "GMQ_BROKERS",
