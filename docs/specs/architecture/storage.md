@@ -127,6 +127,11 @@ gaslight/
 
 `gmq init` creates this layout with a `.gitignore` for the three ignored directories.
 
+`selectors.yaml` and `presets.yaml` hold a list each, and so does every file in `rules/`.
+A file in `environments/` or `layouts/` holds one definition.
+A directory holds the files in it that end in `.yaml` and whose name does not start with a `.`, and no file below them.
+A file or a directory that is not there holds nothing, so an empty directory is an empty workspace.
+
 The workspace works in git.
 Teams review scenarios in pull requests,
 and CI runs them with `gmq run`.
@@ -152,6 +157,16 @@ trigger.every: a count is at least one
 
 The path comes from the reader.
 The message after it comes from the type of the value, which knows nothing about files.
+The error names the file before the path, and a definition in a list starts its path with its place there:
+
+```
+rules/orders.yaml: [2].trigger.every: a count is at least one
+```
+
+The engine reads every definition of every file before it says what failed, so one start names every error.
+A name that two definitions of a kind have is an error of the second one.
+
+The files are YAML 1.2: `true` and `false` are the only booleans, so a selector named `on` keeps its name.
 
 A key that a definition does not have is a reading error too.
 A definition holds [what a person writes](identity.md#what-a-definition-holds), so no key holds something that GaslightMQ keeps: `revision` and `armed` are such keys.
@@ -239,6 +254,10 @@ It is an [operation of the control plane](control-plane.md#resources): `gmq relo
   The [journal](../domains/observation.md#journal) records each one, whoever asked for the reload.
   Nobody undoes it in the UI.
 - **A store in memory has nothing to reload**, so a reload [without a workspace](#without-a-workspace) changes nothing.
+- **Nothing changes before the reload is taken.**
+  Every store reads its files again and holds what it read aside, and the workspace compares and validates.
+  Whoever asked for the reload sees what it would change, and can still refuse it for what only it knows, such as the name of a live rule.
+  Until it takes the reload in, every store holds what it held, and the files that changed hold up the writes to them.
 
 Something can ask for a reload on its own later, such as a watcher of the files.
 It would be one more sender of this operation, and nothing else would change.
@@ -255,6 +274,15 @@ So what it writes has to read well in a diff.
 - **A definition has one written form.**
   Its keys come in a fixed order, the order of the examples in these documents.
   A definition that GaslightMQ wrote once never changes again in a diff, unless its content changes.
+  In a list, it is an item that starts with `- `, and it keeps the indentation of the list.
+- **A new definition goes where its kind goes.**
+  A selector or a preset comes after the last one of its file, with an empty line before it when the first two have one between them.
+  A rule goes to `rules/<name>.yaml`, after the rules that the file holds already.
+  A pad layout and an environment get a file of their own name.
+- **A delete takes the lines of the definition away**, with one empty line next to them.
+  A file that holds nothing else after it goes too.
+- **A list in flow style is not edited.**
+  A file that holds its definitions as `[…]` reads as any other, and a write of one of them fails.
 - **A write loses the comments inside the definition it writes.**
   The store knows whether the text of a definition holds a comment, and the control plane says so with the definition.
   The UI asks before it saves an edit of such a definition.
@@ -273,12 +301,16 @@ The store of files therefore checks each file before it writes it.
   A file that should be there and is gone, and a file that should not exist and does, count as changed.
 - **A refused write changes nothing.**
   Neither the file nor the memory of the engine changes, and the operation fails with `changed-outside`.
+  The error says which file changed, and how: its bytes changed, it is gone, or it exists now.
   A [reload](#reloading) takes the edit in, and whoever made the change makes it again on top of it.
 - **The check is per file.**
   An edit of one selector in `selectors.yaml` holds up the write of every other selector, until someone reloads.
 - **A write replaces the file in one step.**
   The store writes the new content to a temporary file next to it, and renames that over the file.
   A reader never sees half a file, and a crash leaves the old file or the new one.
+  The name of the temporary file starts with a `.`, so the engine never reads it as a definition.
+- **A write reads back.**
+  The store reads the new text before it writes it, and writes nothing when it does not read back as the definitions of the file with the change.
 
 An edit that lands between the check and the rename is still lost.
 An editor takes no lock that the store could wait for, so the store cannot rule that out, and the window is as short as one rename.
@@ -299,6 +331,10 @@ The engine then loads and validates it, and never writes back.
 Pads and ⌘K still create live rules in memory.
 Keeping a rule, saving a scenario and the scratch file are switched off.
 A reload still works, because it only reads.
+
+Whoever starts the process says that the workspace is read-only.
+The engine does not guess it from the permissions of the files.
+The stores of the files then refuse every write, and the error says that the workspace is read-only.
 
 ## Environments
 
