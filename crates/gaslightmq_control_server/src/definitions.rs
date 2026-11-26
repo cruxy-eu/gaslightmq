@@ -158,15 +158,15 @@ impl DefinitionOperations {
         use gaslightmq_host::CreateDefinitionError as Host;
         match host.create(definition, from).await {
             Ok(created) => Ok(revised(created)),
-            Err(Host::NameTaken { rule, environment }) => Err(CreateDefinitionError::NameTaken {
+            Err(Host::NameTaken { rule, holder }) => Err(CreateDefinitionError::NameTaken {
                 name: rule.into(),
-                environment: Some(environment),
+                holder: Some(rule_holder(holder)),
             }),
             Err(Host::NotCreated {
                 error: CreateError::NameTaken { name },
             }) => Err(CreateDefinitionError::NameTaken {
                 name: reference(name),
-                environment: None,
+                holder: None,
             }),
             Err(Host::NotCreated {
                 error: CreateError::DoesNotFit { name, errors },
@@ -274,6 +274,14 @@ pub(crate) async fn named<C: WorkspaceContext>(
             .await?
             .map(AnyDefinition::Environment),
     })
+}
+
+/// What holds a rule of a name outside the workspace, as the control plane writes it.
+pub(crate) fn rule_holder(holder: gaslightmq_host::RuleHolder) -> RuleHolder {
+    match holder {
+        gaslightmq_host::RuleHolder::Environment(environment) => RuleHolder::Environment(environment),
+        gaslightmq_host::RuleHolder::Scenario(scenario) => RuleHolder::Scenario(scenario),
+    }
 }
 
 /// The name of a definition with its kind, as the control plane writes it.

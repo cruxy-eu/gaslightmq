@@ -21,7 +21,7 @@ use serde::Serialize;
 use tokio::sync::broadcast;
 
 use crate::StreamBacklog;
-use crate::definitions::{self, DefinitionOperations, Editable, each};
+use crate::definitions::{self, DefinitionOperations, Editable, each, rule_holder};
 use crate::revisions::{expected, revised, revision, run};
 
 /// What the server answers a request with, before it travels.
@@ -325,7 +325,15 @@ impl<C: WorkspaceContext + 'static> ControlPlane<C> {
         match created {
             Ok(created) => Ok(revised(created)),
             Err(Host::NotRunning { environment }) => Err(CreateLiveRuleError::NotRunning { environment }),
-            Err(Host::NameTaken { environment, rule }) => Err(CreateLiveRuleError::NameTaken { environment, rule }),
+            Err(Host::NameTaken {
+                environment,
+                rule,
+                scenario,
+            }) => Err(CreateLiveRuleError::NameTaken {
+                environment,
+                rule,
+                scenario,
+            }),
             Err(Host::StoreFailed { rule, reason }) => Err(CreateLiveRuleError::StoreFailed { rule, reason }),
             Err(Host::WorkspaceInvalid { rule, reason }) => Err(CreateLiveRuleError::DoesNotFit {
                 rule,
@@ -422,15 +430,12 @@ impl<C: WorkspaceContext + 'static> ControlPlane<C> {
                 rule,
                 revision: revision(now),
             }),
-            Err(Host::NameTaken { rule, environment }) => Err(KeepRuleError::NameTaken {
+            Err(Host::NameTaken { rule, holder }) => Err(KeepRuleError::NameTaken {
                 rule,
-                environment: Some(environment),
+                holder: Some(rule_holder(holder)),
             }),
             Err(Host::NotKept { rule, error }) => Err(match error {
-                CreateError::NameTaken { .. } => KeepRuleError::NameTaken {
-                    rule,
-                    environment: None,
-                },
+                CreateError::NameTaken { .. } => KeepRuleError::NameTaken { rule, holder: None },
                 CreateError::DoesNotFit { errors, .. } => KeepRuleError::DoesNotFit {
                     rule,
                     reason: each(&errors),

@@ -263,13 +263,14 @@ impl<C: WorkspaceContext> Host<C> {
     /// A create expects nothing: it refuses a name that is taken.
     /// A rule of the workspace is in every environment, so it never stands next to a live rule of its name:
     /// the host refuses a rule that has the name of a live rule of an environment that runs.
+    /// Rule names are unique among all rules, so it also refuses the name of a rule that a scenario owns.
     /// `from` says where the change comes from, and the journal of every environment that runs records it.
     /// Whoever follows the host learns of it.
     ///
     /// # Errors
     ///
     /// - [`CreateDefinitionError::NameTaken`] when the definition is a rule, and a live rule of an environment that
-    ///   runs has its name.
+    ///   runs or a rule that a scenario owns has its name.
     /// - [`CreateDefinitionError::NotCreated`] with the [`CreateError`](gaslightmq_workspace::CreateError) of the workspace.
     pub async fn create<D: WorkspaceDefinition>(
         &self,
@@ -282,11 +283,11 @@ impl<C: WorkspaceContext> Host<C> {
             // The workspace stays taken from the check to the write, as it does while a live rule goes in.
             let mut workspace = self.workspace.lock().await;
             if let DefinitionName::Rule(rule) = &name
-                && let Some(environment) = self.live_rule_of_another(rule, None)
+                && let Some(holder) = self.holder_of(&workspace, rule, None).await
             {
                 return Err(CreateDefinitionError::NameTaken {
                     rule: rule.clone(),
-                    environment,
+                    holder,
                 });
             }
             let created = workspace.create(definition).await;

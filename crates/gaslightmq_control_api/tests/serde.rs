@@ -830,32 +830,47 @@ fn an_error_names_its_variant() {
 }
 
 #[test]
-fn a_name_that_a_live_rule_of_another_environment_has_is_taken_there() {
+fn a_name_that_another_rule_has_is_taken_with_what_holds_it() {
     let name: RuleName = "slow-order-producers".parse().unwrap();
 
     Form(KeepRuleError::NameTaken {
         rule: name.clone(),
-        environment: Some("canary-proxy".parse().unwrap()),
+        holder: Some(RuleHolder::Environment("canary-proxy".parse().unwrap())),
     })
-    .writes(json!({ "error": "name-taken", "rule": "slow-order-producers", "environment": "canary-proxy" }));
+    .writes(json!({
+        "error": "name-taken",
+        "rule": "slow-order-producers",
+        "holder": { "environment": "canary-proxy" },
+    }));
     Form(CreateDefinitionError::NameTaken {
         name: name.clone().into(),
-        environment: Some("canary-proxy".parse().unwrap()),
+        holder: Some(RuleHolder::Scenario("leader-election".parse().unwrap())),
     })
     .writes(json!({
         "error": "name-taken",
         "name": { "rule": "slow-order-producers" },
-        "environment": "canary-proxy",
+        "holder": { "scenario": "leader-election" },
     }));
-    // A name that the workspace has is taken without an environment.
+    Form(CreateLiveRuleError::NameTaken {
+        environment: "orders-sim".parse().unwrap(),
+        rule: name.clone(),
+        scenario: Some("leader-election".parse().unwrap()),
+    })
+    .writes(json!({
+        "error": "name-taken",
+        "environment": "orders-sim",
+        "rule": "slow-order-producers",
+        "scenario": "leader-election",
+    }));
+    // A name that the workspace has is taken without a holder.
     Form(KeepRuleError::NameTaken {
         rule: name.clone(),
-        environment: None,
+        holder: None,
     })
     .writes(json!({ "error": "name-taken", "rule": "slow-order-producers" }));
     Form(CreateDefinitionError::NameTaken {
         name: name.into(),
-        environment: None,
+        holder: None,
     })
     .writes(json!({ "error": "name-taken", "name": { "rule": "slow-order-producers" } }));
 }

@@ -11,7 +11,7 @@ use gaslightmq_surface::{LayoutName, PadLayout};
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 
-use crate::{AnyOperation, Expects, Operation, Revised, Revision, RunId};
+use crate::{AnyOperation, Expects, Operation, Revised, Revision, RuleHolder, RunId};
 
 /// A kind of definition that the control plane lists, gets, creates, updates and deletes:
 /// a [`Selector`], a [`Preset`], a [`Rule`] or a [`PadLayout`].
@@ -460,15 +460,15 @@ pub enum GetDefinitionError {
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error, Serialize, Deserialize)]
 #[serde(tag = "error", rename_all = "kebab-case", deny_unknown_fields)]
 pub enum CreateDefinitionError {
-    /// A definition of the kind has the name already, or for a rule, a live rule of the environment `environment`.
-    /// Creating never overwrites it. A rule of the workspace is in every environment, so it never stands next to a
-    /// live rule of its name.
-    #[error("{name} {}", exists(.environment.as_ref()))]
+    /// A definition of the kind has the name already, or for a rule, a live rule of an environment or a rule that a
+    /// scenario owns. Creating never overwrites it. A rule of the workspace is in every environment, so it never
+    /// stands next to a live rule of its name, and rule names are unique among all rules.
+    #[error("{name} {}", exists(.holder.as_ref()))]
     NameTaken {
         name: DefinitionRef,
-        /// The environment whose live rule has the name of the rule, or `None` when the workspace has the name.
+        /// What holds a rule of the name outside the workspace, or `None` when the workspace has the name.
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        environment: Option<EnvironmentName>,
+        holder: Option<RuleHolder>,
     },
     /// The definitions of the workspace would not fit each other with this one.
     /// `reason` says everything that would be wrong.
@@ -566,9 +566,12 @@ fn all(users: &[DefinitionRef]) -> String {
 }
 
 /// What has the name of a definition: a live rule of an environment, or the workspace.
-fn exists(environment: Option<&EnvironmentName>) -> String {
-    match environment {
-        Some(environment) => format!("is the name of a live rule of environment {:?}", environment.as_str()),
+fn exists(holder: Option<&RuleHolder>) -> String {
+    match holder {
+        Some(RuleHolder::Environment(environment)) => {
+            format!("is the name of a live rule of environment {:?}", environment.as_str())
+        }
+        Some(RuleHolder::Scenario(scenario)) => format!("is the name of a rule of scenario {:?}", scenario.as_str()),
         None => "exists already".to_owned(),
     }
 }

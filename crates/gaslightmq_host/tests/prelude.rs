@@ -102,6 +102,7 @@ mod next_to_the_others {
         let taken: CreateLiveRuleError = CreateLiveRuleError::NameTaken {
             environment: staging.clone(),
             rule: "blackhole".parse().unwrap(),
+            scenario: None,
         };
         let unchanged: UpdateLiveRuleError = UpdateLiveRuleError::NotFound {
             environment: staging.clone(),
@@ -118,9 +119,10 @@ mod next_to_the_others {
         let unknown: IntentError = IntentError::UnknownLayout {
             layout: "order-desk".parse().unwrap(),
         };
+        let holder: RuleHolder = RuleHolder::Environment(staging.clone());
         let uncreated: CreateDefinitionError = CreateDefinitionError::NameTaken {
             rule: "blackhole".parse().unwrap(),
-            environment: staging.clone(),
+            holder,
         };
         let unclosed: CloseSessionError = CloseSessionError::NotRunning { environment: staging };
         let missed: HostChangesError = HostChangesError::Missed { changes: 3 };

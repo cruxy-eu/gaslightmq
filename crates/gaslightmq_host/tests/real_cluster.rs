@@ -16,6 +16,7 @@ use std::net::{IpAddr, Ipv4Addr, TcpListener};
 
 use anyhow::Context;
 use gaslightmq_clock::{Duration, TimeSpan};
+use gaslightmq_definition_api::prelude::*;
 use gaslightmq_engine::prelude::*;
 use gaslightmq_environment::prelude::*;
 use gaslightmq_field::prelude::*;
@@ -29,6 +30,7 @@ use gaslightmq_lie_api::prelude::*;
 use gaslightmq_lie_refusal::prelude::*;
 use gaslightmq_quick_inject::prelude::*;
 use gaslightmq_rule::prelude::*;
+use gaslightmq_scenario::prelude::*;
 use gaslightmq_selector::prelude::*;
 use gaslightmq_surface::{Column, Encoder, EncoderTurn, Intent, Layer, PadLayout, PresenceId, Row, Steps};
 use gaslightmq_test_kafka::KafkaCluster;
@@ -376,6 +378,7 @@ async fn a_live_rule_is_made_armed_in_one_step_or_not_at_all() -> anyhow::Result
         Err(CreateLiveRuleError::NameTaken {
             environment: staging.name().clone(),
             rule: quiet_fetch.name().clone(),
+            scenario: None,
         })
     );
     // The other rule is a live rule of the environment, and it is armed. Making it and arming it was one change,
@@ -1449,7 +1452,7 @@ async fn a_name_that_a_live_rule_of_another_environment_has_is_no_name_for_the_w
         kept,
         Err(KeepRuleError::NameTaken {
             rule: slow.name().clone(),
-            environment: canary.name().clone(),
+            holder: RuleHolder::Environment(canary.name().clone()),
         })
     );
     assert!(
@@ -1470,6 +1473,104 @@ async fn a_name_that_a_live_rule_of_another_environment_has_is_no_name_for_the_w
             state: RuleState::Disarmed,
             revision: kept,
         })
+    );
+    host.stop_all().await;
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_name_that_a_rule_of_a_scenario_has_is_no_name_for_a_live_rule_or_the_workspace() -> anyhow::Result<()> {
+    let cluster = KafkaCluster::plaintext().start().await?;
+    let host = Host::new(
+        HostConfiguration::default(),
+        MemoryContext::new(),
+        Lies::of_every_build(),
+        RUN,
+    );
+    let any = ListenAddress::new(LOCALHOST, 0);
+    let brokers = BrokerListeners::pinned(cluster.brokers().iter().map(|broker| (broker.id(), any)))?;
+    let staging = Environment::new(
+        "staging-proxy".parse()?,
+        Instances::ProxyInFrontOfCluster {
+            proxy: ProxyDefinition::new(Listeners::new(any, brokers, LOCALHOST.into())?),
+            upstream: Upstream::new(cluster.brokers()[0].address().to_string().parse()?),
+        },
+    );
+    let quiet_metadata = Rule::new(
+        "quiet-metadata".parse()?,
+        Conditions::from(Condition::is(ApiKey::METADATA)),
+        LieDefinition::Silence,
+    );
+    let quiet_fetch = Rule::new(
+        "quiet-fetch".parse()?,
+        Conditions::from(Condition::is(ApiKey::FETCH)),
+        LieDefinition::Silence,
+    );
+    let outage = Scenario::new(
+        "metadata-outage".parse()?,
+        Mode::Chain,
+        Seed::new(42),
+        [quiet_metadata.clone().into()],
+    )?;
+    host.create(outage.clone(), ChangeSurface::Test).await?;
+    host.start(EnvironmentConfiguration::new(&staging)?).await?;
+
+    let live = host
+        .create_live_rule(staging.name(), quiet_metadata.clone(), ChangeSurface::Test)
+        .await;
+    let created = host.create(quiet_metadata.clone(), ChangeSurface::Test).await;
+
+    // Rule names are unique among all rules, and the scenario owns a rule of this one.
+    assert_eq!(
+        live,
+        Err(CreateLiveRuleError::NameTaken {
+            environment: staging.name().clone(),
+            rule: quiet_metadata.name().clone(),
+            scenario: Some(outage.name().clone()),
+        })
+    );
+    assert_eq!(
+        live.unwrap_err().to_string(),
+        "rule \"quiet-metadata\" was not added to environment \"staging-proxy\": \
+         scenario \"metadata-outage\" owns a rule of that name"
+    );
+    assert_eq!(
+        created,
+        Err(CreateDefinitionError::NameTaken {
+            rule: quiet_metadata.name().clone(),
+            holder: RuleHolder::Scenario(outage.name().clone()),
+        })
+    );
+
+    // A scenario can come into the stores behind the back of the host, as a file that someone edits.
+    // A live rule of its name that was there before does not go into the workspace.
+    host.create_live_rule(staging.name(), quiet_fetch.clone(), ChangeSurface::Test)
+        .await?;
+    let fetch_outage = Scenario::new(
+        "fetch-outage".parse()?,
+        Mode::Chain,
+        Seed::new(42),
+        [quiet_fetch.clone().into()],
+    )?;
+    host.workspace()
+        .await
+        .stores()
+        .scenarios()
+        .create(fetch_outage.clone())
+        .await?;
+    let kept = host
+        .keep(staging.name(), quiet_fetch.name(), None, ChangeSurface::Test)
+        .await;
+    assert_eq!(
+        kept,
+        Err(KeepRuleError::NameTaken {
+            rule: quiet_fetch.name().clone(),
+            holder: RuleHolder::Scenario(fetch_outage.name().clone()),
+        })
+    );
+    assert_eq!(
+        kept.unwrap_err().to_string(),
+        "rule \"quiet-fetch\" was not kept: scenario \"fetch-outage\" owns a rule of that name"
     );
     host.stop_all().await;
     Ok(())

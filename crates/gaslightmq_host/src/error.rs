@@ -6,6 +6,7 @@ use gaslightmq_engine::EngineStartError;
 use gaslightmq_environment::{EnvironmentName, ListenAddress};
 use gaslightmq_field::ConnectionNumber;
 use gaslightmq_rule::{RuleError, RuleName};
+use gaslightmq_scenario::ScenarioName;
 use gaslightmq_selector::SelectorSetError;
 use gaslightmq_surface::LayoutName;
 use gaslightmq_workspace::{CreateError, DeleteError, Revision, UpdateError};
@@ -368,12 +369,15 @@ pub enum CreateLiveRuleError {
     /// No environment of this name runs.
     #[error("environment {:?} does not run", .environment.as_str())]
     NotRunning { environment: EnvironmentName },
-    /// A rule of the workspace or a live rule of the environment has the name already,
-    /// or a rule of that name is armed there, so the new one cannot be.
-    #[error("environment {:?} has a rule {:?} already", .environment.as_str(), .rule.as_str())]
+    /// Another rule has the name: a rule of the workspace or a live rule of the environment,
+    /// a rule of that name that is armed there, or a rule that the scenario `scenario` owns.
+    /// Rule names are unique among all rules, so the new one cannot have it.
+    #[error("{}", live_rule_taken(.environment, .rule, .scenario.as_ref()))]
     NameTaken {
         environment: EnvironmentName,
         rule: RuleName,
+        /// The scenario that owns a rule of the name, or `None` when the workspace or the environment has it.
+        scenario: Option<ScenarioName>,
     },
     /// A store of the workspace could not be read. `reason` says which store, and what it said.
     #[error("rule {:?} was not added: {reason}", .rule.as_str())]
@@ -469,17 +473,11 @@ pub enum KeepRuleError {
         environment: EnvironmentName,
         rule: RuleName,
     },
-    /// A live rule of another environment that runs has the name.
-    /// A rule of the workspace is in every environment, so it never stands next to a live rule of its name.
-    #[error(
-        "rule {:?} was not kept: environment {:?} has a live rule of that name",
-        .rule.as_str(),
-        .environment.as_str()
-    )]
-    NameTaken {
-        rule: RuleName,
-        environment: EnvironmentName,
-    },
+    /// Another rule has the name: a live rule of another environment that runs, or a rule that a scenario owns.
+    /// A rule of the workspace is in every environment, so it never stands next to a live rule of its name,
+    /// and rule names are unique among all rules.
+    #[error("rule {:?} was not kept: {}", .rule.as_str(), .holder.holds())]
+    NameTaken { rule: RuleName, holder: RuleHolder },
     /// The workspace did not take the rule. Its error says why: a rule of the workspace has the name,
     /// the rule does not fit the workspace, or a store failed.
     #[error("rule {:?} was not kept: {error}", .rule.as_str())]
@@ -501,6 +499,54 @@ pub enum KeepRuleError {
     OtherRun { run: RunId },
 }
 
+/// What holds a rule of a name outside the workspace, so that no other rule can have that name.
+///
+/// Rule names are unique among all rules: those of the workspace, the live rules of every environment that runs,
+/// and the rules that scenarios own.
+///
+/// ```
+/// use gaslightmq_host::prelude::*;
+///
+/// let holder = RuleHolder::Scenario("leader-election".parse().expect("a scenario name"));
+/// assert_eq!(holder.holds(), "scenario \"leader-election\" owns a rule of that name");
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RuleHolder {
+    /// A live rule of this environment has the name.
+    Environment(EnvironmentName),
+    /// A rule that this scenario of the workspace owns has the name.
+    Scenario(ScenarioName),
+}
+
+impl RuleHolder {
+    /// What the holder holds, as a sentence: `environment "canary-proxy" has a live rule of that name`.
+    pub fn holds(&self) -> String {
+        match self {
+            RuleHolder::Environment(environment) => {
+                format!("environment {:?} has a live rule of that name", environment.as_str())
+            }
+            RuleHolder::Scenario(scenario) => format!("scenario {:?} owns a rule of that name", scenario.as_str()),
+        }
+    }
+}
+
+/// The message of a live rule whose name is taken: by the environment, or by a scenario.
+fn live_rule_taken(environment: &EnvironmentName, rule: &RuleName, scenario: Option<&ScenarioName>) -> String {
+    match scenario {
+        None => format!(
+            "environment {:?} has a rule {:?} already",
+            environment.as_str(),
+            rule.as_str()
+        ),
+        Some(scenario) => format!(
+            "rule {:?} was not added to environment {:?}: {}",
+            rule.as_str(),
+            environment.as_str(),
+            RuleHolder::Scenario(scenario.clone()).holds()
+        ),
+    }
+}
+
 /// Why a host did not [create](crate::Host::create) a definition in the workspace.
 ///
 /// A create that failed changed nothing.
@@ -510,7 +556,7 @@ pub enum KeepRuleError {
 ///
 /// let error = CreateDefinitionError::NameTaken {
 ///     rule: "slow-order-producers".parse().expect("a rule name"),
-///     environment: "orders-sim".parse().expect("an environment name"),
+///     holder: RuleHolder::Environment("orders-sim".parse().expect("an environment name")),
 /// };
 /// assert_eq!(
 ///     error.to_string(),
@@ -519,17 +565,11 @@ pub enum KeepRuleError {
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum CreateDefinitionError {
-    /// A live rule of an environment that runs has the name of the rule.
-    /// A rule of the workspace is in every environment, so it never stands next to a live rule of its name.
-    #[error(
-        "rule {:?} was not created: environment {:?} has a live rule of that name",
-        .rule.as_str(),
-        .environment.as_str()
-    )]
-    NameTaken {
-        rule: RuleName,
-        environment: EnvironmentName,
-    },
+    /// Another rule has the name of the rule: a live rule of an environment that runs, or a rule that a scenario
+    /// owns. A rule of the workspace is in every environment, so it never stands next to a live rule of its name,
+    /// and rule names are unique among all rules.
+    #[error("rule {:?} was not created: {}", .rule.as_str(), .holder.holds())]
+    NameTaken { rule: RuleName, holder: RuleHolder },
     /// The workspace did not take the definition. Its error says why.
     #[error("{error}")]
     NotCreated { error: CreateError },
