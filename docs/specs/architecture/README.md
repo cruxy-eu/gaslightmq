@@ -19,6 +19,7 @@ These documents call the runtime of one proxy the **engine**.
 | [Request pipeline](request-pipeline.md) | What happens to one call, stage by stage. |
 | [Backends](backends.md) | Upstream and Simulated, their capabilities, the overlay and incident emulation. |
 | [Storage and configuration](storage.md) | The workspace, environments, secrets, live state and recordings. |
+| [Recording format](recording-format.md) | The bytes of a recording file, and how a writer makes one and a reader opens one. |
 | [Identity](identity.md) | Every entity per district, and how GaslightMQ identifies it: names and IDs, with the revision and the run beside them. |
 | [Control plane](control-plane.md) | The API the UI and the CLI use. |
 | [Crate layout](crates.md) | The crates of the workspace, what each one holds, which ones are sans-IO, and how the async IO edge drives them. |

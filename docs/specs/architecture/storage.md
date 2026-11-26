@@ -85,7 +85,11 @@ control:
   presence_grace: 10s           # how long a presence stays once its live stream ended
 recordings:
   directory: recordings
-  backlog: 10000                # the calls that the recorder may be behind
+  backlog: 10000                # the calls and journal entries that the recorder may be behind
+  backlog_size: 256MiB          # the bytes of the frames that may wait with them
+  chunk_size: 4MiB              # the size at which a chunk of a recording closes
+  chunk_age: 1s                 # how long a chunk stays open at most
+  summary_values: 128           # the values of one field that the summary of a chunk lists
 ```
 
 ## Workspace
@@ -577,6 +581,7 @@ It does not hold armed state.
 A recording file is append-only.
 It holds a header, the sessions, and the calls and [journal](../domains/observation.md#journal) entries in the order they happened.
 It is one file, so it is easy to attach to a bug report or to seed a World from.
+The [recording format](recording-format.md) gives its bytes, and says how a writer makes a file and how a reader opens one.
 
 Each call holds:
 
@@ -591,16 +596,21 @@ The name of the file is the [ID of the recording](identity.md#recording-id): its
 
 The engine hands the recorder the raw frames of a call next to the call, and only while a recording runs.
 A call itself holds no frames, so a call that nobody records costs no copy of its bytes.
+What it hands over [shares the bytes](recording-format.md#handing-frames-to-the-recorder) that the session holds already, so a call that someone records costs no copy in its session either.
 
 The recorder writes on a thread of its own, behind a queue of the calls and journal entries it has not written yet.
-The queue holds as many as `recordings.backlog` says.
+The queue holds as many as `recordings.backlog` says, and no more bytes of frames than `recordings.backlog_size` says.
 A session never waits for the disk.
 When the queue is full, the recording stops, and its last entry and the control plane say why.
 What the file holds up to there is a complete recording.
 
-The file is split into chunks, so a long recording can be opened from the end.
-Each chunk carries a summary of the field values it contains.
+The file is split into [chunks](recording-format.md#chunks), so a long recording can be opened from the end.
+A chunk closes at `recordings.chunk_size`, or when it has been open for `recordings.chunk_age`.
+Each chunk carries a [summary](recording-format.md#the-summary) of the field values it contains.
 A query with a selector skips the chunks that cannot match.
+
+A reader copies no frame: the engine maps the file into memory, and a frame is a range of its bytes.
+A recording that a crash cut short opens up to its last whole chunk.
 
 The index is not stored.
 The engine rebuilds it when it opens a recording.
@@ -610,6 +620,7 @@ The engine rebuilds it when it opens a recording.
 Records can hold personal or secret data.
 A **metadata-only** recording drops record keys, values and headers,
 and keeps everything else.
+It keeps the frames: a frame with records is there [without their contents](recording-format.md#what-a-recording-must-not-keep), and still decodes.
 
 | Backend | Default | Reason |
 |---|---|---|
@@ -624,6 +635,9 @@ A `SaslAuthenticate` request carries a client's password or token.
 The engine blanks that payload in every recording, full ones included,
 and in every call it streams to the UI.
 A client's credentials never reach the disk.
+
+The [writer of a recording](recording-format.md#what-a-recording-must-not-keep) does the blanking and applies privacy, so no caller can forget either.
+It blanks what the server answers to `SaslAuthenticate` too.
 
 ## Browser
 

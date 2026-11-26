@@ -81,7 +81,7 @@ A recording keeps:
 
 - every session with its identity, open and close times,
 - every call with its request, truth, delivered response, verdict and explanation,
-- the raw frames, unless the recording is metadata-only,
+- the raw frames, without the keys, values and headers of their records when the recording is metadata-only,
 - the [journal](#journal) entries between the calls.
 
 A **metadata-only** recording drops record keys, values and headers,
