@@ -256,7 +256,9 @@ It is an [operation of the control plane](control-plane.md#resources): `gmq relo
 - **A store in memory has nothing to reload**, so a reload [without a workspace](#without-a-workspace) changes nothing.
 - **Nothing changes before the reload is taken.**
   Every store reads its files again and holds what it read aside, and the workspace compares and validates.
-  Whoever asked for the reload sees what it would change, and can still refuse it for what only it knows, such as the name of a live rule.
+  Whoever asked for the reload sees what it would change, and can still refuse it for what only it knows.
+  The host checks there that no new rule has the name of a live rule, and refuses the reload when one does.
+  Nothing else changes the workspace in between, so what the host checked is what it takes in.
   Until it takes the reload in, every store holds what it held, and the files that changed hold up the writes to them.
 
 Something can ask for a reload on its own later, such as a watcher of the files.
