@@ -205,7 +205,7 @@ What the overlay answers is the truth.
 An emulation is only as consistent as the traffic that passes through GaslightMQ.
 Clients that talk to the real cluster directly see the real cluster.
 The UI marks emulated incidents, so nobody mistakes them for real ones.
-A backend rejects an incident it cannot emulate when the scenario loads.
+A backend rejects an incident it cannot emulate when someone activates the scenario that uses it.
 
 ### A lie or an incident?
 

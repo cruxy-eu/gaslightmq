@@ -56,10 +56,13 @@ The second part lists the decisions that were settled, with the reason and the s
   A [seeded](domains/world.md#seeding) World can start with recorded records.
   A world definition is in git, and recordings are not.
   The records need a home that CI can reach.
-- **Does write-back keep comments and formatting?**
-  The UI writes edits back to [workspace files](architecture/storage.md#workspace) that people also edit by hand.
-  Either the engine keeps hand-written comments and layout,
-  or it owns the formatting and says so.
+- **Does write-back keep the comments inside the definition it writes?**
+  A [write](architecture/storage.md#writing-back) keeps every byte outside the definition that changed, and the UI asks before it loses a comment inside it.
+  Keeping those comments too needs an edit of the text in place, which changes only the values that differ.
+- **Does GaslightMQ recognise a definition in a later run?**
+  A [UUID](architecture/identity.md#uuid) lasts for one run, and the name is what two runs share.
+  A committed file next to the definitions that maps names to UUIDs would carry a UUID across runs and copies of the workspace.
+  Nothing needs that yet.
 - **Can several people share one engine?**
   The [journal](domains/observation.md#journal) records which surface changed something, not which person.
   A shared engine in a staging cluster needs identities and permissions on the control plane.
@@ -100,6 +103,8 @@ The second part lists the decisions that were settled, with the reason and the s
 |---|---|---|
 | Can several scenarios be active at once? | No. One scenario plus the [live set](domains/scenarios.md#the-live-set). Scenarios share rules by name. | Two scenarios need a conflict rule between them. |
 | What does Capture do with encoder turns? | It keeps the parameters from the moment of arming. Later, a change becomes one step once the value settles. | A step per encoder tick drowns the story. |
+| When does GaslightMQ check that a backend supports the incidents of a scenario? | When someone activates the scenario in an environment. The workspace checks the references of a scenario alone. See [portability](domains/scenarios.md#portability). | A workspace serves every environment, and each has a backend of its own. |
+| What identifies a step? | Its name, unique within its scenario. See [identity](architecture/identity.md#scenarios). | A step keeps its name when someone puts a step before it, and its place would not. |
 
 ### Backends
 
@@ -118,13 +123,14 @@ The second part lists the decisions that were settled, with the reason and the s
 | What is a session made of? | A transport and a pipeline. The pipeline holds the session's state, including the rule snapshot. See [parts](domains/session.md#parts). | The transport is the only part that does IO, so everything a rule decides runs in a test without a socket. |
 | Does a session survive a simulated disconnect? | No. A hang-up or a broker that goes down closes the real connection, and the session ends with it. The client context and the shared counters stay. See [disconnects](domains/session.md#disconnects). | The client must see a real close. A reconnect is a new connection, as it is with a real broker. |
 | Is a call to a broker a plain function call? | No. The broker is a state machine that answers under the call ID, at once or later. See [the broker is a state machine too](architecture/crates.md#the-broker-is-a-state-machine-too). | A Fetch that waits for records and a `JoinGroup` that waits for members cannot return at once. |
+| What does the recorder do when it cannot keep up? | It stops the recording and says so. It writes on a thread of its own, behind a queue whose size the configuration sets. See [recordings](architecture/storage.md#recordings). | A session never waits for a disk, and a queue without a limit ends with a process that has no memory left. |
 
 ### Storage and naming
 
 | Question | Decision | Reason |
 |---|---|---|
 | Are names unique across kinds? | No, per kind. The UI shows the kind where kinds mix. See [names](architecture/storage.md#names). | Every reference already says which kind it means. |
-| What is a name? | A slug, like the name of a resource in Kubernetes. It is the identity of its definition, and every reference uses it. The [UUID](architecture/identity.md#uuid) next to it stays inside the workspace. See [names](domains/rules.md#names). | One string names a definition in a file, a command, an explanation and the statistics. |
+| What is a name? | A slug, like the name of a resource in Kubernetes. It is the identity of its definition, and every reference uses it. The [UUID](architecture/identity.md#uuid) next to it is live state, and no reference uses it. See [names](domains/rules.md#names). | One string names a definition in a file, a command, an explanation and the statistics. |
 | Where does free text go? | In an optional title on the definition itself. See [titles](domains/rules.md#titles). | Nothing references a title, so it changes without breaking anything. |
 | Can someone rename a definition? | No. Another name means a new definition, and the old one is deleted. | A rename had to rewrite every reference, and its history hung on a name that no longer existed. |
 | What is the default for recordings? | Metadata-only on Upstream, full on Simulated. See [privacy](architecture/storage.md#privacy). | The real cluster can carry sensitive data. The World's data is synthetic. |
@@ -136,3 +142,18 @@ The second part lists the decisions that were settled, with the reason and the s
 | Where does a fake cluster's data come from? | From the topic's [record source](domains/world.md#records): virtual records from a template or a schema, a file, a recording, or what clients produce. | A consumer test needs data without a producer, and a virtual record is the same at the same partition and offset. |
 | Do records have schemas? | Yes. A topic names a format and a schema, and an environment names a [schema registry](architecture/backends.md#schema-registry). | Avro and Protobuf consumers cannot read a record without one. |
 | Where do secrets live? | In files outside git, referenced by path. An environment variable works as a fallback. See [secrets](architecture/storage.md#secrets). | Platforms mount secrets as files, files rotate, and a reference cannot leak through git. |
+| Does a file hold the UUID of its definition? | No. A UUID is live state: the process gives it, and keeps it in memory for one run. See [UUID](architecture/identity.md#uuid). | A file is what someone defined. A file that someone wrote by hand and one that the UI saved look the same, and a copy of a file is just another definition. |
+| Does GaslightMQ need a store for what it assigns, as Kubernetes has? | No. Its memory is that store, and a restart is a clean slate. | Nothing has to recognise a definition across runs yet, and a second store has to be kept in step with files that people edit. |
+| What does a write from the UI do to a file that someone wrote by hand? | It rewrites the one definition that changed, in one fixed form, and leaves every other byte. The UI asks before a comment is lost. See [writing back](architecture/storage.md#writing-back). | People version the files with git, so a change of one definition has to be a diff of one definition. |
+| How are two clients kept from overwriting each other? | Whatever a request changes has a revision, and a change can name the one it expects. See [revisions](architecture/control-plane.md#revisions). | Two tabs, `gmq`, a scenario and a file edit change the same process. |
+| How is a recording identified, and a journal entry? | A recording by its environment and the instant it started, which is the name of its file. A journal entry by a number that its environment counts. See [identity](architecture/identity.md#recording-id). | A file name that says what it holds, and an order that needs no clock. |
+
+### Control surfaces
+
+| Question | Decision | Reason |
+|---|---|---|
+| Where does the undo history live? | In the browser tab, in memory. The engine keeps none. See [undo and redo](domains/control-surfaces.md#undo-and-redo). | A tab takes back its own changes alone, and the engine stays a clean slate. |
+| How does an undo reach the engine? | As an ordinary operation: the inverse of the change, with the revision that the change left and the cause `undo`. See [undo](architecture/control-plane.md#undo). | The journal records it as a new change, and the control plane needs no second way to change something. |
+| What happens to an undo when the state has moved on? | Nothing changes, and the UI drops the step and says so. | An undo can arm a fault against real clients, so the last writer does not win. |
+| What can an undo not take back? | What happened: a lie or an incident that fired, a step, and what clients did about them. | A client that got an error has already reacted. |
+| Who says which surface a change came from? | The request, for a pad, ⌘K, the UI, `gmq`, a test or another client. The engine, for a step, a lifetime and a file. See [surfaces](domains/observation.md#surfaces). | The journal says where every change came from, also one that nobody asked for. |

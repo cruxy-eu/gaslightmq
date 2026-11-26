@@ -151,7 +151,7 @@ See [the backend seam](crates.md#the-backend-seam).
 
 A scenario declares the incidents it needs.
 A backend rejects a scenario that needs incidents it cannot apply or emulate,
-when the scenario loads, not halfway through a run.
+when someone activates the scenario, not halfway through a run.
 The check includes each incident's [consequences](../domains/lies-and-incidents.md#consequences):
 "broker goes down" with `failover: true` needs "leader moves".
 

@@ -35,6 +35,10 @@ A command always carries the name.
 
 The [mockups](../../../mockups/proxy-ui-v2.html) show most of these views.
 
+A definition in a file can hold comments that someone wrote by hand.
+Before the UI saves an edit that loses such a comment, it says so and asks.
+See [writing back](../architecture/storage.md#writing-back).
+
 ## Quick inject
 
 ⌘K, or Ctrl-K, opens a palette over every view.
@@ -51,7 +55,7 @@ It says those without the word for their kind, and completes them: `order-ingest
 |---|---|
 | Up, down | Move through the rule, the completions of the word at the end, and the views. |
 | Tab | Put the highlighted completion, or the first one, in place of the word at the end. |
-| Enter | On the rule: create it as a live rule of the environment shown, and arm it. On a completion or a view: take it. |
+| Enter | On the rule: create it as a live rule of the environment shown, armed, in one operation. On a completion or a view: take it. |
 | Esc | Close the palette. |
 
 A sentence with a word that the control plane could not read creates nothing, so a typo never becomes a rule that does less than it says.
@@ -129,6 +133,7 @@ The grid plays by keyboard as well as by mouse.
 | Arrows | Move the focus one pad. The focus stays at the edge of the grid. |
 | Space | Press and release the focused pad. |
 | 1 to 9 | Show that layer of the layout. |
+| ⌘Z, ⇧⌘Z | [Undo and redo](#undo-and-redo), except while a pad is held. |
 
 ### Modes of play
 
@@ -136,3 +141,68 @@ The grid plays by keyboard as well as by mouse.
 - **Hold**: the pad is armed while pressed, and disarms on release.
 
 Pad presses act on the [live set](scenarios.md#the-live-set).
+
+## Undo and redo
+
+⌘Z takes back the last change that someone made in this tab, and ⇧⌘Z makes it again.
+On other systems the keys are Ctrl-Z and Ctrl-Shift-Z.
+
+Undo reverses what someone set, and never what happened.
+
+| Undo takes back | Undo does not take back |
+|---|---|
+| Creating, changing or deleting a definition. | A lie or an incident that fired, by a trigger or by hand. |
+| Making, changing or deleting a live rule. | A step that advanced. |
+| Arming and disarming a rule. | What the traffic counted and spent: counters and budgets. |
+| A pad press and an encoder turn. | Keeping a live rule. |
+| Activating and deactivating a scenario. | Starting or stopping an environment, a recording or a capture, and closing a session. |
+
+A client that got an error, or that waited, has already reacted.
+Undoing an arm disarms the rule, and takes back nothing that the rule did.
+
+### The history of a tab
+
+The undo history belongs to the UI, and the engine keeps none.
+
+- **Each tab has a history of its own, in memory.**
+  It holds the changes that this tab made.
+  It never holds a change of another tab, of `gmq`, of a scenario or of someone who edited a file.
+- **It holds as many steps as `undo.depth` says.**
+  That is a property of the UI's configuration, and 100 unless someone sets it.
+  The oldest step goes when a new one would be one too many.
+- **It lives as long as the tab.**
+  A live stream that drops and opens again keeps it.
+  Closing or reloading the tab ends it.
+- **A new change ends what could be redone.**
+- **A step goes with its environment.**
+  When an environment stops, the tab drops the steps that changed it.
+
+### One gesture is one step
+
+One gesture sends one operation, and one operation is one step.
+
+| Gesture | One step |
+|---|---|
+| Enter in ⌘K | The live rule that the sentence made, armed. Undo deletes it. |
+| A press in latch | The press. Undo disarms the rule, or deletes it when the press made it. |
+| A press and its release in hold | Both together. They leave a step only when the press made the rule, and undo then deletes it. |
+| Turns of one encoder on one rule, one after another | All of them. Undo sets the rule back to what it was before the first. |
+
+⌘Z does nothing while a pad is held.
+While a text field has the focus, and in the ⌘K palette, ⌘Z and ⇧⌘Z belong to the text.
+
+### When the state has moved on
+
+An undo is an ordinary operation of the [control plane](../architecture/control-plane.md#undo).
+The UI works out the inverse of each change from what the control plane answered to it, and never from what it expects a press or a turn to do.
+
+Someone else can change the same rule in between: another tab, `gmq`, a step, a lifetime or a file edit.
+Each undo therefore names the [revision](../architecture/control-plane.md#revisions) that its change left.
+
+- **When the revision still holds, the undo applies.**
+  The UI says what it did, by name: *Armed slow-order-producers again*.
+  An undo can arm a fault, so it never happens without a word.
+- **When the revision has moved on, the undo changes nothing.**
+  The UI drops the step, and says that the rule changed since.
+  It never forces an undo over a change that the tab did not make.
+  The steps before it stay, and the next ⌘Z takes the next one.

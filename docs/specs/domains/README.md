@@ -43,7 +43,7 @@ Workspace, Environment, Secret and Scratch file belong to [storage](../architect
 | **Field** | A named property of a connection or a call that selectors can test. |
 | **Incident** | A change to the state of the world. |
 | **Index** | Facets built automatically from recorded calls. |
-| **Journal** | The record of what changed in the engine: arms, disarms, parameter changes, steps and incidents. |
+| **Journal** | The record of what changed in an environment: arms, disarms, parameter changes, definitions, steps and incidents, each with the surface it came from. |
 | **Layer** | A scope on the pad grid. The same row and column can hold different rules on different layers. |
 | **Learned field** | A field whose value comes from the client context when the request does not carry it. |
 | **Lie** | Anything the client is told that differs from the truth. |
@@ -59,6 +59,7 @@ Workspace, Environment, Secret and Scratch file belong to [storage](../architect
 | **Preset** | A named, reusable lie or incident with its parameters, such as `delay-1s`. |
 | **Priority** | Where a rule stands among the armed rules. When two lies conflict, the lie of the rule with the higher priority wins. |
 | **Recording** | A captured stretch of calls across sessions. |
+| **Revision** | A number that says which state of a definition, of a rule in an environment or of a scenario that runs someone saw. It rises with every change, and a change can name the one it expects. |
 | **Rule** | A named selector, action and trigger, with a lifetime. |
 | **Shadowed** | A lie that fired but lost a conflict to a rule with a higher priority. |
 | **Stage** | When a lie acts: before forwarding, or after the response. |
@@ -70,11 +71,14 @@ Workspace, Environment, Secret and Scratch file belong to [storage](../architect
 | **Selector** | A named predicate over fields that describes a set of calls. |
 | **Session** | The runtime of one client connection: its transport and its pipeline. |
 | **Step** | One part of a Sequence scenario. It arms rules and ends on a condition. |
+| **Surface** | Where a change came from: a pad, ⌘K, the UI, `gmq`, a test, a step, a lifetime or a file. The journal records it. |
 | **Template** | A file that describes one record of a topic, with placeholders the broker fills per partition and offset. |
 | **Title** | What a definition is for, in free text. Optional, and nothing references it. |
 | **Target** | The part of a call a lie changes: the partitions the selector matched, or the whole call. |
 | **Trigger** | What decides that a rule fires: chance, count, time or manual. |
 | **Truth** | What the backend answers when no lie applies. On the proxy, that includes the overlay. |
+| **Undo** | Taking back a change that someone made in the same browser tab. It reverses what someone set, and never what happened. |
+| **UUID** | What tells one definition from every other in one run of a process. Live state: no file holds it. |
 | **Virtual record** | A record the broker makes up when a consumer asks. A pure function of the world definition, the partition and the offset. |
 | **Verdict** | The outcome of evaluating one call: pass, or the lies that apply. |
 | **World** | The state of a simulated cluster. |
