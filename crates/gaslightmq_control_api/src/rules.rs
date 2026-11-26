@@ -237,7 +237,7 @@ impl Operation for FireRule {
 /// let error = CreateLiveRuleError::NameTaken {
 ///     environment: "orders-sim".parse().expect("an environment name"),
 ///     rule: "delay-1s-on-order-producers".parse().expect("a rule name"),
-///     scenario: None,
+///     holder: Some(RuleHolder::Environment("orders-sim".parse().expect("an environment name"))),
 /// };
 /// assert_eq!(error.to_string(), "environment \"orders-sim\" has a rule \"delay-1s-on-order-producers\" already");
 /// ```
@@ -247,16 +247,16 @@ pub enum CreateLiveRuleError {
     /// The environment does not run.
     #[error("environment {:?} does not run", .environment.as_str())]
     NotRunning { environment: EnvironmentName },
-    /// Another rule has the name: a rule of the workspace or a live rule of the environment,
-    /// a rule of that name that is armed there, or a rule that the scenario `scenario` owns.
+    /// Another rule has the name, and `holder` says which: a rule of the workspace when it is `None`,
+    /// a live rule of the environment or a rule of that name that is armed there, or a rule that a scenario owns.
     /// Rule names are unique among all rules, so the new one cannot have it.
-    #[error("{}", live_rule_taken(.environment, .rule, .scenario.as_ref()))]
+    #[error("{}", live_rule_taken(.environment, .rule, .holder.as_ref()))]
     NameTaken {
         environment: EnvironmentName,
         rule: RuleName,
-        /// The scenario that owns a rule of the name, or `None` when the workspace or the environment has it.
+        /// What holds a rule of the name outside the workspace, or `None` when the workspace has a rule of the name.
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        scenario: Option<ScenarioName>,
+        holder: Option<RuleHolder>,
     },
     /// The rule does not fit the workspace: it names a selector or a preset that does not exist, or it could never
     /// work. `reason` says what is wrong.
@@ -528,19 +528,21 @@ pub(crate) fn taken_by(holder: Option<&RuleHolder>) -> String {
     }
 }
 
-/// The message of a live rule whose name is taken: by the environment or the workspace, or by a scenario.
-fn live_rule_taken(environment: &EnvironmentName, rule: &RuleName, scenario: Option<&ScenarioName>) -> String {
-    match scenario {
-        None => format!(
-            "environment {:?} has a rule {:?} already",
-            environment.as_str(),
-            rule.as_str()
-        ),
-        Some(scenario) => format!(
-            "rule {:?} was not added to environment {:?}: {}",
-            rule.as_str(),
-            environment.as_str(),
-            taken_by(Some(&RuleHolder::Scenario(scenario.clone())))
-        ),
+/// The message of a live rule whose name is taken: by the workspace, by the environment, or by a scenario.
+fn live_rule_taken(environment: &EnvironmentName, rule: &RuleName, holder: Option<&RuleHolder>) -> String {
+    let not_added = format!(
+        "rule {:?} was not added to environment {:?}",
+        rule.as_str(),
+        environment.as_str()
+    );
+    match holder {
+        Some(RuleHolder::Environment(_)) => {
+            format!(
+                "environment {:?} has a rule {:?} already",
+                environment.as_str(),
+                rule.as_str()
+            )
+        }
+        other => format!("{not_added}: {}", taken_by(other)),
     }
 }

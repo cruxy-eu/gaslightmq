@@ -854,13 +854,13 @@ fn a_name_that_another_rule_has_is_taken_with_what_holds_it() {
     Form(CreateLiveRuleError::NameTaken {
         environment: "orders-sim".parse().unwrap(),
         rule: name.clone(),
-        scenario: Some("leader-election".parse().unwrap()),
+        holder: Some(RuleHolder::Scenario("leader-election".parse().unwrap())),
     })
     .writes(json!({
         "error": "name-taken",
         "environment": "orders-sim",
         "rule": "slow-order-producers",
-        "scenario": "leader-election",
+        "holder": { "scenario": "leader-election" },
     }));
     // A name that the workspace has is taken without a holder.
     Form(KeepRuleError::NameTaken {

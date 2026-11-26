@@ -378,7 +378,7 @@ async fn a_live_rule_is_made_armed_in_one_step_or_not_at_all() -> anyhow::Result
         Err(CreateLiveRuleError::NameTaken {
             environment: staging.name().clone(),
             rule: quiet_fetch.name().clone(),
-            scenario: None,
+            holder: Some(RuleHolder::Environment(staging.name().clone())),
         })
     );
     // The other rule is a live rule of the environment, and it is armed. Making it and arming it was one change,
@@ -1526,7 +1526,7 @@ async fn a_name_that_a_rule_of_a_scenario_has_is_no_name_for_a_live_rule_or_the_
         Err(CreateLiveRuleError::NameTaken {
             environment: staging.name().clone(),
             rule: quiet_metadata.name().clone(),
-            scenario: Some(outage.name().clone()),
+            holder: Some(RuleHolder::Scenario(outage.name().clone())),
         })
     );
     assert_eq!(

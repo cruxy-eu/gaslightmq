@@ -148,10 +148,10 @@ impl<C: WorkspaceContext> Host<C> {
         from: ChangeSource,
     ) -> Result<Revision, CreateLiveRuleError> {
         let name = rule.name().clone();
-        let taken = || CreateLiveRuleError::NameTaken {
+        let taken = |holder: Option<RuleHolder>| CreateLiveRuleError::NameTaken {
             environment: environment.clone(),
             rule: name.clone(),
-            scenario: None,
+            holder,
         };
         self.check_running(environment)
             .map_err(|environment| CreateLiveRuleError::NotRunning { environment })?;
@@ -160,7 +160,7 @@ impl<C: WorkspaceContext> Host<C> {
         let workspace = self.workspace.lock().await;
         match workspace.stores().rules().get(&name).await {
             Ok(None) => {}
-            Ok(Some(_)) => return Err(taken()),
+            Ok(Some(_)) => return Err(taken(None)),
             Err(error) => {
                 return Err(CreateLiveRuleError::StoreFailed {
                     rule: name.clone(),
@@ -170,13 +170,7 @@ impl<C: WorkspaceContext> Host<C> {
         }
         match scenario_owning(&workspace, &name).await {
             Ok(None) => {}
-            Ok(Some(scenario)) => {
-                return Err(CreateLiveRuleError::NameTaken {
-                    environment: environment.clone(),
-                    rule: name.clone(),
-                    scenario: Some(scenario),
-                });
-            }
+            Ok(Some(scenario)) => return Err(taken(Some(RuleHolder::Scenario(scenario)))),
             Err(error) => {
                 return Err(CreateLiveRuleError::StoreFailed {
                     rule: name.clone(),
@@ -199,12 +193,13 @@ impl<C: WorkspaceContext> Host<C> {
             })?;
         let not_running = |environment| CreateLiveRuleError::NotRunning { environment };
         let revision = self.change_rules(environment, not_running, |running, revisions| {
+            let here = || taken(Some(RuleHolder::Environment(environment.clone())));
             if running.live.contains_key(&name) {
-                return Err(taken());
+                return Err(here());
             }
             let rules = running.engine.rules();
             if armed {
-                rules.arm(resolved).map_err(|ArmError::AlreadyArmed { .. }| taken())?;
+                rules.arm(resolved).map_err(|ArmError::AlreadyArmed { .. }| here())?;
             }
             running.live.insert(name.clone(), rule);
             // Making the rule and arming it are one change, and take one number.

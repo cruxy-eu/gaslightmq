@@ -57,11 +57,12 @@ Rule names are also unique among all rules, so no rule has the name of a rule th
   **or a rule of a scenario.**
 - **Keep refuses a name that a live rule of another environment, or a rule of a scenario, has.**
 
-Each error is `name-taken`.
-A keep and a create name what holds the other rule: `{ "holder": { "environment": "canary-proxy" } }` for a live rule,
-and `{ "holder": { "scenario": "leader-election" } }` for a rule of a scenario.
+Each error is `name-taken`, and each names what holds the other rule in the same way:
+`{ "holder": { "environment": "canary-proxy" } }` for a live rule of that environment,
+and `{ "holder": { "scenario": "leader-election" } }` for a rule of that scenario.
+A live rule that is not created names its own environment as the holder when a live rule of the environment has the name,
+or a rule of that name is armed there.
 The same error without a holder says that the workspace has a rule of that name.
-A live rule that is not created names the scenario whose rule has the name, and nothing when the workspace or the environment has it.
 Whoever wants the rule in the workspace deletes the other live rule first.
 The check and the write are one step, so a live rule never gets the name in between.
 
@@ -555,6 +556,7 @@ No operation reloads the workspace yet.
 It arrives with the stores of files: a store in memory has nothing to reload.
 
 No operation lists, gets, creates, updates or deletes a scenario yet.
+So nothing refuses yet a scenario that owns a rule with the name of a live rule: that check arrives with those operations.
 The snapshot holds every scenario of the workspace, and a change of one is a `definition-changed` or a `definition-deleted` message, as for every kind.
 
 The journal has no entry of the activation of a scenario, of a step or of a recording yet: those arrive with their operations.

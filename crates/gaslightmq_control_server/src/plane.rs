@@ -328,11 +328,11 @@ impl<C: WorkspaceContext + 'static> ControlPlane<C> {
             Err(Host::NameTaken {
                 environment,
                 rule,
-                scenario,
+                holder,
             }) => Err(CreateLiveRuleError::NameTaken {
                 environment,
                 rule,
-                scenario,
+                holder: holder.map(rule_holder),
             }),
             Err(Host::StoreFailed { rule, reason }) => Err(CreateLiveRuleError::StoreFailed { rule, reason }),
             Err(Host::WorkspaceInvalid { rule, reason }) => Err(CreateLiveRuleError::DoesNotFit {

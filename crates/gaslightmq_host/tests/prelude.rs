@@ -102,7 +102,7 @@ mod next_to_the_others {
         let taken: CreateLiveRuleError = CreateLiveRuleError::NameTaken {
             environment: staging.clone(),
             rule: "blackhole".parse().unwrap(),
-            scenario: None,
+            holder: Some(RuleHolder::Environment(staging.clone())),
         };
         let unchanged: UpdateLiveRuleError = UpdateLiveRuleError::NotFound {
             environment: staging.clone(),

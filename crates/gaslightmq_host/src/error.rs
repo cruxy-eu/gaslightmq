@@ -369,15 +369,14 @@ pub enum CreateLiveRuleError {
     /// No environment of this name runs.
     #[error("environment {:?} does not run", .environment.as_str())]
     NotRunning { environment: EnvironmentName },
-    /// Another rule has the name: a rule of the workspace or a live rule of the environment,
-    /// a rule of that name that is armed there, or a rule that the scenario `scenario` owns.
+    /// Another rule has the name, and `holder` says which: a rule of the workspace when it is `None`,
+    /// a live rule of the environment or a rule of that name that is armed there, or a rule that a scenario owns.
     /// Rule names are unique among all rules, so the new one cannot have it.
-    #[error("{}", live_rule_taken(.environment, .rule, .scenario.as_ref()))]
+    #[error("{}", live_rule_taken(.environment, .rule, .holder.as_ref()))]
     NameTaken {
         environment: EnvironmentName,
         rule: RuleName,
-        /// The scenario that owns a rule of the name, or `None` when the workspace or the environment has it.
-        scenario: Option<ScenarioName>,
+        holder: Option<RuleHolder>,
     },
     /// A store of the workspace could not be read. `reason` says which store, and what it said.
     #[error("rule {:?} was not added: {reason}", .rule.as_str())]
@@ -530,20 +529,23 @@ impl RuleHolder {
     }
 }
 
-/// The message of a live rule whose name is taken: by the environment, or by a scenario.
-fn live_rule_taken(environment: &EnvironmentName, rule: &RuleName, scenario: Option<&ScenarioName>) -> String {
-    match scenario {
-        None => format!(
-            "environment {:?} has a rule {:?} already",
-            environment.as_str(),
-            rule.as_str()
-        ),
-        Some(scenario) => format!(
-            "rule {:?} was not added to environment {:?}: {}",
-            rule.as_str(),
-            environment.as_str(),
-            RuleHolder::Scenario(scenario.clone()).holds()
-        ),
+/// The message of a live rule whose name is taken: by the workspace, by the environment, or by a scenario.
+fn live_rule_taken(environment: &EnvironmentName, rule: &RuleName, holder: Option<&RuleHolder>) -> String {
+    let not_added = format!(
+        "rule {:?} was not added to environment {:?}",
+        rule.as_str(),
+        environment.as_str()
+    );
+    match holder {
+        None => format!("{not_added}: the workspace has a rule of that name"),
+        Some(RuleHolder::Environment(_)) => {
+            format!(
+                "environment {:?} has a rule {:?} already",
+                environment.as_str(),
+                rule.as_str()
+            )
+        }
+        Some(scenario @ RuleHolder::Scenario(_)) => format!("{not_added}: {}", scenario.holds()),
     }
 }
 
