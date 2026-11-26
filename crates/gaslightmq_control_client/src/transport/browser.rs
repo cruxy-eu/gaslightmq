@@ -79,6 +79,16 @@ impl Socket {
             Some(Err(error)) => Err(unreachable(&error)),
         }
     }
+
+    /// Closes the socket. The browser tells the other side, behind the page.
+    #[expect(
+        clippy::unused_async,
+        reason = "every transport closes a socket the same way, and the other one waits"
+    )]
+    pub(crate) async fn close(self) {
+        // A socket that is let go of closes.
+        drop(self);
+    }
 }
 
 /// Waits for `span`, on a timer of the browser.

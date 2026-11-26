@@ -7,7 +7,7 @@
 //! | Type | Is |
 //! |---|---|
 //! | [`ControlClient`] | A client of one control plane. It sends operations and opens live streams. |
-//! | [`LiveStream`] | The snapshot of the process, then every change, and the calls it follows. |
+//! | [`LiveStream`] | The presence of the client, the snapshot of the process, then every change, and the calls it follows. |
 //! | [`ControlClientConfiguration`] | Where the control plane is, which surface the client is, and how long it waits. |
 //! | [`ControlPlaneAddress`], [`ControlPlaneAddressError`] | Where a control plane listens. |
 //! | [`SendError`] | Why an operation got no answer of its own. |
@@ -53,6 +53,12 @@
 //! A [`LiveStream`] starts with the [snapshot](gaslightmq_control_api::StreamMessage::Snapshot) of the process,
 //! and every message after it is one change, or one call that the stream follows.
 //! A client that falls behind gets a new snapshot, and goes on from there.
+//!
+//! A client that follows the stream is there, and the control plane knows it as a
+//! [presence](LiveStream::presence). A request that names the presence adds holds that end with it,
+//! so a pad never stays held for a client that is gone.
+//! The control plane keeps the presence of a stream that ended for a grace period,
+//! and a client that [comes back as it](ControlClient::live_stream_as) in that time keeps its holds.
 //!
 //! ```no_run
 //! use gaslightmq_control_api::prelude::*;

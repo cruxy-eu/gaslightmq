@@ -89,6 +89,15 @@ impl Socket {
             }
         }
     }
+
+    /// Tells the other side that the socket closes, and waits until the other side let go of the connection.
+    pub(crate) async fn close(mut self) {
+        if self.outgoing.send(Message::Close(None)).await.is_err() {
+            return;
+        }
+        // The other side answers, and then closes the connection. What it still sent before goes by.
+        while let Some(Ok(_)) = self.incoming.next().await {}
+    }
 }
 
 /// Waits for `span`.

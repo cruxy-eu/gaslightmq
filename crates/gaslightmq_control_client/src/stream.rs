@@ -1,8 +1,11 @@
 //! The live stream of one client.
 
+use gaslightmq_control_api::clock::TimeSpan;
+use gaslightmq_control_api::surface::PresenceId;
 use gaslightmq_control_api::{StreamMessage, Subscription};
 
 use crate::StreamError;
+use crate::client::within;
 use crate::exchange::{read_message, subscription_text};
 use crate::transport::Socket;
 
@@ -14,15 +17,40 @@ use crate::transport::Socket;
 /// and goes on from there. It misses the oldest calls instead, which no snapshot holds.
 /// The stream ends at the first error: the client no longer holds what the process holds,
 /// so it [opens](crate::ControlClient::live_stream) a new stream, which starts with a new snapshot.
+///
+/// # The presence of the client
+///
+/// A client that follows the live stream is there, and the control plane knows it as a [presence](Self::presence).
+/// A request that [names the presence](gaslightmq_control_api::RequestSource::with_presence) adds holds that end
+/// with it, so a pad never stays held for a client that is gone.
+/// The presence outlives a stream that ends: the control plane keeps it for a grace period,
+/// and a client that [comes back as it](crate::ControlClient::live_stream_as) within that time keeps its holds.
 pub struct LiveStream {
     socket: Socket,
+    /// The presence of the client, which the control plane named when the stream opened.
+    presence: PresenceId,
+    /// How long [`close`](Self::close) waits for the control plane.
+    close_timeout: TimeSpan,
     /// Why the stream ended, which every later call returns.
     ended: Option<StreamError>,
 }
 
 impl LiveStream {
-    pub(crate) fn new(socket: Socket) -> Self {
-        Self { socket, ended: None }
+    pub(crate) fn new(socket: Socket, presence: PresenceId, close_timeout: TimeSpan) -> Self {
+        Self {
+            socket,
+            presence,
+            close_timeout,
+            ended: None,
+        }
+    }
+
+    /// The presence of the client of this stream.
+    ///
+    /// It is the presence that the client [asked for](crate::ControlClient::live_stream_as) when the control plane
+    /// still held that one, and a new presence otherwise.
+    pub fn presence(&self) -> PresenceId {
+        self.presence
     }
 
     /// The next message. Waits as long as it takes.
@@ -64,5 +92,17 @@ impl LiveStream {
         if let Err(error) = self.socket.send(subscription_text(&subscription)).await {
             self.ended = Some(error);
         }
+    }
+
+    /// Ends the stream, and tells the control plane so.
+    ///
+    /// The presence of the client stays for the grace period of the control plane, as after a stream that broke.
+    /// On a native target, the call returns once the control plane let go of the stream, which it does after it
+    /// noted that the client left, or once the [request timeout](crate::ControlClientConfiguration::request_timeout)
+    /// passed. In a browser, the browser ends the stream behind the page, and the call returns at once.
+    ///
+    /// Letting go of the stream ends it too, without a word and without a wait.
+    pub async fn close(self) {
+        let _ = within(self.close_timeout, self.socket.close()).await;
     }
 }

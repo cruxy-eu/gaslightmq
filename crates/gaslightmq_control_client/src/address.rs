@@ -65,7 +65,7 @@ impl ControlPlaneAddress {
         self.below(path).to_string()
     }
 
-    /// The `ws` URL of `path` below the address, for a WebSocket.
+    /// The `ws` URL of `path` below the address, for a WebSocket. `path` may end in a query.
     pub(crate) fn websocket(&self, path: &str) -> String {
         let below = self.below(path);
         // The scheme of a WebSocket that the browser and the native client open over plain HTTP.
@@ -142,6 +142,10 @@ mod tests {
             "http://tools.internal/gaslightmq/operations"
         );
         assert_eq!(address.websocket("stream"), "ws://tools.internal/gaslightmq/stream");
+        assert_eq!(
+            address.websocket("stream?presence=9f86"),
+            "ws://tools.internal/gaslightmq/stream?presence=9f86"
+        );
     }
 
     #[test]
