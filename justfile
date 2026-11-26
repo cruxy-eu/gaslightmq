@@ -66,11 +66,14 @@ test-kafka *args:
 doc:
     RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps --all-features
 
+# The image of `gmq`, with the UI built in. Needs Docker. The image builds the UI itself, as `just ui` does.
 image:
     docker build -t ghcr.io/cruxy-eu/gaslightmq:latest .
 
-container:
-    docker run --rm -p 9092:9092 ghcr.io/cruxy-eu/gaslightmq:latest
+# Run the image with the arguments of `gmq`: `just container proxy --upstream host.docker.internal:9092`.
+# It publishes the bootstrap listener, the brokers and the control plane with the UI on the ports of `gmq proxy`.
+container *args:
+    docker run --rm -p 9092:9092 -p 19092-19191:19092-19191 -p 7092:7092 ghcr.io/cruxy-eu/gaslightmq:latest {{args}}
 
 # The version of dx that builds the UI. It pins the Tailwind that builds the stylesheet: 4.1.5 for dx 0.7.10.
 dx-version:
