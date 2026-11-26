@@ -10,7 +10,8 @@
 //! |---|---|
 //! | [`JournalEntry`] | One entry: what changed, when, at which revision, and where the change came from. |
 //! | [`JournalEntryId`] | Which entry of its journal this is: one number. |
-//! | [`Change`] | What changed: a rule armed, a parameter changed, a definition was created, an incident was applied. |
+//! | [`Change`] | What changed: a rule armed, a parameter changed, a definition was created, an incident was applied, a recording stopped. |
+//! | [`RecordingStopCause`] | Why a recording stopped by itself: the recorder fell behind, or it could not write. |
 //! | [`Parameter`] | One parameter of a rule, which a turn of an encoder changes. |
 //! | [`RecordedName`], [`RecordedDefinition`] | The name a rule or a definition had when the entry was written, and a definition of the workspace with its kind. |
 //! | [`ChangeSource`], [`ChangeSurface`], [`ChangeCause`] | Where a change came from: its surface, and `undo` or `redo` when it takes back or repeats an earlier change. |
@@ -95,7 +96,7 @@
 //! | [`JournalEntryId`], [`Revision`] | A number. |
 //! | [`RecordedName`] | The text. |
 //! | [`RecordedDefinition`] | A map with one entry: the kind, and the name. `{ "rule": "slow-order-producers" }` |
-//! | [`ChangeSurface`], [`ChangeCause`], [`Parameter`] | The name in kebab case: `quick-inject`. |
+//! | [`ChangeSurface`], [`ChangeCause`], [`Parameter`], [`RecordingStopCause`] | The name in kebab case: `quick-inject`. |
 //! | [`ChangeSource`] | A map with `surface`, and with `cause` when it has one. |
 //! | [`Change`] | The map of its fields, with a `change` key that names it: `{ "change": "rule-armed", "rule": "slow-order-producers" }`. |
 //! | [`JournalEntry`] | The map of its change, with `id`, `at`, `from`, and `revision` when it has one, next to the keys of the change. |
@@ -116,7 +117,7 @@ mod recent;
 mod revision;
 mod source;
 
-pub use change::{Change, Parameter};
+pub use change::{Change, Parameter, RecordingStopCause};
 pub use entry::JournalEntry;
 pub use id::{JournalEntryId, JournalEntryIdError};
 pub use name::{RecordedDefinition, RecordedName, RecordedNameError};
@@ -141,6 +142,6 @@ pub mod prelude {
     pub use crate::{
         Change, ChangeCause, ChangeSource, ChangeSurface, JournalEntry, JournalEntryId, JournalEntryIdError, Parameter,
         RecentJournal, RecentJournalSize, RecentJournalSizeError, RecordedDefinition, RecordedName, RecordedNameError,
-        Revision,
+        RecordingStopCause, Revision,
     };
 }
