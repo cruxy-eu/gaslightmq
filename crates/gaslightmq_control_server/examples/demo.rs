@@ -68,7 +68,7 @@ async fn main() -> anyhow::Result<()> {
     ));
     // Every listener of the proxy takes a free port, which the UI shows under Endpoints.
     let any = ListenAddress::new(LOCALHOST, 0);
-    let brokers = BrokerListeners::pinned(cluster.brokers().iter().map(|broker| (broker.id(), any)))?;
+    let brokers = BrokerListeners::any_port(LOCALHOST);
     let staging = Environment::new(
         "staging-proxy".parse()?,
         Instances::ProxyInFrontOfCluster {
