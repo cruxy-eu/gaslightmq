@@ -94,7 +94,7 @@ impl<C: WorkspaceContext> Host<C> {
         rule: Rule,
     ) -> Result<Rule, CreateLiveRuleError> {
         self.resolve_new_live_rule(environment, &rule).await?;
-        self.add_live_rule(environment, rule.clone(), |_| Ok(()))?;
+        self.add_live_rule(environment, rule.clone(), |_| Ok(())).await?;
         Ok(rule)
     }
 
@@ -124,11 +124,11 @@ impl<C: WorkspaceContext> Host<C> {
                     rule,
                 })
         })
+        .await
     }
 
-    /// Resolves a rule that is to become a live rule of an environment against the workspace.
-    ///
-    /// The environment runs, and no rule of the workspace has the name of the rule.
+    /// Resolves a rule that is to become a live rule of an environment against the workspace, in an environment that
+    /// runs. [`add_live_rule`](Self::add_live_rule) checks its name.
     async fn resolve_new_live_rule(
         &self,
         environment: &EnvironmentName,
@@ -137,25 +137,6 @@ impl<C: WorkspaceContext> Host<C> {
         let name = rule.name();
         self.check_running(environment)
             .map_err(|environment| CreateLiveRuleError::NotRunning { environment })?;
-        let of_the_workspace = {
-            let workspace = self.workspace.lock().await;
-            workspace.stores().rules().get(name).await
-        };
-        match of_the_workspace {
-            Ok(None) => {}
-            Ok(Some(_)) => {
-                return Err(CreateLiveRuleError::NameTaken {
-                    environment: environment.clone(),
-                    rule: name.clone(),
-                });
-            }
-            Err(error) => {
-                return Err(CreateLiveRuleError::StoreFailed {
-                    rule: name.clone(),
-                    reason: unread::<Rule>(error),
-                });
-            }
-        }
         self.resolve(rule).await.map_err(|unresolvable| match unresolvable {
             Unresolvable::StoreFailed { reason } => CreateLiveRuleError::StoreFailed {
                 rule: name.clone(),
@@ -174,7 +155,10 @@ impl<C: WorkspaceContext> Host<C> {
     ///
     /// `arm` runs while nobody else reads or changes the environments, so the rule is armed and a live rule from
     /// the same moment. When it fails, the rule is no live rule.
-    fn add_live_rule<A>(
+    ///
+    /// The workspace stays taken from the check of the name until the live rule is in, so no rule of the workspace
+    /// gets its name in between. Creating a rule of the workspace takes it too, and checks the live rules.
+    async fn add_live_rule<A>(
         &self,
         environment: &EnvironmentName,
         rule: Rule,
@@ -182,6 +166,22 @@ impl<C: WorkspaceContext> Host<C> {
     ) -> Result<A, CreateLiveRuleError> {
         let name = rule.name().clone();
         let armed = {
+            let workspace = self.workspace.lock().await;
+            match workspace.stores().rules().get(&name).await {
+                Ok(None) => {}
+                Ok(Some(_)) => {
+                    return Err(CreateLiveRuleError::NameTaken {
+                        environment: environment.clone(),
+                        rule: name,
+                    });
+                }
+                Err(error) => {
+                    return Err(CreateLiveRuleError::StoreFailed {
+                        rule: name,
+                        reason: unread::<Rule>(error),
+                    });
+                }
+            }
             let mut environments = self.environments();
             let Some(running) = environments.get_mut(environment) else {
                 return Err(CreateLiveRuleError::NotRunning {
@@ -310,6 +310,8 @@ impl<C: WorkspaceContext> Host<C> {
     ///
     /// - [`KeepRuleError::NotRunning`] when no environment of that name runs.
     /// - [`KeepRuleError::NotFound`] when the environment has no live rule of that name.
+    /// - [`KeepRuleError::NameTaken`] when a live rule of another environment that runs has the name.
+    ///   Whoever wants the rule in the workspace deletes that live rule first.
     /// - [`KeepRuleError::NotKept`] when the workspace did not take the rule.
     pub async fn keep(&self, environment: &EnvironmentName, name: &RuleName) -> Result<Rule, KeepRuleError> {
         let live = {
@@ -327,15 +329,23 @@ impl<C: WorkspaceContext> Host<C> {
                 rule: name.clone(),
             });
         };
-        self.workspace
-            .lock()
-            .await
-            .create(rule.clone())
-            .await
-            .map_err(|error| KeepRuleError::NotKept {
-                rule: name.clone(),
-                error,
-            })?;
+        {
+            // The workspace stays taken from the check to the write, as it does while a live rule goes in.
+            let mut workspace = self.workspace.lock().await;
+            if let Some(holder) = self.live_rule_of_another(name, Some(environment)) {
+                return Err(KeepRuleError::NameTaken {
+                    rule: name.clone(),
+                    environment: holder,
+                });
+            }
+            workspace
+                .create(rule.clone())
+                .await
+                .map_err(|error| KeepRuleError::NotKept {
+                    rule: name.clone(),
+                    error,
+                })?;
+        }
         if let Some(running) = self.environments().get_mut(environment) {
             running.live.remove(name);
         }
@@ -351,6 +361,18 @@ impl<C: WorkspaceContext> Host<C> {
             rule: name.clone(),
         });
         Ok(rule)
+    }
+
+    /// The environment that runs and holds a live rule of that name, other than `except`.
+    pub(super) fn live_rule_of_another(
+        &self,
+        name: &RuleName,
+        except: Option<&EnvironmentName>,
+    ) -> Option<EnvironmentName> {
+        self.environments()
+            .iter()
+            .find(|(environment, running)| Some(*environment) != except && running.live.contains_key(name))
+            .map(|(environment, _)| environment.clone())
     }
 
     /// Whether an environment of that name runs. Returns its name when it does not.

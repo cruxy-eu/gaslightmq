@@ -54,8 +54,11 @@ A rule of the workspace is in every environment, so it never stands next to a li
 - **Creating a live rule refuses a name that a rule of the workspace has.**
 - **Creating a rule of the workspace refuses a name that a live rule has**, in any environment that runs.
 - **Keep refuses a name that a live rule of another environment has.**
-  The error is `name-taken`, with the environment that holds that live rule.
-  Whoever wants the rule in the workspace deletes the other live rule first.
+
+Both errors are `name-taken`, with the environment that holds that live rule.
+The same error without an environment says that the workspace has a rule of that name.
+Whoever wants the rule in the workspace deletes the other live rule first.
+The check and the write are one step, so a live rule never gets the name in between.
 
 Activating a scenario asks the backend of the environment whether it supports the incidents that the scenario uses.
 The activation fails with the list of those it does not.
@@ -175,6 +178,10 @@ It acts on the rule as the rule is, and it says the state that it wants.
 - **The answer says what the intent did.**
   It holds the rule it acted on, whether it made that rule, whether it changed the state of the rule,
   and the definition, the state and the revision that the rule has now.
+  A disarm or a release of a pad that points at no rule finds no rule, and changes nothing.
+- **A press in hold answers with its hold.**
+  The engine numbers every hold, and no number comes back within a run.
+  The release names the hold of its press, so it never takes away the hold of someone else.
 - **A surface never works out what a press or a turn did.**
   The name of a rule that a pad makes and the bounds of an encoder belong to the engine.
 

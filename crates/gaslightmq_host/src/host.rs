@@ -4,6 +4,7 @@ use std::collections::BTreeMap;
 use std::fmt;
 use std::net::SocketAddr;
 use std::ops::Deref;
+use std::sync::atomic::AtomicU64;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use futures::future::join_all;
@@ -23,15 +24,17 @@ use gaslightmq_selector::{Selector, SelectorRef, SelectorSet};
 use gaslightmq_surface::EncoderMapping;
 use gaslightmq_traffic::{Statistics, Traffic, TrafficConfiguration};
 use gaslightmq_workspace::{
-    CreateError, DefinitionName, DeleteError, Stores, UpdateError, Workspace, WorkspaceContext, WorkspaceDefinition,
+    DefinitionName, DeleteError, Stores, UpdateError, Workspace, WorkspaceContext, WorkspaceDefinition,
 };
 use tokio::sync::broadcast;
 use tokio::task::JoinHandle;
 
 use crate::calls::{Watched, lock};
+use crate::holds::Holds;
 use crate::{
-    ArmRuleError, CallBacklog, CallSubscription, CloseSessionError, EnvironmentConfiguration, EnvironmentStartError,
-    FireRuleError, FollowCallsError, HostChange, HostChanges, HostConfiguration, NotRunningError, ReadSentenceError,
+    ArmRuleError, CallBacklog, CallSubscription, CloseSessionError, CreateDefinitionError, EnvironmentConfiguration,
+    EnvironmentStartError, FireRuleError, FollowCallsError, HostChange, HostChanges, HostConfiguration,
+    NotRunningError, ReadSentenceError,
 };
 
 mod live;
@@ -107,6 +110,8 @@ pub struct Host<C: WorkspaceContext> {
     traffic: TrafficConfiguration,
     /// How many calls a follower of the calls of an environment may fall behind.
     call_backlog: CallBacklog,
+    /// How many holds the presses of every environment added, which numbers the next one.
+    holds_given: AtomicU64,
 }
 
 /// One environment that runs: its proxy, the backend behind it, the listeners it was started with, and what lives in
@@ -118,6 +123,8 @@ struct Running {
     listeners: Listeners,
     /// The live rules, by name. They stay in memory until someone keeps or deletes them, or the environment stops.
     live: BTreeMap<RuleName, Rule>,
+    /// Who holds the pad of a rule, by the arming of the rule.
+    holds: Holds,
     /// The calls of the environment, as the task that watches it counts them and hands them to their followers.
     traffic: Arc<Mutex<Watched>>,
     /// The task that watches the environment, which ends a moment after its proxy stopped.
@@ -139,6 +146,7 @@ impl<C: WorkspaceContext> Host<C> {
             encoders: configuration.encoders,
             traffic: configuration.traffic,
             call_backlog: configuration.call_backlog,
+            holds_given: AtomicU64::new(0),
         }
     }
 
@@ -158,14 +166,33 @@ impl<C: WorkspaceContext> Host<C> {
 
     /// Adds a definition to the workspace. See [`Workspace::create`].
     ///
+    /// A rule of the workspace is in every environment, so it never stands next to a live rule of its name:
+    /// the host refuses a rule that has the name of a live rule of an environment that runs.
     /// Whoever follows the host learns of it.
     ///
     /// # Errors
     ///
-    /// The [`CreateError`] of the workspace.
-    pub async fn create<D: WorkspaceDefinition>(&self, definition: D) -> Result<(), CreateError> {
-        let name = definition.name().clone().into();
-        self.workspace.lock().await.create(definition).await?;
+    /// - [`CreateDefinitionError::NameTaken`] when the definition is a rule, and a live rule of an environment that
+    ///   runs has its name.
+    /// - [`CreateDefinitionError::NotCreated`] with the [`CreateError`](gaslightmq_workspace::CreateError) of the workspace.
+    pub async fn create<D: WorkspaceDefinition>(&self, definition: D) -> Result<(), CreateDefinitionError> {
+        let name: DefinitionName = definition.name().clone().into();
+        {
+            // The workspace stays taken from the check to the write, as it does while a live rule goes in.
+            let mut workspace = self.workspace.lock().await;
+            if let DefinitionName::Rule(rule) = &name
+                && let Some(environment) = self.live_rule_of_another(rule, None)
+            {
+                return Err(CreateDefinitionError::NameTaken {
+                    rule: rule.clone(),
+                    environment,
+                });
+            }
+            workspace
+                .create(definition)
+                .await
+                .map_err(|error| CreateDefinitionError::NotCreated { error })?;
+        }
         self.publish(HostChange::DefinitionChanged { name });
         Ok(())
     }
@@ -247,6 +274,7 @@ impl<C: WorkspaceContext> Host<C> {
                 backend,
                 listeners,
                 live: BTreeMap::new(),
+                holds: Holds::default(),
                 traffic,
                 watching,
             },

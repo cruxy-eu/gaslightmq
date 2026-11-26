@@ -4,7 +4,7 @@ use dioxus::prelude::*;
 use gaslightmq_control_api::prelude::*;
 use gaslightmq_control_api::rule::{Action, Preset, PresetName, RuleState};
 use gaslightmq_control_api::selector::SelectorName;
-use gaslightmq_control_api::surface::{Column, Encoder, Layer, LayoutName, PadState, PlayMode, Row, Steps};
+use gaslightmq_control_api::surface::{Column, Encoder, Intent, Layer, LayoutName, PadState, PlayMode, Row, Steps};
 use gaslightmq_control_api::trigger::Chance;
 
 use crate::app::Ui;
@@ -110,9 +110,9 @@ pub fn Pads() -> Element {
                         let pad = desk.surface().focused()?;
                         desk.press(pad.row(), pad.column(), running)
                     });
-                    play(&ui, |desk, running| {
+                    let_go(&ui, |desk| {
                         let pad = desk.surface().focused()?;
-                        desk.release(pad.row(), pad.column(), running)
+                        desk.release(pad.row(), pad.column())
                     });
                 }
                 Key::Character(text) => {
@@ -215,8 +215,51 @@ fn play(ui: &Ui, change: impl FnOnce(&mut Desk, &RunningEnvironment) -> Option<S
         intent
     };
     if let Some(intent) = intent {
-        ui.send_from(RequestSurface::Pad, intent, |()| {});
+        send(ui, intent);
     }
+}
+
+/// Someone let go of a pad: `release` gives the release of its hold, which goes to the environment of the hold.
+///
+/// It needs no environment that the UI shows, as a press does: whatever the UI shows by now, the hold stays armed until
+/// its release reaches the environment that its press went to.
+fn let_go(ui: &Ui, release: impl FnOnce(&mut Desk) -> Option<SendIntent>) {
+    let mut slot = ui.desk;
+    let mut desk = slot.peek().clone();
+    // A release before the answer to its press changes the desk too, which then sends it with the answer.
+    let intent = desk.as_mut().and_then(release);
+    slot.set(desk);
+    if let Some(intent) = intent {
+        send(ui, intent);
+    }
+}
+
+/// Sends an intent. The answer to a press in hold goes back to the desk, which keeps the hold for the release,
+/// and sends the release at once when someone let go of the pad before the answer came.
+fn send(ui: &Ui, send: SendIntent) {
+    let Intent::Hold { pad } = &send.intent else {
+        ui.send_from(RequestSurface::Pad, send, |_| {});
+        return;
+    };
+    let (pad, environment) = (pad.clone(), send.environment.clone());
+    let answered = ui.clone();
+    ui.send_settled(RequestSurface::Pad, send, move |effect| {
+        let hold = effect.and_then(|effect| effect.hold);
+        let mut slot = answered.desk;
+        let mut desk = slot.peek().clone();
+        let release = match desk.as_mut() {
+            Some(desk) => desk.answered(&environment, &pad, hold),
+            // No desk waits for the hold any more, so nobody would release it.
+            None => hold.map(|hold| SendIntent {
+                environment,
+                intent: Intent::Release { pad, hold },
+            }),
+        };
+        slot.set(desk);
+        if let Some(release) = release {
+            answered.send_from(RequestSurface::Pad, release, |_| {});
+        }
+    });
 }
 
 /// How many pads of a layer point at an armed rule.
@@ -283,7 +326,7 @@ fn ModeButton(mode: PlayMode, on: bool) -> Element {
     rsx! {
         button {
             class: if on { SEGMENT_ON } else { SEGMENT },
-            title: if mode == PlayMode::Latch { "A press toggles the pad" } else { "The pad is armed while pressed" },
+            title: if mode == PlayMode::Latch { "A press arms a pad that is not armed, and disarms one that is" } else { "The pad is armed while anyone holds it" },
             onclick: move |_| play(&ui, |desk, _| {
                 desk.set_mode(mode);
                 None
@@ -514,11 +557,11 @@ fn PadCell(row: Row, column: Column, tone: Tone, on: bool) -> Element {
     };
     let release = {
         let ui = ui.clone();
-        move |_| play(&ui, |desk, running| desk.release(row, column, running))
+        move |_| let_go(&ui, |desk| desk.release(row, column))
     };
     let leave = {
         let ui = ui.clone();
-        move |_| play(&ui, |desk, running| desk.release(row, column, running))
+        move |_| let_go(&ui, |desk| desk.release(row, column))
     };
     rsx! {
         div {

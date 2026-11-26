@@ -386,9 +386,10 @@ async fn a_press_of_an_empty_pad_makes_its_live_rule_and_arms_it() -> anyhow::Re
             environment: staging.name().clone(),
             intent: Intent::Arm { pad },
         })
-        .await?;
+        .await??;
     stream.next_where(|message| *message == armed(&made)).await?;
-    assert_eq!(pressed, Ok(()));
+    assert_eq!((pressed.made, pressed.changed, pressed.hold), (true, true, None));
+    assert_eq!(pressed.rule.map(|status| status.rule), Some(made));
 
     server.stop().await;
     host.stop_all().await;
@@ -492,9 +493,10 @@ async fn a_turn_changes_the_live_rule_of_a_pad_and_it_stays_armed() -> anyhow::R
             environment: staging.name().clone(),
             intent: Intent::Turn { pad, turn },
         })
-        .await?;
+        .await??;
     stream.next_where(|message| *message == armed(&turned)).await?;
-    assert_eq!(turning, Ok(()));
+    assert_eq!((turning.made, turning.changed), (false, true));
+    assert_eq!(turning.rule.map(|status| status.rule), Some(turned));
 
     server.stop().await;
     host.stop_all().await;

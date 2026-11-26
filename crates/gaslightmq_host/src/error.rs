@@ -321,10 +321,55 @@ pub enum KeepRuleError {
         environment: EnvironmentName,
         rule: RuleName,
     },
+    /// A live rule of another environment that runs has the name.
+    /// A rule of the workspace is in every environment, so it never stands next to a live rule of its name.
+    #[error(
+        "rule {:?} was not kept: environment {:?} has a live rule of that name",
+        .rule.as_str(),
+        .environment.as_str()
+    )]
+    NameTaken {
+        rule: RuleName,
+        environment: EnvironmentName,
+    },
     /// The workspace did not take the rule. Its error says why: a rule of the workspace has the name,
     /// the rule does not fit the workspace, or a store failed.
     #[error("rule {:?} was not kept: {error}", .rule.as_str())]
     NotKept { rule: RuleName, error: CreateError },
+}
+
+/// Why a host did not [create](crate::Host::create) a definition in the workspace.
+///
+/// A create that failed changed nothing.
+///
+/// ```
+/// use gaslightmq_host::prelude::*;
+///
+/// let error = CreateDefinitionError::NameTaken {
+///     rule: "slow-order-producers".parse().expect("a rule name"),
+///     environment: "orders-sim".parse().expect("an environment name"),
+/// };
+/// assert_eq!(
+///     error.to_string(),
+///     "rule \"slow-order-producers\" was not created: environment \"orders-sim\" has a live rule of that name",
+/// );
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum CreateDefinitionError {
+    /// A live rule of an environment that runs has the name of the rule.
+    /// A rule of the workspace is in every environment, so it never stands next to a live rule of its name.
+    #[error(
+        "rule {:?} was not created: environment {:?} has a live rule of that name",
+        .rule.as_str(),
+        .environment.as_str()
+    )]
+    NameTaken {
+        rule: RuleName,
+        environment: EnvironmentName,
+    },
+    /// The workspace did not take the definition. Its error says why.
+    #[error("{error}")]
+    NotCreated { error: CreateError },
 }
 
 /// Why a host did not act on what someone did at a pad: see [`send_intent`](crate::Host::send_intent).
@@ -346,9 +391,9 @@ pub enum IntentError {
     /// A store of the workspace could not be read. `reason` says which store, and what it said.
     #[error("the intent was not acted on: {reason}")]
     StoreFailed { reason: String },
-    /// The intent changed nothing: the pad lies outside its layout, it has no rule to disarm or to turn,
-    /// its rule cannot be made, armed or disarmed, or the turn has nothing to change. `reason` says which.
-    #[error("the intent changed nothing: {reason}")]
+    /// The host cannot act on the intent: the pad lies outside its layout, its rule cannot be made or armed,
+    /// it has no rule to turn, or the turn cannot change the rule. `reason` says which.
+    #[error("the intent was refused: {reason}")]
     Refused { reason: String },
 }
 

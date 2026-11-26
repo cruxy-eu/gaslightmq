@@ -75,6 +75,7 @@ mod next_to_the_others {
         let mut surface: Surface = Surface::new(layout.clone());
         let arm: Intent = surface.press(row, column, shows).unwrap();
         let change: Intent = surface.turn(turn).unwrap();
+        let hold: Hold = Hold::new(1);
 
         vec![
             layout_name.to_string(),
@@ -93,6 +94,7 @@ mod next_to_the_others {
             surface.layer().to_string(),
             arm.to_string(),
             change.to_string(),
+            hold.to_string(),
         ]
     }
 
@@ -154,7 +156,7 @@ mod next_to_the_others {
 fn the_prelude_names_every_item_next_to_the_other_preludes() {
     let items = next_to_the_others::every_item();
 
-    assert_eq!(items.len(), 16);
+    assert_eq!(items.len(), 17);
     assert!(items.iter().all(|item| !item.is_empty()));
 }
 

@@ -17,7 +17,8 @@
 //! | [`Encoder`] | One of the eight encoders, each for one parameter of a rule. |
 //! | [`Steps`], [`EncoderTurn`] | How far someone turned an encoder, and the turn of one encoder. |
 //! | [`EncoderMapping`] | What one step of each encoder is worth, and what a turn does to a rule. |
-//! | [`Intent`] | What a surface sends: arm, disarm, or change a parameter by a turn. |
+//! | [`Intent`] | What a surface sends: the state it wants for a rule, a hold of a pad and its release, or a change of a parameter by a turn. |
+//! | [`Hold`] | One hold of a pad, which a press in hold adds and its release takes away. |
 //! | [`Surface`] | One surface: its layout, the layer it shows, its mode and its focus. It turns presses and turns into intents. |
 //! | [`LayoutStore`] | What keeps the pad layouts: the store contract, and which layouts use a selector or a preset. |
 //!
@@ -84,7 +85,9 @@
 //! | Which selector, preset and scope does a pad stand on? | [`PadLayout`]. |
 //! | Which rule does a pad point at? | The rule that has [the name of the pad](PadLayout::rule_name), if there is one. A rule keeps its name, whatever its title becomes. |
 //! | Is that rule there, and is it armed? | Whoever holds the rules. |
-//! | What does a press do? | [`Surface`], from the mode of play and from what the pad shows. |
+//! | What does a press want? | [`Surface`], from the mode of play and from what the pad shows. |
+//! | What did a press do, and which hold did it add? | Whoever holds the rules, in its answer. |
+//! | How many people hold a rule? | Whoever holds the rules. It disarms a rule that holds armed when its last hold goes, and a disarm ends every hold. |
 //! | What does a turn do to a rule? | [`EncoderMapping::apply`], on the side of whoever holds the rule. |
 //! | Does a selector or a preset of a layout exist? | Whoever holds the whole workspace. |
 //!
@@ -123,10 +126,10 @@
 //! | [`Row`], [`Column`] | The index, counted from zero. |
 //! | [`Pad`] | A map with `layout`, `layer`, `row` and `column`. |
 //! | [`Encoder`], [`PlayMode`] | The name. |
-//! | [`Steps`] | The number. |
+//! | [`Steps`], [`Hold`] | The number. |
 //! | [`EncoderTurn`] | A map with `encoder` and `steps`. |
 //! | [`EncoderMapping`] | A map of its properties. It leaves none out, and reads the default of one that is missing. |
-//! | [`Intent`] | A map whose `intent` key is `arm`, `disarm` or `turn`, with a `pad`, and with a `turn` for a turn. |
+//! | [`Intent`] | A map whose `intent` key is `arm`, `disarm`, `hold`, `release` or `turn`, with a `pad`, with a `hold` for a release, and with a `turn` for a turn. |
 //!
 //! ```yaml
 //! name: order-desk
@@ -162,6 +165,7 @@
 //! Its only async code is in [`LayoutStore`]: the trait awaits the store it is handed, and nothing else.
 
 mod encoder;
+mod hold;
 mod intent;
 mod layer;
 mod layout;
@@ -175,6 +179,7 @@ mod store;
 mod surface;
 
 pub use encoder::{Encoder, EncoderError, EncoderTurn, Steps};
+pub use hold::Hold;
 pub use intent::Intent;
 pub use layer::{Layer, LayerError};
 pub use layout::{PadLayout, PadLayoutError};
@@ -200,7 +205,7 @@ pub use surface::Surface;
 pub mod prelude {
     #[doc(no_inline)]
     pub use crate::{
-        Column, Encoder, EncoderError, EncoderMapping, EncoderTurn, Intent, Layer, LayerError, LayoutName,
+        Column, Encoder, EncoderError, EncoderMapping, EncoderTurn, Hold, Intent, Layer, LayerError, LayoutName,
         LayoutNameError, LayoutStore, LayoutTitle, LayoutTitleError, Pad, PadLayout, PadLayoutError, PadState,
         PlayMode, PlayModeError, Row, Steps, Surface, TurnError,
     };

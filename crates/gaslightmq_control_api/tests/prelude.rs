@@ -78,7 +78,7 @@ mod next_to_std_and_every_domain {
         let _: Option<<DisarmRule as Operation>::Error> = None::<RuleCommandError>;
         let _: Option<<FireRule as Operation>::Answer> = None::<()>;
         let _: Option<<FireRule as Operation>::Error> = None::<RuleCommandError>;
-        let _: Option<<SendIntent as Operation>::Answer> = None::<()>;
+        let _: Option<<SendIntent as Operation>::Answer> = None::<IntentEffect>;
         let _: Option<<SendIntent as Operation>::Error> = None::<IntentError>;
         let _: Option<<ListSessions as Operation>::Answer> = None::<Vec<SessionStatus>>;
         let _: Option<<ListSessions as Operation>::Error> = None::<EnvironmentNotRunning>;

@@ -12,9 +12,11 @@
 //! | [`ArmRuleError`], [`FireRuleError`], [`ReadSentenceError`] | Why a rule was not armed or fired, and why a sentence was not read. |
 //! | [`EnvironmentConfigurationError`] | Why an environment has no configuration that a host can start. |
 //! | [`EnvironmentRule`] | A rule of an environment, and its state there: a rule of the workspace, or a live rule. |
+//! | [`IntentEffect`] | What an intent of a pad did: the rule it acted on, whether it made or changed it, and the hold it added. |
 //! | [`HostChange`], [`HostChanges`] | One change of the host, whoever made it, and the changes for one follower. |
 //! | [`ChangeBacklog`], [`CallBacklog`] | How many changes, and how many calls, a host keeps for a follower that falls behind. |
 //! | [`CallSubscription`] | The calls of one environment that one selector matches, as its traffic matches them. |
+//! | [`CreateDefinitionError`] | Why a definition was not created in the workspace. |
 //! | [`CreateLiveRuleError`], [`UpdateLiveRuleError`], [`DeleteLiveRuleError`], [`KeepRuleError`] | Why a live rule was not made, changed, removed or kept. |
 //! | [`EnvironmentRulesError`], [`IntentError`], [`CloseSessionError`], [`HostChangesError`], [`FollowCallsError`] | Why the rules of an environment were not read, a pad was not acted on, a session was not closed, a follower has no next change, and the calls of an environment were not followed. |
 //!
@@ -108,8 +110,9 @@
 //! | [`Host::create_live_rule`], [`Host::create_live_rule_armed`] | [`CreateLiveRuleError`] | The environment does not run, a rule has the name, or the rule does not resolve. |
 //! | [`Host::update_live_rule`] | [`UpdateLiveRuleError`] | The environment does not run, it has no live rule of the name, or the rule does not resolve. |
 //! | [`Host::delete_live_rule`] | [`DeleteLiveRuleError`] | The environment does not run, or it has no live rule of the name. |
-//! | [`Host::keep`] | [`KeepRuleError`] | The environment does not run, it has no live rule of the name, or the workspace did not take it. |
-//! | [`Host::send_intent`] | [`IntentError`] | The environment does not run, the layout does not exist, a store could not read, or the intent changed nothing. |
+//! | [`Host::create`] | [`CreateDefinitionError`] | A live rule of an environment that runs has the name of the rule, or the workspace did not take the definition. |
+//! | [`Host::keep`] | [`KeepRuleError`] | The environment does not run, it has no live rule of the name, a live rule of another environment has the name, or the workspace did not take it. |
+//! | [`Host::send_intent`] | [`IntentError`] | The environment does not run, the layout does not exist, a store could not read, or the host cannot act on the intent. An intent that finds the state it wants changes nothing, and is no error. |
 //! | [`Host::close_session`] | [`CloseSessionError`] | The environment does not run, or no session is open on the connection. |
 //! | [`Host::follow_calls`] | [`FollowCallsError`] | The environment does not run, the selectors could not be read, or the selector does not resolve. |
 //! | [`CallBacklog::new`] | [`CallBacklogError`] | The backlog is zero, or larger than the largest. |
@@ -133,6 +136,7 @@ mod calls;
 mod changes;
 mod configuration;
 mod error;
+mod holds;
 mod host;
 mod rules;
 
@@ -143,12 +147,12 @@ pub use configuration::{
     EnvironmentConfigurationError, HostConfiguration,
 };
 pub use error::{
-    ArmRuleError, CloseSessionError, CreateLiveRuleError, DeleteLiveRuleError, EnvironmentRulesError,
-    EnvironmentStartError, FireRuleError, FollowCallsError, IntentError, KeepRuleError, NotRunningError,
-    ReadSentenceError, UpdateLiveRuleError,
+    ArmRuleError, CloseSessionError, CreateDefinitionError, CreateLiveRuleError, DeleteLiveRuleError,
+    EnvironmentRulesError, EnvironmentStartError, FireRuleError, FollowCallsError, IntentError, KeepRuleError,
+    NotRunningError, ReadSentenceError, UpdateLiveRuleError,
 };
 pub use host::Host;
-pub use rules::EnvironmentRule;
+pub use rules::{EnvironmentRule, IntentEffect};
 
 /// Every item of this crate.
 ///
@@ -168,9 +172,9 @@ pub mod prelude {
     #[doc(no_inline)]
     pub use crate::{
         ArmRuleError, CallBacklog, CallBacklogError, CallSubscription, ChangeBacklog, ChangeBacklogError,
-        CloseSessionError, CreateLiveRuleError, DeleteLiveRuleError, EnvironmentConfiguration,
+        CloseSessionError, CreateDefinitionError, CreateLiveRuleError, DeleteLiveRuleError, EnvironmentConfiguration,
         EnvironmentConfigurationError, EnvironmentRule, EnvironmentRulesError, EnvironmentStartError, FireRuleError,
-        FollowCallsError, Host, HostChange, HostChanges, HostChangesError, HostConfiguration, IntentError,
-        KeepRuleError, NotRunningError, ReadSentenceError, UpdateLiveRuleError,
+        FollowCallsError, Host, HostChange, HostChanges, HostChangesError, HostConfiguration, IntentEffect,
+        IntentError, KeepRuleError, NotRunningError, ReadSentenceError, UpdateLiveRuleError,
     };
 }

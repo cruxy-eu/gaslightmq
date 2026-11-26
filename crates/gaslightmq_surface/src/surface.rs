@@ -1,4 +1,4 @@
-use crate::{Column, EncoderTurn, Intent, Layer, Pad, PadLayout, PadState, PlayMode, Row};
+use crate::{Column, EncoderTurn, Hold, Intent, Layer, Pad, PadLayout, PadState, PlayMode, Row};
 
 /// One control surface: a pad grid that someone plays by mouse or by keyboard.
 ///
@@ -11,6 +11,7 @@ use crate::{Column, EncoderTurn, Intent, Layer, Pad, PadLayout, PadState, PlayMo
 /// | The layer it shows, which is the page of the grid. | The first layer of the layout. | [`switch_to`](Self::switch_to) |
 /// | The [mode of play](PlayMode). | Latch. | [`set_mode`](Self::set_mode) |
 /// | The focused pad, which the encoders tune. | None. | [`focus`](Self::focus), and every press of a pad. |
+/// | The pads that someone holds, with the [`Hold`] of each. | None. | A press and a release in hold, and [`answered`](Self::answered). |
 ///
 /// A position without a pad is dead: a press there gives no intent.
 /// A surface that draws a grid of a fixed size therefore passes on every press, whatever the size of the layout.
@@ -28,13 +29,19 @@ use crate::{Column, EncoderTurn, Intent, Layer, Pad, PadLayout, PadState, PlayMo
 /// let (row, column) = (Row::from_index(0), Column::from_index(0));
 /// let pad = surface.pad(row, column).expect("the layout has this pad");
 ///
-/// // A press of an empty pad arms it, and the engine creates the live rule.
+/// // A press of an empty pad wants it armed, and the engine creates the live rule.
 /// let pressed = surface.press(row, column, PadState::Empty);
 /// assert_eq!(pressed, Some(Intent::Arm { pad: pad.clone() }));
 ///
-/// // The pad now shows an armed rule, and in latch a second press disarms it.
+/// // The pad now shows an armed rule, and in latch a second press wants it disarmed.
 /// let pressed = surface.press(row, column, PadState::Armed);
 /// assert_eq!(pressed, Some(Intent::Disarm { pad: pad.clone() }));
+///
+/// // In hold, a press holds the pad, and its release ends the hold that the engine answered with.
+/// surface.set_mode(PlayMode::Hold);
+/// assert_eq!(surface.press(row, column, PadState::Disarmed), Some(Intent::Hold { pad: pad.clone() }));
+/// assert_eq!(surface.answered(&pad, Some(Hold::new(1))), None);
+/// assert_eq!(surface.release(row, column), Some(Intent::Release { pad: pad.clone(), hold: Hold::new(1) }));
 ///
 /// // The encoders tune the rule behind the pad that was pressed last.
 /// let turn = EncoderTurn::new(Encoder::Probability, Steps::new(3));
@@ -47,8 +54,18 @@ pub struct Surface {
     layer: Layer,
     mode: PlayMode,
     focus: Option<(Row, Column)>,
-    /// The pads that were pressed in hold and not released yet, in the order of their presses.
-    held: Vec<Pad>,
+    /// The pads that were pressed in hold, in the order of their presses, until their release went out.
+    held: Vec<Held>,
+}
+
+/// A pad that someone pressed in hold, whose release has not gone out yet.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct Held {
+    pad: Pad,
+    /// The hold that the press added, once its answer came.
+    hold: Option<Hold>,
+    /// Whether someone let go of the pad before the answer came, so the release goes out with it.
+    released: bool,
 }
 
 impl Surface {
@@ -104,7 +121,7 @@ impl Surface {
     }
 
     /// Plays in that mode from the next press on.
-    /// A pad that is held when the mode changes still disarms on its release.
+    /// A pad that is held when the mode changes still ends its hold on its release.
     pub fn set_mode(&mut self, mode: PlayMode) {
         self.mode = mode;
     }
@@ -131,43 +148,82 @@ impl Surface {
 
     /// Someone pressed the pad at that row and column, which shows `shows`.
     ///
-    /// The press focuses the pad.
+    /// The press focuses the pad, and says the state that someone wants, from what the pad shows.
     ///
     /// | Mode | The pad shows | Intent |
     /// |---|---|---|
     /// | Latch | No rule, or a rule that is not armed. | [`Intent::Arm`] |
     /// | Latch | An armed rule. | [`Intent::Disarm`] |
-    /// | Hold | No rule, or a rule that is not armed. | [`Intent::Arm`] |
-    /// | Hold | An armed rule. | None: the rule is armed already, and the release disarms it. |
+    /// | Hold | Anything. | [`Intent::Hold`]: the rule stays armed while anyone holds it. |
     ///
-    /// Returns `None` too when the layout has no pad there.
+    /// A press in hold holds the pad until its release. Whoever sends the intent hands its answer to
+    /// [`answered`](Self::answered), so that the release names the [`Hold`] that the press added.
+    ///
+    /// Returns `None` when the layout has no pad there.
     pub fn press(&mut self, row: Row, column: Column, shows: PadState) -> Option<Intent> {
         let pad = self.focus(row, column)?;
         match self.mode {
             PlayMode::Latch if shows.is_armed() => Some(Intent::Disarm { pad }),
             PlayMode::Latch => Some(Intent::Arm { pad }),
             PlayMode::Hold => {
-                if !self.held.contains(&pad) {
-                    self.held.push(pad.clone());
-                }
-                (!shows.is_armed()).then_some(Intent::Arm { pad })
+                self.held.push(Held {
+                    pad: pad.clone(),
+                    hold: None,
+                    released: false,
+                });
+                Some(Intent::Hold { pad })
             }
         }
     }
 
-    /// Someone released the pad at that row and column.
+    /// The answer to the [hold](Intent::Hold) of `pad` came: the [`Hold`] that the press added,
+    /// or `None` when the press failed.
     ///
-    /// A pad that was pressed in hold disarms: [`Intent::Disarm`] for the pad that was pressed,
-    /// also when the surface shows another layer or plays in another mode by now.
-    /// Any other release gives `None`.
-    pub fn release(&mut self, row: Row, column: Column) -> Option<Intent> {
-        let held = self
+    /// Returns the [`Intent::Release`] of the hold when someone let go of the pad before the answer came,
+    /// and when the surface holds no pad that waits for it. Else the hold waits for the release of its pad.
+    pub fn answered(&mut self, pad: &Pad, hold: Option<Hold>) -> Option<Intent> {
+        let waiting = self
             .held
             .iter()
-            .rposition(|pad| pad.row() == row && pad.column() == column)?;
-        Some(Intent::Disarm {
-            pad: self.held.remove(held),
-        })
+            .position(|held| &held.pad == pad && held.hold.is_none());
+        let Some(waiting) = waiting else {
+            // Nobody holds the pad for this hold, so it ends at once.
+            return hold.map(|hold| Intent::Release { pad: pad.clone(), hold });
+        };
+        let Some(hold) = hold else {
+            self.held.remove(waiting);
+            return None;
+        };
+        if self.held[waiting].released {
+            self.held.remove(waiting);
+            return Some(Intent::Release { pad: pad.clone(), hold });
+        }
+        self.held[waiting].hold = Some(hold);
+        None
+    }
+
+    /// Someone released the pad at that row and column.
+    ///
+    /// A pad that was pressed in hold ends its hold: [`Intent::Release`] for the pad that was pressed,
+    /// also when the surface shows another layer or plays in another mode by now.
+    /// When the answer to its press has not come yet, the release goes out with [`answered`](Self::answered).
+    /// Any other release gives `None`.
+    pub fn release(&mut self, row: Row, column: Column) -> Option<Intent> {
+        let pressed = self
+            .held
+            .iter()
+            .rposition(|held| !held.released && held.pad.row() == row && held.pad.column() == column)?;
+        let Some(hold) = self.held[pressed].hold else {
+            self.held[pressed].released = true;
+            return None;
+        };
+        let Held { pad, .. } = self.held.remove(pressed);
+        Some(Intent::Release { pad, hold })
+    }
+
+    /// Whether someone holds a pad of the surface: they pressed it in hold, and did not let go of it yet.
+    pub fn holding(&self) -> bool {
+        self.held.iter().any(|held| !held.released)
     }
 
     /// Someone turned an encoder.

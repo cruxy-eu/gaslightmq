@@ -348,8 +348,15 @@ impl<C: WorkspaceContext + 'static> ControlPlane<C> {
             Ok(_) => Ok(()),
             Err(Host::NotRunning { environment }) => Err(KeepRuleError::NotRunning { environment }),
             Err(Host::NotFound { environment, rule }) => Err(KeepRuleError::NotFound { environment, rule }),
+            Err(Host::NameTaken { rule, environment }) => Err(KeepRuleError::NameTaken {
+                rule,
+                environment: Some(environment),
+            }),
             Err(Host::NotKept { rule, error }) => Err(match error {
-                CreateError::NameTaken { .. } => KeepRuleError::NameTaken { rule },
+                CreateError::NameTaken { .. } => KeepRuleError::NameTaken {
+                    rule,
+                    environment: None,
+                },
                 CreateError::DoesNotFit { errors, .. } => KeepRuleError::DoesNotFit {
                     rule,
                     reason: each(&errors),
@@ -439,10 +446,15 @@ impl<C: WorkspaceContext + 'static> ControlPlane<C> {
 
     // Pads
 
-    async fn intent(&self, environment: EnvironmentName, intent: &Intent) -> Result<(), IntentError> {
+    async fn intent(&self, environment: EnvironmentName, intent: &Intent) -> Result<IntentEffect, IntentError> {
         use gaslightmq_host::IntentError as Host;
         match self.host.send_intent(&environment, intent).await {
-            Ok(()) => Ok(()),
+            Ok(effect) => Ok(IntentEffect {
+                rule: effect.rule.map(status),
+                made: effect.made,
+                changed: effect.changed,
+                hold: effect.hold,
+            }),
             Err(Host::NotRunning { environment }) => Err(IntentError::NotRunning { environment }),
             Err(Host::UnknownLayout { layout }) => Err(IntentError::UnknownLayout { layout }),
             Err(Host::StoreFailed { reason }) => Err(IntentError::StoreFailed { reason }),
