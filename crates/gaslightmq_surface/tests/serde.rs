@@ -287,6 +287,20 @@ fn an_intent_writes_what_it_asks_for_and_the_pad_it_is_about() {
     ));
 }
 
+// A presence
+
+#[test]
+fn a_presence_id_writes_its_32_hexadecimal_digits_and_reads_no_other_text() {
+    let presence = PresenceId::from_random_bits(0x9f86_d081_884c_7d65_9a2f_eaa0_c55a_d015);
+
+    Form(presence).writes(r#""9f86d081884c7d659a2feaa0c55ad015""#);
+    Form::<PresenceId>::rejects(
+        r#""tab-7""#,
+        "a presence ID has 32 hexadecimal digits, and not 5 characters",
+    );
+    Form::<PresenceId>::rejects("7", "invalid type: integer `7`");
+}
+
 #[test]
 fn an_intent_reads_its_keys_in_any_order() {
     Form(Intent::Arm { pad: pad() }).reads(&format!(r#"{{"pad":{PAD},"intent":"arm"}}"#));
