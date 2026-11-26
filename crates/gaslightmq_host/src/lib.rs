@@ -79,6 +79,9 @@
 //! - **Listeners must not overlap.**
 //!   The host refuses to start an environment whose listeners name a port that an environment that runs names on
 //!   the same address. A listener on port 0 takes any free port, and meets nothing.
+//! - **The process knows what it started with.**
+//!   Whoever puts the process together starts its first environments with [`Host::start_with`], and the host keeps
+//!   them as the environments of the start: the process is healthy while each of them runs.
 //! - **One start or stop at a time.**
 //!   The host checks the listeners and opens them as one step, so two starts never claim one port.
 //!   What the environments that run hand over, and their rules, do not wait for a start.
@@ -134,7 +137,7 @@
 //! | What fails | Error | What is wrong |
 //! |---|---|---|
 //! | [`EnvironmentConfiguration::new`] | [`EnvironmentConfigurationError`] | The environment runs a broker. |
-//! | [`Host::start`] | [`EnvironmentStartError`] | The environment runs already, its listeners meet those of another, or its backend or its proxy did not start. |
+//! | [`Host::start`], [`Host::start_with`] | [`EnvironmentStartError`] | The environment runs already, its listeners meet those of another, or its backend or its proxy did not start. |
 //! | [`Host::stop`], and every question about an environment that runs | [`NotRunningError`] | No environment of that name runs. |
 //! | [`Host::update`] | [`UpdateDefinitionError`] | The change expects another run, an armed live rule would not resolve with it, or the workspace did not take the update. |
 //! | [`Host::delete`] | [`DeleteDefinitionError`] | The change expects another run, an armed live rule uses the definition, or the workspace did not take the delete. |

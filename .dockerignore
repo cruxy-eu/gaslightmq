@@ -1,4 +1,5 @@
 .git
 target/
-crates/gaslightmq-proxy/ui-dist/
+# The image builds the UI itself, so a build of the machine stays out of it.
+crates/gaslightmq_control_server/ui/
 .claude/

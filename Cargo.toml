@@ -46,6 +46,7 @@ members = [
     "crates/gaslightmq_workspace_fs",
     "crates/gaslightmq_definition/*",
     "crates/gaslightmq_kafka_client/*",
+    "crates/gmq",
     "xtask",
 ]
 resolver = "2"
@@ -108,6 +109,8 @@ arc-swap = "1"
 # Only `gaslightmq_control_server` names it: the HTTP and WebSocket server of the control plane.
 axum = { version = "0.8", default-features = false, features = ["http1", "tokio", "ws"] }
 bytes = "1"
+# Only `gmq` names it: the flags and the environment variables of the binary.
+clap = { version = "4", default-features = false, features = ["std", "derive", "env", "help", "usage", "error-context", "suggestions"] }
 # Only `gaslightmq_ui` names it: the web UI, a Dioxus application. The renderer of the browser comes on wasm32 alone.
 dioxus = { version = "0.7", default-features = false, features = ["lib", "launch", "router"] }
 futures = "0.3"
@@ -145,6 +148,8 @@ tokio = "1"
 # Only `gaslightmq_control_client` names it, for the WebSocket from a native target. Plain `ws`: no TLS.
 tokio-tungstenite = "0.30"
 tracing = "0.1"
+# Only `gmq` names it: the log output of the binary, which writes what the crates log through `tracing`.
+tracing-subscriber = { version = "0.3", default-features = false, features = ["fmt", "std"] }
 # Only `gaslightmq_control_client` names it, for the address of a control plane.
 url = "2"
 # Only `gaslightmq_ui` names it, on wasm32, for the address of the page that the browser shows.

@@ -14,7 +14,7 @@ use anyhow::Context;
 use gaslightmq_clock_waitable::SteppedClock;
 use gaslightmq_control_api::clock::{Duration, TimeSpan};
 use gaslightmq_control_api::environment::{
-    BrokerDefinition, Environment, EnvironmentName, Instances, Listeners, ProxyDefinition,
+    BrokerDefinition, Environment, EnvironmentName, Instances, Listeners, ProxyDefinition, Upstream,
 };
 use gaslightmq_control_api::field::ConnectionNumber;
 use gaslightmq_control_api::journal::ChangeSurface;
@@ -28,7 +28,7 @@ use gaslightmq_control_api::selector::{Condition, Conditions, Selector, Selector
 use gaslightmq_control_api::surface::{Column, Intent, Layer, Pad, Row};
 use gaslightmq_control_client::{ControlClient, ControlClientConfiguration, StreamError};
 use gaslightmq_control_server::prelude::*;
-use gaslightmq_host::{Host, HostConfiguration};
+use gaslightmq_host::{EnvironmentConfiguration, Host, HostConfiguration};
 use gaslightmq_lie_api::prelude::*;
 use gaslightmq_workspace::prelude::*;
 
@@ -38,6 +38,9 @@ const PATIENCE: Duration = Duration::from_secs(10);
 /// The interval of the pings in a test that steps the clock of the server and is not about them:
 /// longer than the test steps, so the server takes no client of the test for silent.
 const QUIET: TimeSpan = TimeSpan::from_secs(3600);
+
+/// How long the backend of an environment waits for a cluster that never answers, before its start gives up.
+const GIVE_UP: TimeSpan = TimeSpan::from_millis(200);
 
 /// The address that the server of a test listens on, and that its client connects to.
 const LOCALHOST: IpAddr = IpAddr::V4(Ipv4Addr::LOCALHOST);
@@ -759,6 +762,75 @@ async fn exchange(server: SocketAddr, request: &str) -> anyhow::Result<String> {
     tokio::time::timeout(PATIENCE, connection.read_to_end(&mut answer)).await??;
     let answer = String::from_utf8_lossy(&answer).into_owned();
     Ok(answer.split("\r\n\r\n").next().unwrap_or_default().to_lowercase())
+}
+
+#[tokio::test]
+async fn a_process_is_healthy_while_every_environment_of_its_start_runs() -> anyhow::Result<()> {
+    // A server that takes connections and never answers a request: the cluster of an environment that never starts.
+    let silent = std::net::TcpListener::bind(SocketAddr::new(LOCALHOST, ANY_PORT))?;
+    let host = Arc::new(Host::new(
+        HostConfiguration::default(),
+        MemoryContext::new(),
+        Lies::of_every_build(),
+        RUN.parse()?,
+    ));
+    let mut configuration = ControlServerConfiguration::default();
+    configuration.listen = SocketAddr::new(LOCALHOST, ANY_PORT);
+    let server = ControlServer::start(configuration, Arc::clone(&host)).await?;
+    let client = ControlClient::new(ControlClientConfiguration::new(server.address().into()));
+    let probe = "GET /health HTTP/1.1\r\nhost: localhost\r\nconnection: close\r\n\r\n";
+
+    // A process that started with no environment has nothing that does not run.
+    let healthy = client.send(CheckHealth {}).await?;
+    let probed_healthy = exchange_with_body(server.address(), probe).await?;
+    // The process starts with an environment whose cluster never answers, so it does not run.
+    let listen = Listeners::new(
+        SocketAddr::new(LOCALHOST, ANY_PORT).into(),
+        "127.0.0.1:19092-19191".parse()?,
+        "localhost".parse()?,
+    )?;
+    let staging = Environment::new(
+        "staging-proxy".parse()?,
+        Instances::ProxyInFrontOfCluster {
+            proxy: ProxyDefinition::new(listen),
+            upstream: Upstream::new(silent.local_addr()?.to_string().parse()?),
+        },
+    );
+    let mut starting = EnvironmentConfiguration::new(&staging)?;
+    starting.upstream.request_timeout = GIVE_UP;
+    let started = host.start_with([starting]).await;
+    let unhealthy = client.send(CheckHealth {}).await?;
+    let probed_unhealthy = exchange_with_body(server.address(), probe).await?;
+
+    assert_eq!(healthy, Ok(Health::default()));
+    assert!(probed_healthy.starts_with("HTTP/1.1 200"), "{probed_healthy}");
+    assert!(probed_healthy.ends_with(r#"{"environments":[]}"#), "{probed_healthy}");
+    assert!(started.is_err(), "{started:?}");
+    let stopped = Health {
+        environments: vec![EnvironmentHealth {
+            environment: staging.name().clone(),
+            running: false,
+        }],
+    };
+    assert_eq!(unhealthy, Err(Unhealthy { health: stopped }));
+    assert!(probed_unhealthy.starts_with("HTTP/1.1 503"), "{probed_unhealthy}");
+    assert!(
+        probed_unhealthy.ends_with(r#"{"environments":[{"environment":"staging-proxy","running":false}]}"#),
+        "{probed_unhealthy}"
+    );
+    server.stop().await;
+    Ok(())
+}
+
+/// The whole answer of the server to `request`, sent as it is on a new connection: its first line, its headers
+/// and its body.
+async fn exchange_with_body(server: SocketAddr, request: &str) -> anyhow::Result<String> {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    let mut connection = tokio::net::TcpStream::connect(server).await?;
+    connection.write_all(request.as_bytes()).await?;
+    let mut answer = Vec::new();
+    tokio::time::timeout(PATIENCE, connection.read_to_end(&mut answer)).await??;
+    Ok(String::from_utf8(answer)?)
 }
 
 #[tokio::test]

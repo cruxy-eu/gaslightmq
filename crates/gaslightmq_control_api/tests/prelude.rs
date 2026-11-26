@@ -95,6 +95,8 @@ mod next_to_std_and_every_domain {
         let _: Option<<ReloadWorkspace as Operation>::Error> = None::<ReloadWorkspaceError>;
         let _: Option<<SaveWorkspace as Operation>::Answer> = None::<Saved>;
         let _: Option<<SaveWorkspace as Operation>::Error> = None::<SaveWorkspaceError>;
+        let _: Option<<CheckHealth as Operation>::Answer> = None::<Health>;
+        let _: Option<<CheckHealth as Operation>::Error> = None::<Unhealthy>;
     }
 
     /// Every other type of the prelude, named without a path.
@@ -126,6 +128,7 @@ mod next_to_std_and_every_domain {
         let _: Option<StreamMessage> = None;
         let _: Option<ProcessState> = None;
         let _: Option<RunningEnvironment> = None;
+        let _: Option<EnvironmentHealth> = None;
         let _: Option<Stats> = None;
         let _: Option<RuleStats> = None;
         let _: Option<Subscription> = None;

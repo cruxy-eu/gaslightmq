@@ -46,6 +46,7 @@
 //! |---|---|
 //! | `POST /api/operations` with an `OperationRequest` | `200` with its answer, `422` with its error, `400` with a `RequestError`. |
 //! | `GET /api/stream`, a WebSocket | A `StreamMessage` per text frame: the presence of the client first, and the snapshot next. The client sends a `Subscription` per text frame. A client that comes back names the presence it was in the query: `?presence=…`. |
+//! | `GET /health` | `200` with the environments that the process was started with when every one of them runs, and `503` with the same list when one does not. A probe asks it without a request body. |
 //! | `GET` of any other path | A file of the web UI, or the page of the UI, which opens the view of the path. |
 //!
 //! Every body and every frame is the JSON form of a type of `gaslightmq_control_api`.

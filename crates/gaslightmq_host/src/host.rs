@@ -169,6 +169,9 @@ pub struct Host<C: WorkspaceContext> {
     lies: Arc<Lies>,
     /// The environments that run, by name. Nobody holds the lock across a wait.
     environments: Mutex<BTreeMap<EnvironmentName, Running>>,
+    /// The environments that the process started with, in the order of their start: the process is healthy while
+    /// each of them runs.
+    started_with: Mutex<Vec<EnvironmentName>>,
     /// Held by a start or a stop, from the check of the listeners until the environment runs or stopped.
     changing: tokio::sync::Mutex<()>,
     /// Every change, for whoever follows the host.
@@ -229,6 +232,7 @@ impl<C: WorkspaceContext> Host<C> {
             counter,
             lies: Arc::new(lies),
             environments: Mutex::new(BTreeMap::new()),
+            started_with: Mutex::new(Vec::new()),
             changing: tokio::sync::Mutex::new(()),
             changes: broadcast::channel(configuration.change_backlog.changes()).0,
             encoders: configuration.encoders,
@@ -554,6 +558,43 @@ impl<C: WorkspaceContext> Host<C> {
         );
         self.publish(HostChange::EnvironmentStarted { environment: name });
         Ok(())
+    }
+
+    /// Starts the environments that the process starts with, one after the other, and keeps them as the
+    /// environments of the start: the process is healthy while each of them runs. See [`started_with`](Self::started_with).
+    ///
+    /// Each one starts as [`start`](Self::start) starts it. The host keeps it among those of the start before it
+    /// starts it, so one that did not start is one of the start that does not run.
+    /// The call stops at the first environment that does not start, and leaves those that started before it running:
+    /// whoever starts the process stops it then.
+    /// A later call adds its environments to those of the start, and an environment that is among them already stays
+    /// where it is.
+    ///
+    /// # Errors
+    ///
+    /// The [`EnvironmentStartError`] of the first environment that did not start.
+    pub async fn start_with(
+        &self,
+        configurations: impl IntoIterator<Item = EnvironmentConfiguration>,
+    ) -> Result<(), EnvironmentStartError> {
+        for configuration in configurations {
+            {
+                let mut started_with = self.started_with.lock().unwrap_or_else(PoisonError::into_inner);
+                if !started_with.contains(configuration.name()) {
+                    started_with.push(configuration.name().clone());
+                }
+            }
+            self.start(configuration).await?;
+        }
+        Ok(())
+    }
+
+    /// The environments that the process started with, in the order of their start, whether they run now or not.
+    ///
+    /// An environment that someone started later, or one that someone stopped since, is no different from any other
+    /// for the host: only [`start_with`](Self::start_with) makes an environment one of the start.
+    pub fn started_with(&self) -> Vec<EnvironmentName> {
+        self.started_with.lock().unwrap_or_else(PoisonError::into_inner).clone()
     }
 
     /// Stops an environment, and waits until its proxy has stopped.

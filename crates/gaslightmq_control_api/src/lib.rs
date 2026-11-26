@@ -20,6 +20,7 @@
 //! | [`Expects`], [`Revised`] | What a change expects of what it changes, and what it answers with: the revision it left. |
 //! | [`ListEnvironments`], [`GetEnvironment`], [`StartEnvironment`], [`StopEnvironment`] | The environments of the workspace, and running one. |
 //! | [`EnvironmentStatus`] | An environment, with its revision, and whether it runs. |
+//! | [`CheckHealth`], [`Health`], [`EnvironmentHealth`] | Whether every environment that the process was started with runs. |
 //! | [`ListEnvironmentRules`], [`RuleStatus`] | The rules of an environment, each with its state and its revision there. |
 //! | [`CreateLiveRule`], [`UpdateLiveRule`], [`DeleteLiveRule`], [`KeepRule`] | The live rules of an environment, and keeping one in the workspace. |
 //! | [`ArmRule`], [`DisarmRule`], [`FireRule`] | Commands on a rule of an environment. |
@@ -152,6 +153,7 @@
 //! | [`CloseSession`] | [`CloseSessionError`] | The environment does not run, or no session is open on the connection. |
 //! | [`ReloadWorkspace`] | [`ReloadWorkspaceError`] | A rule of the files has the name of a live rule, an armed live rule would not fit the files, the workspace holds changes that nobody saved, the files do not fit each other, or a file does not read. |
 //! | [`SaveWorkspace`] | [`SaveWorkspaceError`] | Someone edited a file that the save would write, or a file could not be written. |
+//! | [`CheckHealth`] | [`Unhealthy`] | An environment that the process was started with does not run. |
 //!
 //! A change that says what it [`Expects`] fails with the variant `Changed` when the thing has another revision,
 //! and with `OtherRun` when the revision is of another run. Either way it changed nothing.
@@ -241,8 +243,8 @@ pub use definitions::{
     ListDefinitionsError, UpdateDefinition, UpdateDefinitionError,
 };
 pub use environments::{
-    EnvironmentNotRunning, EnvironmentReadError, EnvironmentStatus, GetEnvironment, ListEnvironments, StartEnvironment,
-    StartEnvironmentError, StopEnvironment,
+    CheckHealth, EnvironmentHealth, EnvironmentNotRunning, EnvironmentReadError, EnvironmentStatus, GetEnvironment,
+    Health, ListEnvironments, StartEnvironment, StartEnvironmentError, StopEnvironment, Unhealthy,
 };
 pub use journal_query::QueryJournal;
 pub use operation::{AnyOperation, Operation, RequestError};
@@ -279,18 +281,18 @@ pub use workspace::{
 pub mod prelude {
     #[doc(no_inline)]
     pub use crate::{
-        AnyDefinition, AnyOperation, ArmRule, BackendKind, BackendStatus, CloseSession, CloseSessionError,
+        AnyDefinition, AnyOperation, ArmRule, BackendKind, BackendStatus, CheckHealth, CloseSession, CloseSessionError,
         CreateDefinition, CreateDefinitionError, CreateLiveRule, CreateLiveRuleError, DefinitionChange, DefinitionRef,
         DefinitionStatus, Definitions, DeleteDefinition, DeleteDefinitionError, DeleteLiveRule, DeleteLiveRuleError,
-        DisarmRule, EditableDefinition, EnvironmentNotRunning, EnvironmentReadError, EnvironmentStatus, Expects,
-        FireRule, FireRuleError, GetBackend, GetDefinition, GetDefinitionError, GetEnvironment, IntentEffect,
-        IntentError, KeepRule, KeepRuleError, ListDefinitions, ListDefinitionsError, ListEnvironmentRules,
-        ListEnvironments, ListSessions, Operation, OperationRequest, ParseSentence, ParsedSentence, ProcessState,
-        QueryJournal, ReloadWorkspace, ReloadWorkspaceError, Reloaded, RequestCause, RequestError, RequestSource,
-        RequestSurface, Revised, Revision, RuleCommandError, RuleHolder, RuleStats, RuleStatus, RunId, RunIdError,
-        RunningEnvironment, SaveWorkspace, SaveWorkspaceError, Saved, SendIntent, SessionCloser, SessionIdentity,
-        SessionStatus, StartEnvironment, StartEnvironmentError, Stats, StopEnvironment, StreamMessage, Subscription,
-        UnreadWord, UpdateDefinition, UpdateDefinitionError, UpdateLiveRule, UpdateLiveRuleError, WordCompletion,
-        WordKind, WorkspaceStatus, WriteBack,
+        DisarmRule, EditableDefinition, EnvironmentHealth, EnvironmentNotRunning, EnvironmentReadError,
+        EnvironmentStatus, Expects, FireRule, FireRuleError, GetBackend, GetDefinition, GetDefinitionError,
+        GetEnvironment, Health, IntentEffect, IntentError, KeepRule, KeepRuleError, ListDefinitions,
+        ListDefinitionsError, ListEnvironmentRules, ListEnvironments, ListSessions, Operation, OperationRequest,
+        ParseSentence, ParsedSentence, ProcessState, QueryJournal, ReloadWorkspace, ReloadWorkspaceError, Reloaded,
+        RequestCause, RequestError, RequestSource, RequestSurface, Revised, Revision, RuleCommandError, RuleHolder,
+        RuleStats, RuleStatus, RunId, RunIdError, RunningEnvironment, SaveWorkspace, SaveWorkspaceError, Saved,
+        SendIntent, SessionCloser, SessionIdentity, SessionStatus, StartEnvironment, StartEnvironmentError, Stats,
+        StopEnvironment, StreamMessage, Subscription, Unhealthy, UnreadWord, UpdateDefinition, UpdateDefinitionError,
+        UpdateLiveRule, UpdateLiveRuleError, WordCompletion, WordKind, WorkspaceStatus, WriteBack,
     };
 }

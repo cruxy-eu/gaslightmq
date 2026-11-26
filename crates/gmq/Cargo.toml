@@ -1,0 +1,53 @@
+[package]
+name = "gmq"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lints]
+workspace = true
+
+# The modules that hold values and never wait: `cargo xtask sans-io` holds them to that.
+[package.metadata.gaslightmq]
+sans_io_modules = ["brokers", "cli", "error", "report"]
+
+# One feature per crate of a lie kind, so a build can leave a kind out.
+# The one backend, in front of a real cluster, comes with the host, so it has no feature yet.
+[features]
+default = ["refusal"]
+# The refusal: a rule answers a call with an error code.
+refusal = ["dep:gaslightmq_lie_refusal"]
+
+[dependencies]
+gaslightmq_control_api.workspace = true
+gaslightmq_control_client.workspace = true
+gaslightmq_control_server.workspace = true
+# The store contract, to ask the workspace whether it holds an environment of the name of the proxy.
+gaslightmq_definition_api.workspace = true
+gaslightmq_environment.workspace = true
+gaslightmq_host.workspace = true
+gaslightmq_lie_api.workspace = true
+gaslightmq_lie_refusal = { workspace = true, optional = true }
+# The workspace of a process without files: stores in memory.
+gaslightmq_workspace = { workspace = true, features = ["memory"] }
+gaslightmq_workspace_fs.workspace = true
+clap.workspace = true
+# The ID of the run.
+getrandom.workspace = true
+thiserror.workspace = true
+tokio = { workspace = true, features = ["rt-multi-thread", "macros", "signal"] }
+# The log output: what the engine, the listener and the backend log, on the standard error.
+tracing-subscriber.workspace = true
+
+[dev-dependencies]
+anyhow.workspace = true
+# The client under test, which knows the bootstrap address of the proxy and nothing else.
+gaslightmq_kafka_client_api.workspace = true
+gaslightmq_kafka_client_native.workspace = true
+# The real cluster behind the proxy.
+gaslightmq_test_kafka.workspace = true
+gaslightmq_wire.workspace = true
+# The workspaces of the tests that write their own files.
+tempfile.workspace = true
+# The binary runs as a process of its own, and the test reads what it prints.
+tokio = { workspace = true, features = ["rt-multi-thread", "macros", "process", "io-util"] }

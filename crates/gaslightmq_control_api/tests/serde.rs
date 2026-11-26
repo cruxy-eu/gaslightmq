@@ -1216,6 +1216,7 @@ fn an_operation_names_itself_as_its_form_does() {
         }),
         AnyOperation::from(ReloadWorkspace { discard_unsaved: false }),
         AnyOperation::from(SaveWorkspace {}),
+        AnyOperation::from(CheckHealth {}),
     ];
 
     for operation in operations {
@@ -1368,6 +1369,40 @@ fn a_save_says_nothing_but_its_operation_and_answers_with_what_it_wrote() {
         "error": "partly-saved",
         "saved": [{ "selector": "order-producers" }],
         "reason": "the rule store did not save: rules/slow.yaml: permission denied",
+    }));
+}
+
+#[test]
+fn a_health_check_says_nothing_but_its_operation_and_answers_with_every_environment_of_the_start() {
+    Form(OperationRequest::new(RequestSurface::Cli, CheckHealth {}))
+        .writes(json!({ "from": { "surface": "cli" }, "operation": "check-health" }));
+    let staging = EnvironmentHealth {
+        environment: "staging-proxy".parse().unwrap(),
+        running: true,
+    };
+    let orders = EnvironmentHealth {
+        environment: "orders-sim".parse().unwrap(),
+        running: false,
+    };
+    Form(Health {
+        environments: vec![staging.clone()],
+    })
+    .writes(json!({ "environments": [{ "environment": "staging-proxy", "running": true }] }));
+    // A process that is not healthy names the same list, so a reader of either reads one form.
+    let unhealthy = Unhealthy {
+        health: Health {
+            environments: vec![staging, orders],
+        },
+    };
+    assert_eq!(
+        unhealthy.to_string(),
+        "the process started with environment \"orders-sim\", which does not run"
+    );
+    Form(unhealthy).writes(json!({
+        "environments": [
+            { "environment": "staging-proxy", "running": true },
+            { "environment": "orders-sim", "running": false },
+        ],
     }));
 }
 

@@ -128,7 +128,8 @@ impl<C: WorkspaceContext + 'static> GaslightMqConfiguration<C> {
         host.create(proxy, ChangeSurface::Test)
             .await
             .map_err(|error| GaslightMqStartError::EnvironmentNotCreated { error })?;
-        host.start(configuration)
+        // The environment of the test is the one that the process starts with, so the process is healthy while it runs.
+        host.start_with([configuration])
             .await
             .map_err(|error| GaslightMqStartError::ProxyNotStarted { error })?;
         let server = match ControlServer::start(control_plane, Arc::clone(&host)).await {

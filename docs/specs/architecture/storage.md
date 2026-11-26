@@ -72,6 +72,8 @@ so `gmq` refuses it on a command that starts several.
 It hands the host and the control plane their configuration as one value each, and neither reads a flag, a variable or a file of its own.
 
 A command takes its workspace from `--workspace`, and from the directory it runs in when the flag is not there.
+`gmq proxy` is the exception: it holds the files of a workspace only when `--workspace` names one,
+so a proxy that someone starts in any directory writes nothing there. See [without a workspace](#without-a-workspace).
 
 ```yaml
 # gaslight.yaml
@@ -87,6 +89,52 @@ recordings:
   directory: recordings
   backlog: 10000                # the calls that the recorder may be behind
 ```
+
+Nothing reads `gaslight.yaml` yet: until it does, a setting comes from a flag, a variable or its default.
+
+### The flags of gmq
+
+Every flag has an environment variable, which counts when the flag is not there.
+A flag that names an address, a size or a wait has a default, and `gmq <command> --help` names it.
+
+Every command takes `--log` or `GMQ_LOG`: how much of what GaslightMQ logs reaches the standard error,
+from `off` through `error`, `warn`, `info` and `debug` to `trace`. It is `warn` until someone names another level.
+The standard output holds what the command did, one thing per line, and no log line.
+
+`gmq proxy` describes [an environment without a file](#environments): a proxy in front of a real cluster.
+
+| Flag | Variable | Default | Sets |
+|---|---|---|---|
+| `--upstream` | `GMQ_UPSTREAM` | Required. | The bootstrap server of the real cluster: `kafka-1.staging:9092`. |
+| `--name` | `GMQ_NAME` | `proxy` | The name of the environment, which the control plane and the UI know it by. |
+| `--listen` | `GMQ_LISTEN` | `0.0.0.0:9092` | The bootstrap listener, where clients connect first. |
+| `--brokers` | `GMQ_BROKERS` | `0.0.0.0:19092-19191` | The listeners of the [brokers](#brokers): a range of ports, or a pin for every broker, `1=0.0.0.0:19092,2=0.0.0.0:19093`. |
+| `--advertise` | `GMQ_ADVERTISE` | `localhost` | The host that clients see in Metadata. |
+| `--workspace` | `GMQ_WORKSPACE` | None: memory. | The directory of the [workspace](#workspace). |
+| `--read-only` | `GMQ_READ_ONLY` | Off. | The workspace is [read-only](#read-only-workspaces). It needs `--workspace`. |
+| `--write-back` | `GMQ_WRITE_BACK` | `each-change` | When an edit of the UI reaches the files: `each-change` or `on-save`, as [writing back](#writing-back) says. `write_back` of `gaslight.yaml`. It needs `--workspace`, and a read-only workspace takes none. |
+| `--control-listen` | `GMQ_CONTROL_LISTEN` | `127.0.0.1:7092` | Where the control plane and the UI listen: `control.listen` of `gaslight.yaml`. |
+| `--no-control` | `GMQ_NO_CONTROL` | Off. | The process runs without a control plane, and without the UI. |
+
+The environment of the flags is no definition of the workspace, and no file holds it.
+The workspace holds no environment of its name, or the proxy does not start.
+Everything else of the proxy, the control plane and the host starts at its default.
+
+The proxy prints a line for each thing once it runs: its run, its workspace, its environment,
+each endpoint that accepts connections with its address, and where the control plane listens.
+`ready` comes last, so a script or a test waits for it.
+`SIGINT` and `SIGTERM` stop the control plane and then the proxy.
+
+`gmq reload` and `gmq health` ask a process that runs, with `--control` or `GMQ_CONTROL`: the URL of its control
+plane, `http://127.0.0.1:7092` by default. Until `gaslight.yaml` is read, neither takes `--workspace`.
+
+- `gmq reload` prints each definition that the reload changed, and the revision of the reload.
+  With `--discard-unsaved` or `GMQ_DISCARD_UNSAVED`, it lets go of the edits that wait for a [save](#saving).
+- `gmq health` prints each environment that the process was started with, and whether it runs.
+  It exits with a failure when one does not, or nothing answers: see [health](control-plane.md#health).
+
+A workspace whose files do not read starts nothing.
+`gmq` names every file that does not read, one per line, with the path of the key that failed, and exits with a failure.
 
 ## Workspace
 
@@ -369,6 +417,7 @@ Whoever starts the process picks when the engine writes an edit of the UI: `writ
 
 The engine starts without a workspace.
 `gmq proxy --upstream kafka:9092` is enough to put GaslightMQ in front of a cluster.
+Without `--workspace`, its workspace is in memory.
 
 Everything is then live state:
 rules are live rules, and nothing is written to disk.
@@ -382,7 +431,7 @@ Pads and ⌘K still create live rules in memory.
 Keeping a rule, saving a scenario and the scratch file are switched off.
 A reload still works, because it only reads.
 
-Whoever starts the process says that the workspace is read-only.
+Whoever starts the process says that the workspace is read-only: `gmq proxy --workspace ci --read-only`.
 The engine does not guess it from the permissions of the files.
 The stores of the files then refuse every write, and the error says that the workspace is read-only.
 That holds with either `write_back`: a read-only workspace refuses every edit, so no edit ever [waits for a save](#saving).
