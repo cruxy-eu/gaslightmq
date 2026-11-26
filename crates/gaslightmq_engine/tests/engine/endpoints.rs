@@ -123,6 +123,54 @@ async fn an_endpoint_that_opens_gets_a_listener() -> anyhow::Result<()> {
 }
 
 #[tokio::test]
+async fn a_broker_that_joins_the_cluster_gets_a_listener_on_a_free_port() -> anyhow::Result<()> {
+    let proxy = EngineUnderTest::start(ScriptedBackend::with_three_brokers()).await?;
+    let brokers = ScriptedBackend::brokers().map(Endpoint::Broker);
+    let mut listening = Vec::new();
+    for broker in brokers {
+        listening.push(proxy.address_of(broker)?);
+    }
+    let broker_4 = BrokerId::from(4);
+
+    // A broker that nobody named joins the cluster.
+    proxy.backend().join(broker_4);
+
+    // Every broker takes a free port, so the new one gets a listener of its own, and the backend hears its address.
+    let got = proxy.backend().listeners_of(Endpoint::Broker(broker_4), 1).await?[0];
+    assert_ne!(got.port(), 0);
+    assert_eq!(proxy.engine().address_of(Endpoint::Broker(broker_4)), Some(got));
+    assert!(!listening.contains(&got));
+    // The brokers that were there keep their listeners.
+    for (broker, address) in brokers.into_iter().zip(listening) {
+        assert_eq!(proxy.address_of(broker)?, address, "{broker}");
+    }
+    let member = RawKafkaClient::new(got);
+    let group: GroupId = "analytics-etl".parse()?;
+    assert_eq!(member.heartbeat(group.as_str()).await, Ok(()));
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_broker_on_a_free_port_keeps_its_listener_when_another_leaves() -> anyhow::Result<()> {
+    let proxy = EngineUnderTest::start(ScriptedBackend::with_three_brokers()).await?;
+    let [broker_1, broker_2, broker_3] = ScriptedBackend::brokers().map(Endpoint::Broker);
+    let on_broker_1 = RawKafkaClient::connect(proxy.address_of(broker_1)?).await?;
+    let on_broker_2 = RawKafkaClient::connect(proxy.address_of(broker_2)?).await?;
+    let listening = [proxy.address_of(broker_2)?, proxy.address_of(broker_3)?];
+
+    // Broker 1 leaves the cluster.
+    proxy.backend().take_down(ScriptedBackend::brokers()[0]);
+
+    // No port is given in the order of the broker IDs, so no other broker gets another one: no listener moves.
+    assert_eq!(EngineUnderTest::soon(on_broker_1.closed()).await?, Ok(()));
+    assert_eq!(proxy.engine().endpoints(), [Endpoint::Bootstrap, broker_2, broker_3]);
+    assert_eq!([proxy.address_of(broker_2)?, proxy.address_of(broker_3)?], listening);
+    let group: GroupId = "analytics-etl".parse()?;
+    assert_eq!(on_broker_2.heartbeat(group.as_str()).await, Ok(()));
+    Ok(())
+}
+
+#[tokio::test]
 async fn an_endpoint_that_closed_and_opened_again_ended_its_sessions_in_between() -> anyhow::Result<()> {
     let proxy = EngineUnderTest::start(ScriptedBackend::with_three_brokers()).await?;
     let broker_2 = ScriptedBackend::brokers()[1];

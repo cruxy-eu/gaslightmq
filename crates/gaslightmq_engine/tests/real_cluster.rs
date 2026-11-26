@@ -40,7 +40,7 @@ async fn a_client_produces_and_consumes_through_the_proxy() -> anyhow::Result<()
     let backend = UpstreamBackend::start(UpstreamBackendConfiguration::new(upstream, "127.0.0.1".parse()?)).await?;
     // Every endpoint of the proxy takes a free port: the bootstrap endpoint, and the one of each broker.
     let any: ListenAddress = "127.0.0.1:0".parse()?;
-    let brokers = BrokerListeners::pinned(cluster.brokers().iter().map(|broker| (broker.id(), any)))?;
+    let brokers: BrokerListeners = "127.0.0.1:0".parse()?;
     let configuration = EngineConfiguration::new(Listeners::new(any, brokers, "127.0.0.1".parse()?)?);
     let engine = Engine::start(configuration, backend, WallClock::new(), Lies::of_every_build()).await?;
     let bootstrap = engine
@@ -95,7 +95,7 @@ async fn a_client_retries_a_refused_produce_and_then_succeeds() -> anyhow::Resul
     let upstream = Upstream::new(cluster.brokers()[0].address().to_string().parse()?);
     let backend = UpstreamBackend::start(UpstreamBackendConfiguration::new(upstream, "127.0.0.1".parse()?)).await?;
     let any: ListenAddress = "127.0.0.1:0".parse()?;
-    let brokers = BrokerListeners::pinned(cluster.brokers().iter().map(|broker| (broker.id(), any)))?;
+    let brokers: BrokerListeners = "127.0.0.1:0".parse()?;
     let configuration = EngineConfiguration::new(Listeners::new(any, brokers, "127.0.0.1".parse()?)?);
     let lies = Lies::of_every_build().with(Refusal)?;
     let engine = Engine::start(configuration, backend, WallClock::new(), lies).await?;
@@ -151,7 +151,7 @@ async fn a_client_reconnects_after_a_hang_up_and_then_succeeds() -> anyhow::Resu
     let upstream = Upstream::new(cluster.brokers()[0].address().to_string().parse()?);
     let backend = UpstreamBackend::start(UpstreamBackendConfiguration::new(upstream, "127.0.0.1".parse()?)).await?;
     let any: ListenAddress = "127.0.0.1:0".parse()?;
-    let brokers = BrokerListeners::pinned(cluster.brokers().iter().map(|broker| (broker.id(), any)))?;
+    let brokers: BrokerListeners = "127.0.0.1:0".parse()?;
     let configuration = EngineConfiguration::new(Listeners::new(any, brokers, "127.0.0.1".parse()?)?);
     let engine = Engine::start(configuration, backend, WallClock::new(), Lies::of_every_build()).await?;
     let bootstrap = engine
