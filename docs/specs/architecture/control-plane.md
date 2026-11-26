@@ -28,7 +28,7 @@ It is then set up by flags and files alone.
 | `recordings` | Start, stop, list, open. Query calls with a selector, saved or [draft](#drafts). Get the index. |
 | `world` | Only for an environment with a broker. Get state, apply an incident, save as a world definition, set the clock. [Preview the records](#drafts) at an offset. |
 | `backend` | Get the backend kind, its endpoints and its capabilities. |
-| `environments` | List and get the environments of the workspace. Start and stop one. Say whether every environment that the process was started with runs. |
+| `environments` | List and get the environments of the workspace. Start and stop one. Say whether every environment that the process was started with runs: [`check-health`](#health). |
 | `journal` | [Query what changed](#the-journal) in an environment: arms, disarms, parameter changes, definitions, steps and incidents. |
 | `capture` | Start, stop and save as a scenario. |
 | `quick-inject` | [Parse a ⌘K sentence](#drafts) into a rule definition, with completions. |
@@ -365,6 +365,31 @@ A save that had nothing to write answers `{}`.
 
 A workspace that writes each change has nothing to save, and a save there answers `{}`.
 
+## Health
+
+`check-health` says whether every environment that the process was started with runs.
+Whoever starts the process names those environments: the one of the flags of `gmq proxy`, or the one of a test.
+An environment that someone starts later counts for nothing, and one of the start that someone stops makes the process unhealthy until someone starts it again.
+A process that started with no environment is healthy.
+
+```json
+{ "from": { "surface": "cli" }, "operation": "check-health" }
+```
+
+It answers with every environment of the start, in the order of their start, each with whether it runs.
+When one of them does not run, it fails with `unhealthy`, which holds the same list:
+
+```json
+{ "environments": [{ "environment": "staging-proxy", "running": true }, { "environment": "orders-sim", "running": false }] }
+```
+
+It reads what the process holds in memory, and fails in no other way.
+
+A probe of Kubernetes or of a load balancer sends no operation: it asks `GET /health`.
+The server answers from the same state, with `200 OK` when every environment of the start runs and `503 Service Unavailable` when one does not, and with the list as the body either way.
+`gmq health` asks `check-health`, and exits with a failure when an environment does not run or nothing answers.
+The image of GaslightMQ checks its health with it.
+
 ## Undo
 
 The control plane has no operation that undoes, and it keeps no history for it.
@@ -528,6 +553,7 @@ No other form exists, so a client in the browser and one on a native target send
 | An operation | `POST /api/operations` |
 | The live stream | `GET /api/stream`, which upgrades to a WebSocket |
 | The live stream of a client that comes back | `GET /api/stream?presence=9f86d081884c7d659a2feaa0c55ad015`, with the ID of the [presence](#presence) that it was |
+| The [health](#health) of the process, for a probe | `GET /health` |
 
 The server serves the [UI](crates.md#what-compiles-to-webassembly) on the other paths, so the page and the control plane share one origin.
 

@@ -108,6 +108,7 @@ A flag that names an address, a size or a wait has a default, and `gmq <command>
 | `--advertise` | `GMQ_ADVERTISE` | `localhost` | The host that clients see in Metadata. |
 | `--workspace` | `GMQ_WORKSPACE` | None: memory. | The directory of the [workspace](#workspace). |
 | `--read-only` | `GMQ_READ_ONLY` | Off. | The workspace is [read-only](#read-only-workspaces). It needs `--workspace`. |
+| `--write-back` | `GMQ_WRITE_BACK` | `each-change` | When an edit of the UI reaches the files: `each-change` or `on-save`, as [writing back](#writing-back) says. `write_back` of `gaslight.yaml`. It needs `--workspace`, and a read-only workspace takes none. |
 | `--control-listen` | `GMQ_CONTROL_LISTEN` | `127.0.0.1:7092` | Where the control plane and the UI listen: `control.listen` of `gaslight.yaml`. |
 | `--no-control` | `GMQ_NO_CONTROL` | Off. | The process runs without a control plane, and without the UI. |
 
@@ -120,8 +121,13 @@ each endpoint that accepts connections with its address, and where the control p
 `ready` comes last, so a script or a test waits for it.
 `SIGINT` and `SIGTERM` stop the control plane and then the proxy.
 
-`gmq reload` asks a process that runs, with `--control` or `GMQ_CONTROL`: the URL of its control plane,
-`http://127.0.0.1:7092` by default. It prints each definition that the reload changed, and the revision of the reload.
+`gmq reload` and `gmq health` ask a process that runs, with `--control` or `GMQ_CONTROL`: the URL of its control
+plane, `http://127.0.0.1:7092` by default. Until `gaslight.yaml` is read, neither takes `--workspace`.
+
+- `gmq reload` prints each definition that the reload changed, and the revision of the reload.
+  With `--discard-unsaved` or `GMQ_DISCARD_UNSAVED`, it lets go of the edits that wait for a [save](#saving).
+- `gmq health` prints each environment that the process was started with, and whether it runs.
+  It exits with a failure when one does not, or nothing answers: see [health](control-plane.md#health).
 
 A workspace whose files do not read starts nothing.
 `gmq` names every file that does not read, one per line, with the path of the key that failed, and exits with a failure.
