@@ -1,4 +1,5 @@
-//! The shell around every view: the navigation, the state of the live stream, the environment switcher and the theme.
+//! The shell around every view: the navigation, the changes that nobody saved, the state of the live stream, the
+//! environment switcher and the theme.
 
 use dioxus::prelude::*;
 use gaslightmq_control_api::environment::{Environment, EnvironmentName, Instances};
@@ -9,7 +10,9 @@ use crate::app::{Route, Ui};
 use crate::browser;
 use crate::components::{Icon, Notices, Shape};
 use crate::live::Link as StreamLink;
-use crate::style::{BUTTON_GHOST, ICON_BUTTON, MENU, MENU_ITEM, MENU_SECTION, SEGMENT, SEGMENT_ON, SEGMENTS};
+use crate::style::{
+    BUTTON_GHOST, BUTTON_PRIMARY, ICON_BUTTON, MENU, MENU_ITEM, MENU_SECTION, SEGMENT, SEGMENT_ON, SEGMENTS,
+};
 use crate::theme::ThemeChoice;
 use crate::views::QuickInject;
 
@@ -99,6 +102,7 @@ fn Sidebar() -> Element {
             Later { shape: Shape::Globe, label: "World" }
             Later { shape: Shape::Users, label: "Clients" }
             div { class: "mt-auto flex flex-col gap-2 px-0.5 pt-3.5 pb-0.5",
+                Unsaved {}
                 Theme {}
                 StreamState {}
                 Switcher {}
@@ -128,6 +132,40 @@ fn Later(shape: Shape, label: &'static str) -> Element {
         div { class: "flex h-7 items-center gap-2.25 whitespace-nowrap px-2 text-faint", title: "Arrives in a later step",
             Icon { shape, size: 15 }
             "{label}"
+        }
+    }
+}
+
+/// The changes that nobody saved yet, and the button that saves them, while the workspace writes on save.
+///
+/// A workspace that writes each change has nothing to save, and shows nothing here. The save writes every change in
+/// one go, or nothing when someone edited one of its files since: the notice of its error says which.
+#[component]
+fn Unsaved() -> Element {
+    let ui = use_context::<Ui>();
+    let live = ui.live.read();
+    let Some(process) = live.process() else {
+        return rsx! {};
+    };
+    let workspace = process.workspace();
+    if workspace.write_back != WriteBack::OnSave || workspace.unsaved.is_empty() {
+        return rsx! {};
+    }
+    let count = workspace.unsaved.len();
+    let names: Vec<String> = workspace.unsaved.iter().map(ToString::to_string).collect();
+    let label = if count == 1 {
+        "1 change not saved".to_owned()
+    } else {
+        format!("{count} changes not saved")
+    };
+    let titles = names.join("\n");
+    let sender = ui.clone();
+    let save = move |_| sender.send(SaveWorkspace {});
+    rsx! {
+        div { class: "flex items-center gap-2 px-2", title: "{titles}",
+            i { class: "size-1.5 shrink-0 rounded-full bg-pending" }
+            span { class: "flex-1 truncate text-caption text-subtle", "{label}" }
+            button { class: BUTTON_PRIMARY, title: "Write every change to the files of the workspace", onclick: save, "Save" }
         }
     }
 }
