@@ -75,6 +75,44 @@ async fn an_environment_whose_cluster_never_answers_does_not_start() -> anyhow::
 }
 
 #[tokio::test]
+async fn an_environment_of_the_start_that_did_not_start_is_one_of_the_start_that_does_not_run() -> anyhow::Result<()> {
+    // A server that takes connections and never answers a request.
+    let silent = TcpListener::bind("127.0.0.1:0")?;
+    let host = Host::new(
+        HostConfiguration::default(),
+        MemoryContext::new(),
+        Lies::of_every_build(),
+        RUN,
+    );
+    let listen = Listeners::new(
+        "127.0.0.1:0".parse()?,
+        "127.0.0.1:19092-19191".parse()?,
+        "localhost".parse()?,
+    )?;
+    let staging = Environment::new(
+        "staging-proxy".parse()?,
+        Instances::ProxyInFrontOfCluster {
+            proxy: ProxyDefinition::new(listen),
+            upstream: Upstream::new(silent.local_addr()?.to_string().parse()?),
+        },
+    );
+    let mut configuration = EnvironmentConfiguration::new(&staging)?;
+    configuration.upstream.request_timeout = PATIENCE;
+    assert_eq!(host.started_with(), Vec::<EnvironmentName>::new());
+
+    let started = host.start_with([configuration]).await;
+
+    assert!(
+        matches!(started, Err(EnvironmentStartError::BackendNotStarted { .. })),
+        "{started:?}"
+    );
+    // The process started with the environment, and it does not run.
+    assert_eq!(host.started_with(), [staging.name().clone()]);
+    assert_eq!(host.running(), Vec::<EnvironmentName>::new());
+    Ok(())
+}
+
+#[tokio::test]
 async fn an_environment_that_does_not_run_has_no_listeners_events_rules_or_journal() -> anyhow::Result<()> {
     let host = Host::new(
         HostConfiguration::default(),
