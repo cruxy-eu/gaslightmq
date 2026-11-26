@@ -8,6 +8,7 @@
 //! | [`Response`] | A frame with its response header decoded. The body decodes on demand. |
 //! | [`Api`] | An API key with a version, which decides how headers and bodies encode. |
 //! | [`RecordBatch`] | Records as they travel inside Produce and Fetch. |
+//! | [`RecordBatches`] | The batches of a `records` field with everything they hold, for a rewrite that keeps the rest as it was. |
 //!
 //! The crate is sans-IO.
 //! It works on bytes in memory and never touches a socket:
@@ -44,8 +45,8 @@
 //! | What failed | Error | What is wrong |
 //! |---|---|---|
 //! | [`FrameDecoder::next_frame`] | [`FrameError`] | The length that a frame announces is zero, or over the limit of the decoder. |
-//! | Reading a header, a body or a record batch | [`DecodeError`] | The bytes are not what they were read as. |
-//! | Writing a request, a response or a record batch | [`EncodeError`] | The message cannot be written, for example at a version it does not exist in. |
+//! | Reading a header, a body or record batches | [`DecodeError`] | The bytes are not what they were read as. |
+//! | Writing a request, a response or record batches | [`EncodeError`] | The message cannot be written, for example at a version it does not exist in. |
 //!
 //! A [`DecodeError`] and an [`EncodeError`] have no variants.
 //! Their message names what did not decode or encode, and then says what is wrong, once.
@@ -56,6 +57,7 @@
 //! so the rest of the workspace depends on `gaslightmq_wire` alone.
 
 mod api;
+mod batches;
 mod error;
 mod frame;
 mod record;
@@ -63,6 +65,7 @@ mod request;
 mod response;
 
 pub use api::Api;
+pub use batches::RecordBatches;
 pub use error::{DecodeError, EncodeError, FrameError};
 pub use frame::{Frame, FrameDecoder};
 pub use record::{Offset, Partition, Record, RecordBatch, RecordHeader};
