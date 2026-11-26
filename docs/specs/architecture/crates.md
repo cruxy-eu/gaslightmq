@@ -300,7 +300,7 @@ Every other crate speaks in them.
 | Crate | Holds | Depends on |
 |---|---|---|
 | `kernel` | The value objects of Kafka: topic names and IDs, partition numbers, offsets, positions such as `orders.eu/3`, broker IDs, epochs, the IDs of clients, groups and producers, and API keys and error codes with the names Kafka gives them. Each type only holds valid values. | — |
-| `resource` | The [resource](control-plane.md#resources) vocabulary: the name, the UUID and the title of a resource, with the one rule that each of them follows. They are the rules of the [name](../domains/rules.md#names) and the [title](../domains/rules.md#titles) of a rule, and of the [UUID](identity.md#uuid) of an entity. Each kind of resource has a name, a UUID and a title of its own that wrap them, so the name of a selector never stands where the name of a rule belongs. It [makes a UUID](identity.md#making-a-uuid) from the time and the random bits that its caller hands in. This crate is [internal](#internal-crates). | — |
+| `resource` | The [resource](control-plane.md#resources) vocabulary: the name and the title of a resource, with the one rule that each of them follows. They are the rules of the [name](../domains/rules.md#names) and the [title](../domains/rules.md#titles) of a rule. Each kind of resource has a name and a title of its own that wrap them, so the name of a selector never stands where the name of a rule belongs. Also what a process keeps beside a resource: the [revision](identity.md#revision), with the counter that gives it, and the [ID of a run](identity.md#run), which it makes from the random bits that its caller hands in. This crate is [internal](#internal-crates). | — |
 | `field` | The [field vocabulary](../domains/targeting.md#fields): field names, their typed values, and the `FieldSource` trait that a live call and a recorded call both implement. Also the parts of a call, and the [target](../domains/lies-and-incidents.md#target) that a match yields. Every district of the town plan [shares this vocabulary](../townplan/README.md#targeting-is-a-shared-kernel). | `kernel`, `clock` |
 | `clock` | The [clock](README.md#clock): a `Clock` trait, the virtual clock, and instants that do not come from the system. | — |
 | `clock_waitable` | The clocks that a task waits on: a `WaitableClock` trait, which says when a clock reaches an instant, the wall clock, and a clock that moves when its owner moves it, which is the virtual clock behind a handle. An engine waits on the clock that whoever starts it hands over. This crate does IO. | `clock` |
@@ -350,7 +350,7 @@ Every other crate speaks in them.
 |---|---|---|
 | `traffic` | The live window of recent calls, subscriptions by selector, statistics per rule and per API, and the topics, groups and clients that the calls named. It takes the record of each call and says which subscriptions it goes to, and it sends nothing itself. | `call`, `selector`, `rule`, `field`, `kernel` |
 | `index` | The [index](../domains/observation.md#index): facets, counts under the active filters, suggested patterns. | `call`, `selector`, `field` |
-| `journal` | The [journal](../domains/observation.md#journal): its entries, each with its number, its [surface](../domains/observation.md#surfaces) and its cause, the name and the UUID by which an entry names a definition, and the window of recent entries the engine keeps in memory. | `incident`, `resource`, `clock` |
+| `journal` | The [journal](../domains/observation.md#journal): its entries, each with its number, its [surface](../domains/observation.md#surfaces), its cause and the revision that its change left, the name by which an entry names a definition, and the window of recent entries the engine keeps in memory. | `incident`, `resource`, `clock` |
 | `recording` | The [recording](storage.md#recordings) format: append-only chunks with summaries, calls with their raw frames and journal entries, metadata-only mode, blanked credentials, the [ID](identity.md#recording-id) of a recording as the name of its file, and a reader and a writer over `std::io`. | `call`, `journal`, `wire` |
 
 ### World and backends
@@ -377,8 +377,8 @@ Transactions arrive later as `sim_txn`, next to `sim_log` and `sim_group`.
 |---|---|---|
 | `environment` | [Environments](storage.md#environments), [secret references](storage.md#secrets), and the order in which flags, variables and files set a value. It never reads a secret. Also the settings of a workspace, as `gaslight.yaml` holds them. Also the [store trait](#the-store-seam) of the environments, with the store in memory behind a feature. | `kernel`, `resource`, `definition_api`, `definition_memory` |
 | `environment_conformance` | What a store of environments does, as a check that the tests of any store of environments run: the store contract with environments. This crate is [test support](#test-support-crates). | `environment`, `definition_conformance` |
-| `workspace` | The whole set of definitions as one model, over a store for each kind: cross-reference validation, and the [UUID](identity.md#uuid) and the [revision](identity.md#revision) of every definition it holds. It keeps both in memory, next to the name: no definition holds them, and no store does. It names the stores of every kind and the source of its UUIDs as one context, and it knows no files. Behind a feature, it has the stores of a workspace in memory, the context over them, and UUIDs that a test knows before they are made. See [the store seam](#the-store-seam). | `definition_api`, `definition_memory`, `selector`, `rule`, `scenario`, `surface`, `world`, `environment` |
-| `workspace_fs` | The stores that keep definitions in the files of a [workspace](storage.md#workspace): the YAML layout, loading, watching and [writing back](storage.md#writing-back). A [reading error](storage.md#reading) names the file and the path of the key that failed. A write changes the one definition that changed, in its one written form, and the store says which definitions hold a comment that a write would lose. Also the settings in `gaslight.yaml`, the scratch file, and reading the files that secret references name. This crate does IO. | `definition_api`, `workspace`, `selector`, `rule`, `scenario`, `surface`, `environment` |
+| `workspace` | The whole set of definitions as one model, over a store for each kind: cross-reference validation, and the [revision](identity.md#revision) of every definition it holds. It keeps the revision in memory, beside the definition: no definition holds one, and no store does. It holds the counter of the process, which gives the revision of every change. It loads the definitions of its stores once, and takes in what changed there on a [reload](storage.md#reloading). It names the stores of every kind as one context, and it knows no files. Behind a feature, it has the stores of a workspace in memory and the context over them. See [the store seam](#the-store-seam). | `definition_api`, `definition_memory`, `selector`, `rule`, `scenario`, `surface`, `world`, `environment` |
+| `workspace_fs` | The stores that keep definitions in the files of a [workspace](storage.md#workspace): the YAML layout, loading, reading again for a reload and [writing back](storage.md#writing-back). A [reading error](storage.md#reading) names the file and the path of the key that failed. A write changes the one definition that changed, in its one written form, and the store says which definitions hold a comment that a write would lose. Before a write, the store [checks](storage.md#the-check-before-a-write) that nobody changed the file since it read it, and it replaces the file in one step. Also the settings in `gaslight.yaml`, the scratch file, and reading the files that secret references name. This crate does IO. | `definition_api`, `workspace`, `selector`, `rule`, `scenario`, `surface`, `environment` |
 
 ### Control
 
@@ -387,7 +387,7 @@ Transactions arrive later as `sim_txn`, next to `sim_log` and `sim_group`.
 | `surface` | [Pad layouts](../domains/control-surfaces.md#pad-layout), layers, pads as positions, the encoder mapping, and the intents a surface sends. Also the state of one surface: the layer it shows, its mode of play and its focus, and the [store trait](#the-store-seam) of the pad layouts, with the store in memory behind a feature. | `rule`, `selector`, `trigger`, `lie`, `field`, `kernel`, `resource`, `clock`, `definition_api`, `definition_memory` |
 | `surface_conformance` | What a store of pad layouts does, as a check that the tests of any store of layouts run: the store contract with layouts, and which layouts have a row for a selector or a column for a preset. This crate is [test support](#test-support-crates). | `surface`, `definition_conformance`, `selector`, `rule` |
 | `quick_inject` | The ⌘K sentence parser: text to a rule definition, with completions for the word that is being typed, and the words it could not read. Whoever reads a sentence hands over the names the system knows. The host runs it behind the [control plane](control-plane.md#drafts). | `selector`, `lie`, `rule`, `trigger`, `field`, `kernel`, `clock` |
-| `control_api` | The [control plane](control-plane.md) as types: every operation with its answer and its error, [where a request comes from](control-plane.md#where-a-request-comes-from), the [revision](control-plane.md#revisions) that a change expects and the one it leaves, and the messages of the live stream. It re-exports the crates of the definition types its messages carry, one module per domain, so the UI names them through it. It holds its own view of the World's state. | `call`, `journal`, `rule`, `scenario`, `selector`, `surface`, `incident`, `environment`, `lie`, `trigger`, `field`, `kernel`, `clock` |
+| `control_api` | The [control plane](control-plane.md) as types: every operation with its answer and its error, [where a request comes from](control-plane.md#where-a-request-comes-from), the run and the [revision](control-plane.md#revisions) that a change expects and the revision it leaves, and the messages of the live stream. It re-exports the crates of the definition types its messages carry, one module per domain, so the UI names them through it. It holds its own view of the World's state. | `call`, `journal`, `rule`, `scenario`, `selector`, `surface`, `incident`, `environment`, `lie`, `trigger`, `field`, `kernel`, `clock` |
 | `control_client` | A client for the control plane, for native targets and for WebAssembly. It sends an operation and returns what the control plane answered: the answer or the error of that operation, each typed by it. An operation without an answer of its own is a `SendError`, so a caller never takes it for a refusal of the operation. It opens and follows the live stream, which ends with a `StreamError`. A stream does not reconnect: the caller opens a new one, which starts with a fresh snapshot. The client speaks plain HTTP and WebSocket, without TLS. Over HTTP and a WebSocket: on Tokio, or through the browser's own fetch and WebSocket, one feature each. This crate does IO. | `control_api` |
 | `control_server` | The HTTP and WebSocket server in front of the host: it answers every [operation](control-plane.md#operations) with the host, starts an environment of the workspace by its name, and sends the live stream: every change of the host, the calls that a client follows, and the statistics at an interval. It serves the files of the UI on every other path, and a release build holds them. See [over the network](control-plane.md#over-the-network). This crate does IO. | `host`, `control_api`, `engine`, `session`, `workspace`, `definition_api`, `quick_inject` |
 
@@ -398,14 +398,14 @@ Transactions arrive later as `sim_txn`, next to `sim_log` and `sim_group`.
 | `engine` | The runtime of one proxy: one task per session that owns the transport and drives the pipeline, a listener for every endpoint of the backend, the armed rules, the sessions that are open, the scenario runner, the event bus, the journal, the recorder and the indexer. This crate does IO. | `pipeline`, `session`, `rule`, `trigger`, `lie_api`, `call`, `incident`, `field`, `wire`, `scenario`, `journal`, `recording`, `backend`, `listener`, `environment`, `kernel`, `clock`, `clock_waitable` |
 | `ui` | The web UI, a Dioxus application compiled to WebAssembly. It reaches the engine only through the control plane: it applies every message of the live stream to the snapshot, follows the calls of the environment it shows with its filter as the selector, and sends operations and the intents of pads. It keeps the [undo history](../domains/control-surfaces.md#undo-and-redo) of its tab, and reads the inverse of every change from what the control plane answered. What it knows and decides is sans-IO code that the tests drive without a browser, and the components and the connection around it run in the browser. The control server serves its files. It styles with Tailwind and the tokens of its theme, each named by its role, in OKLCH, with a dark and a light value. This crate does IO. | `control_api`, `control_client`, `surface` |
 | `listener` | Kafka on a socket: accept connections, frame bytes, and run whatever [handles a connection](#the-connection-handler). A proxy's pipeline and a broker alone both sit behind it. This crate does IO. | `wire`, `field`, `clock` |
-| `host` | One process with several [environments](storage.md#several-environments-in-one-process): it starts and stops proxies and brokers, runs the task that drives each broker, and shares the workspace and the control plane between them. It holds the workspace over the context it is handed, whichever stores that names, resolves the rules it arms against that workspace, and reads ⌘K sentences with its names. It holds the live rules of every environment, acts on what someone does at a pad, counts the traffic of every environment and hands its calls to whoever follows them, gives every rule of an environment and every scenario that runs its [revision](identity.md#revision), refuses a change that expects another one, and tells every change of the process to whoever follows it. See [the host](#the-host). This crate does IO. | `engine`, `broker`, `backend`, `backend_upstream`, `call`, `workspace`, `environment`, `quick_inject`, `surface`, `traffic`, `clock`, `clock_waitable`, `lie_api`, `rule`, `selector`, `field`, `incident`, `definition_api` |
+| `host` | One process with several [environments](storage.md#several-environments-in-one-process): it starts and stops proxies and brokers, runs the task that drives each broker, and shares the workspace and the control plane between them. It holds the workspace over the context it is handed, whichever stores that names, resolves the rules it arms against that workspace, and reads ⌘K sentences with its names. It holds the live rules of every environment, acts on what someone does at a pad, counts the traffic of every environment and hands its calls to whoever follows them, holds the [ID of its run](identity.md#run), gives every rule of an environment and the scenario of every environment its [revision](identity.md#revision), refuses a change that expects another revision or another run, counts the holds of a rule, and tells every change of the process to whoever follows it. See [the host](#the-host). This crate does IO. | `engine`, `broker`, `backend`, `backend_upstream`, `call`, `workspace`, `environment`, `quick_inject`, `surface`, `traffic`, `clock`, `clock_waitable`, `lie_api`, `rule`, `selector`, `field`, `incident`, `definition_api` |
 | `test` | The test library: it starts a proxy, a broker, or a proxy in front of a broker inside the test's own process, on free ports, with a control plane on a free port of its own, and hands the test the addresses its clients connect to. It holds the workspace over the context it is handed, as the host does, and over stores in memory when the test hands none. The test then activates a scenario and asserts on the recording, through the control plane. This crate does IO. See [instances in a test](#instances-in-a-test). | `host`, `control_server`, `control_client`, `workspace` |
 | `testcontainers` | A container module: it starts the GaslightMQ image next to a test, with the workspace the test hands over, waits until the instance is ready, and hands the test the addresses its clients connect to. This crate does IO. See [instances in a test](#instances-in-a-test). | `control_client` |
 | `kafka_client_api` | What a Kafka client offers to a test, whichever client it is: the producer, consumer and admin traits, one trait per protocol API, and a raw client that sends one request at a fixed version. Every call of a client returns one error, `ClientError`. A broker that refuses a call is the variant that holds the broker's error code, and a failure of the client holds no error code, so a test never takes one for the other. This crate does IO. | `wire`, `kernel` |
 | `kafka_client_native` | Our own Kafka client behind those traits, as three types: a producer, a consumer and an admin. Every instance has its own connections, its own view of the cluster, its own configuration and its own `client.id`, so a fault or a lie reaches one role alone. The consumer is one member of each group it joins, and everything it says about a group travels on connections of its own, so a Fetch that waits never delays a Heartbeat. Each role follows partition leaders, negotiates API versions on every connection, and reports every failure as the `ClientError` of `kafka_client_api`. What a role decides is sans-IO code inside the crate, and the async part only owns sockets and timers. This crate does IO. | `kafka_client_api`, `wire`, `kernel`, `clock` |
 | `test_kafka` | A real Kafka cluster for the tests of this workspace: brokers of the version the workspace tests against, each with an address for the clients of a test. Its own handles create topics, write records, read them back and open transactions, with one request at a fixed version each. They share the codec with the client a test is about, and no decision of a client. It starts no GaslightMQ. This crate is [test support](#test-support-crates). This crate does IO. See [a real cluster in a test](#a-real-cluster-in-a-test). | `wire`, `kernel`, `clock` |
 | `gaslightmq` | The facade crate: `Proxy`, `Broker` and `Host`, and re-exports of what library users need. This crate does IO. | The public crates |
-| `gmq` | The binary: `gmq proxy`, `gmq broker`, `gmq start`, `gmq run`, `gmq init` and `gmq health`. It reads the flags, the variables and the files once, and hands the host and the control server their configuration. It writes the context of the workspace, and picks its stores there: files, or memory when there are none. This crate does IO. | `host`, `control_server`, `control_client`, `workspace_fs`, `workspace`, `environment` |
+| `gmq` | The binary: `gmq proxy`, `gmq broker`, `gmq start`, `gmq run`, `gmq init`, `gmq health` and `gmq reload`. It reads the flags, the variables and the files once, and hands the host and the control server their configuration. It writes the context of the workspace, and picks its stores there: files, or memory when there are none. It makes the [ID of the run](identity.md#run) from the randomness of the system, and hands it to the host. This crate does IO. | `host`, `control_server`, `control_client`, `workspace_fs`, `workspace`, `environment` |
 
 ## The pipeline is sans-IO
 
@@ -551,7 +551,7 @@ On a native target they run on Tokio.
 | `listener` | Client sockets. |
 | `backend_upstream` | Sockets to the real cluster. |
 | `schema_registry` | The HTTP interface of the built-in registry, and requests to a real one. |
-| `workspace_fs` | Files, and watching them. It keeps the [store contract](#the-store-seam). |
+| `workspace_fs` | Files. It keeps the [store contract](#the-store-seam). |
 | `control_server` | HTTP and WebSocket. |
 | `control_client` | HTTP and WebSocket, from a native target or from the browser. |
 | `engine` | Tasks, timers and channels. It opens no socket itself. |
@@ -644,7 +644,7 @@ Every crate of the seam knows only what it needs.
 | `definition_conformance` | The check of the contract, for any kind. Whoever runs it hands in the definitions that it stores. | No kind of definition. |
 | `selector`, `rule`, `scenario`, `surface`, `environment` | The store of each kind they define: selectors, rules, presets, scenarios, pad layouts and environments. The store trait is the contract for that kind, with what only a store of that kind is asked. Behind a feature, the store in memory is a store of that kind. | Their own kinds. |
 | `selector_conformance`, `rule_conformance`, `scenario_conformance`, `surface_conformance`, `environment_conformance` | The check of the store trait of each kind, with the definitions that the check stores. | The kinds of the crate they check. |
-| `workspace` | The stores of every kind as one trait, and the context of a workspace: its stores, and the source of its UUIDs. The UUID and the revision of every definition, in memory. Behind a feature, the stores and the context of a workspace in memory. | Every kind. |
+| `workspace` | The stores of every kind as one trait, and the context of a workspace: its stores. The revision of every definition, in memory. Behind a feature, the stores and the context of a workspace in memory. | Every kind. |
 
 The crate of a definition depends on the contract and on the store in memory, and never the other way round.
 Its conformance crate sits in its directory, and depends on it and on the check of the contract.
@@ -655,9 +655,10 @@ Its conformance crate sits in its directory, and depends on it and on the check 
 | Creates | It refuses a name that is taken. |
 | Updates and deletes | They need a name that exists. An update never creates a definition. |
 | Fails | A change that fails changed nothing. What the store, a file or the system said is text in the error. |
-| Writes | It takes a definition as its type holds it. A definition holds no UUID and no revision, so no store keeps one. |
+| Writes | It takes a definition as its type holds it. A definition holds [what a person writes](identity.md#what-a-definition-holds) and no revision, so no store keeps one. |
 | Says what a write loses | Whether the text it holds for a definition has a comment that a write would lose. A store in memory holds no text, and loses nothing. |
-| Changes behind the workspace | A store whose definitions someone else can change, as a file that someone edits, says which definition changed. A store in memory never does. |
+| Refuses a write over a change it has not read | A store whose definitions someone else can change, as a file that someone edits, changes nothing when they changed since it read them, and says so. A store in memory never does. |
+| Reads again | A store whose definitions someone else can change reads them again when the workspace asks, and holds what it read only once the workspace takes it. It tells nobody of a change on its own. A store in memory has nothing to read again. |
 
 Nothing overwrites another definition.
 An error of a store names no definition and no kind, because whoever asked knows both.
@@ -682,21 +683,29 @@ The `workspace` crate does that before it asks a store for a change:
 every reference names a definition that exists,
 and a selector, a preset or a rule that another definition uses is not deleted.
 
-The `workspace` crate also holds what no store holds: the [UUID](identity.md#uuid) and the [revision](identity.md#revision) of every definition.
-It keeps both in memory, under the kind and the name of the definition.
+The `workspace` crate also holds what no store holds: the [revision](identity.md#revision) of every definition.
+It keeps it in memory, beside the definition, under its kind and its name.
+It also holds the one counter of the process, and every change takes its next number from there.
 
-| When | The UUID | The revision |
-|---|---|---|
-| The workspace first holds a definition: it loads it, or someone creates it. | A new one. | Its first. |
-| Someone updates the definition, through the workspace or behind it. | The same. | Rises. |
-| Someone keeps a live rule. | The one the live rule had. | Its first. |
-| Someone deletes the definition. | Forgotten. | Forgotten. |
+| When | The revision of the definition |
+|---|---|
+| The workspace loads its definitions. | The number of the load, for all of them. |
+| Someone creates or updates the definition. | The number of that change. |
+| Someone keeps a live rule. | The number of the keep. |
+| A reload finds the definition new or changed. | The number of the reload. |
+| A reload finds the definition as it was. | The one it had. |
+| Someone deletes the definition, or a reload finds it gone. | Forgotten. |
 
 A change that names the revision it expects changes nothing when the definition has another one.
 The workspace checks that before it asks a store, so every store is held to it without knowing a revision.
 
+The workspace takes in what its stores hold at the load, and again on every [reload](storage.md#reloading).
+On a reload it asks every store to read again, compares what they read with what it holds, by name, and validates the result as a whole.
+It takes the changes in as one change, or none of them.
+No store calls the workspace, so nothing changes behind it.
+
 A workspace has one type parameter, its context.
-The context names the stores of every kind and the source of the UUIDs, and the workspace reaches both through it.
+The context names the stores of every kind, and the workspace reaches them through it.
 `host` holds the workspace over the context it is handed, and names no store.
 Only what puts a process together writes a context and names a store there: `gmq` picks files or memory, and `test` uses memory.
 
@@ -712,10 +721,8 @@ Its rules are plain functions over the definitions that the stores gave it.
 | Files | `workspace_fs`: the YAML files of a [workspace](storage.md#workspace). |
 | Memory | `definition_memory` has the store, the crate of each kind makes it a store of its kind, and `workspace` has the six as the stores of a workspace. For tests, and for an engine that runs without a workspace. |
 
-A UUID is made of the time and of random bits, and `workspace` reads neither.
-Its context hands it a source of both, and the IO edge has the one that reads the system.
-The context of a test has a source whose UUIDs the test knows before they are made.
-`workspace` has that context behind a feature, over its stores in memory, and a test turns the feature on.
+A [run ID](identity.md#run) is made of random bits, and no sans-IO crate reads the randomness of the system.
+Whoever puts a process together reads it once and hands the host its run ID: `gmq` does, and `test` does for a test that names none.
 
 `definition_conformance` holds the behaviour of the contract once, as a check.
 The conformance crate of each kind holds the check of its store trait on top of it.
@@ -751,25 +758,33 @@ The conformance crates are [test support](#test-support-crates): no code that sh
   and the topics, groups and clients that the traffic of the environment has seen.
   The traffic keeps as many names of each kind as its configuration says, and lets go of the name seen longest ago.
 - **Live rules belong to one environment.**
-  A live rule resolves against the workspace when someone makes it or changes it, and gets its UUID from the workspace
-  then. It stays in the memory of its environment until someone keeps it, deletes it, or stops the environment.
-  *Keep* saves it in the workspace under its name and its UUID, and it stays in the state it has.
+  A live rule resolves against the workspace when someone makes it or changes it.
+  It stays in the memory of its environment until someone keeps it, deletes it, or stops the environment.
+  *Keep* saves it in the workspace under its name, and it stays in the state it has.
   A change of a live rule that is armed keeps its counters.
+- **A rule of the workspace never stands next to a live rule of its name.**
+  The host refuses a live rule under the name of a rule of the workspace, and a rule of the workspace under the name of a live rule of any environment.
+  It refuses to keep a live rule while another environment has a live rule of that name.
 - **Whatever someone changes has a revision.**
-  The workspace holds the [revision](identity.md#revision) of every definition.
-  The host holds the one of every rule in an environment, and of the scenario that an environment runs.
-  It raises a revision with every change, whoever makes it: a request, a pad, a step, a lifetime or a file.
+  The workspace holds the [revision](identity.md#revision) of every definition, and the one counter of the process.
+  The host holds the number of the last change of state of every rule in an environment, and of the scenario of every environment.
+  It takes that number from the counter of the workspace with every change, whoever makes it: a request, a pad, a step, a lifetime or the start of an environment.
+  The revision of a rule in an environment is the later of that number and the revision of its definition.
   A request that expects another revision changes nothing, and the host answers every change with the revision it left.
+- **A process has one run.**
+  The host holds the [run ID](identity.md#run) that it is handed when it is made, and every snapshot names it.
+  A request that expects a revision of another run changes nothing.
 - **An intent says what it did.**
   The host answers a press or a turn with the rule it acted on, whether it made that rule, and what the rule is now.
   Whoever sent the intent takes it back with that, and works nothing out.
 - **Every change has a surface.**
   Whoever asks the host for a change says [where it comes from](control-plane.md#where-a-request-comes-from), and the host hands that to the journal of the environment.
-  The host names the surface of a change that nobody asked for: a step, a lifetime or a file.
+  The host names the surface of a change that nobody asked for, a step or a lifetime, and of what a reload takes in, a file.
   It keeps no history of what to undo: an undo reaches it as one more change.
 - **A pad plays the rules of one environment.**
   The pad points at the rule that has the name of its position: a rule of the workspace, or a live rule.
-  A press arms it, and makes the live rule of the position first when the pad has none.
+  A press arms it or disarms it, as the press says, and makes the live rule of the position first when the pad has none.
+  The host counts the holds of a rule, and disarms it when the last one goes.
   A turn changes a live rule as the encoders of the host's configuration say, and never a rule of the workspace,
   which changes in the workspace.
 - **A task watches each environment.**
@@ -783,10 +798,9 @@ The conformance crates are [test support](#test-support-crates): no code that sh
   A change names what changed, and whoever follows the host asks it for the state of that thing.
   Changes are states, so a follower that reads one late reads the newest state, and one that falls behind learns how
   many it missed and asks for everything again.
-  A definition that changes behind the host, as a file that someone edits, is a change like the others.
-  The store says which definition changed, the workspace validates it and raises its revision,
-  and the host replaces the armed rules that use it, which keep their counters.
-  An edit that does not fit keeps the last valid version, and the host says that the workspace is invalid.
+  A [reload](storage.md#reloading) is a change like the others.
+  The workspace says which definitions it changed, and the host replaces the armed rules that use them, which keep their counters.
+  A reload that does not fit changes nothing, and the host answers with what does not fit.
 
 Until the [broker](#the-broker-is-a-state-machine-too) exists, the host runs a proxy in front of a real cluster alone,
 and refuses an environment with a broker.
@@ -985,12 +999,17 @@ Step 5 also changes what step 4 built, before the new crates build on it:
 
 | Change | In |
 |---|---|
-| A definition holds no UUID. The workspace keeps the [UUID](identity.md#uuid) of every definition in memory, and no file and no store holds one. | `selector`, `rule`, `surface`, `environment`, `workspace`, `host`, `control_server`, and the examples. |
+| A definition holds [what a person writes](identity.md#what-a-definition-holds): no definition, no `serde` form and no file holds a UUID. The workspace reads its stores at the load. | `resource`, `selector`, `rule`, `surface`, `environment`, `workspace`, `host`, `control_server`, and the examples. |
 | Every request says [where it comes from](control-plane.md#where-a-request-comes-from), and a live rule can be created armed. | `control_api`, `control_server`, `control_client`, `host`, `ui`. |
-| Whatever a request changes has a [revision](control-plane.md#revisions), a change can expect one, and every change answers with the one it left. | `workspace`, `host`, `control_api`, `control_server`, `control_client`. |
+| Whatever a request changes has a [revision](control-plane.md#revisions) from the one counter of the process, and the process has a [run ID](identity.md#run). A change can expect a revision of its run, keep and steps included, and every change answers with the revision it left. | `resource`, `workspace`, `host`, `control_api`, `control_server`, `control_client`. |
+| A press says the state it wants, and the host counts the holds of a rule. Keep and creating a rule refuse a name that a live rule of another environment has. | `surface`, `host`, `control_api`, `ui`. |
 | The UI keeps an [undo history](../domains/control-surfaces.md#undo-and-redo) for each tab. | `ui`. |
 
 The first three come before the crates of step 5 that build on them: the scenarios, the stores of files and the journal.
+
+The stores of files bring two things with them, in `workspace_fs`, `workspace`, `host` and `control_api`:
+the [check before a write](storage.md#the-check-before-a-write), and the [reload](storage.md#reloading) operation.
+Nothing in step 5 watches a file.
 
 In step 5, `gmq` runs a proxy in front of a real cluster, as [example 09](../../../examples/09-proxy-in-front-of-real-kafka/README.md) does.
 The stores of files read the definitions of every example: the selectors, presets, rules, scenarios, layouts and environments.

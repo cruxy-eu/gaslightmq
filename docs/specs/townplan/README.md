@@ -64,7 +64,7 @@ flowchart TB
 | [Control surfaces](../domains/control-surfaces.md) | Supporting | View, Pad layout, Layer, Hardware mapping (later) | Gives people fast ways to change rules and scenarios. |
 | [Backends](../architecture/backends.md) | Generic | Backend, Capability, Overlay, Emulation | Answers calls, either from a real cluster or from a broker with its World. |
 | Wire | Generic | Frame, Request, Response | Encodes and decodes the Kafka protocol. |
-| [Workspace](../architecture/storage.md) | Generic | Workspace, Environment, Secret reference, Scratch file, Recording file | Persists definitions and recordings, gives every definition its UUID, and configures where the engine runs. |
+| [Workspace](../architecture/storage.md) | Generic | Workspace, Environment, Secret reference, Scratch file, Recording file | Persists definitions and recordings, keeps the revision of every definition, and configures where the engine runs. |
 
 The core districts are where GaslightMQ differs from every other Kafka tool.
 The supporting districts exist to serve the core.

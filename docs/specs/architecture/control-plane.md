@@ -23,6 +23,7 @@ It is then set up by flags and files alone.
 | `rules` | List, get, create, update, delete. List the rules of an environment with their state. Create a live rule, armed when the request says so. Update and delete a live rule. Arm, disarm, fire. Keep a live rule. |
 | `scenarios` | List, get, create, update, delete. Activate, deactivate, step. |
 | `layouts` | List, get, create, update, delete. |
+| `workspace` | [Reload](storage.md#reloading) the definitions from the files of the workspace. |
 | `sessions` | List the open sessions with their identity. Close one. |
 | `recordings` | Start, stop, list, open. Query calls with a selector, saved or [draft](#drafts). Get the index. |
 | `world` | Only for an environment with a broker. Get state, apply an incident, save as a world definition, set the clock. [Preview the records](#drafts) at an offset. |
@@ -33,8 +34,7 @@ It is then set up by flags and files alone.
 | `quick-inject` | [Parse a ⌘K sentence](#drafts) into a rule definition, with completions. |
 
 Every operation on a definition names it by its [name](../domains/rules.md#names).
-No operation names a definition by its [UUID](identity.md#uuid).
-A UUID is live state of the process, and it reaches a client in [journal entries](../domains/observation.md#journal) alone.
+A definition has no other identity, so no operation names it by anything else.
 No operation renames a definition.
 An update changes everything but the name, the [title](../domains/rules.md#titles) included.
 Whoever wants another name creates a new definition and deletes the old one.
@@ -45,8 +45,17 @@ Live rules are the exception.
 They stay in memory until *keep* saves them as workspace rules.
 
 A live rule belongs to one environment, and its name is a name that no rule of the workspace has.
-*Keep* saves it in the workspace under the same name and UUID.
+Two environments can each have a live rule of one name, because each holds its own.
+*Keep* saves a live rule in the workspace under the same name.
 It stays in the state it has in its environment, and every other environment holds it disarmed.
+
+A rule of the workspace is in every environment, so it never stands next to a live rule of its name:
+
+- **Creating a live rule refuses a name that a rule of the workspace has.**
+- **Creating a rule of the workspace refuses a name that a live rule has**, in any environment that runs.
+- **Keep refuses a name that a live rule of another environment has.**
+  The error is `name-taken`, with the environment that holds that live rule.
+  Whoever wants the rule in the workspace deletes the other live rule first.
 
 Activating a scenario asks the backend of the environment whether it supports the incidents that the scenario uses.
 The activation fails with the list of those it does not.
@@ -72,9 +81,11 @@ and a client and a server share them.
   Every such command fails the same way when the environment does not run,
   whether it stopped or never existed.
 - **A definition travels as its file holds it.**
-  It holds no [UUID](identity.md#uuid) and no revision, in a request as in a file.
+  It holds [what a person writes](identity.md#what-a-definition-holds), in a request as in a file.
+- **Live state travels beside a definition, never inside it.**
   An answer, the snapshot and a message of a change hold two things next to the definition:
   its [revision](#revisions), and whether [a write would lose a comment](storage.md#writing-back) of its file.
+  The definition is one key of the answer, and each of the two is a key next to it: `{ "definition": { … }, "revision": 7, … }`.
 - **One gesture is one operation.**
   Whatever a surface does in one gesture is one request, so it applies as a whole or not at all.
   A ⌘K sentence creates its live rule armed, with one operation.
@@ -95,25 +106,32 @@ Every request says which surface sends it.
 The [journal](../domains/observation.md#journal) records both with every change that the request makes.
 The control plane has no users, so `from` is what the sender says about itself.
 
-A change that no request made has a surface too: `step`, `lifetime` or `file`.
-The engine names those itself, and a request that claims one is unreadable.
+The engine names three surfaces itself, and a request that claims one is unreadable.
+A change that no request made has the surface `step` or `lifetime`.
+A change that a [reload](storage.md#reloading) takes in has the surface `file`, whoever asked for the reload.
 
 ## Revisions
 
-Several clients change one process: two tabs of the UI, `gmq`, a scenario, a lifetime, and whoever edits a file.
+Several clients change one process: two tabs of the UI, `gmq`, a scenario, a lifetime, and a reload after someone edited a file.
 A revision keeps one of them from overwriting what it has not seen.
 
 Whatever a request changes has a [revision](identity.md#revision):
 a definition, a rule in an environment, and the scenario of an environment.
+One counter of the process gives all of them, so a revision never comes back within a [run](identity.md#run).
 
 - **Whoever reads something gets its revision.**
-  An answer, the snapshot and every message of a change hold it.
+  An answer, the snapshot and every message of a change hold it, beside what it belongs to.
+- **The snapshot names the run.**
+  A revision means something in the run that gave it, and in no other.
 - **A change answers with the new revision.**
   A client that changes one thing twice in a row waits for no message of the stream in between.
-- **A change can say which revision it expects.**
-  An update, a delete, an arm, a disarm, an activation and a deactivation take `expects`.
-  When the thing has another revision, the operation changes nothing,
-  and its error is `changed`, with the revision that the thing has now.
+- **A change can say what it expects.**
+  `expects` holds two things: the run that the client read from, and the revision that it saw.
+- **A change that expects another revision changes nothing.**
+  Its error is `changed`, with the revision that the thing has now.
+- **A change that expects another run changes nothing.**
+  Its error is `other-run`, with the run ID of the process.
+  The process started again since the client read, and nothing that the client holds is certain any more: it reads the snapshot again.
 - **Without `expects`, the last change wins.**
   `gmq` and a test that has its process to itself leave it out.
   The UI sends it with every change.
@@ -121,20 +139,46 @@ a definition, a rule in an environment, and the scenario of an environment.
   It refuses a name that is taken, so it never overwrites.
 
 ```json
-{ "from": { "surface": "ui" }, "operation": "update-rule", "expects": 7, "definition": { "name": "slow-order-producers", "selector": "order-producers", "action": "delay-1s" } }
+{ "from": { "surface": "ui" }, "operation": "update-rule", "expects": { "run": "4be0643f1d98573b97cdca98a65347dd", "revision": 7 }, "definition": { "name": "slow-order-producers", "selector": "order-producers", "action": "delay-1s" } }
 ```
 
-A pad intent expects nothing either.
-It says what someone did, and it acts on the rule as the rule is.
-Its answer says what it did: the rule it acted on, whether it made that rule, and the definition, the state and the revision that the rule has now.
-A surface never works out what a press or a turn did.
-The name of a rule that a pad makes and the bounds of an encoder belong to the engine.
+| An operation | Expects the revision of |
+|---|---|
+| Update or delete a definition | The definition. |
+| Arm or disarm a rule | The rule in its environment. |
+| Update, delete or keep a live rule | The rule in its environment. |
+| Activate or deactivate a scenario, or step | The scenario of the environment. |
+
+- **A rule in an environment has one revision, for its definition and its state together.**
+  Someone who arms a rule of the workspace after another client changed its definition gets `changed`, and arms nothing they have not seen.
+- **Keep expects the live rule as its sender saw it.**
+  A turn of an encoder by someone else in between is a change, so the workspace never gets a rule that nobody looked at.
+- **A step expects the scenario as its sender saw it.**
+  Two clients that both step from the same step advance the scenario once, and the second one gets `changed`.
+- **A revision does not cover what a definition refers to.**
+  A rule whose selector someone changed has the revision it had.
+
+A write to a file can also fail because [someone edited the file](storage.md#the-check-before-a-write) while the process ran.
+Its error is `changed-outside`, and no revision is involved: the engine does not hold what the file holds now, until someone asks for a reload.
+
+A pad intent expects nothing.
+It acts on the rule as the rule is, and it says the state that it wants.
+
+- **A press never says *the other state*.**
+  It says *arm the rule of this position* or *disarm it*.
+  Two people who press the same pad to arm it both find it armed, and the second press changes nothing.
+- **The answer says what the intent did.**
+  It holds the rule it acted on, whether it made that rule, whether it changed the state of the rule,
+  and the definition, the state and the revision that the rule has now.
+- **A surface never works out what a press or a turn did.**
+  The name of a rule that a pad makes and the bounds of an encoder belong to the engine.
 
 ## Undo
 
 The control plane has no operation that undoes, and it keeps no history for it.
 A surface keeps the history of its own changes, as the [UI](../domains/control-surfaces.md#undo-and-redo) does for each tab.
-An undo is an ordinary operation: the inverse of the change, with the revision that the change left as `expects`, and with the cause `undo`.
+An undo is an ordinary operation: the inverse of the change, with the cause `undo`.
+Its `expects` names the run of the change and the revision that the change left.
 
 | A change | Its inverse |
 |---|---|
@@ -148,6 +192,7 @@ An undo is an ordinary operation: the inverse of the change, with the revision t
 | Activate a scenario, deactivate it | Deactivate it, activate it. |
 | A pad press that armed a rule | Disarm it, or delete the live rule when the answer says that the press made it. |
 | A pad press that disarmed a rule | Arm it. |
+| A pad press that changed nothing | Nothing. The answer says so, and the surface keeps no step. |
 | Turns of an encoder | Update the live rule to the definition before the first turn. |
 
 A redo is the change again, with the revision that the undo left and the cause `redo`.
@@ -157,14 +202,18 @@ A redo is the change again, with the revision that the undo left and the cause `
 - **A surface reads the inverse from answers.**
   The definition before an update is the one whose revision the update expected, so a success says that the surface held the right one.
 - **A definition that comes back is a new definition.**
-  It has the name and the content of the one that went, and a new [UUID](identity.md#uuid).
+  It has the name and the content of the one that went, and a higher revision than that one ever had.
+  A change that still expects the one that went changes nothing.
 - **A scenario that comes back starts again.**
   Activating it starts it at its first step, whichever step it was at.
 - **A state that moved on is no state to undo.**
   When someone else changed the thing since, the inverse fails with `changed` and changes nothing.
   The surface drops the step.
+- **A history ends with its run.**
+  An inverse that names another run fails with `other-run`, and the surface drops its whole history.
+  A process that started again armed nothing, and no undo of an earlier run arms a fault in it.
 - **Some operations have no inverse.**
-  Fire, a step, keep, the start and the stop of an environment, of a recording and of a capture, and closing a session.
+  Fire, a step, keep, a reload, the start and the stop of an environment, of a recording and of a capture, and closing a session.
   What they did has happened.
 
 The [journal](../domains/observation.md#the-journal-only-grows) records an undo as a new change with its cause, next to the change it took back.
@@ -198,18 +247,17 @@ The WebSocket streams:
 
 | Message | Carries |
 |---|---|
-| **Snapshot** | The full state, sent when a client connects: every definition of the workspace, and every environment that runs with its backend, its rules and its sessions. |
+| **Snapshot** | The full state, sent when a client connects: the [run ID](identity.md#run), every definition of the workspace, and every environment that runs with its backend, its rules and its sessions. Whatever has a revision comes with it. |
 | **Call** | One call event: request summary, verdict and explanation. |
 | **Stats** | Matches, firings and remaining budget per rule, and calls per API, at a fixed interval. |
 | **Rule changed, removed** | A rule of an environment changed state, or a live rule was made or changed its definition, with its revision. A live rule left its environment: someone deleted or kept it. |
-| **Definition changed, deleted** | Someone created, updated or deleted a definition of the workspace, through the control plane or in its file. A change holds the revision of the definition. |
+| **Definition changed, deleted** | Someone created, updated or deleted a definition of the workspace, through the control plane or with a [reload](storage.md#reloading). A change holds the revision of the definition. |
 | **Scenario changed** | The active scenario changed, or advanced a step, with its revision. |
 | **Recording started, stopped** | A recording of an environment began or ended, and why it ended when nobody stopped it. |
 | **World changed** | An incident changed the World, or the Upstream backend's overlay. |
 | **Session opened, identified, software named, closed** | Session lifecycle. The client software comes with the identification, or later with the first `ApiVersions` request that names it. |
 | **Journal entry** | Something changed in an environment, with the time, the surface that changed it and the cause. |
 | **Environment started, stopped** | An environment came up, with its backend, its rules and its sessions, or went down. |
-| **Workspace invalid** | The definitions do not fit each other, or a file failed validation. The engine keeps the last valid version. |
 | **Following** | The last subscription of this client is in force: the server sends every call it names from here on. |
 | **Subscription refused** | The last subscription of this client cannot be followed, and why. The client follows no calls. |
 
@@ -281,6 +329,10 @@ Every frame is a text frame.
 - **A message is a state, not a difference.**
   A change says what a rule, a definition or an environment is now.
   A change can repeat what the snapshot holds already, and applying it again changes nothing.
+- **The later revision is the newer state.**
+  A client that already holds a later revision of a thing, from the answer to its own change, drops a message that brings an earlier one.
+- **A snapshot that names another run is another process.**
+  The client drops what it held, its [undo history](../domains/control-surfaces.md#the-history-of-a-tab) included.
 - **A client that falls behind gets a new snapshot.**
   The server keeps a backlog of changes for every client, as large as its configuration says.
   A client that falls further behind would miss changes, so the server sends it a new `snapshot` and goes on from there.
@@ -310,6 +362,7 @@ A change whose subject is gone again by then sends nothing, because a later mess
 |---|---|
 | An environment started or stopped. | `environment-started` with what runs in it, or `environment-stopped` once its sessions closed. |
 | A definition changed through the host, or went. | `definition-changed` with the definition, or `definition-deleted`. |
+| A reload changed definitions. | `definition-changed` or `definition-deleted` for each of them, and `rule-changed` for every armed rule that follows its definition. |
 | A rule armed or disarmed in an environment, or a live rule was made or changed. | `rule-changed` with the rule and its state. |
 | A live rule left its environment. | `rule-removed`. Keeping a live rule sends `rule-removed`, `definition-changed` and `rule-changed`, in that order. |
 | A session opened, was identified, named its software, or closed. | The message of the session. |
@@ -324,10 +377,11 @@ Every operation of `control_api` is served, so no answer is `501` today.
 `RequestError::NotServed` stays for a process that knows fewer operations than its client:
 an older process, or one built without a part.
 
-`workspace-invalid` waits for the files of a workspace, which can change behind the host. Stores in memory cannot.
+No operation reloads the workspace yet.
+It arrives with the stores of files: a store in memory has nothing to reload.
 
-A request does not say where it comes from yet, and nothing has a revision yet.
-Both arrive with the journal, which records the surface of every change.
+A request does not say where it comes from yet, nothing has a revision yet, and the snapshot names no run.
+They arrive with the journal, which records the surface of every change.
 
 No request needs a token yet, and the server allows no request from a page of another origin.
 The `token` of the [process configuration](storage.md#process-configuration) arrives with the binary.
@@ -344,6 +398,8 @@ See [credentials on the wire](storage.md#credentials-on-the-wire).
 Surfaces send intent, not state.
 A pad press sends *arm the rule at row 1, column 4 on layer order-ingest*,
 and the engine creates a live rule if the pad has none yet.
+A press in latch sends *arm* or *disarm*, and never *toggle*, so two surfaces pressing the same pad do not undo each other.
+A press in hold sends *hold*, and its release sends *release*: the engine [counts the holds](../domains/control-surfaces.md#modes-of-play) of a rule, and disarms it when the last one goes.
 An encoder turn sends *change probability by +3*, not *set probability to 43*,
 so two surfaces turning the same encoder do not fight.
 The answer to an intent says [what it did](#revisions), so the surface knows without working it out.

@@ -14,13 +14,13 @@ flowchart TB
     SE["Secrets<br/>files outside git"]
   end
 
-  EN["Engine, memory only<br/>loaded definitions · UUIDs · revisions · armed state · live set<br/>counters · budgets · sessions · client context<br/>overlay or World · journal"]
+  EN["Engine, memory only<br/>loaded definitions · revisions · run ID · armed state · live set<br/>counters · budgets · sessions · client context<br/>overlay or World · journal"]
 
   REC[("Recordings<br/>files, not in git<br/>calls and journal")]
   SCR[("Scratch<br/>file, not in git<br/>live rules")]
   BR["Browser<br/>view preferences · undo history"]
 
-  WS -->|load and watch| EN
+  WS -->|load and reload| EN
   EN -->|write back| WS
   PC -->|picks workspace and environment| EN
   SE -->|read on connect| EN
@@ -39,7 +39,7 @@ flowchart TB
 | Environments: which proxies and brokers, which ports | Workspace files | Yes | A person |
 | Workspace settings: default environment, default seed | `gaslight.yaml` | Yes | A person |
 | Secrets: passwords, keys, tokens | Files outside git, referenced by path | No | A person or the platform |
-| The [UUID](identity.md#uuid) and the [revision](identity.md#revision) of a definition | Memory | No | The engine |
+| The [revision](identity.md#revision) of a definition, and the [run ID](identity.md#run) | Memory | No | The engine |
 | Armed state, counters, budgets, sessions, client context | Memory, per environment | No | The proxy |
 | World state, or the Upstream overlay | Memory, per environment | No | The broker, or the proxy |
 | Live rules from pads and ⌘K | Memory and a scratch file, per environment | No | The proxy |
@@ -87,9 +87,10 @@ recordings:
 ## Workspace
 
 A workspace is a directory of plain-text files.
-The files are the source of truth:
-the engine loads them, watches them for changes,
-and writes edits from the UI back to them.
+The files are the source of truth.
+The engine loads them once, when it starts, and works on the copy in its memory from there.
+It writes edits from the UI back to them, and reads them again when someone asks for a [reload](#reloading).
+It does not watch them.
 
 ```
 gaslight/
@@ -151,7 +152,7 @@ The path comes from the reader.
 The message after it comes from the type of the value, which knows nothing about files.
 
 A key that a definition does not have is a reading error too.
-`uuid` is such a key: no file holds the [UUID](identity.md#uuid) of a definition.
+A definition holds [what a person writes](identity.md#what-a-definition-holds), so no key holds something that GaslightMQ keeps: `revision` and `armed` are such keys.
 
 ### Names
 
@@ -164,8 +165,9 @@ A key that a definition does not have is a reading error too.
   The name inside the file is authoritative.
 - A definition can have a `title`, which is free text.
   See [titles](../domains/rules.md#titles).
-- A file holds what someone defined, and nothing that GaslightMQ assigns.
-  The [UUID](identity.md#uuid) and the [revision](identity.md#revision) of a definition are live state, and stay in memory.
+- A file holds what someone defined, and nothing that GaslightMQ keeps.
+  The [revision](identity.md#revision) of a definition is live state: it sits beside the definition, in memory.
+  See [what a definition holds](identity.md#what-a-definition-holds).
 - Nothing renames a definition, so no change rewrites references.
   A definition under another name is a new definition.
   A reference to a name that no definition has is an error, as on every [validation](#validation).
@@ -181,7 +183,7 @@ See [secrets](#secrets).
 
 ### Validation
 
-The engine validates the whole workspace on load and on every change:
+The engine validates the whole workspace when it loads it, when it [reloads](#reloading) it, and before every change:
 
 - every reference resolves: the selector and the preset of a rule, the rules of a scenario and of its steps,
   and the rows and columns of a pad layout,
@@ -192,23 +194,52 @@ The workspace does not ask whether a backend supports the incidents of a scenari
 A workspace serves every environment, and each has a backend of its own.
 The backend of an environment checks that when someone [activates the scenario](../domains/scenarios.md#portability) there.
 
-An invalid file does not stop the engine.
-The engine keeps the last valid version and reports the error in the UI.
+The engine only ever holds a valid workspace.
 
-### Changes to files
+- **A process does not start on an invalid workspace.**
+  `gmq` names every error with its file and the path of its key, and ends.
+- **A change that would make the workspace invalid changes nothing.**
+  That holds for a request of the control plane and for a reload.
 
-The engine watches the files of the workspace, and takes a change as it takes one from the control plane.
+### Loading
 
-- **A file that someone edits is an update of its definition.**
-  The definition keeps its [UUID](identity.md#uuid), and its [revision](identity.md#revision) rises.
-  A file that goes is a definition that someone deleted, and a new file is a new definition.
-- **An armed rule follows its file.**
-  The engine resolves the rule again, and replaces the armed rule in every environment that armed it.
+The engine reads the files of the workspace once, when it starts.
+From there, its memory is the working copy: every answer of the control plane, every armed rule and every ⌘K sentence comes from it.
+
+- **A file that someone edits while the engine runs changes nothing.**
+  The engine does not watch the files.
+  It takes the edit in with the next [reload](#reloading), or with the next start.
+- **An edit by hand never changes a fault behind someone's back.**
+  A branch that someone checks out, a file that an editor saved half-way and a pull from a colleague leave every armed rule as it is.
+- **The engine never overwrites an edit that it has not read.**
+  See [the check before a write](#the-check-before-a-write).
+
+### Reloading
+
+A reload reads the files of the workspace again, and takes what changed as one change.
+It is an [operation of the control plane](control-plane.md#resources): `gmq reload` asks for it, and so does the UI.
+
+- **A reload compares what the files hold with what the engine holds, by name.**
+  A definition whose content differs is an update.
+  A name that the files no longer hold is a delete, and a new name is a create.
+  A definition that did not change keeps its [revision](identity.md#revision).
+- **A reload is one change.**
+  Every definition that it creates or updates gets the revision of the reload.
+  It applies as a whole or not at all.
+- **A reload that does not fit changes nothing.**
+  When the files cannot be read, or the definitions in them do not [fit each other](#validation), the reload fails with every error.
+  It also fails when a new rule of the files has the name of a [live rule](control-plane.md#resources) of an environment that runs.
+  The engine keeps what it holds, armed rules included.
+- **An armed rule follows a reload.**
+  The engine resolves every armed rule that the reload changed, and replaces it in every environment that armed it.
   The rule stays armed, and it keeps its counters and its budget, as after a change of a parameter.
-- **An edit that does not resolve changes nothing.**
-  The engine keeps the last valid version, armed rules included, and says that the workspace is invalid.
-- **Nobody undoes a file change in the UI.**
-  The [journal](../domains/observation.md#journal) records it with the surface `file`.
+- **A change that a reload takes in has the surface `file`.**
+  The [journal](../domains/observation.md#journal) records each one, whoever asked for the reload.
+  Nobody undoes it in the UI.
+- **A store in memory has nothing to reload**, so a reload [without a workspace](#without-a-workspace) changes nothing.
+
+Something can ask for a reload on its own later, such as a watcher of the files.
+It would be one more sender of this operation, and nothing else would change.
 
 ### Writing back
 
@@ -225,8 +256,30 @@ So what it writes has to read well in a diff.
 - **A write loses the comments inside the definition it writes.**
   The store knows whether the text of a definition holds a comment, and the control plane says so with the definition.
   The UI asks before it saves an edit of such a definition.
-- **A file holds nothing that GaslightMQ assigns.**
-  No UUID, no revision and no time of the last change, so a file changes only when someone changed a definition.
+- **A file holds nothing that GaslightMQ keeps.**
+  No revision and no time of the last change, so a file changes only when someone changed a definition.
+
+#### The check before a write
+
+Someone can edit a file while the engine runs, and the engine does not see it.
+The store of files therefore checks each file before it writes it.
+
+- **The store remembers what it read.**
+  It keeps a hash of the bytes of every file that it read, and of every file that it wrote.
+- **The store reads the file again before it writes.**
+  When the bytes have another hash, someone changed the file since, and the store writes nothing.
+  A file that should be there and is gone, and a file that should not exist and does, count as changed.
+- **A refused write changes nothing.**
+  Neither the file nor the memory of the engine changes, and the operation fails with `changed-outside`.
+  A [reload](#reloading) takes the edit in, and whoever made the change makes it again on top of it.
+- **The check is per file.**
+  An edit of one selector in `selectors.yaml` holds up the write of every other selector, until someone reloads.
+- **A write replaces the file in one step.**
+  The store writes the new content to a temporary file next to it, and renames that over the file.
+  A reader never sees half a file, and a crash leaves the old file or the new one.
+
+An edit that lands between the check and the rename is still lost.
+An editor takes no lock that the store could wait for, so the store cannot rule that out, and the window is as short as one rename.
 
 ### Without a workspace
 
@@ -243,7 +296,7 @@ In CI, the workspace is often mounted read-only.
 The engine then loads and validates it, and never writes back.
 Pads and ⌘K still create live rules in memory.
 Keeping a rule, saving a scenario and the scratch file are switched off.
-Every definition still gets its [UUID](identity.md#uuid), because a UUID lives in memory.
+A reload still works, because it only reads.
 
 ## Environments
 
@@ -408,6 +461,7 @@ so playing with the pads leaves git clean.
 
 Nothing is armed after a restart.
 The engine does not remember which rules were armed, which scenario was active or how far its counters were.
+It is a new [run](identity.md#run): it has a new run ID, and its [revisions](identity.md#revision) start again.
 A fault injector that resumes on its own is a hazard:
 someone restarts it after an outage and the faults are back.
 
@@ -421,6 +475,7 @@ The scratch file keeps the definitions of live rules, so a crash does not lose t
 
 - The engine writes `.gaslight/scratch/<environment>.yaml` whenever a live rule changes.
 - On start, the engine loads the rules in the scratch file as live rules, disarmed.
+  It leaves out a rule whose name a rule of the workspace has by then, and says which.
 - Keeping or deleting a live rule removes it from the scratch file.
 - Git ignores the file.
 

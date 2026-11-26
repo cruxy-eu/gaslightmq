@@ -59,13 +59,25 @@ The second part lists the decisions that were settled, with the reason and the s
 - **Does write-back keep the comments inside the definition it writes?**
   A [write](architecture/storage.md#writing-back) keeps every byte outside the definition that changed, and the UI asks before it loses a comment inside it.
   Keeping those comments too needs an edit of the text in place, which changes only the values that differ.
-- **Does GaslightMQ recognise a definition in a later run?**
-  A [UUID](architecture/identity.md#uuid) lasts for one run, and the name is what two runs share.
-  A committed file next to the definitions that maps names to UUIDs would carry a UUID across runs and copies of the workspace.
-  Nothing needs that yet.
+- **Does a definition get an ID of its own, next to its name?**
+  A definition has a name and no ID.
+  Within a run, its [revision](architecture/identity.md#revision) and the journal tell it from a definition that [had its name before](architecture/identity.md#two-definitions-of-one-name).
+  A rename, and recognising a definition in a later run or in another copy of the workspace, would each need an ID.
+  The second one also needs a committed file next to the definitions that maps names to IDs.
+  Nothing needs either yet. See [not decided yet](architecture/identity.md#not-decided-yet).
+- **Does GaslightMQ watch the files of the workspace?**
+  It loads them once, and reads them again when someone asks for a [reload](architecture/storage.md#reloading).
+  A watcher would ask for the reload itself.
+  It then has to cope with a file that an editor saved half-way and with a branch that someone checks out file by file.
 - **Can several people share one engine?**
   The [journal](domains/observation.md#journal) records which surface changed something, not which person.
   A shared engine in a staging cluster needs identities and permissions on the control plane.
+
+### Control surfaces
+
+- **What ends a hold whose holder went away?**
+  The engine [counts the holds](domains/control-surfaces.md#modes-of-play) of a rule, and disarms it when the last one goes.
+  A tab that closes while a pad is held never sends its release, and the control plane does not know which requests come from one tab.
 
 ### Backends
 
@@ -130,7 +142,7 @@ The second part lists the decisions that were settled, with the reason and the s
 | Question | Decision | Reason |
 |---|---|---|
 | Are names unique across kinds? | No, per kind. The UI shows the kind where kinds mix. See [names](architecture/storage.md#names). | Every reference already says which kind it means. |
-| What is a name? | A slug, like the name of a resource in Kubernetes. It is the identity of its definition, and every reference uses it. The [UUID](architecture/identity.md#uuid) next to it is live state, and no reference uses it. See [names](domains/rules.md#names). | One string names a definition in a file, a command, an explanation and the statistics. |
+| What is a name? | A slug, like the name of a resource in Kubernetes. It is the identity of its definition, and every reference uses it. A definition has no other ID. See [names](domains/rules.md#names). | One string names a definition in a file, a command, an explanation and the statistics. |
 | Where does free text go? | In an optional title on the definition itself. See [titles](domains/rules.md#titles). | Nothing references a title, so it changes without breaking anything. |
 | Can someone rename a definition? | No. Another name means a new definition, and the old one is deleted. | A rename had to rewrite every reference, and its history hung on a name that no longer existed. |
 | What is the default for recordings? | Metadata-only on Upstream, full on Simulated. See [privacy](architecture/storage.md#privacy). | The real cluster can carry sensitive data. The World's data is synthetic. |
@@ -142,10 +154,16 @@ The second part lists the decisions that were settled, with the reason and the s
 | Where does a fake cluster's data come from? | From the topic's [record source](domains/world.md#records): virtual records from a template or a schema, a file, a recording, or what clients produce. | A consumer test needs data without a producer, and a virtual record is the same at the same partition and offset. |
 | Do records have schemas? | Yes. A topic names a format and a schema, and an environment names a [schema registry](architecture/backends.md#schema-registry). | Avro and Protobuf consumers cannot read a record without one. |
 | Where do secrets live? | In files outside git, referenced by path. An environment variable works as a fallback. See [secrets](architecture/storage.md#secrets). | Platforms mount secrets as files, files rotate, and a reference cannot leak through git. |
-| Does a file hold the UUID of its definition? | No. A UUID is live state: the process gives it, and keeps it in memory for one run. See [UUID](architecture/identity.md#uuid). | A file is what someone defined. A file that someone wrote by hand and one that the UI saved look the same, and a copy of a file is just another definition. |
-| Does GaslightMQ need a store for what it assigns, as Kubernetes has? | No. Its memory is that store, and a restart is a clean slate. | Nothing has to recognise a definition across runs yet, and a second store has to be kept in step with files that people edit. |
+| Does a definition hold anything that GaslightMQ keeps? | No. A definition holds what a person writes: its name, its title and its content. Its revision, its armed state and its counters sit beside it, in memory, and never in a file. See [what a definition holds](architecture/identity.md#what-a-definition-holds). | A file is what someone defined. A file that someone wrote by hand and one that the UI saved look the same, and a copy of a file is just another definition. |
+| Does a definition have a UUID? | No. Its name is its identity, and the revision tells it from a definition that had its name before. See [two definitions of one name](architecture/identity.md#two-definitions-of-one-name). | Nothing read the UUID. What it guarded, a definition that someone deleted and made again, the revision guards too, and it also guards the state of a rule and of a scenario, which had no UUID. |
+| Does GaslightMQ need a store for what it keeps, as Kubernetes has? | No. Its memory is that store, and a restart is a clean slate. | Nothing has to recognise a definition across runs yet, and a second store has to be kept in step with files that people edit. |
+| When does GaslightMQ read the files of the workspace? | Once, at the start, and again when someone asks for a reload. It does not watch them. See [loading](architecture/storage.md#loading). | A file that someone edits, or a branch that someone checks out, never changes an armed fault behind someone's back. |
+| What keeps a write from the UI from overwriting an edit by hand? | The store checks the file before it writes: it compares a hash of the bytes with the one it read, writes nothing when they differ, and replaces the file in one step. See [the check before a write](architecture/storage.md#the-check-before-a-write). | The engine does not see an edit until a reload, so the file has to say that it changed. |
 | What does a write from the UI do to a file that someone wrote by hand? | It rewrites the one definition that changed, in one fixed form, and leaves every other byte. The UI asks before a comment is lost. See [writing back](architecture/storage.md#writing-back). | People version the files with git, so a change of one definition has to be a diff of one definition. |
-| How are two clients kept from overwriting each other? | Whatever a request changes has a revision, and a change can name the one it expects. See [revisions](architecture/control-plane.md#revisions). | Two tabs, `gmq`, a scenario and a file edit change the same process. |
+| How are two clients kept from overwriting each other? | Whatever a request changes has a revision, and a change can name the one it expects. See [revisions](architecture/control-plane.md#revisions). | Two tabs, `gmq`, a scenario and a reload change the same process. |
+| Is a revision counted per definition? | No. One counter of the process gives every revision, so none comes back within a run. See [revision](architecture/identity.md#revision). | A counter per definition starts again when someone deletes a definition and makes it again, and a change that expects the old one would overwrite the new one. |
+| What tells the revisions of two runs apart? | The run ID: random, made at the start, and in the snapshot. A change that expects a revision names its run, and another run refuses it. See [run](architecture/identity.md#run). | Revisions start again with every run, and an undo from before a restart could arm a fault in a process where nothing is armed. |
+| Does arming a rule say which definition someone saw? | Yes. A rule in an environment has one revision, the later of its definition and its state. | Someone who arms a rule after another client changed it would arm a fault they have not seen. |
 | How is a recording identified, and a journal entry? | A recording by its environment and the instant it started, which is the name of its file. A journal entry by a number that its environment counts. See [identity](architecture/identity.md#recording-id). | A file name that says what it holds, and an order that needs no clock. |
 
 ### Control surfaces
@@ -153,7 +171,9 @@ The second part lists the decisions that were settled, with the reason and the s
 | Question | Decision | Reason |
 |---|---|---|
 | Where does the undo history live? | In the browser tab, in memory. The engine keeps none. See [undo and redo](domains/control-surfaces.md#undo-and-redo). | A tab takes back its own changes alone, and the engine stays a clean slate. |
-| How does an undo reach the engine? | As an ordinary operation: the inverse of the change, with the revision that the change left and the cause `undo`. See [undo](architecture/control-plane.md#undo). | The journal records it as a new change, and the control plane needs no second way to change something. |
+| How does an undo reach the engine? | As an ordinary operation: the inverse of the change, with the run and the revision that the change left and the cause `undo`. See [undo](architecture/control-plane.md#undo). | The journal records it as a new change, and the control plane needs no second way to change something. |
 | What happens to an undo when the state has moved on? | Nothing changes, and the UI drops the step and says so. | An undo can arm a fault against real clients, so the last writer does not win. |
 | What can an undo not take back? | What happened: a lie or an incident that fired, a step, and what clients did about them. | A client that got an error has already reacted. |
 | Who says which surface a change came from? | The request, for a pad, ⌘K, the UI, `gmq`, a test or another client. The engine, for a step, a lifetime and a file. See [surfaces](domains/observation.md#surfaces). | The journal says where every change came from, also one that nobody asked for. |
+| Does a press in latch toggle the pad? | No. It says the state it wants, *arm* or *disarm*. See [modes of play](domains/control-surfaces.md#modes-of-play). | Two people who press one pad to arm it would disarm it again. |
+| What happens when two people hold one pad? | The engine counts the holds, and disarms the rule when the last one goes. | The first release would disarm a rule that someone still holds. |
