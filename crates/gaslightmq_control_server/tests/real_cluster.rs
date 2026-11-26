@@ -539,6 +539,7 @@ async fn a_kept_live_rule_leaves_its_environment_for_the_workspace_and_stays_arm
         .send(CreateLiveRule {
             environment: staging.name().clone(),
             rule: made.clone(),
+            armed: false,
         })
         .await??;
     client
@@ -769,6 +770,7 @@ async fn a_rule_that_spends_its_budget_disarms_and_the_statistics_count_its_firi
         .send(CreateLiveRule {
             environment: staging.name().clone(),
             rule: once.clone(),
+            armed: false,
         })
         .await??;
     client
@@ -824,8 +826,8 @@ async fn a_rule_that_spends_its_budget_disarms_and_the_statistics_count_its_firi
 }
 
 #[tokio::test]
-async fn a_sentence_knows_the_client_that_wrote_through_the_environment_and_enter_arms_its_rule() -> anyhow::Result<()>
-{
+async fn a_sentence_knows_the_client_that_wrote_through_the_environment_and_enter_creates_its_rule_armed()
+-> anyhow::Result<()> {
     let cluster = KafkaCluster::plaintext().start().await?;
     let orders = cluster.topics().create("orders.eu").await?;
     let host = Arc::new(Host::new(
@@ -905,19 +907,13 @@ async fn a_sentence_knows_the_client_that_wrote_through_the_environment_and_ente
     assert_eq!(rule.name(), "delay-750ms-on-produce-orders-for-order-ingest");
     assert_eq!(rule.scope().to_string(), "client.id is order-ingest");
 
-    // Enter creates the rule as a live rule of the environment, and arms it.
-    client
-        .send(CreateLiveRule {
-            environment: staging.name().clone(),
-            rule: rule.clone(),
-        })
-        .await??;
-    client
-        .send(ArmRule {
-            environment: staging.name().clone(),
-            rule: rule.name().clone(),
-        })
-        .await??;
+    // Enter creates the rule as a live rule of the environment, armed, with one request of ⌘K.
+    let enter = CreateLiveRule {
+        environment: staging.name().clone(),
+        rule: rule.clone(),
+        armed: true,
+    };
+    client.send_from(RequestSurface::QuickInject, enter).await??;
     let armed_rule = StreamMessage::RuleChanged {
         environment: staging.name().clone(),
         rule: RuleStatus {

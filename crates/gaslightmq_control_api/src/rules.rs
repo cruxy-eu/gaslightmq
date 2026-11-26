@@ -35,10 +35,41 @@ impl Operation for ListEnvironmentRules {
     type Error = EnvironmentReadError;
 }
 
-/// Add a live rule to an environment, disarmed.
+/// Add a live rule to an environment, disarmed, or armed when the operation says so.
 ///
 /// A live rule stays in the memory of its environment, and never in the workspace, until someone
 /// [keeps](KeepRule) it. Its name is a name that no rule of the workspace and no other live rule has.
+///
+/// One gesture is one operation, so a ⌘K sentence creates its live rule armed.
+/// The operation applies as a whole: a rule that does not arm is no live rule either.
+///
+/// With `serde`, a rule that is created disarmed leaves `armed` out.
+///
+/// ```
+/// use gaslightmq_control_api::prelude::*;
+/// use gaslightmq_control_api::rule::{PresetName, Rule};
+/// use gaslightmq_control_api::selector::SelectorName;
+///
+/// // Enter in ⌘K: the rule of the sentence is a live rule of the environment shown, and it is armed.
+/// let rule = Rule::new(
+///     "delay-1s-on-order-producers".parse().expect("a rule name"),
+///     "order-producers".parse::<SelectorName>().expect("a selector name"),
+///     "delay-1s".parse::<PresetName>().expect("a preset name"),
+/// );
+/// let create = CreateLiveRule { environment: "orders-sim".parse().expect("an environment name"), rule, armed: true };
+/// let request = OperationRequest::new(RequestSurface::QuickInject, create);
+/// let request = serde_json::to_value(request).expect("a request has a form");
+/// assert_eq!(
+///     request,
+///     serde_json::json!({
+///         "from": { "surface": "quick-inject" },
+///         "operation": "create-live-rule",
+///         "environment": "orders-sim",
+///         "rule": { "name": "delay-1s-on-order-producers", "selector": "order-producers", "action": "delay-1s" },
+///         "armed": true,
+///     }),
+/// );
+/// ```
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct CreateLiveRule {
@@ -46,6 +77,9 @@ pub struct CreateLiveRule {
     pub environment: EnvironmentName,
     /// The rule, with its name.
     pub rule: Rule,
+    /// Whether the rule is armed from the moment it is there.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub armed: bool,
 }
 
 impl Operation for CreateLiveRule {
@@ -170,7 +204,8 @@ pub enum CreateLiveRuleError {
     /// The environment does not run.
     #[error("environment {:?} does not run", .environment.as_str())]
     NotRunning { environment: EnvironmentName },
-    /// A rule of the workspace or a live rule of the environment has the name already.
+    /// A rule of the workspace or a live rule of the environment has the name already,
+    /// or a rule of that name is armed there, so the new one cannot be.
     #[error("environment {:?} has a rule {:?} already", .environment.as_str(), .rule.as_str())]
     NameTaken {
         environment: EnvironmentName,

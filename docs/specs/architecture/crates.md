@@ -759,6 +759,7 @@ The conformance crates are [test support](#test-support-crates): no code that sh
   The traffic keeps as many names of each kind as its configuration says, and lets go of the name seen longest ago.
 - **Live rules belong to one environment.**
   A live rule resolves against the workspace when someone makes it or changes it.
+  Someone can make it armed: the host arms it and adds it as one step, so it is a live rule and armed, or neither.
   It stays in the memory of its environment until someone keeps it, deletes it, or stops the environment.
   *Keep* saves it in the workspace under its name, and it stays in the state it has.
   A change of a live rule that is armed keeps its counters.

@@ -4,6 +4,7 @@
 //! `gaslightmq_control_api`, sends operations and follows the live stream with `gaslightmq_control_client`,
 //! and turns pad presses into intents with `gaslightmq_surface`. It runs none of the engine's behaviour,
 //! and the Kafka codec never reaches the browser.
+//! Every request says which surface of the UI sends it: the pads, ⌘K, or any other view.
 //!
 //! The control server serves the UI from the address of the control plane, so the page and `/api/…` share one origin.
 //!

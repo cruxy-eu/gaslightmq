@@ -1,5 +1,5 @@
 //! ⌘K: only the answer to the sentence typed now counts, Tab takes a completion, and Enter on a whole sentence
-//! creates the live rule in the environment shown and arms it.
+//! creates the live rule in the environment shown, armed, with one operation.
 
 #![expect(
     clippy::unwrap_used,
@@ -10,7 +10,7 @@ use gaslightmq_control_api::environment::EnvironmentName;
 use gaslightmq_control_api::prelude::*;
 use gaslightmq_control_api::rule::{PresetName, Rule};
 use gaslightmq_control_api::selector::SelectorName;
-use gaslightmq_ui::palette::{Creation, Jump, Palette, PaletteItem};
+use gaslightmq_ui::palette::{Jump, Palette, PaletteItem};
 
 /// The rule that `delay-1s order-producers` gives.
 fn delayed_producers() -> Rule {
@@ -112,7 +112,7 @@ fn tab_takes_the_completion_and_asks_again() {
 }
 
 #[test]
-fn a_whole_sentence_creates_the_live_rule_in_the_environment_shown_and_arms_it() {
+fn a_whole_sentence_creates_the_live_rule_in_the_environment_shown_armed_with_one_operation() {
     let mut palette = Palette::default();
     let environment: EnvironmentName = "orders-sim".parse().unwrap();
     let question = palette.type_text("delay-1s order-producers".to_owned());
@@ -127,15 +127,10 @@ fn a_whole_sentence_creates_the_live_rule_in_the_environment_shown_and_arms_it()
 
     assert_eq!(
         palette.creation(&environment),
-        Some(Creation {
-            create: CreateLiveRule {
-                environment: environment.clone(),
-                rule: delayed_producers(),
-            },
-            arm: ArmRule {
-                environment,
-                rule: "delay-1s-on-order-producers".parse().unwrap(),
-            },
+        Some(CreateLiveRule {
+            environment,
+            rule: delayed_producers(),
+            armed: true,
         })
     );
 }

@@ -273,11 +273,32 @@ fn a_live_rule_carries_its_definition() {
     Form(AnyOperation::from(CreateLiveRule {
         environment: "orders-sim".parse().unwrap(),
         rule: OrderDesk::rule(),
+        armed: false,
     }))
     .writes(json!({
         "operation": "create-live-rule",
         "environment": "orders-sim",
         "rule": Form(OrderDesk::rule()).json(),
+    }));
+}
+
+#[test]
+fn a_sentence_creates_its_live_rule_armed_in_one_request() {
+    // Enter in ⌘K: the rule is there and armed, or neither.
+    Form(OperationRequest::new(
+        RequestSurface::QuickInject,
+        CreateLiveRule {
+            environment: "orders-sim".parse().unwrap(),
+            rule: OrderDesk::rule(),
+            armed: true,
+        },
+    ))
+    .writes(json!({
+        "from": { "surface": "quick-inject" },
+        "operation": "create-live-rule",
+        "environment": "orders-sim",
+        "rule": Form(OrderDesk::rule()).json(),
+        "armed": true,
     }));
 }
 

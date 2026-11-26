@@ -295,6 +295,7 @@ async fn live_rules_pads_and_sessions_need_an_environment_that_runs() -> anyhow:
         .send(CreateLiveRule {
             environment: staging.clone(),
             rule: hold.clone(),
+            armed: true,
         })
         .await?;
     let kept = client

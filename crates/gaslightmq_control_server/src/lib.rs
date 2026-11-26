@@ -61,6 +61,7 @@
 //! - **An environment starts by its name.** The server reads it from the workspace, makes its
 //!   configuration as the environment says, and hands that to the host.
 //! - **A rule of an environment** is a rule of the workspace or a live rule of that environment.
+//!   A live rule that is created armed is there and armed, or neither.
 //!   Pads, live rules, keeping one and the sessions of an environment are the host's.
 //!
 //! # The live stream follows the host

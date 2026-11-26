@@ -89,6 +89,7 @@ and a client and a server share them.
 - **One gesture is one operation.**
   Whatever a surface does in one gesture is one request, so it applies as a whole or not at all.
   A ⌘K sentence creates its live rule armed, with one operation.
+  A rule that does not arm is no live rule either: creating it fails with `name-taken` when a rule of its name is armed in the environment already.
 
 ## Where a request comes from
 

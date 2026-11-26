@@ -105,7 +105,7 @@
 //! | [`Host::fire`] | [`FireRuleError`] | The environment does not run, the rule is not armed or fires no more, its incident needs a call, or the backend rejects it. |
 //! | [`Host::read_sentence`] | [`ReadSentenceError`] | The environment does not run, or the workspace could not be read. |
 //! | [`Host::rules_of`], [`Host::rule_of`] | [`EnvironmentRulesError`] | The environment does not run, or the rules could not be read. |
-//! | [`Host::create_live_rule`] | [`CreateLiveRuleError`] | The environment does not run, a rule has the name, or the rule does not resolve. |
+//! | [`Host::create_live_rule`], [`Host::create_live_rule_armed`] | [`CreateLiveRuleError`] | The environment does not run, a rule has the name, or the rule does not resolve. |
 //! | [`Host::update_live_rule`] | [`UpdateLiveRuleError`] | The environment does not run, it has no live rule of the name, or the rule does not resolve. |
 //! | [`Host::delete_live_rule`] | [`DeleteLiveRuleError`] | The environment does not run, or it has no live rule of the name. |
 //! | [`Host::keep`] | [`KeepRuleError`] | The environment does not run, it has no live rule of the name, or the workspace did not take it. |

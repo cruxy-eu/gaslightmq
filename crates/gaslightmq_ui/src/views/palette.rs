@@ -90,13 +90,10 @@ pub fn QuickInject() -> Element {
                         return;
                     };
                     drop(live);
-                    let label = rule_label(&creation.create.rule);
-                    let after = ui.clone();
-                    ui.send_from(RequestSurface::QuickInject, creation.create, move |()| {
-                        let done = after.clone();
-                        after.send_from(RequestSurface::QuickInject, creation.arm, move |()| {
-                            done.notify(format!("Armed the live rule {label}"), false);
-                        });
+                    let label = rule_label(&creation.rule);
+                    let done = ui.clone();
+                    ui.send_from(RequestSurface::QuickInject, creation, move |()| {
+                        done.notify(format!("Armed the live rule {label}"), false);
                     });
                     palette.set(Palette::default());
                     open.set(false);

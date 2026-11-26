@@ -150,9 +150,7 @@ impl<C: WorkspaceContext + 'static> ControlPlane<C> {
             AnyOperation::ListEnvironmentRules(list) => {
                 Reply::of::<ListEnvironmentRules>(self.environment_rules(list.environment).await)
             }
-            AnyOperation::CreateLiveRule(create) => {
-                Reply::of::<CreateLiveRule>(self.create_live_rule(create.environment, create.rule).await)
-            }
+            AnyOperation::CreateLiveRule(create) => Reply::of::<CreateLiveRule>(self.create_live_rule(create).await),
             AnyOperation::UpdateLiveRule(update) => {
                 Reply::of::<UpdateLiveRule>(self.update_live_rule(update.environment, update.rule).await)
             }
@@ -286,11 +284,22 @@ impl<C: WorkspaceContext + 'static> ControlPlane<C> {
         }
     }
 
-    async fn create_live_rule(&self, environment: EnvironmentName, rule: Rule) -> Result<(), CreateLiveRuleError> {
+    /// Adds the live rule, armed when the operation says so: the host arms and adds it as one step.
+    async fn create_live_rule(&self, create: CreateLiveRule) -> Result<(), CreateLiveRuleError> {
         use gaslightmq_host::CreateLiveRuleError as Host;
+        let CreateLiveRule {
+            environment,
+            rule,
+            armed,
+        } = create;
         let name = rule.name().clone();
-        match self.host.create_live_rule(&environment, rule).await {
-            Ok(_) => Ok(()),
+        let created = if armed {
+            self.host.create_live_rule_armed(&environment, rule).await.map(|_| ())
+        } else {
+            self.host.create_live_rule(&environment, rule).await.map(|_| ())
+        };
+        match created {
+            Ok(()) => Ok(()),
             Err(Host::NotRunning { environment }) => Err(CreateLiveRuleError::NotRunning { environment }),
             Err(Host::NameTaken { environment, rule }) => Err(CreateLiveRuleError::NameTaken { environment, rule }),
             Err(Host::StoreFailed { rule, reason }) => Err(CreateLiveRuleError::StoreFailed { rule, reason }),

@@ -241,15 +241,17 @@ pub enum EnvironmentRulesError {
     },
 }
 
-/// Why a host did not [add a live rule](crate::Host::create_live_rule) to an environment.
+/// Why a host did not [add a live rule](crate::Host::create_live_rule) to an environment,
+/// disarmed or [armed](crate::Host::create_live_rule_armed).
 ///
-/// A rule that was not added changed nothing.
+/// A rule that was not added changed nothing: it is not armed either.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum CreateLiveRuleError {
     /// No environment of this name runs.
     #[error("environment {:?} does not run", .environment.as_str())]
     NotRunning { environment: EnvironmentName },
-    /// A rule of the workspace or a live rule of the environment has the name already.
+    /// A rule of the workspace or a live rule of the environment has the name already,
+    /// or a rule of that name is armed there, so the new one cannot be.
     #[error("environment {:?} has a rule {:?} already", .environment.as_str(), .rule.as_str())]
     NameTaken {
         environment: EnvironmentName,
