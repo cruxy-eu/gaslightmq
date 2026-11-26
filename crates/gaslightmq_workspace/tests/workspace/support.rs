@@ -10,6 +10,7 @@ use gaslightmq_field::prelude::*;
 use gaslightmq_kernel::prelude::*;
 use gaslightmq_lie::prelude::*;
 use gaslightmq_rule::prelude::*;
+use gaslightmq_scenario::prelude::*;
 use gaslightmq_selector::prelude::*;
 use gaslightmq_surface::prelude::*;
 use gaslightmq_workspace::prelude::*;
@@ -141,6 +142,7 @@ pub struct ReadOnlyPresets {
     selectors: MemoryStore<Selector>,
     presets: ReadOnly<Preset>,
     rules: MemoryStore<Rule>,
+    scenarios: MemoryStore<Scenario>,
     layouts: MemoryStore<PadLayout>,
     environments: MemoryStore<Environment>,
 }
@@ -152,6 +154,7 @@ impl ReadOnlyPresets {
             selectors: MemoryStore::new(),
             presets: ReadOnly(presets),
             rules: MemoryStore::new(),
+            scenarios: MemoryStore::new(),
             layouts: MemoryStore::new(),
             environments: MemoryStore::new(),
         }
@@ -162,6 +165,7 @@ impl Stores for ReadOnlyPresets {
     type Selectors = MemoryStore<Selector>;
     type Presets = ReadOnly<Preset>;
     type Rules = MemoryStore<Rule>;
+    type Scenarios = MemoryStore<Scenario>;
     type Layouts = MemoryStore<PadLayout>;
     type Environments = MemoryStore<Environment>;
 
@@ -175,6 +179,10 @@ impl Stores for ReadOnlyPresets {
 
     fn rules(&self) -> &MemoryStore<Rule> {
         &self.rules
+    }
+
+    fn scenarios(&self) -> &MemoryStore<Scenario> {
+        &self.scenarios
     }
 
     fn layouts(&self) -> &MemoryStore<PadLayout> {
@@ -192,6 +200,7 @@ pub struct UnreadableRules {
     selectors: MemoryStore<Selector>,
     presets: MemoryStore<Preset>,
     rules: Unreadable,
+    scenarios: MemoryStore<Scenario>,
     layouts: MemoryStore<PadLayout>,
     environments: MemoryStore<Environment>,
 }
@@ -206,6 +215,7 @@ impl Stores for UnreadableRules {
     type Selectors = MemoryStore<Selector>;
     type Presets = MemoryStore<Preset>;
     type Rules = Unreadable;
+    type Scenarios = MemoryStore<Scenario>;
     type Layouts = MemoryStore<PadLayout>;
     type Environments = MemoryStore<Environment>;
 
@@ -219,6 +229,10 @@ impl Stores for UnreadableRules {
 
     fn rules(&self) -> &Unreadable {
         &self.rules
+    }
+
+    fn scenarios(&self) -> &MemoryStore<Scenario> {
+        &self.scenarios
     }
 
     fn layouts(&self) -> &MemoryStore<PadLayout> {

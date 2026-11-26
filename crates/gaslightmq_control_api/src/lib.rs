@@ -182,9 +182,11 @@
 //!
 //! # What the control plane does not hold yet
 //!
-//! Scenarios, recordings and capture arrive with the crates of their domains,
+//! Scenarios travel as definitions: the state of a process holds them, and a change of one is a message of the
+//! live stream. No operation creates, changes, activates or steps a scenario yet.
+//! Recordings and capture arrive with the crates of their domains,
 //! and the World with the broker. Their operations and messages arrive with them,
-//! and so do the entries of the journal for scenarios, steps and recordings.
+//! and so do the entries of the journal for steps and recordings.
 //!
 //! # No IO
 //!
@@ -200,6 +202,7 @@ pub use gaslightmq_journal as journal;
 pub use gaslightmq_kernel as kernel;
 pub use gaslightmq_lie as lie;
 pub use gaslightmq_rule as rule;
+pub use gaslightmq_scenario as scenario;
 pub use gaslightmq_selector as selector;
 pub use gaslightmq_surface as surface;
 pub use gaslightmq_trigger as trigger;

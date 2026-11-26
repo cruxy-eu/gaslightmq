@@ -85,6 +85,7 @@ impl<C: WorkspaceContext> Reload<'_, C> {
         stores.selectors().take_reading().await;
         stores.presets().take_reading().await;
         stores.rules().take_reading().await;
+        stores.scenarios().take_reading().await;
         stores.layouts().take_reading().await;
         stores.environments().take_reading().await;
 
@@ -132,6 +133,7 @@ impl<C: WorkspaceContext> Workspace<C> {
             read_again(stores.selectors(), &mut failures).await,
             read_again(stores.presets(), &mut failures).await,
             read_again(stores.rules(), &mut failures).await,
+            read_again(stores.scenarios(), &mut failures).await,
             read_again(stores.layouts(), &mut failures).await,
             read_again(stores.environments(), &mut failures).await,
         );

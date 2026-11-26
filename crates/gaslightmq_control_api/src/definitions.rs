@@ -5,6 +5,7 @@ use std::marker::PhantomData;
 
 use gaslightmq_environment::{Environment, EnvironmentName};
 use gaslightmq_rule::{Preset, PresetName, Rule, RuleName};
+use gaslightmq_scenario::{Scenario, ScenarioName};
 use gaslightmq_selector::{Selector, SelectorName};
 use gaslightmq_surface::{LayoutName, PadLayout};
 use serde::de::DeserializeOwned;
@@ -85,6 +86,8 @@ pub enum AnyDefinition {
     Preset(Preset),
     /// A rule of the workspace.
     Rule(Rule),
+    /// A scenario.
+    Scenario(Scenario),
     /// A pad layout.
     Layout(PadLayout),
     /// An environment.
@@ -98,6 +101,7 @@ impl AnyDefinition {
             AnyDefinition::Selector(selector) => selector.name().clone().into(),
             AnyDefinition::Preset(preset) => preset.name().clone().into(),
             AnyDefinition::Rule(rule) => rule.name().clone().into(),
+            AnyDefinition::Scenario(scenario) => scenario.name().clone().into(),
             AnyDefinition::Layout(layout) => layout.name().clone().into(),
             AnyDefinition::Environment(environment) => environment.name().clone().into(),
         }
@@ -131,6 +135,8 @@ pub enum DefinitionRef {
     Preset(PresetName),
     /// The name of a rule.
     Rule(RuleName),
+    /// The name of a scenario.
+    Scenario(ScenarioName),
     /// The name of a pad layout.
     Layout(LayoutName),
     /// The name of an environment.
@@ -144,6 +150,7 @@ impl fmt::Display for DefinitionRef {
             DefinitionRef::Selector(name) => ("selector", name.as_str()),
             DefinitionRef::Preset(name) => ("preset", name.as_str()),
             DefinitionRef::Rule(name) => ("rule", name.as_str()),
+            DefinitionRef::Scenario(name) => ("scenario", name.as_str()),
             DefinitionRef::Layout(name) => ("layout", name.as_str()),
             DefinitionRef::Environment(name) => ("environment", name.as_str()),
         };
@@ -166,6 +173,12 @@ impl From<PresetName> for DefinitionRef {
 impl From<RuleName> for DefinitionRef {
     fn from(name: RuleName) -> Self {
         DefinitionRef::Rule(name)
+    }
+}
+
+impl From<ScenarioName> for DefinitionRef {
+    fn from(name: ScenarioName) -> Self {
+        DefinitionRef::Scenario(name)
     }
 }
 
@@ -231,6 +244,8 @@ pub struct Definitions {
     pub presets: Vec<DefinitionStatus<Preset>>,
     /// Every rule of the workspace. Live rules belong to an environment, and are not here.
     pub rules: Vec<DefinitionStatus<Rule>>,
+    /// Every scenario.
+    pub scenarios: Vec<DefinitionStatus<Scenario>>,
     /// Every pad layout.
     pub layouts: Vec<DefinitionStatus<PadLayout>>,
     /// Every environment, whether it runs or not.

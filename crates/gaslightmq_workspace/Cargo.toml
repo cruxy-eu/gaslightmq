@@ -13,6 +13,7 @@ memory = [
     "dep:gaslightmq_definition_memory",
     "gaslightmq_environment/memory",
     "gaslightmq_rule/memory",
+    "gaslightmq_scenario/memory",
     "gaslightmq_selector/memory",
     "gaslightmq_surface/memory",
 ]
@@ -23,6 +24,7 @@ gaslightmq_definition_memory = { workspace = true, optional = true }
 gaslightmq_environment.workspace = true
 gaslightmq_resource.workspace = true
 gaslightmq_rule.workspace = true
+gaslightmq_scenario.workspace = true
 gaslightmq_selector.workspace = true
 gaslightmq_surface.workspace = true
 thiserror.workspace = true

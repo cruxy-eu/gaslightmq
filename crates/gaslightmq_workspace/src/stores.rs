@@ -2,6 +2,7 @@
 
 use gaslightmq_environment::EnvironmentStore;
 use gaslightmq_rule::{PresetStore, RuleStore};
+use gaslightmq_scenario::ScenarioStore;
 use gaslightmq_selector::SelectorStore;
 use gaslightmq_surface::LayoutStore;
 
@@ -9,7 +10,7 @@ use gaslightmq_surface::LayoutStore;
 ///
 /// Whatever keeps the definitions of a workspace implements this once, and names the store of each kind.
 /// The files of a workspace are one such set of stores, and memory is another.
-/// The five need not be of one sort: the rules can be in files while the layouts are in memory.
+/// The six need not be of one sort: the rules can be in files while the layouts are in memory.
 ///
 /// Reading goes to a store directly, because no rule of a workspace is about reading.
 /// Changes go through the [`Workspace`](crate::Workspace), which checks them first.
@@ -34,6 +35,8 @@ pub trait Stores: Send + Sync {
     type Presets: PresetStore;
     /// What keeps the rules.
     type Rules: RuleStore;
+    /// What keeps the scenarios.
+    type Scenarios: ScenarioStore;
     /// What keeps the pad layouts.
     type Layouts: LayoutStore;
     /// What keeps the environments.
@@ -47,6 +50,9 @@ pub trait Stores: Send + Sync {
 
     /// The store of the rules.
     fn rules(&self) -> &Self::Rules;
+
+    /// The store of the scenarios.
+    fn scenarios(&self) -> &Self::Scenarios;
 
     /// The store of the pad layouts.
     fn layouts(&self) -> &Self::Layouts;

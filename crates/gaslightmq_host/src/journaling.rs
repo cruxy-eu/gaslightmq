@@ -21,6 +21,7 @@ pub(crate) fn definition(name: &DefinitionName) -> RecordedDefinition {
         DefinitionName::Selector(name) => RecordedDefinition::Selector(recorded(name.as_str())),
         DefinitionName::Preset(name) => RecordedDefinition::Preset(recorded(name.as_str())),
         DefinitionName::Rule(name) => RecordedDefinition::Rule(recorded(name.as_str())),
+        DefinitionName::Scenario(name) => RecordedDefinition::Scenario(recorded(name.as_str())),
         DefinitionName::Layout(name) => RecordedDefinition::Layout(recorded(name.as_str())),
         DefinitionName::Environment(name) => RecordedDefinition::Environment(recorded(name.as_str())),
     }

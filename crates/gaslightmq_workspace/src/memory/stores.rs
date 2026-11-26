@@ -3,6 +3,7 @@
 use gaslightmq_definition_memory::MemoryStore;
 use gaslightmq_environment::Environment;
 use gaslightmq_rule::{Preset, Rule};
+use gaslightmq_scenario::Scenario;
 use gaslightmq_selector::Selector;
 use gaslightmq_surface::PadLayout;
 
@@ -32,6 +33,7 @@ pub struct MemoryStores {
     selectors: MemoryStore<Selector>,
     presets: MemoryStore<Preset>,
     rules: MemoryStore<Rule>,
+    scenarios: MemoryStore<Scenario>,
     layouts: MemoryStore<PadLayout>,
     environments: MemoryStore<Environment>,
 }
@@ -47,6 +49,7 @@ impl Stores for MemoryStores {
     type Selectors = MemoryStore<Selector>;
     type Presets = MemoryStore<Preset>;
     type Rules = MemoryStore<Rule>;
+    type Scenarios = MemoryStore<Scenario>;
     type Layouts = MemoryStore<PadLayout>;
     type Environments = MemoryStore<Environment>;
 
@@ -60,6 +63,10 @@ impl Stores for MemoryStores {
 
     fn rules(&self) -> &MemoryStore<Rule> {
         &self.rules
+    }
+
+    fn scenarios(&self) -> &MemoryStore<Scenario> {
+        &self.scenarios
     }
 
     fn layouts(&self) -> &MemoryStore<PadLayout> {

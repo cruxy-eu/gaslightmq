@@ -16,6 +16,7 @@ sans_io_modules = ["access", "document", "error", "held", "kind", "text"]
 gaslightmq_definition_api.workspace = true
 gaslightmq_environment = { workspace = true, features = ["serde"] }
 gaslightmq_rule = { workspace = true, features = ["serde"] }
+gaslightmq_scenario = { workspace = true, features = ["serde"] }
 gaslightmq_selector = { workspace = true, features = ["serde"] }
 gaslightmq_surface = { workspace = true, features = ["serde"] }
 gaslightmq_workspace.workspace = true

@@ -4,6 +4,7 @@ use gaslightmq_control_api::environment::Environment;
 use gaslightmq_control_api::journal::ChangeSource;
 use gaslightmq_control_api::prelude::*;
 use gaslightmq_control_api::rule::{Preset, Rule};
+use gaslightmq_control_api::scenario::Scenario;
 use gaslightmq_control_api::selector::Selector;
 use gaslightmq_control_api::surface::PadLayout;
 use gaslightmq_definition_api::{Definition, Store, StoreReadError};
@@ -44,6 +45,7 @@ stored! {
     Selector => selectors;
     Preset => presets;
     Rule => rules;
+    Scenario => scenarios;
     PadLayout => layouts;
     Environment => environments;
 }
@@ -110,6 +112,7 @@ pub(crate) async fn every<C: WorkspaceContext>(workspace: &Workspace<C>) -> Resu
         selectors: list_with_revisions(workspace).await?,
         presets: list_with_revisions(workspace).await?,
         rules: list_with_revisions(workspace).await?,
+        scenarios: list_with_revisions(workspace).await?,
         layouts: list_with_revisions(workspace).await?,
         environments: list_with_revisions(workspace).await?,
     })
@@ -265,6 +268,7 @@ pub(crate) async fn named<C: WorkspaceContext>(
         DefinitionName::Selector(name) => get::<Selector, C>(workspace, name).await?.map(AnyDefinition::Selector),
         DefinitionName::Preset(name) => get::<Preset, C>(workspace, name).await?.map(AnyDefinition::Preset),
         DefinitionName::Rule(name) => get::<Rule, C>(workspace, name).await?.map(AnyDefinition::Rule),
+        DefinitionName::Scenario(name) => get::<Scenario, C>(workspace, name).await?.map(AnyDefinition::Scenario),
         DefinitionName::Layout(name) => get::<PadLayout, C>(workspace, name).await?.map(AnyDefinition::Layout),
         DefinitionName::Environment(name) => get::<Environment, C>(workspace, name)
             .await?
@@ -278,6 +282,7 @@ pub(crate) fn reference(name: DefinitionName) -> DefinitionRef {
         DefinitionName::Selector(name) => name.into(),
         DefinitionName::Preset(name) => name.into(),
         DefinitionName::Rule(name) => name.into(),
+        DefinitionName::Scenario(name) => name.into(),
         DefinitionName::Layout(name) => name.into(),
         DefinitionName::Environment(name) => name.into(),
     }
