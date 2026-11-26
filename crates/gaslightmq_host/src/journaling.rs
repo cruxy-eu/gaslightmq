@@ -114,26 +114,6 @@ mod tests {
 
     use super::*;
 
-    fn delay_1s() -> Preset {
-        Preset::new(
-            "delay-1s".parse().unwrap(),
-            TimingLie::new().with_delay(TimeSpan::from_secs(1)),
-        )
-    }
-
-    fn presets() -> PresetSet {
-        PresetSet::new([delay_1s()]).unwrap()
-    }
-
-    /// A rule that delays every call by the preset `delay-1s`.
-    fn slow() -> Rule {
-        Rule::new(
-            "slow-order-producers".parse().unwrap(),
-            Conditions::new(),
-            delay_1s().name().clone(),
-        )
-    }
-
     #[test]
     fn every_encoder_changes_one_parameter_and_two_of_them_the_lifetime() {
         let parameters = Encoder::ALL.map(parameter);
@@ -155,43 +135,62 @@ mod tests {
 
     #[test]
     fn a_parameter_of_the_action_is_read_through_the_preset_that_the_rule_names() {
-        assert_eq!(value(Parameter::Delay, &slow(), &presets()), Some("1s".to_owned()));
-        assert_eq!(value(Parameter::Jitter, &slow(), &presets()), Some("0s".to_owned()));
-        assert_eq!(value(Parameter::Throttle, &slow(), &presets()), Some("0s".to_owned()));
-        // A delay has no error to tell.
-        assert_eq!(value(Parameter::Error, &slow(), &presets()), None);
-        // Nobody holds the preset, so nobody knows the delay.
-        assert_eq!(value(Parameter::Delay, &slow(), &PresetSet::default()), None);
+        let delay_1s = Preset::new(
+            "delay-1s".parse().unwrap(),
+            TimingLie::new().with_delay(TimeSpan::from_secs(1)),
+        );
+        let slow = Rule::new(
+            "slow-order-producers".parse().unwrap(),
+            Conditions::new(),
+            delay_1s.name().clone(),
+        );
+        let presets = PresetSet::new([delay_1s]).unwrap();
 
-        let refusal = slow().with_action(RefusalLie::new(ErrorCode::NOT_LEADER_OR_FOLLOWER));
+        assert_eq!(value(Parameter::Delay, &slow, &presets), Some("1s".to_owned()));
+        assert_eq!(value(Parameter::Jitter, &slow, &presets), Some("0s".to_owned()));
+        assert_eq!(value(Parameter::Throttle, &slow, &presets), Some("0s".to_owned()));
+        // A delay has no error to tell.
+        assert_eq!(value(Parameter::Error, &slow, &presets), None);
+        // Nobody holds the preset, so nobody knows the delay.
+        assert_eq!(value(Parameter::Delay, &slow, &PresetSet::default()), None);
+
+        let refusal = slow.with_action(RefusalLie::new(ErrorCode::NOT_LEADER_OR_FOLLOWER));
         assert_eq!(
-            value(Parameter::Error, &refusal, &presets()),
+            value(Parameter::Error, &refusal, &presets),
             Some("NOT_LEADER_OR_FOLLOWER".to_owned())
         );
-        assert_eq!(value(Parameter::Delay, &refusal, &presets()), None);
+        assert_eq!(value(Parameter::Delay, &refusal, &presets), None);
     }
 
     #[test]
     fn a_trigger_that_leaves_a_part_out_fires_on_every_match() {
-        assert_eq!(value(Parameter::Chance, &slow(), &presets()), Some("100%".to_owned()));
-        assert_eq!(value(Parameter::Every, &slow(), &presets()), Some("1".to_owned()));
+        let silence = Rule::new("blackhole".parse().unwrap(), Conditions::new(), LieDefinition::Silence);
+        let no_presets = PresetSet::default();
 
-        let rarer = slow().with_trigger(TriggerParts::new().with_chance("40%".parse().unwrap()));
-        assert_eq!(value(Parameter::Chance, &rarer, &presets()), Some("40%".to_owned()));
+        assert_eq!(value(Parameter::Chance, &silence, &no_presets), Some("100%".to_owned()));
+        assert_eq!(value(Parameter::Every, &silence, &no_presets), Some("1".to_owned()));
 
-        let by_hand = slow().with_trigger(Trigger::Manual);
-        assert_eq!(value(Parameter::Chance, &by_hand, &presets()), None);
-        assert_eq!(value(Parameter::Every, &by_hand, &presets()), None);
+        let rarer = silence
+            .clone()
+            .with_trigger(TriggerParts::new().with_chance("40%".parse().unwrap()));
+        assert_eq!(value(Parameter::Chance, &rarer, &no_presets), Some("40%".to_owned()));
+
+        let by_hand = silence.with_trigger(Trigger::Manual);
+        assert_eq!(value(Parameter::Chance, &by_hand, &no_presets), None);
+        assert_eq!(value(Parameter::Every, &by_hand, &no_presets), None);
     }
 
     #[test]
     fn the_lifetime_is_written_as_a_definition_writes_it() {
+        let silence = Rule::new("blackhole".parse().unwrap(), Conditions::new(), LieDefinition::Silence);
+        let no_presets = PresetSet::default();
+
         assert_eq!(
-            value(Parameter::Lifetime, &slow(), &presets()),
+            value(Parameter::Lifetime, &silence, &no_presets),
             Some("until disarmed".to_owned())
         );
 
-        let short = slow().with_lifetime(Lifetime::Duration(TimeSpan::from_secs(30)));
-        assert_eq!(value(Parameter::Lifetime, &short, &presets()), Some("30s".to_owned()));
+        let short = silence.with_lifetime(Lifetime::Duration(TimeSpan::from_secs(30)));
+        assert_eq!(value(Parameter::Lifetime, &short, &no_presets), Some("30s".to_owned()));
     }
 }

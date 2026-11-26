@@ -100,9 +100,9 @@ Each environment has a journal of its own.
 | Entry | Records |
 |---|---|
 | Rule armed or disarmed | The rule. |
-| Parameter changed | The live rule, the parameter, the old and the new value. |
+| Parameter changed | The live rule, the parameter, the old and the new value. A turn of an encoder changes one parameter. |
 | Rule fired by hand | The rule. |
-| Live rule made, changed, kept or deleted | The rule. |
+| Live rule made, changed, kept or deleted | The rule. *Changed* is an update that replaces the definition as a whole. A rule that is made armed has two entries with one revision: made, and armed. An armed rule that is deleted has two as well: disarmed, and deleted. |
 | Definition created, changed or deleted | The definition and its kind. |
 | Scenario activated or deactivated, step advanced | The scenario, and the step by its name. |
 | Incident applied or emulated | The incident and its consequences. |

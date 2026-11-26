@@ -27,10 +27,6 @@ fn rejects<T: DeserializeOwned + Debug>(json: &str, reason: &str) {
     assert!(error.contains(reason), "{json}: {error:?} does not hold {reason:?}");
 }
 
-fn name(text: &str) -> RecordedName {
-    text.parse().unwrap()
-}
-
 /// A cluster in which broker 2 leads one partition, and hosts no coordinator.
 struct Cluster;
 
@@ -44,15 +40,7 @@ impl Topology for Cluster {
     }
 }
 
-/// Broker 2 goes down without a failover, which leaves its partition without a leader.
-fn broker_2_went_down() -> ExpandedIncident {
-    let down = Incident::BrokerGoesDown {
-        broker: BrokerId::from(2),
-        failover: false,
-    };
-    down.expand(&Cluster)
-}
-
+/// What an incident writes when broker 2 goes down without a failover, which leaves its partition without a leader.
 const BROKER_2_WENT_DOWN: &str = r#"{"incident":"broker-goes-down","broker":2,"consequences":[{"consequence":"leaderless","partition":"orders.eu/3"}]}"#;
 
 #[test]
@@ -68,27 +56,30 @@ fn an_entry_id_and_a_revision_are_numbers() {
 
 #[test]
 fn a_recorded_name_is_its_text_and_a_definition_is_its_kind_and_its_name() {
-    writes(&name("slow-order-producers"), r#""slow-order-producers""#);
+    writes(
+        &"slow-order-producers".parse::<RecordedName>().unwrap(),
+        r#""slow-order-producers""#,
+    );
     rejects::<RecordedName>(r#""""#, "recorded name \"\" is empty");
 
     writes(
-        &RecordedDefinition::Selector(name("order-producers")),
+        &RecordedDefinition::Selector("order-producers".parse().unwrap()),
         r#"{"selector":"order-producers"}"#,
     );
     writes(
-        &RecordedDefinition::Preset(name("delay-1s")),
+        &RecordedDefinition::Preset("delay-1s".parse().unwrap()),
         r#"{"preset":"delay-1s"}"#,
     );
     writes(
-        &RecordedDefinition::Rule(name("slow-order-producers")),
+        &RecordedDefinition::Rule("slow-order-producers".parse().unwrap()),
         r#"{"rule":"slow-order-producers"}"#,
     );
     writes(
-        &RecordedDefinition::Layout(name("order-desk")),
+        &RecordedDefinition::Layout("order-desk".parse().unwrap()),
         r#"{"layout":"order-desk"}"#,
     );
     writes(
-        &RecordedDefinition::Environment(name("orders-sim")),
+        &RecordedDefinition::Environment("orders-sim".parse().unwrap()),
         r#"{"environment":"orders-sim"}"#,
     );
     rejects::<RecordedDefinition>(r#"{"scenario":"black-friday"}"#, "unknown variant");
@@ -142,8 +133,16 @@ fn a_source_leaves_out_the_cause_it_does_not_have() {
 
 #[test]
 fn a_change_names_itself_in_its_change_key() {
-    let rule = || name("slow-order-producers");
-    let definition = || RecordedDefinition::Preset(name("delay-1s"));
+    let rule = || -> RecordedName { "slow-order-producers".parse().unwrap() };
+    // Broker 2 goes down without a failover, in a cluster where it leads one partition.
+    let broker_2_went_down = || {
+        let down = Incident::BrokerGoesDown {
+            broker: BrokerId::from(2),
+            failover: false,
+        };
+        down.expand(&Cluster)
+    };
+    let definition = || RecordedDefinition::Preset("delay-1s".parse().unwrap());
 
     writes(
         &Change::RuleArmed { rule: rule() },
@@ -236,7 +235,7 @@ fn an_entry_is_its_change_with_its_other_parts_next_to_it() {
         revision: Some(Revision::new(12)),
         from: ChangeSource::new(ChangeSurface::Pad).with_cause(ChangeCause::Redo),
         change: Change::RuleArmed {
-            rule: name("slow-order-producers"),
+            rule: "slow-order-producers".parse().unwrap(),
         },
     };
 
@@ -254,7 +253,7 @@ fn an_entry_of_what_left_no_revision_leaves_the_key_out() {
         revision: None,
         from: ChangeSource::new(ChangeSurface::Cli),
         change: Change::RuleFiredByHand {
-            rule: name("slow-order-producers"),
+            rule: "slow-order-producers".parse().unwrap(),
         },
     };
 

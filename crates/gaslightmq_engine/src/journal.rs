@@ -100,47 +100,39 @@ mod tests {
     use super::*;
     use crate::EventBacklog;
 
-    fn journal(size: RecentJournalSize, clock: &SteppedClock) -> (Journal, Arc<EventBus>) {
-        let events = Arc::new(EventBus::new(EventBacklog::default()));
-        let journal = Journal::new(size, Arc::new(clock.clone()), Arc::clone(&events));
-        (journal, events)
-    }
-
-    fn rule() -> RecordedName {
-        "slow-order-producers".parse().unwrap()
-    }
-
     #[test]
     fn an_entry_takes_the_next_number_and_the_instant_of_the_clock() {
         let clock = SteppedClock::new();
-        let (journal, _events) = journal(RecentJournalSize::default(), &clock);
+        let events = Arc::new(EventBus::new(EventBacklog::default()));
+        let journal = Journal::new(RecentJournalSize::default(), Arc::new(clock.clone()), events);
+        let rule: RecordedName = "slow-order-producers".parse().unwrap();
+        let lifetime = Duration::from_secs(30);
 
-        let armed = journal.record(
-            Change::RuleArmed { rule: rule() },
-            ChangeSurface::Pad,
-            Some(Revision::new(2)),
-        );
-        let later = clock.advance(Duration::from_secs(30));
-        let disarmed = journal.record(
-            Change::RuleDisarmed { rule: rule() },
-            ChangeSurface::Lifetime,
-            Some(Revision::new(3)),
-        );
+        // Someone arms the rule at a pad, and its lifetime ends thirty seconds later.
+        let armed = Change::RuleArmed { rule: rule.clone() };
+        let armed = journal.record(armed, ChangeSurface::Pad, Some(Revision::new(2)));
+        let ended_at = clock.advance(lifetime);
+        let disarmed = Change::RuleDisarmed { rule };
+        let disarmed = journal.record(disarmed, ChangeSurface::Lifetime, Some(Revision::new(3)));
 
         assert_eq!(armed.id, JournalEntryId::FIRST);
         assert_eq!(disarmed.id, JournalEntryId::FIRST.next());
-        assert_eq!(disarmed.at, later);
-        assert_eq!(disarmed.at - armed.at, Duration::from_secs(30));
+        assert_eq!(disarmed.at, ended_at);
+        assert_eq!(disarmed.at - armed.at, lifetime);
         assert_eq!(journal.entries(), [armed.clone(), disarmed.clone()]);
         assert_eq!(journal.after(armed.id), [disarmed]);
     }
 
     #[test]
     fn a_clone_of_the_handle_leads_to_the_same_journal() {
-        let (journal, _events) = journal(RecentJournalSize::default(), &SteppedClock::new());
+        let events = Arc::new(EventBus::new(EventBacklog::default()));
+        let journal = Journal::new(RecentJournalSize::default(), Arc::new(SteppedClock::new()), events);
         let clone = journal.clone();
+        let fired = Change::RuleFiredByHand {
+            rule: "slow-order-producers".parse().unwrap(),
+        };
 
-        let fired = clone.record(Change::RuleFiredByHand { rule: rule() }, ChangeSurface::Cli, None);
+        let fired = clone.record(fired, ChangeSurface::Cli, None);
 
         assert_eq!(journal.entries(), [fired]);
     }
@@ -148,33 +140,32 @@ mod tests {
     #[test]
     fn the_journal_keeps_as_many_entries_as_its_size_says() {
         let one_entry = RecentJournalSize::new(1).unwrap();
-        let (journal, _events) = journal(one_entry, &SteppedClock::new());
+        let events = Arc::new(EventBus::new(EventBacklog::default()));
+        let journal = Journal::new(one_entry, Arc::new(SteppedClock::new()), events);
+        let rule: RecordedName = "slow-order-producers".parse().unwrap();
 
-        journal.record(
-            Change::RuleArmed { rule: rule() },
-            ChangeSurface::Test,
-            Some(Revision::new(2)),
-        );
-        let disarmed = journal.record(
-            Change::RuleDisarmed { rule: rule() },
-            ChangeSurface::Test,
-            Some(Revision::new(3)),
-        );
+        let armed = Change::RuleArmed { rule: rule.clone() };
+        journal.record(armed, ChangeSurface::Test, Some(Revision::new(2)));
+        let disarmed = Change::RuleDisarmed { rule };
+        let disarmed = journal.record(disarmed, ChangeSurface::Test, Some(Revision::new(3)));
 
         assert_eq!(journal.entries(), [disarmed]);
     }
 
     #[tokio::test]
     async fn every_entry_leaves_with_the_events_in_the_order_of_the_entries() {
-        let (journal, events) = journal(RecentJournalSize::default(), &SteppedClock::new());
-        let mut recording = events.listen_to_every_event();
-
-        let armed = journal.record(
-            Change::RuleArmed { rule: rule() },
-            ChangeSurface::Ui,
-            Some(Revision::new(2)),
+        let events = Arc::new(EventBus::new(EventBacklog::default()));
+        let journal = Journal::new(
+            RecentJournalSize::default(),
+            Arc::new(SteppedClock::new()),
+            Arc::clone(&events),
         );
-        let fired = journal.record(Change::RuleFiredByHand { rule: rule() }, ChangeSurface::Ui, None);
+        let mut recording = events.listen_to_every_event();
+        let rule: RecordedName = "slow-order-producers".parse().unwrap();
+
+        let armed = Change::RuleArmed { rule: rule.clone() };
+        let armed = journal.record(armed, ChangeSurface::Ui, Some(Revision::new(2)));
+        let fired = journal.record(Change::RuleFiredByHand { rule }, ChangeSurface::Ui, None);
 
         for entry in [armed, fired] {
             let Some(EngineEvent::Journaled(journaled)) = recording.next().await else {
