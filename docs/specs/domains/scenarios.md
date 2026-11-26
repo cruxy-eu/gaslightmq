@@ -15,10 +15,10 @@ A scenario has:
 | **Seed** | The root of every die in the run. |
 | **Rules** | The rules the scenario owns, or references by name, in its order. They stay armed for the whole run. Optional. |
 | **Steps** | Only in Sequence mode: the stages of the story. A Sequence has at least one. |
+| **Requirements** | What the backend must support: the incidents that the scenario's rules fire. Nobody writes them: they follow from the rules. |
 
-A scenario holds [what a person writes](../architecture/identity.md#what-a-definition-holds).
-What a backend must support follows from its rules: the incidents they fire.
-It is no part of the definition, and the backend of an environment checks it when someone activates the scenario there.
+A scenario holds [what a person writes](../architecture/identity.md#what-a-definition-holds), so its requirements are no part of the definition.
+The backend of an environment reads them from the rules when someone activates the scenario there.
 See [portability](#portability).
 
 ```yaml
