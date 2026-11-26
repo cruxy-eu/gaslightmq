@@ -59,9 +59,8 @@
 //! A definition only holds valid values, so the UI checks a value in a form with the engine's own types.
 //!
 //! A definition travels as its file holds it, in a request as in an answer.
-//! Its UUID is live state of the process: the workspace keeps it in memory, and no definition holds one.
 //!
-//! # Names, not UUIDs
+//! # Names
 //!
 //! Every operation names a definition by its name, and an operation on something live names its environment too.
 //! Nothing renames a definition: an update changes everything but the name.

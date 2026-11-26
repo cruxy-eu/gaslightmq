@@ -28,10 +28,6 @@ use crate::{ActionRef, RuleName, RuleTitle};
 /// lifetime: until disarmed
 /// ```
 ///
-/// A rule holds what someone defined, and nothing that GaslightMQ assigns.
-/// The [`RuleUuid`](crate::RuleUuid) of a rule is live state: the workspace keeps it in memory for a rule of the
-/// workspace, and an environment for a live rule. No rule and no file holds it.
-///
 /// A rule is a definition, and every value of it is a valid one.
 /// It can still name a selector or a preset that does not exist.
 /// [`resolve`](Self::resolve) looks the names up, and gives the [`ResolvedRule`](crate::ResolvedRule) that can be armed.

@@ -13,10 +13,6 @@ use crate::{Conditions, SelectorName, SelectorTitle};
 /// A selector alone does not know them: a [`SelectorSet`](crate::SelectorSet) resolves the name,
 /// and gives the [`EffectiveSelector`](crate::EffectiveSelector) that matches calls.
 ///
-/// A selector holds what someone defined, and nothing that GaslightMQ assigns.
-/// The [`SelectorUuid`](crate::SelectorUuid) of a selector is live state: the workspace keeps it in memory,
-/// next to the name, and no selector and no file holds it.
-///
 /// ```
 /// use gaslightmq_field::prelude::*;
 /// use gaslightmq_kernel::prelude::*;

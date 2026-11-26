@@ -7,17 +7,15 @@ use gaslightmq_selector::{Selector, SelectorStore};
 use gaslightmq_surface::{LayoutStore, PadLayout};
 
 use crate::contents::Contents;
-use crate::held::HeldUuids;
-use crate::kind::{AnyDefinition, Kind};
+use crate::kind::AnyDefinition;
 use crate::{
-    CreateError, DefinitionName, DeleteError, KeepError, LiveRuleUuid, Stores, UpdateError, UuidSource,
-    ValidationError, WorkspaceContext, WorkspaceDefinition,
+    CreateError, DefinitionName, DeleteError, Stores, UpdateError, ValidationError, WorkspaceContext,
+    WorkspaceDefinition,
 };
 
 /// Every definition of a workspace, as one model that holds together.
 ///
-/// A workspace works with a [`WorkspaceContext`]: the [`Stores`] of the definitions, one for each kind,
-/// and the source of its UUIDs.
+/// A workspace works with a [`WorkspaceContext`]: the [`Stores`] of the definitions, one for each kind.
 /// It holds no definition itself, and it knows no files.
 /// What it holds is the rules that no single store can keep, because they span the kinds:
 ///
@@ -39,25 +37,6 @@ use crate::{
 /// A store can still change behind the back of the workspace, as when someone edits a file.
 /// [`validate`](Self::validate) says whether the definitions still fit each other.
 ///
-/// # UUIDs
-///
-/// No definition and no store holds a UUID: the UUID of a definition is live state, and the workspace keeps it in
-/// memory, next to the name. [`uuid`](Self::uuid) gives it.
-///
-/// | When | The UUID |
-/// |---|---|
-/// | The workspace first holds a definition: someone creates it, or the workspace finds it in a store. | A new one. |
-/// | Someone updates the definition, through the workspace or behind it. | The same. |
-/// | Someone [keeps](Self::keep) a live rule. | The one the live rule had. |
-/// | Someone deletes the definition. | Forgotten: a definition under that name later gets a new one. |
-///
-/// The workspace finds what the stores hold whenever it reads them: on every change and on every
-/// [`validate`](Self::validate). A name that it did not hold yet gets a new UUID, and a name that went is forgotten.
-/// The next run gives every definition a new UUID: what two runs share is the name.
-///
-/// The workspace reads neither a clock nor the randomness of the system: the seeds come from the [`UuidSource`]
-/// of its context.
-///
 /// ```
 /// use futures::executor::block_on;
 /// use gaslightmq_kernel::prelude::*;
@@ -66,7 +45,7 @@ use crate::{
 /// use gaslightmq_selector::prelude::*;
 /// use gaslightmq_workspace::prelude::*;
 ///
-/// // Nothing is written anywhere, and every UUID is known before the workspace makes it.
+/// // Nothing is written anywhere.
 /// let mut workspace = Workspace::new(MemoryContext::new());
 ///
 /// let produce = Selector::new(
@@ -87,11 +66,7 @@ use crate::{
 ///
 ///     workspace.create(produce.clone()).await?;
 ///     workspace.create(blackhole).await?;
-///     let uuid = workspace.create(rule.clone()).await?;
-///
-///     // Each definition got a UUID of its own, which the workspace keeps. The rule was the third to get one.
-///     assert_eq!(String::from(uuid), KnownUuids::nth(3));
-///     assert_eq!(workspace.uuid::<Rule>(rule.name()), Some(uuid));
+///     workspace.create(rule).await?;
 ///
 ///     // The rule uses the selector, so the selector stays.
 ///     let in_use = workspace.delete(produce.name().clone()).await.unwrap_err();
@@ -106,19 +81,14 @@ use crate::{
 #[derive(Debug, Clone)]
 pub struct Workspace<C: WorkspaceContext> {
     context: C,
-    uuids: HeldUuids,
 }
 
 impl<C: WorkspaceContext> Workspace<C> {
-    /// The workspace over the stores of that context, which takes the seeds of its UUIDs from it.
+    /// The workspace over the stores of that context.
     ///
-    /// It checks nothing yet, and holds no UUID yet: [`validate`](Self::validate) says whether what the stores hold
-    /// fits together, and gives every definition that it finds its UUID.
+    /// It checks nothing yet: [`validate`](Self::validate) says whether what the stores hold fits together.
     pub fn new(context: C) -> Self {
-        Self {
-            context,
-            uuids: HeldUuids::default(),
-        }
+        Self { context }
     }
 
     /// The stores, to list and to get definitions.
@@ -126,17 +96,7 @@ impl<C: WorkspaceContext> Workspace<C> {
         self.context.stores()
     }
 
-    /// The UUID of the definition of the kind `D` and this name, or `None` when the workspace does not hold one.
-    ///
-    /// The workspace holds a definition from the moment someone creates it, or it finds it in a store,
-    /// until someone deletes it.
-    pub fn uuid<D: WorkspaceDefinition>(&self, name: &D::Name) -> Option<D::Uuid> {
-        self.uuids.get::<D>(&name.clone().into())
-    }
-
-    /// Adds a definition, and returns the UUID that it got.
-    ///
-    /// The definition gets a new UUID: a copy of a definition is a definition of its own.
+    /// Adds a definition.
     ///
     /// # Errors
     ///
@@ -144,47 +104,14 @@ impl<C: WorkspaceContext> Workspace<C> {
     /// - [`CreateError::DoesNotFit`] when the definitions would not fit each other with this one:
     ///   it refers to a name that does not exist, or it is a rule that can never fire.
     /// - [`CreateError::StoreFailed`] when a store could not read its definitions, or could not keep this one.
-    pub async fn create<D: WorkspaceDefinition>(&mut self, definition: D) -> Result<D::Uuid, CreateError> {
+    pub async fn create<D: WorkspaceDefinition>(&mut self, definition: D) -> Result<(), CreateError> {
         let name: DefinitionName = definition.name().clone().into();
-        self.add(definition, &name).await?;
-        let uuid = D::new_uuid(self.context.uuids().seed());
-        self.uuids.hold::<D>(name, uuid);
-        Ok(uuid)
+        self.add(definition, &name).await
     }
 
-    /// Adds a live rule to the workspace, under the UUID that the workspace gave it when someone made it.
+    /// Replaces the definition of the same kind and name.
     ///
-    /// A live rule gets its UUID from [`live_rule_uuid`](Self::live_rule_uuid), and only from there,
-    /// so a rule of the workspace never has a UUID that someone made up. Keeping spends it.
-    ///
-    /// # Errors
-    ///
-    /// A [`KeepError`] with the UUID of the live rule, which stays live, and the [`CreateError`] of what went wrong:
-    ///
-    /// - [`CreateError::NameTaken`] when a rule of the workspace has the name. Nothing overwrites it.
-    /// - [`CreateError::DoesNotFit`] when the definitions would not fit each other with this one:
-    ///   it refers to a name that does not exist, or it is a rule that can never fire.
-    /// - [`CreateError::StoreFailed`] when a store could not read its definitions, or could not keep this one.
-    pub async fn keep(&mut self, rule: Rule, uuid: LiveRuleUuid) -> Result<(), KeepError> {
-        let name: DefinitionName = rule.name().clone().into();
-        if let Err(error) = self.add(rule, &name).await {
-            return Err(KeepError { error, uuid });
-        }
-        self.uuids.hold::<Rule>(name, uuid.uuid());
-        Ok(())
-    }
-
-    /// A new UUID for a live rule, as [`create`](Self::create) gives one, and stores nothing.
-    ///
-    /// A live rule lives in an environment for a while, and the environment holds its UUID.
-    /// It gets the UUID from here when someone makes it, and keeps it once someone [keeps](Self::keep) it.
-    pub fn live_rule_uuid(&mut self) -> LiveRuleUuid {
-        LiveRuleUuid::new(Rule::new_uuid(self.context.uuids().seed()))
-    }
-
-    /// Replaces the definition of the same kind and name, and returns the UUID that it keeps.
-    ///
-    /// The definition changes in everything but its name, and keeps its UUID.
+    /// The definition changes in everything but its name.
     ///
     /// # Errors
     ///
@@ -193,16 +120,15 @@ impl<C: WorkspaceContext> Workspace<C> {
     ///   the definition refers to a name that does not exist, or a rule can never fire with it,
     ///   which can be a rule that uses the selector or the preset that changes.
     /// - [`UpdateError::StoreFailed`] when a store could not read its definitions, or could not keep the change.
-    pub async fn update<D: WorkspaceDefinition>(&mut self, definition: D) -> Result<D::Uuid, UpdateError> {
+    pub async fn update<D: WorkspaceDefinition>(&mut self, definition: D) -> Result<(), UpdateError> {
         let name: DefinitionName = definition.name().clone().into();
         let contents = match self.contents().await {
             Ok(contents) => contents,
             Err(Unread { reason }) => return Err(UpdateError::StoreFailed { name, reason }),
         };
-        // The workspace took in what the stores hold, so it holds a UUID for every definition that they have.
-        let Some(uuid) = self.uuids.get::<D>(&name) else {
+        if contents.get(&name).is_none() {
             return Err(UpdateError::NotFound { name });
-        };
+        }
 
         let errors = contents.errors_with(definition.clone().into_any());
         if !errors.is_empty() {
@@ -210,7 +136,7 @@ impl<C: WorkspaceContext> Workspace<C> {
         }
 
         match self.store_update(definition.into_any()).await {
-            Ok(()) => Ok(uuid),
+            Ok(()) => Ok(()),
             Err(StoreChangeError::NotFound) => Err(UpdateError::NotFound { name }),
             Err(StoreChangeError::Failed { reason }) => Err(UpdateError::StoreFailed { name, reason }),
         }
@@ -244,10 +170,7 @@ impl<C: WorkspaceContext> Workspace<C> {
         }
 
         match self.store_delete(&name).await {
-            Ok(()) => {
-                self.uuids.forget(&name);
-                Ok(())
-            }
+            Ok(()) => Ok(()),
             Err(StoreChangeError::NotFound) => Err(DeleteError::NotFound { name }),
             Err(StoreChangeError::Failed { reason }) => Err(DeleteError::StoreFailed { name, reason }),
         }
@@ -256,15 +179,13 @@ impl<C: WorkspaceContext> Workspace<C> {
     /// Checks that the definitions of every store fit each other.
     ///
     /// Whoever opens a workspace asks this once, and again whenever a store changed behind the workspace.
-    /// The workspace takes in what the stores hold, whether it fits or not:
-    /// a definition that it finds for the first time gets its UUID, and one that went is forgotten.
     ///
     /// # Errors
     ///
     /// - [`ValidationError::Invalid`] with everything that is wrong: a reference that names nothing,
     ///   selectors that include each other in a circle, and a rule that can never fire.
     /// - [`ValidationError::StoreFailed`] when a store could not read its definitions.
-    pub async fn validate(&mut self) -> Result<(), ValidationError> {
+    pub async fn validate(&self) -> Result<(), ValidationError> {
         let contents = match self.contents().await {
             Ok(contents) => contents,
             Err(Unread { reason }) => return Err(ValidationError::StoreFailed { reason }),
@@ -278,7 +199,7 @@ impl<C: WorkspaceContext> Workspace<C> {
     }
 
     /// Checks a new definition against what the stores hold, and asks the store of its kind to take it.
-    async fn add<D: WorkspaceDefinition>(&mut self, definition: D, name: &DefinitionName) -> Result<(), CreateError> {
+    async fn add<D: WorkspaceDefinition>(&self, definition: D, name: &DefinitionName) -> Result<(), CreateError> {
         let failed = |reason| CreateError::StoreFailed {
             name: name.clone(),
             reason,
@@ -303,20 +224,16 @@ impl<C: WorkspaceContext> Workspace<C> {
         }
     }
 
-    /// Everything that the stores hold now, with a UUID for every definition of it.
-    ///
-    /// A definition that the workspace did not hold yet gets a new UUID, and the UUID of one that went is forgotten.
-    async fn contents(&mut self) -> Result<Contents, Unread> {
+    /// Everything that the stores hold now.
+    async fn contents(&self) -> Result<Contents, Unread> {
         let stores = self.context.stores();
-        let contents = Contents::new(
+        Ok(Contents::new(
             stores.selectors().list().await.map_err(Unread::by::<Selector>)?,
             stores.presets().list().await.map_err(Unread::by::<Preset>)?,
             stores.rules().list().await.map_err(Unread::by::<Rule>)?,
             stores.layouts().list().await.map_err(Unread::by::<PadLayout>)?,
             stores.environments().list().await.map_err(Unread::by::<Environment>)?,
-        );
-        self.uuids.take_in(contents.names(), self.context.uuids());
-        Ok(contents)
+        ))
     }
 
     /// Whether the store of its kind holds a definition of this name.

@@ -33,7 +33,7 @@ fn rejects<T: DeserializeOwned + Debug>(json: &str, reason: &str) -> String {
     error
 }
 
-/// The UUID that a workspace gave the environment `plain-kafka` in one run.
+/// A UUID, which an environment does not hold.
 const PLAIN_KAFKA_UUID: &str = "0193b6c2-5f3e-7a41-9c2d-8e4b1f6a7d10";
 
 fn name(text: &str) -> EnvironmentName {
@@ -199,7 +199,6 @@ fn an_environment_writes_its_title_when_it_has_one() {
 
 #[test]
 fn an_environment_holds_no_uuid() {
-    let uuid: EnvironmentUuid = PLAIN_KAFKA_UUID.parse().unwrap();
     let blocks = concat!(
         r#""broker":{"world":"orders-sim","#,
         r#""listen":{"bootstrap":"0.0.0.0:39092","brokers":"0.0.0.0:39093-39192","advertise":"localhost"}}}"#,
@@ -209,12 +208,6 @@ fn an_environment_holds_no_uuid() {
     rejects::<Environment>(
         &format!(r#"{{"name":"plain-kafka","uuid":"{PLAIN_KAFKA_UUID}",{blocks}"#),
         "unknown field `uuid`",
-    );
-    // A UUID is its text, as the journal holds it.
-    writes(&uuid, &format!(r#""{PLAIN_KAFKA_UUID}""#));
-    rejects::<EnvironmentUuid>(
-        r#""plain-kafka""#,
-        "environment UUID \"plain-kafka\" is no UUID of version 7",
     );
 }
 

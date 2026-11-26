@@ -38,11 +38,6 @@ impl Contents {
         Self { definitions }
     }
 
-    /// The name of every definition, with its kind, in the order of their kinds and names.
-    pub(crate) fn names(&self) -> impl Iterator<Item = DefinitionName> {
-        self.definitions.iter().map(AnyDefinition::name)
-    }
-
     /// The definition of this kind and name.
     pub(crate) fn get(&self, name: &DefinitionName) -> Option<&AnyDefinition> {
         self.definitions.iter().find(|definition| definition.name() == *name)

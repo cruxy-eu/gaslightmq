@@ -82,7 +82,7 @@ async fn a_definition_changes_in_the_workspace_and_every_client_of_the_stream_he
             definition: AnyDefinition::Selector(order_producers.clone())
         }
     );
-    // A definition travels as its file holds it: the UUID that the workspace gave it stays in the process.
+    // A definition travels as its file holds it.
     assert_eq!(got, Ok(order_producers.clone()));
     assert_eq!(listed, Ok(vec![order_producers.clone()]));
 

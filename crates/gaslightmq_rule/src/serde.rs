@@ -279,14 +279,10 @@ mod tests {
     use serde_json::{Value, json};
 
     use super::*;
-    use crate::{Preset, PresetUuid, Rule, RuleUuid};
+    use crate::{Preset, Rule};
 
-    /// The UUID that a workspace gave the rule `blackhole-metadata` in one run, and the one it gave the preset
-    /// `blackhole`.
-    const BLACKHOLE_METADATA_UUID: &str = "0193b6c2-5f3e-7a41-9c2d-8e4b1f6a7d10";
-    const BLACKHOLE_UUID: &str = "0193b6c2-6b07-7d52-8a1e-3c5f7a9b0d24";
-    /// A UUID of version 4, which is no UUID of a rule or of a preset.
-    const VERSION_4_UUID: &str = "550e8400-e29b-41d4-a716-446655440000";
+    /// A UUID, which neither a rule nor a preset holds.
+    const UUID: &str = "0193b6c2-5f3e-7a41-9c2d-8e4b1f6a7d10";
 
     fn read<T: serde::de::DeserializeOwned>(value: Value) -> T {
         serde_json::from_value(value).unwrap()
@@ -664,43 +660,20 @@ mod tests {
     }
 
     #[test]
-    fn a_uuid_is_its_text() {
-        let rule: RuleUuid = BLACKHOLE_METADATA_UUID.parse().unwrap();
-        let preset: PresetUuid = BLACKHOLE_UUID.parse().unwrap();
-
-        assert_eq!(write(&rule), json!(BLACKHOLE_METADATA_UUID));
-        assert_eq!(read::<RuleUuid>(json!(BLACKHOLE_METADATA_UUID)), rule);
-        assert_eq!(write(&preset), json!(BLACKHOLE_UUID));
-        assert_eq!(read::<PresetUuid>(json!(BLACKHOLE_UUID)), preset);
-    }
-
-    #[test]
     fn a_rule_and_a_preset_hold_no_uuid() {
         // No file holds the UUID of a definition: `uuid` is a key that neither has.
         assert!(
             error::<Rule>(json!({
                 "name": "blackhole-metadata",
-                "uuid": BLACKHOLE_METADATA_UUID,
+                "uuid": UUID,
                 "selector": { "api": "Metadata" },
                 "action": { "lie": "silence" },
             }))
             .starts_with("unknown field `uuid`")
         );
         assert!(
-            error::<Preset>(json!({ "name": "blackhole", "uuid": BLACKHOLE_UUID, "lie": "silence" }))
+            error::<Preset>(json!({ "name": "blackhole", "uuid": UUID, "lie": "silence" }))
                 .starts_with("unknown field `uuid`")
-        );
-    }
-
-    #[test]
-    fn a_text_that_is_no_uuid_of_version_7_does_not_read() {
-        assert_eq!(
-            error::<RuleUuid>(json!("blackhole")),
-            "rule UUID \"blackhole\" is no UUID of version 7"
-        );
-        assert_eq!(
-            error::<PresetUuid>(json!(VERSION_4_UUID)),
-            format!("preset UUID \"{VERSION_4_UUID}\" is no UUID of version 7")
         );
     }
 

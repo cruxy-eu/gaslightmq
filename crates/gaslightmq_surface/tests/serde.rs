@@ -49,7 +49,7 @@ fn pad() -> Pad {
     )
 }
 
-/// The UUID that a workspace gave the layout `order-desk` in one run.
+/// A UUID, which a layout does not hold.
 const ORDER_DESK_UUID: &str = "0193b6c2-5f3e-7a41-9c2d-8e4b1f6a7d10";
 
 /// The JSON of [`pad`].
@@ -86,13 +86,6 @@ fn a_layout_without_a_title_writes_none_and_one_without_rows_and_columns_writes_
     let layout = PadLayout::new("empty".parse().unwrap(), [], [], [Layer::all_clients()]).unwrap();
 
     Form(layout).writes(r#"{"name":"empty","rows":[],"columns":[],"layers":["All clients"]}"#);
-}
-
-#[test]
-fn a_uuid_is_its_text() {
-    let uuid: LayoutUuid = ORDER_DESK_UUID.parse().unwrap();
-
-    Form(uuid).writes(&format!(r#""{ORDER_DESK_UUID}""#));
 }
 
 #[test]

@@ -8,7 +8,7 @@ license.workspace = true
 workspace = true
 
 [features]
-# The stores of a workspace in memory, the context over them, and UUIDs that a test knows before they are made.
+# The stores of a workspace in memory, and the context over them.
 memory = [
     "dep:gaslightmq_definition_memory",
     "gaslightmq_environment/memory",
@@ -30,7 +30,7 @@ thiserror.workspace = true
 anyhow.workspace = true
 # The executor that drives the workspace in the tests and the examples. The crate itself needs no runtime.
 futures.workspace = true
-# The context of the tests and the examples: stores in memory, and UUIDs that a test knows. A test turns the feature on.
+# The context of the tests and the examples: stores in memory. A test turns the feature on.
 gaslightmq_workspace = { workspace = true, features = ["memory"] }
 # The store in memory, for the stores of a test of which one fails.
 gaslightmq_definition_memory.workspace = true

@@ -35,7 +35,7 @@ tokio = { workspace = true, features = ["sync", "rt", "macros"] }
 
 [dev-dependencies]
 anyhow.workspace = true
-# The workspace of every test: stores in memory, and UUIDs that a test knows.
+# The workspace of every test: stores in memory.
 gaslightmq_workspace = { workspace = true, features = ["memory"] }
 # The proxies of `tests/real_cluster`: a real client in front, and real Kafka brokers behind.
 gaslightmq_kafka_client_native.workspace = true

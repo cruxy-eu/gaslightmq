@@ -3,9 +3,9 @@
 use gaslightmq_definition_api::Store;
 use gaslightmq_environment::EnvironmentName;
 use gaslightmq_rule::{Rule, RuleName, RuleState};
-use gaslightmq_workspace::{KeepError, Stores, WorkspaceContext};
+use gaslightmq_workspace::{Stores, WorkspaceContext};
 
-use super::{Host, LiveRule, Unresolvable, unread};
+use super::{Host, Unresolvable, unread};
 use crate::{
     CreateLiveRuleError, DeleteLiveRuleError, EnvironmentRule, EnvironmentRulesError, HostChange, KeepRuleError,
     UpdateLiveRuleError,
@@ -49,9 +49,9 @@ impl<C: WorkspaceContext> Host<C> {
             rule,
             live: false,
         });
-        let live = running.live.values().map(|live| EnvironmentRule {
-            state: state(live.rule.name()),
-            rule: live.rule.clone(),
+        let live = running.live.values().map(|rule| EnvironmentRule {
+            state: state(rule.name()),
+            rule: rule.clone(),
             live: true,
         });
         Ok(of_the_workspace.chain(live).collect())
@@ -77,8 +77,7 @@ impl<C: WorkspaceContext> Host<C> {
     ///
     /// The rule stays in the memory of the environment, and never in the workspace, until someone
     /// [keeps](Self::keep) it. It resolves against the workspace first, so a rule that could never work is no live
-    /// rule. It gets its UUID from the workspace then, and the environment keeps that UUID next to it.
-    /// Whoever follows the host learns of it.
+    /// rule. Whoever follows the host learns of it.
     ///
     /// # Errors
     ///
@@ -125,7 +124,6 @@ impl<C: WorkspaceContext> Host<C> {
             },
             Unresolvable::Unresolved { error } => CreateLiveRuleError::Unresolved { error },
         })?;
-        let uuid = self.workspace.lock().await.live_rule_uuid();
         {
             let mut environments = self.environments();
             let Some(running) = environments.get_mut(environment) else {
@@ -136,13 +134,7 @@ impl<C: WorkspaceContext> Host<C> {
             if running.live.contains_key(&name) {
                 return Err(taken());
             }
-            running.live.insert(
-                name.clone(),
-                LiveRule {
-                    rule: rule.clone(),
-                    uuid,
-                },
-            );
+            running.live.insert(name.clone(), rule.clone());
         }
         self.publish(HostChange::RuleChanged {
             environment: environment.clone(),
@@ -152,7 +144,7 @@ impl<C: WorkspaceContext> Host<C> {
     }
 
     /// Replaces the live rule of an environment that has the name of `rule`, and returns it as the environment holds
-    /// it now. It keeps the UUID it had.
+    /// it now.
     ///
     /// Everything but the name changes. A rule that is armed stays armed with the change, and none of its counters
     /// resets. Whoever follows the host learns of it.
@@ -205,7 +197,7 @@ impl<C: WorkspaceContext> Host<C> {
             let Some(live) = running.live.get_mut(&name) else {
                 return Err(not_found());
             };
-            live.rule = rule.clone();
+            *live = rule.clone();
             // A rule that is not armed has no arming to keep, and arms with the change when someone arms it.
             let _ = running.engine.rules().retune(resolved);
         }
@@ -246,8 +238,7 @@ impl<C: WorkspaceContext> Host<C> {
         Ok(())
     }
 
-    /// Keeps a live rule of an environment in the workspace, under its name and its UUID, and returns it as the
-    /// workspace holds it.
+    /// Keeps a live rule of an environment in the workspace, under its name, and returns it as the workspace holds it.
     ///
     /// The rule stays in the state it has in the environment, and every other environment holds it disarmed,
     /// as every rule of the workspace. Whoever follows the host learns that the live rule left the environment,
@@ -259,34 +250,33 @@ impl<C: WorkspaceContext> Host<C> {
     /// - [`KeepRuleError::NotFound`] when the environment has no live rule of that name.
     /// - [`KeepRuleError::NotKept`] when the workspace did not take the rule.
     pub async fn keep(&self, environment: &EnvironmentName, name: &RuleName) -> Result<Rule, KeepRuleError> {
-        // The UUID of a live rule goes to the workspace and comes back when keeping fails. The workspace stays locked
-        // until then, so no live rule of that name comes meanwhile.
-        let mut workspace = self.workspace.lock().await;
         let live = {
-            let mut environments = self.environments();
-            let Some(running) = environments.get_mut(environment) else {
+            let environments = self.environments();
+            let Some(running) = environments.get(environment) else {
                 return Err(KeepRuleError::NotRunning {
                     environment: environment.clone(),
                 });
             };
-            running.live.remove(name)
+            running.live.get(name).cloned()
         };
-        let Some(LiveRule { rule, uuid }) = live else {
+        let Some(rule) = live else {
             return Err(KeepRuleError::NotFound {
                 environment: environment.clone(),
                 rule: name.clone(),
             });
         };
-        if let Err(KeepError { error, uuid }) = workspace.keep(rule.clone(), uuid).await {
-            if let Some(running) = self.environments().get_mut(environment) {
-                running.live.insert(name.clone(), LiveRule { rule, uuid });
-            }
-            return Err(KeepRuleError::NotKept {
+        self.workspace
+            .lock()
+            .await
+            .create(rule.clone())
+            .await
+            .map_err(|error| KeepRuleError::NotKept {
                 rule: name.clone(),
                 error,
-            });
+            })?;
+        if let Some(running) = self.environments().get_mut(environment) {
+            running.live.remove(name);
         }
-        drop(workspace);
         self.publish(HostChange::RuleRemoved {
             environment: environment.clone(),
             rule: name.clone(),

@@ -1,4 +1,4 @@
-//! A workspace over stores in memory: what it lets through, what it refuses, and the UUIDs it keeps in memory.
+//! A workspace over stores in memory: what it lets through, and what it refuses.
 //!
 //! [`support`] holds the definitions of one workspace, and two sets of stores of which one store fails.
 //! Every test starts its workspace itself, over a context whose stores hold nothing.
@@ -12,6 +12,5 @@ mod support;
 
 mod creating;
 mod deleting;
-mod keeping;
 mod updating;
 mod validating;

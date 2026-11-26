@@ -20,10 +20,6 @@ use crate::{Action, ActionRef, PresetName, PresetTitle};
 ///
 /// Rules reference a preset by its name, and pad grid columns, ⌘K suggestions and rule editors offer presets.
 ///
-/// A preset holds what someone defined, and nothing that GaslightMQ assigns.
-/// The [`PresetUuid`](crate::PresetUuid) of a preset is live state: the workspace keeps it in memory,
-/// next to the name, and no preset and no file holds it.
-///
 /// ```
 /// use gaslightmq_clock::TimeSpan;
 /// use gaslightmq_lie::prelude::*;

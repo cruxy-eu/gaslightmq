@@ -2,7 +2,6 @@
 
 use futures::executor::block_on;
 use gaslightmq_definition_api::prelude::*;
-use gaslightmq_environment::prelude::*;
 use gaslightmq_lie::prelude::*;
 use gaslightmq_rule::prelude::*;
 use gaslightmq_selector::prelude::*;
@@ -13,14 +12,14 @@ use crate::support::{Context, OrderDesk, UnreadableRules};
 
 #[test]
 fn a_workspace_without_a_definition_is_valid() {
-    let mut workspace = Workspace::new(MemoryContext::new());
+    let workspace = Workspace::new(MemoryContext::new());
 
     assert_eq!(block_on(workspace.validate()), Ok(()));
 }
 
 #[test]
 fn definitions_that_someone_wrote_by_hand_are_valid_when_they_fit_each_other() -> anyhow::Result<()> {
-    let mut workspace = Workspace::new(MemoryContext::new());
+    let workspace = Workspace::new(MemoryContext::new());
 
     block_on(async {
         // The stores get the order desk as it was written, in an order in which nothing is there before it is named.
@@ -38,26 +37,13 @@ fn definitions_that_someone_wrote_by_hand_are_valid_when_they_fit_each_other() -
         stores.environments().create(OrderDesk::environment()).await?;
 
         assert_eq!(workspace.validate().await, Ok(()));
-        // The workspace found every definition, and gave each one a UUID in the order of their kinds and names.
-        assert_eq!(
-            workspace
-                .uuid::<Selector>(OrderDesk::order_producers().name())
-                .map(String::from),
-            Some(KnownUuids::nth(1))
-        );
-        assert_eq!(
-            workspace
-                .uuid::<Environment>(OrderDesk::environment().name())
-                .map(String::from),
-            Some(KnownUuids::nth(8))
-        );
         Ok(())
     })
 }
 
 #[test]
 fn every_reference_names_a_definition_that_exists() -> anyhow::Result<()> {
-    let mut workspace = Workspace::new(MemoryContext::new());
+    let workspace = Workspace::new(MemoryContext::new());
     let layout = PadLayout::new(
         "order-desk".parse()?,
         ["order-producers".parse()?],
@@ -102,7 +88,7 @@ fn every_reference_names_a_definition_that_exists() -> anyhow::Result<()> {
 
 #[test]
 fn selectors_that_include_each_other_in_a_circle_are_not_valid() -> anyhow::Result<()> {
-    let mut workspace = Workspace::new(MemoryContext::new());
+    let workspace = Workspace::new(MemoryContext::new());
     let order_producers: SelectorName = "order-producers".parse()?;
     let from_ingest: SelectorName = "order-producers-from-ingest".parse()?;
 
@@ -145,7 +131,7 @@ fn selectors_that_include_each_other_in_a_circle_are_not_valid() -> anyhow::Resu
 
 #[test]
 fn a_rule_is_checked_with_the_selector_and_the_preset_that_it_names() -> anyhow::Result<()> {
-    let mut workspace = Workspace::new(MemoryContext::new());
+    let workspace = Workspace::new(MemoryContext::new());
     let name: RuleName = "blackhole-what-worked".parse()?;
     let answered: SelectorName = "answered".parse()?;
     let blackhole: PresetName = "blackhole".parse()?;
@@ -194,7 +180,7 @@ fn an_environment_names_a_world_that_nothing_checks_yet() -> anyhow::Result<()> 
 
 #[test]
 fn a_store_that_cannot_read_is_why_nobody_knows_whether_the_definitions_fit() {
-    let mut workspace = Workspace::new(Context::over(UnreadableRules::new()));
+    let workspace = Workspace::new(Context::over(UnreadableRules::new()));
 
     let error = block_on(workspace.validate()).unwrap_err();
 

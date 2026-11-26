@@ -113,35 +113,26 @@ impl OrderDesk {
     }
 }
 
-/// The context of a workspace over the stores of a test, with UUIDs that the test knows before they are made.
+/// The context of a workspace over the stores of a test.
 ///
 /// A test whose stores all work takes the context in memory that the workspace crate has.
 /// This one is for the stores below, of which one fails.
 pub struct Context<S> {
     stores: S,
-    uuids: KnownUuids,
 }
 
 impl<S: Stores> Context<S> {
-    /// The context over those stores, which has made no UUID yet.
+    /// The context over those stores.
     pub fn over(stores: S) -> Self {
-        Self {
-            stores,
-            uuids: KnownUuids::new(),
-        }
+        Self { stores }
     }
 }
 
 impl<S: Stores> WorkspaceContext for Context<S> {
     type Stores = S;
-    type Uuids = KnownUuids;
 
     fn stores(&self) -> &S {
         &self.stores
-    }
-
-    fn uuids(&mut self) -> &mut KnownUuids {
-        &mut self.uuids
     }
 }
 

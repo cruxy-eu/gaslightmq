@@ -184,7 +184,7 @@ impl From<EnvironmentName> for DefinitionRef {
 /// Every definition of the workspace, by kind.
 ///
 /// The [state of a process](crate::ProcessState) carries them, so a client that connects knows the workspace at once.
-/// A definition travels as its file holds it. Its UUID is live state of the process, and travels in no definition.
+/// A definition travels as its file holds it.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Definitions {
@@ -258,8 +258,6 @@ where
 }
 
 /// Create a definition in the workspace, under a name that no definition of its kind has.
-///
-/// The workspace gives the definition a new UUID, and keeps it in memory.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(bound = "", deny_unknown_fields)]
 pub struct CreateDefinition<D: EditableDefinition> {
@@ -277,7 +275,7 @@ where
 
 /// Replace the definition that has the name of this one: everything but the name changes, the title included.
 ///
-/// Nothing renames a definition. The definition keeps the UUID that the workspace holds for it.
+/// Nothing renames a definition.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(bound = "", deny_unknown_fields)]
 pub struct UpdateDefinition<D: EditableDefinition> {

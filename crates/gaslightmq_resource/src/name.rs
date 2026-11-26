@@ -9,7 +9,6 @@ use std::sync::Arc;
 /// Things reference a resource by its name: a rule names its selector and its preset, and a command names an
 /// environment.
 /// A resource keeps its name for as long as it exists.
-/// Its UUID stands next to its name, and only the workspace tells resources apart by it.
 ///
 /// A resource name does not say which kind of resource it names.
 /// Every kind has a name type of its own that wraps this one, and code speaks in those.

@@ -31,7 +31,7 @@ tokio = { workspace = true, features = ["net", "sync", "time", "rt"] }
 anyhow.workspace = true
 # Every test speaks to the server through the client, as the UI, the CLI and tests do.
 gaslightmq_control_client.workspace = true
-# The workspace of every test: stores in memory, and UUIDs that a test knows.
+# The workspace of every test: stores in memory.
 gaslightmq_workspace = { workspace = true, features = ["memory"] }
 # The lies that the host of a test tells.
 gaslightmq_lie_api.workspace = true

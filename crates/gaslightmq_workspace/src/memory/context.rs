@@ -1,13 +1,11 @@
 //! The context of a workspace that is kept in memory.
 
-use crate::{KnownUuids, MemoryStores, UuidSource, WorkspaceContext};
+use crate::{MemoryStores, WorkspaceContext};
 
-/// The context of a workspace that is kept in memory: [`MemoryStores`], and a source of UUIDs.
+/// The context of a workspace that is kept in memory: [`MemoryStores`].
 ///
-/// [`new`](Self::new) is the context of a test: nothing is written anywhere,
-/// and the UUIDs are [`KnownUuids`], so the test knows each one before the workspace makes it.
-/// [`with_uuids`](Self::with_uuids) takes another source, such as the one that reads the clock and the randomness
-/// of the system for an engine that runs without the files of a workspace.
+/// [`new`](Self::new) is the context of a test, and of an engine that runs without the files of a workspace:
+/// nothing is written anywhere.
 ///
 /// ```
 /// use futures::executor::block_on;
@@ -19,45 +17,28 @@ use crate::{KnownUuids, MemoryStores, UuidSource, WorkspaceContext};
 /// let mut workspace = Workspace::new(MemoryContext::new());
 /// let blackhole = Preset::new("blackhole".parse().expect("a preset name"), LieDefinition::Silence);
 ///
-/// let uuid = block_on(workspace.create(blackhole.clone()))?;
+/// block_on(workspace.create(blackhole.clone()))?;
 ///
-/// // The preset got the first UUID of the source, and the store of the presets holds the preset.
-/// assert_eq!(String::from(uuid), KnownUuids::nth(1));
+/// // The store of the presets holds the preset.
 /// assert_eq!(block_on(workspace.stores().presets().list()).expect("a store in memory reads"), [blackhole]);
 /// # Ok::<(), CreateError>(())
 /// ```
 #[derive(Debug, Default)]
-pub struct MemoryContext<Uuids = KnownUuids> {
+pub struct MemoryContext {
     stores: MemoryStores,
-    uuids: Uuids,
 }
 
 impl MemoryContext {
-    /// A context whose stores hold nothing, and whose UUIDs are the [`KnownUuids`] from the first one on.
+    /// A context whose stores hold nothing.
     pub fn new() -> Self {
         Self::default()
     }
 }
 
-impl<Uuids: UuidSource> MemoryContext<Uuids> {
-    /// A context whose stores hold nothing, and which takes the seeds of its UUIDs from `uuids`.
-    pub fn with_uuids(uuids: Uuids) -> Self {
-        Self {
-            stores: MemoryStores::new(),
-            uuids,
-        }
-    }
-}
-
-impl<Uuids: UuidSource + Send + Sync> WorkspaceContext for MemoryContext<Uuids> {
+impl WorkspaceContext for MemoryContext {
     type Stores = MemoryStores;
-    type Uuids = Uuids;
 
     fn stores(&self) -> &MemoryStores {
         &self.stores
-    }
-
-    fn uuids(&mut self) -> &mut Uuids {
-        &mut self.uuids
     }
 }

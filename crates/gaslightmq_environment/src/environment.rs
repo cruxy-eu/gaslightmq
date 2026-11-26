@@ -218,9 +218,6 @@ impl fmt::Display for Instances {
 /// - a built-in schema registry stands next to a broker, and a real one next to a real cluster,
 /// - a built-in schema registry takes no port of a Kafka listener.
 ///
-/// An environment holds what someone defined, and nothing that GaslightMQ assigns.
-/// The [`EnvironmentUuid`](crate::EnvironmentUuid) of an environment is live state: the workspace keeps it in memory,
-/// next to the name, and no environment and no file holds it.
 /// Everything references an environment by its name.
 ///
 /// ```

@@ -122,7 +122,7 @@ impl DefinitionOperations {
         definition: D,
     ) -> Result<(), CreateDefinitionError> {
         match host.create(definition).await {
-            Ok(_) => Ok(()),
+            Ok(()) => Ok(()),
             Err(CreateError::NameTaken { name }) => Err(CreateDefinitionError::NameTaken { name: reference(name) }),
             Err(CreateError::DoesNotFit { name, errors }) => Err(CreateDefinitionError::DoesNotFit {
                 name: reference(name),
@@ -141,7 +141,7 @@ impl DefinitionOperations {
         definition: D,
     ) -> Result<(), UpdateDefinitionError> {
         match host.update(definition).await {
-            Ok(_) => Ok(()),
+            Ok(()) => Ok(()),
             Err(UpdateError::NotFound { name }) => Err(UpdateDefinitionError::NotFound { name: reference(name) }),
             Err(UpdateError::DoesNotFit { name, errors }) => Err(UpdateDefinitionError::DoesNotFit {
                 name: reference(name),

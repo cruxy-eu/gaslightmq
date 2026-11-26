@@ -23,8 +23,7 @@ use gaslightmq_selector::{Selector, SelectorRef, SelectorSet};
 use gaslightmq_surface::EncoderMapping;
 use gaslightmq_traffic::{Statistics, Traffic, TrafficConfiguration};
 use gaslightmq_workspace::{
-    CreateError, DefinitionName, DeleteError, LiveRuleUuid, Stores, UpdateError, Workspace, WorkspaceContext,
-    WorkspaceDefinition,
+    CreateError, DefinitionName, DeleteError, Stores, UpdateError, Workspace, WorkspaceContext, WorkspaceDefinition,
 };
 use tokio::sync::broadcast;
 use tokio::task::JoinHandle;
@@ -118,19 +117,11 @@ struct Running {
     backend: Arc<UpstreamBackend>,
     listeners: Listeners,
     /// The live rules, by name. They stay in memory until someone keeps or deletes them, or the environment stops.
-    live: BTreeMap<RuleName, LiveRule>,
+    live: BTreeMap<RuleName, Rule>,
     /// The calls of the environment, as the task that watches it counts them and hands them to their followers.
     traffic: Arc<Mutex<Watched>>,
     /// The task that watches the environment, which ends a moment after its proxy stopped.
     watching: JoinHandle<()>,
-}
-
-/// A live rule of an environment, with the UUID that the workspace gave it when someone made it.
-///
-/// No rule holds its UUID: the environment keeps it next to the rule, as the workspace does for its own rules.
-struct LiveRule {
-    rule: Rule,
-    uuid: LiveRuleUuid,
 }
 
 impl<C: WorkspaceContext> Host<C> {
@@ -165,32 +156,32 @@ impl<C: WorkspaceContext> Host<C> {
         HostChanges::new(self.changes.subscribe())
     }
 
-    /// Adds a definition to the workspace, and returns the UUID it got. See [`Workspace::create`].
+    /// Adds a definition to the workspace. See [`Workspace::create`].
     ///
     /// Whoever follows the host learns of it.
     ///
     /// # Errors
     ///
     /// The [`CreateError`] of the workspace.
-    pub async fn create<D: WorkspaceDefinition>(&self, definition: D) -> Result<D::Uuid, CreateError> {
+    pub async fn create<D: WorkspaceDefinition>(&self, definition: D) -> Result<(), CreateError> {
         let name = definition.name().clone().into();
-        let uuid = self.workspace.lock().await.create(definition).await?;
+        self.workspace.lock().await.create(definition).await?;
         self.publish(HostChange::DefinitionChanged { name });
-        Ok(uuid)
+        Ok(())
     }
 
-    /// Replaces a definition of the workspace, and returns the UUID it keeps. See [`Workspace::update`].
+    /// Replaces a definition of the workspace. See [`Workspace::update`].
     ///
     /// Whoever follows the host learns of it.
     ///
     /// # Errors
     ///
     /// The [`UpdateError`] of the workspace.
-    pub async fn update<D: WorkspaceDefinition>(&self, definition: D) -> Result<D::Uuid, UpdateError> {
+    pub async fn update<D: WorkspaceDefinition>(&self, definition: D) -> Result<(), UpdateError> {
         let name = definition.name().clone().into();
-        let uuid = self.workspace.lock().await.update(definition).await?;
+        self.workspace.lock().await.update(definition).await?;
         self.publish(HostChange::DefinitionChanged { name });
-        Ok(uuid)
+        Ok(())
     }
 
     /// Removes a definition from the workspace. See [`Workspace::delete`].

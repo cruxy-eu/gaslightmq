@@ -125,9 +125,6 @@ tokio-tungstenite = "0.30"
 tracing = "0.1"
 # Only `gaslightmq_control_client` names it, for the address of a control plane.
 url = "2"
-# Only `gaslightmq_resource` names it, for the text and the bits of a UUID. Without its features it makes no UUID by
-# itself: it reads no clock and has no randomness, so the crate that uses it stays sans-IO and compiles to WebAssembly.
-uuid = { version = "1", default-features = false }
 # Only `gaslightmq_ui` names it, on wasm32, for the address of the page that the browser shows.
 web-sys = { version = "0.3", features = ["Location", "Window"] }
 

@@ -34,14 +34,10 @@ fn rejects<T: DeserializeOwned + Debug>(json: &str, reason: &str) {
     assert!(error.contains(reason), "{json}: {error:?} does not hold {reason:?}");
 }
 
-/// The UUID that a workspace gave the selector `order-producers` in one run.
+/// A UUID, which a selector does not hold.
 const ORDER_PRODUCERS_UUID: &str = "0193b6c2-5f3e-7a41-9c2d-8e4b1f6a7d10";
 
 fn name(text: &str) -> SelectorName {
-    text.parse().unwrap()
-}
-
-fn uuid(text: &str) -> SelectorUuid {
     text.parse().unwrap()
 }
 
@@ -590,34 +586,10 @@ fn a_title_that_breaks_the_rule_for_titles_does_not_read() {
 }
 
 #[test]
-fn a_uuid_is_its_text() {
-    writes(&uuid(ORDER_PRODUCERS_UUID), &format!(r#""{ORDER_PRODUCERS_UUID}""#));
-    // A UUID reads in upper case, and writes in lower case.
-    reads(
-        &format!(r#""{}""#, ORDER_PRODUCERS_UUID.to_uppercase()),
-        &uuid(ORDER_PRODUCERS_UUID),
-    );
-}
-
-#[test]
 fn a_selector_holds_no_uuid() {
     // No file holds the UUID of a selector: `uuid` is a key that a selector does not have.
     rejects::<Selector>(
         &format!(r#"{{"name":"order-producers","uuid":"{ORDER_PRODUCERS_UUID}"}}"#),
         "unknown field `uuid`",
     );
-}
-
-#[test]
-fn a_text_that_is_no_uuid_of_version_7_does_not_read() {
-    rejects::<SelectorUuid>(
-        r#""order-producers""#,
-        "selector UUID \"order-producers\" is no UUID of version 7",
-    );
-    // A UUID of version 4, and no text at all.
-    rejects::<SelectorUuid>(
-        r#""550e8400-e29b-41d4-a716-446655440000""#,
-        "selector UUID \"550e8400-e29b-41d4-a716-446655440000\" is no UUID of version 7",
-    );
-    rejects::<SelectorUuid>("7", "expected a string");
 }

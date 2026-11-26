@@ -70,10 +70,6 @@ use crate::{Column, Layer, LayoutName, LayoutTitle, Pad, Row};
 /// # Ok::<(), PadLayoutError>(())
 /// ```
 ///
-/// A layout holds what someone defined, and nothing that GaslightMQ assigns.
-/// The [`LayoutUuid`](crate::LayoutUuid) of a layout is live state: the workspace keeps it in memory,
-/// next to the name, and no layout and no file holds it.
-///
 /// With the `serde` feature, a layout serializes as the map above.
 /// Writing leaves out a title that the layout does not have, and reading rejects a key it does not know,
 /// such as `uuid`.
@@ -261,8 +257,6 @@ impl PadLayout {
     /// One that has no title, or that they do not hold, stands in the title of the rule with its name.
     /// The rule has no title when the text of the layer makes one that breaks the rule for titles.
     /// Someone can change the title afterwards, and the name stays.
-    ///
-    /// Whoever makes the rule a live rule gives it its UUID: a layout reads no clock and has no randomness.
     pub fn rule(&self, pad: &Pad, selectors: &SelectorSet, presets: &PresetSet) -> Option<Rule> {
         let (selector, preset, layer) = self.parts(pad)?;
         let rule = Rule::new(self.rule_name(pad)?, selector.clone(), preset.clone()).scoped(layer.scope().clone());

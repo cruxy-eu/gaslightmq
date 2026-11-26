@@ -1,14 +1,12 @@
 //! The kinds of definitions that a workspace holds, and what it needs of each.
 
-use std::fmt;
-
 use gaslightmq_definition_api::Definition;
-use gaslightmq_environment::{Environment, EnvironmentUuid};
-use gaslightmq_rule::{Preset, PresetUuid, Rule, RuleUuid};
-use gaslightmq_selector::{Selector, SelectorUuid};
-use gaslightmq_surface::{LayoutUuid, PadLayout};
+use gaslightmq_environment::Environment;
+use gaslightmq_rule::{Preset, Rule};
+use gaslightmq_selector::Selector;
+use gaslightmq_surface::PadLayout;
 
-use crate::{DefinitionName, UuidSeed};
+use crate::DefinitionName;
 
 /// A definition of a kind that a [`Workspace`](crate::Workspace) holds:
 /// a selector, a preset, a rule, a pad layout or an environment.
@@ -30,22 +28,10 @@ use crate::{DefinitionName, UuidSeed};
 /// ```
 pub trait WorkspaceDefinition: Definition<Name: Into<DefinitionName>> + Kind {}
 
-/// What a workspace needs of a kind, next to its name: the type of its UUID, and its place among the other kinds.
+/// What a workspace needs of a kind, next to its name: its place among the other kinds.
 pub trait Kind: Sized {
-    /// The UUID of a definition of this kind, which the workspace keeps in memory next to the name.
-    type Uuid: Copy + Eq + fmt::Debug + Send + Sync;
-
     /// The definition, as one of any kind.
     fn into_any(self) -> AnyDefinition;
-
-    /// The UUID of this kind, as one of any kind.
-    fn any_uuid(uuid: Self::Uuid) -> AnyUuid;
-
-    /// The UUID of this kind that `uuid` is, or `None` when it is of another kind.
-    fn uuid_of(uuid: AnyUuid) -> Option<Self::Uuid>;
-
-    /// The UUID of this kind that `seed` makes.
-    fn new_uuid(seed: UuidSeed) -> Self::Uuid;
 }
 
 /// One definition of a workspace, of any kind.
@@ -60,44 +46,15 @@ pub enum AnyDefinition {
     Environment(Environment),
 }
 
-/// The UUID of one definition of a workspace, of any kind.
-///
-/// Each kind keeps the UUID type of its own crate, and this type only says which kind it is.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum AnyUuid {
-    Selector(SelectorUuid),
-    Preset(PresetUuid),
-    Rule(RuleUuid),
-    Layout(LayoutUuid),
-    Environment(EnvironmentUuid),
-}
-
-/// Makes a definition type a kind of the workspace: the variant it has, and the UUID it takes.
+/// Makes a definition type a kind of the workspace: the variant it has.
 macro_rules! kind {
-    ($($definition:ident, $uuid:ident => $variant:ident;)*) => {
+    ($($definition:ident => $variant:ident;)*) => {
         $(
             impl WorkspaceDefinition for $definition {}
 
             impl Kind for $definition {
-                type Uuid = $uuid;
-
                 fn into_any(self) -> AnyDefinition {
                     AnyDefinition::$variant(self)
-                }
-
-                fn any_uuid(uuid: $uuid) -> AnyUuid {
-                    AnyUuid::$variant(uuid)
-                }
-
-                fn uuid_of(uuid: AnyUuid) -> Option<$uuid> {
-                    match uuid {
-                        AnyUuid::$variant(uuid) => Some(uuid),
-                        _ => None,
-                    }
-                }
-
-                fn new_uuid(seed: UuidSeed) -> $uuid {
-                    $uuid::new(seed.unix_millis(), seed.random())
                 }
             }
         )*
@@ -110,24 +67,15 @@ macro_rules! kind {
                 }
             }
         }
-
-        impl AnyUuid {
-            /// The UUID that `seed` makes, of the kind of the definition that `name` names.
-            pub(crate) fn new(name: &DefinitionName, seed: UuidSeed) -> Self {
-                match name {
-                    $(DefinitionName::$variant(_) => AnyUuid::$variant($definition::new_uuid(seed)),)*
-                }
-            }
-        }
     };
 }
 
 kind! {
-    Selector, SelectorUuid => Selector;
-    Preset, PresetUuid => Preset;
-    Rule, RuleUuid => Rule;
-    PadLayout, LayoutUuid => Layout;
-    Environment, EnvironmentUuid => Environment;
+    Selector => Selector;
+    Preset => Preset;
+    Rule => Rule;
+    PadLayout => Layout;
+    Environment => Environment;
 }
 
 impl AnyDefinition {

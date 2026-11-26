@@ -1,4 +1,4 @@
-//! Updating: a definition changes in everything but its name, keeps its UUID, and still fits the others.
+//! Updating: a definition changes in everything but its name, and still fits the others.
 
 use futures::executor::block_on;
 use gaslightmq_definition_api::prelude::*;
@@ -11,19 +11,17 @@ use gaslightmq_workspace::prelude::*;
 use crate::support::{Context, OrderDesk, ReadOnly, ReadOnlyPresets};
 
 #[test]
-fn an_update_changes_everything_but_the_name_and_keeps_the_uuid() -> anyhow::Result<()> {
+fn an_update_changes_everything_but_the_name() -> anyhow::Result<()> {
     let mut workspace = Workspace::new(MemoryContext::new());
     let blackhole: PresetName = "blackhole".parse()?;
 
     block_on(async {
-        let created = workspace.create(OrderDesk::blackhole()).await?;
+        workspace.create(OrderDesk::blackhole()).await?;
 
-        // The preset becomes a hang-up with a title. Whoever sends the change knows no UUID.
+        // The preset becomes a hang-up with a title.
         let change = Preset::new(blackhole.clone(), HangUpLie::new()).with_title("Hang up".parse()?);
-        let kept = workspace.update(change.clone()).await?;
+        workspace.update(change.clone()).await?;
 
-        assert_eq!(kept, created);
-        assert_eq!(workspace.uuid::<Preset>(&blackhole), Some(created));
         assert_eq!(workspace.stores().presets().get(&blackhole).await?, Some(change));
         Ok(())
     })
@@ -46,28 +44,18 @@ fn update_needs_a_name_that_exists() -> anyhow::Result<()> {
 }
 
 #[test]
-fn a_definition_that_someone_put_into_its_store_keeps_the_uuid_that_the_workspace_found_it_with() -> anyhow::Result<()>
-{
+fn a_definition_that_someone_put_into_its_store_is_updated_like_any_other() -> anyhow::Result<()> {
     let mut workspace = Workspace::new(MemoryContext::new());
     let blackhole: PresetName = "blackhole".parse()?;
 
     block_on(async {
         // Someone put the preset into the store by hand, as a file that someone wrote.
         workspace.stores().presets().create(OrderDesk::blackhole()).await?;
-        assert_eq!(workspace.uuid::<Preset>(&blackhole), None);
 
-        // The workspace finds it when it looks, and gives it a UUID then.
-        workspace.validate().await?;
-        let found = workspace.uuid::<Preset>(&blackhole).map(String::from);
-        assert_eq!(found, Some(KnownUuids::nth(1)));
+        let change = OrderDesk::blackhole().with_title("Blackhole".parse()?);
+        workspace.update(change.clone()).await?;
 
-        // Someone edits it behind the workspace, and then through it. It keeps that UUID.
-        let titled = OrderDesk::blackhole().with_title("Blackhole".parse()?);
-        workspace.stores().presets().update(titled.clone()).await?;
-        workspace.validate().await?;
-        let updated = workspace.update(titled.with_action(HangUpLie::new())).await?;
-
-        assert_eq!(Some(String::from(updated)), found);
+        assert_eq!(workspace.stores().presets().get(&blackhole).await?, Some(change));
         Ok(())
     })
 }
