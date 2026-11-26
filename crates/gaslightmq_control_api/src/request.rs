@@ -19,6 +19,7 @@ use crate::AnyOperation;
 /// let disarm = DisarmRule {
 ///     environment: "orders-sim".parse().expect("an environment name"),
 ///     rule: "slow-order-producers".parse().expect("a rule name"),
+///     expects: None,
 /// };
 /// let undo = RequestSource::new(RequestSurface::Ui).with_cause(RequestCause::Undo);
 /// let request = serde_json::to_value(OperationRequest::new(undo, disarm)).expect("a request has a form");

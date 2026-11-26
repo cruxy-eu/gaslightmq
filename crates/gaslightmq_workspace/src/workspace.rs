@@ -47,6 +47,8 @@ use crate::{
 /// asked: see [`UpdateError::Changed`] and [`DeleteError::Changed`].
 /// Without a revision, the last change wins.
 ///
+/// A workspace is no value to copy: it holds the revisions of one process, so it has no clone.
+///
 /// # One change at a time
 ///
 /// A change takes the workspace exclusively, so the check and the write of one change belong together.
@@ -96,7 +98,7 @@ use crate::{
 /// })?;
 /// # Ok::<(), CreateError>(())
 /// ```
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct Workspace<C: WorkspaceContext> {
     context: C,
     /// The counter of the process, which gives the revision of every change.

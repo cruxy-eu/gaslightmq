@@ -71,9 +71,11 @@ pub struct ScopedRules {
 ///     "delay-1s".parse::<PresetName>().expect("a preset name"),
 /// );
 /// let ingest = Scope::client(ClientId::new("order-ingest").expect("a client ID"));
+/// // The revision that the control plane told beside each rule.
+/// let revision = Revision::new(7);
 /// let rules = [
-///     RuleStatus { rule: rule("slow-ingest").scoped(ingest.clone()), live: true, state: RuleState::Armed },
-///     RuleStatus { rule: rule("slow-everyone"), live: false, state: RuleState::Disarmed },
+///     RuleStatus { rule: rule("slow-ingest").scoped(ingest.clone()), live: true, state: RuleState::Armed, revision },
+///     RuleStatus { rule: rule("slow-everyone"), live: false, state: RuleState::Disarmed, revision },
 /// ];
 ///
 /// let groups = by_scope(&rules, RuleTab::All);

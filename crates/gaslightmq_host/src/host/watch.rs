@@ -23,10 +23,14 @@ use crate::revisions::{self, RuleRevisions};
 /// and a change through the handle of the armed rules.
 /// A rule can arm and disarm between two looks at the armed rules, and then nothing counts it:
 /// the rule is in the state it was, and every change is a state.
+///
+/// `rules` follows the armed rules `armed` from before the environment took its first change,
+/// so the task misses none of them.
 pub(super) async fn watch(
     environment: EnvironmentName,
     mut events: EveryEvent,
     armed: ArmedRules,
+    rules: RuleChanges,
     revisions: Arc<Mutex<RuleRevisions>>,
     traffic: Arc<Mutex<Watched>>,
     changes: broadcast::Sender<HostChange>,
@@ -35,7 +39,7 @@ pub(super) async fn watch(
         // A change that nobody follows is gone.
         let _ = changes.send(change);
     };
-    let mut rules = Some(armed.changes());
+    let mut rules = Some(rules);
     loop {
         tokio::select! {
             event = events.next() => match event {

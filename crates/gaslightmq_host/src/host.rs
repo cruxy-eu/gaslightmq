@@ -353,6 +353,7 @@ impl<C: WorkspaceContext> Host<C> {
             name.clone(),
             engine.every_event(),
             engine.rules().clone(),
+            engine.rules().changes(),
             Arc::clone(&revisions),
             Arc::clone(&traffic),
             self.changes.clone(),
