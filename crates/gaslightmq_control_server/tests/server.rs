@@ -12,7 +12,7 @@ use std::sync::Arc;
 
 use anyhow::Context;
 use gaslightmq_clock_waitable::SteppedClock;
-use gaslightmq_control_api::clock::Duration;
+use gaslightmq_control_api::clock::{Duration, TimeSpan};
 use gaslightmq_control_api::environment::{
     BrokerDefinition, Environment, EnvironmentName, Instances, Listeners, ProxyDefinition,
 };
@@ -33,6 +33,10 @@ use gaslightmq_workspace::prelude::*;
 
 /// How long a test waits for a message of the live stream that the server has a reason to send.
 const PATIENCE: Duration = Duration::from_secs(10);
+
+/// The interval of the pings in a test that steps the clock of the server and is not about them:
+/// longer than the test steps, so the server takes no client of the test for silent.
+const QUIET: TimeSpan = TimeSpan::from_secs(3600);
 
 /// The address that the server of a test listens on, and that its client connects to.
 const LOCALHOST: IpAddr = IpAddr::V4(Ipv4Addr::LOCALHOST);
@@ -433,6 +437,7 @@ async fn a_client_that_comes_back_within_the_grace_period_is_the_presence_it_was
     ));
     let mut configuration = ControlServerConfiguration::default();
     configuration.listen = SocketAddr::new(LOCALHOST, ANY_PORT);
+    configuration.ping_interval = PingInterval::new(QUIET)?;
     let grace = configuration.presence_grace;
     // The grace period of a presence runs on the clock of the server, which the test steps.
     let clock = SteppedClock::new();

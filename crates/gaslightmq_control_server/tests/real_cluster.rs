@@ -12,6 +12,7 @@ use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::Arc;
 
 use anyhow::Context;
+use futures::StreamExt;
 use gaslightmq_clock_waitable::SteppedClock;
 use gaslightmq_control_api::clock::{Duration, TimeSpan};
 use gaslightmq_control_api::environment::{
@@ -43,8 +44,9 @@ use tokio::net::TcpStream;
 /// How long a test waits for a message of the live stream that the server has a reason to send.
 const PATIENCE: Duration = Duration::from_secs(30);
 
-/// The interval of the statistics in a test that is not about them: longer than any test runs,
-/// so no statistics come between the messages that the test looks at.
+/// The interval of the statistics, and of the pings, in a test that is not about them: longer than any test runs
+/// or steps its clock, so no statistics come between the messages that the test looks at, and the server takes no
+/// client of the test for silent.
 const QUIET: TimeSpan = TimeSpan::from_secs(3600);
 
 /// The interval of the statistics in the test that is about them.
@@ -1081,6 +1083,7 @@ async fn a_client_that_stays_away_for_the_grace_period_loses_its_holds() -> anyh
     let mut configuration = ControlServerConfiguration::default();
     configuration.listen = SocketAddr::new(LOCALHOST, ANY_PORT);
     configuration.stats_interval = StatsInterval::new(QUIET)?;
+    configuration.ping_interval = PingInterval::new(QUIET)?;
     let grace = configuration.presence_grace;
     // The grace period of a presence runs on the clock of the server, which the test steps.
     let clock = SteppedClock::new();
@@ -1187,6 +1190,7 @@ async fn a_client_that_comes_back_within_the_grace_period_keeps_its_holds_until_
     let mut configuration = ControlServerConfiguration::default();
     configuration.listen = SocketAddr::new(LOCALHOST, ANY_PORT);
     configuration.stats_interval = StatsInterval::new(QUIET)?;
+    configuration.ping_interval = PingInterval::new(QUIET)?;
     let grace = configuration.presence_grace;
     // The grace period of a presence runs on the clock of the server, which the test steps.
     let clock = SteppedClock::new();
@@ -1252,6 +1256,111 @@ async fn a_client_that_comes_back_within_the_grace_period_keeps_its_holds_until_
     server.stop().await;
     let after_the_stop = host.rule_of(staging.name(), &anas_rule).await?;
     assert_eq!(after_the_stop.map(|rule| rule.state), Some(RuleState::Disarmed));
+    host.stop_all().await;
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_client_that_goes_silent_loses_its_holds_after_the_grace_period() -> anyhow::Result<()> {
+    let cluster = KafkaCluster::plaintext().start().await?;
+    let host = Arc::new(Host::new(
+        HostConfiguration::default(),
+        MemoryContext::new(),
+        Lies::of_every_build(),
+        RUN.parse()?,
+    ));
+    let any = ListenAddress::new(LOCALHOST, ANY_PORT);
+    let brokers = BrokerListeners::pinned(cluster.brokers().iter().map(|broker| (broker.id(), any)))?;
+    let staging = Environment::new(
+        "staging-proxy".parse()?,
+        Instances::ProxyInFrontOfCluster {
+            proxy: ProxyDefinition::new(Listeners::new(any, brokers, LOCALHOST.into())?),
+            upstream: Upstream::new(cluster.brokers()[0].address().to_string().parse()?),
+        },
+    );
+    // A desk with one pad: a delay of 1 s on the order producers, for every client.
+    let order_producers = Selector::new(
+        "order-producers".parse()?,
+        Conditions::from(Condition::is(ApiKey::PRODUCE)),
+    );
+    let delay = Preset::new("delay-1s".parse()?, TimingLie::new().with_delay(TimeSpan::from_secs(1)));
+    let desk = PadLayout::new(
+        "order-desk".parse()?,
+        [order_producers.name().clone()],
+        [delay.name().clone()],
+        [Layer::all_clients()],
+    )?;
+    host.create(staging.clone()).await?;
+    host.create(order_producers).await?;
+    host.create(delay).await?;
+    host.create(desk.clone()).await?;
+    let mut configuration = ControlServerConfiguration::default();
+    configuration.listen = SocketAddr::new(LOCALHOST, ANY_PORT);
+    configuration.stats_interval = StatsInterval::new(QUIET)?;
+    let (ping_interval, grace) = (configuration.ping_interval.span(), configuration.presence_grace);
+    // The pings and the grace period of a presence run on the clock of the server, which the test steps.
+    let clock = SteppedClock::new();
+    let server = ControlServer::start_on(configuration, Arc::clone(&host), clock.clone()).await?;
+    let client = ControlClient::new(ControlClientConfiguration::new(server.address().into()));
+    client
+        .send(StartEnvironment {
+            environment: staging.name().clone(),
+        })
+        .await??;
+    let pad = desk
+        .pad(&Layer::all_clients(), Row::from_index(0), Column::from_index(0))
+        .context("the desk has a pad at its first row and column")?;
+    let rule = desk.rule_name(&pad).context("the pad points at a rule by its name")?;
+    let mut changes = host.changes();
+
+    // Ana's tab is a WebSocket that the test reads frame by frame, so the test decides what the tab answers.
+    // Its first frame names its presence.
+    let (mut anas_tab, _) = tokio_tungstenite::connect_async(format!("ws://{}/api/stream", server.address())).await?;
+    let first = tokio::time::timeout(PATIENCE, anas_tab.next())
+        .await?
+        .context("the stream names the presence of its client")??;
+    let StreamMessage::Present { presence } = serde_json::from_str(first.to_text()?)? else {
+        anyhow::bail!("the stream started with another message than the presence: {first}");
+    };
+    // Ana holds the pad, as that presence.
+    let held = client
+        .send_from(
+            RequestSource::new(RequestSurface::Pad).with_presence(presence),
+            SendIntent {
+                environment: staging.name().clone(),
+                intent: Intent::Hold { pad },
+            },
+        )
+        .await??;
+    assert!(held.hold.is_some(), "{held:?}");
+
+    // The server asks every client of the stream whether it is still there, and its ping reaches the tab.
+    clock.advance(ping_interval.duration());
+    let pinged = async {
+        loop {
+            let frame = anas_tab.next().await.context("the stream goes on")??;
+            if frame.is_ping() {
+                return Ok::<_, anyhow::Error>(());
+            }
+        }
+    };
+    tokio::time::timeout(PATIENCE, pinged).await??;
+    // Ana's network drops with the pad down. Her tab answers nothing from here on, and closes nothing:
+    // the test reads the tab no more, so the answer to the ping never leaves it.
+    // The next ping is due, and the tab is silent. A grace period later its presence ends, and its hold with it.
+    clock.advance(ping_interval.duration() + grace.duration());
+    let disarmed = async {
+        loop {
+            changes.next().await?;
+            let of_the_pad = host.rule_of(staging.name(), &rule).await?;
+            if of_the_pad.map(|rule| rule.state) == Some(RuleState::Disarmed) {
+                return Ok::<_, anyhow::Error>(());
+            }
+        }
+    };
+    tokio::time::timeout(PATIENCE, disarmed).await??;
+    drop(anas_tab);
+    server.stop().await;
     host.stop_all().await;
     Ok(())
 }

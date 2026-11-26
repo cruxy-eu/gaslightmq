@@ -8,7 +8,7 @@
 //! |---|---|
 //! | [`ControlServer`] | The server, from the moment it listens until someone stops it. |
 //! | [`ControlServerConfiguration`] | Where it listens, its limits and waits, and how long it keeps the presence of a client that went away. |
-//! | [`RequestSizeLimit`], [`StreamBacklog`], [`StatsInterval`] | The largest request it reads, how many changes it keeps for a client of the stream, and how often the statistics come. |
+//! | [`RequestSizeLimit`], [`StreamBacklog`], [`StatsInterval`], [`PingInterval`] | The largest request it reads, how many changes it keeps for a client of the stream, how often the statistics come, and how often it asks a client whether it is still there. |
 //! | [`ControlServerError`] | Why it did not start. |
 //!
 //! The [`prelude`] holds all of them, with the errors of the values.
@@ -91,12 +91,15 @@
 //!   A client that opens a stream as that presence within it goes on as it, and the pads it holds stay held.
 //! - **A client that stays away is gone.** The server ends its presence in the host, which ends every hold of it:
 //!   a tab that closed never sends its release.
+//! - **A client that goes silent is gone too.** A connection can go silent without closing: the network of its
+//!   client dropped, or its laptop sleeps. The server pings every client of the stream at the
+//!   [interval](ControlServerConfiguration::ping_interval) of its configuration.
+//!   A client that sent nothing between one ping and the next has gone silent, and so has one that takes no message
+//!   for as long. The server ends its stream as if the connection had closed, and the grace period begins.
 //! - **A server that stops ends every presence at once.** No client comes back to it.
 //!
-//! The grace period runs on the clock of the server: real time for [`ControlServer::start`],
+//! The grace period and the pings run on the clock of the server: real time for [`ControlServer::start`],
 //! and the clock that [`ControlServer::start_on`] is handed, which a test steps.
-//! The server learns from the connection that a stream ended, and sends no ping:
-//! a connection that goes silent without closing ends when the system gives up on it.
 //!
 //! # Errors
 //!
@@ -106,6 +109,7 @@
 //! | [`RequestSizeLimit::new`] | [`RequestSizeLimitError`] | The limit is zero. |
 //! | [`StreamBacklog::new`] | [`StreamBacklogError`] | The backlog is zero, or larger than the largest. |
 //! | [`StatsInterval::new`] | [`StatsIntervalError`] | The interval is no time at all. |
+//! | [`PingInterval::new`] | [`PingIntervalError`] | The interval is no time at all. |
 //!
 //! What a request asks fails with the errors of `gaslightmq_control_api`, and travels to the client.
 //! The message of every error is complete, so no error has a [`source`](std::error::Error::source).
@@ -129,8 +133,8 @@ mod server;
 mod stream;
 mod ui;
 
-pub use configuration::{ControlServerConfiguration, RequestSizeLimit, StatsInterval, StreamBacklog};
-pub use error::{ControlServerError, RequestSizeLimitError, StatsIntervalError, StreamBacklogError};
+pub use configuration::{ControlServerConfiguration, PingInterval, RequestSizeLimit, StatsInterval, StreamBacklog};
+pub use error::{ControlServerError, PingIntervalError, RequestSizeLimitError, StatsIntervalError, StreamBacklogError};
 pub use server::ControlServer;
 
 /// Every item of this crate.
@@ -147,7 +151,7 @@ pub use server::ControlServer;
 pub mod prelude {
     #[doc(no_inline)]
     pub use crate::{
-        ControlServer, ControlServerConfiguration, ControlServerError, RequestSizeLimit, RequestSizeLimitError,
-        StatsInterval, StatsIntervalError, StreamBacklog, StreamBacklogError,
+        ControlServer, ControlServerConfiguration, ControlServerError, PingInterval, PingIntervalError,
+        RequestSizeLimit, RequestSizeLimitError, StatsInterval, StatsIntervalError, StreamBacklog, StreamBacklogError,
     };
 }

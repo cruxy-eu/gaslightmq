@@ -25,6 +25,11 @@ use crate::transport::Socket;
 /// with it, so a pad never stays held for a client that is gone.
 /// The presence outlives a stream that ends: the control plane keeps it for a grace period,
 /// and a client that [comes back as it](crate::ControlClient::live_stream_as) within that time keeps its holds.
+///
+/// The control plane asks every client at an interval whether it is still there, with a ping.
+/// A stream answers while its caller waits for its [next message](Self::next), and a browser answers by itself.
+/// A caller on a native target that stops reading for longer than that interval is taken for gone:
+/// the control plane ends the stream, and its next message is a [`StreamError::Unreachable`].
 pub struct LiveStream {
     socket: Socket,
     /// The presence of the client, which the control plane named when the stream opened.

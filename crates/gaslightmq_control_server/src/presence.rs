@@ -1,4 +1,5 @@
-//! The presences of the clients of the live stream: which of them the control plane holds, and when one ends.
+//! The presences of the clients of the live stream: which of them the control plane holds, when one ends,
+//! and whether the client of a stream still answers.
 //!
 //! The module decides and never waits: whoever serves a stream tells it what happened and when,
 //! and waits itself for the instant that it names.
@@ -135,6 +136,76 @@ impl Presences {
     }
 }
 
+/// Whether the client of one live stream still answers.
+///
+/// A connection can go silent without closing: the network of its client dropped, or its laptop sleeps.
+/// So the server pings the client at an interval, and a client that is there answers every ping.
+/// A client that sent nothing between one ping and the next has gone silent,
+/// and so has one that takes no message for as long as an interval.
+#[derive(Debug)]
+pub(crate) struct Liveness {
+    /// How long the server waits between two pings.
+    interval: TimeSpan,
+    /// When the next ping is due.
+    next_ping: Instant,
+    /// When the server pinged the client last. `None` before the first ping.
+    pinged_at: Option<Instant>,
+    /// When the client sent something last, or when its stream opened.
+    heard_at: Instant,
+}
+
+/// What the server does when a ping is due.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum PingDue {
+    /// The client answered the ping before, or this is the first one: it gets a ping.
+    Ping,
+    /// The client sent nothing since the ping before. It has been silent for a whole interval at `since`,
+    /// the instant at which this ping was due.
+    Silent { since: Instant },
+}
+
+impl Liveness {
+    /// The liveness of a client whose stream opened at `now`, which the server pings every `interval`.
+    pub(crate) fn new(interval: TimeSpan, now: Instant) -> Self {
+        Self {
+            interval,
+            next_ping: now + interval,
+            pinged_at: None,
+            heard_at: now,
+        }
+    }
+
+    /// When the next ping is due: an interval after the one before, or after the stream opened.
+    pub(crate) const fn next_ping(&self) -> Instant {
+        self.next_ping
+    }
+
+    /// The client sent something at `now`: the answer to a ping, or anything else.
+    pub(crate) const fn heard(&mut self, now: Instant) {
+        self.heard_at = now;
+    }
+
+    /// A ping is due, and the server gets to it at `now`.
+    ///
+    /// A client that sent something since the ping before is there, and gets the next ping.
+    /// A client that sent nothing has gone silent. It is silent since the instant at which this ping was due,
+    /// also when the server gets to it later.
+    pub(crate) fn due(&mut self, now: Instant) -> PingDue {
+        if self.pinged_at.is_some_and(|pinged_at| self.heard_at < pinged_at) {
+            return PingDue::Silent { since: self.next_ping };
+        }
+        self.pinged_at = Some(now);
+        self.next_ping = now + self.interval;
+        PingDue::Ping
+    }
+
+    /// The instant by which a client that is there has taken a message that the server sends at `now`.
+    /// A client that has not taken it by then reads nothing any more, and is silent since that instant.
+    pub(crate) fn taken_by(&self, now: Instant) -> Instant {
+        now + self.interval
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -259,5 +330,64 @@ mod tests {
         assert_eq!(asked_for(""), None);
         assert_eq!(asked_for("presence"), None);
         assert_eq!(asked_for("presence=tab-7"), None);
+    }
+
+    /// How often the server of the tests pings a client.
+    const INTERVAL: TimeSpan = TimeSpan::from_secs(15);
+
+    /// The moment at which the stream of a liveness test opens.
+    const OPENED_AT: Instant = Instant::from_nanos(2_000_000_000);
+
+    #[test]
+    fn a_client_that_answers_every_ping_gets_the_next_one() {
+        let mut liveness = Liveness::new(INTERVAL, OPENED_AT);
+        let first = OPENED_AT + INTERVAL;
+        assert_eq!(liveness.next_ping(), first);
+
+        // The first ping has no ping before it that the client could have left unanswered.
+        assert_eq!(liveness.due(first), PingDue::Ping);
+        assert_eq!(liveness.next_ping(), first + INTERVAL);
+        // The client answers at once, in the same instant as the ping on a clock that someone steps.
+        liveness.heard(first);
+
+        assert_eq!(liveness.due(first + INTERVAL), PingDue::Ping);
+    }
+
+    #[test]
+    fn a_client_that_sends_nothing_between_two_pings_has_gone_silent_when_the_second_was_due() {
+        let mut liveness = Liveness::new(INTERVAL, OPENED_AT);
+        let first = OPENED_AT + INTERVAL;
+        // The client said something before the first ping, and nothing after it.
+        liveness.heard(OPENED_AT);
+        assert_eq!(liveness.due(first), PingDue::Ping);
+
+        // The server gets to the second ping late, and the client is silent since the ping was due.
+        let late = first + INTERVAL + INTERVAL;
+
+        assert_eq!(
+            liveness.due(late),
+            PingDue::Silent {
+                since: first + INTERVAL
+            }
+        );
+    }
+
+    #[test]
+    fn anything_that_a_client_sends_says_that_it_is_there() {
+        let mut liveness = Liveness::new(INTERVAL, OPENED_AT);
+        let first = OPENED_AT + INTERVAL;
+        assert_eq!(liveness.due(first), PingDue::Ping);
+
+        // A subscription comes half-way to the next ping, and no answer to the ping itself.
+        liveness.heard(first + INTERVAL.duration() / 2);
+
+        assert_eq!(liveness.due(first + INTERVAL), PingDue::Ping);
+    }
+
+    #[test]
+    fn a_client_takes_a_message_within_one_interval() {
+        let liveness = Liveness::new(INTERVAL, OPENED_AT);
+
+        assert_eq!(liveness.taken_by(OPENED_AT), OPENED_AT + INTERVAL);
     }
 }

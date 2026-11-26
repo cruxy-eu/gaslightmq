@@ -170,8 +170,20 @@ and ends when the client stays away.
   No client comes back to a server that stopped, and the host may live on with the pads that its clients held.
   The server ends every presence at once, without a grace period.
 
-The server learns from the connection that a stream ended.
-A connection that goes silent without closing is [not noticed yet](#what-the-server-does-not-send-yet) until the system notices it.
+A stream ends when its connection closes, and also when its client goes silent.
+A connection can go silent without closing: the network of a client on another machine drops, or its laptop sleeps.
+
+- **The server pings every client of the stream.**
+  It does so at an interval: `ping_interval` of the server's configuration, and 15 seconds until someone sets it.
+  A browser answers a ping itself, and so does a client that waits for the next message of its stream.
+- **A client that sends nothing between one ping and the next has gone silent.**
+  Whatever the client sends says that it is there: the answer to a ping, or a subscription.
+- **A client that takes no message for a whole interval has gone silent too.**
+  A client that reads nothing would hold its stream up for as long as its connection stays.
+- **The stream of a silent client ends, and the grace period begins.**
+  The server lets go of the connection without a word.
+  A client that went away without closing anything is therefore gone within two intervals, and its presence ends a grace period later.
+  The grace period counts from the instant at which the silence was a whole interval long.
 
 ## Revisions
 
@@ -443,6 +455,10 @@ Every frame is a text frame.
   It closes with `1001 Going Away` when it stops,
   and with `1011 Internal Error` when the workspace cannot be read for a snapshot, with what the store said as the reason.
   It closes with `1011` too when the system gives no randomness for the ID of a presence.
+- **The server pings the client, and the client answers.**
+  A ping and its answer are the ping and the pong of the WebSocket, and no message of the stream.
+  The server ends the stream of a client that [went silent](#presence), without a close frame.
+  A client that stops reading its stream answers no ping, so the server takes it for gone.
 - **A client can end the stream with a close frame.**
   The server notes that the client left, and only then lets go of the connection.
   A client that waits for the connection to close therefore knows that the grace period of its presence has begun.
@@ -481,10 +497,6 @@ Every request says where it comes from, and nothing records it yet.
 The server reads it and refuses a request without it.
 The host takes the presence of a request with an intent, so that a hold ends with it.
 It takes the surface and the cause of every change once the journal exists, which records them.
-
-The server sends no ping, so it does not notice a connection that went silent without closing:
-a client on another machine whose network dropped, or whose laptop sleeps.
-The [presence](#presence) of such a client ends a grace period after the system gave up on the connection, which can take minutes.
 
 The scenario of an environment has no revision yet: no operation activates a scenario or steps one.
 Its revision, and the `expects` of those operations, arrive with them.
