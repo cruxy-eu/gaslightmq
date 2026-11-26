@@ -549,7 +549,10 @@ an older process, or one built without a part.
 No operation reloads the workspace yet.
 It arrives with the stores of files: a store in memory has nothing to reload.
 
-The journal has no entry of a scenario, a step or a recording yet: those arrive with their operations.
+No operation lists, gets, creates, updates or deletes a scenario yet.
+The snapshot holds every scenario of the workspace, and a change of one is a `definition-changed` or a `definition-deleted` message, as for every kind.
+
+The journal has no entry of the activation of a scenario, of a step or of a recording yet: those arrive with their operations.
 No backend applies or emulates an incident yet, so no journal has an entry of one.
 No change has the surface `step` or `file` yet.
 

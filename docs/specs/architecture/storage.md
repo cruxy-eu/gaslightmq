@@ -203,7 +203,9 @@ See [secrets](#secrets).
 The engine validates the whole workspace when it loads it, when it [reloads](#reloading) it, and before every change:
 
 - every reference resolves: the selector and the preset of a rule, the rules of a scenario and of its steps,
+  the selectors and presets of the rules a scenario owns, the selector of a step that ends on calls,
   and the rows and columns of a pad layout,
+- no two rules share a name, whether the workspace or a scenario holds them,
 - every selector uses known fields,
 - every secret is a reference, not a value.
 
