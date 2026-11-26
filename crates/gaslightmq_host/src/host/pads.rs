@@ -12,7 +12,7 @@ use gaslightmq_workspace::{Stores, WorkspaceContext};
 
 use super::{Host, Running, unread};
 use crate::{
-    ArmRuleError, CreateLiveRuleError, EnvironmentRule, EnvironmentRulesError, IntentEffect, IntentError,
+    ArmRuleError, CreateLiveRuleError, EnvironmentRule, EnvironmentRulesError, HostChange, IntentEffect, IntentError,
     UpdateLiveRuleError,
 };
 
@@ -40,6 +40,10 @@ impl<C: WorkspaceContext> Host<C> {
     ///
     /// A turn changes a live rule, and never a rule of the workspace, which changes in the workspace.
     /// Whoever follows the host learns what the rule became.
+    ///
+    /// An intent expects no revision: it acts on the rule as the rule is, and says the state it wants.
+    /// The rule of the answer has the revision that the rule has in the environment now.
+    /// An intent that changed the rule took one number for it, also where it made the rule and armed it.
     ///
     /// # Errors
     ///
@@ -103,7 +107,7 @@ impl<C: WorkspaceContext> Host<C> {
                     .map_err(|error| refused(error.to_string()))?;
                 let changed = turned != existing.rule;
                 if changed {
-                    self.update_live_rule(environment, turned)
+                    self.update_live_rule(environment, turned, None)
                         .await
                         .map_err(|error| match error {
                             UpdateLiveRuleError::NotRunning { environment } => IntentError::NotRunning { environment },
@@ -167,7 +171,8 @@ impl<C: WorkspaceContext> Host<C> {
 
     /// Arms `rule` in the environment, and returns whether it was not armed. A rule that is armed stays as it is.
     async fn arm_unless_armed(&self, environment: &EnvironmentName, rule: &Rule) -> Result<bool, IntentError> {
-        match self.arm(environment, rule).await {
+        // An intent expects no revision: it acts on the rule as the rule is.
+        match self.arm(environment, rule, None).await {
             Ok(_) => Ok(true),
             Err(ArmRuleError::AlreadyArmed { .. }) => Ok(false),
             Err(ArmRuleError::NotRunning { environment }) => Err(IntentError::NotRunning { environment }),
@@ -180,7 +185,34 @@ impl<C: WorkspaceContext> Host<C> {
 
     /// Disarms the rule `name` in the environment, and returns whether it was armed.
     fn disarm_if_armed(&self, environment: &EnvironmentName, name: &RuleName) -> Result<bool, IntentError> {
-        self.with_running_rule(environment, |running| running.engine.rules().disarm(name).is_ok())
+        self.disarm_when(environment, name, |_| true)
+    }
+
+    /// Disarms the rule `name` in the environment when `wanted` says so, and returns whether the rule disarmed.
+    ///
+    /// `wanted` and the disarm are one step: nobody else reads or changes the environment in between.
+    /// A rule that disarmed takes the next number, and whoever follows the host learns of it.
+    fn disarm_when(
+        &self,
+        environment: &EnvironmentName,
+        name: &RuleName,
+        wanted: impl FnOnce(&mut Running) -> bool,
+    ) -> Result<bool, IntentError> {
+        let not_running = |environment| IntentError::NotRunning { environment };
+        let disarmed = self.change_rules(environment, not_running, |running, revisions| {
+            let disarmed = wanted(running) && running.engine.rules().disarm(name).is_ok();
+            if disarmed {
+                revisions.count(name, &running.engine.rules().snapshot());
+            }
+            Ok(disarmed)
+        })?;
+        if disarmed {
+            self.publish(HostChange::RuleChanged {
+                environment: environment.clone(),
+                rule: name.clone(),
+            });
+        }
+        Ok(disarmed)
     }
 
     /// Adds a hold to the rule `name`, which is armed in the environment. Returns `None` when someone disarmed the
@@ -205,9 +237,9 @@ impl<C: WorkspaceContext> Host<C> {
     /// Takes `hold` away from the rule `name`, and disarms the rule when that was its last hold and holds armed it.
     /// Returns whether the rule disarmed.
     fn release_hold(&self, environment: &EnvironmentName, name: &RuleName, hold: Hold) -> Result<bool, IntentError> {
-        self.with_running_rule(environment, |running| {
+        self.disarm_when(environment, name, |running| {
             let armed = armed_now(running, name);
-            running.holds.release(name, hold, armed.as_ref()) && running.engine.rules().disarm(name).is_ok()
+            running.holds.release(name, hold, armed.as_ref())
         })
     }
 

@@ -1,15 +1,14 @@
 //! The task that watches one environment: it counts its calls, and tells the changes of its sessions and its rules.
 
-use std::collections::BTreeSet;
 use std::sync::{Arc, Mutex};
 
-use gaslightmq_engine::{EngineEvent, EveryEvent, RuleChanges};
+use gaslightmq_engine::{ArmedRules, EngineEvent, EveryEvent, RuleChanges};
 use gaslightmq_environment::EnvironmentName;
-use gaslightmq_rule::{RuleName, Snapshot};
 use tokio::sync::broadcast;
 
 use crate::HostChange;
 use crate::calls::{Watched, lock};
+use crate::revisions::{self, RuleRevisions};
 
 /// Watches the environment `environment` until its proxy stopped and every event of it is taken.
 ///
@@ -17,14 +16,18 @@ use crate::calls::{Watched, lock};
 /// |---|---|
 /// | The record of a call | Counts it in `traffic`, which hands it to the followers of the calls its selectors match. |
 /// | What happened to a session | Tells it as a [`HostChange::Session`]. |
-/// | A snapshot of the armed rules | Tells a [`HostChange::RuleChanged`] for every rule that armed or disarmed since the one before. |
+/// | A change of the armed rules | Counts every rule that armed or disarmed without anyone counting it, so it takes its number in `revisions`, and tells a [`HostChange::RuleChanged`] for it. |
 ///
-/// A rule can arm and disarm between two snapshots that the task takes, and then it tells nothing:
+/// The host counts and tells what someone arms or disarms through it.
+/// What is left for the task is what nobody asked the host for: a rule whose lifetime ended or whose budget is spent,
+/// and a change through the handle of the armed rules.
+/// A rule can arm and disarm between two looks at the armed rules, and then nothing counts it:
 /// the rule is in the state it was, and every change is a state.
 pub(super) async fn watch(
     environment: EnvironmentName,
     mut events: EveryEvent,
-    rules: RuleChanges,
+    armed: ArmedRules,
+    revisions: Arc<Mutex<RuleRevisions>>,
     traffic: Arc<Mutex<Watched>>,
     changes: broadcast::Sender<HostChange>,
 ) {
@@ -32,8 +35,7 @@ pub(super) async fn watch(
         // A change that nobody follows is gone.
         let _ = changes.send(change);
     };
-    let mut rules = Some(rules);
-    let mut armed: BTreeSet<RuleName> = BTreeSet::new();
+    let mut rules = Some(armed.changes());
     loop {
         tokio::select! {
             event = events.next() => match event {
@@ -50,16 +52,20 @@ pub(super) async fn watch(
                     return;
                 }
             },
-            snapshot = next_snapshot(&mut rules) => match snapshot {
-                Some(snapshot) => {
-                    let now = names(&snapshot);
-                    for rule in armed.symmetric_difference(&now) {
+            armed_or_disarmed = next_change(&mut rules) => match armed_or_disarmed {
+                Some(()) => {
+                    // The armed rules are read under the lock, so a change that the host is counting is counted
+                    // once, by the host.
+                    let uncounted = {
+                        let mut revisions = revisions::lock(&revisions);
+                        revisions.catch_up(&armed.snapshot())
+                    };
+                    for rule in uncounted {
                         tell(HostChange::RuleChanged {
                             environment: environment.clone(),
-                            rule: rule.clone(),
+                            rule,
                         });
                     }
-                    armed = now;
                 }
                 // The armed rules are gone with the proxy, and the events tell the end.
                 None => rules = None,
@@ -68,15 +74,10 @@ pub(super) async fn watch(
     }
 }
 
-/// The next snapshot of the armed rules, or `None` once they are gone. Waits forever once they are gone.
-async fn next_snapshot(rules: &mut Option<RuleChanges>) -> Option<Arc<Snapshot>> {
+/// Waits until the armed rules changed, or returns `None` once they are gone. Waits forever once they are gone.
+async fn next_change(rules: &mut Option<RuleChanges>) -> Option<()> {
     match rules {
-        Some(rules) => rules.next().await,
+        Some(rules) => rules.next().await.map(|_| ()),
         None => std::future::pending().await,
     }
-}
-
-/// The names of the armed rules of a snapshot.
-fn names(snapshot: &Snapshot) -> BTreeSet<RuleName> {
-    snapshot.iter().map(|rule| rule.name().clone()).collect()
 }

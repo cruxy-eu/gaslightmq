@@ -8,7 +8,9 @@ use gaslightmq_field::ConnectionNumber;
 use gaslightmq_rule::{RuleError, RuleName};
 use gaslightmq_selector::SelectorSetError;
 use gaslightmq_surface::LayoutName;
-use gaslightmq_workspace::CreateError;
+use gaslightmq_workspace::{CreateError, DeleteError, Revision, UpdateError};
+
+use crate::run::RunId;
 
 /// Why a host did not [start](crate::Host::start) an environment.
 ///
@@ -90,6 +92,60 @@ pub struct NotRunningError {
     pub name: EnvironmentName,
 }
 
+/// Why a host did not [update](crate::Host::update) a definition of the workspace.
+///
+/// An update that fails changed nothing.
+///
+/// ```
+/// use gaslightmq_host::prelude::*;
+/// use gaslightmq_rule::prelude::*;
+/// use gaslightmq_workspace::prelude::*;
+///
+/// let name: PresetName = "blackhole".parse()?;
+/// let error = UpdateDefinitionError::NotUpdated { error: UpdateError::NotFound { name: name.into() } };
+/// assert_eq!(error.to_string(), "preset \"blackhole\" does not exist");
+/// # Ok::<(), PresetNameError>(())
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum UpdateDefinitionError {
+    /// The change expects a revision of another run than the run of the host, which is `run`.
+    #[error("the change expects a revision of another run than {run}, which is the run of the process")]
+    OtherRun { run: RunId },
+    /// The workspace did not take the update. Its error says why, and names the definition:
+    /// no definition has the name, it has another revision than the change expects, it does not fit the workspace,
+    /// or a store failed.
+    #[error("{error}")]
+    NotUpdated { error: UpdateError },
+}
+
+/// Why a host did not [delete](crate::Host::delete) a definition of the workspace.
+///
+/// A delete that fails changed nothing.
+///
+/// ```
+/// use gaslightmq_host::prelude::*;
+///
+/// let run: RunId = "4be0643f1d98573b97cdca98a65347dd".parse()?;
+/// let error = DeleteDefinitionError::OtherRun { run };
+/// assert_eq!(
+///     error.to_string(),
+///     "the change expects a revision of another run than 4be0643f1d98573b97cdca98a65347dd, \
+///      which is the run of the process"
+/// );
+/// # Ok::<(), RunIdError>(())
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum DeleteDefinitionError {
+    /// The change expects a revision of another run than the run of the host, which is `run`.
+    #[error("the change expects a revision of another run than {run}, which is the run of the process")]
+    OtherRun { run: RunId },
+    /// The workspace did not take the delete. Its error says why, and names the definition:
+    /// no definition has the name, it has another revision than the change expects, other definitions use it,
+    /// or a store failed.
+    #[error("{error}")]
+    NotDeleted { error: DeleteError },
+}
+
 /// Why a host did not [arm](crate::Host::arm) a rule in an environment.
 ///
 /// | Variant | What is wrong |
@@ -99,6 +155,8 @@ pub struct NotRunningError {
 /// | [`WorkspaceInvalid`](Self::WorkspaceInvalid) | The selectors or the presets of the workspace do not hold together, so no rule resolves against them. |
 /// | [`Unresolved`](Self::Unresolved) | The rule does not resolve against the workspace: it names a selector or a preset that does not exist, or it could never fire. |
 /// | [`AlreadyArmed`](Self::AlreadyArmed) | A rule of that name is armed in the environment. |
+/// | [`Changed`](Self::Changed) | The rule has another revision in the environment than the change expects. |
+/// | [`OtherRun`](Self::OtherRun) | The change expects a revision of another run. |
 ///
 /// An error that leaves a rule disarmed changes nothing.
 ///
@@ -136,6 +194,66 @@ pub enum ArmRuleError {
         environment: EnvironmentName,
         rule: RuleName,
     },
+    /// The rule has another revision in the environment than the change expects: someone changed its definition
+    /// or its state there since. `revision` is the one it has now.
+    #[error(
+        "rule {:?} changed in environment {:?} since: it has revision {revision} now",
+        .rule.as_str(),
+        .environment.as_str()
+    )]
+    Changed {
+        environment: EnvironmentName,
+        rule: RuleName,
+        revision: Revision,
+    },
+    /// The change expects a revision of another run than the run of the host, which is `run`.
+    #[error("the change expects a revision of another run than {run}, which is the run of the process")]
+    OtherRun { run: RunId },
+}
+
+/// Why a host did not [disarm](crate::Host::disarm) a rule in an environment.
+///
+/// A rule that was not disarmed is as it was.
+///
+/// ```
+/// use gaslightmq_host::prelude::*;
+///
+/// let error = DisarmRuleError::NotArmed {
+///     environment: "staging-proxy".parse().expect("an environment name"),
+///     rule: "leader-flap".parse().expect("a rule name"),
+/// };
+/// assert_eq!(
+///     error.to_string(),
+///     "rule \"leader-flap\" is not armed in environment \"staging-proxy\""
+/// );
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum DisarmRuleError {
+    /// No environment of this name runs.
+    #[error("environment {:?} does not run", .environment.as_str())]
+    NotRunning { environment: EnvironmentName },
+    /// No rule of this name is armed in the environment: nobody armed it, someone disarmed it,
+    /// or its lifetime ended.
+    #[error("rule {:?} is not armed in environment {:?}", .rule.as_str(), .environment.as_str())]
+    NotArmed {
+        environment: EnvironmentName,
+        rule: RuleName,
+    },
+    /// The rule has another revision in the environment than the change expects: someone changed its definition
+    /// or its state there since. `revision` is the one it has now.
+    #[error(
+        "rule {:?} changed in environment {:?} since: it has revision {revision} now",
+        .rule.as_str(),
+        .environment.as_str()
+    )]
+    Changed {
+        environment: EnvironmentName,
+        rule: RuleName,
+        revision: Revision,
+    },
+    /// The change expects a revision of another run than the run of the host, which is `run`.
+    #[error("the change expects a revision of another run than {run}, which is the run of the process")]
+    OtherRun { run: RunId },
 }
 
 /// Why a host did not [fire a rule by hand](crate::Host::fire).
@@ -291,6 +409,21 @@ pub enum UpdateLiveRuleError {
     /// The rule does not resolve against the workspace. Its error names the rule.
     #[error("{error}")]
     Unresolved { error: RuleError },
+    /// The live rule has another revision than the change expects: someone changed its definition or its state
+    /// since. `revision` is the one it has now.
+    #[error(
+        "rule {:?} changed in environment {:?} since: it has revision {revision} now",
+        .rule.as_str(),
+        .environment.as_str()
+    )]
+    Changed {
+        environment: EnvironmentName,
+        rule: RuleName,
+        revision: Revision,
+    },
+    /// The change expects a revision of another run than the run of the host, which is `run`.
+    #[error("the change expects a revision of another run than {run}, which is the run of the process")]
+    OtherRun { run: RunId },
 }
 
 /// Why a host did not [remove a live rule](crate::Host::delete_live_rule) from an environment.
@@ -305,6 +438,21 @@ pub enum DeleteLiveRuleError {
         environment: EnvironmentName,
         rule: RuleName,
     },
+    /// The live rule has another revision than the change expects: someone changed its definition or its state
+    /// since. `revision` is the one it has now.
+    #[error(
+        "rule {:?} changed in environment {:?} since: it has revision {revision} now",
+        .rule.as_str(),
+        .environment.as_str()
+    )]
+    Changed {
+        environment: EnvironmentName,
+        rule: RuleName,
+        revision: Revision,
+    },
+    /// The change expects a revision of another run than the run of the host, which is `run`.
+    #[error("the change expects a revision of another run than {run}, which is the run of the process")]
+    OtherRun { run: RunId },
 }
 
 /// Why a host did not [keep a live rule](crate::Host::keep) in the workspace.
@@ -336,6 +484,21 @@ pub enum KeepRuleError {
     /// the rule does not fit the workspace, or a store failed.
     #[error("rule {:?} was not kept: {error}", .rule.as_str())]
     NotKept { rule: RuleName, error: CreateError },
+    /// The live rule has another revision than the change expects: someone changed its definition or its state
+    /// since. `revision` is the one it has now.
+    #[error(
+        "rule {:?} changed in environment {:?} since: it has revision {revision} now",
+        .rule.as_str(),
+        .environment.as_str()
+    )]
+    Changed {
+        environment: EnvironmentName,
+        rule: RuleName,
+        revision: Revision,
+    },
+    /// The change expects a revision of another run than the run of the host, which is `run`.
+    #[error("the change expects a revision of another run than {run}, which is the run of the process")]
+    OtherRun { run: RunId },
 }
 
 /// Why a host did not [create](crate::Host::create) a definition in the workspace.

@@ -64,11 +64,18 @@ mod next_to_the_others {
         );
         let configuration: HostConfiguration = HostConfiguration::default();
         let environment: EnvironmentConfiguration = EnvironmentConfiguration::new(&staging).unwrap();
-        let host: Host<MemoryContext> = Host::new(configuration.clone(), MemoryContext::new(), Lies::of_every_build());
+        let run: RunId = "4be0643f1d98573b97cdca98a65347dd".parse().unwrap();
+        let expects: Expects = Expects {
+            run,
+            revision: RevisionCounter::FIRST,
+        };
+        let host: Host<MemoryContext> =
+            Host::new(configuration.clone(), MemoryContext::new(), Lies::of_every_build(), run);
         vec![
             format!("{configuration:?}"),
             environment.name().to_string(),
             format!("{host:?}"),
+            expects.to_string(),
         ]
     }
 
@@ -164,15 +171,44 @@ mod next_to_the_others {
             uncreated.to_string(),
         ]
     }
+
+    /// One error of every type of the prelude that a run or a revision brought, each named without a path.
+    pub fn every_error_of_a_run_or_a_revision() -> Vec<String> {
+        let run: RunId = "4be0643f1d98573b97cdca98a65347dd".parse().unwrap();
+        let no_run: RunIdError = RunId::new("4be0").unwrap_err();
+        let earlier: UpdateDefinitionError = UpdateDefinitionError::OtherRun { run };
+        let gone: DeleteDefinitionError = DeleteDefinitionError::NotDeleted {
+            error: DeleteError::NotFound {
+                name: PresetName::new("blackhole").unwrap().into(),
+            },
+        };
+        let disarmed: DisarmRuleError = DisarmRuleError::Changed {
+            environment: "staging-proxy".parse().unwrap(),
+            rule: "blackhole".parse().unwrap(),
+            revision: RevisionCounter::FIRST,
+        };
+        // A message says everything, so no error has a source.
+        assert!(std::error::Error::source(&no_run).is_none());
+        assert!(std::error::Error::source(&earlier).is_none());
+        assert!(std::error::Error::source(&gone).is_none());
+        assert!(std::error::Error::source(&disarmed).is_none());
+        vec![
+            no_run.to_string(),
+            earlier.to_string(),
+            gone.to_string(),
+            disarmed.to_string(),
+        ]
+    }
 }
 
 #[test]
 fn the_prelude_names_every_item_next_to_the_other_preludes() {
     let items = next_to_the_others::every_item();
 
-    assert_eq!(items.len(), 3);
+    assert_eq!(items.len(), 4);
     assert_eq!(items[1], "staging-proxy");
     assert_eq!(items[2], "Host { running: [], .. }");
+    assert_eq!(items[3], "revision 1 of run 4be0643f1d98573b97cdca98a65347dd");
 }
 
 #[test]
@@ -198,6 +234,20 @@ fn the_prelude_names_the_error_of_every_type() {
             "a call backlog holds at least one call",
             "the calls were not followed: the selector store could not be read: disk full",
             "rule \"blackhole\" was not created: environment \"staging-proxy\" has a live rule of that name",
+        ]
+    );
+}
+
+#[test]
+fn the_prelude_names_the_error_of_a_run_and_of_a_change_that_expects_a_revision() {
+    assert_eq!(
+        next_to_the_others::every_error_of_a_run_or_a_revision(),
+        [
+            "a run ID has 32 hexadecimal digits, and not 4 characters",
+            "the change expects a revision of another run than 4be0643f1d98573b97cdca98a65347dd, \
+             which is the run of the process",
+            "preset \"blackhole\" does not exist",
+            "rule \"blackhole\" changed in environment \"staging-proxy\" since: it has revision 1 now",
         ]
     );
 }
