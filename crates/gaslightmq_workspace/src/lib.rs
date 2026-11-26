@@ -20,6 +20,7 @@
 //! | [`CreateError`], [`UpdateError`], [`DeleteError`] | Why a workspace did not make a change. |
 //! | [`ValidationError`] | Why the definitions of a workspace are not valid. |
 //! | [`ReloadError`] | Why a workspace did not reload what its stores hold. |
+//! | [`SaveError`] | Why a workspace did not save the changes that its stores hold. |
 //!
 //! The [`prelude`] holds all of them, and those of the `memory` feature when it is on.
 //!
@@ -88,12 +89,21 @@
 //! | [`Workspace::delete`] | [`DeleteError`] | No definition has the name, it changed since, other definitions use it, someone changed the store behind it, or a store failed. |
 //! | [`Workspace::validate`] | [`ValidationError`] | The definitions do not fit each other, or a store failed. |
 //! | [`Workspace::reload`] | [`ReloadError`] | What the stores read again does not fit together, or a store could not read again. |
+//! | [`Workspace::save`] | [`SaveError`] | Someone changed a place that the save would write, or a store could not write. |
 //!
 //! A [`WorkspaceError`] is one thing that does not fit, and an error that says so holds every one of them.
 //! The message of an error is complete: it writes them all, in one line.
 //! An error names its definitions with a [`DefinitionName`], because one error speaks about several kinds.
 //! What a store said is text, in a field `reason`.
 //! No error has a [`source`](std::error::Error::source).
+//!
+//! # Changes that wait for a save
+//!
+//! A store can hold its changes until someone saves them: see
+//! [`WriteBack`](gaslightmq_definition_api::WriteBack). The workspace says [when its stores write](Workspace::write_back),
+//! names [what they hold unsaved](Workspace::unsaved), and [saves](Workspace::save) every store at once: it checks
+//! every store before any writes, so a change that someone made outside holds up the whole save.
+//! A change gets its revision when it is made, and a save changes no definition, so it takes no number.
 //!
 //! # Async, and no IO
 //!
@@ -115,7 +125,7 @@ mod stores;
 mod workspace;
 
 pub use context::WorkspaceContext;
-pub use error::{CreateError, DeleteError, ReloadError, UpdateError, ValidationError, WorkspaceError};
+pub use error::{CreateError, DeleteError, ReloadError, SaveError, UpdateError, ValidationError, WorkspaceError};
 pub use kind::WorkspaceDefinition;
 #[cfg(feature = "memory")]
 pub use memory::{MemoryContext, MemoryStores};
@@ -143,8 +153,8 @@ pub mod prelude {
     #[doc(no_inline)]
     pub use crate::{
         CreateError, DefinitionChange, DefinitionName, DeleteError, Preview, Reload, ReloadError, Revision,
-        RevisionCounter, Stores, UpdateError, ValidationError, Workspace, WorkspaceContext, WorkspaceDefinition,
-        WorkspaceError,
+        RevisionCounter, SaveError, Stores, UpdateError, ValidationError, Workspace, WorkspaceContext,
+        WorkspaceDefinition, WorkspaceError,
     };
     #[cfg(feature = "memory")]
     #[doc(no_inline)]

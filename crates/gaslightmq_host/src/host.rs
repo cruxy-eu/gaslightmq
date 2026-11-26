@@ -12,7 +12,7 @@ use gaslightmq_backend::Backend;
 use gaslightmq_backend_upstream::UpstreamBackend;
 use gaslightmq_clock::Clock;
 use gaslightmq_clock_waitable::WallClock;
-use gaslightmq_definition_api::{Definition, Store, StoreReadError};
+use gaslightmq_definition_api::{Definition, Store, StoreReadError, WriteBack};
 use gaslightmq_engine::{ArmError, DisarmError, Engine, EveryEvent, LiveEvents, NotOpenError, OpenSession};
 use gaslightmq_environment::{EnvironmentName, Listeners};
 use gaslightmq_field::{ConnectionNumber, Endpoint};
@@ -25,7 +25,7 @@ use gaslightmq_selector::{Selector, SelectorRef, SelectorSet};
 use gaslightmq_surface::{EncoderMapping, PresenceId};
 use gaslightmq_traffic::{Statistics, Traffic, TrafficConfiguration};
 use gaslightmq_workspace::{
-    DefinitionName, Revision, RevisionCounter, Stores, Workspace, WorkspaceContext, WorkspaceDefinition,
+    DefinitionName, Revision, RevisionCounter, SaveError, Stores, Workspace, WorkspaceContext, WorkspaceDefinition,
 };
 use tokio::sync::broadcast;
 use tokio::task::JoinHandle;
@@ -300,6 +300,7 @@ impl<C: WorkspaceContext> Host<C> {
             revision
         };
         self.publish(HostChange::DefinitionChanged { name });
+        self.publish_unsaved().await;
         Ok(revision)
     }
 
@@ -318,10 +319,13 @@ impl<C: WorkspaceContext> Host<C> {
     /// # Errors
     ///
     /// - [`UpdateDefinitionError::OtherRun`] when the change expects a revision of another run.
-    /// - [`UpdateDefinitionError::Unresolved`] when a live rule that is armed would not resolve with the change.
     /// - [`UpdateDefinitionError::NotUpdated`] with the [`UpdateError`](gaslightmq_workspace::UpdateError) of the
     ///   workspace, which is [`Changed`](gaslightmq_workspace::UpdateError::Changed) when the definition has
     ///   another revision than the change expects.
+    /// - [`UpdateDefinitionError::Unresolved`] when a live rule that is armed would not resolve with the change.
+    ///
+    /// The errors come in that order: a change that expects what is no more is refused for that, whatever else is
+    /// wrong with it.
     pub async fn update<D: WorkspaceDefinition>(
         &self,
         definition: D,
@@ -337,15 +341,15 @@ impl<C: WorkspaceContext> Host<C> {
             // The workspace stays taken until every armed rule follows the change and the journals hold it,
             // so their entries come in its order.
             let mut workspace = self.workspace.lock().await;
-            let followings = match workspace.preview_update(definition.clone()).await {
-                Some(after) => self.followings(
-                    after.definitions::<Rule>(),
-                    &BTreeSet::new(),
-                    after.definitions::<Selector>(),
-                    after.definitions::<Preset>(),
-                ),
-                None => Ok(BTreeMap::new()),
-            };
+            // The workspace checks the update first, so a stale one is refused for being stale.
+            let checked = workspace.check_update(definition.clone(), expects).await;
+            let after = checked.map_err(|error| UpdateDefinitionError::NotUpdated { error })?;
+            let followings = self.followings(
+                after.definitions::<Rule>(),
+                &BTreeSet::new(),
+                after.definitions::<Selector>(),
+                after.definitions::<Preset>(),
+            );
             let followings = followings.map_err(
                 |Unfollowed {
                      environment,
@@ -375,6 +379,7 @@ impl<C: WorkspaceContext> Host<C> {
         for (environment, rule) in following {
             self.publish(HostChange::RuleChanged { environment, rule });
         }
+        self.publish_unsaved().await;
         Ok(revision)
     }
 
@@ -392,11 +397,14 @@ impl<C: WorkspaceContext> Host<C> {
     /// # Errors
     ///
     /// - [`DeleteDefinitionError::OtherRun`] when the change expects a revision of another run.
-    /// - [`DeleteDefinitionError::Unresolved`] when a live rule that is armed uses the definition, and would not
-    ///   resolve without it.
     /// - [`DeleteDefinitionError::NotDeleted`] with the [`DeleteError`](gaslightmq_workspace::DeleteError) of the
     ///   workspace, which is [`Changed`](gaslightmq_workspace::DeleteError::Changed) when the definition has
     ///   another revision than the change expects.
+    /// - [`DeleteDefinitionError::Unresolved`] when a live rule that is armed uses the definition, and would not
+    ///   resolve without it.
+    ///
+    /// The errors come in that order: a change that expects what is no more is refused for that, whatever else is
+    /// wrong with it.
     pub async fn delete(
         &self,
         name: impl Into<DefinitionName>,
@@ -416,15 +424,15 @@ impl<C: WorkspaceContext> Host<C> {
                 DefinitionName::Rule(rule) => BTreeSet::from([rule.clone()]),
                 _ => BTreeSet::new(),
             };
-            let followings = match workspace.preview_delete(name.clone()).await {
-                Some(after) => self.followings(
-                    after.definitions::<Rule>(),
-                    &gone,
-                    after.definitions::<Selector>(),
-                    after.definitions::<Preset>(),
-                ),
-                None => Ok(BTreeMap::new()),
-            };
+            // The workspace checks the delete first, so a stale one is refused for being stale.
+            let checked = workspace.check_delete(name.clone(), expects).await;
+            let after = checked.map_err(|error| DeleteDefinitionError::NotDeleted { error })?;
+            let followings = self.followings(
+                after.definitions::<Rule>(),
+                &gone,
+                after.definitions::<Selector>(),
+                after.definitions::<Preset>(),
+            );
             let followings = followings.map_err(
                 |Unfollowed {
                      environment,
@@ -455,7 +463,29 @@ impl<C: WorkspaceContext> Host<C> {
         for (environment, rule) in following {
             self.publish(HostChange::RuleChanged { environment, rule });
         }
+        self.publish_unsaved().await;
         Ok(revision)
+    }
+
+    /// Writes every change that the workspace holds and nobody saved yet, and returns the definitions that it saved.
+    /// See [`Workspace::save`].
+    ///
+    /// Only a workspace that [writes on save](Workspace::write_back) has something to save.
+    /// The save checks every file that it would write before it writes one, so a file that someone edited since
+    /// the workspace read it holds up the whole save. A save changes no definition: it takes no number, enters no
+    /// journal, and has no source. Whoever follows the host learns that nothing is unsaved any more.
+    ///
+    /// # Errors
+    ///
+    /// The [`SaveError`] of the workspace: someone changed a file that the save would write, and nothing was
+    /// written, or a store could not write.
+    pub async fn save(&self) -> Result<Vec<DefinitionName>, SaveError> {
+        let saved = {
+            let mut workspace = self.workspace.lock().await;
+            workspace.save().await
+        };
+        self.publish_unsaved().await;
+        saved
     }
 
     /// Starts an environment: its backend in front of the real cluster, and its proxy in front of the backend.
@@ -1097,6 +1127,14 @@ impl<C: WorkspaceContext> Host<C> {
     /// Tells whoever follows the host. A change that nobody follows is gone.
     fn publish(&self, change: HostChange) {
         let _ = self.changes.send(change);
+    }
+
+    /// Tells whoever follows the host that what the workspace holds unsaved may be other, when the workspace writes
+    /// on save. A workspace that writes each change has nothing unsaved, and tells nothing.
+    pub(super) async fn publish_unsaved(&self) {
+        if self.workspace.lock().await.write_back() == WriteBack::OnSave {
+            self.publish(HostChange::WorkspaceChanged);
+        }
     }
 
     /// Refuses listeners that meet those of an environment that runs, and a name that runs already.

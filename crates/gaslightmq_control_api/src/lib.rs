@@ -29,6 +29,7 @@
 //! | [`ParseSentence`], [`ParsedSentence`], [`WordCompletion`], [`WordKind`], [`UnreadWord`] | A ⌘K sentence that is still being typed, and the rule it gives. |
 //! | [`QueryJournal`] | The journal of an environment: what changed there, and where each change came from. |
 //! | [`ReloadWorkspace`], [`Reloaded`], [`DefinitionChange`] | Reading the files of the workspace again, what the reload took in, and what it changed in one definition. |
+//! | [`WorkspaceStatus`], [`WriteBack`], [`SaveWorkspace`], [`Saved`] | The workspace as a whole: when it writes its changes, whether it is read-only, what nobody saved yet, and saving it. |
 //! | [`StreamMessage`], [`ProcessState`], [`RunningEnvironment`] | The live stream, and the state it starts from. |
 //! | [`Stats`], [`RuleStats`] | Calls per API, and how far each rule got. |
 //! | [`Subscription`] | Which calls a client of the stream follows. |
@@ -149,7 +150,8 @@
 //! | [`FireRule`] | [`FireRuleError`] | The environment does not run, no rule has the name, the rule cannot fire from where it stands, or a store could not read. |
 //! | [`SendIntent`] | [`IntentError`] | The environment does not run, the layout does not exist, the environment cannot act on the intent, or a store could not read. |
 //! | [`CloseSession`] | [`CloseSessionError`] | The environment does not run, or no session is open on the connection. |
-//! | [`ReloadWorkspace`] | [`ReloadWorkspaceError`] | A rule of the files has the name of a live rule, an armed live rule would not fit the files, the files do not fit each other, or a file does not read. |
+//! | [`ReloadWorkspace`] | [`ReloadWorkspaceError`] | A rule of the files has the name of a live rule, an armed live rule would not fit the files, the workspace holds changes that nobody saved, the files do not fit each other, or a file does not read. |
+//! | [`SaveWorkspace`] | [`SaveWorkspaceError`] | Someone edited a file that the save would write, or a file could not be written. |
 //!
 //! A change that says what it [`Expects`] fails with the variant `Changed` when the thing has another revision,
 //! and with `OtherRun` when the revision is of another run. Either way it changed nothing.
@@ -157,7 +159,9 @@
 //! A change that writes a file fails with `ChangedOutside` when someone edited that file since the process read it.
 //! No revision is involved: the process does not hold what the file holds now, until someone
 //! [reloads](ReloadWorkspace). A read-only workspace refuses every such change with `StoreFailed`, and the
-//! [state of the process](ProcessState::read_only) says beforehand that it is read-only.
+//! [state of the process](ProcessState::workspace) says beforehand that it is read-only.
+//! A workspace that [writes on save](WriteBack::OnSave) writes no file on a change, so a change fails that way
+//! only on the [save](SaveWorkspace).
 //!
 //! A request can also fail before its operation runs, in the same way for every operation:
 //! the process does not serve the operation yet, reads no operation in the request,
@@ -185,7 +189,7 @@
 //! | [`DefinitionChange`] | A map with one entry: `created`, `updated` or `deleted`, and the [`DefinitionRef`]. |
 //! | [`StreamMessage`] | The map of its fields, with a `message` key that names it: `rule-changed`. |
 //! | [`Subscription`] | The map of its fields, with a `follow` key: `calls` or `nothing`. |
-//! | [`BackendKind`], [`SessionCloser`], [`WordKind`], [`RequestSurface`], [`RequestCause`] | The name in kebab case. |
+//! | [`BackendKind`], [`SessionCloser`], [`WordKind`], [`RequestSurface`], [`RequestCause`], [`WriteBack`] | The name in kebab case. |
 //! | Every other type | A map of its fields. A field that is `None` or empty is left out. |
 //!
 //! # What the control plane does not hold yet
@@ -254,7 +258,10 @@ pub use sentence::{ParseSentence, ParsedSentence, UnreadWord, WordCompletion, Wo
 pub use sessions::{CloseSession, CloseSessionError, ListSessions, SessionCloser, SessionIdentity, SessionStatus};
 pub use stats::{RuleStats, Stats};
 pub use stream::{ProcessState, RunningEnvironment, StreamMessage, Subscription};
-pub use workspace::{DefinitionChange, ReloadWorkspace, ReloadWorkspaceError, Reloaded};
+pub use workspace::{
+    DefinitionChange, ReloadWorkspace, ReloadWorkspaceError, Reloaded, SaveWorkspace, SaveWorkspaceError, Saved,
+    WorkspaceStatus, WriteBack,
+};
 
 /// Every type of this crate, with its error.
 ///
@@ -281,8 +288,9 @@ pub mod prelude {
         ListEnvironments, ListSessions, Operation, OperationRequest, ParseSentence, ParsedSentence, ProcessState,
         QueryJournal, ReloadWorkspace, ReloadWorkspaceError, Reloaded, RequestCause, RequestError, RequestSource,
         RequestSurface, Revised, Revision, RuleCommandError, RuleHolder, RuleStats, RuleStatus, RunId, RunIdError,
-        RunningEnvironment, SendIntent, SessionCloser, SessionIdentity, SessionStatus, StartEnvironment,
-        StartEnvironmentError, Stats, StopEnvironment, StreamMessage, Subscription, UnreadWord, UpdateDefinition,
-        UpdateDefinitionError, UpdateLiveRule, UpdateLiveRuleError, WordCompletion, WordKind,
+        RunningEnvironment, SaveWorkspace, SaveWorkspaceError, Saved, SendIntent, SessionCloser, SessionIdentity,
+        SessionStatus, StartEnvironment, StartEnvironmentError, Stats, StopEnvironment, StreamMessage, Subscription,
+        UnreadWord, UpdateDefinition, UpdateDefinitionError, UpdateLiveRule, UpdateLiveRuleError, WordCompletion,
+        WordKind, WorkspaceStatus, WriteBack,
     };
 }

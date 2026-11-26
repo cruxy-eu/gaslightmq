@@ -1,6 +1,23 @@
 //! The one trait through which the definitions of one kind are kept.
 
-use crate::{Definition, StoreChangeError, StoreCreateError, StoreReadError};
+use crate::{Definition, StoreChangeError, StoreCreateError, StoreReadError, StoreSaveError};
+
+/// When a store writes a change to where it keeps its definitions.
+///
+/// ```
+/// use gaslightmq_definition_api::prelude::*;
+///
+/// assert_eq!(WriteBack::default(), WriteBack::EachChange);
+/// ```
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+pub enum WriteBack {
+    /// A change is kept by the time it returns, as a store in memory keeps it.
+    #[default]
+    EachChange,
+    /// A change is held until someone saves: the store lists it at once, and writes every change
+    /// that it holds with the next save, in one go.
+    OnSave,
+}
 
 /// What keeps the definitions of one kind: the files of a workspace, memory, or anything else.
 ///
@@ -19,6 +36,7 @@ use crate::{Definition, StoreChangeError, StoreCreateError, StoreReadError};
 /// | Lets go of a definition it holds. | [`delete`](Self::delete) |
 /// | Says whether a write of a definition loses a comment of its text. | [`would_lose_comment`](Self::would_lose_comment) |
 /// | Says whether it refuses every change. | [`read_only`](Self::read_only) |
+/// | Says when it writes a change, names what it holds and has not written, and writes it. | [`write_back`](Self::write_back), [`unsaved`](Self::unsaved), [`check_unsaved`](Self::check_unsaved), [`stage_unsaved`](Self::stage_unsaved), [`commit_staged`](Self::commit_staged), [`drop_staged`](Self::drop_staged) |
 /// | Reads again what someone else can change, and holds it once it is taken. | [`read_again`](Self::read_again), [`take_reading`](Self::take_reading) |
 ///
 /// # What every store keeps to
@@ -56,6 +74,29 @@ use crate::{Definition, StoreChangeError, StoreCreateError, StoreReadError};
 ///
 /// A store can also be read-only, as the files of a workspace that CI mounts read-only:
 /// it says so with [`read_only`](Self::read_only), and refuses every create, update and delete with `Failed`.
+///
+/// # Changes that wait for a save
+///
+/// A store can hold its changes until someone saves them, as the files of a workspace that someone edits in the UI
+/// and saves in one go. It says so with [`write_back`](Self::write_back).
+///
+/// - **A change is there at once.** The store lists it from the moment the change returns, as any store does.
+/// - **The store names what it has not written.** [`unsaved`](Self::unsaved) gives the name of every definition that
+///   it created, updated or deleted since the last save.
+/// - **A save goes in three steps**, so that the stores of every kind save as one, as far as a file system lets them.
+///   [`check_unsaved`](Self::check_unsaved) says whether a save would write over a change that the store has not
+///   read. [`stage_unsaved`](Self::stage_unsaved) writes every change where nobody reads it yet, and changes nothing
+///   that anyone sees. [`commit_staged`](Self::commit_staged) puts what it staged in its place, one place at a time.
+///   Whoever holds the stores of every kind checks all of them, then stages all of them, and commits only once
+///   every store staged; when one fails before the commit, it [drops](Self::drop_staged) what the others staged,
+///   and nothing changed.
+/// - **A commit that stops on the way says so, and keeps the rest unsaved.**
+///   What it put in its place is saved, and [`unsaved`](Self::unsaved) no longer names it.
+///   What it did not is still unsaved, and the next save writes it.
+/// - **Reading again lets go of what was not saved.** A reading that the store [takes](Self::take_reading) is what
+///   it holds from then on, and nothing is unsaved after it.
+///
+/// A store that writes each change keeps these methods as the trait writes them: it has nothing unsaved.
 ///
 /// The trait is a signature, and it has no logic.
 /// It names no runtime: a store waits however it likes, and whoever calls it drives the futures.
@@ -129,6 +170,62 @@ pub trait Store<D: Definition>: Send + Sync {
     /// A store that takes changes, such as a store in memory, keeps this method as the trait writes it.
     fn read_only(&self) -> bool {
         false
+    }
+
+    /// When the store writes a change: by the time the change returns, or with the next save.
+    /// A store that writes each change keeps this method as the trait writes it.
+    fn write_back(&self) -> WriteBack {
+        WriteBack::EachChange
+    }
+
+    /// The name of every definition that the store created, updated or deleted since the last save, and has not
+    /// written yet, in the order of their names. A store that writes each change has none.
+    fn unsaved(&self) -> impl Future<Output = Vec<D::Name>> + Send {
+        async { Vec::new() }
+    }
+
+    /// Checks that a save would write over nothing that someone else changed since the store read it.
+    /// It writes nothing.
+    ///
+    /// # Errors
+    ///
+    /// - [`StoreSaveError::ChangedOutside`] with every place that someone else changed.
+    /// - [`StoreSaveError::Failed`] when the store could not look.
+    fn check_unsaved(&self) -> impl Future<Output = Result<(), StoreSaveError>> + Send {
+        async { Ok(()) }
+    }
+
+    /// Writes every change that the store holds and has not written yet where nobody reads it yet, so that
+    /// [`commit_staged`](Self::commit_staged) only has to put it in place. It checks first, as
+    /// [`check_unsaved`](Self::check_unsaved) does, and changes nothing that anyone reads: the store lists what it
+    /// listed, and what it stages is no definition of anyone.
+    ///
+    /// A stage replaces what an earlier stage left.
+    ///
+    /// # Errors
+    ///
+    /// - [`StoreSaveError::ChangedOutside`] with every place that someone else changed. The store staged nothing.
+    /// - [`StoreSaveError::Failed`] when the store could not write. It staged nothing.
+    fn stage_unsaved(&self) -> impl Future<Output = Result<(), StoreSaveError>> + Send {
+        async { Ok(()) }
+    }
+
+    /// Puts every change that the last [stage](Self::stage_unsaved) wrote in its place, one place at a time.
+    /// What it put in its place is saved, and the store names it unsaved no more.
+    ///
+    /// # Errors
+    ///
+    /// [`StoreSaveError::Failed`] when one place could not take its change. `reason` names it.
+    /// What the commit put in its place before is saved, and everything from that place on is still unsaved:
+    /// the store dropped what it had staged for it.
+    fn commit_staged(&self) -> impl Future<Output = Result<(), StoreSaveError>> + Send {
+        async { Ok(()) }
+    }
+
+    /// Takes away what the last [stage](Self::stage_unsaved) wrote, without putting it in place: another store
+    /// did not stage. Every change stays unsaved, and nothing changed.
+    fn drop_staged(&self) -> impl Future<Output = ()> + Send {
+        async {}
     }
 
     /// Reads again what someone else can change, and gives every definition it read, in the order of their names.

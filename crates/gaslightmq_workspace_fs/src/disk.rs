@@ -57,6 +57,19 @@ pub(crate) fn read(directory: &Path, file: &Path) -> Result<Option<Vec<u8>>, Str
 ///
 /// What the system said, when the file could not be written. The file is then as it was.
 pub(crate) fn replace(directory: &Path, file: &Path, text: &str) -> Result<(), String> {
+    let temporary = write_beside(directory, file, text)?;
+    put_in_place(directory, &temporary, file)
+}
+
+/// Writes `text` to a temporary file next to `file`, and waits until its bytes are on the disk.
+/// Returns the temporary file, which nobody reads as a definition: its name starts with a `.`.
+///
+/// The directory of the file is made when it is not there. The file itself stays as it is.
+///
+/// # Errors
+///
+/// What the system said, when the temporary file could not be written. Nothing of it is left then.
+pub(crate) fn write_beside(directory: &Path, file: &Path, text: &str) -> Result<PathBuf, String> {
     let path = directory.join(file);
     let parent = path.parent().unwrap_or(directory);
     fs::create_dir_all(parent).map_err(|error| error.to_string())?;
@@ -64,21 +77,60 @@ pub(crate) fn replace(directory: &Path, file: &Path, text: &str) -> Result<(), S
         .file_name()
         .map_or_else(Default::default, |name| name.to_string_lossy());
     let temporary = parent.join(format!(".{name}.{}.tmp", std::process::id()));
-    let written = write_through(&temporary, text).and_then(|()| fs::rename(&temporary, &path));
-    written.map_err(|error| {
-        // What is left of the temporary file is of no use to anyone, whatever failed.
+    write_through(&temporary, text).map_err(|error| {
+        // What is left of the temporary file is of no use to anyone.
         let _ = fs::remove_file(&temporary);
         error.to_string()
-    })
+    })?;
+    Ok(temporary)
 }
 
-/// Takes a file away.
+/// Renames a temporary file that [`write_beside`] wrote over `file`, in one step, and asks the system to keep the
+/// rename through a crash.
+///
+/// # Errors
+///
+/// What the system said, when the rename failed. The file is then as it was, and the temporary file is gone.
+pub(crate) fn put_in_place(directory: &Path, temporary: &Path, file: &Path) -> Result<(), String> {
+    let path = directory.join(file);
+    fs::rename(temporary, &path).map_err(|error| {
+        let _ = fs::remove_file(temporary);
+        error.to_string()
+    })?;
+    keep_entries_of(path.parent().unwrap_or(directory));
+    Ok(())
+}
+
+/// Takes away a temporary file that [`write_beside`] wrote, and that nobody puts in place.
+pub(crate) fn throw_away(temporary: &Path) {
+    // A temporary file that is gone already is as good as one taken away.
+    let _ = fs::remove_file(temporary);
+}
+
+/// Takes a file away, and asks the system to keep that through a crash.
 ///
 /// # Errors
 ///
 /// What the system said, when the file could not be removed.
 pub(crate) fn remove(directory: &Path, file: &Path) -> Result<(), String> {
-    fs::remove_file(directory.join(file)).map_err(|error| error.to_string())
+    let path = directory.join(file);
+    fs::remove_file(&path).map_err(|error| error.to_string())?;
+    keep_entries_of(path.parent().unwrap_or(directory));
+    Ok(())
+}
+
+/// Asks the system to put what a directory lists on the disk, so that a rename or a remove in it survives a crash.
+///
+/// The file is in its place, or gone, before this runs, so a system that refuses changes nothing that a reader
+/// sees: the entry reaches the disk with the next sync of the system instead. A system that cannot open a directory
+/// as a file, as Windows, is asked nothing.
+fn keep_entries_of(directory: &Path) {
+    #[cfg(unix)]
+    if let Ok(entries) = fs::File::open(directory) {
+        let _ = entries.sync_all();
+    }
+    #[cfg(not(unix))]
+    let _ = directory;
 }
 
 /// Writes a new file, and waits until its bytes are on the disk.

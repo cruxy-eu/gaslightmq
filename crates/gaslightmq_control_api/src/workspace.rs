@@ -1,4 +1,4 @@
-//! The workspace as a whole: reading its files again.
+//! The workspace as a whole: when it writes its changes, saving them, and reading its files again.
 
 use std::fmt;
 
@@ -24,13 +24,18 @@ use crate::{DefinitionRef, Operation, Revision, RuleHolder};
 /// - **What changed comes from the files.** The journal of every environment that runs records each change with
 ///   the surface `file`, whoever asked for the reload, and nobody undoes it.
 /// - **A workspace without files has nothing to reload**, and the reload changes nothing.
+/// - **A reload does not let go of changes that nobody saved, unless it says so.**
+///   A workspace that [writes on save](WriteBack::OnSave) can hold changes that are not in the files yet.
+///   A reload refuses with `unsaved` then, and one with `discard-unsaved` lets go of them: each comes back to what
+///   the files hold, as a change of the reload.
 ///
-/// With `serde`, it is `{ "operation": "reload-workspace" }`.
+/// With `serde`, it is `{ "operation": "reload-workspace" }`, and `"discard-unsaved": true` next to it for a reload
+/// that lets go of what nobody saved.
 ///
 /// ```
 /// use gaslightmq_control_api::prelude::*;
 ///
-/// let request = OperationRequest::new(RequestSurface::Cli, ReloadWorkspace {});
+/// let request = OperationRequest::new(RequestSurface::Cli, ReloadWorkspace { discard_unsaved: false });
 /// assert_eq!(
 ///     serde_json::to_value(request).expect("a request has a form"),
 ///     serde_json::json!({ "from": { "surface": "cli" }, "operation": "reload-workspace" }),
@@ -38,7 +43,12 @@ use crate::{DefinitionRef, Operation, Revision, RuleHolder};
 /// ```
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct ReloadWorkspace {}
+pub struct ReloadWorkspace {
+    /// Whether the reload lets go of the changes that the workspace holds and nobody saved.
+    /// Without it, a reload refuses while there are any.
+    #[serde(rename = "discard-unsaved", default, skip_serializing_if = "std::ops::Not::not")]
+    pub discard_unsaved: bool,
+}
 
 impl Operation for ReloadWorkspace {
     type Answer = Reloaded;
@@ -113,6 +123,7 @@ impl fmt::Display for DefinitionChange {
 /// | Variant | What to do about it |
 /// |---|---|
 /// | [`NameTaken`](Self::NameTaken) | Delete the live rule first, or give the rule of the files another name. |
+/// | [`Unsaved`](Self::Unsaved) | [Save](SaveWorkspace) first, or reload again with `discard-unsaved`. |
 /// | [`LiveRuleDoesNotFit`](Self::LiveRuleDoesNotFit) | Disarm or delete the live rule first, or bring back in the files what it uses. |
 /// | [`DoesNotFit`](Self::DoesNotFit), [`StoreFailed`](Self::StoreFailed) | Fix the files, and reload again: `reason` says what is wrong. |
 ///
@@ -148,6 +159,10 @@ pub enum ReloadWorkspaceError {
         rule: RuleName,
         reason: String,
     },
+    /// The workspace writes on save, and holds changes of these definitions that nobody saved.
+    /// The reload would let go of them, and does not without `discard-unsaved`. There is at least one.
+    #[error("the workspace was not reloaded: {} changed, and nobody saved it", all(.definitions))]
+    Unsaved { definitions: Vec<DefinitionRef> },
     /// The files read, and the definitions in them do not fit each other. `reason` says everything that is wrong.
     #[error("the files of the workspace do not fit each other: {reason}")]
     DoesNotFit { reason: String },
@@ -165,4 +180,135 @@ fn holds(holder: &RuleHolder) -> String {
         }
         RuleHolder::Scenario(scenario) => format!("scenario {:?} owns a rule of that name", scenario.as_str()),
     }
+}
+
+/// The definitions as a sentence lists them: `a`, `a and b`, or `a, b and c`.
+fn all(definitions: &[DefinitionRef]) -> String {
+    let names: Vec<String> = definitions.iter().map(ToString::to_string).collect();
+    match names.as_slice() {
+        [] => String::new(),
+        [only] => only.clone(),
+        [first @ .., last] => format!("{} and {last}", first.join(", ")),
+    }
+}
+
+/// When the workspace writes a change of a definition to its files.
+///
+/// Whoever starts the process picks one, with `write_back` of its configuration.
+/// The workspace writes each change until someone says otherwise.
+///
+/// With `serde`, it is the name in kebab case: `each-change` or `on-save`.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum WriteBack {
+    /// Every create, update and delete writes the file of its definition before it answers.
+    #[default]
+    EachChange,
+    /// A change stays in memory, and one [save](SaveWorkspace) writes every change in one go.
+    OnSave,
+}
+
+/// The workspace as a whole: when it writes its changes, whether it takes any, and what nobody saved yet.
+///
+/// The [state of the process](crate::ProcessState) holds it, and a
+/// [`workspace-changed`](crate::StreamMessage::WorkspaceChanged) says what it is after a change.
+///
+/// With `serde`, it is a map of its fields. A workspace that takes changes leaves `read-only` out, and one with
+/// nothing unsaved leaves `unsaved` out: `{ "write-back": "on-save", "unsaved": [{ "selector": "order-producers" }] }`.
+///
+/// ```
+/// use gaslightmq_control_api::prelude::*;
+/// use gaslightmq_control_api::selector::SelectorName;
+///
+/// let producers: SelectorName = "order-producers".parse().expect("a selector name");
+/// let workspace = WorkspaceStatus { write_back: WriteBack::OnSave, read_only: false, unsaved: vec![producers.into()] };
+/// assert_eq!(
+///     serde_json::to_value(&workspace).expect("a state has a form"),
+///     serde_json::json!({ "write-back": "on-save", "unsaved": [{ "selector": "order-producers" }] }),
+/// );
+/// ```
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct WorkspaceStatus {
+    /// When the workspace writes a change of a definition to its files.
+    #[serde(rename = "write-back")]
+    pub write_back: WriteBack,
+    /// Whether the workspace is read-only: the process reads its files, and reads them again, and refuses every
+    /// change of a definition. Whoever starts the process says so.
+    #[serde(rename = "read-only", default, skip_serializing_if = "std::ops::Not::not")]
+    pub read_only: bool,
+    /// Every definition that someone created, updated or deleted since the last save, in the order of the kinds and
+    /// the names. A workspace that writes each change has none.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub unsaved: Vec<DefinitionRef>,
+}
+
+/// Write every change that the workspace holds and nobody saved yet, in one go.
+///
+/// Only a workspace that [writes on save](WriteBack::OnSave) holds such changes.
+///
+/// - **The save checks every file that it would write before it writes one.**
+///   When someone edited one of them since the process read it, the save fails with `changed-outside`,
+///   names every such file, and writes nothing. A [reload](ReloadWorkspace) with `discard-unsaved` takes the edits
+///   in, and whoever made the changes makes them again on top of them.
+/// - **Then it writes every file beside its place, and only then renames them in place, one at a time.**
+///   A file that cannot be written leaves every file as it was, and the save fails with `store-failed`.
+///   A rename that fails stops the save there: it fails with `partly-saved`, which names what it saved before,
+///   and everything else still waits. The save is not one step across files: a crash during the renames leaves
+///   some files saved and some not.
+/// - **A save changes no definition.** Every definition keeps its revision, so the save expects nothing and
+///   answers with no revision, and no journal records it.
+/// - **A workspace with nothing unsaved saves nothing**, and answers so.
+///
+/// With `serde`, it is `{ "operation": "save-workspace" }`.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SaveWorkspace {}
+
+impl Operation for SaveWorkspace {
+    type Answer = Saved;
+    type Error = SaveWorkspaceError;
+}
+
+/// What a [save](SaveWorkspace) wrote.
+///
+/// With `serde`, it is a map of its field, and a save that wrote nothing is `{}`:
+/// `{ "saved": [{ "selector": "order-producers" }, { "rule": "slow-order-producers" }] }`.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Saved {
+    /// Every definition whose change the save wrote, in the order of the kinds and the names.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub saved: Vec<DefinitionRef>,
+}
+
+/// Why the control plane did not [save](SaveWorkspace) the workspace.
+///
+/// ```
+/// use gaslightmq_control_api::prelude::*;
+///
+/// let error = SaveWorkspaceError::ChangedOutside {
+///     reason: "selectors.yaml changed since the store read it".to_owned(),
+/// };
+/// assert_eq!(
+///     error.to_string(),
+///     "the workspace saved nothing, because selectors.yaml changed since the store read it",
+/// );
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error, Serialize, Deserialize)]
+#[serde(tag = "error", rename_all = "kebab-case", deny_unknown_fields)]
+pub enum SaveWorkspaceError {
+    /// Someone edited a file that the save would write since the process read it, and the save wrote nothing.
+    /// `reason` names every such file, and how it changed: its bytes changed, it is gone, or it exists now.
+    #[error("the workspace saved nothing, because {reason}")]
+    ChangedOutside { reason: String },
+    /// A file could not be written, and the save saved nothing: every edit still waits.
+    /// `reason` says which file, and what the system said.
+    #[error("the workspace was not saved: {reason}")]
+    StoreFailed { reason: String },
+    /// The save stopped on the way, after it saved the definitions of `saved`: a file did not take its rename.
+    /// Every other edit still waits for the next save, and none of them is among `saved`.
+    /// `reason` says which file, and what the system said.
+    #[error("the workspace saved {} and stopped: {reason}", all(.saved))]
+    PartlySaved { saved: Vec<DefinitionRef>, reason: String },
 }

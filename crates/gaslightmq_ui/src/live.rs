@@ -52,7 +52,7 @@ pub enum Link {
 /// let snapshot = ProcessState {
 ///     run: "4be0643f1d98573b97cdca98a65347dd".parse().expect("a run ID"),
 ///     definitions: Definitions::default(),
-///     read_only: false,
+///     workspace: WorkspaceStatus::default(),
 ///     environments: Vec::new(),
 /// };
 /// live.apply(StreamMessage::Snapshot(snapshot));

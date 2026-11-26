@@ -50,8 +50,8 @@ pub struct Process {
     revisions: BTreeMap<DefinitionRef, Revision>,
     /// The definitions whose write would lose a comment of their file.
     losing_comments: BTreeSet<DefinitionRef>,
-    /// Whether the workspace refuses every change of a definition.
-    read_only: bool,
+    /// The workspace as a whole: when it writes its changes, whether it takes any, and what nobody saved yet.
+    workspace: WorkspaceStatus,
     environments: Vec<RunningEnvironment>,
     /// The statistics of each environment, the newest last, as many as `stats_kept` says.
     stats: BTreeMap<EnvironmentName, VecDeque<Stats>>,
@@ -65,7 +65,7 @@ impl Process {
         let ProcessState {
             run,
             definitions,
-            read_only,
+            workspace,
             environments,
         } = state;
         let mut revisions = BTreeMap::new();
@@ -104,7 +104,7 @@ impl Process {
             definitions,
             revisions,
             losing_comments,
-            read_only,
+            workspace,
             environments,
             stats: BTreeMap::new(),
             stats_kept,
@@ -133,9 +133,9 @@ impl Process {
         self.losing_comments.contains(name)
     }
 
-    /// Whether the workspace is read-only: the process refuses every change of a definition.
-    pub const fn read_only(&self) -> bool {
-        self.read_only
+    /// The workspace as a whole: when it writes its changes, whether it is read-only, and what nobody saved yet.
+    pub const fn workspace(&self) -> &WorkspaceStatus {
+        &self.workspace
     }
 
     /// The revision that `subject` has, as far as the live stream told it, or `None` when the process holds no such
@@ -258,6 +258,7 @@ impl Process {
                 self.environments.retain(|running| &running.environment != environment);
                 self.stats.remove(environment);
             }
+            StreamMessage::WorkspaceChanged { workspace } => self.workspace = workspace.clone(),
             StreamMessage::WorkspaceInvalid { reason } => self.workspace_invalid = Some(reason.clone()),
             // No view shows the journal yet, so the state keeps no entry of it.
             StreamMessage::JournalEntry { .. }

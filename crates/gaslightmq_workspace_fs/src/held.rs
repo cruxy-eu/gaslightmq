@@ -2,7 +2,7 @@
 //!
 //! Nothing here reads or writes a file. The store hands in the bytes it found, and writes the text it gets back.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::hash::{DefaultHasher, Hasher};
 use std::path::{Path, PathBuf};
 
@@ -14,19 +14,47 @@ use crate::kind::{FileDefinition, Place};
 use crate::text::{self, Read};
 
 /// Every file of one kind that a store read or wrote, and every definition in them.
+///
+/// A store that writes on save also holds what it changed and has not written: a file of it holds the text after
+/// the change, and the hash of the bytes on the disk that the save expects to find.
 #[derive(Debug)]
 pub(crate) struct Held<D: FileDefinition> {
     /// By the path below the directory of the workspace, with the files that the store found missing.
     files: BTreeMap<PathBuf, Known>,
     definitions: BTreeMap<D::Name, Entry<D>>,
+    /// The files that hold a change that is not written yet, by their path.
+    unsaved: BTreeMap<PathBuf, Unsaved<D>>,
 }
 
-/// What a store knows of one file: the hash of its bytes and their layout, or that the file is not there.
+/// What a store knows of one file: the hash of its bytes, their layout and their text, or that the file is not
+/// there.
 #[derive(Debug, Clone)]
 struct Known {
     /// `None` when the file is not there.
     fingerprint: Option<Fingerprint>,
     document: Document,
+    /// The text of the file, empty when the file is not there.
+    text: String,
+}
+
+/// A file that holds a change that the store has not written yet.
+#[derive(Debug, Clone)]
+struct Unsaved<D: Definition> {
+    /// The hash of the bytes that the disk held when the store last read or wrote the file, or `None` when the file
+    /// was not there. A save expects to find them.
+    on_disk: Option<Fingerprint>,
+    /// The definitions of the file that the store created, updated or deleted since.
+    names: BTreeSet<D::Name>,
+}
+
+/// What a save writes to one file: its text, or `None` when the file goes.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct Pending {
+    pub(crate) file: PathBuf,
+    /// The hash of the bytes that the save expects to find on the disk, or `None` for a file that is not there.
+    pub(crate) on_disk: Option<Fingerprint>,
+    /// The text that the file holds after the save, or `None` when the file goes.
+    pub(crate) text: Option<String>,
 }
 
 /// One definition, and the item of the file that holds it.
@@ -69,12 +97,23 @@ pub(crate) enum After<D> {
     Gone,
 }
 
+impl<D: Definition> Edit<D> {
+    /// The name of the definition that the change changes.
+    pub(crate) fn name(&self) -> &D::Name {
+        match self {
+            Edit::Create(definition) | Edit::Update(definition) => definition.name(),
+            Edit::Delete(name) => name,
+        }
+    }
+}
+
 impl<D: FileDefinition> Held<D> {
     /// What a store holds before it read anything: no definition, and no file.
     pub(crate) fn new() -> Self {
         Self {
             files: BTreeMap::new(),
             definitions: BTreeMap::new(),
+            unsaved: BTreeMap::new(),
         }
     }
 
@@ -140,6 +179,7 @@ impl<D: FileDefinition> Held<D> {
                 Known {
                     fingerprint: Some(Fingerprint::of(&bytes)),
                     document: read.document,
+                    text: text.to_owned(),
                 },
             );
         }
@@ -304,10 +344,63 @@ impl<D: FileDefinition> Held<D> {
                     Known {
                         fingerprint: Some(Fingerprint::of(text.as_bytes())),
                         document: read.document,
+                        text,
                     },
                 );
             }
         }
+    }
+
+    /// The text that the store holds of a file: what it read or wrote, or what a change left that it has not
+    /// written yet. A file that is not there holds no text.
+    pub(crate) fn text(&self, file: &Path) -> &str {
+        self.files.get(file).map_or("", |known| known.text.as_str())
+    }
+
+    /// Holds what a file holds after a change that the store does not write until a save: `name` is the
+    /// definition that the change changed.
+    ///
+    /// The first change of a file since the store read or wrote it keeps the hash of the bytes on the disk, which
+    /// the save expects to find.
+    pub(crate) fn hold(&mut self, file: PathBuf, after: After<D>, name: D::Name) {
+        let on_disk = self.fingerprint(&file);
+        self.unsaved
+            .entry(file.clone())
+            .or_insert_with(|| Unsaved {
+                on_disk,
+                names: BTreeSet::new(),
+            })
+            .names
+            .insert(name);
+        self.take(file, after);
+    }
+
+    /// The name of every definition that a change created, updated or deleted since the last save, in the order of
+    /// their names.
+    pub(crate) fn unsaved_names(&self) -> Vec<D::Name> {
+        let names: BTreeSet<&D::Name> = self.unsaved.values().flat_map(|unsaved| &unsaved.names).collect();
+        names.into_iter().cloned().collect()
+    }
+
+    /// What a save writes, file by file, in the order of their paths.
+    pub(crate) fn pending(&self) -> Vec<Pending> {
+        self.unsaved
+            .iter()
+            .map(|(file, unsaved)| Pending {
+                file: file.clone(),
+                on_disk: unsaved.on_disk,
+                text: self
+                    .files
+                    .get(file)
+                    .filter(|known| known.fingerprint.is_some())
+                    .map(|known| known.text.clone()),
+            })
+            .collect()
+    }
+
+    /// The save wrote the file, so the disk holds what the store holds of it.
+    pub(crate) fn saved(&mut self, file: &Path) {
+        self.unsaved.remove(file);
     }
 
     /// The place of the definition of this name among the items of its file. The store holds the name.
@@ -328,6 +421,7 @@ impl Known {
         Self {
             fingerprint: None,
             document: Document::Nothing,
+            text: String::new(),
         }
     }
 }

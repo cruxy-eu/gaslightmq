@@ -2,6 +2,7 @@
 
 use std::collections::BTreeSet;
 
+use gaslightmq_definition_api::WriteBack;
 use gaslightmq_journal::{Change, ChangeSurface};
 use gaslightmq_rule::{Preset, Rule, RuleName};
 use gaslightmq_scenario::Scenario;
@@ -10,7 +11,7 @@ use gaslightmq_workspace::{DefinitionChange, DefinitionName, Reload, WorkspaceCo
 
 use super::Host;
 use super::follow::Unfollowed;
-use crate::{HostChange, ReloadWorkspaceError, Reloaded, journaling};
+use crate::{HostChange, ReloadWorkspaceError, Reloaded, Unsaved, journaling};
 
 impl<C: WorkspaceContext> Host<C> {
     /// Reads the files of the workspace again, and takes what changed in as one change.
@@ -46,10 +47,23 @@ impl<C: WorkspaceContext> Host<C> {
     /// - [`ReloadWorkspaceError::NotReloaded`] with the [`ReloadError`](gaslightmq_workspace::ReloadError) of the
     ///   workspace: a store could not read again, or what the files hold does not fit together.
     ///
+    /// - [`ReloadWorkspaceError::Unsaved`] when the workspace writes on save, holds changes that nobody saved, and
+    ///   `unsaved` says to refuse.
+    ///
     /// A reload that fails changes nothing: the workspace and every armed rule stay as they are.
-    pub async fn reload(&self) -> Result<Reloaded, ReloadWorkspaceError> {
+    ///
+    /// # Changes that nobody saved
+    ///
+    /// A workspace that [writes on save](gaslightmq_workspace::Workspace::write_back) can hold changes that are not
+    /// in the files yet. A reload takes what the files hold, so it would let go of them: `unsaved` says whether it
+    /// refuses then, or lets go of them. What it lets go of is a change like any other, back to what the files hold.
+    pub async fn reload(&self, unsaved: Unsaved) -> Result<Reloaded, ReloadWorkspaceError> {
         // The workspace stays taken from the reading of the files until every armed rule follows it.
         let mut workspace = self.workspace.lock().await;
+        let held = workspace.unsaved().await;
+        if unsaved == Unsaved::Refuse && !held.is_empty() {
+            return Err(ReloadWorkspaceError::Unsaved { definitions: held });
+        }
         let reload = workspace
             .reload()
             .await
@@ -111,6 +125,7 @@ impl<C: WorkspaceContext> Host<C> {
                 running.record(entry, ChangeSurface::File, revision);
             }
         });
+        let writes_on_save = workspace.write_back() == WriteBack::OnSave;
         drop(workspace);
 
         for change in &changes {
@@ -123,6 +138,10 @@ impl<C: WorkspaceContext> Host<C> {
         }
         for (environment, rule) in following {
             self.publish(HostChange::RuleChanged { environment, rule });
+        }
+        if writes_on_save {
+            // Nothing is unsaved after a reload.
+            self.publish(HostChange::WorkspaceChanged);
         }
         Ok(Reloaded { revision, changes })
     }

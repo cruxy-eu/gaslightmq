@@ -23,7 +23,7 @@ It is then set up by flags and files alone.
 | `rules` | List, get, create, update, delete. List the rules of an environment with their state. Create a live rule, armed when the request says so. Update and delete a live rule. Arm, disarm, fire. Keep a live rule. |
 | `scenarios` | List, get, create, update, delete. Activate, deactivate, step. |
 | `layouts` | List, get, create, update, delete. |
-| `workspace` | [Reload](#reloading) the definitions from the files of the workspace. |
+| `workspace` | [Reload](#reloading) the definitions from the files of the workspace. [Save](#saving) the edits that wait for a save. |
 | `sessions` | List the open sessions with their identity. Close one. |
 | `recordings` | Start, stop, list, open. Query calls with a selector, saved or [draft](#drafts). Get the index. |
 | `world` | Only for an environment with a broker. Get state, apply an incident, save as a world definition, set the clock. [Preview the records](#drafts) at an offset. |
@@ -39,7 +39,8 @@ No operation renames a definition.
 An update changes everything but the name, the [title](../domains/rules.md#titles) included.
 Whoever wants another name creates a new definition and deletes the old one.
 
-Create and update operations on definitions write to the workspace files.
+Create, update and delete operations on definitions write to the workspace files:
+before they answer, or with the next [save](#saving) when the workspace writes on save.
 See [writing back](storage.md#writing-back).
 Live rules are the exception.
 They stay in memory until *keep* saves them as workspace rules.
@@ -328,9 +329,41 @@ It answers with its revision, and with what it changed, by the kind and the name
 | `live-rule-does-not-fit` | A live rule that is armed would not resolve against the files. | `environment`, `rule`, and the `reason`. |
 | `does-not-fit` | The definitions of the files do not fit each other. | The `reason`, with every error. |
 | `store-failed` | A file does not read. | The `reason`, with every file and the path of its key that failed. |
+| `unsaved` | The workspace [writes on save](storage.md#saving), and holds edits that nobody saved. | `definitions`: each with its kind, as `{ "selector": "order-producers" }`. |
 
 A reload that fails changes nothing.
 Whoever deletes the live rule, or fixes the files, reloads again.
+Whoever saves the edits that wait, or lets go of them, reloads again: a reload with `"discard-unsaved": true` takes what the files hold,
+and each edit that it lets go of comes back as one of its changes.
+
+## Saving
+
+A workspace that [writes on save](storage.md#saving) holds every edit in memory until someone saves.
+`save-workspace` writes every edit that waits, in one go.
+
+```json
+{ "from": { "surface": "ui" }, "operation": "save-workspace" }
+```
+
+It answers with the definitions whose edits it wrote, each with its kind: `{ "saved": [{ "selector": "order-producers" }] }`.
+A save that had nothing to write answers `{}`.
+
+- **The snapshot says what waits.**
+  Its `workspace` holds when the workspace writes back, whether it is read-only, and every definition whose edit waits:
+  `{ "write-back": "on-save", "unsaved": [{ "selector": "order-producers" }] }`.
+- **A `workspace-changed` says what waits after a change.**
+  It comes after every change of a definition of a workspace that writes on save, after a save, and after a reload,
+  and it holds the `workspace` as the snapshot does.
+- **A save expects nothing, and leaves no revision.**
+  It changes no definition, so every one keeps its revision, and no journal records it.
+
+| Error | When | The other keys |
+|---|---|---|
+| `changed-outside` | Someone edited a file that the save would write, since the process read it. The save wrote nothing. | The `reason`, with every such file and how it changed. |
+| `store-failed` | A temporary file could not be written, so the save changed no file. Every edit still waits. | The `reason`, with the file and what the system said. |
+| `partly-saved` | A rename failed after earlier ones went through. Every edit that is not in `saved` still waits. | `saved`, each with its kind, and the `reason`, with the file and what the system said. |
+
+A workspace that writes each change has nothing to save, and a save there answers `{}`.
 
 ## Undo
 
@@ -376,7 +409,7 @@ it arms, disarms, creates or updates the rule as the press or the turn left it.
   An inverse that names another run fails with `other-run`, and the surface drops its whole history.
   A process that started again armed nothing, and no undo of an earlier run arms a fault in it.
 - **Some operations have no inverse.**
-  Fire, a step, keep, a reload, the start and the stop of an environment, of a recording and of a capture, and closing a session.
+  Fire, a step, keep, a reload, a save, the start and the stop of an environment, of a recording and of a capture, and closing a session.
   What they did has happened.
 
 The [journal](../domains/observation.md#the-journal-only-grows) records an undo as a new change with its cause, next to the change it took back.
@@ -458,11 +491,12 @@ The WebSocket streams:
 | Message | Carries |
 |---|---|
 | **Present** | The ID of the [presence](#presence) of this client. It is the first message, and comes once. |
-| **Snapshot** | The full state, sent when a client connects: the [run ID](identity.md#run), every definition of the workspace, whether the workspace is [read-only](storage.md#read-only-workspaces), and every environment that runs with its backend, its rules and its sessions. Whatever has a revision comes with it. It holds no [journal](#the-journal). |
+| **Snapshot** | The full state, sent when a client connects: the [run ID](identity.md#run), every definition of the workspace, the workspace as a whole (when it [writes back](storage.md#saving), whether it is [read-only](storage.md#read-only-workspaces), and what waits for a save), and every environment that runs with its backend, its rules and its sessions. Whatever has a revision comes with it. It holds no [journal](#the-journal). |
 | **Call** | One call event: request summary, verdict and explanation. |
 | **Stats** | Matches, firings and remaining budget per rule, and calls per API, at a fixed interval. |
 | **Rule changed, removed** | A rule of an environment changed state, or a live rule was made or changed its definition, with its revision. A live rule left its environment: someone deleted or kept it. |
 | **Definition changed, deleted** | Someone created, updated or deleted a definition of the workspace, through the control plane or with a [reload](storage.md#reloading). A change holds the revision of the definition. |
+| **Workspace changed** | What waits for a [save](#saving) changed: an edit of a workspace that writes on save, a save, or a reload. It holds the workspace as the snapshot does. |
 | **Scenario changed** | The active scenario changed, or advanced a step, with its revision. |
 | **Recording started, stopped** | A recording of an environment began or ended, and why it ended when nobody stopped it. |
 | **World changed** | An incident changed the World, or the Upstream backend's overlay. |

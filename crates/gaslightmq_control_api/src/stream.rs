@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     AnyDefinition, BackendStatus, DefinitionRef, Definitions, Revision, RuleStatus, RunId, SessionCloser,
-    SessionIdentity, SessionStatus, Stats,
+    SessionIdentity, SessionStatus, Stats, WorkspaceStatus,
 };
 
 /// One message of the live stream, from the control plane to a client.
@@ -107,6 +107,9 @@ pub enum StreamMessage {
     EnvironmentStarted { environment: RunningEnvironment },
     /// An environment went down, and everything live in it with it.
     EnvironmentStopped { environment: EnvironmentName },
+    /// The workspace as a whole is what this says now: someone changed a definition of a workspace that writes on
+    /// save, saved it, or reloaded it.
+    WorkspaceChanged { workspace: WorkspaceStatus },
     /// The definitions of the workspace do not fit each other, or a file did not read.
     /// The workspace keeps the last definitions that did. `reason` says what is wrong.
     WorkspaceInvalid { reason: String },
@@ -131,11 +134,8 @@ pub struct ProcessState {
     pub run: RunId,
     /// Every definition of the workspace, which every environment shares, each with its revision.
     pub definitions: Definitions,
-    /// Whether the workspace is read-only: the process reads its files, and reads them again, and refuses every
-    /// change of a definition. Whoever starts the process says so. With `serde`, a workspace that takes changes
-    /// leaves `read-only` out.
-    #[serde(rename = "read-only", default, skip_serializing_if = "std::ops::Not::not")]
-    pub read_only: bool,
+    /// The workspace as a whole: when it writes its changes, whether it takes any, and what nobody saved yet.
+    pub workspace: WorkspaceStatus,
     /// Every environment that runs, with what is live in it.
     pub environments: Vec<RunningEnvironment>,
 }

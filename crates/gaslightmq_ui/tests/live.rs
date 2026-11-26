@@ -80,7 +80,7 @@ impl Workspace {
                 ..Definitions::default()
             },
             environments: running.iter().map(|name| Self::running(name)).collect(),
-            read_only: false,
+            workspace: WorkspaceStatus::default(),
         })
     }
 
@@ -392,6 +392,37 @@ mod process {
         assert_eq!(process.environment(&staging).unwrap().rules, [armed(false)]);
         let elsewhere = process.environment(&"orders-sim".parse().unwrap()).unwrap();
         assert_eq!(elsewhere.rules[0].state, RuleState::Disarmed);
+    }
+
+    #[test]
+    fn the_ui_knows_what_waits_for_a_save_and_which_definitions_a_write_loses_a_comment_of() {
+        let mut live = Live::new(&UiConfiguration::default());
+        live.opened();
+        live.apply(Workspace::snapshot(&[]));
+        let rule: DefinitionRef = Workspace::rule().name().clone().into();
+
+        // Someone wrote a comment inside the rule in its file, and the UI edited it in a workspace that writes on save.
+        live.apply(StreamMessage::DefinitionChanged {
+            definition: AnyDefinition::Rule(Workspace::rule()),
+            revision: TOLD,
+            loses_comment: true,
+        });
+        let waiting = WorkspaceStatus {
+            write_back: WriteBack::OnSave,
+            read_only: false,
+            unsaved: vec![rule.clone()],
+        };
+        live.apply(StreamMessage::WorkspaceChanged {
+            workspace: waiting.clone(),
+        });
+
+        let process = live.process().unwrap();
+        assert!(process.loses_comment(&rule));
+        assert_eq!(process.workspace(), &waiting);
+
+        // The definition went, and so does what the UI knew beside it.
+        live.apply(StreamMessage::DefinitionDeleted { name: rule.clone() });
+        assert!(!live.process().unwrap().loses_comment(&rule));
     }
 
     #[test]

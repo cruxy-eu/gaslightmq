@@ -43,6 +43,7 @@ flowchart TB
 | Armed state, counters, budgets, sessions, client context | Memory, per environment | No | The proxy |
 | World state, or the Upstream overlay | Memory, per environment | No | The broker, or the proxy |
 | Live rules from pads and ⌘K | Memory and a scratch file, per environment | No | The proxy |
+| Edits of the UI that wait for a [save](#saving) | Memory | No | The engine |
 | Journal: who armed what, and when | Memory and recordings, per environment | No | The proxy |
 | Recordings | Append-only files | No | The engine |
 | View preferences, and the [undo history](../domains/control-surfaces.md#undo-and-redo) of a tab | The browser | No | The UI |
@@ -76,6 +77,7 @@ A command takes its workspace from `--workspace`, and from the directory it runs
 # gaslight.yaml
 environments: [staging-proxy, orders-sim]   # the environments to start by default
 seed: 1337                      # the seed when no scenario is active
+write_back: each-change         # or on-save: an edit of the UI waits in memory until someone saves
 control:
   listen: 127.0.0.1:7092
   token: { file: secrets/control-token }
@@ -267,6 +269,11 @@ It is an [operation of the control plane](control-plane.md#resources): `gmq relo
   Nothing else changes the workspace in between, so what the host checked is what it takes in.
   Until it takes the reload in, every store holds what it held, and the files that changed hold up the writes to them.
 
+- **A reload lets go of an edit that waits for a save only when it is asked to.**
+  In a workspace that [writes on save](#saving), the engine can hold edits that the files do not have yet.
+  A reload would take what the files hold, so it fails with `unsaved` and names those edits.
+  A reload that is asked to let go of them takes what the files hold, and each edit comes back as a change of the reload.
+
 Something can ask for a reload on its own later, such as a watcher of the files.
 It would be one more sender of this operation, and nothing else would change.
 
@@ -315,7 +322,8 @@ The store of files therefore checks each file before it writes it.
 - **The check is per file.**
   An edit of one selector in `selectors.yaml` holds up the write of every other selector, until someone reloads.
 - **A write replaces the file in one step.**
-  The store writes the new content to a temporary file next to it, and renames that over the file.
+  The store writes the new content to a temporary file next to it, waits until its bytes are on the disk, and renames that over the file.
+  Then it asks the system to keep the entries of the directory on the disk, so the rename survives a crash too.
   A reader never sees half a file, and a crash leaves the old file or the new one.
   The name of the temporary file starts with a `.`, so the engine never reads it as a definition.
 - **A write reads back.**
@@ -323,6 +331,39 @@ The store of files therefore checks each file before it writes it.
 
 An edit that lands between the check and the rename is still lost.
 An editor takes no lock that the store could wait for, so the store cannot rule that out, and the window is as short as one rename.
+
+#### Saving
+
+Whoever starts the process picks when the engine writes an edit of the UI: `write_back` of the [process configuration](#process-configuration).
+
+| `write_back` | An edit |
+|---|---|
+| `each-change`, until someone sets it | Writes its definition to its file before it answers, as above. |
+| `on-save` | Waits in memory, and one save writes every edit that waits, in one go. |
+
+- **An edit that waits is there at once.**
+  The engine holds it: every answer and the live stream show it, and a rule arms with it.
+  Only the files do not have it yet.
+- **The engine says what waits.**
+  The control plane names every definition that someone created, updated or deleted since the last save.
+- **A save checks every file that an edit touched before it writes one.**
+  It makes the [check before a write](#the-check-before-a-write) for every one of them.
+  When someone edited one since the engine read it, the save fails with `changed-outside`, names every such file, and writes nothing.
+- **Then it writes every file beside its place.**
+  The text of each file goes to a temporary file next to it, and its bytes are on the disk before the next step.
+  Each file gets the one written form of what changed, and keeps every other byte as it was.
+  A temporary file that the system refuses to write stops the save: it takes every temporary file away, and no file changed.
+- **Then it renames each temporary file over its file, one at a time.**
+  After each rename it asks the system to keep the entries of the directory on the disk too, so a rename survives a crash.
+  A single write of a workspace that writes each change does the same.
+- **A save is not one step across files.**
+  Each file changes in one step, and the renames come one after the other.
+  A rename that fails stops the save there: it fails with `partly-saved`, names the definitions it saved before, and every other edit still waits for the next save.
+  A crash during the renames leaves some files with their edits and some without, and the engine that starts again reads what each file holds.
+- **A save changes no definition.**
+  Every definition keeps its revision, no journal records the save, and nobody undoes it.
+- **An edit that waits is live state.**
+  It is lost when the engine stops, as every armed rule is.
 
 ### Without a workspace
 
@@ -344,6 +385,7 @@ A reload still works, because it only reads.
 Whoever starts the process says that the workspace is read-only.
 The engine does not guess it from the permissions of the files.
 The stores of the files then refuse every write, and the error says that the workspace is read-only.
+That holds with either `write_back`: a read-only workspace refuses every edit, so no edit ever [waits for a save](#saving).
 The [snapshot](control-plane.md#live-stream) says it beforehand, so a surface can leave out what would write.
 
 ## Environments

@@ -23,6 +23,7 @@ use tokio::sync::broadcast::error::RecvError;
 /// | [`RuleRemoved`](Self::RuleRemoved) | A live rule left its environment: someone deleted or kept it. |
 /// | [`Session`](Self::Session) | A session of an environment opened, said who its client is, or closed. |
 /// | [`Journaled`](Self::Journaled) | The journal of an environment got an entry: something changed there, or a definition of the workspace changed. |
+/// | [`WorkspaceChanged`](Self::WorkspaceChanged) | What the workspace holds unsaved may be other: a definition changed in a workspace that writes on save, someone saved, or a reload let go of what nobody saved. |
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum HostChange {
     /// The environment started.
@@ -54,6 +55,10 @@ pub enum HostChange {
         environment: EnvironmentName,
         entry: JournalEntry,
     },
+    /// What the workspace holds unsaved may be other than it was: a definition changed in a workspace that writes
+    /// on save, someone saved, or a reload let go of what nobody saved.
+    /// It comes after the change of the definition, and only from a workspace that writes on save.
+    WorkspaceChanged,
 }
 
 /// The changes of a host from the moment it was made, for one follower.
