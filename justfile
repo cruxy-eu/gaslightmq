@@ -60,6 +60,7 @@ test-kafka *args:
     cargo test -p gaslightmq_host --test real_cluster {{args}}
     cargo test -p gaslightmq_control_server --test real_cluster {{args}}
     cargo test -p gaslightmq_test --test real_cluster {{args}}
+    cargo test -p gmq --test real_cluster {{args}}
 
 # The API docs, warnings and broken links denied.
 doc:
