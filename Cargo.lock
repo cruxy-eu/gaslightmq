@@ -1444,6 +1444,7 @@ dependencies = [
  "anyhow",
  "axum",
  "futures",
+ "gaslightmq_clock_waitable",
  "gaslightmq_control_api",
  "gaslightmq_control_client",
  "gaslightmq_definition_api",

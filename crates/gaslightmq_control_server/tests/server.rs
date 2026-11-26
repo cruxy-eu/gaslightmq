@@ -1,7 +1,7 @@
 //! The control plane without a real cluster, driven through the client as the UI, the CLI and tests drive it:
 //! the definitions of the workspace with their revisions, a change that expects another revision or another run,
 //! what an operation answers about an environment that does not run, a request that does not say where it comes
-//! from, and the live stream.
+//! from, the live stream, and the presence of its client.
 //!
 //! Each test starts a host whose workspace lives in memory, puts a server in front of it on a free port,
 //! and speaks to that server with a client. The tests in `tests/real_cluster` run environments in front of real
@@ -11,6 +11,7 @@ use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::Arc;
 
 use anyhow::Context;
+use gaslightmq_clock_waitable::SteppedClock;
 use gaslightmq_control_api::clock::Duration;
 use gaslightmq_control_api::environment::{
     BrokerDefinition, Environment, EnvironmentName, Instances, Listeners, ProxyDefinition,
@@ -418,6 +419,48 @@ async fn a_subscription_is_answered_and_a_stop_of_the_server_ends_the_stream() -
     server.stop().await;
     let ended = tokio::time::timeout(PATIENCE, stream.next()).await?;
     assert!(matches!(ended, Err(StreamError::Unreachable { .. })), "{ended:?}");
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_client_that_comes_back_within_the_grace_period_is_the_presence_it_was_and_a_new_one_after_it()
+-> anyhow::Result<()> {
+    let host = Arc::new(Host::new(
+        HostConfiguration::default(),
+        MemoryContext::new(),
+        Lies::of_every_build(),
+        RUN.parse()?,
+    ));
+    let mut configuration = ControlServerConfiguration::default();
+    configuration.listen = SocketAddr::new(LOCALHOST, ANY_PORT);
+    let grace = configuration.presence_grace;
+    // The grace period of a presence runs on the clock of the server, which the test steps.
+    let clock = SteppedClock::new();
+    let server = ControlServer::start_on(configuration, Arc::clone(&host), clock.clone()).await?;
+    let client = ControlClient::new(ControlClientConfiguration::new(server.address().into()));
+
+    // Two tabs of the UI open the live stream, and each is a presence of its own.
+    let tab = client.live_stream().await?;
+    let other_tab = client.live_stream().await?;
+    let presence = tab.presence();
+    assert_ne!(presence, other_tab.presence());
+
+    // The stream of the first tab ends, and the tab comes back before the grace period is over, as the same presence.
+    tab.close().await;
+    clock.advance(grace.duration() / 2);
+    let back = client.live_stream_as(presence).await?;
+    assert_eq!(back.presence(), presence);
+
+    // Its stream ends again, and this time the tab stays away until the grace period is over.
+    // Its presence has ended, so it is a new one when it comes back, and its stream starts as any other.
+    back.close().await;
+    clock.advance(grace.duration());
+    let mut late = client.live_stream_as(presence).await?;
+    assert_ne!(late.presence(), presence);
+    assert_ne!(late.presence(), other_tab.presence());
+    let first = tokio::time::timeout(PATIENCE, late.next()).await??;
+    assert!(matches!(first, StreamMessage::Snapshot(_)), "{first:?}");
+    server.stop().await;
     Ok(())
 }
 
