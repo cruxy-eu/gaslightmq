@@ -782,6 +782,9 @@ The conformance crates are [test support](#test-support-crates): no code that sh
   Whoever asks the host for a change says [where it comes from](control-plane.md#where-a-request-comes-from), and the host hands that to the journal of the environment.
   The host names the surface of a change that nobody asked for, a step or a lifetime, and of what a reload takes in, a file.
   It keeps no history of what to undo: an undo reaches it as one more change.
+  Until the journal exists, nothing would read it, so no call of the host takes where a change comes from.
+  The control server reads it in every request and stops there.
+  Whoever builds `journal` adds it to every call of the host that changes something, with the surfaces that the host names itself, and hands it over from the control server.
 - **A pad plays the rules of one environment.**
   The pad points at the rule that has the name of its position: a rule of the workspace, or a live rule.
   A press arms it or disarms it, as the press says, and makes the live rule of the position first when the pad has none.
@@ -805,9 +808,6 @@ The conformance crates are [test support](#test-support-crates): no code that sh
 
 Until the [broker](#the-broker-is-a-state-machine-too) exists, the host runs a proxy in front of a real cluster alone,
 and refuses an environment with a broker.
-
-Until the journal exists, nobody tells the host where a change comes from.
-The control server reads it in every request, and the host takes it with the journal, which brings the surfaces that the host names itself.
 
 ## Lies as crates
 
