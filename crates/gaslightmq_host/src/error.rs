@@ -611,6 +611,7 @@ pub enum CreateDefinitionError {
 /// |---|---|
 /// | [`NameTaken`](Self::NameTaken) | Delete or rename the live rule first, or give the rule of the files another name. |
 /// | [`Unresolved`](Self::Unresolved) | Disarm or delete the live rule first, or bring back in the files what it refers to. |
+/// | [`Unsaved`](Self::Unsaved) | Save first, or reload again and let go of what nobody saved. |
 /// | [`NotReloaded`](Self::NotReloaded) | Fix the files: its `error` says every one that does not read, or every definition that does not fit. |
 ///
 /// ```
@@ -652,10 +653,24 @@ pub enum ReloadWorkspaceError {
         rule: RuleName,
         reason: String,
     },
+    /// The workspace writes on save, and holds changes of these definitions that nobody saved.
+    /// A reload takes what the files hold, so it would let go of them. There is at least one.
+    #[error("the workspace was not reloaded: {} changed, and nobody saved it", names(.definitions))]
+    Unsaved { definitions: Vec<DefinitionName> },
     /// The workspace did not take the reload. Its error says why: a store could not read again,
     /// or what the files hold does not fit together.
     #[error("{error}")]
     NotReloaded { error: ReloadError },
+}
+
+/// The definitions as a sentence lists them: `a`, `a and b`, or `a, b and c`.
+fn names(definitions: &[DefinitionName]) -> String {
+    let names: Vec<String> = definitions.iter().map(ToString::to_string).collect();
+    match names.as_slice() {
+        [] => String::new(),
+        [only] => only.clone(),
+        [first @ .., last] => format!("{} and {last}", first.join(", ")),
+    }
 }
 
 /// Why a host did not act on what someone did at a pad: see [`send_intent`](crate::Host::send_intent).

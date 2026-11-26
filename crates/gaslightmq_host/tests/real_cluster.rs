@@ -1962,7 +1962,7 @@ async fn an_armed_rule_follows_a_reload_and_keeps_what_it_counted() -> anyhow::R
         "- name: hold-order-producers\n  selector: order-producers\n  action: hold-20ms\n  trigger: { nth: 2 }\n",
     )?;
     let mut changes = host.changes();
-    let reloaded = host.reload().await?;
+    let reloaded = host.reload(Unsaved::Refuse).await?;
 
     assert_eq!(reloaded.changes, [DefinitionChange::Updated(producers.clone().into())]);
     // The rule stays armed with the definition of the file, at the revision of the reload.
@@ -2052,7 +2052,7 @@ async fn an_armed_rule_whose_file_went_disarms_with_the_reload_that_the_journal_
     // A colleague's branch deletes the file of the rule, and someone reloads.
     fs::remove_file(rules.join("fetches.yaml"))?;
     let mut changes = host.changes();
-    let reloaded = host.reload().await?;
+    let reloaded = host.reload(Unsaved::Refuse).await?;
 
     assert_eq!(reloaded.changes, [DefinitionChange::Deleted(fetches.clone().into())]);
     // The rule is armed no more, and the environment holds no rule of its name.
@@ -2132,7 +2132,7 @@ async fn a_reload_that_a_live_rule_stands_in_the_way_of_changes_nothing() -> any
         rules.join("produces.yaml"),
         "- name: hold-the-produces\n  selector: order-producers\n  action: hold-20ms\n",
     )?;
-    let taken = host.reload().await;
+    let taken = host.reload(Unsaved::Refuse).await;
 
     assert_eq!(
         taken,
@@ -2149,7 +2149,7 @@ async fn a_reload_that_a_live_rule_stands_in_the_way_of_changes_nothing() -> any
     // Another branch takes away the selector that the armed live rule uses.
     fs::remove_file(rules.join("produces.yaml"))?;
     fs::write(&selectors, "- name: order-fetches\n  match:\n    api: Fetch\n")?;
-    let unresolved = host.reload().await;
+    let unresolved = host.reload(Unsaved::Refuse).await;
 
     assert_eq!(
         unresolved,
@@ -2175,7 +2175,7 @@ async fn a_reload_that_a_live_rule_stands_in_the_way_of_changes_nothing() -> any
 
     // Once the live rule is gone, nothing stands in the way of the files.
     host.delete_live_rule(staging.name(), live.name(), None, ChangeSurface::Pad)?;
-    let reloaded = host.reload().await?;
+    let reloaded = host.reload(Unsaved::Refuse).await?;
     assert_eq!(
         reloaded.changes,
         [

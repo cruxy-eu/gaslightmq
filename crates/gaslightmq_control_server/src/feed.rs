@@ -84,6 +84,9 @@ impl<C: WorkspaceContext + 'static> Feed<C> {
                 Some(StreamMessage::EnvironmentStarted { environment })
             }
             HostChange::EnvironmentStopped { environment } => Some(StreamMessage::EnvironmentStopped { environment }),
+            HostChange::WorkspaceChanged => Some(StreamMessage::WorkspaceChanged {
+                workspace: self.plane.workspace_status().await,
+            }),
             HostChange::DefinitionChanged { name } => {
                 let workspace = self.plane.host().workspace().await;
                 let definition = named(&*workspace, &name).await.ok()??;

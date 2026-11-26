@@ -493,7 +493,7 @@ struct Underway {
 /// history.apply(&StreamMessage::Snapshot(ProcessState {
 ///     run,
 ///     definitions: Definitions::default(),
-///     read_only: false,
+///     workspace: WorkspaceStatus::default(),
 ///     environments: Vec::new(),
 /// }));
 ///

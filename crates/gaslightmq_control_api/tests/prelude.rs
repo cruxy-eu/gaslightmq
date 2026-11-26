@@ -93,6 +93,8 @@ mod next_to_std_and_every_domain {
         let _: Option<<QueryJournal as Operation>::Error> = None::<EnvironmentNotRunning>;
         let _: Option<<ReloadWorkspace as Operation>::Answer> = None::<Reloaded>;
         let _: Option<<ReloadWorkspace as Operation>::Error> = None::<ReloadWorkspaceError>;
+        let _: Option<<SaveWorkspace as Operation>::Answer> = None::<Saved>;
+        let _: Option<<SaveWorkspace as Operation>::Error> = None::<SaveWorkspaceError>;
     }
 
     /// Every other type of the prelude, named without a path.
@@ -108,6 +110,8 @@ mod next_to_std_and_every_domain {
         let _: Option<AnyDefinition> = None;
         let _: Option<DefinitionRef> = None;
         let _: Option<DefinitionChange> = None;
+        let _: Option<WorkspaceStatus> = None;
+        let _: Option<WriteBack> = None;
         let _: Option<Definitions> = None;
         let _: Option<Revision> = None;
         let _: Option<RunId> = None;

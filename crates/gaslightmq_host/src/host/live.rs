@@ -480,6 +480,7 @@ impl<C: WorkspaceContext> Host<C> {
             environment: environment.clone(),
             rule: name.clone(),
         });
+        self.publish_unsaved().await;
         Ok(revision)
     }
 

@@ -79,7 +79,7 @@ async fn a_reload_takes_an_edit_by_hand_in_as_one_change_and_tells_whoever_follo
         "the host read the files once, and holds what they held"
     );
 
-    let reloaded = host.reload().await?;
+    let reloaded = host.reload(Unsaved::Refuse).await?;
 
     assert_eq!(
         reloaded.changes,
@@ -130,7 +130,7 @@ async fn a_reload_of_files_that_do_not_fit_changes_nothing() -> anyhow::Result<(
         "- name: delay-order-fetches\n  selector: order-fetches\n  action: delay-1s\n",
     )?;
 
-    let refused = host.reload().await;
+    let refused = host.reload(Unsaved::Refuse).await;
 
     let Err(ReloadWorkspaceError::NotReloaded { error }) = refused else {
         anyhow::bail!("a reload took in a rule that names nothing: {refused:?}");
@@ -150,7 +150,7 @@ async fn a_reload_of_files_that_do_not_fit_changes_nothing() -> anyhow::Result<(
         directory.path().join("rules").join("fetches.yaml"),
         "- name: blackhole-order-fetches\n  selector: order-fetches\n  action: blackhole\n",
     )?;
-    let reloaded = host.reload().await?;
+    let reloaded = host.reload(Unsaved::Refuse).await?;
     let blackhole_fetches: RuleName = "blackhole-order-fetches".parse()?;
     assert_eq!(reloaded.changes, [DefinitionChange::Created(blackhole_fetches.into())]);
     Ok(())
@@ -184,8 +184,83 @@ async fn a_read_only_workspace_reloads_and_takes_no_change() -> anyhow::Result<(
 
     // A reload only reads, so it still takes in what someone changed.
     fs::write(directory.path().join("selectors.yaml"), SELECTORS_EDITED)?;
-    let reloaded = host.reload().await?;
+    let reloaded = host.reload(Unsaved::Refuse).await?;
     let fetches: SelectorName = "order-fetches".parse()?;
     assert_eq!(reloaded.changes, [DefinitionChange::Updated(fetches.into())]);
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_reload_refuses_while_changes_wait_for_a_save_unless_it_lets_go_of_them() -> anyhow::Result<()> {
+    let directory = tempfile::tempdir()?;
+    fs::write(directory.path().join("selectors.yaml"), SELECTORS)?;
+    fs::write(directory.path().join("presets.yaml"), PRESETS)?;
+    let stores = FileStores::open(directory.path(), Access::WriteOnSave).await?;
+    let host = Host::new(
+        HostConfiguration::default(),
+        FileContext::new(stores),
+        Lies::of_every_build(),
+        RUN,
+    );
+    let hang_up: PresetName = "hang-up".parse()?;
+    // Someone deletes a preset in the UI, and nobody saves it.
+    host.delete(hang_up.clone(), None, ChangeSurface::Ui).await?;
+
+    // `gmq reload` would let go of that change, so it refuses.
+    let refused = host.reload(Unsaved::Refuse).await;
+
+    assert_eq!(
+        refused,
+        Err(ReloadWorkspaceError::Unsaved {
+            definitions: vec![hang_up.clone().into()],
+        })
+    );
+    assert_eq!(host.workspace().await.stores().presets().get(&hang_up).await?, None);
+
+    // A reload that lets go of it brings the preset back from the file, as a change of the reload.
+    let reloaded = host.reload(Unsaved::Discard).await?;
+
+    assert_eq!(reloaded.changes, [DefinitionChange::Created(hang_up.clone().into())]);
+    let workspace = host.workspace().await;
+    assert!(workspace.stores().presets().get(&hang_up).await?.is_some());
+    assert_eq!(workspace.unsaved().await, Vec::<DefinitionName>::new());
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_save_writes_what_waited_and_tells_whoever_follows() -> anyhow::Result<()> {
+    let directory = tempfile::tempdir()?;
+    fs::write(directory.path().join("selectors.yaml"), SELECTORS)?;
+    fs::write(directory.path().join("presets.yaml"), PRESETS)?;
+    let stores = FileStores::open(directory.path(), Access::WriteOnSave).await?;
+    let host = Host::new(
+        HostConfiguration::default(),
+        FileContext::new(stores),
+        Lies::of_every_build(),
+        RUN,
+    );
+    let mut changes = host.changes();
+    let hang_up: PresetName = "hang-up".parse()?;
+    host.delete(hang_up.clone(), None, ChangeSurface::Ui).await?;
+
+    // Whoever follows the host learns that the definition went, and that the workspace holds something unsaved.
+    assert_eq!(
+        changes.next().await?,
+        HostChange::DefinitionDeleted {
+            name: hang_up.clone().into()
+        }
+    );
+    assert_eq!(changes.next().await?, HostChange::WorkspaceChanged);
+    assert_eq!(fs::read_to_string(directory.path().join("presets.yaml"))?, PRESETS);
+
+    let saved = host.save().await?;
+
+    assert_eq!(saved, [DefinitionName::from(hang_up)]);
+    assert_eq!(
+        fs::read_to_string(directory.path().join("presets.yaml"))?,
+        PRESETS_EDITED
+    );
+    assert_eq!(changes.next().await?, HostChange::WorkspaceChanged);
+    assert_eq!(host.workspace().await.unsaved().await, Vec::<DefinitionName>::new());
     Ok(())
 }

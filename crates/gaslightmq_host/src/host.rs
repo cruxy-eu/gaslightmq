@@ -12,7 +12,7 @@ use gaslightmq_backend::Backend;
 use gaslightmq_backend_upstream::UpstreamBackend;
 use gaslightmq_clock::Clock;
 use gaslightmq_clock_waitable::WallClock;
-use gaslightmq_definition_api::{Definition, Store, StoreReadError};
+use gaslightmq_definition_api::{Definition, Store, StoreReadError, WriteBack};
 use gaslightmq_engine::{ArmError, DisarmError, Engine, EveryEvent, LiveEvents, NotOpenError, OpenSession};
 use gaslightmq_environment::{EnvironmentName, Listeners};
 use gaslightmq_field::{ConnectionNumber, Endpoint};
@@ -25,7 +25,7 @@ use gaslightmq_selector::{Selector, SelectorRef, SelectorSet};
 use gaslightmq_surface::{EncoderMapping, PresenceId};
 use gaslightmq_traffic::{Statistics, Traffic, TrafficConfiguration};
 use gaslightmq_workspace::{
-    DefinitionName, Revision, RevisionCounter, Stores, Workspace, WorkspaceContext, WorkspaceDefinition,
+    DefinitionName, Revision, RevisionCounter, SaveError, Stores, Workspace, WorkspaceContext, WorkspaceDefinition,
 };
 use tokio::sync::broadcast;
 use tokio::task::JoinHandle;
@@ -300,6 +300,7 @@ impl<C: WorkspaceContext> Host<C> {
             revision
         };
         self.publish(HostChange::DefinitionChanged { name });
+        self.publish_unsaved().await;
         Ok(revision)
     }
 
@@ -378,6 +379,7 @@ impl<C: WorkspaceContext> Host<C> {
         for (environment, rule) in following {
             self.publish(HostChange::RuleChanged { environment, rule });
         }
+        self.publish_unsaved().await;
         Ok(revision)
     }
 
@@ -461,7 +463,29 @@ impl<C: WorkspaceContext> Host<C> {
         for (environment, rule) in following {
             self.publish(HostChange::RuleChanged { environment, rule });
         }
+        self.publish_unsaved().await;
         Ok(revision)
+    }
+
+    /// Writes every change that the workspace holds and nobody saved yet, and returns the definitions that it saved.
+    /// See [`Workspace::save`].
+    ///
+    /// Only a workspace that [writes on save](Workspace::write_back) has something to save.
+    /// The save checks every file that it would write before it writes one, so a file that someone edited since
+    /// the workspace read it holds up the whole save. A save changes no definition: it takes no number, enters no
+    /// journal, and has no source. Whoever follows the host learns that nothing is unsaved any more.
+    ///
+    /// # Errors
+    ///
+    /// The [`SaveError`] of the workspace: someone changed a file that the save would write, and nothing was
+    /// written, or a store could not write.
+    pub async fn save(&self) -> Result<Vec<DefinitionName>, SaveError> {
+        let saved = {
+            let mut workspace = self.workspace.lock().await;
+            workspace.save().await
+        };
+        self.publish_unsaved().await;
+        saved
     }
 
     /// Starts an environment: its backend in front of the real cluster, and its proxy in front of the backend.
@@ -1103,6 +1127,14 @@ impl<C: WorkspaceContext> Host<C> {
     /// Tells whoever follows the host. A change that nobody follows is gone.
     fn publish(&self, change: HostChange) {
         let _ = self.changes.send(change);
+    }
+
+    /// Tells whoever follows the host that what the workspace holds unsaved may be other, when the workspace writes
+    /// on save. A workspace that writes each change has nothing unsaved, and tells nothing.
+    pub(super) async fn publish_unsaved(&self) {
+        if self.workspace.lock().await.write_back() == WriteBack::OnSave {
+            self.publish(HostChange::WorkspaceChanged);
+        }
     }
 
     /// Refuses listeners that meet those of an environment that runs, and a name that runs already.

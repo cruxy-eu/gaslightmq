@@ -284,7 +284,7 @@ mod live_stream {
             run: RUN.parse()?,
             definitions: Definitions::default(),
             environments: Vec::new(),
-            read_only: false,
+            workspace: WorkspaceStatus::default(),
         });
         server_side.send(&snapshot).await?;
         stream.follow(every_call.clone()).await;
@@ -460,7 +460,7 @@ impl ScriptedControlPlane {
             run: RUN.parse()?,
             definitions: Definitions::default(),
             environments: Vec::new(),
-            read_only: false,
+            workspace: WorkspaceStatus::default(),
         });
         stream.send(&snapshot).await?;
         Ok(stream)

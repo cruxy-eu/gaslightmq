@@ -78,14 +78,14 @@ async fn a_reload_answers_with_what_it_took_in_and_every_client_hears_of_it() ->
     let StreamMessage::Snapshot(first) = tokio::time::timeout(PATIENCE, stream.next()).await?? else {
         anyhow::bail!("the stream did not start with a snapshot");
     };
-    assert!(!first.read_only, "the workspace takes changes");
+    assert!(!first.workspace.read_only, "the workspace takes changes");
     let fetches: SelectorName = "order-fetches".parse()?;
     let blackhole: PresetName = "blackhole".parse()?;
 
     // Someone edits the selectors and takes the presets away while the process runs, and `gmq reload` follows.
     fs::write(directory.path().join("selectors.yaml"), SELECTORS_EDITED)?;
     fs::remove_file(directory.path().join("presets.yaml"))?;
-    let reloaded = client.send(ReloadWorkspace {}).await??;
+    let reloaded = client.send(ReloadWorkspace { discard_unsaved: false }).await??;
 
     assert_eq!(
         reloaded.changes,
@@ -184,7 +184,7 @@ async fn a_write_over_a_file_that_someone_edited_since_is_changed_outside_until_
         .await??;
 
     // A reload takes the edit in, and the title goes on top of it.
-    client.send(ReloadWorkspace {}).await??;
+    client.send(ReloadWorkspace { discard_unsaved: false }).await??;
     let edited = client
         .send(GetDefinition::<Selector> { name: fetches.clone() })
         .await??;
@@ -220,7 +220,7 @@ async fn a_read_only_workspace_says_so_and_refuses_every_write() -> anyhow::Resu
     let StreamMessage::Snapshot(state) = tokio::time::timeout(PATIENCE, stream.next()).await?? else {
         anyhow::bail!("the stream did not start with a snapshot");
     };
-    assert!(state.read_only);
+    assert!(state.workspace.read_only);
     let deleted = client
         .send(DeleteDefinition::<Selector> {
             name: "order-producers".parse()?,
@@ -236,13 +236,83 @@ async fn a_read_only_workspace_says_so_and_refuses_every_write() -> anyhow::Resu
     );
     // A reload only reads, so it still works.
     fs::write(directory.path().join("selectors.yaml"), SELECTORS_EDITED)?;
-    let reloaded = client.send(ReloadWorkspace {}).await??;
+    let reloaded = client.send(ReloadWorkspace { discard_unsaved: false }).await??;
     assert_eq!(
         reloaded.changes,
         [DefinitionChange::Updated(
             "order-fetches".parse::<SelectorName>()?.into()
         )]
     );
+    server.stop().await;
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_workspace_that_writes_on_save_holds_its_changes_until_someone_saves_them() -> anyhow::Result<()> {
+    let directory = tempfile::tempdir()?;
+    fs::write(directory.path().join("selectors.yaml"), SELECTORS_EDITED)?;
+    fs::write(directory.path().join("presets.yaml"), PRESETS)?;
+    // Whoever starts the process says that the workspace writes on save.
+    let stores = FileStores::open(directory.path(), Access::WriteOnSave).await?;
+    let host = Arc::new(Host::new(
+        HostConfiguration::default(),
+        FileContext::new(stores),
+        Lies::of_every_build(),
+        RUN.parse()?,
+    ));
+    let mut configuration = ControlServerConfiguration::default();
+    configuration.listen = SocketAddr::new(LOCALHOST, ANY_PORT);
+    let server = ControlServer::start(configuration, Arc::clone(&host)).await?;
+    let client = ControlClient::new(ControlClientConfiguration::new(server.address().into()));
+    let mut stream = client.live_stream().await?;
+    let StreamMessage::Snapshot(first) = tokio::time::timeout(PATIENCE, stream.next()).await?? else {
+        anyhow::bail!("the stream did not start with a snapshot");
+    };
+    let nothing_unsaved = WorkspaceStatus {
+        write_back: WriteBack::OnSave,
+        read_only: false,
+        unsaved: Vec::new(),
+    };
+    assert_eq!(first.workspace, nothing_unsaved);
+    let blackhole: PresetName = "blackhole".parse()?;
+
+    // Someone deletes the preset in the UI. The file stays as it is, and every client hears what waits for a save.
+    client
+        .send(DeleteDefinition::<gaslightmq_control_api::rule::Preset> {
+            name: blackhole.clone(),
+            expects: None,
+        })
+        .await??;
+    let waiting = loop {
+        let message = tokio::time::timeout(PATIENCE, stream.next()).await??;
+        if let StreamMessage::WorkspaceChanged { workspace } = message {
+            break workspace;
+        }
+    };
+    assert_eq!(waiting.unsaved, [DefinitionRef::from(blackhole.clone())]);
+    assert!(directory.path().join("presets.yaml").exists());
+
+    // `gmq reload` would let go of the change, so it refuses.
+    let refused = client.send(ReloadWorkspace { discard_unsaved: false }).await?;
+    assert_eq!(
+        refused,
+        Err(ReloadWorkspaceError::Unsaved {
+            definitions: vec![blackhole.clone().into()],
+        })
+    );
+
+    // The save writes it, and every client hears that nothing waits any more.
+    let saved = client.send(SaveWorkspace {}).await??;
+
+    assert_eq!(saved.saved, [DefinitionRef::from(blackhole)]);
+    assert!(!directory.path().join("presets.yaml").exists());
+    let after = loop {
+        let message = tokio::time::timeout(PATIENCE, stream.next()).await??;
+        if let StreamMessage::WorkspaceChanged { workspace } = message {
+            break workspace;
+        }
+    };
+    assert_eq!(after, nothing_unsaved);
     server.stop().await;
     Ok(())
 }

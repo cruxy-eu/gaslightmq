@@ -10,13 +10,14 @@ use gaslightmq_control_api::prelude::*;
 use gaslightmq_control_api::rule::{Preset, Rule, RuleName};
 use gaslightmq_control_api::selector::Selector;
 use gaslightmq_control_api::surface::{Intent, PadLayout, PresenceId};
+use gaslightmq_definition_api::WriteBack as StoreWriteBack;
 use gaslightmq_engine::OpenSession;
 use gaslightmq_host::{
     ArmRuleError, CallSubscription, DisarmRuleError, EnvironmentConfiguration, EnvironmentConfigurationError,
-    EnvironmentRule, EnvironmentRulesError, EnvironmentStartError, Host, ReadSentenceError,
+    EnvironmentRule, EnvironmentRulesError, EnvironmentStartError, Host, ReadSentenceError, Unsaved,
 };
 use gaslightmq_quick_inject::{CompletionKind, Sentence};
-use gaslightmq_workspace::{CreateError, DefinitionChange as Changed, ReloadError, WorkspaceContext};
+use gaslightmq_workspace::{CreateError, DefinitionChange as Changed, ReloadError, SaveError, WorkspaceContext};
 use serde::Serialize;
 use tokio::sync::broadcast;
 
@@ -176,7 +177,10 @@ impl<C: WorkspaceContext + 'static> ControlPlane<C> {
             AnyOperation::QueryJournal(query) => {
                 Reply::of::<QueryJournal>(self.journal(query.environment, query.after))
             }
-            AnyOperation::ReloadWorkspace(_) => Reply::of::<ReloadWorkspace>(self.reload().await),
+            AnyOperation::ReloadWorkspace(reload) => {
+                Reply::of::<ReloadWorkspace>(self.reload(reload.discard_unsaved).await)
+            }
+            AnyOperation::SaveWorkspace(_) => Reply::of::<SaveWorkspace>(self.save().await),
         }
     }
 
@@ -215,9 +219,15 @@ impl<C: WorkspaceContext + 'static> ControlPlane<C> {
 
     /// Reads the files of the workspace again, through the host, which records what changed and tells whoever
     /// follows it. Whoever asks, the changes come from the files.
-    async fn reload(&self) -> Result<Reloaded, ReloadWorkspaceError> {
+    /// It lets go of what nobody saved when `discard_unsaved` says so, and refuses while there is any otherwise.
+    async fn reload(&self, discard_unsaved: bool) -> Result<Reloaded, ReloadWorkspaceError> {
         use gaslightmq_host::ReloadWorkspaceError as Host;
-        match self.host.reload().await {
+        let unsaved = if discard_unsaved {
+            Unsaved::Discard
+        } else {
+            Unsaved::Refuse
+        };
+        match self.host.reload(unsaved).await {
             Ok(reloaded) => Ok(Reloaded {
                 revision: revision(reloaded.revision),
                 changes: reloaded.changes.into_iter().map(definition_change).collect(),
@@ -235,12 +245,39 @@ impl<C: WorkspaceContext + 'static> ControlPlane<C> {
                 rule,
                 reason,
             }),
+            Err(Host::Unsaved { definitions }) => Err(ReloadWorkspaceError::Unsaved {
+                definitions: definitions.into_iter().map(reference).collect(),
+            }),
             Err(Host::NotReloaded {
                 error: ReloadError::Invalid { errors },
             }) => Err(ReloadWorkspaceError::DoesNotFit { reason: each(&errors) }),
             Err(Host::NotReloaded {
                 error: ReloadError::StoreFailed { reason },
             }) => Err(ReloadWorkspaceError::StoreFailed { reason }),
+        }
+    }
+
+    /// Writes every change that nobody saved yet, through the host, which tells whoever follows it.
+    async fn save(&self) -> Result<Saved, SaveWorkspaceError> {
+        match self.host.save().await {
+            Ok(saved) => Ok(Saved {
+                saved: saved.into_iter().map(reference).collect(),
+            }),
+            Err(SaveError::ChangedOutside { reason }) => Err(SaveWorkspaceError::ChangedOutside { reason }),
+            Err(SaveError::StoreFailed { reason }) => Err(SaveWorkspaceError::StoreFailed { reason }),
+        }
+    }
+
+    /// The workspace as a whole: when it writes its changes, whether it takes any, and what nobody saved yet.
+    pub(crate) async fn workspace_status(&self) -> WorkspaceStatus {
+        let workspace = self.host.workspace().await;
+        WorkspaceStatus {
+            write_back: match workspace.write_back() {
+                StoreWriteBack::EachChange => WriteBack::EachChange,
+                StoreWriteBack::OnSave => WriteBack::OnSave,
+            },
+            read_only: workspace.read_only(),
+            unsaved: workspace.unsaved().await.into_iter().map(reference).collect(),
         }
     }
 
@@ -759,11 +796,11 @@ impl<C: WorkspaceContext + 'static> ControlPlane<C> {
                 environments.push(environment);
             }
         }
-        let read_only = self.host.workspace().await.read_only();
+        let workspace = self.workspace_status().await;
         Ok(ProcessState {
             run: run(self.host.run()),
             definitions,
-            read_only,
+            workspace,
             environments,
         })
     }

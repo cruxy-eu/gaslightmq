@@ -71,7 +71,7 @@ fn an_undo_after_another_tab_changed_the_rule_is_refused_and_changes_nothing() {
             rules: vec![disarmed.clone()],
             sessions: Vec::new(),
         }],
-        read_only: false,
+        workspace: WorkspaceStatus::default(),
     });
     let configuration = UiConfiguration::default();
     let mut first = Live::new(&configuration);
@@ -187,7 +187,7 @@ fn an_undo_says_what_it_did_and_a_redo_expects_what_the_undo_left() {
         run,
         definitions: Definitions::default(),
         environments: Vec::new(),
-        read_only: false,
+        workspace: WorkspaceStatus::default(),
     }));
     let disarm = DisarmRule {
         environment: ENVIRONMENT.parse().unwrap(),
@@ -257,7 +257,7 @@ fn two_changes_of_one_rule_undo_one_after_the_other() {
         run,
         definitions: Definitions::default(),
         environments: Vec::new(),
-        read_only: false,
+        workspace: WorkspaceStatus::default(),
     }));
     let always = Rule::new(
         RULE.parse().unwrap(),
@@ -331,7 +331,7 @@ fn a_rule_that_comes_back_is_made_again_armed_when_it_was_armed() {
         run,
         definitions: Definitions::default(),
         environments: Vec::new(),
-        read_only: false,
+        workspace: WorkspaceStatus::default(),
     }));
     let definition = Rule::new(
         RULE.parse().unwrap(),
@@ -419,7 +419,7 @@ fn a_press_that_made_the_rule_of_its_pad_is_undone_by_deleting_it() {
         run,
         definitions: Definitions::default(),
         environments: Vec::new(),
-        read_only: false,
+        workspace: WorkspaceStatus::default(),
     }));
     let made = Rule::new(
         RULE.parse().unwrap(),
@@ -477,7 +477,7 @@ fn a_hold_leaves_a_step_only_when_its_press_made_the_rule() {
         run,
         definitions: Definitions::default(),
         environments: Vec::new(),
-        read_only: false,
+        workspace: WorkspaceStatus::default(),
     }));
     let armed = RuleStatus {
         rule: Rule::new(
@@ -569,7 +569,7 @@ fn turns_of_one_encoder_are_one_step_back_to_the_rule_before_the_first() {
         run,
         definitions: Definitions::default(),
         environments: Vec::new(),
-        read_only: false,
+        workspace: WorkspaceStatus::default(),
     }));
     let always = RuleStatus {
         rule: Rule::new(
@@ -656,7 +656,7 @@ fn a_turn_that_found_another_rule_than_the_tab_showed_leaves_no_step() {
         run: RUN.parse().unwrap(),
         definitions: Definitions::default(),
         environments: Vec::new(),
-        read_only: false,
+        workspace: WorkspaceStatus::default(),
     }));
     let shown = RuleStatus {
         rule: Rule::new(
@@ -700,7 +700,7 @@ fn a_new_change_ends_what_could_be_redone() {
         run,
         definitions: Definitions::default(),
         environments: Vec::new(),
-        read_only: false,
+        workspace: WorkspaceStatus::default(),
     }));
     let arm = ArmRule {
         environment: ENVIRONMENT.parse().unwrap(),
@@ -747,7 +747,7 @@ fn the_history_holds_as_many_steps_as_its_depth_says() {
         run,
         definitions: Definitions::default(),
         environments: Vec::new(),
-        read_only: false,
+        workspace: WorkspaceStatus::default(),
     }));
     // The tab arms three rules, one after the other, and each arm takes the next revision.
     let mut left = SHOWN;
@@ -786,7 +786,7 @@ fn the_history_lasts_across_a_stream_that_opens_again_and_ends_with_the_run() {
         run,
         definitions: Definitions::default(),
         environments: Vec::new(),
-        read_only: false,
+        workspace: WorkspaceStatus::default(),
     }));
     let arm = ArmRule {
         environment: ENVIRONMENT.parse().unwrap(),
@@ -806,7 +806,7 @@ fn the_history_lasts_across_a_stream_that_opens_again_and_ends_with_the_run() {
         run,
         definitions: Definitions::default(),
         environments: Vec::new(),
-        read_only: false,
+        workspace: WorkspaceStatus::default(),
     }));
     assert!(tab.history().can_undo(), "a stream of the same run keeps the steps");
 
@@ -816,7 +816,7 @@ fn the_history_lasts_across_a_stream_that_opens_again_and_ends_with_the_run() {
         run: NEXT_RUN.parse().unwrap(),
         definitions: Definitions::default(),
         environments: Vec::new(),
-        read_only: false,
+        workspace: WorkspaceStatus::default(),
     }));
     assert!(
         !tab.history().can_undo(),
@@ -835,7 +835,7 @@ fn an_undo_refused_with_another_run_drops_every_step() {
         run,
         definitions: Definitions::default(),
         environments: Vec::new(),
-        read_only: false,
+        workspace: WorkspaceStatus::default(),
     }));
     let arm = ArmRule {
         environment: ENVIRONMENT.parse().unwrap(),
@@ -887,7 +887,7 @@ fn a_step_goes_with_its_environment_and_a_change_of_the_workspace_stays() {
         run,
         definitions: Definitions::default(),
         environments: Vec::new(),
-        read_only: false,
+        workspace: WorkspaceStatus::default(),
     }));
     let always = Rule::new(
         RULE.parse().unwrap(),
@@ -949,7 +949,7 @@ fn a_change_of_a_rule_of_the_workspace_is_a_change_of_it_in_every_environment() 
         run,
         definitions: Definitions::default(),
         environments: Vec::new(),
-        read_only: false,
+        workspace: WorkspaceStatus::default(),
     }));
     let always = Rule::new(
         RULE.parse().unwrap(),
@@ -1009,7 +1009,7 @@ fn an_undo_that_got_no_answer_stays_and_one_goes_out_at_a_time() {
         run,
         definitions: Definitions::default(),
         environments: Vec::new(),
-        read_only: false,
+        workspace: WorkspaceStatus::default(),
     }));
     let arm = ArmRule {
         environment: ENVIRONMENT.parse().unwrap(),

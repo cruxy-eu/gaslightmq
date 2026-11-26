@@ -685,8 +685,17 @@ fn a_definition_whose_write_would_lose_a_comment_says_so_beside_it() {
 
 #[test]
 fn a_reload_says_nothing_but_its_operation_and_answers_with_what_it_changed() {
-    Form(OperationRequest::new(RequestSurface::Cli, ReloadWorkspace {}))
-        .writes(json!({ "from": { "surface": "cli" }, "operation": "reload-workspace" }));
+    Form(OperationRequest::new(
+        RequestSurface::Cli,
+        ReloadWorkspace { discard_unsaved: false },
+    ))
+    .writes(json!({ "from": { "surface": "cli" }, "operation": "reload-workspace" }));
+    // A reload that lets go of what nobody saved says so.
+    Form(OperationRequest::new(
+        RequestSurface::Ui,
+        ReloadWorkspace { discard_unsaved: true },
+    ))
+    .writes(json!({ "from": { "surface": "ui" }, "operation": "reload-workspace", "discard-unsaved": true }));
     let producers: SelectorName = "order-producers".parse().unwrap();
     let slow: RuleName = "slow-order-producers".parse().unwrap();
     let blackhole: PresetName = "blackhole".parse().unwrap();
@@ -730,6 +739,10 @@ fn a_reload_that_changed_nothing_says_why() {
         "rule": "slow-order-producers",
         "holder": { "environment": "orders-sim" },
     }));
+    Form(ReloadWorkspaceError::Unsaved {
+        definitions: vec!["order-producers".parse::<SelectorName>().unwrap().into()],
+    })
+    .writes(json!({ "error": "unsaved", "definitions": [{ "selector": "order-producers" }] }));
     Form(ReloadWorkspaceError::LiveRuleDoesNotFit {
         environment,
         rule,
@@ -1201,7 +1214,8 @@ fn an_operation_names_itself_as_its_form_does() {
             environment,
             after: None,
         }),
-        AnyOperation::from(ReloadWorkspace {}),
+        AnyOperation::from(ReloadWorkspace { discard_unsaved: false }),
+        AnyOperation::from(SaveWorkspace {}),
     ];
 
     for operation in operations {
@@ -1280,12 +1294,18 @@ fn a_refused_subscription_says_why() {
 }
 
 #[test]
-fn the_state_of_a_process_over_a_read_only_workspace_says_so() {
+fn the_state_of_a_process_says_how_its_workspace_writes_and_what_nobody_saved() {
+    let producers: SelectorName = "order-producers".parse().unwrap();
+    let slow: RuleName = "slow-order-producers".parse().unwrap();
     let state = ProcessState {
         run: RUN.parse().unwrap(),
         definitions: Definitions::default(),
+        workspace: WorkspaceStatus {
+            write_back: WriteBack::OnSave,
+            read_only: false,
+            unsaved: vec![producers.into(), slow.into()],
+        },
         environments: Vec::new(),
-        read_only: true,
     };
 
     Form(StreamMessage::Snapshot(state)).writes(json!({
@@ -1299,8 +1319,48 @@ fn the_state_of_a_process_over_a_read_only_workspace_says_so() {
             "layouts": [],
             "environments": [],
         },
-        "read-only": true,
+        "workspace": {
+            "write-back": "on-save",
+            "unsaved": [{ "selector": "order-producers" }, { "rule": "slow-order-producers" }],
+        },
         "environments": [],
+    }));
+    // CI mounts the workspace read-only, and a surface reads that it takes no change.
+    Form(StreamMessage::WorkspaceChanged {
+        workspace: WorkspaceStatus {
+            write_back: WriteBack::EachChange,
+            read_only: true,
+            unsaved: Vec::new(),
+        },
+    })
+    .writes(json!({
+        "message": "workspace-changed",
+        "workspace": { "write-back": "each-change", "read-only": true },
+    }));
+}
+
+#[test]
+fn a_save_says_nothing_but_its_operation_and_answers_with_what_it_wrote() {
+    Form(OperationRequest::new(RequestSurface::Ui, SaveWorkspace {}))
+        .writes(json!({ "from": { "surface": "ui" }, "operation": "save-workspace" }));
+    let producers: SelectorName = "order-producers".parse().unwrap();
+    Form(Saved {
+        saved: vec![producers.into()],
+    })
+    .writes(json!({ "saved": [{ "selector": "order-producers" }] }));
+    // A workspace with nothing unsaved saves nothing.
+    Form(Saved::default()).writes(json!({}));
+    let changed = "selectors.yaml changed since the store read it; rules/slow.yaml is gone since the store read it";
+    Form(SaveWorkspaceError::ChangedOutside {
+        reason: changed.to_owned(),
+    })
+    .writes(json!({ "error": "changed-outside", "reason": changed }));
+    Form(SaveWorkspaceError::StoreFailed {
+        reason: "the rule store did not save: rules/slow.yaml: disk full, and it wrote no file before".to_owned(),
+    })
+    .writes(json!({
+        "error": "store-failed",
+        "reason": "the rule store did not save: rules/slow.yaml: disk full, and it wrote no file before",
     }));
 }
 
@@ -1332,7 +1392,7 @@ fn a_client_that_connects_gets_the_state_of_the_process() {
             rules: Vec::new(),
             sessions: Vec::new(),
         }],
-        read_only: false,
+        workspace: WorkspaceStatus::default(),
     };
 
     // The snapshot names the run, and whatever has a revision comes with it.
@@ -1347,6 +1407,7 @@ fn a_client_that_connects_gets_the_state_of_the_process() {
             "layouts": [],
             "environments": [{ "definition": Form(&environment).json(), "revision": SEEN.number() }],
         },
+        "workspace": { "write-back": "each-change" },
         "environments": [{
             "environment": "orders-sim",
             "backend": {
@@ -1427,7 +1488,7 @@ fn an_environment_with_brokers_travels_inside_a_message() {
             ..Definitions::default()
         },
         environments: vec![running.clone()],
-        read_only: false,
+        workspace: WorkspaceStatus::default(),
     }))
     .writes(json!({
         "message": "snapshot",
@@ -1440,6 +1501,7 @@ fn an_environment_with_brokers_travels_inside_a_message() {
             "layouts": [],
             "environments": [{ "definition": staging_json, "revision": SEEN.number() }],
         },
+        "workspace": { "write-back": "each-change" },
         "environments": [running_json],
     }));
     Form(StreamMessage::DefinitionChanged {
