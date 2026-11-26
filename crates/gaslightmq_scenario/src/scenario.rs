@@ -52,8 +52,6 @@ use crate::{Mode, ScenarioName, ScenarioTitle, Step, StepName, Until};
 /// preset that does not exist. Whoever holds the whole workspace checks that.
 ///
 /// ```
-/// use gaslightmq_clock::TimeSpan;
-/// use gaslightmq_lie::prelude::*;
 /// use gaslightmq_rule::prelude::*;
 /// use gaslightmq_scenario::prelude::*;
 /// use gaslightmq_selector::prelude::*;

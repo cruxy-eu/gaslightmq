@@ -183,8 +183,7 @@ impl<'de> Deserialize<'de> for Until {
                 after: Some(span),
             } => Ok(Until::After(span)),
             _ => Err(de::Error::custom(
-                "a step ends on `calls` with a `selector`, on `firings` with a `rule`, or `after` a time, \
-                 and on one of them",
+                "a step ends on one condition: `calls` with a `selector`, `firings` with a `rule`, or `after` a time",
             )),
         }
     }

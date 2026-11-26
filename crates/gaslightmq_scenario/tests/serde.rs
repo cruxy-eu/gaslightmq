@@ -178,7 +178,7 @@ fn a_step_ends_on_one_condition_with_its_own_keys() {
     for written in [both, calls_without_selector, rule_without_firings] {
         assert_eq!(
             serde_json::from_value::<Until>(written).unwrap_err().to_string(),
-            "a step ends on `calls` with a `selector`, on `firings` with a `rule`, or `after` a time, and on one of them"
+            "a step ends on one condition: `calls` with a `selector`, `firings` with a `rule`, or `after` a time"
         );
     }
     assert!(
