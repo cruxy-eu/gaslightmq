@@ -25,7 +25,7 @@ impl<C: WorkspaceContext> Host<C> {
     ///
     /// | Intent | The host |
     /// |---|---|
-    /// | [`Arm`](Intent::Arm) | Arms the rule of the pad, unless it is armed. A pad without a rule gets [the rule of its position](PadLayout::rule) first, as a live rule. |
+    /// | [`Arm`](Intent::Arm) | Arms the rule of the pad, unless it is armed. A pad without a rule gets [the rule of its position](PadLayout::rule) as a live rule, made and armed in one step. |
     /// | [`Disarm`](Intent::Disarm) | Disarms the rule of the pad, unless it is not armed or the pad has none. |
     /// | [`Hold`](Intent::Hold) | Arms the rule of the pad as `Arm` does, and adds a [`Hold`] to it, which the answer holds. |
     /// | [`Release`](Intent::Release) | Takes the hold away, and disarms the rule when that was its last hold. |
@@ -67,16 +67,17 @@ impl<C: WorkspaceContext> Host<C> {
         let mut hold = None;
         let changed = match intent {
             Intent::Arm { .. } | Intent::Hold { .. } => {
-                let rule = if let Some(existing) = existing {
-                    existing.rule
+                let armed = if let Some(existing) = existing {
+                    self.arm_unless_armed(environment, &existing.rule).await?
+                } else if let Some(made_by_another) = self
+                    .make_armed(environment, &name, pad, &layout, &selectors, &presets)
+                    .await?
+                {
+                    self.arm_unless_armed(environment, &made_by_another).await?
                 } else {
-                    let (rule, was_made) = self
-                        .make(environment, &name, pad, &layout, &selectors, &presets)
-                        .await?;
-                    made = was_made;
-                    rule
+                    made = true;
+                    true
                 };
-                let armed = self.arm_unless_armed(environment, &rule).await?;
                 if matches!(intent, Intent::Hold { .. }) {
                     hold = self.add_hold(environment, &name)?;
                 }
@@ -132,9 +133,11 @@ impl<C: WorkspaceContext> Host<C> {
         })
     }
 
-    /// Makes the live rule of the position of `pad`, which has the name `name`, and returns it with whether this call
-    /// made it. When another press made it in the meantime, the rule is that one.
-    async fn make(
+    /// Makes the live rule of the position of `pad`, which has the name `name`, and arms it, in one step.
+    ///
+    /// Returns `None` when this call made it. When another press made it in the meantime, it returns that rule, which
+    /// this call neither made nor armed.
+    async fn make_armed(
         &self,
         environment: &EnvironmentName,
         name: &RuleName,
@@ -142,18 +145,18 @@ impl<C: WorkspaceContext> Host<C> {
         layout: &PadLayout,
         selectors: &SelectorSet,
         presets: &PresetSet,
-    ) -> Result<(Rule, bool), IntentError> {
+    ) -> Result<Option<Rule>, IntentError> {
         let refused = |reason: String| IntentError::Refused { reason };
         let Some(rule) = layout.rule(pad, selectors, presets) else {
             return Err(refused(format!("the {pad} has no rule to make")));
         };
-        match self.create_live_rule(environment, rule).await {
-            Ok(rule) => Ok((rule, true)),
+        match self.create_live_rule_armed(environment, rule).await {
+            Ok(_) => Ok(None),
             Err(CreateLiveRuleError::NotRunning { environment }) => Err(IntentError::NotRunning { environment }),
             Err(CreateLiveRuleError::StoreFailed { reason, .. }) => Err(IntentError::StoreFailed { reason }),
             Err(taken @ CreateLiveRuleError::NameTaken { .. }) => match self.rule_at(environment, name).await? {
                 // Another press made the rule of the pad first.
-                Some(made) => Ok((made.rule, false)),
+                Some(made) => Ok(Some(made.rule)),
                 None => Err(refused(taken.to_string())),
             },
             Err(other) => Err(refused(other.to_string())),
