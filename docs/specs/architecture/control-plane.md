@@ -132,19 +132,27 @@ One counter of the process gives all of them, so a revision never comes back wit
 - **The snapshot names the run.**
   A revision means something in the run that gave it, and in no other.
 - **A change answers with the new revision.**
+  The answer of every change is `{ "revision": 8 }`.
   A client that changes one thing twice in a row waits for no message of the stream in between.
+- **A delete answers with the revision of the delete.**
+  The delete is a change, so it takes a number, and nothing has that revision afterwards.
 - **A change can say what it expects.**
   `expects` holds two things: the run that the client read from, and the revision that it saw.
 - **A change that expects another revision changes nothing.**
   Its error is `changed`, with the revision that the thing has now.
+  It names the thing too: a definition by its kind and its name, and a rule of an environment by both names.
 - **A change that expects another run changes nothing.**
   Its error is `other-run`, with the run ID of the process.
   The process started again since the client read, and nothing that the client holds is certain any more: it reads the snapshot again.
+  A change learns of the other run before anything else that is wrong with it, such as an environment that does not run any more.
 - **Without `expects`, the last change wins.**
   `gmq` and a test that has its process to itself leave it out.
   The UI sends it with every change.
 - **A create expects nothing.**
   It refuses a name that is taken, so it never overwrites.
+  A live rule that is created armed is one change, and takes one number.
+- **A firing expects nothing, and leaves no revision.**
+  It is what happens, and no change of what someone set.
 
 ```json
 { "from": { "surface": "ui" }, "operation": "update-rule", "expects": { "run": "4be0643f1d98573b97cdca98a65347dd", "revision": 7 }, "definition": { "name": "slow-order-producers", "selector": "order-producers", "action": "delay-1s" } }
@@ -165,6 +173,9 @@ One counter of the process gives all of them, so a revision never comes back wit
   Two clients that both step from the same step advance the scenario once, and the second one gets `changed`.
 - **A revision does not cover what a definition refers to.**
   A rule whose selector someone changed has the revision it had.
+- **A change that nobody asked for takes a number too.**
+  A rule whose lifetime ended or whose budget is spent has a higher revision than it had while it was armed.
+  Whoever still expects the armed rule changes nothing.
 
 A write to a file can also fail because [someone edited the file](storage.md#the-check-before-a-write) while the process ran.
 Its error is `changed-outside`, and no revision is involved: the engine does not hold what the file holds now, until someone asks for a reload.
@@ -349,6 +360,9 @@ Every frame is a text frame.
   The server keeps a backlog of changes for every client, as large as its configuration says.
   A client that falls further behind would miss changes, so the server sends it a new `snapshot` and goes on from there.
   Calls do not count: a client that falls behind the calls of its environment misses the oldest of them.
+- **A rule of the workspace follows its definition.**
+  A `definition-changed` of a rule gives the rule that definition in every environment that runs, with the state it has there.
+  Its revision in an environment is the later of the two: the one of the message, and the one that the rule had there.
 - **Every subscription gets an answer.**
   A subscription that the server follows gets a `following` with the subscription,
   and the client gets every call it names from that message on, and none before it.
@@ -395,7 +409,16 @@ It arrives with the stores of files: a store in memory has nothing to reload.
 Every request says where it comes from, and nothing records it yet.
 The server reads it and refuses a request without it. The host takes the surface and the cause of every change once the journal exists, which records them.
 
-Nothing has a revision yet, and the snapshot names no run.
+The scenario of an environment has no revision yet: no operation activates a scenario or steps one.
+Its revision, and the `expects` of those operations, arrive with them.
+
+A pad intent answers with nothing yet.
+What it did, the rule it acted on and the revision that the rule has now arrive with the presses that say the state they want.
+Until then a surface reads them from the `rule-changed` that follows.
+A press that makes a live rule and arms it takes two numbers, one for each, and the rule has the later one.
+
+The UI sends no `expects` yet.
+It keeps the run and every revision that the stream tells, and sends them with its changes once it keeps an undo history.
 
 No request needs a token yet, and the server allows no request from a page of another origin.
 The `token` of the [process configuration](storage.md#process-configuration) arrives with the binary.
