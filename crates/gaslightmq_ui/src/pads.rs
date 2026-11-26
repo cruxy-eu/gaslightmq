@@ -1,12 +1,14 @@
 //! The pads that someone plays in the UI: a surface on a layout of the workspace, against the rules of the
 //! environment shown.
 
+use std::collections::BTreeMap;
+
 use gaslightmq_control_api::environment::EnvironmentName;
 use gaslightmq_control_api::lie::LieDefinition;
 use gaslightmq_control_api::prelude::*;
 use gaslightmq_control_api::rule::{Action, ActionRef, Preset, Rule};
 use gaslightmq_control_api::surface::{
-    Column, Encoder, EncoderTurn, Hold, Layer, Pad, PadLayout, PadState, PlayMode, Row, Steps, Surface,
+    Column, Encoder, EncoderTurn, Hold, Intent, Layer, Pad, PadLayout, PadState, PlayMode, Row, Steps, Surface,
 };
 use gaslightmq_control_api::trigger::{Lifetime, Trigger};
 
@@ -20,6 +22,8 @@ use gaslightmq_control_api::trigger::{Lifetime, Trigger};
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Desk {
     surface: Surface,
+    /// The environment that the press of each hold went to, which its release goes to as well.
+    held_in: BTreeMap<Hold, EnvironmentName>,
 }
 
 /// A way to move the focus across the grid, as the arrow keys do.
@@ -36,6 +40,7 @@ impl Desk {
     pub fn new(layout: PadLayout) -> Self {
         Self {
             surface: Surface::new(layout),
+            held_in: BTreeMap::new(),
         }
     }
 
@@ -111,13 +116,17 @@ impl Desk {
 
     /// Someone released the pad at that row and column: in hold, the intent that ends the hold of its press.
     ///
+    /// The release goes to the environment that the press went to, whichever environment the UI shows by now:
+    /// another environment has no such hold, and the hold would stay.
     /// When the answer to the press has not come yet, the release goes out with [`answered`](Self::answered).
-    pub fn release(&mut self, row: Row, column: Column, running: &RunningEnvironment) -> Option<SendIntent> {
+    pub fn release(&mut self, row: Row, column: Column) -> Option<SendIntent> {
         let intent = self.surface.release(row, column)?;
-        Some(SendIntent {
-            environment: running.environment.clone(),
-            intent,
-        })
+        let Intent::Release { hold, .. } = &intent else {
+            return None;
+        };
+        // The surface only releases a hold that it was answered with, and the desk kept where that answer came from.
+        let environment = self.held_in.remove(hold)?;
+        Some(SendIntent { environment, intent })
     }
 
     /// The answer to a press in hold of `pad` came from `environment`: the hold that the press added,
@@ -126,7 +135,13 @@ impl Desk {
     /// Returns the release of the hold, for the same environment, when someone let go of the pad before the answer
     /// came.
     pub fn answered(&mut self, environment: &EnvironmentName, pad: &Pad, hold: Option<Hold>) -> Option<SendIntent> {
-        let intent = self.surface.answered(pad, hold)?;
+        let Some(intent) = self.surface.answered(pad, hold) else {
+            // The pad is still held, and its release goes where its press went.
+            if let Some(hold) = hold {
+                self.held_in.insert(hold, environment.clone());
+            }
+            return None;
+        };
         Some(SendIntent {
             environment: environment.clone(),
             intent,

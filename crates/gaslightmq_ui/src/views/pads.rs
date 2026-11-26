@@ -110,9 +110,9 @@ pub fn Pads() -> Element {
                         let pad = desk.surface().focused()?;
                         desk.press(pad.row(), pad.column(), running)
                     });
-                    play(&ui, |desk, running| {
+                    play(&ui, |desk, _| {
                         let pad = desk.surface().focused()?;
-                        desk.release(pad.row(), pad.column(), running)
+                        desk.release(pad.row(), pad.column())
                     });
                 }
                 Key::Character(text) => {
@@ -542,11 +542,11 @@ fn PadCell(row: Row, column: Column, tone: Tone, on: bool) -> Element {
     };
     let release = {
         let ui = ui.clone();
-        move |_| play(&ui, |desk, running| desk.release(row, column, running))
+        move |_| play(&ui, |desk, _| desk.release(row, column))
     };
     let leave = {
         let ui = ui.clone();
-        move |_| play(&ui, |desk, running| desk.release(row, column, running))
+        move |_| play(&ui, |desk, _| desk.release(row, column))
     };
     rsx! {
         div {
