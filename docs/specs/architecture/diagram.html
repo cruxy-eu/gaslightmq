@@ -398,7 +398,7 @@ const CRATES = [
   ["overlay","World and backends","sans",0,3,"The Upstream overlay: address translation, emulated incidents and sessionless Fetch. Rewrites requests and responses, opens no connection.",["backend","wire","wire_edit","incident","field","kernel"]],
   ["schema","World and backends","sans",0,6,"Record formats and schemas: encode and decode JSON, Avro and Protobuf, one feature per format.",[]],
 
-  ["traffic","Observation","sans",0,4,"The live window of recent calls, subscriptions by selector, and statistics per rule and per API. It takes the record of each call and says which subscriptions it goes to, and it sends nothing itself.",["call","selector","rule","field","kernel"]],
+  ["traffic","Observation","sans",0,4,"The live window of recent calls, subscriptions by selector, statistics per rule and per API, and the topics, groups and clients that the calls named. It takes the record of each call and says which subscriptions it goes to, and it sends nothing itself.",["call","selector","rule","field","kernel"]],
   ["index","Observation","sans",0,4,"The index: facets, counts under the active filters, suggested patterns.",["call","selector","field"]],
   ["journal","Observation","sans",1,5,"The journal: its entries, and the window of recent entries the engine keeps in memory.",["incident","clock"]],
   ["recording","Observation","sans",0,5,"The recording format: append-only chunks, metadata-only mode, blanked credentials, a reader and a writer over std::io.",["call","journal","wire"]],

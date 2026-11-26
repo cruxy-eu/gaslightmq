@@ -1,5 +1,5 @@
-//! The control plane runs environments of the workspace in front of real Kafka brokers, and streams what happens in
-//! them: their calls, their rules, their sessions and their statistics.
+//! The control plane runs environments of the workspace in front of real Kafka brokers, streams what happens in
+//! them: their calls, their rules, their sessions and their statistics, and reads ⌘K sentences with their names.
 //!
 //! The tests need Docker.
 //! Each test starts the cluster it needs, a host whose workspace lives in memory, and a server in front of the host,
@@ -16,7 +16,7 @@ use gaslightmq_control_api::environment::{
     BrokerListeners, Environment, Instances, ListenAddress, Listeners, ProxyDefinition, Upstream,
 };
 use gaslightmq_control_api::field::{Endpoint, Field, FieldSource};
-use gaslightmq_control_api::kernel::ApiKey;
+use gaslightmq_control_api::kernel::{ApiKey, ClientId};
 use gaslightmq_control_api::lie::TimingLie;
 use gaslightmq_control_api::prelude::*;
 use gaslightmq_control_api::rule::{Preset, PresetSet, Rule, RuleState};
@@ -28,7 +28,7 @@ use gaslightmq_control_api::trigger::{Count, Lifetime, Trigger};
 use gaslightmq_control_client::{ControlClient, ControlClientConfiguration, LiveStream};
 use gaslightmq_control_server::prelude::*;
 use gaslightmq_host::{Host, HostConfiguration};
-use gaslightmq_kafka_client_native::KafkaProducer;
+use gaslightmq_kafka_client_native::{KafkaProducer, ProducerConfiguration};
 use gaslightmq_lie_api::prelude::*;
 use gaslightmq_test_kafka::KafkaCluster;
 use gaslightmq_wire::{Offset, Partition, Record};
@@ -818,6 +818,115 @@ async fn a_rule_that_spends_its_budget_disarms_and_the_statistics_count_its_firi
             left: None,
         })
     );
+    server.stop().await;
+    host.stop_all().await;
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_sentence_knows_the_client_that_wrote_through_the_environment_and_enter_arms_its_rule() -> anyhow::Result<()>
+{
+    let cluster = KafkaCluster::plaintext().start().await?;
+    let orders = cluster.topics().create("orders.eu").await?;
+    let host = Arc::new(Host::new(
+        HostConfiguration::default(),
+        MemoryContext::new(),
+        Lies::of_every_build(),
+    ));
+    let any = ListenAddress::new(LOCALHOST, ANY_PORT);
+    let brokers = BrokerListeners::pinned(cluster.brokers().iter().map(|broker| (broker.id(), any)))?;
+    let staging = Environment::new(
+        "staging-proxy".parse()?,
+        Instances::ProxyInFrontOfCluster {
+            proxy: ProxyDefinition::new(Listeners::new(any, brokers, LOCALHOST.into())?),
+            upstream: Upstream::new(cluster.brokers()[0].address().to_string().parse()?),
+        },
+    );
+    host.create(staging.clone()).await?;
+    let mut configuration = ControlServerConfiguration::default();
+    configuration.listen = SocketAddr::new(LOCALHOST, ANY_PORT);
+    let server = ControlServer::start(configuration, Arc::clone(&host)).await?;
+    let client = ControlClient::new(ControlClientConfiguration::new(server.address().into()));
+    client
+        .send(StartEnvironment {
+            environment: staging.name().clone(),
+        })
+        .await??;
+    let mut stream = Watched {
+        stream: client.live_stream().await?,
+    };
+    let order_ingest: ClientId = "order-ingest".parse()?;
+    let of_order_ingest = Subscription::Calls {
+        environment: staging.name().clone(),
+        selector: SelectorRef::Inline(Conditions::from(Condition::is(order_ingest.clone()))),
+    };
+    stream.stream.follow(of_order_ingest.clone()).await;
+    let following = StreamMessage::Following {
+        subscription: of_order_ingest,
+    };
+    stream.next_where(|message| *message == following).await?;
+    let bootstrap = host
+        .address_of(staging.name(), Endpoint::Bootstrap)?
+        .context("the bootstrap endpoint of the staging proxy is open")?;
+    let mut producing = ProducerConfiguration::new(bootstrap);
+    producing.client.client_id = order_ingest;
+
+    // `order-ingest` writes through the environment, and the stream hands over its first call, once the traffic saw it.
+    let written = KafkaProducer::new(producing)
+        .send(
+            orders.name().as_str(),
+            Partition::new(0),
+            &[Record::new("placed").with_key("o-1")],
+        )
+        .await;
+    stream
+        .next_where(|message| matches!(message, StreamMessage::Call { .. }))
+        .await?;
+    // Someone types the sentence of the spec in ⌘K: the client ID completes, and the whole sentence is a rule.
+    let typing = client
+        .send(ParseSentence {
+            environment: staging.name().clone(),
+            text: "delay produce orders.* 750ms 40% order-".to_owned(),
+        })
+        .await??;
+    let whole = client
+        .send(ParseSentence {
+            environment: staging.name().clone(),
+            text: "delay produce orders.* 750ms 40% order-ingest".to_owned(),
+        })
+        .await??;
+
+    assert_eq!(written, Ok(Offset::new(0)));
+    let completes =
+        |completion: &WordCompletion| completion.kind == WordKind::Client && completion.word == "order-ingest";
+    assert!(typing.completions.iter().any(completes), "{:?}", typing.completions);
+    assert_eq!(whole.unread, []);
+    let rule = whole.rule.context("the sentence names a lie")?;
+    assert_eq!(rule.name(), "delay-750ms-on-produce-orders-for-order-ingest");
+    assert_eq!(rule.scope().to_string(), "client.id is order-ingest");
+
+    // Enter creates the rule as a live rule of the environment, and arms it.
+    client
+        .send(CreateLiveRule {
+            environment: staging.name().clone(),
+            rule: rule.clone(),
+        })
+        .await??;
+    client
+        .send(ArmRule {
+            environment: staging.name().clone(),
+            rule: rule.name().clone(),
+        })
+        .await??;
+    let armed_rule = StreamMessage::RuleChanged {
+        environment: staging.name().clone(),
+        rule: RuleStatus {
+            rule,
+            live: true,
+            state: RuleState::Armed,
+        },
+    };
+    stream.next_where(|message| *message == armed_rule).await?;
     server.stop().await;
     host.stop_all().await;
     Ok(())

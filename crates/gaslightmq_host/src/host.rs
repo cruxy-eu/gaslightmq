@@ -45,7 +45,7 @@ mod watch;
 /// | The [workspace](Self::workspace) | The definitions of every environment, over the context the host was handed. |
 /// | The environments that run | Each one by its name, with its own proxy: its listeners, sessions, armed rules and events. |
 /// | The lies of the build | One behaviour per kind, which the proxy of every environment tells. |
-/// | Quick inject | Reads a ⌘K sentence with the names of the workspace. |
+/// | Quick inject | Reads a ⌘K sentence with the names of the workspace, and those that the traffic of an environment has seen. |
 ///
 /// # Environments
 ///
@@ -66,27 +66,28 @@ mod watch;
 /// The host holds the workspace over the context it is handed, and names no store.
 /// Whoever puts a process together picks the stores there.
 /// [`arm`](Self::arm) resolves a rule against the selectors and the presets of the workspace,
-/// and [`read_sentence`](Self::read_sentence) offers their names.
+/// and [`read_sentence`](Self::read_sentence) offers their names, next to those of the traffic of the environment.
 ///
 /// ```
+/// use gaslightmq_environment::EnvironmentName;
 /// use gaslightmq_host::prelude::*;
 /// use gaslightmq_lie::prelude::*;
 /// use gaslightmq_lie_api::prelude::*;
 /// use gaslightmq_rule::prelude::*;
+/// use gaslightmq_selector::prelude::*;
 /// use gaslightmq_workspace::prelude::*;
 ///
 /// # #[tokio::main(flavor = "current_thread")]
-/// # async fn main() -> Result<(), ReadSentenceError> {
+/// # async fn main() {
 /// let host = Host::new(HostConfiguration::default(), MemoryContext::new(), Lies::of_every_build());
 /// let quiet = Preset::new("quiet-orders".parse().expect("a preset name"), LieDefinition::Silence);
-/// host.create(quiet).await.expect("a workspace in memory keeps it");
+/// host.create(quiet.clone()).await.expect("a workspace in memory keeps it");
 ///
-/// // Someone types in the ⌘K palette, and the sentence knows the presets of the workspace.
-/// let sentence = host.read_sentence("quiet-orders for 3 firings").await?;
-/// let rule = sentence.rule().expect("the sentence names a preset");
-/// assert_eq!(rule.action().preset().map(PresetName::as_str), Some("quiet-orders"));
-/// assert!(host.running().is_empty());
-/// # Ok(())
+/// // A rule that names the preset resolves against the workspace, and only an environment that runs arms it.
+/// let staging: EnvironmentName = "staging-proxy".parse().expect("an environment name");
+/// let rule = Rule::new("quiet-produce".parse().expect("a rule name"), Conditions::new(), quiet.name().clone());
+/// let armed = host.arm(&staging, &rule).await;
+/// assert_eq!(armed.err(), Some(ArmRuleError::NotRunning { environment: staging }));
 /// # }
 /// ```
 pub struct Host<C: WorkspaceContext> {
@@ -472,18 +473,31 @@ impl<C: WorkspaceContext> Host<C> {
         }
     }
 
-    /// Reads a ⌘K sentence, as someone types it, with the names of the workspace.
+    /// Reads a ⌘K sentence, as someone types it, with the names that an environment knows.
     ///
-    /// A sentence knows the presets and the selectors of the workspace, with their titles.
-    /// It knows no topic, group or client by itself yet: those come from the traffic, which no environment keeps yet.
-    /// A sentence names one of those after the word for its kind: `topic orders`.
+    /// A sentence knows the presets and the selectors of the workspace, with their titles,
+    /// and the topics, the consumer groups and the client IDs that the traffic of the environment has seen:
+    /// as many of each as the [traffic keeps](gaslightmq_traffic::TrafficConfiguration::seen_names).
+    /// It says those without the word for their kind, and offers them as completions.
+    /// A sentence names any other one after the word for its kind: `topic orders`.
     ///
     /// Reading changes nothing. The rule of the sentence is a definition, which whoever read it [arms](Self::arm).
     ///
     /// # Errors
     ///
-    /// [`ReadSentenceError::StoreFailed`] when the workspace could not read its presets or its selectors.
-    pub async fn read_sentence(&self, text: &str) -> Result<Sentence, ReadSentenceError> {
+    /// - [`ReadSentenceError::NotRunning`] when no environment of that name runs.
+    /// - [`ReadSentenceError::StoreFailed`] when the workspace could not read its presets or its selectors.
+    pub async fn read_sentence(
+        &self,
+        environment: &EnvironmentName,
+        text: &str,
+    ) -> Result<Sentence, ReadSentenceError> {
+        let not_running = || ReadSentenceError::NotRunning {
+            environment: environment.clone(),
+        };
+        if !self.environments().contains_key(environment) {
+            return Err(not_running());
+        }
         let (presets, selectors) = {
             let workspace = self.workspace.lock().await;
             let stores = workspace.stores();
@@ -514,6 +528,16 @@ impl<C: WorkspaceContext> Host<C> {
                     .iter()
                     .map(|selector| (selector.name().clone(), selector.title().cloned())),
             );
+        let known = self
+            .with_running(environment, |running| {
+                let watched = lock(&running.traffic);
+                let seen = watched.traffic().seen_names();
+                known
+                    .with_topics(seen.topics().cloned())
+                    .with_groups(seen.groups().cloned())
+                    .with_clients(seen.clients().cloned())
+            })
+            .map_err(|_| not_running())?;
         Ok(self.quick_inject.read(text, &known))
     }
 

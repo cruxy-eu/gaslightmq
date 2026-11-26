@@ -486,11 +486,9 @@ impl<C: WorkspaceContext + 'static> ControlPlane<C> {
     }
 
     async fn parse(&self, environment: EnvironmentName, text: &str) -> Result<ParsedSentence, EnvironmentReadError> {
-        if !self.host.running().contains(&environment) {
-            return Err(EnvironmentReadError::NotRunning { environment });
-        }
-        match self.host.read_sentence(text).await {
+        match self.host.read_sentence(&environment, text).await {
             Ok(sentence) => Ok(parsed(&sentence)),
+            Err(ReadSentenceError::NotRunning { environment }) => Err(EnvironmentReadError::NotRunning { environment }),
             Err(ReadSentenceError::StoreFailed { reason }) => {
                 Err(EnvironmentReadError::StoreFailed { environment, reason })
             }

@@ -71,6 +71,13 @@ impl ClientConnection {
         self.call(ApiKey::HEARTBEAT, None)
     }
 
+    /// The next call of the connection: a Heartbeat of a member of `group`.
+    pub fn heartbeat_in(&self, group: GroupId) -> EndingCall {
+        let mut call = self.call(ApiKey::HEARTBEAT, None);
+        call.fields = call.fields.with(group);
+        call
+    }
+
     fn call(&self, api: ApiKey, partition: Option<&TopicPartition>) -> EndingCall {
         let id = self.next_call.get();
         self.next_call.set(id.next());

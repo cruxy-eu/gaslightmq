@@ -347,7 +347,7 @@ Every other crate speaks in them.
 
 | Crate | Holds | Depends on |
 |---|---|---|
-| `traffic` | The live window of recent calls, subscriptions by selector, and statistics per rule and per API. It takes the record of each call and says which subscriptions it goes to, and it sends nothing itself. | `call`, `selector`, `rule`, `field`, `kernel` |
+| `traffic` | The live window of recent calls, subscriptions by selector, statistics per rule and per API, and the topics, groups and clients that the calls named. It takes the record of each call and says which subscriptions it goes to, and it sends nothing itself. | `call`, `selector`, `rule`, `field`, `kernel` |
 | `index` | The [index](../domains/observation.md#index): facets, counts under the active filters, suggested patterns. | `call`, `selector`, `field` |
 | `journal` | The [journal](../domains/observation.md#journal): its entries, and the window of recent entries the engine keeps in memory. | `incident`, `clock` |
 | `recording` | The [recording](storage.md#recordings) format: append-only chunks with summaries, calls and journal entries, metadata-only mode, blanked credentials, a reader and a writer over `std::io`. | `call`, `journal`, `wire` |
@@ -729,9 +729,11 @@ The conformance crates are [test support](#test-support-crates): no code that sh
 - **A rule fires by hand in one environment.**
   A lie waits for the next call that the rule matches.
   An incident goes to the backend of the environment at once, and the firing counts once the backend applied it.
-- **A ⌘K sentence knows the names of the workspace.**
-  The host hands quick inject the presets and the selectors of the workspace, with their titles.
-  The topics, groups and clients come from the traffic, once an environment keeps it.
+- **A ⌘K sentence knows the names of an environment.**
+  A sentence is read for an environment that runs.
+  The host hands quick inject the presets and the selectors of the workspace, with their titles,
+  and the topics, groups and clients that the traffic of the environment has seen.
+  The traffic keeps as many names of each kind as its configuration says, and lets go of the name seen longest ago.
 - **Live rules belong to one environment.**
   A live rule resolves against the workspace when someone makes it or changes it, and gets its UUID from the workspace
   then. It stays in the memory of its environment until someone keeps it, deletes it, or stops the environment.

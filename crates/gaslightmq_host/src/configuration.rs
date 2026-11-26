@@ -40,7 +40,8 @@ pub struct HostConfiguration {
     pub encoders: EncoderMapping,
     /// Ours. Default: the defaults of the traffic.
     ///
-    /// What the traffic of every environment keeps: the calls of its live window. The statistics come from it.
+    /// What the traffic of every environment keeps: the calls of its live window, and the names that its calls named.
+    /// The statistics come from it, and a ⌘K sentence knows the names.
     pub traffic: TrafficConfiguration,
     /// Ours. Default: 1024 changes.
     ///

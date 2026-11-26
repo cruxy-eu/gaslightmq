@@ -89,8 +89,7 @@
 //! - **What a process configures.** No workspace setting reaches an environment by itself:
 //!   whoever starts one sets its seed and its other properties in its [`EnvironmentConfiguration`].
 //! - **The live set, scenarios, the journal and recordings** arrive with their crates.
-//!   Until then the armed rules of an environment are its live set, and a ⌘K sentence knows the names of the
-//!   workspace alone, although the traffic of every environment is counted.
+//!   Until then the armed rules of an environment are its live set.
 //! - **The control plane** stands in front of the host, in the crate `gaslightmq_control_server`.
 //!
 //! # Errors
@@ -104,7 +103,7 @@
 //! | [`Host::stop`], and every question about an environment that runs | [`NotRunningError`] | No environment of that name runs. |
 //! | [`Host::arm`] | [`ArmRuleError`] | The environment does not run, the workspace could not be read or is not valid, the rule does not resolve, or it is armed already. |
 //! | [`Host::fire`] | [`FireRuleError`] | The environment does not run, the rule is not armed or fires no more, its incident needs a call, or the backend rejects it. |
-//! | [`Host::read_sentence`] | [`ReadSentenceError`] | The workspace could not be read. |
+//! | [`Host::read_sentence`] | [`ReadSentenceError`] | The environment does not run, or the workspace could not be read. |
 //! | [`Host::rules_of`], [`Host::rule_of`] | [`EnvironmentRulesError`] | The environment does not run, or the rules could not be read. |
 //! | [`Host::create_live_rule`] | [`CreateLiveRuleError`] | The environment does not run, a rule has the name, or the rule does not resolve. |
 //! | [`Host::update_live_rule`] | [`UpdateLiveRuleError`] | The environment does not run, it has no live rule of the name, or the rule does not resolve. |

@@ -1,5 +1,5 @@
 //! A host without a real cluster: what it refuses, what it says about an environment that does not run,
-//! and what it reads with the names of its workspace.
+//! and what it tells whoever follows it.
 //!
 //! The tests in `tests/real_cluster` run environments in front of real Kafka brokers.
 
@@ -13,7 +13,6 @@ use gaslightmq_host::prelude::*;
 use gaslightmq_kernel::prelude::*;
 use gaslightmq_lie::prelude::*;
 use gaslightmq_lie_api::prelude::*;
-use gaslightmq_quick_inject::prelude::*;
 use gaslightmq_rule::prelude::*;
 use gaslightmq_selector::prelude::*;
 use gaslightmq_surface::{Column, Intent, Layer, Pad, Row};
@@ -132,46 +131,6 @@ async fn a_rule_resolves_against_the_workspace_before_it_is_armed() -> anyhow::R
 }
 
 #[tokio::test]
-async fn a_sentence_knows_the_presets_and_the_selectors_of_the_workspace() -> anyhow::Result<()> {
-    let host = Host::new(
-        HostConfiguration::default(),
-        MemoryContext::new(),
-        Lies::of_every_build(),
-    );
-    let leader_flap = Preset::new(
-        "leader-flap".parse()?,
-        RefusalLie::new(ErrorCode::NOT_LEADER_OR_FOLLOWER),
-    );
-    let order_producers = Selector::new(
-        "order-producers".parse()?,
-        Conditions::new().with(Condition::is(ApiKey::PRODUCE)),
-    )
-    .with_title("Order producers".parse()?);
-    host.create(leader_flap).await?;
-    host.create(order_producers).await?;
-
-    // Someone types the start of a word of the title of a selector, and the sentence offers its name.
-    let typing = host.read_sentence("leader-flap prod").await?;
-    let offered: Vec<&str> = typing
-        .completions()
-        .iter()
-        .filter(|completion| completion.kind() == CompletionKind::Selector)
-        .map(Completion::sentence)
-        .collect();
-    assert_eq!(offered, ["leader-flap order-producers "]);
-
-    // The sentence that names both is a rule with the preset and the selector of the workspace.
-    let sentence = host.read_sentence("leader-flap order-producers for 3 firings").await?;
-    let rule = sentence
-        .rule()
-        .ok_or_else(|| anyhow::anyhow!("no rule in {sentence:?}"))?;
-    assert_eq!(rule.action().preset().map(PresetName::as_str), Some("leader-flap"));
-    assert_eq!(rule.lifetime().to_string(), "3 firings");
-    assert!(sentence.unread().is_empty(), "{:?}", sentence.unread());
-    Ok(())
-}
-
-#[tokio::test]
 async fn a_follower_of_the_host_learns_of_every_change_of_a_definition() -> anyhow::Result<()> {
     let host = Host::new(
         HostConfiguration::default(),
@@ -265,6 +224,12 @@ async fn live_rules_pads_and_sessions_need_an_environment_that_runs() -> anyhow:
             .await
             .map(|_| ()),
         Err(FollowCallsError::NotRunning {
+            environment: staging.clone()
+        })
+    );
+    assert_eq!(
+        host.read_sentence(&staging, "delay produce").await.map(|_| ()),
+        Err(ReadSentenceError::NotRunning {
             environment: staging.clone()
         })
     );
