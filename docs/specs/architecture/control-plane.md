@@ -106,8 +106,9 @@ Every request says which surface sends it.
 |---|---|
 | `surface` | Where the request comes from: `pad`, `quick-inject`, `ui`, `cli`, `test` or `api`. See [surfaces](../domains/observation.md#surfaces). |
 | `cause` | `undo` or `redo`, when the request takes back or repeats an earlier change of its sender. A request leaves it out otherwise. |
+| `presence` | The ID of the [presence](#presence) of its sender, when the sender has one. A request leaves it out otherwise. |
 
-The [journal](../domains/observation.md#journal) records both with every change that the request makes.
+The [journal](../domains/observation.md#journal) records the surface and the cause with every change that the request makes.
 The control plane has no users, so `from` is what the sender says about itself.
 
 A client says once which surface it is, and every request of it says so.
@@ -117,6 +118,60 @@ A client that says nothing about itself is `api`.
 The engine names three surfaces itself, and a request that claims one is unreadable.
 A change that no request made has the surface `step` or `lifetime`.
 A change that a [reload](storage.md#reloading) takes in has the surface `file`, whoever asked for the reload.
+
+## Presence
+
+A client of the control plane that is there is a presence.
+A tab of the UI is one, from the moment it opens its [live stream](#live-stream) until it is gone.
+The word *session* belongs to a Kafka client: a [session](../domains/session.md) is the runtime of one of its connections.
+A client of the control plane has no session, and a presence is not one.
+
+A presence stands above the connection of its client.
+It begins with the first live stream of the client, outlives a stream that ends while the client opens a new one,
+and ends when the client stays away.
+
+```json
+{ "from": { "surface": "pad", "presence": "9f86d081884c7d659a2feaa0c55ad015" }, "operation": "send-intent", "environment": "orders-sim", "intent": { "intent": "hold", "pad": { "layout": "order-desk", "layer": "order-ingest", "row": 0, "column": 3 } } }
+```
+
+- **Every live stream belongs to a presence.**
+  A stream that asks for none opens a new one.
+  The first message of the stream names the presence of its client.
+- **A presence has an ID.**
+  It is 128 random bits, written as 32 hexadecimal digits in lower case, as the ID of a [run](identity.md#run) is.
+  The server makes it from the randomness of the system, for each client that is new.
+  It is no number that the process counts: a tab that comes back after a restart never takes the presence of another tab for its own.
+- **A request says which presence it comes from.**
+  `from` holds the ID.
+  A [hold](../domains/control-surfaces.md#modes-of-play) that the request adds belongs to that presence.
+- **A presence outlives a stream that ends.**
+  When the last stream of a presence ends, the server keeps the presence for a grace period.
+  That is `presence_grace` of the server's configuration, and 10 seconds until someone sets it.
+  The server cannot tell a tab that closed from one whose connection dropped, so every stream that ends gets the grace period.
+- **A client that comes back names its presence.**
+  It opens its new stream as the presence that it was.
+  When the server still holds that presence, the client goes on as it, and everything of the presence stays.
+  A client can come back before the server noticed that its earlier stream is gone: the presence then has two streams, and is there until the last of them ends.
+- **A client that comes back too late is new.**
+  The server no longer holds its presence: the grace period is over, or the process is another one.
+  The stream opens a new presence, and its first message names another ID than the client asked for.
+  The client reads from that that the presence it was has ended, with everything that belonged to it.
+- **The holds of a presence end with it.**
+  The engine takes away every hold of a presence that ended, in every environment, as the release of each would.
+  A rule that disarms with its last hold takes one number, as with a release, and its `rule-changed` reaches every client.
+  A hold that names a presence which has ended is refused, because nothing would end it.
+- **A reload is a new presence.**
+  A page keeps the ID of its presence in memory, so a page that loads again asks for none.
+  The presence of the page before it ends with its grace period.
+- **A client that names no presence has none.**
+  `gmq` and a test send requests without one.
+  A hold of such a request ends by its release or by a disarm, and by nothing else.
+- **Every presence ends when the server stops.**
+  No client comes back to a server that stopped, and the host may live on with the pads that its clients held.
+  The server ends every presence at once, without a grace period.
+
+The server learns from the connection that a stream ended.
+A connection that goes silent without closing is [not noticed yet](#what-the-server-does-not-send-yet) until the system notices it.
 
 ## Revisions
 
@@ -276,6 +331,7 @@ The WebSocket streams:
 
 | Message | Carries |
 |---|---|
+| **Present** | The ID of the [presence](#presence) of this client. It is the first message, and comes once. |
 | **Snapshot** | The full state, sent when a client connects: the [run ID](identity.md#run), every definition of the workspace, and every environment that runs with its backend, its rules and its sessions. Whatever has a revision comes with it. |
 | **Call** | One call event: request summary, verdict and explanation. |
 | **Stats** | Matches, firings and remaining budget per rule, and calls per API, at a fixed interval. |
@@ -298,7 +354,7 @@ so a UI that only shows `orders.*` does not receive every call.
 A client follows the calls of one environment at a time, and no calls until it subscribes.
 A new subscription replaces the one before it.
 A selector without conditions follows every call.
-Every other message reaches every client, except the answer to a subscription, which reaches the client that sent it.
+Every other message reaches every client, except two: the presence of a client and the answer to a subscription reach the client that they are about.
 
 ## Over the network
 
@@ -311,6 +367,7 @@ No other form exists, so a client in the browser and one on a native target send
 |---|---|
 | An operation | `POST /api/operations` |
 | The live stream | `GET /api/stream`, which upgrades to a WebSocket |
+| The live stream of a client that comes back | `GET /api/stream?presence=9f86d081884c7d659a2feaa0c55ad015`, with the ID of the [presence](#presence) that it was |
 
 The server serves the [UI](crates.md#what-compiles-to-webassembly) on the other paths, so the page and the control plane share one origin.
 
@@ -353,8 +410,11 @@ Every frame is a text frame.
 | Server to client | One `StreamMessage`. |
 | Client to server | One `Subscription`. |
 
-- **The snapshot comes first.**
-  The first message is a `snapshot`, and every message after it is a change, a call or the answer to a subscription.
+- **The presence comes first, and the snapshot next.**
+  The first message is a `present`, with the ID of the [presence](#presence) of the client.
+  It is the presence that the query of the stream names, when the server still holds that one, and a new one otherwise.
+  A query that names no presence, or what is no ID of one, belongs to a client that is new.
+  The second message is a `snapshot`, and every message after it is a change, a call or the answer to a subscription.
 - **A message is a state, not a difference.**
   A change says what a rule, a definition or an environment is now.
   A change can repeat what the snapshot holds already, and applying it again changes nothing.
@@ -382,6 +442,11 @@ Every frame is a text frame.
 - **The server ends the stream with a close frame.**
   It closes with `1001 Going Away` when it stops,
   and with `1011 Internal Error` when the workspace cannot be read for a snapshot, with what the store said as the reason.
+  It closes with `1011` too when the system gives no randomness for the ID of a presence.
+- **A client can end the stream with a close frame.**
+  The server notes that the client left, and only then lets go of the connection.
+  A client that waits for the connection to close therefore knows that the grace period of its presence has begun.
+  A connection that breaks without a close frame ends the stream the same way.
 
 ### Where the changes come from
 
@@ -413,7 +478,13 @@ No operation reloads the workspace yet.
 It arrives with the stores of files: a store in memory has nothing to reload.
 
 Every request says where it comes from, and nothing records it yet.
-The server reads it and refuses a request without it. The host takes the surface and the cause of every change once the journal exists, which records them.
+The server reads it and refuses a request without it.
+The host takes the presence of a request with an intent, so that a hold ends with it.
+It takes the surface and the cause of every change once the journal exists, which records them.
+
+The server sends no ping, so it does not notice a connection that went silent without closing:
+a client on another machine whose network dropped, or whose laptop sleeps.
+The [presence](#presence) of such a client ends a grace period after the system gave up on the connection, which can take minutes.
 
 The scenario of an environment has no revision yet: no operation activates a scenario or steps one.
 Its revision, and the `expects` of those operations, arrive with them.
@@ -438,6 +509,7 @@ A pad press sends *arm the rule at row 1, column 4 on layer order-ingest*,
 and the engine creates a live rule if the pad has none yet.
 A press in latch sends *arm* or *disarm*, and never *toggle*, so two surfaces pressing the same pad do not undo each other.
 A press in hold sends *hold*, and its release sends *release*: the engine [counts the holds](../domains/control-surfaces.md#modes-of-play) of a rule, and disarms it when the last one goes.
+A hold belongs to the [presence](#presence) that its request names, and ends with it, so a surface that goes away without a release leaves no rule armed.
 An encoder turn sends *change probability by +3*, not *set probability to 43*,
 so two surfaces turning the same encoder do not fight.
 The answer to an intent says [what it did](#revisions), so the surface knows without working it out.

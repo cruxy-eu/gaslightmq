@@ -75,9 +75,11 @@ The second part lists the decisions that were settled, with the reason and the s
 
 ### Control surfaces
 
-- **What ends a hold whose holder went away?**
-  The engine [counts the holds](domains/control-surfaces.md#modes-of-play) of a rule, and disarms it when the last one goes.
-  A tab that closes while a pad is held never sends its release, and the control plane does not know which requests come from one tab.
+- **How does the control plane notice a client that went silent?**
+  A tab that closes, crashes or reloads closes its connection, and its [presence](architecture/control-plane.md#presence) ends a grace period later.
+  A client on another machine whose network drops closes nothing, and the server learns of it only when the system does, which can take minutes.
+  A ping at an interval of the configuration would find it, with a limit on how long a message may wait for a client that takes none.
+  The UI and the control plane run on one machine by default, where a connection never goes silent.
 
 ### Backends
 
@@ -179,3 +181,6 @@ The second part lists the decisions that were settled, with the reason and the s
 | What happens when two people hold one pad? | The engine counts the holds, and disarms the rule when the last one goes. | The first release would disarm a rule that someone still holds. |
 | How does a release know which hold it ends? | The engine numbers every hold, the press answers with its number, and the release names it. A hold belongs to the arming of its rule, so a disarm ends it. See [modes of play](domains/control-surfaces.md#modes-of-play). | A count alone lets a release that comes after a disarm end the hold of someone who held the rule again since. |
 | Does the release of a hold disarm a rule that something else armed? | No. Only a rule that a press in hold armed disarms when its last hold goes. A hold of a rule that a press in latch, a command, a scenario step or a create armed answers with a hold, and its release changes nothing. See [modes of play](domains/control-surfaces.md#modes-of-play). | A hold would otherwise take back what someone else armed on purpose. |
+| What ends a hold whose holder went away? | The end of its presence. A client of the control plane that is there is a [presence](architecture/control-plane.md#presence): it opens with the live stream of the client, and every request of the client names it. The engine ends the holds of a presence that ended. A hold that names no presence, as one of `gmq` or of a test, ends by its release or by a disarm alone. | A tab that closes, crashes or loses its network never sends its release, and the fault would stay armed against real clients until someone notices. |
+| Does a connection that drops end a presence at once? | No. The control plane keeps the presence for a grace period, 10 seconds by default, and a client that comes back within it keeps its holds. A reload is a new page and a new presence, so the holds of the page before end with the grace period. See [presence](architecture/control-plane.md#presence). | A network that drops for a moment must not let go of a pad that someone still holds, and the server cannot tell a tab that closed from one that lost its connection. |
+| How does a client that comes back prove which presence it is? | By the ID of the presence: 128 random bits that the server made, which the client names when it opens its stream again. It is no number that the process counts. | A tab that comes back after a restart, or after the grace period, would otherwise take the number of another tab for its own, and keep the holds of that tab alive. |
