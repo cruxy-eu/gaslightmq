@@ -28,8 +28,8 @@ Every example uses one or both of these:
 - A **broker** is a fake Kafka cluster. It owns the data. Examples 01 to 03 need nothing else.
 - A **proxy** stands in front of a broker or a real cluster. It owns the lies: errors, delays and the rest.
 
-## The `uuid` of a definition
+## What a definition file holds
 
-Every definition in these workspaces has a `uuid` under its `name`.
-GaslightMQ wrote it when it first loaded the file, and it tells the definitions of a workspace apart.
-Nobody writes a UUID by hand: leave the line out of a definition you write, and GaslightMQ adds it.
+A definition file holds what you defined, and nothing that GaslightMQ assigns.
+GaslightMQ gives every definition a UUID while it runs, and keeps it in memory.
+It never writes one into a file, and a `uuid` in a definition is an error.

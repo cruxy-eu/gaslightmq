@@ -35,8 +35,9 @@ A rule needs a name, a selector and an action.
 `selector: {}` has no conditions, so it matches every call.
 `title`, `scope`, `trigger`, `lifetime` and `dice` are optional.
 
-The file of a rule also holds a `uuid`, which GaslightMQ writes and nobody else does.
-See [UUID](../architecture/identity.md#uuid).
+A rule holds nothing that GaslightMQ assigns.
+The [UUID](../architecture/identity.md#uuid) and the [revision](../architecture/identity.md#revision) of a rule are live state,
+so the file of a rule that someone wrote by hand and of one that the UI saved look the same.
 
 ### Names
 
@@ -48,7 +49,7 @@ It starts and ends with a letter or a digit, and it has at most 63 characters.
 Every reference to a rule uses its name:
 a file, a command, an explanation, the statistics and a pad.
 Nothing references a rule by anything else.
-Its [UUID](../architecture/identity.md#uuid) stays inside the workspace, which tells its rules apart by it.
+Its [UUID](../architecture/identity.md#uuid) tells it from a rule that had its name earlier in the same run, and the journal holds it next to the name.
 
 A rule keeps its name for as long as it exists.
 Nothing renames a rule.
@@ -71,7 +72,7 @@ A rule without a title shows its name wherever a surface would show the title.
 
 Selectors, presets, scenarios, pad layouts, environments and world definitions follow the same two rules.
 Each has a name, which is a slug and its identity, and each can have a title.
-Each gets a UUID from GaslightMQ too.
+A process gives each a UUID and a revision while it holds it, and no file holds either.
 
 ### Where rules live
 

@@ -188,8 +188,10 @@ and keeps it as a reproducible test.
 A scenario that uses only lies runs on every backend.
 A scenario that uses incidents runs where the backend can apply or emulate those incidents
 and their [consequences](lies-and-incidents.md#consequences).
-The backend checks a scenario's requirements when the scenario loads,
-and rejects it with the list of unsupported incidents.
+The backend of an environment checks a scenario's requirements when someone activates the scenario there,
+and rejects the activation with the list of unsupported incidents.
+The workspace does not check them: it serves every environment, and each has a backend of its own.
+So a workspace can hold a scenario that only one of its environments runs.
 
 The `leader-election` scenario above needs "leader moves",
 so it runs on the Simulated backend only.

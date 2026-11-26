@@ -20,31 +20,37 @@ It is then set up by flags and files alone.
 |---|---|
 | `selectors` | List, get, create, update, delete. Test against the current recording. |
 | `presets` | List, get, create, update, delete. |
-| `rules` | List, get, create, update, delete. List the rules of an environment with their state. Create, update and delete a live rule. Arm, disarm, fire. Keep a live rule. |
+| `rules` | List, get, create, update, delete. List the rules of an environment with their state. Create a live rule, armed when the request says so. Update and delete a live rule. Arm, disarm, fire. Keep a live rule. |
 | `scenarios` | List, get, create, update, delete. Activate, deactivate, step. |
 | `layouts` | List, get, create, update, delete. |
 | `sessions` | List the open sessions with their identity. Close one. |
 | `recordings` | Start, stop, list, open. Query calls with a selector, saved or [draft](#drafts). Get the index. |
 | `world` | Only for an environment with a broker. Get state, apply an incident, save as a world definition, set the clock. [Preview the records](#drafts) at an offset. |
 | `backend` | Get the backend kind, its endpoints and its capabilities. |
-| `environments` | List and get the environments of the workspace. Start and stop one. |
-| `journal` | Query what changed: arms, disarms, parameter changes, steps and incidents. |
+| `environments` | List and get the environments of the workspace. Start and stop one. Say whether every environment that the process was started with runs. |
+| `journal` | Query what changed in an environment: arms, disarms, parameter changes, definitions, steps and incidents. |
 | `capture` | Start, stop and save as a scenario. |
 | `quick-inject` | [Parse a ⌘K sentence](#drafts) into a rule definition, with completions. |
 
 Every operation on a definition names it by its [name](../domains/rules.md#names).
-No operation names a definition by its [UUID](identity.md#uuid), which stays inside the workspace.
+No operation names a definition by its [UUID](identity.md#uuid).
+A UUID is live state of the process, and it reaches a client in [journal entries](../domains/observation.md#journal) alone.
 No operation renames a definition.
 An update changes everything but the name, the [title](../domains/rules.md#titles) included.
 Whoever wants another name creates a new definition and deletes the old one.
 
 Create and update operations on definitions write to the workspace files.
+See [writing back](storage.md#writing-back).
 Live rules are the exception.
 They stay in memory until *keep* saves them as workspace rules.
 
 A live rule belongs to one environment, and its name is a name that no rule of the workspace has.
 *Keep* saves it in the workspace under the same name and UUID.
 It stays in the state it has in its environment, and every other environment holds it disarmed.
+
+Activating a scenario asks the backend of the environment whether it supports the incidents that the scenario uses.
+The activation fails with the list of those it does not.
+See [portability](../domains/scenarios.md#portability).
 
 *Fire* skips a rule's trigger once.
 An incident fires immediately.
@@ -65,9 +71,103 @@ and a client and a server share them.
 - **A command on something live names an environment that runs.**
   Every such command fails the same way when the environment does not run,
   whether it stopped or never existed.
-- **A definition travels without its [UUID](identity.md#uuid).**
-  An answer leaves it out.
-  The workspace gives a definition its UUID when it creates it, and keeps it on every update, whatever UUID a request holds.
+- **A definition travels as its file holds it.**
+  It holds no [UUID](identity.md#uuid) and no revision, in a request as in a file.
+  An answer, the snapshot and a message of a change hold two things next to the definition:
+  its [revision](#revisions), and whether [a write would lose a comment](storage.md#writing-back) of its file.
+- **One gesture is one operation.**
+  Whatever a surface does in one gesture is one request, so it applies as a whole or not at all.
+  A ⌘K sentence creates its live rule armed, with one operation.
+
+## Where a request comes from
+
+Every request says which surface sends it.
+
+```json
+{ "from": { "surface": "pad" }, "operation": "arm-rule", "environment": "orders-sim", "rule": "slow-order-producers" }
+```
+
+| Part of `from` | Says |
+|---|---|
+| `surface` | Where the request comes from: `pad`, `quick-inject`, `ui`, `cli`, `test` or `api`. See [surfaces](../domains/observation.md#surfaces). |
+| `cause` | `undo` or `redo`, when the request takes back or repeats an earlier change of its sender. A request leaves it out otherwise. |
+
+The [journal](../domains/observation.md#journal) records both with every change that the request makes.
+The control plane has no users, so `from` is what the sender says about itself.
+
+A change that no request made has a surface too: `step`, `lifetime` or `file`.
+The engine names those itself, and a request that claims one is unreadable.
+
+## Revisions
+
+Several clients change one process: two tabs of the UI, `gmq`, a scenario, a lifetime, and whoever edits a file.
+A revision keeps one of them from overwriting what it has not seen.
+
+Whatever a request changes has a [revision](identity.md#revision):
+a definition, a rule in an environment, and the scenario of an environment.
+
+- **Whoever reads something gets its revision.**
+  An answer, the snapshot and every message of a change hold it.
+- **A change answers with the new revision.**
+  A client that changes one thing twice in a row waits for no message of the stream in between.
+- **A change can say which revision it expects.**
+  An update, a delete, an arm, a disarm, an activation and a deactivation take `expects`.
+  When the thing has another revision, the operation changes nothing,
+  and its error is `changed`, with the revision that the thing has now.
+- **Without `expects`, the last change wins.**
+  `gmq` and a test that has its process to itself leave it out.
+  The UI sends it with every change.
+- **A create expects nothing.**
+  It refuses a name that is taken, so it never overwrites.
+
+```json
+{ "from": { "surface": "ui" }, "operation": "update-rule", "expects": 7, "definition": { "name": "slow-order-producers", "selector": "order-producers", "action": "delay-1s" } }
+```
+
+A pad intent expects nothing either.
+It says what someone did, and it acts on the rule as the rule is.
+Its answer says what it did: the rule it acted on, whether it made that rule, and the definition, the state and the revision that the rule has now.
+A surface never works out what a press or a turn did.
+The name of a rule that a pad makes and the bounds of an encoder belong to the engine.
+
+## Undo
+
+The control plane has no operation that undoes, and it keeps no history for it.
+A surface keeps the history of its own changes, as the [UI](../domains/control-surfaces.md#undo-and-redo) does for each tab.
+An undo is an ordinary operation: the inverse of the change, with the revision that the change left as `expects`, and with the cause `undo`.
+
+| A change | Its inverse |
+|---|---|
+| Create a definition | Delete it. |
+| Update a definition | Update it to the definition before. |
+| Delete a definition | Create it again. |
+| Create a live rule | Delete it. |
+| Update a live rule | Update it to the definition before. |
+| Delete a live rule | Create it again, armed when it was armed. |
+| Arm, disarm | Disarm, arm. |
+| Activate a scenario, deactivate it | Deactivate it, activate it. |
+| A pad press that armed a rule | Disarm it, or delete the live rule when the answer says that the press made it. |
+| A pad press that disarmed a rule | Arm it. |
+| Turns of an encoder | Update the live rule to the definition before the first turn. |
+
+A redo is the change again, with the revision that the undo left and the cause `redo`.
+
+- **The inverse restores a state, and never replays a gesture.**
+  The undo of a turn of +3 is no turn of −3: an encoder stops at its bounds, and the turn may have changed less.
+- **A surface reads the inverse from answers.**
+  The definition before an update is the one whose revision the update expected, so a success says that the surface held the right one.
+- **A definition that comes back is a new definition.**
+  It has the name and the content of the one that went, and a new [UUID](identity.md#uuid).
+- **A scenario that comes back starts again.**
+  Activating it starts it at its first step, whichever step it was at.
+- **A state that moved on is no state to undo.**
+  When someone else changed the thing since, the inverse fails with `changed` and changes nothing.
+  The surface drops the step.
+- **Some operations have no inverse.**
+  Fire, a step, keep, the start and the stop of an environment, of a recording and of a capture, and closing a session.
+  What they did has happened.
+
+The [journal](../domains/observation.md#the-journal-only-grows) records an undo as a new change with its cause, next to the change it took back.
 
 ## Drafts
 
@@ -101,12 +201,13 @@ The WebSocket streams:
 | **Snapshot** | The full state, sent when a client connects: every definition of the workspace, and every environment that runs with its backend, its rules and its sessions. |
 | **Call** | One call event: request summary, verdict and explanation. |
 | **Stats** | Matches, firings and remaining budget per rule, and calls per API, at a fixed interval. |
-| **Rule changed, removed** | A rule of an environment changed state, or a live rule was made or changed its definition. A live rule left its environment: someone deleted or kept it. |
-| **Definition changed, deleted** | Someone created, updated or deleted a definition of the workspace. |
-| **Scenario changed** | The active scenario changed, or advanced a step. |
+| **Rule changed, removed** | A rule of an environment changed state, or a live rule was made or changed its definition, with its revision. A live rule left its environment: someone deleted or kept it. |
+| **Definition changed, deleted** | Someone created, updated or deleted a definition of the workspace, through the control plane or in its file. A change holds the revision of the definition. |
+| **Scenario changed** | The active scenario changed, or advanced a step, with its revision. |
+| **Recording started, stopped** | A recording of an environment began or ended, and why it ended when nobody stopped it. |
 | **World changed** | An incident changed the World, or the Upstream backend's overlay. |
 | **Session opened, identified, software named, closed** | Session lifecycle. The client software comes with the identification, or later with the first `ApiVersions` request that names it. |
-| **Journal entry** | Something changed, with the time and the surface that changed it. |
+| **Journal entry** | Something changed in an environment, with the time, the surface that changed it and the cause. |
 | **Environment started, stopped** | An environment came up, with its backend, its rules and its sessions, or went down. |
 | **Workspace invalid** | The definitions do not fit each other, or a file failed validation. The engine keeps the last valid version. |
 | **Following** | The last subscription of this client is in force: the server sends every call it names from here on. |
@@ -148,8 +249,9 @@ A build without them serves a page that says how to build them.
 
 ### Operations
 
-A request is one `POST /api/operations` with an `AnyOperation` as its body:
-`{ "operation": "arm-rule", "environment": "orders-sim", "rule": "slow-order-producers" }`.
+A request is one `POST /api/operations`.
+Its body is one object: an `AnyOperation`, with [where the request comes from](#where-a-request-comes-from) next to its keys.
+`{ "from": { "surface": "cli" }, "operation": "arm-rule", "environment": "orders-sim", "rule": "slow-order-producers" }`.
 The status of the response says what its body is.
 
 | Status | The body is |
@@ -157,7 +259,7 @@ The status of the response says what its body is.
 | `200 OK` | The answer of the operation, in the form of its `Answer`. An answer of `()` is `null`. |
 | `422 Unprocessable Content` | The error of the operation, in the form of its `Error`. |
 | `501 Not Implemented` | A `RequestError::NotServed`: the process does not serve the operation yet. |
-| `400 Bad Request` | A `RequestError::Unreadable`: the body is larger than the server takes, or it is no operation that the server knows. |
+| `400 Bad Request` | A `RequestError::Unreadable`: the body is larger than the server takes, it is no operation that the server knows, or it does not say where it comes from. |
 
 A client knows which operation it sent, so it reads `200` with the type of the answer and `422` with the type of the error.
 A `RequestError` is the same for every operation, and its `error` key names the variant.
@@ -224,6 +326,9 @@ an older process, or one built without a part.
 
 `workspace-invalid` waits for the files of a workspace, which can change behind the host. Stores in memory cannot.
 
+A request does not say where it comes from yet, and nothing has a revision yet.
+Both arrive with the journal, which records the surface of every change.
+
 No request needs a token yet, and the server allows no request from a page of another origin.
 The `token` of the [process configuration](storage.md#process-configuration) arrives with the binary.
 
@@ -241,6 +346,7 @@ A pad press sends *arm the rule at row 1, column 4 on layer order-ingest*,
 and the engine creates a live rule if the pad has none yet.
 An encoder turn sends *change probability by +3*, not *set probability to 43*,
 so two surfaces turning the same encoder do not fight.
+The answer to an intent says [what it did](#revisions), so the surface knows without working it out.
 A turn changes a live rule, and never a rule of the workspace, which changes in the workspace.
 A pad whose rule someone kept therefore takes presses, and refuses turns.
 

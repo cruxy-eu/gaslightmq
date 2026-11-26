@@ -94,18 +94,58 @@ The engine blanks the payload of `SaslAuthenticate` in every recording.
 
 ## Journal
 
-The journal records what changed in the engine, next to what happened on the wire.
+The journal records what changed in an environment, next to what happened on the wire.
+Each environment has a journal of its own.
 
 | Entry | Records |
 |---|---|
-| Rule armed or disarmed | The rule, and whether a person, a step or a lifetime did it. |
+| Rule armed or disarmed | The rule. |
 | Parameter changed | The rule, the parameter, the old and the new value. |
 | Rule fired by hand | The rule. |
-| Scenario activated, step advanced | The scenario and the step. |
+| Live rule made, kept or deleted | The rule. |
+| Definition created, changed or deleted | The definition and its kind. |
+| Scenario activated or deactivated, step advanced | The scenario, and the step by its name. |
 | Incident applied or emulated | The incident and its consequences. |
-| Environment switched | The environment. |
+| Recording stopped by itself | Why: the recorder could not keep up, or it could not write. |
 
-Every entry carries the time and the surface it came from, such as a pad, ⌘K or a file change.
+A definition belongs to the workspace and not to one environment.
+A change of a definition therefore enters the journal of every environment that runs, and no journal when none runs.
+
+Every entry carries:
+
+- its [ID](../architecture/identity.md#journal-entry-id), a number that the environment counts from 1,
+- the time,
+- the surface the change came from,
+- the cause, when the change takes back or repeats an earlier one: `undo` or `redo`.
+
+An entry names a definition by its name and its [UUID](../architecture/identity.md#uuid).
+The UUID tells a rule from a rule that had its name before, so the history of one rule never runs into the history of another.
+
+### Surfaces
+
+A surface is where a change came from.
+The journal records the surface, and not a person: the control plane has no users.
+
+| Surface | The change came from |
+|---|---|
+| `pad` | A press or a turn at the pad grid. |
+| `quick-inject` | A ⌘K sentence. |
+| `ui` | Any other view of the UI. |
+| `cli` | `gmq`. |
+| `test` | A test library. |
+| `api` | Any other client of the control plane. |
+| `step` | A step of the active scenario. |
+| `lifetime` | A lifetime that ended, or a firing that spent it. |
+| `file` | A file of the workspace that someone edited. |
+
+A [request](../architecture/control-plane.md#where-a-request-comes-from) names one of the first six.
+The engine names the last three itself, and no request can claim them.
+
+### The journal only grows
+
+Nothing takes an entry out of the journal.
+An [undo](control-surfaces.md#undo-and-redo) is a change like any other: it adds an entry, with the cause `undo`.
+The journal then shows both: that someone armed a rule, and that they took it back.
 
 The engine always keeps the recent journal in memory.
 It feeds the history of a rule in the UI, and [Capture](scenarios.md#capture) reads it.

@@ -14,11 +14,11 @@ flowchart TB
     SE["Secrets<br/>files outside git"]
   end
 
-  EN["Engine, memory only<br/>loaded definitions · armed state · live set<br/>counters · budgets · sessions · client context<br/>overlay or World · journal"]
+  EN["Engine, memory only<br/>loaded definitions · UUIDs · revisions · armed state · live set<br/>counters · budgets · sessions · client context<br/>overlay or World · journal"]
 
   REC[("Recordings<br/>files, not in git<br/>calls and journal")]
   SCR[("Scratch<br/>file, not in git<br/>live rules")]
-  BR["Browser<br/>view preferences"]
+  BR["Browser<br/>view preferences · undo history"]
 
   WS -->|load and watch| EN
   EN -->|write back| WS
@@ -39,12 +39,13 @@ flowchart TB
 | Environments: which proxies and brokers, which ports | Workspace files | Yes | A person |
 | Workspace settings: default environment, default seed | `gaslight.yaml` | Yes | A person |
 | Secrets: passwords, keys, tokens | Files outside git, referenced by path | No | A person or the platform |
+| The [UUID](identity.md#uuid) and the [revision](identity.md#revision) of a definition | Memory | No | The engine |
 | Armed state, counters, budgets, sessions, client context | Memory, per environment | No | The proxy |
 | World state, or the Upstream overlay | Memory, per environment | No | The broker, or the proxy |
 | Live rules from pads and ⌘K | Memory and a scratch file, per environment | No | The proxy |
 | Journal: who armed what, and when | Memory and recordings, per environment | No | The proxy |
 | Recordings | Append-only files | No | The engine |
-| View preferences | The browser | No | The UI |
+| View preferences, and the [undo history](../domains/control-surfaces.md#undo-and-redo) of a tab | The browser | No | The UI |
 
 ## Process configuration
 
@@ -63,6 +64,13 @@ The first one that sets it wins:
 A flag overrides a file.
 `gmq start --env orders-sim --advertise localhost` starts the environment
 with another advertised host than its file names.
+A flag or a variable that sets something of an environment, such as `--advertise`, belongs to one environment,
+so `gmq` refuses it on a command that starts several.
+
+`gmq` reads the flags, the variables and the files once, when it starts.
+It hands the host and the control plane their configuration as one value each, and neither reads a flag, a variable or a file of its own.
+
+A command takes its workspace from `--workspace`, and from the directory it runs in when the flag is not there.
 
 ```yaml
 # gaslight.yaml
@@ -73,6 +81,7 @@ control:
   token: { file: secrets/control-token }
 recordings:
   directory: recordings
+  backlog: 10000                # the calls that the recorder may be behind
 ```
 
 ## Workspace
@@ -107,7 +116,7 @@ gaslight/
 │   └── payments.jsonl
 ├── secrets/                 # gitignored
 ├── recordings/              # gitignored
-│   └── 2026-11-21T14-02-11.rec
+│   └── orders-sim.2026-11-21T14-02-11.527Z.rec
 └── .gaslight/               # gitignored
     └── scratch/
         └── orders-sim.yaml
@@ -141,6 +150,9 @@ trigger.every: a count is at least one
 The path comes from the reader.
 The message after it comes from the type of the value, which knows nothing about files.
 
+A key that a definition does not have is a reading error too.
+`uuid` is such a key: no file holds the [UUID](identity.md#uuid) of a definition.
+
 ### Names
 
 - Every definition has a name, unique within its kind.
@@ -152,9 +164,8 @@ The message after it comes from the type of the value, which knows nothing about
   The name inside the file is authoritative.
 - A definition can have a `title`, which is free text.
   See [titles](../domains/rules.md#titles).
-- A definition also has a `uuid`, which the engine writes into its file.
-  Nobody writes it by hand, and no definition references another by it.
-  See [UUID](identity.md#uuid).
+- A file holds what someone defined, and nothing that GaslightMQ assigns.
+  The [UUID](identity.md#uuid) and the [revision](identity.md#revision) of a definition are live state, and stay in memory.
 - Nothing renames a definition, so no change rewrites references.
   A definition under another name is a new definition.
   A reference to a name that no definition has is an error, as on every [validation](#validation).
@@ -172,14 +183,50 @@ See [secrets](#secrets).
 
 The engine validates the whole workspace on load and on every change:
 
-- every reference resolves,
-- no two definitions have the same [UUID](identity.md#uuid),
+- every reference resolves: the selector and the preset of a rule, the rules of a scenario and of its steps,
+  and the rows and columns of a pad layout,
 - every selector uses known fields,
-- every scenario's incidents are supported by the current backend,
 - every secret is a reference, not a value.
+
+The workspace does not ask whether a backend supports the incidents of a scenario.
+A workspace serves every environment, and each has a backend of its own.
+The backend of an environment checks that when someone [activates the scenario](../domains/scenarios.md#portability) there.
 
 An invalid file does not stop the engine.
 The engine keeps the last valid version and reports the error in the UI.
+
+### Changes to files
+
+The engine watches the files of the workspace, and takes a change as it takes one from the control plane.
+
+- **A file that someone edits is an update of its definition.**
+  The definition keeps its [UUID](identity.md#uuid), and its [revision](identity.md#revision) rises.
+  A file that goes is a definition that someone deleted, and a new file is a new definition.
+- **An armed rule follows its file.**
+  The engine resolves the rule again, and replaces the armed rule in every environment that armed it.
+  The rule stays armed, and it keeps its counters and its budget, as after a change of a parameter.
+- **An edit that does not resolve changes nothing.**
+  The engine keeps the last valid version, armed rules included, and says that the workspace is invalid.
+- **Nobody undoes a file change in the UI.**
+  The [journal](../domains/observation.md#journal) records it with the surface `file`.
+
+### Writing back
+
+The UI writes its edits back to files that people also write by hand.
+GaslightMQ never talks to git: it reads and writes the files of the directory, and people commit them.
+So what it writes has to read well in a diff.
+
+- **A write changes one definition.**
+  The store of files writes the definition that changed, and leaves every other byte of the file as it was.
+  An edit of one selector in `selectors.yaml` keeps the comments and the layout of every other selector.
+- **A definition has one written form.**
+  Its keys come in a fixed order, the order of the examples in these documents.
+  A definition that GaslightMQ wrote once never changes again in a diff, unless its content changes.
+- **A write loses the comments inside the definition it writes.**
+  The store knows whether the text of a definition holds a comment, and the control plane says so with the definition.
+  The UI asks before it saves an edit of such a definition.
+- **A file holds nothing that GaslightMQ assigns.**
+  No UUID, no revision and no time of the last change, so a file changes only when someone changed a definition.
 
 ### Without a workspace
 
@@ -196,6 +243,7 @@ In CI, the workspace is often mounted read-only.
 The engine then loads and validates it, and never writes back.
 Pads and ⌘K still create live rules in memory.
 Keeping a rule, saving a scenario and the scratch file are switched off.
+Every definition still gets its [UUID](identity.md#uuid), because a UUID lives in memory.
 
 ## Environments
 
@@ -394,6 +442,17 @@ Each call holds:
 - the real cluster's response, when the overlay changed it,
 - the verdict and the explanation.
 
+The name of the file is the [ID of the recording](identity.md#recording-id): its environment and the instant it started.
+
+The engine hands the recorder the raw frames of a call next to the call, and only while a recording runs.
+A call itself holds no frames, so a call that nobody records costs no copy of its bytes.
+
+The recorder writes on a thread of its own, behind a queue of the calls and journal entries it has not written yet.
+The queue holds as many as `recordings.backlog` says.
+A session never waits for the disk.
+When the queue is full, the recording stops, and its last entry and the control plane say why.
+What the file holds up to there is a complete recording.
+
 The file is split into chunks, so a long recording can be opened from the end.
 Each chunk carries a summary of the field values it contains.
 A query with a selector skips the chunks that cannot match.
@@ -424,5 +483,6 @@ A client's credentials never reach the disk.
 ## Browser
 
 The browser keeps view preferences: the open view and display options.
+A tab also keeps its [undo history](../domains/control-surfaces.md#undo-and-redo) in memory, and loses it when it closes.
 Nothing else lives there.
 Pad layouts are definitions in the workspace, so a team shares them.

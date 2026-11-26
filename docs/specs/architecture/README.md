@@ -67,8 +67,8 @@ flowchart LR
 | **Armed rules** | Hold the rules that are armed, workspace rules and live rules alike. Publish an immutable snapshot of them in priority order on every change. Hold each armed rule's shared counter and budget as atomics. |
 | **Scenario runner** | Run the active scenario and the live set: turn the mode into a priority order, advance steps, and hand incidents to the backend. |
 | **Clock** | Tell the time for triggers, lifetimes, steps, arriving records and timeouts. |
-| **Event bus** | Carry call events, rule changes and world changes to everyone who listens. Keep every event for the recorder, and the newest ones for a listener that only watches. |
-| **Recorder** | Write call events and journal entries to a recording while recording is on. It misses no event, however slow it writes. |
+| **Event bus** | Carry call events, rule changes and world changes to everyone who listens. Keep every event for the recorder, as far as its queue reaches, and the newest ones for a listener that only watches. |
+| **Recorder** | Write call events and journal entries to a recording while recording is on, on a thread of its own. It misses no event while it records, and it stops the recording when it cannot keep up. |
 | **Journal** | Keep what changed and who changed it: arms, disarms, parameter changes, steps and incidents. |
 | **Indexer** | Maintain the facets of the current recording. |
 | **Workspace** | Hold the definitions as one model, over a store for each kind, and check that they fit each other before a store takes a change. A store is the files of a workspace, or memory, and the workspace reaches its stores through one context. The stores of files load definitions, watch them for changes and write edits back, and keep live rules in the scratch file. |
@@ -88,10 +88,11 @@ flowchart LR
   | The listener | When it falls behind | The price |
   |---|---|---|
   | Shows what happens now: the traffic view, the UI. | It misses the oldest events, and learns how many. | Events. The bus keeps a number of them that the configuration sets, and no more memory than that. |
-  | Keeps what happened: the recorder. | It misses nothing. The bus keeps every event until the recorder took it. | Memory, without a limit. A recorder that writes slower than the sessions record makes the engine hold what is not written yet, and one that stops writing ends with a process that has no memory left. |
+  | Keeps what happened: the recorder. | It misses nothing up to the size of its queue, which the configuration sets. The bus keeps every event until the recorder took it. When the queue is full, the recording stops and says so. | The recording. What the file holds up to there is complete, and the process keeps its memory. |
 
-  The recorder pays in memory and not in time, because time is what a lie is made of:
+  The recorder pays with its recording and never in time, because time is what a lie is made of:
   a session that waited for a slow disk would delay answers that no rule delays.
+  See [recordings](storage.md#recordings).
 - **Budgets are exact.**
   Shared counters and budgets are atomics next to the snapshot.
   A session takes from a budget at the moment a rule fires.
@@ -205,12 +206,16 @@ The sketch shows the shape of the interface, not its final names.
 | `gmq broker --world orders-sim` | A broker alone | A truthful fake Kafka. |
 | `gmq start --env <environment> …` | One or more [environments](storage.md#environments) from the workspace | Several proxies and brokers in one process, with one UI. |
 | `gmq run <scenario> --env <environment>` | One environment | Run a scenario without the UI, for example in CI. Exit when the last step ends, or when stopped. |
+| `gmq health` | Nothing | Ask a process that runs whether every environment it was started with runs. The health check of a container. |
 | Library and testcontainers | Instances in a test | Create a proxy or a broker from a test, drive it through the control plane, assert on explanations. |
 
-Every command takes `--no-control` to run without a control plane.
+Every command that starts an instance takes `--no-control` to run without a control plane.
+It takes its [workspace](storage.md#workspace) from `--workspace`, and from the directory it runs in when the flag is not there.
 
 `gmq init` creates a new workspace.
 The flags of `gmq proxy` and `gmq broker` describe an environment without a file.
+
+`gmq health` asks the [control plane](control-plane.md#resources) of the process, and exits with a failure when an environment does not run or nothing answers.
 
 `gmq run` reports whether the scenario loaded and ran to its end.
 It does not judge the client under test.
