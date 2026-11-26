@@ -192,6 +192,31 @@ fn a_release_goes_to_the_environment_of_its_press_whichever_environment_the_ui_s
 }
 
 #[test]
+fn a_release_needs_no_environment_that_the_ui_shows() {
+    let mut desk = Desk::new(OrderDesk::layout());
+    desk.set_mode(PlayMode::Hold);
+    let orders = OrderDesk::running(Vec::new());
+    let (row, column) = (Row::from_index(1), Column::from_index(0));
+    let hold = Hold::new(1);
+    let pressed = desk.press(row, column, &orders).unwrap();
+    let Intent::Hold { pad } = &pressed.intent else {
+        panic!("a press in hold holds the pad: {pressed:?}");
+    };
+    assert_eq!(desk.answered(&orders.environment, pad, Some(hold)), None);
+
+    // The UI shows no environment by the time someone lets go, and the release still reaches the one of the hold.
+    let released = desk.release(row, column);
+
+    assert_eq!(
+        released,
+        Some(SendIntent {
+            environment: orders.environment.clone(),
+            intent: Intent::Release { pad: pad.clone(), hold },
+        })
+    );
+}
+
+#[test]
 fn an_encoder_turns_a_live_rule_whose_action_has_its_parameter() {
     let mut desk = Desk::new(OrderDesk::layout());
     let presets = OrderDesk::presets();

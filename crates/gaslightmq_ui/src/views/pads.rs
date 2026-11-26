@@ -110,7 +110,7 @@ pub fn Pads() -> Element {
                         let pad = desk.surface().focused()?;
                         desk.press(pad.row(), pad.column(), running)
                     });
-                    play(&ui, |desk, _| {
+                    let_go(&ui, |desk| {
                         let pad = desk.surface().focused()?;
                         desk.release(pad.row(), pad.column())
                     });
@@ -214,6 +214,21 @@ fn play(ui: &Ui, change: impl FnOnce(&mut Desk, &RunningEnvironment) -> Option<S
         slot.set(Some(desk));
         intent
     };
+    if let Some(intent) = intent {
+        send(ui, intent);
+    }
+}
+
+/// Someone let go of a pad: `release` gives the release of its hold, which goes to the environment of the hold.
+///
+/// It needs no environment that the UI shows, as a press does: whatever the UI shows by now, the hold stays armed until
+/// its release reaches the environment that its press went to.
+fn let_go(ui: &Ui, release: impl FnOnce(&mut Desk) -> Option<SendIntent>) {
+    let mut slot = ui.desk;
+    let mut desk = slot.peek().clone();
+    // A release before the answer to its press changes the desk too, which then sends it with the answer.
+    let intent = desk.as_mut().and_then(release);
+    slot.set(desk);
     if let Some(intent) = intent {
         send(ui, intent);
     }
@@ -542,11 +557,11 @@ fn PadCell(row: Row, column: Column, tone: Tone, on: bool) -> Element {
     };
     let release = {
         let ui = ui.clone();
-        move |_| play(&ui, |desk, _| desk.release(row, column))
+        move |_| let_go(&ui, |desk| desk.release(row, column))
     };
     let leave = {
         let ui = ui.clone();
-        move |_| play(&ui, |desk, _| desk.release(row, column))
+        move |_| let_go(&ui, |desk| desk.release(row, column))
     };
     rsx! {
         div {
