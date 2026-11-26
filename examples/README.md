@@ -30,6 +30,5 @@ Every example uses one or both of these:
 
 ## What a definition file holds
 
-A definition file holds what you defined, and nothing that GaslightMQ assigns.
-GaslightMQ gives every definition a UUID while it runs, and keeps it in memory.
-It never writes one into a file, and a `uuid` in a definition is an error.
+A definition file holds what you defined, and nothing that GaslightMQ keeps while it runs.
+A key that a definition does not have is an error, so a file never holds an ID, a revision or whether a rule is armed.

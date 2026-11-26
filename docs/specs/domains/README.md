@@ -59,8 +59,10 @@ Workspace, Environment, Secret and Scratch file belong to [storage](../architect
 | **Preset** | A named, reusable lie or incident with its parameters, such as `delay-1s`. |
 | **Priority** | Where a rule stands among the armed rules. When two lies conflict, the lie of the rule with the higher priority wins. |
 | **Recording** | A captured stretch of calls across sessions. |
-| **Revision** | A number that says which state of a definition, of a rule in an environment or of a scenario that runs someone saw. It rises with every change, and a change can name the one it expects. |
+| **Reload** | Reading the files of the workspace again while the process runs, and taking in what changed as one change. Someone asks for it: the engine does not watch the files. |
+| **Revision** | A number that says which state of a definition, of a rule in an environment or of the scenario of an environment someone saw. One counter of the process gives it, so it rises with every change and never comes back in a run. A change can name the one it expects. |
 | **Rule** | A named selector, action and trigger, with a lifetime. |
+| **Run** | One life of a process, from start to stop, with a random ID. A revision means something in the run that gave it. |
 | **Shadowed** | A lie that fired but lost a conflict to a rule with a higher priority. |
 | **Stage** | When a lie acts: before forwarding, or after the response. |
 | **Scenario** | A named set of rules with a mode and a seed. |
@@ -78,7 +80,6 @@ Workspace, Environment, Secret and Scratch file belong to [storage](../architect
 | **Trigger** | What decides that a rule fires: chance, count, time or manual. |
 | **Truth** | What the backend answers when no lie applies. On the proxy, that includes the overlay. |
 | **Undo** | Taking back a change that someone made in the same browser tab. It reverses what someone set, and never what happened. |
-| **UUID** | What tells one definition from every other in one run of a process. Live state: no file holds it. |
 | **Virtual record** | A record the broker makes up when a consumer asks. A pure function of the world definition, the partition and the offset. |
 | **Verdict** | The outcome of evaluating one call: pass, or the lies that apply. |
 | **World** | The state of a simulated cluster. |

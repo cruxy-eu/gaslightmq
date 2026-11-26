@@ -93,6 +93,10 @@ It points at zero or one rule.
 - Pressing a pad with an armed rule disarms the rule.
 - Pressing a pad with a disarmed rule arms it again.
 
+A press tells the engine the state it wants, *arm* or *disarm*, and never *the other state*.
+The surface reads that from what the pad shows when someone presses it.
+See [modes of play](#modes-of-play).
+
 The rule gets a generated name, such as `delay-1s-on-order-producers-for-order-ingest`,
 and a generated title, such as *Delay 1 s on Order producers for order-ingest*.
 The name follows the [rule for names](rules.md#names): what a name cannot hold is left out, and a name that is too long is cut.
@@ -137,10 +141,23 @@ The grid plays by keyboard as well as by mouse.
 
 ### Modes of play
 
-- **Latch**: a press toggles the pad.
+- **Latch**: a press arms a pad that shows no armed rule, and disarms one that shows an armed rule.
 - **Hold**: the pad is armed while pressed, and disarms on release.
 
 Pad presses act on the [live set](scenarios.md#the-live-set).
+
+Several people can play one environment, each at a surface of their own.
+
+- **Two presses in latch that want the same state do not cancel each other.**
+  Both people saw a pad that was not armed, and both pressed to arm it.
+  The first press arms the rule, and the second one finds it armed and changes nothing.
+  A press that changes nothing leaves no step to [undo](#undo-and-redo).
+- **The engine counts the holds of a rule.**
+  A press in hold adds a hold and arms the rule, and its release takes one hold away.
+  The rule disarms when its last hold goes, so it stays armed while anyone still holds its pad.
+- **A disarm ends every hold.**
+  When someone disarms a held rule, by a press in latch, by a command or by a lifetime, the rule has no holds left.
+  A release that comes after it changes nothing.
 
 ## Undo and redo
 
@@ -154,7 +171,7 @@ Undo reverses what someone set, and never what happened.
 | Creating, changing or deleting a definition. | A lie or an incident that fired, by a trigger or by hand. |
 | Making, changing or deleting a live rule. | A step that advanced. |
 | Arming and disarming a rule. | What the traffic counted and spent: counters and budgets. |
-| A pad press and an encoder turn. | Keeping a live rule. |
+| A pad press and an encoder turn. | Keeping a live rule, and reloading the workspace. |
 | Activating and deactivating a scenario. | Starting or stopping an environment, a recording or a capture, and closing a session. |
 
 A client that got an error, or that waited, has already reacted.
@@ -166,13 +183,16 @@ The undo history belongs to the UI, and the engine keeps none.
 
 - **Each tab has a history of its own, in memory.**
   It holds the changes that this tab made.
-  It never holds a change of another tab, of `gmq`, of a scenario or of someone who edited a file.
+  It never holds a change of another tab, of `gmq`, of a scenario or of a reload.
 - **It holds as many steps as `undo.depth` says.**
   That is a property of the UI's configuration, and 100 unless someone sets it.
   The oldest step goes when a new one would be one too many.
 - **It lives as long as the tab.**
   A live stream that drops and opens again keeps it.
   Closing or reloading the tab ends it.
+- **It ends with the run of the process.**
+  When the stream opens again and its snapshot names another [run](../architecture/identity.md#run), the tab drops every step.
+  The process started again, nothing is armed, and no step of the history fits it.
 - **A new change ends what could be redone.**
 - **A step goes with its environment.**
   When an environment stops, the tab drops the steps that changed it.
@@ -196,8 +216,9 @@ While a text field has the focus, and in the ⌘K palette, ⌘Z and ⇧⌘Z belo
 An undo is an ordinary operation of the [control plane](../architecture/control-plane.md#undo).
 The UI works out the inverse of each change from what the control plane answered to it, and never from what it expects a press or a turn to do.
 
-Someone else can change the same rule in between: another tab, `gmq`, a step, a lifetime or a file edit.
-Each undo therefore names the [revision](../architecture/control-plane.md#revisions) that its change left.
+Someone else can change the same rule in between: another tab, `gmq`, a step, a lifetime or a reload.
+Each undo therefore names the [revision](../architecture/control-plane.md#revisions) that its change left, and the run that gave it.
+No revision comes back within a run, so a rule that someone deleted and made again under its name never fits an old step.
 
 - **When the revision still holds, the undo applies.**
   The UI says what it did, by name: *Armed slow-order-producers again*.

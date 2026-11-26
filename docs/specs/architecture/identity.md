@@ -14,9 +14,9 @@ and how GaslightMQ identifies each one.
 ## Entities per district
 
 A user-defined entity has a name and an optional title.
-The [title](#title) is no identifier.
-A process that holds the entity gives it a [UUID](#uuid) and a [revision](#revision) for as long as it runs.
-The ID column names the type of that UUID.
+The [name](#name) is its identity, and the [title](#title) is no identifier.
+It has no ID: a table shows an ID column only where an observed entity or a part has one.
+A process that holds the entity keeps a [revision](#revision) beside it for as long as it runs.
 
 ### Session
 
@@ -31,34 +31,34 @@ See [session](../domains/session.md).
 
 See [targeting](../domains/targeting.md).
 
-| Entity    | Type               | Name           | ID             | Title           |
-|-----------|--------------------|----------------|----------------|-----------------|
-| Selector  | User-defined       | `SelectorName` | `SelectorUuid` | `SelectorTitle` |
-| Condition | Part of a selector | —              | —              | —               |
-| Scope     | Part of a rule     | —              | —              | —               |
+| Entity    | Type               | Name           | Title           |
+|-----------|--------------------|----------------|-----------------|
+| Selector  | User-defined       | `SelectorName` | `SelectorTitle` |
+| Condition | Part of a selector | —              | —               |
+| Scope     | Part of a rule     | —              | —               |
 
 ### Lies and incidents
 
 See [lies and incidents](../domains/lies-and-incidents.md).
 
-| Entity   | Type                       | Name         | ID           | Title         |
-|----------|----------------------------|--------------|--------------|---------------|
-| Preset   | User-defined               | `PresetName` | `PresetUuid` | `PresetTitle` |
-| Lie      | Part of a rule or a preset | —            | —            | —             |
-| Incident | Part of a rule or a preset | —            | —            | —             |
+| Entity   | Type                       | Name         | Title         |
+|----------|----------------------------|--------------|---------------|
+| Preset   | User-defined               | `PresetName` | `PresetTitle` |
+| Lie      | Part of a rule or a preset | —            | —             |
+| Incident | Part of a rule or a preset | —            | —             |
 
 ### Injection
 
 See [injection](../domains/rules.md).
 
-| Entity                 | Type           | Name       | ID         | Title       |
-|------------------------|----------------|------------|------------|-------------|
-| Rule, in the workspace | User-defined   | `RuleName` | `RuleUuid` | `RuleTitle` |
-| Live rule              | User-defined   | `RuleName` | `RuleUuid` | `RuleTitle` |
-| Trigger                | Part of a rule | —          | —          | —           |
-| Lifetime               | Part of a rule | —          | —          | —           |
-| Counter                | Part of a rule | —          | —          | —           |
-| Budget                 | Part of a rule | —          | —          | —           |
+| Entity                 | Type           | Name       | Title       |
+|------------------------|----------------|------------|-------------|
+| Rule, in the workspace | User-defined   | `RuleName` | `RuleTitle` |
+| Live rule              | User-defined   | `RuleName` | `RuleTitle` |
+| Trigger                | Part of a rule | —          | —           |
+| Lifetime               | Part of a rule | —          | —           |
+| Counter                | Part of a rule | —          | —           |
+| Budget                 | Part of a rule | —          | —           |
 
 ### Scenarios
 
@@ -66,7 +66,7 @@ See [scenarios](../domains/scenarios.md).
 
 | Entity   | Type                   | Name           | ID                        | Title           |
 |----------|------------------------|----------------|---------------------------|-----------------|
-| Scenario | User-defined           | `ScenarioName` | `ScenarioUuid`            | `ScenarioTitle` |
+| Scenario | User-defined           | `ScenarioName` | —                         | `ScenarioTitle` |
 | Step     | Part of a scenario     | Its name, unique within its scenario | —   | Its title       |
 | Live set | Part of an environment | —              | Its environment           | —               |
 
@@ -89,7 +89,7 @@ See [world](../domains/world.md).
 
 | Entity      | Type            | Name                                | ID                             | Title        |
 |-------------|-----------------|-------------------------------------|--------------------------------|--------------|
-| World       | User-defined    | `WorldName`                         | `WorldUuid`                    | `WorldTitle` |
+| World       | User-defined    | `WorldName`                         | —                              | `WorldTitle` |
 | Broker node | Part of a world | —                                   | Its broker ID, as in Kafka     | —            |
 | Topic       | Part of a world | Its topic name, as in Kafka         | —                              | —            |
 | Partition   | Part of a topic | —                                   | Its topic and partition number | —            |
@@ -103,7 +103,7 @@ See [control surfaces](../domains/control-surfaces.md).
 
 | Entity     | Type                 | Name         | ID                                                           | Title         |
 |------------|----------------------|--------------|--------------------------------------------------------------|---------------|
-| Pad layout | User-defined         | `LayoutName` | `LayoutUuid`                                                 | `LayoutTitle` |
+| Pad layout | User-defined         | `LayoutName` | —                                                            | `LayoutTitle` |
 | Layer      | Part of a pad layout | —            | Its scope: all clients, a `client.id`, or a scope of its own | —             |
 | Pad        | Part of a pad layout | —            | Its position: layer, row and column                          | —             |
 
@@ -113,8 +113,9 @@ See [workspace](../architecture/storage.md).
 
 | Entity      | Type                | Name              | ID                   | Title              |
 |-------------|---------------------|-------------------|----------------------|--------------------|
-| Environment | User-defined        | `EnvironmentName` | `EnvironmentUuid`    | `EnvironmentTitle` |
+| Environment | User-defined        | `EnvironmentName` | —                    | `EnvironmentTitle` |
 | Workspace   | One per directory   | —                 | Its directory        | —                  |
+| Run         | One per process     | —                 | `RunId`              | —                  |
 | Secret      | Part of a workspace | —                 | The path of its file | —                  |
 
 ## User-defined entities
@@ -126,8 +127,31 @@ selector: order-producers
 action: delay-1s
 ```
 
-Each kind has a type of its own for its name, its UUID and its title,
+Each kind has a type of its own for its name and its title,
 so the name of a selector never stands where the name of a rule belongs.
+
+### What a definition holds
+
+A definition holds what a person writes, and nothing else: its name, its title and its content.
+A file holds definitions, so a file holds nothing else either.
+
+What the process keeps while it runs sits beside a definition, and never inside it:
+
+| Beside a definition | Kept by |
+|---|---|
+| Its [revision](#revision) | The workspace, in memory. |
+| Whether a rule is armed, its counters and its budget | Each environment, in memory. |
+| Whether a write would [lose a comment](storage.md#writing-back) of its file | The store of files. |
+
+The [run](#run) and the live rules of an environment are live state of the same kind: the process keeps them, and no definition and no workspace file holds them.
+
+- **The type of a definition has no field for live state.**
+  A rule has no revision and no armed state, in memory as in a file.
+- **A file that someone wrote by hand and one that GaslightMQ saved look the same.**
+  A key that a definition does not have is a [reading error](storage.md#reading), whatever it is called.
+- **On the control plane, live state travels beside the definition.**
+  An answer holds a definition and its revision as two things next to each other, such as `{ "definition": { … }, "revision": 7 }`.
+  A [request](control-plane.md#operations) holds the definition as its file holds it.
 
 ### Name
 
@@ -144,68 +168,36 @@ A name is a slug, like the name of a Kubernetes object.
 
 A name is a name and nothing else.
 
-### UUID
-
-The UUID tells one definition from every other definition that a process holds, or held, in one run.
-A rule that someone deleted and the rule that someone made under its name afterwards have different UUIDs.
-
-A UUID is live state, as the armed state of a rule is.
-The workspace keeps it in memory, next to the definition.
-A manifest in Kubernetes holds no `metadata.uid` either: the cluster gives the object one, and keeps it in a store of its own.
-Here, that store is the memory of the process.
-
-- **No file holds a UUID.**
-  A definition that someone wrote by hand and one that GaslightMQ saved look the same.
-  A `uuid` key in a definition is a [reading error](storage.md#reading), as every key is that a definition does not have.
-- **A definition gets its UUID when the process first holds it.**
-  That is when the workspace loads it, when someone creates it, or when someone makes it as a live rule.
-- **A definition keeps its UUID for as long as it keeps its name.**
-  An update keeps it, whoever makes it: the UI, or someone who edits the file.
-  *Keep* saves a live rule in the workspace under the UUID it has.
-- **A name that goes and comes back is a new definition.**
-  Deleting a definition forgets its UUID, and a definition that someone makes under that name gets a new one.
-  A file that someone renames by hand is one definition that went and another one that came.
-- **The next run gives new UUIDs.**
-  A restart is a [clean slate](storage.md#a-restart-is-a-clean-slate), and the name is what two runs share.
-
-A [journal entry](../domains/observation.md#journal) names a definition by its name and its UUID.
-Within one run, and within one recording, the UUID says which definition the name meant at that moment.
-
-A UUID is a UUID v7, so UUIDs sort in the order the process gave them, to the millisecond.
-As text, it is in lower case and with hyphens.
-
-#### Making a UUID
-
-A UUID v7 is made of the current time and of random bits.
-The crates that hold the definitions are [sans-IO](crates.md#sans-io-code), so they read neither.
-The IO edge reads the clock and the randomness of the system, and hands both in:
-
-```rust
-let uuid = RuleUuid::new(unix_millis, random);
-```
-
-The same time and the same bits make the same UUID, so a test writes its UUIDs down.
-
-A definition type holds no UUID.
-The workspace holds one for every definition it holds, and an environment holds one for every live rule.
-A live rule gets its UUID from the workspace when someone makes it.
-
 ### Revision
 
-A revision says which state of an entity someone saw.
-It is a number, and the process raises it each time the entity changes, whoever changes it.
+A revision says which state of something someone saw.
+It is a number, and a process has one counter for all of them.
+The counter starts at 1 with every [run](#run), and every change takes the next number, whoever makes the change.
 
-| Has a revision | The revision rises when |
+| Has a revision | Its revision is the number of |
 |---|---|
-| A definition of the workspace | Someone creates or updates it, through the control plane or in its file. |
-| A rule in an environment | It arms or disarms, whether a person, a step or a lifetime does it. For a live rule, also when its definition changes. |
-| The scenario of an environment | Someone activates or deactivates a scenario, or a step advances. |
+| A definition of the workspace | The change that last created or updated it: the load, a request, or a [reload](storage.md#reloading). |
+| A rule in an environment | The last change of its definition or of its state there. Its state changes when the environment starts, and when the rule arms or disarms, whether a person, a step or a lifetime does it. |
+| The scenario of an environment | The last time the environment started, someone activated or deactivated a scenario, or a step advanced. |
 
-What traffic does raises no revision: not a match, a firing, a counter or a budget.
+- **One change takes one number.**
+  A load is one change, so every definition that it brings has the same revision.
+  A request is one change too, whatever it changes.
+- **A number never comes back in one run.**
+  A definition that someone deletes and makes again under its name has a higher revision than the one that went.
+  An environment that stops and starts again gives every rule a higher revision than it had before.
+  So a revision that someone saw earlier never fits something else.
+- **A rule in an environment has one revision.**
+  It is the later of two numbers: the revision of the rule's definition, and the number of the last change of its state in that environment.
+  Whoever arms a rule therefore says which definition they saw, and not only which state.
+- **A revision orders changes.**
+  A higher revision is a later change, across everything the process holds.
+- **What traffic does takes no number.**
+  Not a match, a firing, a counter or a budget.
 
-A revision is live state, as the UUID is.
-The process keeps it in memory, no file holds one, and every run starts it again.
-A change through the control plane can name the revision it expects, and changes nothing when the entity has another one.
+A revision is live state.
+The process keeps it in memory, [beside the definition](#what-a-definition-holds), and no file holds one.
+A change through the control plane can name the revision it expects, and changes nothing when the thing has another one.
 See [revisions](control-plane.md#revisions).
 
 ### Title
@@ -228,18 +220,56 @@ Domains refer to user-defined entities by name:
 - statistics count per rule,
 - a pad points at a rule.
 
-No reference uses a UUID.
-A journal entry holds the UUID next to the name, and nothing looks a definition up by it.
+Nothing refers to a user-defined entity by anything else.
 
 Creating an entity never overwrites another one:
 
 - creating fails when the name is already taken within its kind,
 - updating fails when no entity has that name.
 
+A rule of the workspace and a live rule share the names of rules.
+See [live rules](../domains/rules.md#where-rules-live).
+
+### Two definitions of one name
+
+A name that goes and comes back is a new definition.
+Someone who deletes `slow-order-producers` and makes a rule under that name has made another rule.
+Nothing renames a definition, so a file that someone renames by hand is one definition that went and another one that came.
+
+Two things tell the new definition from the old one within a run:
+
+- **Its revision.**
+  The new definition has a higher [revision](#revision) than the old one ever had, so a change that expects the old one changes nothing.
+- **The journal.**
+  The [journal](../domains/observation.md#journal) records that the old definition was deleted and that the new one was created, each with its revision.
+  The entries between a creation and the next deletion are the history of one definition.
+
+Across runs, the name is all that two definitions share.
+
 ## Observed entities
 
 An observed entity exists because GaslightMQ observed it.
-It has no name, no UUID and no title.
+It has no name and no title.
+
+### Run
+
+A run is one life of a process, from its start to its stop.
+
+Every run has a run ID, a `RunId`.
+It is 128 random bits, written as 32 hexadecimal digits in lower case.
+Whoever puts the process together reads the randomness of the system once, at the start, and hands the ID to the host.
+A test names its own.
+
+Revisions start again with every run.
+A definition that the workspace loads has the revision of the load, which is the same number in every run.
+A revision alone therefore does not say which run it is from, and it means something only together with the run that gave it.
+
+- **The [snapshot](control-plane.md#live-stream) holds the run ID.**
+  A client learns the run when it connects, and learns of a restart when the next snapshot names another one.
+- **A change that expects a revision names its run.**
+  A process changes nothing for a request that names another run.
+  See [revisions](control-plane.md#revisions).
+- **No file holds a run ID**, and nothing refers to a run after it ended.
 
 ### Call ID
 
@@ -284,13 +314,17 @@ A recorded name follows the rule for names,
 but nothing promises that an entity with that name still exists.
 
 A call keeps the name alone.
-A journal entry keeps the UUID too, so the entries around a call say which definition had that name when the call arrived.
+The journal entries around a call say [which definition](#two-definitions-of-one-name) had that name when the call arrived.
 
 ## Not decided yet
 
-- Whether an entity can be renamed.
-  The UUID can carry a rename within one run: one operation would change the name, keep the UUID and rewrite every reference.
-  No operation does that yet, so a new name still makes a new entity.
-- Whether GaslightMQ recognises a definition in a later run, or in another copy of the workspace.
-  A file next to the definitions that maps each name to a UUID would do that, and people would commit it with them.
-  Nothing needs it yet, and the definition files would not change.
+- **Whether a definition gets an ID of its own, next to its name.**
+  A UUID that the process gives each definition, and keeps in memory beside it, would tell one definition from every other one that had its name.
+  Nothing needs that today: the [revision](#revision) and the [journal](#two-definitions-of-one-name) tell them apart within a run.
+  Two things would need it, and neither is decided.
+- **Whether an entity can be renamed.**
+  An ID could carry a rename within one run: one operation would change the name, keep the ID and rewrite every reference.
+  No operation does that, so a new name makes a new entity.
+- **Whether GaslightMQ recognises a definition in a later run, or in another copy of the workspace.**
+  A file next to the definitions that maps each name to an ID would do that, and people would commit it with them.
+  The definition files would not change: a definition holds [what a person writes](#what-a-definition-holds), with or without such a file.

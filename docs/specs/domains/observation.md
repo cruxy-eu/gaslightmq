@@ -115,11 +115,14 @@ Every entry carries:
 
 - its [ID](../architecture/identity.md#journal-entry-id), a number that the environment counts from 1,
 - the time,
+- the [revision](../architecture/identity.md#revision) that the change left, when the change has one,
 - the surface the change came from,
 - the cause, when the change takes back or repeats an earlier one: `undo` or `redo`.
 
-An entry names a definition by its name and its [UUID](../architecture/identity.md#uuid).
-The UUID tells a rule from a rule that had its name before, so the history of one rule never runs into the history of another.
+An entry names a definition by its name.
+A name can go and come back, so the journal records every creation and every deletion of a definition.
+The entries between a creation and the next deletion are the history of [one definition](../architecture/identity.md#two-definitions-of-one-name), and the history of one rule never runs into the history of another.
+The revision orders the entries of every environment of one run, because one counter gives all of them.
 
 ### Surfaces
 
@@ -136,7 +139,7 @@ The journal records the surface, and not a person: the control plane has no user
 | `api` | Any other client of the control plane. |
 | `step` | A step of the active scenario. |
 | `lifetime` | A lifetime that ended, or a firing that spent it. |
-| `file` | A file of the workspace that someone edited. |
+| `file` | A file of the workspace that someone edited, taken in by a [reload](../architecture/storage.md#reloading). |
 
 A [request](../architecture/control-plane.md#where-a-request-comes-from) names one of the first six.
 The engine names the last three itself, and no request can claim them.
