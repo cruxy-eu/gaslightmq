@@ -135,8 +135,17 @@ impl Contents {
         errors
     }
 
+    /// The same contents without the definition of that kind and name.
+    pub(crate) fn without(&self, name: &DefinitionName) -> Self {
+        let definitions = (self.definitions.iter())
+            .filter(|held| held.name() != *name)
+            .cloned()
+            .collect();
+        Self { definitions }
+    }
+
     /// The same contents with `definition`, in the place of the definition of its name when there is one.
-    fn with(&self, definition: AnyDefinition) -> Self {
+    pub(crate) fn with(&self, definition: AnyDefinition) -> Self {
         let name = definition.name();
         let mut definitions: Vec<AnyDefinition> = (self.definitions.iter())
             .filter(|held| held.name() != name)

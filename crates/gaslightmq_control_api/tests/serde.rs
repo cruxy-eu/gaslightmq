@@ -761,6 +761,34 @@ fn a_reload_that_changed_nothing_says_why() {
 }
 
 #[test]
+fn a_change_that_an_armed_live_rule_could_not_follow_says_which() {
+    let selector: DefinitionRef = "order-producers".parse::<SelectorName>().unwrap().into();
+    let reason = "rule \"hold-the-produces\": no selector is named \"order-producers\"";
+    let json = json!({
+        "error": "live-rule-does-not-fit",
+        "name": { "selector": "order-producers" },
+        "environment": "orders-sim",
+        "rule": "hold-the-produces",
+        "reason": reason,
+    });
+
+    Form(DeleteDefinitionError::LiveRuleDoesNotFit {
+        name: selector.clone(),
+        environment: "orders-sim".parse().unwrap(),
+        rule: "hold-the-produces".parse().unwrap(),
+        reason: reason.to_owned(),
+    })
+    .writes(json.clone());
+    Form(UpdateDefinitionError::LiveRuleDoesNotFit {
+        name: selector,
+        environment: "orders-sim".parse().unwrap(),
+        rule: "hold-the-produces".parse().unwrap(),
+        reason: reason.to_owned(),
+    })
+    .writes(json);
+}
+
+#[test]
 fn a_write_over_a_file_that_someone_changed_since_is_changed_outside() {
     let selector: DefinitionRef = "order-producers".parse::<SelectorName>().unwrap().into();
     let changed = "selectors.yaml changed since the store read it";

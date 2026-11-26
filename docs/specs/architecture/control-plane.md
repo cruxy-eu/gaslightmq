@@ -44,6 +44,17 @@ See [writing back](storage.md#writing-back).
 Live rules are the exception.
 They stay in memory until *keep* saves them as workspace rules.
 
+An armed rule follows a change of the workspace, as it follows a [reload](storage.md#reloading):
+
+- **An update replaces every armed rule that it changes.**
+  A rule of the workspace whose definition changed, and a rule that uses a selector or a preset that changed, stays armed in every environment that armed it, with its counters and its budget.
+  An armed rule of the workspace that the update changed is a `rule-changed` too.
+- **A delete of a rule of the workspace disarms it** wherever it is armed.
+  The journal records that it disarmed, and then that it went, both with the revision of the delete.
+- **A change that an armed live rule could not follow changes nothing.**
+  An update that leaves a selector or a preset that an armed live rule cannot fire with, and a delete of one that it uses, fail with `live-rule-does-not-fit`.
+  Whoever wants the change disarms or deletes the live rule first.
+
 A live rule belongs to one environment, and its name is a name that no rule of the workspace has.
 Two environments can each have a live rule of one name, because each holds its own.
 *Keep* saves a live rule in the workspace under the same name.

@@ -2186,3 +2186,205 @@ async fn a_reload_that_a_live_rule_stands_in_the_way_of_changes_nothing() -> any
     host.stop_all().await;
     Ok(())
 }
+
+#[tokio::test]
+async fn an_armed_rule_follows_an_update_of_its_definition_and_keeps_what_it_counted() -> anyhow::Result<()> {
+    let cluster = KafkaCluster::plaintext().start().await?;
+    let orders = cluster.topics().create("orders").await?;
+    let host = Host::new(
+        HostConfiguration::default(),
+        MemoryContext::new(),
+        Lies::of_every_build(),
+        RUN,
+    );
+    let any = ListenAddress::new(LOCALHOST, 0);
+    let brokers = BrokerListeners::pinned(cluster.brokers().iter().map(|broker| (broker.id(), any)))?;
+    let staging = Environment::new(
+        "staging-proxy".parse()?,
+        Instances::ProxyInFrontOfCluster {
+            proxy: ProxyDefinition::new(Listeners::new(any, brokers, LOCALHOST.into())?),
+            upstream: Upstream::new(cluster.brokers()[0].address().to_string().parse()?),
+        },
+    );
+    let order_producers = Selector::new(
+        "order-producers".parse()?,
+        Conditions::from(Condition::is(ApiKey::PRODUCE)),
+    );
+    let hold = Preset::new(
+        "hold-20ms".parse()?,
+        TimingLie::new().with_delay(TimeSpan::from_millis(20)),
+    );
+    let rule = Rule::new(
+        "hold-order-producers".parse()?,
+        order_producers.name().clone(),
+        hold.name().clone(),
+    );
+    host.create(order_producers, ChangeSurface::Test).await?;
+    host.create(hold, ChangeSurface::Test).await?;
+    host.create(rule.clone(), ChangeSurface::Test).await?;
+    host.start(EnvironmentConfiguration::new(&staging)?).await?;
+    host.arm(staging.name(), &rule, None, ChangeSurface::Test).await?;
+    // One Produce goes through the proxy, and the rule counts it.
+    let bootstrap = host
+        .address_of(staging.name(), Endpoint::Bootstrap)?
+        .context("the bootstrap endpoint of the staging proxy is open")?;
+    let written = KafkaProducer::from(bootstrap)
+        .send(
+            orders.name().as_str(),
+            Partition::new(0),
+            &[Record::new("placed").with_key("o-1").with_timestamp(PLACED_AT)],
+        )
+        .await;
+    assert_eq!(written, Ok(Offset::new(0)));
+    let mut changes = host.changes();
+
+    // Someone edits the rule in the UI to hold every 2nd Produce.
+    let every_2nd = TriggerParts::new().with_nth(MatchNumber::new(2)?);
+    let edited = rule.clone().with_trigger(every_2nd);
+    let ui = ChangeSource::new(ChangeSurface::Ui);
+    let updated = host.update(edited.clone(), None, ui).await?;
+
+    // The rule stays armed with its new definition, and the proxy still counts the Produce from before.
+    assert_eq!(
+        host.rule_of(staging.name(), rule.name()).await?,
+        Some(EnvironmentRule {
+            rule: edited,
+            live: false,
+            state: RuleState::Armed,
+            revision: updated,
+        })
+    );
+    let armed = host.armed_rules(staging.name())?;
+    let followed = armed.get(rule.name()).context("the rule is still armed")?;
+    assert_eq!(followed.arming().trigger(), Trigger::from(every_2nd));
+    assert_eq!(followed.arming().counter().matches(), 1);
+    let journal = host.journal(staging.name(), None)?;
+    let last = journal.last().context("the journal recorded the update")?;
+    assert_eq!(
+        (last.from, &last.change),
+        (
+            ui,
+            &Change::DefinitionChanged {
+                definition: RecordedDefinition::Rule(RecordedName::new(rule.name().as_str())?)
+            }
+        )
+    );
+    // Whoever follows the host learns of the definition, and that the armed rule follows it.
+    let mut told = Vec::new();
+    while told.len() < 2 {
+        let change = tokio::time::timeout(PATIENCE, changes.next()).await??;
+        if matches!(
+            change,
+            HostChange::DefinitionChanged { .. } | HostChange::RuleChanged { .. }
+        ) {
+            told.push(change);
+        }
+    }
+    assert_eq!(
+        told,
+        [
+            HostChange::DefinitionChanged {
+                name: rule.name().clone().into()
+            },
+            HostChange::RuleChanged {
+                environment: staging.name().clone(),
+                rule: rule.name().clone(),
+            },
+        ]
+    );
+    host.stop_all().await;
+    Ok(())
+}
+
+#[tokio::test]
+async fn an_armed_rule_whose_definition_someone_deletes_disarms_and_an_armed_live_rule_keeps_its_selector()
+-> anyhow::Result<()> {
+    let cluster = KafkaCluster::plaintext().start().await?;
+    let host = Host::new(
+        HostConfiguration::default(),
+        MemoryContext::new(),
+        Lies::of_every_build(),
+        RUN,
+    );
+    let any = ListenAddress::new(LOCALHOST, 0);
+    let brokers = BrokerListeners::pinned(cluster.brokers().iter().map(|broker| (broker.id(), any)))?;
+    let staging = Environment::new(
+        "staging-proxy".parse()?,
+        Instances::ProxyInFrontOfCluster {
+            proxy: ProxyDefinition::new(Listeners::new(any, brokers, LOCALHOST.into())?),
+            upstream: Upstream::new(cluster.brokers()[0].address().to_string().parse()?),
+        },
+    );
+    let order_fetches = Selector::new("order-fetches".parse()?, Conditions::from(Condition::is(ApiKey::FETCH)));
+    let order_producers = Selector::new(
+        "order-producers".parse()?,
+        Conditions::from(Condition::is(ApiKey::PRODUCE)),
+    );
+    let hold = Preset::new(
+        "hold-20ms".parse()?,
+        TimingLie::new().with_delay(TimeSpan::from_millis(20)),
+    );
+    let of_the_workspace = Rule::new(
+        "hold-order-fetches".parse()?,
+        order_fetches.name().clone(),
+        hold.name().clone(),
+    );
+    let live = Rule::new(
+        "hold-the-produces".parse()?,
+        order_producers.name().clone(),
+        hold.name().clone(),
+    );
+    host.create(order_fetches, ChangeSurface::Test).await?;
+    host.create(order_producers.clone(), ChangeSurface::Test).await?;
+    host.create(hold, ChangeSurface::Test).await?;
+    host.create(of_the_workspace.clone(), ChangeSurface::Test).await?;
+    host.start(EnvironmentConfiguration::new(&staging)?).await?;
+    host.arm(staging.name(), &of_the_workspace, None, ChangeSurface::Test)
+        .await?;
+    host.create_live_rule_armed(staging.name(), live.clone(), ChangeSurface::Pad)
+        .await?;
+
+    // The armed live rule uses the selector, so the selector stays.
+    let kept = host
+        .delete(order_producers.name().clone(), None, ChangeSurface::Ui)
+        .await;
+    assert_eq!(
+        kept,
+        Err(DeleteDefinitionError::Unresolved {
+            name: order_producers.name().clone().into(),
+            environment: staging.name().clone(),
+            rule: live.name().clone(),
+            reason: "rule \"hold-the-produces\": no selector is named \"order-producers\"".to_owned(),
+        })
+    );
+
+    // The rule of the workspace goes while it is armed, and disarms with it.
+    let ui = ChangeSource::new(ChangeSurface::Ui);
+    let deleted = host.delete(of_the_workspace.name().clone(), None, ui).await?;
+
+    assert!(host.armed_rules(staging.name())?.get(of_the_workspace.name()).is_none());
+    assert_eq!(host.rule_of(staging.name(), of_the_workspace.name()).await?, None);
+    let left = Some(gaslightmq_journal::Revision::new(deleted.number()));
+    let said: Vec<(Option<gaslightmq_journal::Revision>, ChangeSource, Change)> = host
+        .journal(staging.name(), None)?
+        .into_iter()
+        .skip_while(|entry| entry.revision != left)
+        .map(|entry| (entry.revision, entry.from, entry.change))
+        .collect();
+    let rule = RecordedName::new(of_the_workspace.name().as_str())?;
+    assert_eq!(
+        said,
+        [
+            (left, ui, Change::RuleDisarmed { rule: rule.clone() }),
+            (
+                left,
+                ui,
+                Change::DefinitionDeleted {
+                    definition: RecordedDefinition::Rule(rule)
+                }
+            ),
+        ]
+    );
+    host.stop_all().await;
+    Ok(())
+}

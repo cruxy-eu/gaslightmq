@@ -9,7 +9,7 @@ use gaslightmq_rule::{RuleError, RuleName};
 use gaslightmq_scenario::ScenarioName;
 use gaslightmq_selector::SelectorSetError;
 use gaslightmq_surface::LayoutName;
-use gaslightmq_workspace::{CreateError, DeleteError, ReloadError, Revision, UpdateError};
+use gaslightmq_workspace::{CreateError, DefinitionName, DeleteError, ReloadError, Revision, UpdateError};
 
 use crate::run::RunId;
 
@@ -112,6 +112,19 @@ pub enum UpdateDefinitionError {
     /// The change expects a revision of another run than the run of the host, which is `run`.
     #[error("the change expects a revision of another run than {run}, which is the run of the process")]
     OtherRun { run: RunId },
+    /// A live rule that is armed in the environment would not resolve with the change, so it could not follow it:
+    /// the change makes its selector or its preset one that the rule cannot fire with. `reason` says what is wrong.
+    #[error(
+        "{name} was not updated: rule {:?}, which is armed in environment {:?}, would not resolve: {reason}",
+        .rule.as_str(),
+        .environment.as_str()
+    )]
+    Unresolved {
+        name: DefinitionName,
+        environment: EnvironmentName,
+        rule: RuleName,
+        reason: String,
+    },
     /// The workspace did not take the update. Its error says why, and names the definition:
     /// no definition has the name, it has another revision than the change expects, it does not fit the workspace,
     /// or a store failed.
@@ -140,6 +153,19 @@ pub enum DeleteDefinitionError {
     /// The change expects a revision of another run than the run of the host, which is `run`.
     #[error("the change expects a revision of another run than {run}, which is the run of the process")]
     OtherRun { run: RunId },
+    /// A live rule that is armed in the environment uses the definition, and would not resolve without it.
+    /// `reason` says what is wrong with the rule then.
+    #[error(
+        "{name} was not deleted: rule {:?}, which is armed in environment {:?}, would not resolve: {reason}",
+        .rule.as_str(),
+        .environment.as_str()
+    )]
+    Unresolved {
+        name: DefinitionName,
+        environment: EnvironmentName,
+        rule: RuleName,
+        reason: String,
+    },
     /// The workspace did not take the delete. Its error says why, and names the definition:
     /// no definition has the name, it has another revision than the change expects, other definitions use it,
     /// or a store failed.

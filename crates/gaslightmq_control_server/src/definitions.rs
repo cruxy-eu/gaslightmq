@@ -256,6 +256,19 @@ impl DefinitionOperations {
             Err(Host::OtherRun { run: of_the_host }) => {
                 return Err(UpdateDefinitionError::OtherRun { run: run(of_the_host) });
             }
+            Err(Host::Unresolved {
+                name,
+                environment,
+                rule,
+                reason,
+            }) => {
+                return Err(UpdateDefinitionError::LiveRuleDoesNotFit {
+                    name: reference(name),
+                    environment,
+                    rule,
+                    reason,
+                });
+            }
             Err(Host::NotUpdated { error }) => error,
         };
         Err(match error {
@@ -291,6 +304,19 @@ impl DefinitionOperations {
             Ok(deleted) => return Ok(revised(deleted)),
             Err(Host::OtherRun { run: of_the_host }) => {
                 return Err(DeleteDefinitionError::OtherRun { run: run(of_the_host) });
+            }
+            Err(Host::Unresolved {
+                name,
+                environment,
+                rule,
+                reason,
+            }) => {
+                return Err(DeleteDefinitionError::LiveRuleDoesNotFit {
+                    name: reference(name),
+                    environment,
+                    rule,
+                    reason,
+                });
             }
             Err(Host::NotDeleted { error }) => error,
         };

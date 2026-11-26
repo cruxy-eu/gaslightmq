@@ -1,7 +1,9 @@
 //! The workspace: the stores of every kind, and the rules that span them.
 
+mod preview;
 mod reload;
 
+pub use preview::Preview;
 pub use reload::{DefinitionChange, Reload};
 
 use std::collections::BTreeMap;

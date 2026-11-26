@@ -136,8 +136,8 @@
 //! | [`EnvironmentConfiguration::new`] | [`EnvironmentConfigurationError`] | The environment runs a broker. |
 //! | [`Host::start`] | [`EnvironmentStartError`] | The environment runs already, its listeners meet those of another, or its backend or its proxy did not start. |
 //! | [`Host::stop`], and every question about an environment that runs | [`NotRunningError`] | No environment of that name runs. |
-//! | [`Host::update`] | [`UpdateDefinitionError`] | The change expects another run, or the workspace did not take the update. |
-//! | [`Host::delete`] | [`DeleteDefinitionError`] | The change expects another run, or the workspace did not take the delete. |
+//! | [`Host::update`] | [`UpdateDefinitionError`] | The change expects another run, an armed live rule would not resolve with it, or the workspace did not take the update. |
+//! | [`Host::delete`] | [`DeleteDefinitionError`] | The change expects another run, an armed live rule uses the definition, or the workspace did not take the delete. |
 //! | [`Host::arm`] | [`ArmRuleError`] | The environment does not run, the workspace could not be read or is not valid, the rule does not resolve, it is armed already, or it changed since. |
 //! | [`Host::disarm`] | [`DisarmRuleError`] | The environment does not run, the rule is not armed, or it changed since. |
 //! | [`Host::fire`] | [`FireRuleError`] | The environment does not run, the rule is not armed or fires no more, its incident needs a call, or the backend rejects it. |

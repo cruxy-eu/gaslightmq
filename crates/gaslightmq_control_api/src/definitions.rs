@@ -522,6 +522,20 @@ pub enum UpdateDefinitionError {
     /// the definition itself, or the definitions that use it. `reason` says everything that would be wrong.
     #[error("{name} does not fit the workspace: {reason}")]
     DoesNotFit { name: DefinitionRef, reason: String },
+    /// A live rule that is armed in the environment would not fit the workspace with the change, so it could not
+    /// follow it: the rule could not fire with the selector or the preset as the change leaves it.
+    /// Disarm or delete the live rule first. `reason` says what is wrong with it.
+    #[error(
+        "{name} was not updated: rule {:?}, which is armed in environment {:?}, would not fit it: {reason}",
+        .rule.as_str(),
+        .environment.as_str()
+    )]
+    LiveRuleDoesNotFit {
+        name: DefinitionRef,
+        environment: EnvironmentName,
+        rule: RuleName,
+        reason: String,
+    },
     /// Someone changed the file of the definition since the process read it, and the process wrote nothing.
     /// A [reload](crate::ReloadWorkspace) takes the edit in, and the update can come again on top of it.
     /// `reason` says which file changed, and how: its bytes changed, it is gone, or it exists now.
@@ -565,6 +579,19 @@ pub enum DeleteDefinitionError {
     InUse {
         name: DefinitionRef,
         users: Vec<DefinitionRef>,
+    },
+    /// A live rule that is armed in the environment uses the definition, and would not fit the workspace without it.
+    /// Disarm or delete the live rule first. `reason` says what is wrong with it.
+    #[error(
+        "{name} was not deleted: rule {:?}, which is armed in environment {:?}, would not fit it: {reason}",
+        .rule.as_str(),
+        .environment.as_str()
+    )]
+    LiveRuleDoesNotFit {
+        name: DefinitionRef,
+        environment: EnvironmentName,
+        rule: RuleName,
+        reason: String,
     },
     /// Someone changed the file of the definition since the process read it, and the process wrote nothing.
     /// A [reload](crate::ReloadWorkspace) takes the edit in, and the delete can come again on top of it.

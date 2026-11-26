@@ -136,8 +136,8 @@
 //! | [`ListDefinitions`], [`ListEnvironments`] | [`ListDefinitionsError`] | A store could not read. |
 //! | [`GetDefinition`], [`GetEnvironment`] | [`GetDefinitionError`] | No definition has the name, or a store could not read. |
 //! | [`CreateDefinition`] | [`CreateDefinitionError`] | The name is taken, the definition does not fit the workspace, someone changed its file since the process read it, or a store failed. |
-//! | [`UpdateDefinition`] | [`UpdateDefinitionError`] | No definition has the name, it changed since, the definition does not fit the workspace, someone changed its file since the process read it, or a store failed. |
-//! | [`DeleteDefinition`] | [`DeleteDefinitionError`] | No definition has the name, it changed since, other definitions use it, someone changed its file since the process read it, or a store failed. |
+//! | [`UpdateDefinition`] | [`UpdateDefinitionError`] | No definition has the name, it changed since, the definition does not fit the workspace, an armed live rule would not fit it, someone changed its file since the process read it, or a store failed. |
+//! | [`DeleteDefinition`] | [`DeleteDefinitionError`] | No definition has the name, it changed since, other definitions or an armed live rule use it, someone changed its file since the process read it, or a store failed. |
 //! | [`StartEnvironment`] | [`StartEnvironmentError`] | No environment has the name, it runs already, or it did not come up. |
 //! | [`StopEnvironment`], [`ListSessions`], [`GetBackend`], [`QueryJournal`] | [`EnvironmentNotRunning`] | The environment does not run. |
 //! | [`ListEnvironmentRules`], [`ParseSentence`] | [`EnvironmentReadError`] | The environment does not run, or a store could not read. |

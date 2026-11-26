@@ -1,26 +1,16 @@
 //! A reload of the workspace: what the files hold now, taken in as one change, and the armed rules that follow it.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeSet;
 
-use gaslightmq_environment::EnvironmentName;
 use gaslightmq_journal::{Change, ChangeSurface};
-use gaslightmq_rule::{Preset, PresetSet, ResolvedRule, Rule, RuleName};
+use gaslightmq_rule::{Preset, Rule, RuleName};
 use gaslightmq_scenario::Scenario;
-use gaslightmq_selector::{Selector, SelectorSet};
+use gaslightmq_selector::Selector;
 use gaslightmq_workspace::{DefinitionChange, DefinitionName, Reload, WorkspaceContext};
 
-use super::{Host, Running, caught_up};
-use crate::revisions::RuleRevisions;
+use super::Host;
+use super::follow::Unfollowed;
 use crate::{HostChange, ReloadWorkspaceError, Reloaded, journaling};
-
-/// What a reload does to one rule that is armed in an environment.
-enum Following {
-    /// The rule resolves to another rule than the one that is armed: its definition changed, or what it refers to.
-    /// It is replaced, and keeps its counters and its budget.
-    Retune(ResolvedRule),
-    /// The rule was of the workspace, and the reload took it away. It disarms.
-    Disarm(RuleName),
-}
 
 impl<C: WorkspaceContext> Host<C> {
     /// Reads the files of the workspace again, and takes what changed in as one change.
@@ -65,21 +55,43 @@ impl<C: WorkspaceContext> Host<C> {
             .await
             .map_err(|error| ReloadWorkspaceError::NotReloaded { error })?;
         self.check_rule_names(&reload)?;
-        let followings = self.followings(&reload)?;
-
-        let changes = reload.changes().to_vec();
-        let revision = reload.take().await;
-        let changed_rules: BTreeSet<&RuleName> = changes
+        let gone: BTreeSet<RuleName> = reload
+            .changes()
             .iter()
             .filter_map(|change| match change {
-                DefinitionChange::Updated(DefinitionName::Rule(rule)) => Some(rule),
+                DefinitionChange::Deleted(DefinitionName::Rule(rule)) => Some(rule.clone()),
                 _ => None,
             })
             .collect();
-        let mut following = Vec::new();
-        for (environment, running) in self.environments().iter_mut() {
-            let followings = followings.get(environment).map_or(&[][..], Vec::as_slice);
-            let (disarmed, uncounted) = caught_up(running, |running, revisions| follow(running, revisions, followings));
+        let followings = self
+            .followings(
+                reload.definitions::<Rule>(),
+                &gone,
+                reload.definitions::<Selector>(),
+                reload.definitions::<Preset>(),
+            )
+            .map_err(
+                |Unfollowed {
+                     environment,
+                     rule,
+                     reason,
+                 }| ReloadWorkspaceError::Unresolved {
+                    environment,
+                    rule,
+                    reason,
+                },
+            )?;
+
+        let changes = reload.changes().to_vec();
+        let revision = reload.take().await;
+        let changed_rules: BTreeSet<RuleName> = changes
+            .iter()
+            .filter_map(|change| match change {
+                DefinitionChange::Updated(DefinitionName::Rule(rule)) => Some(rule.clone()),
+                _ => None,
+            })
+            .collect();
+        let following = self.follow_everywhere(&followings, &changed_rules, |running, disarmed| {
             for change in &changes {
                 let definition = journaling::definition(change.name());
                 let entry = match change {
@@ -98,16 +110,7 @@ impl<C: WorkspaceContext> Host<C> {
                 };
                 running.record(entry, ChangeSurface::File, revision);
             }
-            let snapshot = running.engine.rules().snapshot();
-            let armed = changed_rules.iter().filter(|rule| snapshot.get(rule).is_some());
-            let armed = armed.map(|rule| (*rule).clone());
-            following.extend(
-                uncounted
-                    .into_iter()
-                    .chain(armed)
-                    .map(|rule| (environment.clone(), rule)),
-            );
-        }
+        });
         drop(workspace);
 
         for change in &changes {
@@ -140,82 +143,4 @@ impl<C: WorkspaceContext> Host<C> {
         }
         Ok(())
     }
-
-    /// What the reload does to every rule that is armed in an environment that runs, by environment.
-    ///
-    /// # Errors
-    ///
-    /// [`ReloadWorkspaceError::Unresolved`] for the first armed rule that would not resolve against what the files
-    /// hold.
-    fn followings(
-        &self,
-        reload: &Reload<'_, C>,
-    ) -> Result<BTreeMap<EnvironmentName, Vec<Following>>, ReloadWorkspaceError> {
-        let rules: BTreeMap<&RuleName, &Rule> = reload.definitions::<Rule>().map(|rule| (rule.name(), rule)).collect();
-        let gone: BTreeSet<&RuleName> = reload
-            .changes()
-            .iter()
-            .filter_map(|change| match change {
-                DefinitionChange::Deleted(DefinitionName::Rule(rule)) => Some(rule),
-                _ => None,
-            })
-            .collect();
-        let selectors = SelectorSet::new(reload.definitions::<Selector>().cloned());
-        let presets = PresetSet::new(reload.definitions::<Preset>().cloned());
-        let resolve = |rule: &Rule| match (&selectors, &presets) {
-            (Ok(selectors), Ok(presets)) => rule.resolve(selectors, presets).map_err(|error| error.to_string()),
-            (Err(error), _) => Err(format!("the selectors are not valid: {error}")),
-            (_, Err(error)) => Err(format!("the presets are not valid: {error}")),
-        };
-
-        let mut followings = BTreeMap::new();
-        for (environment, running) in self.environments().iter() {
-            let armed = running.engine.rules().snapshot();
-            let mut here = Vec::new();
-            for armed in armed.iter() {
-                let name = armed.name();
-                let Some(rule) = running.live.get(name).or_else(|| rules.get(name).copied()) else {
-                    if gone.contains(name) {
-                        here.push(Following::Disarm(name.clone()));
-                    }
-                    continue;
-                };
-                let resolved = resolve(rule).map_err(|reason| ReloadWorkspaceError::Unresolved {
-                    environment: environment.clone(),
-                    rule: name.clone(),
-                    reason,
-                })?;
-                if &resolved != armed.rule() {
-                    here.push(Following::Retune(resolved));
-                }
-            }
-            followings.insert(environment.clone(), here);
-        }
-        Ok(followings)
-    }
-}
-
-/// Replaces and disarms the armed rules of one environment as the reload says, and returns the names of the rules
-/// that disarmed.
-///
-/// A rule that disarmed takes no number of its own: the reload took its definition away, and the rule has no
-/// revision in the environment any more. A rule that is no longer armed, because its lifetime ended or someone
-/// deleted its live rule since, has nothing to follow, and is left as it is.
-fn follow(running: &mut Running, revisions: &mut RuleRevisions, followings: &[Following]) -> BTreeSet<RuleName> {
-    let rules = running.engine.rules();
-    let mut disarmed = BTreeSet::new();
-    for following in followings {
-        match following {
-            Following::Retune(resolved) => {
-                let _ = rules.retune(resolved.clone());
-            }
-            Following::Disarm(rule) => {
-                if rules.disarm(rule).is_ok() {
-                    revisions.forget(rule);
-                    disarmed.insert(rule.clone());
-                }
-            }
-        }
-    }
-    disarmed
 }
