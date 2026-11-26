@@ -12,6 +12,8 @@
 //! | [`StoreReadError`] | Why a store has no answer to a list, a get or another question. |
 //! | [`StoreCreateError`] | Why a store did not create a definition. |
 //! | [`StoreChangeError`] | Why a store did not update or delete a definition. |
+//! | [`WriteBack`] | When a store writes a change: as it happens, or with the next save. |
+//! | [`StoreSaveError`] | Why a store did not save the changes it holds. |
 //!
 //! The [`prelude`] holds every type of the table.
 //!
@@ -114,6 +116,7 @@
 //! | [`StoreReadError`] | Could not read what it holds, for a [list](Store::list), a [get](Store::get) or a question of its kind. | Keeps what it read before, and reports the error. |
 //! | [`StoreCreateError`] | Did not [create](Store::create) a definition: its name is taken, someone else changed where it would go, or the store could not keep it. | Tells whoever asked that the name is taken, or that the store has to read again first, or reports the error. |
 //! | [`StoreChangeError`] | Did not [update](Store::update) or [delete](Store::delete) a definition: no definition has the name, someone else changed where it is, or the store could not keep the change. | Tells whoever asked that there is no such definition, or that the store has to read again first, or reports the error. |
+//! | [`StoreSaveError`] | Did not [save](Store::save) the changes it holds: someone else changed where they go, or the store could not write them. | Tells whoever asked that the store has to read again first, or reports the error. |
 //!
 //! Every store returns these errors and no other, whatever stands behind it.
 //! An error names no definition and no kind: whoever asked knows both, and says them in its own error.
@@ -134,8 +137,8 @@ mod error;
 mod store;
 
 pub use definition::Definition;
-pub use error::{StoreChangeError, StoreCreateError, StoreReadError};
-pub use store::Store;
+pub use error::{StoreChangeError, StoreCreateError, StoreReadError, StoreSaveError};
+pub use store::{Store, WriteBack};
 
 /// Every item of this crate.
 ///
@@ -150,5 +153,5 @@ pub use store::Store;
 /// ```
 pub mod prelude {
     #[doc(no_inline)]
-    pub use crate::{Definition, Store, StoreChangeError, StoreCreateError, StoreReadError};
+    pub use crate::{Definition, Store, StoreChangeError, StoreCreateError, StoreReadError, StoreSaveError, WriteBack};
 }

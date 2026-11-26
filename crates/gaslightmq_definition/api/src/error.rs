@@ -76,6 +76,33 @@ pub enum StoreChangeError {
     Failed { reason: String },
 }
 
+/// Why a store did not [save](crate::Store::save) the changes that it holds, or would not.
+///
+/// A save that fails before it writes changed nothing: the store holds every change that it held, and writes them
+/// with the next save.
+///
+/// ```
+/// use gaslightmq_definition_api::prelude::*;
+///
+/// let error = StoreSaveError::ChangedOutside {
+///     reason: "selectors.yaml changed since the store read it".to_owned(),
+/// };
+/// assert_eq!(
+///     error.to_string(),
+///     "the store wrote nothing, because selectors.yaml changed since the store read it"
+/// );
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum StoreSaveError {
+    /// Someone else changed where a change would go, since the store read it, and the store wrote nothing.
+    /// `reason` says every place that changed, and how.
+    #[error("the store wrote nothing, because {reason}")]
+    ChangedOutside { reason: String },
+    /// The store could not write the changes. `reason` says what stood in the way, and what it wrote before.
+    #[error("the store could not save its changes: {reason}")]
+    Failed { reason: String },
+}
+
 #[cfg(test)]
 mod tests {
     use std::error::Error;

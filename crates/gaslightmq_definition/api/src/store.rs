@@ -1,6 +1,23 @@
 //! The one trait through which the definitions of one kind are kept.
 
-use crate::{Definition, StoreChangeError, StoreCreateError, StoreReadError};
+use crate::{Definition, StoreChangeError, StoreCreateError, StoreReadError, StoreSaveError};
+
+/// When a store writes a change to where it keeps its definitions.
+///
+/// ```
+/// use gaslightmq_definition_api::prelude::*;
+///
+/// assert_eq!(WriteBack::default(), WriteBack::EachChange);
+/// ```
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+pub enum WriteBack {
+    /// A change is kept by the time it returns, as a store in memory keeps it.
+    #[default]
+    EachChange,
+    /// A change is held until someone [saves](Store::save): the store lists it at once, and writes every change
+    /// that it holds with the next save, in one go.
+    OnSave,
+}
 
 /// What keeps the definitions of one kind: the files of a workspace, memory, or anything else.
 ///
@@ -19,6 +36,7 @@ use crate::{Definition, StoreChangeError, StoreCreateError, StoreReadError};
 /// | Lets go of a definition it holds. | [`delete`](Self::delete) |
 /// | Says whether a write of a definition loses a comment of its text. | [`would_lose_comment`](Self::would_lose_comment) |
 /// | Says whether it refuses every change. | [`read_only`](Self::read_only) |
+/// | Says when it writes a change, names what it holds and has not written, and writes it. | [`write_back`](Self::write_back), [`unsaved`](Self::unsaved), [`check_unsaved`](Self::check_unsaved), [`save`](Self::save) |
 /// | Reads again what someone else can change, and holds it once it is taken. | [`read_again`](Self::read_again), [`take_reading`](Self::take_reading) |
 ///
 /// # What every store keeps to
@@ -56,6 +74,23 @@ use crate::{Definition, StoreChangeError, StoreCreateError, StoreReadError};
 ///
 /// A store can also be read-only, as the files of a workspace that CI mounts read-only:
 /// it says so with [`read_only`](Self::read_only), and refuses every create, update and delete with `Failed`.
+///
+/// # Changes that wait for a save
+///
+/// A store can hold its changes until someone saves them, as the files of a workspace that someone edits in the UI
+/// and saves in one go. It says so with [`write_back`](Self::write_back).
+///
+/// - **A change is there at once.** The store lists it from the moment the change returns, as any store does.
+/// - **The store names what it has not written.** [`unsaved`](Self::unsaved) gives the name of every definition that
+///   it created, updated or deleted since the last save.
+/// - **A save writes everything, or nothing that someone else changed.**
+///   [`check_unsaved`](Self::check_unsaved) says whether a save would write over a change that the store has not
+///   read, and [`save`](Self::save) checks again and writes. Whoever holds the stores of every kind checks them all
+///   before it saves any, so one change outside holds up the whole save.
+/// - **Reading again lets go of what was not saved.** A reading that the store [takes](Self::take_reading) is what
+///   it holds from then on, and nothing is unsaved after it.
+///
+/// A store that writes each change keeps these methods as the trait writes them: it has nothing unsaved.
 ///
 /// The trait is a signature, and it has no logic.
 /// It names no runtime: a store waits however it likes, and whoever calls it drives the futures.
@@ -129,6 +164,42 @@ pub trait Store<D: Definition>: Send + Sync {
     /// A store that takes changes, such as a store in memory, keeps this method as the trait writes it.
     fn read_only(&self) -> bool {
         false
+    }
+
+    /// When the store writes a change: by the time the change returns, or with the next [save](Self::save).
+    /// A store that writes each change keeps this method as the trait writes it.
+    fn write_back(&self) -> WriteBack {
+        WriteBack::EachChange
+    }
+
+    /// The name of every definition that the store created, updated or deleted since the last save, and has not
+    /// written yet, in the order of their names. A store that writes each change has none.
+    fn unsaved(&self) -> impl Future<Output = Vec<D::Name>> + Send {
+        async { Vec::new() }
+    }
+
+    /// Checks that a [save](Self::save) would write over nothing that someone else changed since the store read it.
+    /// It writes nothing.
+    ///
+    /// # Errors
+    ///
+    /// - [`StoreSaveError::ChangedOutside`] with every place that someone else changed.
+    /// - [`StoreSaveError::Failed`] when the store could not look.
+    fn check_unsaved(&self) -> impl Future<Output = Result<(), StoreSaveError>> + Send {
+        async { Ok(()) }
+    }
+
+    /// Writes every change that the store holds and has not written yet, and holds nothing unsaved afterwards.
+    ///
+    /// It checks first, as [`check_unsaved`](Self::check_unsaved) does, and writes nothing when someone else
+    /// changed a place that it would write.
+    ///
+    /// # Errors
+    ///
+    /// - [`StoreSaveError::ChangedOutside`] with every place that someone else changed. The store wrote nothing.
+    /// - [`StoreSaveError::Failed`] when the store could not write. It holds what it did not write, unsaved.
+    fn save(&self) -> impl Future<Output = Result<(), StoreSaveError>> + Send {
+        async { Ok(()) }
     }
 
     /// Reads again what someone else can change, and gives every definition it read, in the order of their names.

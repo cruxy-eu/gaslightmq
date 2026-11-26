@@ -8,7 +8,9 @@ pub use reload::{DefinitionChange, Reload};
 
 use std::collections::BTreeMap;
 
-use gaslightmq_definition_api::{Definition, Store, StoreChangeError, StoreCreateError, StoreReadError};
+use gaslightmq_definition_api::{
+    Definition, Store, StoreChangeError, StoreCreateError, StoreReadError, StoreSaveError, WriteBack,
+};
 use gaslightmq_environment::Environment;
 use gaslightmq_rule::{Preset, Rule, RuleStore};
 use gaslightmq_scenario::{Scenario, ScenarioStore};
@@ -18,8 +20,8 @@ use gaslightmq_surface::{LayoutStore, PadLayout};
 use crate::contents::Contents;
 use crate::kind::AnyDefinition;
 use crate::{
-    CreateError, DefinitionName, DeleteError, Revision, RevisionCounter, Stores, UpdateError, ValidationError,
-    WorkspaceContext, WorkspaceDefinition,
+    CreateError, DefinitionName, DeleteError, Revision, RevisionCounter, SaveError, Stores, UpdateError,
+    ValidationError, WorkspaceContext, WorkspaceDefinition,
 };
 
 /// Every definition of a workspace, as one model that holds together.
@@ -156,6 +158,82 @@ impl<C: WorkspaceContext> Workspace<C> {
             || stores.scenarios().read_only()
             || stores.layouts().read_only()
             || stores.environments().read_only()
+    }
+
+    /// When the stores of the workspace write a change: as it happens, or with the next [save](Self::save).
+    ///
+    /// A workspace writes on save when a store of it does. Whoever starts the process says which,
+    /// and a store in memory writes each change.
+    pub fn write_back(&self) -> WriteBack {
+        let stores = self.context.stores();
+        let all = [
+            stores.selectors().write_back(),
+            stores.presets().write_back(),
+            stores.rules().write_back(),
+            stores.scenarios().write_back(),
+            stores.layouts().write_back(),
+            stores.environments().write_back(),
+        ];
+        if all.contains(&WriteBack::OnSave) {
+            WriteBack::OnSave
+        } else {
+            WriteBack::EachChange
+        }
+    }
+
+    /// Every definition that a change created, updated or deleted since the last save, and that its store has not
+    /// written yet, in the order of the kinds and the names. A workspace that writes each change has none.
+    pub async fn unsaved(&self) -> Vec<DefinitionName> {
+        let stores = self.context.stores();
+        let mut names = Vec::new();
+        names.extend(stores.selectors().unsaved().await.into_iter().map(DefinitionName::from));
+        names.extend(stores.presets().unsaved().await.into_iter().map(DefinitionName::from));
+        names.extend(stores.rules().unsaved().await.into_iter().map(DefinitionName::from));
+        names.extend(stores.scenarios().unsaved().await.into_iter().map(DefinitionName::from));
+        names.extend(stores.layouts().unsaved().await.into_iter().map(DefinitionName::from));
+        names.extend(
+            stores
+                .environments()
+                .unsaved()
+                .await
+                .into_iter()
+                .map(DefinitionName::from),
+        );
+        names
+    }
+
+    /// Writes every change that the stores hold and have not written yet, and returns the definitions that it saved,
+    /// in the order of the kinds and the names.
+    ///
+    /// The save checks every store before any writes. When someone changed a place that it would write since the
+    /// store read it, no store writes anything. A save changes no definition, so it takes no number, and every
+    /// definition keeps its revision. A workspace that writes each change has nothing to save.
+    ///
+    /// # Errors
+    ///
+    /// - [`SaveError::ChangedOutside`] with every place that someone changed. Nothing was written,
+    ///   and a [reload](Self::reload) takes the change in.
+    /// - [`SaveError::StoreFailed`] when a store could not check or write. What it did not write, it holds unsaved.
+    pub async fn save(&mut self) -> Result<Vec<DefinitionName>, SaveError> {
+        let unsaved = self.unsaved().await;
+        let stores = self.context.stores();
+        let mut refused = Refused::default();
+        refused.add::<Selector>(stores.selectors().check_unsaved().await);
+        refused.add::<Preset>(stores.presets().check_unsaved().await);
+        refused.add::<Rule>(stores.rules().check_unsaved().await);
+        refused.add::<Scenario>(stores.scenarios().check_unsaved().await);
+        refused.add::<PadLayout>(stores.layouts().check_unsaved().await);
+        refused.add::<Environment>(stores.environments().check_unsaved().await);
+        refused.error().map_or(Ok(()), Err)?;
+
+        let mut refused = Refused::default();
+        refused.add::<Selector>(stores.selectors().save().await);
+        refused.add::<Preset>(stores.presets().save().await);
+        refused.add::<Rule>(stores.rules().save().await);
+        refused.add::<Scenario>(stores.scenarios().save().await);
+        refused.add::<PadLayout>(stores.layouts().save().await);
+        refused.add::<Environment>(stores.environments().save().await);
+        refused.error().map_or(Ok(unsaved), Err)
     }
 
     /// The counter of the process, which gives the revision of every change, whoever makes it.
@@ -434,6 +512,41 @@ impl<C: WorkspaceContext> Workspace<C> {
             DefinitionName::Layout(name) => stores.layouts().delete(name).await,
             DefinitionName::Environment(name) => stores.environments().delete(name).await,
         }
+    }
+}
+
+/// What the stores of a save said when they did not check or write: every place that someone changed, and every
+/// store that failed.
+#[derive(Default)]
+struct Refused {
+    changed: Vec<String>,
+    failed: Vec<String>,
+}
+
+impl Refused {
+    /// Adds what the store of the definitions `D` said.
+    fn add<D: Definition>(&mut self, answer: Result<(), StoreSaveError>) {
+        match answer {
+            Ok(()) => {}
+            Err(StoreSaveError::ChangedOutside { reason }) => self.changed.push(reason),
+            Err(StoreSaveError::Failed { reason }) => {
+                self.failed
+                    .push(format!("the {} store did not save: {reason}", D::LABEL));
+            }
+        }
+    }
+
+    /// The error of the save, or `None` when every store did what it was asked.
+    /// A store that failed comes first: what someone changed outside waits until the stores can look.
+    fn error(self) -> Option<SaveError> {
+        if !self.failed.is_empty() {
+            return Some(SaveError::StoreFailed {
+                reason: self.failed.join("; "),
+            });
+        }
+        (!self.changed.is_empty()).then(|| SaveError::ChangedOutside {
+            reason: self.changed.join("; "),
+        })
     }
 }
 

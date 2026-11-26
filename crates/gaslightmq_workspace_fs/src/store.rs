@@ -4,14 +4,14 @@ use std::fmt;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
-use gaslightmq_definition_api::{Store, StoreChangeError, StoreCreateError, StoreReadError};
+use gaslightmq_definition_api::{Store, StoreChangeError, StoreCreateError, StoreReadError, StoreSaveError, WriteBack};
 use gaslightmq_environment::{Environment, EnvironmentStore};
 use gaslightmq_rule::{Preset, PresetStore, Rule, RuleStore};
 use gaslightmq_scenario::{Scenario, ScenarioStore};
 use gaslightmq_selector::{Selector, SelectorStore};
 use gaslightmq_surface::{LayoutStore, PadLayout};
 
-use crate::held::{self, After, Edit, Held};
+use crate::held::{self, After, Edit, Held, Pending};
 use crate::{Access, FileDefinition, FileError, disk, error};
 
 /// The definitions of one kind, kept in the files of a workspace.
@@ -37,6 +37,20 @@ use crate::{Access, FileDefinition, FileError, disk, error};
 ///   whoever asked for it stops waiting.
 ///
 /// A store of [`Access::ReadOnly`] refuses every write, and reads as any other.
+///
+/// # Writing on save
+///
+/// A store of [`Access::WriteOnSave`] makes every change to the text that it holds, and lists the change at once,
+/// but writes no file until someone [saves](Store::save).
+///
+/// - **A change waits in memory.** The store keeps the text of every file after the change, and the hash of the bytes
+///   on the disk from when it last read or wrote the file.
+/// - **The store names what it has not written**: see [`unsaved`](Store::unsaved).
+/// - **A save checks every file before it writes one.** When the bytes of one file differ from what the store
+///   expects, or a file is gone or appeared, the save fails with `ChangedOutside`, names every such file, and
+///   writes nothing. Otherwise it replaces every file in one step each, as a change of a store that writes each
+///   change does.
+/// - **Reading again lets go of what was not saved.** The store holds what it read once the reading is taken.
 ///
 /// Whoever shares the store shares one set of definitions: put it behind an `Arc`, or lend it out.
 /// The store needs a Tokio runtime for every method that touches the files.
@@ -131,6 +145,56 @@ impl<D: FileDefinition> FileStore<D> {
 }
 
 impl<D: FileDefinition> Shared<D> {
+    /// Every file that a save would write and that someone changed since the store read or wrote it, with how,
+    /// in one line. `None` when nobody changed one.
+    ///
+    /// # Errors
+    ///
+    /// What the system said about a file that it could not read.
+    fn changed_outside(&self, pending: &[Pending]) -> Result<Option<String>, String> {
+        let mut changed = Vec::new();
+        for Pending { file, on_disk, .. } in pending {
+            let found = disk::read(&self.directory, file).map_err(|reason| format!("{}: {reason}", file.display()))?;
+            changed.extend(held::changed_outside(file, *on_disk, found.as_deref()));
+        }
+        Ok((!changed.is_empty()).then(|| changed.join("; ")))
+    }
+
+    /// Checks every file that a save would write, and writes them when nobody changed one since.
+    fn save(&self) -> Result<(), StoreSaveError> {
+        let _files = lock(&self.files);
+        let pending = lock(&self.held).pending();
+        match self.changed_outside(&pending) {
+            Ok(None) => {}
+            Ok(Some(reason)) => return Err(StoreSaveError::ChangedOutside { reason }),
+            Err(reason) => return Err(StoreSaveError::Failed { reason }),
+        }
+        let mut written = Vec::new();
+        for Pending { file, text, .. } in pending {
+            let wrote = match &text {
+                Some(text) => disk::replace(&self.directory, &file, text),
+                None => match disk::read(&self.directory, &file) {
+                    Ok(None) => Ok(()),
+                    Ok(Some(_)) => disk::remove(&self.directory, &file),
+                    Err(reason) => Err(reason),
+                },
+            };
+            if let Err(reason) = wrote {
+                let before = if written.is_empty() {
+                    "it wrote no file before".to_owned()
+                } else {
+                    format!("it wrote {} before", written.join(", "))
+                };
+                return Err(StoreSaveError::Failed {
+                    reason: format!("{}: {reason}, and {before}", file.display()),
+                });
+            }
+            lock(&self.held).saved(&file);
+            written.push(file.display().to_string());
+        }
+        Ok(())
+    }
+
     /// Checks the file of the change, writes it, and holds what it holds after.
     fn change<E: Refusal>(&self, edit: &Edit<D>, place: impl FnOnce(&Held<D>) -> Result<PathBuf, E>) -> Result<(), E> {
         let _files = lock(&self.files);
@@ -142,6 +206,13 @@ impl<D: FileDefinition> Shared<D> {
         };
         if self.access == Access::ReadOnly {
             return Err(E::failed("the workspace is read-only".to_owned()));
+        }
+        if self.access == Access::WriteOnSave {
+            let mut held = lock(&self.held);
+            let text = held.text(&file).to_owned();
+            let after = held.after(&file, &text, edit).map_err(E::failed)?;
+            held.hold(file, after, edit.name().clone());
+            return Ok(());
         }
 
         let found =
@@ -231,6 +302,45 @@ impl<D: FileDefinition> Store<D> for FileStore<D> {
 
     fn read_only(&self) -> bool {
         self.shared.access == Access::ReadOnly
+    }
+
+    fn write_back(&self) -> WriteBack {
+        match self.shared.access {
+            Access::WriteOnSave => WriteBack::OnSave,
+            Access::ReadWrite | Access::ReadOnly => WriteBack::EachChange,
+        }
+    }
+
+    async fn unsaved(&self) -> Vec<D::Name> {
+        lock(&self.shared.held).unsaved_names()
+    }
+
+    async fn check_unsaved(&self) -> Result<(), StoreSaveError> {
+        let shared = Arc::clone(&self.shared);
+        let checked = tokio::task::spawn_blocking(move || {
+            let _files = lock(&shared.files);
+            let pending = lock(&shared.held).pending();
+            match shared.changed_outside(&pending) {
+                Ok(None) => Ok(()),
+                Ok(Some(reason)) => Err(StoreSaveError::ChangedOutside { reason }),
+                Err(reason) => Err(StoreSaveError::Failed { reason }),
+            }
+        });
+        checked.await.unwrap_or_else(|stopped| {
+            Err(StoreSaveError::Failed {
+                reason: format!("the check stopped before it ended: {stopped}"),
+            })
+        })
+    }
+
+    async fn save(&self) -> Result<(), StoreSaveError> {
+        let shared = Arc::clone(&self.shared);
+        let saved = tokio::task::spawn_blocking(move || shared.save());
+        saved.await.unwrap_or_else(|stopped| {
+            Err(StoreSaveError::Failed {
+                reason: format!("the save stopped before it ended: {stopped}"),
+            })
+        })
     }
 
     async fn read_again(&self) -> Result<Option<Vec<D>>, StoreReadError> {

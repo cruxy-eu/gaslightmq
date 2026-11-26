@@ -226,6 +226,36 @@ pub enum ReloadError {
     StoreFailed { reason: String },
 }
 
+/// Why a workspace did not [save](crate::Workspace::save) the changes that its stores hold.
+///
+/// A save checks every store before any writes, so a change that someone made outside holds up the whole save,
+/// and nothing is written.
+///
+/// ```
+/// use gaslightmq_workspace::prelude::*;
+///
+/// let error = SaveError::ChangedOutside {
+///     reason: "selectors.yaml changed since the store read it; rules/slow.yaml is gone since the store read it"
+///         .to_owned(),
+/// };
+/// assert_eq!(
+///     error.to_string(),
+///     "the workspace saved nothing, because selectors.yaml changed since the store read it; \
+///      rules/slow.yaml is gone since the store read it"
+/// );
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum SaveError {
+    /// Someone changed a place that the save would write, since the store read it, and no store wrote anything.
+    /// A [reload](crate::Workspace::reload) takes the change in. `reason` names every place that changed, and how.
+    #[error("the workspace saved nothing, because {reason}")]
+    ChangedOutside { reason: String },
+    /// A store could not check or write its changes. `reason` names every store that failed, what it said,
+    /// and what it wrote before. What a store did not write, it still holds unsaved.
+    #[error("the workspace was not saved: {reason}")]
+    StoreFailed { reason: String },
+}
+
 /// Every error in one line, with `; ` between them.
 fn each(errors: &[WorkspaceError]) -> String {
     let messages: Vec<String> = errors.iter().map(ToString::to_string).collect();
