@@ -66,6 +66,10 @@ pub enum CreateError {
         name: DefinitionName,
         errors: Vec<WorkspaceError>,
     },
+    /// Someone changed where the store would keep the definition, since the store read it, and the store wrote
+    /// nothing. A [reload](crate::Workspace::reload) takes the change in. `reason` is what the store said changed.
+    #[error("{name} was not created, because {reason}")]
+    ChangedOutside { name: DefinitionName, reason: String },
     /// A store could not read its definitions, or could not keep this one.
     /// `reason` is what the store said, after the store that could not read.
     #[error("{name} was not created: {reason}")]
@@ -101,6 +105,10 @@ pub enum UpdateError {
         name: DefinitionName,
         errors: Vec<WorkspaceError>,
     },
+    /// Someone changed where the store keeps the definition, since the store read it, and the store wrote nothing.
+    /// A [reload](crate::Workspace::reload) takes the change in. `reason` is what the store said changed.
+    #[error("{name} was not updated, because {reason}")]
+    ChangedOutside { name: DefinitionName, reason: String },
     /// A store could not read its definitions, or could not keep the change.
     /// `reason` is what the store said, after the store that could not read.
     #[error("{name} was not updated: {reason}")]
@@ -137,6 +145,10 @@ pub enum DeleteError {
         name: DefinitionName,
         users: Vec<DefinitionName>,
     },
+    /// Someone changed where the store keeps the definition, since the store read it, and the store wrote nothing.
+    /// A [reload](crate::Workspace::reload) takes the change in. `reason` is what the store said changed.
+    #[error("{name} was not deleted, because {reason}")]
+    ChangedOutside { name: DefinitionName, reason: String },
     /// A store could not read its definitions, or could not remove this one.
     /// `reason` is what the store said, after the store that could not read.
     #[error("{name} was not deleted: {reason}")]
@@ -169,6 +181,35 @@ pub enum ValidationError {
     /// A store could not read its definitions, so nobody knows whether they fit.
     /// `reason` names the store, and what it said.
     #[error("the definitions were not validated: {reason}")]
+    StoreFailed { reason: String },
+}
+
+/// Why a workspace did not [reload](crate::Workspace::reload) what its stores hold.
+///
+/// A reload that fails changed nothing: the workspace and its stores hold what they held before.
+///
+/// ```
+/// use gaslightmq_workspace::prelude::*;
+///
+/// let error = ReloadError::StoreFailed {
+///     reason: "the rule store could not be read again: rules/slow.yaml: [0].trigger.every: \
+///              a count is at least one".to_owned(),
+/// };
+/// assert_eq!(
+///     error.to_string(),
+///     "the definitions were not reloaded: the rule store could not be read again: \
+///      rules/slow.yaml: [0].trigger.every: a count is at least one"
+/// );
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum ReloadError {
+    /// What the stores read again does not fit together. `errors` holds everything that is wrong,
+    /// and there is at least one.
+    #[error("the definitions that the stores read again do not fit each other: {}", each(.errors))]
+    Invalid { errors: Vec<WorkspaceError> },
+    /// A store could not read again, or what it read does not read.
+    /// `reason` names every store that failed, and what each one said.
+    #[error("the definitions were not reloaded: {reason}")]
     StoreFailed { reason: String },
 }
 
@@ -312,6 +353,9 @@ mod tests {
         let validated = ValidationError::StoreFailed {
             reason: reason.to_owned(),
         };
+        let reloaded = ReloadError::StoreFailed {
+            reason: reason.to_owned(),
+        };
 
         assert_eq!(
             created.to_string(),
@@ -329,6 +373,56 @@ mod tests {
             validated.to_string(),
             format!("the definitions were not validated: {reason}")
         );
+        assert_eq!(
+            reloaded.to_string(),
+            format!("the definitions were not reloaded: {reason}")
+        );
+    }
+
+    #[test]
+    fn a_change_over_an_edit_that_nobody_read_says_what_changed() {
+        let name = selector("order-producers");
+        let reason = "selectors.yaml changed since the store read it";
+
+        let created = CreateError::ChangedOutside {
+            name: name.clone(),
+            reason: reason.to_owned(),
+        };
+        let updated = UpdateError::ChangedOutside {
+            name: name.clone(),
+            reason: reason.to_owned(),
+        };
+        let deleted = DeleteError::ChangedOutside {
+            name,
+            reason: reason.to_owned(),
+        };
+
+        assert_eq!(
+            created.to_string(),
+            format!("selector \"order-producers\" was not created, because {reason}")
+        );
+        assert_eq!(
+            updated.to_string(),
+            format!("selector \"order-producers\" was not updated, because {reason}")
+        );
+        assert_eq!(
+            deleted.to_string(),
+            format!("selector \"order-producers\" was not deleted, because {reason}")
+        );
+    }
+
+    #[test]
+    fn a_reload_that_does_not_fit_says_everything_that_is_wrong_in_one_line() {
+        let error = ReloadError::Invalid {
+            errors: vec![unknown_selector()],
+        };
+
+        assert_eq!(
+            error.to_string(),
+            "the definitions that the stores read again do not fit each other: \
+             rule \"slow-order-producers\" refers to selector \"order-producers\", which does not exist"
+        );
+        assert!(error.source().is_none());
     }
 
     #[test]

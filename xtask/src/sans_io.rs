@@ -134,7 +134,10 @@ const PATHS: [(&[&str], Reach); 6] = [
 /// The crate of a definition awaits in one module: `store` holds its store trait, whose methods with a body
 /// read what the store lists. Everything else in such a crate is held to the rule of every sans-IO crate.
 /// The check of that trait is a crate of its own, in its directory.
-const AWAITS_STORES: [(&str, &[&str]); 10] = [
+/// The contract has a module `store` too: its trait answers for a store that nobody else changes,
+/// in the methods with a body that such a store keeps as they are.
+const AWAITS_STORES: [(&str, &[&str]); 11] = [
+    ("gaslightmq_definition_api", &["store"]),
     ("gaslightmq_definition_conformance", &[]),
     ("gaslightmq_definition_memory", &[]),
     ("gaslightmq_environment_conformance", &[]),

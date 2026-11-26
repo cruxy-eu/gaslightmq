@@ -39,6 +39,7 @@ members = [
     "crates/gaslightmq_wire",
     "crates/gaslightmq_wire_edit",
     "crates/gaslightmq_workspace",
+    "crates/gaslightmq_workspace_fs",
     "crates/gaslightmq_definition/*",
     "crates/gaslightmq_kafka_client/*",
     "xtask",
@@ -64,6 +65,7 @@ gaslightmq_definition_conformance = { path = "crates/gaslightmq_definition/confo
 gaslightmq_definition_memory = { path = "crates/gaslightmq_definition/memory" }
 gaslightmq_engine = { path = "crates/gaslightmq_engine" }
 gaslightmq_environment = { path = "crates/gaslightmq_environment" }
+gaslightmq_environment_conformance = { path = "crates/gaslightmq_environment/conformance" }
 gaslightmq_field = { path = "crates/gaslightmq_field" }
 gaslightmq_host = { path = "crates/gaslightmq_host" }
 gaslightmq_incident = { path = "crates/gaslightmq_incident" }
@@ -79,9 +81,12 @@ gaslightmq_pipeline = { path = "crates/gaslightmq_pipeline" }
 gaslightmq_quick_inject = { path = "crates/gaslightmq_quick_inject" }
 gaslightmq_resource = { path = "crates/gaslightmq_resource" }
 gaslightmq_rule = { path = "crates/gaslightmq_rule" }
+gaslightmq_rule_conformance = { path = "crates/gaslightmq_rule/conformance" }
 gaslightmq_selector = { path = "crates/gaslightmq_selector" }
+gaslightmq_selector_conformance = { path = "crates/gaslightmq_selector/conformance" }
 gaslightmq_session = { path = "crates/gaslightmq_session" }
 gaslightmq_surface = { path = "crates/gaslightmq_surface" }
+gaslightmq_surface_conformance = { path = "crates/gaslightmq_surface/conformance" }
 gaslightmq_test_kafka = { path = "crates/gaslightmq_test_kafka" }
 gaslightmq_traffic = { path = "crates/gaslightmq_traffic" }
 gaslightmq_trigger = { path = "crates/gaslightmq_trigger" }
@@ -116,10 +121,15 @@ reqwest = { version = "0.13", default-features = false }
 rust-embed = { version = "8", features = ["mime-guess"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+# Only `gaslightmq_workspace_fs` names it: the path of the key that a file of a workspace failed to read at.
+serde_path_to_error = "0.1"
 # Reads YAML into serde types. The `ci-parity` check in `xtask/` reads the CI workflow with it.
+# `gaslightmq_workspace_fs` reads and writes the files of a workspace with it, and finds their comments.
 serde-saphyr = { version = "2", default-features = false, features = ["deserialize"] }
 serde_test = "1"
 syn = { version = "3", default-features = false, features = ["full", "parsing", "visit"] }
+# Only tests name it: the directories of a workspace that a test writes, gone when the test ends.
+tempfile = "3"
 # Only error types use it: it derives `Error` and the message. No error has a source, see the `wrapped-errors` check.
 thiserror = "2"
 tokio = "1"
