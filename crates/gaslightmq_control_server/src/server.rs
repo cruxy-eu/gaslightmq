@@ -157,7 +157,10 @@ impl fmt::Debug for ControlServer {
     }
 }
 
-/// Answers one request to the operations: reads its operation, and answers it.
+/// Answers one request to the operations: reads its operation and where it comes from, and answers it.
+///
+/// A body that holds no operation, that does not say where it comes from, or that claims a surface which only the
+/// process names is no request, and gets a [`RequestError::Unreadable`].
 async fn operation<C: WorkspaceContext + 'static>(State(shared): State<Shared<C>>, body: Body) -> Response {
     let reply = match to_bytes(body, shared.request_limit.bytes()).await {
         Err(error) => Reply::Refused(RequestError::Unreadable {
@@ -166,8 +169,8 @@ async fn operation<C: WorkspaceContext + 'static>(State(shared): State<Shared<C>
                 shared.request_limit
             ),
         }),
-        Ok(bytes) => match serde_json::from_slice::<AnyOperation>(&bytes) {
-            Ok(operation) => shared.plane.answer(operation).await,
+        Ok(bytes) => match serde_json::from_slice::<OperationRequest>(&bytes) {
+            Ok(request) => shared.plane.answer(request).await,
             Err(error) => Reply::Refused(RequestError::Unreadable {
                 reason: error.to_string(),
             }),

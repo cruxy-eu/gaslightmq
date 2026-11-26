@@ -97,6 +97,105 @@ impl OrderDesk {
 // Requests
 
 #[test]
+fn a_request_says_where_it_comes_from_next_to_its_operation() {
+    // Someone presses a pad, and the UI arms the rule of the pad in the environment it shows.
+    let arm = ArmRule {
+        environment: "orders-sim".parse().unwrap(),
+        rule: "slow-order-producers".parse().unwrap(),
+    };
+
+    Form(OperationRequest::new(RequestSurface::Pad, arm)).writes(json!({
+        "from": { "surface": "pad" },
+        "operation": "arm-rule",
+        "environment": "orders-sim",
+        "rule": "slow-order-producers",
+    }));
+}
+
+#[test]
+fn every_surface_that_sends_requests_has_a_name() {
+    Form(RequestSurface::Pad).writes(json!("pad"));
+    Form(RequestSurface::QuickInject).writes(json!("quick-inject"));
+    Form(RequestSurface::Ui).writes(json!("ui"));
+    Form(RequestSurface::Cli).writes(json!("cli"));
+    Form(RequestSurface::Test).writes(json!("test"));
+    Form(RequestSurface::Api).writes(json!("api"));
+}
+
+#[test]
+fn an_undo_and_a_redo_say_their_cause() {
+    // ⌘Z in a tab takes back the arming of a rule, and ⇧⌘Z arms it again.
+    let environment: EnvironmentName = "orders-sim".parse().unwrap();
+    let rule: RuleName = "slow-order-producers".parse().unwrap();
+    let undo = RequestSource::new(RequestSurface::Ui).with_cause(RequestCause::Undo);
+    let redo = RequestSource::new(RequestSurface::Ui).with_cause(RequestCause::Redo);
+
+    Form(OperationRequest::new(
+        undo,
+        DisarmRule {
+            environment: environment.clone(),
+            rule: rule.clone(),
+        },
+    ))
+    .writes(json!({
+        "from": { "surface": "ui", "cause": "undo" },
+        "operation": "disarm-rule",
+        "environment": "orders-sim",
+        "rule": "slow-order-producers",
+    }));
+    Form(OperationRequest::new(redo, ArmRule { environment, rule })).writes(json!({
+        "from": { "surface": "ui", "cause": "redo" },
+        "operation": "arm-rule",
+        "environment": "orders-sim",
+        "rule": "slow-order-producers",
+    }));
+}
+
+#[test]
+fn a_request_that_does_not_say_where_it_comes_from_does_not_read() {
+    Form::<OperationRequest>::rejects(
+        json!({ "operation": "arm-rule", "environment": "orders-sim", "rule": "slow-order-producers" }),
+        "missing field `from`",
+    );
+    Form::<OperationRequest>::rejects(
+        json!({ "from": { "cause": "undo" }, "operation": "list-rules" }),
+        "missing field `surface`",
+    );
+}
+
+#[test]
+fn a_request_cannot_claim_a_surface_that_the_process_names_itself() {
+    // A step, a lifetime and a file change things without a request.
+    for surface in ["step", "lifetime", "file"] {
+        Form::<OperationRequest>::rejects(
+            json!({ "from": { "surface": surface }, "operation": "list-rules" }),
+            &format!("unknown variant `{surface}`"),
+        );
+    }
+}
+
+#[test]
+fn a_request_reads_its_operation_as_strictly_as_the_operation_reads_alone() {
+    Form::<OperationRequest>::rejects(
+        json!({ "from": { "surface": "cli" }, "operation": "rename-rule", "name": "x" }),
+        "unknown variant `rename-rule`",
+    );
+    Form::<OperationRequest>::rejects(
+        json!({ "from": { "surface": "cli" }, "operation": "arm-rule", "rule": "x" }),
+        "missing field `environment`",
+    );
+    // A misspelt key would otherwise be dropped without a word, next to the operation or inside `from`.
+    Form::<OperationRequest>::rejects(
+        json!({ "from": { "surface": "cli" }, "operation": "list-rules", "form": { "surface": "cli" } }),
+        "unknown field `form`",
+    );
+    Form::<OperationRequest>::rejects(
+        json!({ "from": { "surface": "cli", "because": "undo" }, "operation": "list-rules" }),
+        "unknown field `because`",
+    );
+}
+
+#[test]
 fn an_operation_on_a_definition_names_its_kind() {
     // Someone saves a new selector in the UI.
     Form(AnyOperation::from(CreateDefinition {

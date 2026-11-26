@@ -90,8 +90,12 @@ impl<C: WorkspaceContext + 'static> ControlPlane<C> {
         &self.host
     }
 
-    /// Answers one operation.
-    pub(crate) async fn answer(&self, operation: AnyOperation) -> Reply {
+    /// Answers one request.
+    ///
+    /// The request says where it comes from, and nothing records that yet:
+    /// the journal of an environment does, once the engine has one.
+    pub(crate) async fn answer(&self, request: OperationRequest) -> Reply {
+        let OperationRequest { from: _, operation } = request;
         match operation {
             AnyOperation::ListSelectors(_) => Reply::of::<ListDefinitions<Selector>>(self.list().await),
             AnyOperation::GetSelector(get) => Reply::of::<GetDefinition<Selector>>(self.get(get.name).await),

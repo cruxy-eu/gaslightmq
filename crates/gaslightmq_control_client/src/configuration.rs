@@ -1,5 +1,6 @@
 //! What a client of the control plane is configured with.
 
+use gaslightmq_control_api::RequestSurface;
 use gaslightmq_control_api::clock::TimeSpan;
 
 use crate::address::ControlPlaneAddress;
@@ -10,12 +11,17 @@ use crate::address::ControlPlaneAddress;
 /// so no property is one of Kafka's: each is ours, and says so.
 ///
 /// ```
-/// use gaslightmq_control_client::ControlClientConfiguration;
+/// use gaslightmq_control_api::RequestSurface;
 /// use gaslightmq_control_api::clock::TimeSpan;
+/// use gaslightmq_control_client::ControlClientConfiguration;
 ///
 /// let mut configuration = ControlClientConfiguration::new("http://localhost:9080".parse()?);
 /// assert_eq!(configuration.request_timeout, TimeSpan::from_secs(30));
+/// // A program that says nothing about itself is any other client of the control plane.
+/// assert_eq!(configuration.surface, RequestSurface::Api);
 ///
+/// // `gmq` says that it is `gmq`.
+/// configuration.surface = RequestSurface::Cli;
 /// configuration.request_timeout = TimeSpan::from_secs(5);
 /// # Ok::<(), gaslightmq_control_client::ControlPlaneAddressError>(())
 /// ```
@@ -26,6 +32,12 @@ pub struct ControlClientConfiguration {
     ///
     /// Where the control plane listens.
     pub address: ControlPlaneAddress,
+    /// Ours. Default: [`RequestSurface::Api`], any other client of the control plane.
+    ///
+    /// The surface that the client is: every request says that it comes from there,
+    /// unless the request [names its source](crate::ControlClient::send_from) itself.
+    /// The UI, `gmq` and a test library each say which they are.
+    pub surface: RequestSurface,
     /// Ours. Default: 30 seconds.
     ///
     /// How long the client waits for the control plane: for the answer to an operation,
@@ -39,6 +51,7 @@ impl ControlClientConfiguration {
     pub fn new(address: ControlPlaneAddress) -> Self {
         Self {
             address,
+            surface: RequestSurface::Api,
             request_timeout: TimeSpan::from_secs(30),
         }
     }

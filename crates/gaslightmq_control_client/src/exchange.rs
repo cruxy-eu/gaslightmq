@@ -2,7 +2,7 @@
 //!
 //! Each transport moves text, and this module says what the text is and what it means.
 
-use gaslightmq_control_api::{AnyOperation, Operation, RequestError, StreamMessage, Subscription};
+use gaslightmq_control_api::{Operation, OperationRequest, RequestError, RequestSource, StreamMessage, Subscription};
 use serde::de::DeserializeOwned;
 
 use crate::error::{SendError, StreamError};
@@ -16,20 +16,21 @@ pub(crate) const STREAM_PATH: &str = "api/stream";
 /// The content type of every request and of every answer.
 pub(crate) const JSON: &str = "application/json";
 
-/// An operation, as the text of one request.
-pub(crate) struct OperationRequest {
+/// One request, as the text that travels: an operation, and where it comes from.
+pub(crate) struct RequestText {
     /// The name of the operation, as its form names it: `arm-rule`. A message names it.
     pub(crate) name: &'static str,
     /// The body of the request.
     pub(crate) body: String,
 }
 
-impl OperationRequest {
-    pub(crate) fn of<O: Operation>(operation: O) -> Self {
-        let any: AnyOperation = operation.into();
+impl RequestText {
+    /// The request that asks `operation`, and comes from `from`.
+    pub(crate) fn of<O: Operation>(from: RequestSource, operation: O) -> Self {
+        let request = OperationRequest::new(from, operation);
         Self {
-            name: any.name(),
-            body: serde_json::to_string(&any).expect("every operation has a form"),
+            name: request.operation.name(),
+            body: serde_json::to_string(&request).expect("every request has a form"),
         }
     }
 
@@ -110,15 +111,19 @@ mod tests {
         }
     }
 
+    /// The source of a request of `gmq`.
+    const FROM_THE_CLI: RequestSource = RequestSource::new(RequestSurface::Cli);
+
     #[test]
-    fn a_request_is_the_form_of_its_operation() {
-        let request = OperationRequest::of(arm_rule());
+    fn a_request_is_the_form_of_its_operation_with_where_it_comes_from() {
+        let request = RequestText::of(FROM_THE_CLI, arm_rule());
 
         assert_eq!(request.name, "arm-rule");
         let body: serde_json::Value = serde_json::from_str(&request.body).expect("json");
         assert_eq!(
             body,
             serde_json::json!({
+                "from": { "surface": "cli" },
                 "operation": "arm-rule",
                 "environment": "orders-sim",
                 "rule": "delay-1s-on-order-producers",
@@ -128,7 +133,7 @@ mod tests {
 
     #[test]
     fn a_refusal_is_the_error_of_the_operation() {
-        let request = OperationRequest::of(arm_rule());
+        let request = RequestText::of(FROM_THE_CLI, arm_rule());
         let reply = Reply {
             status: Reply::REFUSED,
             body: r#"{ "error": "not-running", "environment": "orders-sim" }"#.to_owned(),
@@ -149,7 +154,7 @@ mod tests {
 
     #[test]
     fn an_answer_of_another_form_is_unreadable() {
-        let request = OperationRequest::of(arm_rule());
+        let request = RequestText::of(FROM_THE_CLI, arm_rule());
         let reply = Reply {
             status: Reply::ANSWERED,
             body: r#"{ "armed": true }"#.to_owned(),
@@ -163,7 +168,7 @@ mod tests {
 
     #[test]
     fn another_status_is_unreadable() {
-        let request = OperationRequest::of(arm_rule());
+        let request = RequestText::of(FROM_THE_CLI, arm_rule());
         let reply = Reply {
             status: 404,
             body: "not found".to_owned(),
@@ -181,7 +186,7 @@ mod tests {
 
     #[test]
     fn an_operation_that_the_control_plane_does_not_serve_is_rejected() {
-        let request = OperationRequest::of(arm_rule());
+        let request = RequestText::of(FROM_THE_CLI, arm_rule());
         let reply = Reply {
             status: Reply::NOT_SERVED,
             body: r#"{ "error": "not-served", "operation": "arm-rule" }"#.to_owned(),

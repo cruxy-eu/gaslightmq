@@ -49,7 +49,48 @@ mod operations {
         assert_eq!(request.path, "/api/operations");
         assert_eq!(
             serde_json::from_str::<serde_json::Value>(&request.body)?,
-            serde_json::json!({ "operation": "arm-rule", "environment": "orders-sim", "rule": "delay-1s-on-order-producers" }),
+            serde_json::json!({
+                "from": { "surface": "api" },
+                "operation": "arm-rule",
+                "environment": "orders-sim",
+                "rule": "delay-1s-on-order-producers",
+            }),
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn a_request_says_the_surface_of_its_client_or_the_source_it_names_itself() -> anyhow::Result<()> {
+        let control_plane = ScriptedControlPlane::start().await?;
+        // The UI is one client: its views send from `ui`, its pads from `pad`, and ⌘Z says that it takes back.
+        let mut configuration = ControlClientConfiguration::new(control_plane.address()?);
+        configuration.surface = RequestSurface::Ui;
+        let ui = ControlClient::new(configuration);
+        let arm = ArmRule {
+            environment: "orders-sim".parse()?,
+            rule: "delay-1s-on-order-producers".parse()?,
+        };
+        let disarm = DisarmRule {
+            environment: arm.environment.clone(),
+            rule: arm.rule.clone(),
+        };
+        let undo = RequestSource::new(RequestSurface::Ui).with_cause(RequestCause::Undo);
+
+        let (_, from_a_view) = tokio::join!(ui.send(arm.clone()), control_plane.answer(()));
+        let (_, from_a_pad) = tokio::join!(ui.send_from(RequestSurface::Pad, arm.clone()), control_plane.answer(()));
+        let (_, taken_back) = tokio::join!(ui.send_from(undo, disarm.clone()), control_plane.answer(()));
+
+        assert_eq!(
+            serde_json::from_str::<OperationRequest>(&from_a_view?.body)?,
+            OperationRequest::new(RequestSurface::Ui, arm.clone()),
+        );
+        assert_eq!(
+            serde_json::from_str::<OperationRequest>(&from_a_pad?.body)?,
+            OperationRequest::new(RequestSurface::Pad, arm),
+        );
+        assert_eq!(
+            serde_json::from_str::<OperationRequest>(&taken_back?.body)?,
+            OperationRequest::new(undo, disarm),
         );
         Ok(())
     }
