@@ -1,0 +1,23 @@
+[package]
+name = "gaslightmq_journal"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lints]
+workspace = true
+
+[features]
+serde = ["dep:serde", "gaslightmq_clock/serde", "gaslightmq_incident/serde"]
+
+[dependencies]
+gaslightmq_clock.workspace = true
+gaslightmq_incident.workspace = true
+gaslightmq_resource.workspace = true
+serde = { workspace = true, optional = true }
+thiserror.workspace = true
+
+[dev-dependencies]
+# What an incident of a test names: brokers and partitions.
+gaslightmq_kernel.workspace = true
+serde_json.workspace = true
