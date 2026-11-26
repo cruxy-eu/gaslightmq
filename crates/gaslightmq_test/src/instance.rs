@@ -5,6 +5,7 @@ use std::sync::Arc;
 
 use gaslightmq_control_api::environment::{EnvironmentName, ServerAddress};
 use gaslightmq_control_api::field::Endpoint;
+use gaslightmq_control_api::journal::ChangeSurface;
 use gaslightmq_control_api::{RequestSurface, RunId};
 use gaslightmq_control_client::{ControlClient, ControlClientConfiguration, ControlPlaneAddress};
 use gaslightmq_control_server::ControlServer;
@@ -124,7 +125,7 @@ impl<C: WorkspaceContext + 'static> GaslightMqConfiguration<C> {
             every_lie(),
             gaslightmq_host::RunId::from_random_bits(run.bits()),
         ));
-        host.create(proxy)
+        host.create(proxy, ChangeSurface::Test)
             .await
             .map_err(|error| GaslightMqStartError::EnvironmentNotCreated { error })?;
         host.start(configuration)
