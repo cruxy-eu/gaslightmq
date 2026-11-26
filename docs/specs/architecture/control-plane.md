@@ -29,7 +29,7 @@ It is then set up by flags and files alone.
 | `world` | Only for an environment with a broker. Get state, apply an incident, save as a world definition, set the clock. [Preview the records](#drafts) at an offset. |
 | `backend` | Get the backend kind, its endpoints and its capabilities. |
 | `environments` | List and get the environments of the workspace. Start and stop one. Say whether every environment that the process was started with runs. |
-| `journal` | Query what changed in an environment: arms, disarms, parameter changes, definitions, steps and incidents. |
+| `journal` | [Query what changed](#the-journal) in an environment: arms, disarms, parameter changes, definitions, steps and incidents. |
 | `capture` | Start, stop and save as a scenario. |
 | `quick-inject` | [Parse a ⌘K sentence](#drafts) into a rule definition, with completions. |
 
@@ -109,6 +109,7 @@ Every request says which surface sends it.
 | `presence` | The ID of the [presence](#presence) of its sender, when the sender has one. A request leaves it out otherwise. |
 
 The [journal](../domains/observation.md#journal) records the surface and the cause with every change that the request makes.
+It records no presence: an entry says where a change came from, and not who was there.
 The control plane has no users, so `from` is what the sender says about itself.
 
 A client says once which surface it is, and every request of it says so.
@@ -320,6 +321,53 @@ it arms, disarms, creates or updates the rule as the press or the turn left it.
 
 The [journal](../domains/observation.md#the-journal-only-grows) records an undo as a new change with its cause, next to the change it took back.
 
+## The journal
+
+Each environment that runs has a [journal](../domains/observation.md#journal) of its own.
+The engine keeps its recent entries in memory, and the control plane hands them out as they are.
+
+```json
+{ "from": { "surface": "cli" }, "operation": "query-journal", "environment": "orders-sim", "after": 41 }
+```
+
+```json
+[
+  { "id": 42, "at": 4200000000, "revision": 12, "from": { "surface": "pad" }, "change": "rule-armed", "rule": "slow-order-producers" },
+  { "id": 43, "at": 9700000000, "revision": 13, "from": { "surface": "ui", "cause": "undo" }, "change": "rule-disarmed", "rule": "slow-order-producers" }
+]
+```
+
+| Part of an entry | Says |
+|---|---|
+| `id` | The [ID](identity.md#journal-entry-id) of the entry: a number that the environment counts from 1. |
+| `at` | The time, in nanoseconds on the clock of the environment, as the timing of a call says it. |
+| `revision` | The [revision](#revisions) that the change left. An entry of what left none, such as a firing, leaves the key out. |
+| `from` | The surface that the change came from, and its cause when it has one, in the form of the `from` of a [request](#where-a-request-comes-from). The surface can be one that no request names: `step`, `lifetime` or `file`. |
+| `change` | Which change it is, such as `rule-armed`. The other keys of the entry belong to the change. |
+
+| `change` | Other keys |
+|---|---|
+| `rule-armed`, `rule-disarmed`, `rule-fired-by-hand` | `rule`: the name of the rule. |
+| `parameter-changed` | `rule`, `parameter`, `old` and `new`. The parameter is `chance`, `every`, `delay`, `jitter`, `throttle`, `error` or `lifetime`, and both values are text. |
+| `live-rule-made`, `live-rule-changed`, `live-rule-kept`, `live-rule-deleted` | `rule`. |
+| `definition-created`, `definition-changed`, `definition-deleted` | `definition`: the kind and the name, such as `{ "rule": "slow-order-producers" }`. |
+| `incident-applied`, `incident-emulated` | `incident`: the incident, with its `consequences`. |
+
+- **A query answers with the entries that the engine keeps, the oldest first.**
+  With `after`, it answers with the entries that came after the entry of that ID.
+  An environment that does not run has no journal, and the query fails as every command on something live does.
+- **Every new entry is a `journal-entry` of the [live stream](#live-stream).**
+  It reaches every client, and the entries of one environment come in the order of their IDs.
+  A change of a definition comes once for every environment that runs.
+- **The snapshot holds no journal.**
+  A client that shows a journal reads it with a query, and takes every later entry from the stream.
+  An entry can come twice that way, and the client knows it by its ID.
+  A client that got a new snapshot asks for the entries after the last one it holds.
+- **The IDs have no gap.**
+  A client that gets an entry whose ID is not the next one knows that the engine let go of the entries in between.
+- **The revision ties an entry to an answer.**
+  A change answers with the revision it left, and the entry of that change holds the same one.
+
 ## Drafts
 
 A control surface holds none of the engine's logic.
@@ -350,7 +398,7 @@ The WebSocket streams:
 | Message | Carries |
 |---|---|
 | **Present** | The ID of the [presence](#presence) of this client. It is the first message, and comes once. |
-| **Snapshot** | The full state, sent when a client connects: the [run ID](identity.md#run), every definition of the workspace, and every environment that runs with its backend, its rules and its sessions. Whatever has a revision comes with it. |
+| **Snapshot** | The full state, sent when a client connects: the [run ID](identity.md#run), every definition of the workspace, and every environment that runs with its backend, its rules and its sessions. Whatever has a revision comes with it. It holds no [journal](#the-journal). |
 | **Call** | One call event: request summary, verdict and explanation. |
 | **Stats** | Matches, firings and remaining budget per rule, and calls per API, at a fixed interval. |
 | **Rule changed, removed** | A rule of an environment changed state, or a live rule was made or changed its definition, with its revision. A live rule left its environment: someone deleted or kept it. |
@@ -359,7 +407,7 @@ The WebSocket streams:
 | **Recording started, stopped** | A recording of an environment began or ended, and why it ended when nobody stopped it. |
 | **World changed** | An incident changed the World, or the Upstream backend's overlay. |
 | **Session opened, identified, software named, closed** | Session lifecycle. The client software comes with the identification, or later with the first `ApiVersions` request that names it. |
-| **Journal entry** | Something changed in an environment, with the time, the surface that changed it and the cause. |
+| **Journal entry** | Something changed in an environment: the [entry](#the-journal) of its journal, with its ID, the time, the revision that the change left, and the surface and the cause that it came from. |
 | **Environment started, stopped** | An environment came up, with its backend, its rules and its sessions, or went down. |
 | **Following** | The last subscription of this client is in force: the server sends every call it names from here on. |
 | **Subscription refused** | The last subscription of this client cannot be followed, and why. The client follows no calls. |
@@ -436,6 +484,7 @@ Every frame is a text frame.
 - **A message is a state, not a difference.**
   A change says what a rule, a definition or an environment is now.
   A change can repeat what the snapshot holds already, and applying it again changes nothing.
+  A call, what happens to a session and a `journal-entry` are no states: each says what happened, once.
 - **The later revision is the newer state.**
   A client that already holds a later revision of a thing, from the answer to its own change, drops a message that brings an earlier one.
 - **A snapshot that names another run is another process.**
@@ -485,6 +534,7 @@ A change whose subject is gone again by then sends nothing, because a later mess
 | A rule armed or disarmed in an environment, or a live rule was made or changed. | `rule-changed` with the rule and its state. |
 | A live rule left its environment. | `rule-removed`. Keeping a live rule sends `rule-removed`, `definition-changed` and `rule-changed`, in that order. |
 | A session opened, was identified, named its software, or closed. | The message of the session. |
+| The journal of an environment got an entry. | `journal-entry` with the entry, as the journal holds it. It comes beside the messages of the change that it records, before or after them. |
 
 A rule of the workspace that someone creates sends `definition-changed` alone: every environment holds it, disarmed.
 `stats` comes for every environment that runs, at the interval of the server's configuration.
@@ -499,10 +549,9 @@ an older process, or one built without a part.
 No operation reloads the workspace yet.
 It arrives with the stores of files: a store in memory has nothing to reload.
 
-Every request says where it comes from, and nothing records it yet.
-The server reads it and refuses a request without it.
-The host takes the presence of a request with an intent, so that a hold ends with it.
-It takes the surface and the cause of every change once the journal exists, which records them.
+The journal has no entry of a scenario, a step or a recording yet: those arrive with their operations.
+No backend applies or emulates an incident yet, so no journal has an entry of one.
+No change has the surface `step` or `file` yet.
 
 The scenario of an environment has no revision yet: no operation activates a scenario or steps one.
 Its revision, and the `expects` of those operations, arrive with them.

@@ -80,7 +80,7 @@ See [observation](../domains/observation.md).
 | Verdict       | Part of a call      | —    | —                  | —     |
 | Explanation   | Part of a call      | —    | —                  | —     |
 | Recording     | Observed            | —    | Its environment and the instant it started | —     |
-| Journal entry | Observed            | —    | A number, counted per environment          | —     |
+| Journal entry | Observed            | —    | `JournalEntryId`, a number                 | —     |
 | Index         | Part of a recording | —    | —                  | —     |
 
 ### World
@@ -306,9 +306,13 @@ A name holds no `.`, so the first one ends the name of the environment.
 
 ### Journal entry ID
 
-A journal entry has one number.
+A `JournalEntryId` is one number.
 Each environment counts its entries from 1, so a higher number is a later entry.
 The number is unique within one run of an environment, and within a recording, as a call ID is.
+
+The engine keeps the count of its environment, and gives an entry its ID when someone records the change.
+It keeps the recent entries in memory, and an entry that left memory keeps its number:
+a reader that finds a gap in the IDs knows that entries are gone.
 
 ### What an observed entity says about a user-defined one
 

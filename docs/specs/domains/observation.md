@@ -100,9 +100,9 @@ Each environment has a journal of its own.
 | Entry | Records |
 |---|---|
 | Rule armed or disarmed | The rule. |
-| Parameter changed | The rule, the parameter, the old and the new value. |
+| Parameter changed | The live rule, the parameter, the old and the new value. |
 | Rule fired by hand | The rule. |
-| Live rule made, kept or deleted | The rule. |
+| Live rule made, changed, kept or deleted | The rule. |
 | Definition created, changed or deleted | The definition and its kind. |
 | Scenario activated or deactivated, step advanced | The scenario, and the step by its name. |
 | Incident applied or emulated | The incident and its consequences. |
@@ -114,15 +114,40 @@ A change of a definition therefore enters the journal of every environment that 
 Every entry carries:
 
 - its [ID](../architecture/identity.md#journal-entry-id), a number that the environment counts from 1,
-- the time,
+- the time, on the clock of the environment, which is the clock of its [calls](#call),
 - the [revision](../architecture/identity.md#revision) that the change left, when the change has one,
 - the surface the change came from,
 - the cause, when the change takes back or repeats an earlier one: `undo` or `redo`.
+
+A firing and an incident are what happens, and no change of what someone set, so their entries have no revision.
 
 An entry names a definition by its name.
 A name can go and come back, so the journal records every creation and every deletion of a definition.
 The entries between a creation and the next deletion are the history of [one definition](../architecture/identity.md#two-definitions-of-one-name), and the history of one rule never runs into the history of another.
 The revision orders the entries of every environment of one run, because one counter gives all of them.
+
+- **A parameter is one part of a rule that a turn of an encoder changes.**
+  It is the chance or the `every` count of the trigger, the delay, the jitter or the throttle of a timing lie,
+  the error of a refusal, or the lifetime.
+  The entry holds the old and the new value as a definition writes them, such as `1s` and `1100ms`.
+- **A live rule that someone replaces as a whole has changed.**
+  An update of a live rule can change everything but its name, so its entry names the rule, and no parameter.
+  The undo of a turn is such an update.
+- **One change can be two entries, with one revision.**
+  A live rule that is made armed is made and armed.
+  An armed live rule that is deleted is disarmed and deleted.
+  Every arming in a journal therefore ends with a disarm, and [Capture](scenarios.md#capture) finds both.
+- **A live rule that someone keeps goes on.**
+  The journal of its environment records that it was kept, and its history goes on under the same name.
+  For every other environment that runs, the workspace has a new rule: their journals record that it was created.
+- **A lifetime that ended has its entry a moment later.**
+  A rule whose lifetime ended or whose budget is spent disarms inside its proxy.
+  Its entry comes when the engine [counts the change](../architecture/control-plane.md#revisions), with the revision and the time of that moment.
+- **The start and the stop of an environment are no entries.**
+  A journal begins and ends with its environment.
+- **The entries of scenarios and recordings arrive with them.**
+  Until a scenario runs and a recording records, no journal has an entry of a scenario, a step or a recording.
+  No backend applies or emulates an incident yet either, so no journal has such an entry so far.
 
 ### Surfaces
 
@@ -144,6 +169,11 @@ The journal records the surface, and not a person: the control plane has no user
 A [request](../architecture/control-plane.md#where-a-request-comes-from) names one of the first six.
 The engine names the last three itself, and no request can claim them.
 
+A [presence](../architecture/control-plane.md#presence) that ends takes its holds with it, and a rule that disarms with its last hold has the surface `pad`:
+the engine takes the hold away as the release would have, which the surface never sent.
+
+No change has the surface `step` until a scenario runs, and none has `file` until the workspace reloads.
+
 ### The journal only grows
 
 Nothing takes an entry out of the journal.
@@ -151,7 +181,11 @@ An [undo](control-surfaces.md#undo-and-redo) is a change like any other: it adds
 The journal then shows both: that someone armed a rule, and that they took it back.
 
 The engine always keeps the recent journal in memory.
+It keeps as many entries as `recent_journal` of its configuration says, 1000 until someone sets it,
+and lets go of the oldest entry when a new one would be one too many.
+An entry that left memory keeps its number, and no later entry gets it.
 It feeds the history of a rule in the UI, and [Capture](scenarios.md#capture) reads it.
+The control plane [answers with it](../architecture/control-plane.md#the-journal), and sends every new entry to the live stream.
 While a recording runs, the journal entries go into the recording between the calls.
 A recording therefore explains itself:
 it shows which rules were armed when a call arrived.
