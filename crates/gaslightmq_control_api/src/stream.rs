@@ -3,6 +3,7 @@
 use gaslightmq_call::Call;
 use gaslightmq_environment::EnvironmentName;
 use gaslightmq_field::{ClientSoftware, ConnectionNumber};
+use gaslightmq_journal::JournalEntry;
 use gaslightmq_rule::RuleName;
 use gaslightmq_selector::SelectorRef;
 use gaslightmq_surface::PresenceId;
@@ -86,6 +87,16 @@ pub enum StreamMessage {
         environment: EnvironmentName,
         connection: ConnectionNumber,
         by: SessionCloser,
+    },
+    /// Something changed in the environment, and this is its entry in the journal of the environment:
+    /// what changed, when, the revision that the change left, and the surface and the cause that it came from.
+    /// A change of a definition comes once for every environment that runs.
+    ///
+    /// The entries of one environment come in the order of their IDs. The snapshot holds no journal:
+    /// a client reads the entries before with [`QueryJournal`](crate::QueryJournal).
+    JournalEntry {
+        environment: EnvironmentName,
+        entry: JournalEntry,
     },
     /// An environment came up, with what is live in it.
     EnvironmentStarted { environment: RunningEnvironment },

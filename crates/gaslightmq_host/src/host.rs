@@ -13,13 +13,14 @@ use gaslightmq_backend_upstream::UpstreamBackend;
 use gaslightmq_clock::Clock;
 use gaslightmq_clock_waitable::WallClock;
 use gaslightmq_definition_api::{Definition, Store, StoreReadError};
-use gaslightmq_engine::{ArmError, ArmedRules, DisarmError, Engine, EveryEvent, LiveEvents, NotOpenError, OpenSession};
+use gaslightmq_engine::{ArmError, DisarmError, Engine, EveryEvent, LiveEvents, NotOpenError, OpenSession};
 use gaslightmq_environment::{EnvironmentName, Listeners};
 use gaslightmq_field::{ConnectionNumber, Endpoint};
-use gaslightmq_incident::IncidentSupport;
+use gaslightmq_incident::{IncidentSupport, Support};
+use gaslightmq_journal::{Change, ChangeSource, JournalEntry, JournalEntryId};
 use gaslightmq_lie_api::Lies;
 use gaslightmq_quick_inject::{KnownNames, QuickInject, Sentence};
-use gaslightmq_rule::{HandFiring, Preset, PresetSet, ResolvedRule, Rule, RuleError, RuleName};
+use gaslightmq_rule::{HandFiring, Preset, PresetSet, ResolvedRule, Rule, RuleError, RuleName, Snapshot};
 use gaslightmq_selector::{Selector, SelectorRef, SelectorSet};
 use gaslightmq_surface::{EncoderMapping, PresenceId};
 use gaslightmq_traffic::{Statistics, Traffic, TrafficConfiguration};
@@ -36,6 +37,7 @@ use crate::{
     ArmRuleError, CallBacklog, CallSubscription, CloseSessionError, CreateDefinitionError, DeleteDefinitionError,
     DisarmRuleError, EnvironmentConfiguration, EnvironmentStartError, Expects, FireRuleError, FollowCallsError,
     HostChange, HostChanges, HostConfiguration, NotRunningError, ReadSentenceError, RunId, UpdateDefinitionError,
+    journaling,
 };
 
 mod live;
@@ -94,9 +96,30 @@ mod watch;
 /// A rule whose lifetime ended disarms inside its proxy. The host counts that change when it next looks at the
 /// armed rules: a moment later, or when someone reads or changes a rule of the environment before that.
 ///
+/// # The journal
+///
+/// Each environment has a [journal](Self::journal) of its own, which its proxy keeps, and the host writes it.
+/// Whoever asks the host for a change says where it comes from: a [`ChangeSource`], which is the surface that
+/// asks, and the cause of a change that takes back or repeats an earlier one.
+/// The host records the change with it, and with the revision that the change left.
+///
+/// - **A change of a rule in an environment** enters the journal of that environment.
+/// - **A change of a definition** enters the journal of every environment that runs, and no journal when none
+///   runs: a definition belongs to the workspace, and not to one environment.
+/// - **A change that nobody asked for** has a surface that the host names itself.
+///   A rule whose lifetime ended or whose budget is spent has the surface `lifetime`.
+///   A rule that disarms because the presence that held its pad ended has the surface `pad`,
+///   as the release that never came would have had.
+/// - **One change can be two entries** with one revision: a live rule that is made armed is made and armed,
+///   and an armed live rule that is deleted is disarmed and deleted.
+/// - **The start and the stop of an environment have no entry.** A journal begins and ends with its environment.
+///
+/// Whoever follows the host gets every entry as a [`HostChange::Journaled`].
+///
 /// ```
 /// use gaslightmq_environment::EnvironmentName;
 /// use gaslightmq_host::prelude::*;
+/// use gaslightmq_journal::prelude::*;
 /// use gaslightmq_lie::prelude::*;
 /// use gaslightmq_lie_api::prelude::*;
 /// use gaslightmq_rule::prelude::*;
@@ -109,13 +132,14 @@ mod watch;
 /// let run: RunId = "4be0643f1d98573b97cdca98a65347dd".parse().expect("a run ID");
 /// let host = Host::new(HostConfiguration::default(), MemoryContext::new(), Lies::of_every_build(), run);
 /// let quiet = Preset::new("quiet-orders".parse().expect("a preset name"), LieDefinition::Silence);
-/// let created = host.create(quiet.clone()).await.expect("a workspace in memory keeps it");
+/// let created = host.create(quiet.clone(), ChangeSurface::Cli).await.expect("a workspace in memory keeps it");
 ///
 /// // Whoever saw the preset as it was created gives it a title. A second change that saw the same changes nothing.
 /// let seen = Expects { run: host.run(), revision: created };
 /// let titled = quiet.clone().with_title("Quiet orders".parse().expect("a preset title"));
-/// let updated = host.update(titled.clone(), Some(seen)).await.expect("nobody changed the preset since");
-/// let late = host.update(titled, Some(seen)).await;
+/// let updated = host.update(titled.clone(), Some(seen), ChangeSurface::Cli).await;
+/// let updated = updated.expect("nobody changed the preset since");
+/// let late = host.update(titled, Some(seen), ChangeSurface::Cli).await;
 /// assert_eq!(
 ///     late,
 ///     Err(UpdateDefinitionError::NotUpdated {
@@ -126,7 +150,7 @@ mod watch;
 /// // A rule that names the preset resolves against the workspace, and only an environment that runs arms it.
 /// let staging: EnvironmentName = "staging-proxy".parse().expect("an environment name");
 /// let rule = Rule::new("quiet-produce".parse().expect("a rule name"), Conditions::new(), quiet.name().clone());
-/// let armed = host.arm(&staging, &rule, None).await;
+/// let armed = host.arm(&staging, &rule, None, ChangeSurface::Cli).await;
 /// assert_eq!(armed.err(), Some(ArmRuleError::NotRunning { environment: staging }));
 /// # }
 /// ```
@@ -176,6 +200,14 @@ struct Running {
     traffic: Arc<Mutex<Watched>>,
     /// The task that watches the environment, which ends a moment after its proxy stopped.
     watching: JoinHandle<()>,
+}
+
+impl Running {
+    /// Records `change` in the journal of the environment, with where it comes from and the revision that it left.
+    fn record(&self, change: Change, from: impl Into<ChangeSource>, revision: Revision) {
+        let journal = self.engine.journal();
+        journal.record(change, from, Some(journaling::left(revision)));
+    }
 }
 
 impl<C: WorkspaceContext> Host<C> {
@@ -231,6 +263,7 @@ impl<C: WorkspaceContext> Host<C> {
     /// A create expects nothing: it refuses a name that is taken.
     /// A rule of the workspace is in every environment, so it never stands next to a live rule of its name:
     /// the host refuses a rule that has the name of a live rule of an environment that runs.
+    /// `from` says where the change comes from, and the journal of every environment that runs records it.
     /// Whoever follows the host learns of it.
     ///
     /// # Errors
@@ -238,7 +271,12 @@ impl<C: WorkspaceContext> Host<C> {
     /// - [`CreateDefinitionError::NameTaken`] when the definition is a rule, and a live rule of an environment that
     ///   runs has its name.
     /// - [`CreateDefinitionError::NotCreated`] with the [`CreateError`](gaslightmq_workspace::CreateError) of the workspace.
-    pub async fn create<D: WorkspaceDefinition>(&self, definition: D) -> Result<Revision, CreateDefinitionError> {
+    pub async fn create<D: WorkspaceDefinition>(
+        &self,
+        definition: D,
+        from: impl Into<ChangeSource>,
+    ) -> Result<Revision, CreateDefinitionError> {
+        let from = from.into();
         let name: DefinitionName = definition.name().clone().into();
         let revision = {
             // The workspace stays taken from the check to the write, as it does while a live rule goes in.
@@ -251,10 +289,11 @@ impl<C: WorkspaceContext> Host<C> {
                     environment,
                 });
             }
-            workspace
-                .create(definition)
-                .await
-                .map_err(|error| CreateDefinitionError::NotCreated { error })?
+            let created = workspace.create(definition).await;
+            let revision = created.map_err(|error| CreateDefinitionError::NotCreated { error })?;
+            let definition = journaling::definition(&name);
+            self.record_everywhere(&Change::DefinitionCreated { definition }, from, revision);
+            revision
         };
         self.publish(HostChange::DefinitionChanged { name });
         Ok(revision)
@@ -264,6 +303,7 @@ impl<C: WorkspaceContext> Host<C> {
     /// See [`Workspace::update`].
     ///
     /// With `expects`, the update only changes the definition that its sender saw. Without it, the last change wins.
+    /// `from` says where the change comes from, and the journal of every environment that runs records it.
     /// Whoever follows the host learns of the change.
     ///
     /// # Errors
@@ -276,13 +316,22 @@ impl<C: WorkspaceContext> Host<C> {
         &self,
         definition: D,
         expects: Option<Expects>,
+        from: impl Into<ChangeSource>,
     ) -> Result<Revision, UpdateDefinitionError> {
+        let from = from.into();
         let expects = self
             .expected(expects)
             .map_err(|run| UpdateDefinitionError::OtherRun { run })?;
-        let name = definition.name().clone().into();
-        let updated = self.workspace.lock().await.update(definition, expects).await;
-        let revision = updated.map_err(|error| UpdateDefinitionError::NotUpdated { error })?;
+        let name: DefinitionName = definition.name().clone().into();
+        let revision = {
+            // The workspace stays taken until the journals hold the change, so their entries come in its order.
+            let mut workspace = self.workspace.lock().await;
+            let updated = workspace.update(definition, expects).await;
+            let revision = updated.map_err(|error| UpdateDefinitionError::NotUpdated { error })?;
+            let definition = journaling::definition(&name);
+            self.record_everywhere(&Change::DefinitionChanged { definition }, from, revision);
+            revision
+        };
         self.publish(HostChange::DefinitionChanged { name });
         Ok(revision)
     }
@@ -291,6 +340,7 @@ impl<C: WorkspaceContext> Host<C> {
     /// See [`Workspace::delete`].
     ///
     /// With `expects`, the delete only removes the definition that its sender saw. Without it, the last change wins.
+    /// `from` says where the change comes from, and the journal of every environment that runs records it.
     /// Whoever follows the host learns of the change.
     ///
     /// # Errors
@@ -303,13 +353,22 @@ impl<C: WorkspaceContext> Host<C> {
         &self,
         name: impl Into<DefinitionName>,
         expects: Option<Expects>,
+        from: impl Into<ChangeSource>,
     ) -> Result<Revision, DeleteDefinitionError> {
+        let from = from.into();
         let expects = self
             .expected(expects)
             .map_err(|run| DeleteDefinitionError::OtherRun { run })?;
         let name = name.into();
-        let deleted = self.workspace.lock().await.delete(name.clone(), expects).await;
-        let revision = deleted.map_err(|error| DeleteDefinitionError::NotDeleted { error })?;
+        let revision = {
+            // The workspace stays taken until the journals hold the change, so their entries come in its order.
+            let mut workspace = self.workspace.lock().await;
+            let deleted = workspace.delete(name.clone(), expects).await;
+            let revision = deleted.map_err(|error| DeleteDefinitionError::NotDeleted { error })?;
+            let definition = journaling::definition(&name);
+            self.record_everywhere(&Change::DefinitionDeleted { definition }, from, revision);
+            revision
+        };
         self.publish(HostChange::DefinitionDeleted { name });
         Ok(revision)
     }
@@ -326,6 +385,8 @@ impl<C: WorkspaceContext> Host<C> {
     /// The start is a change: it takes the next number, and every rule has that revision in the environment until
     /// its definition or its state there changes. An environment that stops and starts again therefore gives every
     /// rule a higher revision than it had before.
+    /// The journal of the environment begins with it, without an entry, so a start says nothing of where it
+    /// comes from.
     ///
     /// # Errors
     ///
@@ -358,7 +419,7 @@ impl<C: WorkspaceContext> Host<C> {
             name.clone(),
             engine.every_event(),
             engine.rules().clone(),
-            engine.rules().changes(),
+            engine.journal().clone(),
             Arc::clone(&revisions),
             Arc::clone(&traffic),
             self.changes.clone(),
@@ -483,19 +544,38 @@ impl<C: WorkspaceContext> Host<C> {
         self.with_running(name, |running| running.engine.every_event())
     }
 
-    /// The armed rules of an environment: the handle disarms a rule, and arms one that is resolved already.
+    /// The armed rules of an environment at this moment, in the order in which they win a conflict.
     ///
-    /// The handle stays with the proxy it came from:
-    /// once the environment stops, it arms and disarms in a proxy that no session reaches.
-    /// It checks no revision and answers with none: [`arm`](Self::arm) and [`disarm`](Self::disarm) do.
-    /// The host counts a change that someone makes through the handle when it next looks at the armed rules,
-    /// as it counts a lifetime that ended.
+    /// It is to read: what each armed rule counted and spent so far. Whoever arms or disarms a rule asks the host,
+    /// which says where the change comes from: see [`arm`](Self::arm) and [`disarm`](Self::disarm).
     ///
     /// # Errors
     ///
     /// [`NotRunningError`] when no environment of that name runs.
-    pub fn rules(&self, name: &EnvironmentName) -> Result<ArmedRules, NotRunningError> {
-        self.with_running(name, |running| running.engine.rules().clone())
+    pub fn armed_rules(&self, name: &EnvironmentName) -> Result<Arc<Snapshot>, NotRunningError> {
+        self.with_running(name, |running| running.engine.rules().snapshot())
+    }
+
+    /// The entries that the journal of an environment keeps in memory, the oldest first: what changed there,
+    /// each with where the change came from. With `after`, only the entries that came after the entry of that ID.
+    ///
+    /// The proxy of the environment keeps as many entries as its
+    /// [`recent_journal`](gaslightmq_engine::EngineConfiguration::recent_journal) says.
+    /// Whoever read the journal up to an entry reads on from there, and sees a gap in the IDs when the journal let
+    /// go of entries in between.
+    ///
+    /// # Errors
+    ///
+    /// [`NotRunningError`] when no environment of that name runs.
+    pub fn journal(
+        &self,
+        name: &EnvironmentName,
+        after: Option<JournalEntryId>,
+    ) -> Result<Vec<JournalEntry>, NotRunningError> {
+        self.with_running(name, |running| {
+            let journal = running.engine.journal();
+            after.map_or_else(|| journal.entries(), |id| journal.after(id))
+        })
     }
 
     /// Arms `rule` in one environment, and returns the revision that the rule has there from then on.
@@ -503,7 +583,8 @@ impl<C: WorkspaceContext> Host<C> {
     /// The rule can be a rule of the workspace, or a live rule that no workspace holds.
     /// It resolves against the selectors and the presets of the workspace,
     /// and arms above every rule that is armed in the environment.
-    /// No other environment arms it. Whoever follows the host learns of it.
+    /// No other environment arms it. `from` says where the change comes from, and the journal of the environment
+    /// records it. Whoever follows the host learns of it.
     ///
     /// With `expects`, the rule only arms while it has the revision that its sender saw in this environment:
     /// the later of the last change of its definition, and the last change of its state there.
@@ -525,7 +606,9 @@ impl<C: WorkspaceContext> Host<C> {
         environment: &EnvironmentName,
         rule: &Rule,
         expects: Option<Expects>,
+        from: impl Into<ChangeSource>,
     ) -> Result<Revision, ArmRuleError> {
+        let from = from.into();
         let expects = self.expected(expects).map_err(|run| ArmRuleError::OtherRun { run })?;
         let name = rule.name();
         // The workspace stays as it is until the rule is armed: nobody changes the definition in between.
@@ -562,7 +645,12 @@ impl<C: WorkspaceContext> Host<C> {
                     environment: environment.clone(),
                     rule,
                 })?;
-            Ok(revisions.count(name, &armed.snapshot()))
+            let revision = revisions.count(name, &armed.snapshot());
+            let armed = Change::RuleArmed {
+                rule: journaling::rule(name),
+            };
+            running.record(armed, from, revision);
+            Ok(revision)
         })?;
         drop(workspace);
         self.publish(HostChange::RuleChanged {
@@ -575,7 +663,8 @@ impl<C: WorkspaceContext> Host<C> {
     /// Disarms the rule of that name in one environment, and returns the revision that the rule has there from
     /// then on.
     ///
-    /// A call in flight that the rule fired on still finishes with it. Whoever follows the host learns of the change.
+    /// A call in flight that the rule fired on still finishes with it. `from` says where the change comes from,
+    /// and the journal of the environment records it. Whoever follows the host learns of the change.
     ///
     /// With `expects`, the rule only disarms while it has the revision that its sender saw in this environment.
     ///
@@ -590,7 +679,9 @@ impl<C: WorkspaceContext> Host<C> {
         environment: &EnvironmentName,
         rule: &RuleName,
         expects: Option<Expects>,
+        from: impl Into<ChangeSource>,
     ) -> Result<Revision, DisarmRuleError> {
+        let from = from.into();
         let expects = self
             .expected(expects)
             .map_err(|run| DisarmRuleError::OtherRun { run })?;
@@ -615,7 +706,12 @@ impl<C: WorkspaceContext> Host<C> {
                     environment: environment.clone(),
                     rule,
                 })?;
-            Ok(revisions.count(rule, &armed.snapshot()))
+            let revision = revisions.count(rule, &armed.snapshot());
+            let disarmed = Change::RuleDisarmed {
+                rule: journaling::rule(rule),
+            };
+            running.record(disarmed, from, revision);
+            Ok(revision)
         })?;
         drop(workspace);
         self.publish(HostChange::RuleChanged {
@@ -631,6 +727,10 @@ impl<C: WorkspaceContext> Host<C> {
     /// A rule with an incident fires it at once: the backend of the environment applies it, and the firing counts
     /// once the backend did.
     ///
+    /// `from` says where the firing comes from, and the journal of the environment records it:
+    /// every incident that the backend applied or emulated, with its consequences, and that the rule fired by hand.
+    /// A firing is what happens, and no change of what someone set, so its entries hold no revision.
+    ///
     /// # Errors
     ///
     /// - [`FireRuleError::NotRunning`] when no environment of that name runs.
@@ -639,8 +739,14 @@ impl<C: WorkspaceContext> Host<C> {
     /// - [`FireRuleError::NeedsCall`] when the incident of the rule leaves its subject to a call.
     /// - [`FireRuleError::IncidentRejected`] when the backend cannot apply the incident.
     ///   The firing goes back to the budget.
-    pub async fn fire(&self, environment: &EnvironmentName, rule: &RuleName) -> Result<(), FireRuleError> {
-        let (armed, now, backend) = {
+    pub async fn fire(
+        &self,
+        environment: &EnvironmentName,
+        rule: &RuleName,
+        from: impl Into<ChangeSource>,
+    ) -> Result<(), FireRuleError> {
+        let from = from.into();
+        let (armed, now, backend, journal) = {
             let environments = self.environments();
             let Some(running) = environments.get(environment) else {
                 return Err(FireRuleError::NotRunning {
@@ -654,28 +760,51 @@ impl<C: WorkspaceContext> Host<C> {
                     rule: rule.clone(),
                 });
             };
-            (armed, running.engine.clock().now(), Arc::clone(&running.backend))
+            (
+                armed,
+                running.engine.clock().now(),
+                Arc::clone(&running.backend),
+                running.engine.journal().clone(),
+            )
+        };
+        let fired_by_hand = || Change::RuleFiredByHand {
+            rule: journaling::rule(rule),
         };
         let fired = armed
             .fire_by_hand(now)
             .map_err(|error| FireRuleError::NeedsCall { error })?;
         match fired {
-            HandFiring::OnNextMatch => Ok(()),
+            HandFiring::OnNextMatch => {
+                journal.record(fired_by_hand(), from, None);
+                Ok(())
+            }
             HandFiring::NotFired => Err(FireRuleError::NotFired {
                 environment: environment.clone(),
                 rule: rule.clone(),
             }),
             HandFiring::Incidents { incidents, firing } => {
+                let support = backend.incident_support();
                 for incident in incidents {
+                    let kind = incident.kind();
                     // The firing goes back to the budget when it is dropped before it is confirmed.
-                    if let Err(error) = backend.apply(incident).await {
-                        return Err(FireRuleError::IncidentRejected {
-                            rule: rule.clone(),
-                            error,
-                        });
-                    }
+                    let incident = match backend.apply(incident).await {
+                        Ok(applied) => applied,
+                        Err(error) => {
+                            return Err(FireRuleError::IncidentRejected {
+                                rule: rule.clone(),
+                                error,
+                            });
+                        }
+                    };
+                    // What the backend did has happened, also when a later incident of the rule is rejected.
+                    let happened = match support.support(kind) {
+                        Support::Emulated => Change::IncidentEmulated { incident },
+                        Support::Applied | Support::Unsupported => Change::IncidentApplied { incident },
+                    };
+                    journal.record(happened, from, None);
                 }
                 firing.confirm();
+                journal.record(fired_by_hand(), from, None);
                 Ok(())
             }
         }
@@ -872,6 +1001,14 @@ impl<C: WorkspaceContext> Host<C> {
         changed
     }
 
+    /// Records a change of a definition of the workspace in the journal of every environment that runs,
+    /// with the revision that the change left. No journal records it when none runs.
+    fn record_everywhere(&self, change: &Change, from: ChangeSource, revision: Revision) {
+        for running in self.environments().values() {
+            running.record(change.clone(), from, revision);
+        }
+    }
+
     /// Tells whoever follows the host. A change that nobody follows is gone.
     fn publish(&self, change: HostChange) {
         let _ = self.changes.send(change);
@@ -922,15 +1059,17 @@ impl<C: WorkspaceContext> Host<C> {
 
 /// Runs `change` on an environment and the revisions of its rules, which are caught up with the armed rules first.
 ///
-/// Returns what `change` returns, and the rules that the look counted: those that armed or disarmed since the last
-/// look without anyone counting it. Whoever calls this tells the followers of the host of them.
+/// Returns what `change` returns, and the rules that the look counted: those that disarmed since the last
+/// look without anyone counting it, because their lifetime ended. The look records each in the journal of the
+/// environment, and whoever calls this tells the followers of the host of them.
 fn caught_up<T>(
     running: &mut Running,
     change: impl FnOnce(&mut Running, &mut RuleRevisions) -> T,
 ) -> (T, Vec<RuleName>) {
     let revisions = Arc::clone(&running.revisions);
     let mut revisions = crate::revisions::lock(&revisions);
-    let uncounted = revisions.catch_up(&running.engine.rules().snapshot());
+    let armed_now = running.engine.rules().snapshot();
+    let uncounted = journaling::catch_up(&mut revisions, &armed_now, running.engine.journal());
     (change(running, &mut revisions), uncounted)
 }
 

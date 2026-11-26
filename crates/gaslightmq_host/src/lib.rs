@@ -85,6 +85,12 @@
 //!   One counter of the process gives the [`Revision`](gaslightmq_workspace::Revision) of every definition and of
 //!   every rule in an environment. A change answers with the revision it left, and it can say what it [`Expects`]:
 //!   a change that expects another revision, or a revision of another [run](RunId), changes nothing.
+//! - **Every change has a surface.**
+//!   Whoever asks the host for a change says where it comes from: a
+//!   [`ChangeSource`](gaslightmq_journal::ChangeSource), as the last argument of the call.
+//!   The host records the change in the [journal](Host::journal) of the environment, with that source and the
+//!   revision it left, and a change of a definition in the journal of every environment that runs.
+//!   The host names the surface of a change that nobody asked for.
 //!
 //! # Presences
 //!
@@ -93,6 +99,7 @@
 //! and [ends](Host::end_presence) it once the client is gone.
 //! A hold of a pad belongs to the presence that its press [came from](Host::send_intent_from), and ends with it:
 //! a client that is gone never sends its release.
+//! A presence is no part of where a change comes from: the journal records a surface, and not who was there.
 //! The host knows no connection, and waits for no client that may come back: when a presence ends is up to whoever
 //! opened it. An intent that comes from [no presence](Host::send_intent) adds a hold that ends by its release or by a
 //! disarm alone.
@@ -113,8 +120,11 @@
 //!   see [`EnvironmentConfigurationError::UnsupportedBroker`]. The broker and its task arrive with the crate `broker`.
 //! - **What a process configures.** No workspace setting reaches an environment by itself:
 //!   whoever starts one sets its seed and its other properties in its [`EnvironmentConfiguration`].
-//! - **The live set, scenarios, the journal and recordings** arrive with their crates.
-//!   Until then the armed rules of an environment are its live set.
+//! - **The live set, scenarios and recordings** arrive with their crates.
+//!   Until then the armed rules of an environment are its live set, and no journal has an entry of a scenario,
+//!   of a step or of a recording.
+//! - **Reloading the workspace** arrives with the stores of files. No change has the surface `file` until then,
+//!   and none has the surface `step` until a scenario runs.
 //! - **The control plane** stands in front of the host, in the crate `gaslightmq_control_server`.
 //!
 //! # Errors
@@ -168,6 +178,7 @@ mod configuration;
 mod error;
 mod holds;
 mod host;
+mod journaling;
 mod revisions;
 mod rules;
 mod run;

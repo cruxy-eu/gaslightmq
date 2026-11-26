@@ -32,6 +32,7 @@ mod next_to_std_and_every_domain {
     use gaslightmq_control_api::environment::prelude::*;
     use gaslightmq_control_api::field::prelude::*;
     use gaslightmq_control_api::incident::prelude::*;
+    use gaslightmq_control_api::journal::prelude::*;
     use gaslightmq_control_api::kernel::prelude::*;
     use gaslightmq_control_api::lie::prelude::*;
     use gaslightmq_control_api::prelude::*;
@@ -88,6 +89,8 @@ mod next_to_std_and_every_domain {
         let _: Option<<GetBackend as Operation>::Error> = None::<EnvironmentNotRunning>;
         let _: Option<<ParseSentence as Operation>::Answer> = None::<ParsedSentence>;
         let _: Option<<ParseSentence as Operation>::Error> = None::<EnvironmentReadError>;
+        let _: Option<<QueryJournal as Operation>::Answer> = None::<Vec<JournalEntry>>;
+        let _: Option<<QueryJournal as Operation>::Error> = None::<EnvironmentNotRunning>;
     }
 
     /// Every other type of the prelude, named without a path.

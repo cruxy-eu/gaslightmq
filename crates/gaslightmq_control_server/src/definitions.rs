@@ -1,6 +1,7 @@
 //! The definitions of the workspace, as the control plane reads and changes them.
 
 use gaslightmq_control_api::environment::Environment;
+use gaslightmq_control_api::journal::ChangeSource;
 use gaslightmq_control_api::prelude::*;
 use gaslightmq_control_api::rule::{Preset, Rule};
 use gaslightmq_control_api::selector::Selector;
@@ -144,13 +145,15 @@ impl DefinitionOperations {
         }
     }
 
-    /// Answers [`CreateDefinition`], through the host, which tells whoever follows it.
+    /// Answers [`CreateDefinition`], through the host, which records where the change comes from and tells
+    /// whoever follows it.
     pub(crate) async fn create<D: Editable, C: WorkspaceContext>(
         host: &Host<C>,
         definition: D,
+        from: ChangeSource,
     ) -> Result<Revised, CreateDefinitionError> {
         use gaslightmq_host::CreateDefinitionError as Host;
-        match host.create(definition).await {
+        match host.create(definition, from).await {
             Ok(created) => Ok(revised(created)),
             Err(Host::NameTaken { rule, environment }) => Err(CreateDefinitionError::NameTaken {
                 name: rule.into(),
@@ -182,10 +185,11 @@ impl DefinitionOperations {
     pub(crate) async fn update<D: Editable, C: WorkspaceContext>(
         host: &Host<C>,
         update: UpdateDefinition<D>,
+        from: ChangeSource,
     ) -> Result<Revised, UpdateDefinitionError> {
         use gaslightmq_host::UpdateDefinitionError as Host;
         let UpdateDefinition { expects, definition } = update;
-        let error = match host.update(definition, expected(expects)).await {
+        let error = match host.update(definition, expected(expects), from).await {
             Ok(updated) => return Ok(revised(updated)),
             Err(Host::OtherRun { run: of_the_host }) => {
                 return Err(UpdateDefinitionError::OtherRun { run: run(of_the_host) });
@@ -216,10 +220,11 @@ impl DefinitionOperations {
     pub(crate) async fn delete<D: Editable, C: WorkspaceContext>(
         host: &Host<C>,
         delete: DeleteDefinition<D>,
+        from: ChangeSource,
     ) -> Result<Revised, DeleteDefinitionError> {
         use gaslightmq_host::DeleteDefinitionError as Host;
         let DeleteDefinition { name, expects } = delete;
-        let error = match host.delete(name, expected(expects)).await {
+        let error = match host.delete(name, expected(expects), from).await {
             Ok(deleted) => return Ok(revised(deleted)),
             Err(Host::OtherRun { run: of_the_host }) => {
                 return Err(DeleteDefinitionError::OtherRun { run: run(of_the_host) });

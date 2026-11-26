@@ -50,15 +50,23 @@ impl RuleRevisions {
     }
 
     /// Counts every rule that armed or disarmed since the last look without anyone counting it:
-    /// each takes the next number. Returns their names, for whoever tells the followers of the host.
-    pub(crate) fn catch_up(&mut self, armed_now: &Snapshot) -> Vec<RuleName> {
+    /// each takes the next number. Returns their names, each with the number it took, for whoever records the
+    /// change and tells the followers of the host.
+    pub(crate) fn catch_up(&mut self, armed_now: &Snapshot) -> Vec<(RuleName, Revision)> {
         let now: BTreeSet<RuleName> = armed_now.iter().map(|rule| rule.name().clone()).collect();
-        let uncounted: Vec<RuleName> = self.armed.symmetric_difference(&now).cloned().collect();
-        for rule in &uncounted {
-            self.changed.insert(rule.clone(), self.counter.next_revision());
-        }
+        let uncounted: Vec<(RuleName, Revision)> = self
+            .armed
+            .symmetric_difference(&now)
+            .map(|rule| (rule.clone(), self.counter.next_revision()))
+            .collect();
+        self.changed.extend(uncounted.iter().cloned());
         self.armed = now;
         uncounted
+    }
+
+    /// Whether the rule was armed at the last change that was counted.
+    pub(crate) fn was_armed(&self, rule: &RuleName) -> bool {
+        self.armed.contains(rule)
     }
 
     /// Counts one change of a rule that the host just made: it takes the next number.

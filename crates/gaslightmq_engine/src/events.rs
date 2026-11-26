@@ -4,6 +4,7 @@ use std::sync::{Arc, Mutex, PoisonError};
 
 use gaslightmq_call::Call;
 use gaslightmq_incident::Incident;
+use gaslightmq_journal::JournalEntry;
 use tokio::sync::broadcast;
 use tokio::sync::broadcast::error::RecvError;
 use tokio::sync::mpsc;
@@ -15,9 +16,11 @@ use crate::{EventBacklog, LiveEventsError, SessionEvent};
 /// It is the one outlet of an engine.
 /// Whoever keeps what happened listens here: the traffic view, the index and a recording take the calls,
 /// the scenario runner takes the calls and the incidents, and whoever shows the sessions takes what happens to them.
+/// The entries of the [journal](crate::Journal) leave here too, so a recording keeps them between the calls.
 ///
 /// The events of one session come in the order in which they happened: it opens, its first request says who its
 /// client is, its calls leave with what their rules fired before their records, and it closes.
+/// The entries of the journal come in the order of their IDs.
 #[derive(Debug, Clone)]
 #[non_exhaustive]
 pub enum EngineEvent {
@@ -29,6 +32,8 @@ pub enum EngineEvent {
     IncidentFired(Incident),
     /// A session opened, said who its client is, or closed.
     Session(SessionEvent),
+    /// Something changed in the environment of the proxy, and this is its entry in the [journal](crate::Journal).
+    Journaled(JournalEntry),
 }
 
 /// The events of an engine as they happen, for a listener that watches: a traffic view, a UI.

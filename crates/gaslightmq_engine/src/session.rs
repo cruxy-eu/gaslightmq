@@ -21,7 +21,7 @@ use tokio::sync::{Notify, mpsc, watch};
 use crate::events::EventBus;
 use crate::open_sessions::OpenSessions;
 use crate::timers::Timers;
-use crate::{ArmedRules, EngineEvent, SessionEvent};
+use crate::{ArmedRules, EngineEvent, Journal, SessionEvent};
 
 /// The bytes of a frame that holds nothing, which are no request.
 ///
@@ -36,7 +36,8 @@ pub(crate) struct Sessions<B, C> {
     pub clock: Arc<C>,
     pub shared: SharedBySessions,
     pub rules: ArmedRules,
-    pub events: EventBus,
+    pub events: Arc<EventBus>,
+    pub journal: Journal,
     /// The sessions that are open, each with the way to ask it to close.
     pub open: OpenSessions,
     /// Which connection from its host to its endpoint each connection is.
@@ -53,7 +54,8 @@ impl<B: Backend, C: WaitableClock> Sessions<B, C> {
         clock: Arc<C>,
         shared: SharedBySessions,
         rules: ArmedRules,
-        events: EventBus,
+        events: Arc<EventBus>,
+        journal: Journal,
     ) -> (Self, mpsc::UnboundedReceiver<Instant>) {
         let (lingering, lingered) = mpsc::unbounded_channel();
         let sessions = Self {
@@ -62,6 +64,7 @@ impl<B: Backend, C: WaitableClock> Sessions<B, C> {
             shared,
             rules,
             events,
+            journal,
             open: OpenSessions::default(),
             ordinals: Mutex::default(),
             lingering,

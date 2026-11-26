@@ -11,7 +11,8 @@
 //! | [`ArmedRules`] | The armed rules of the proxy. Arming and disarming publishes a snapshot to every session. |
 //! | [`RuleChanges`] | Every snapshot that the armed rules publish, for whoever follows what is armed. |
 //! | [`OpenSession`], [`SessionEvent`] | A session that is open, and what happens to a session: it opens, says who its client is, and closes. |
-//! | [`EngineEvent`] | What a session hands over: the record of a call, or an incident that a rule fired. |
+//! | [`EngineEvent`] | What a session hands over: the record of a call, or an incident that a rule fired. Also an entry of the journal. |
+//! | [`Journal`] | The journal of the proxy: what changed in its environment, with the recent entries in memory. |
 //! | [`LiveEvents`], [`EveryEvent`] | The events as a listener receives them: one that watches and may miss the oldest, and one that keeps every event. |
 //! | [`EventBacklog`] | How many events an engine keeps for a live listener that falls behind. |
 //! | [`EngineStartError`], [`EndpointOpenError`] | Why an engine did not start, and why an endpoint has no listener. |
@@ -231,6 +232,19 @@
 //! so a recorder that stops taking events ends with a process that has no memory left.
 //! It never costs a client anything: a slow disk does not change when an answer leaves.
 //!
+//! # The journal
+//!
+//! [`Journal`] holds what changed in the environment of the proxy: a rule armed, a live rule was made,
+//! someone changed a definition. The engine keeps the entries, and changes nothing by itself:
+//! whoever changes the environment records the change, with where it came from and the revision it left.
+//!
+//! - **The engine numbers the entries.** It counts them from one, so a higher ID is a later entry,
+//!   and it tells the time of each on its clock, as it tells the time of every call.
+//! - **The recent journal stays in memory.** The journal keeps as many entries as its
+//!   [`recent_journal`](EngineConfiguration::recent_journal) says, and lets go of the oldest one after that.
+//! - **Every entry leaves with the events**, as an [`EngineEvent::Journaled`], in the order of the entries.
+//!   A listener of [every event](Engine::every_event) gets the entries between the calls.
+//!
 //! # Time
 //!
 //! An engine has one [`WaitableClock`](gaslightmq_clock_waitable::WaitableClock), which whoever starts it hands over.
@@ -246,7 +260,7 @@
 //!
 //! # What is not here yet
 //!
-//! The scenario runner, the journal, the traffic window, the index, the recorder and the workspace arrive
+//! The scenario runner, the traffic window, the index, the recorder and the workspace arrive
 //! with their crates. Until then:
 //!
 //! - Nobody applies an incident. The engine hands it over, and whoever listens passes it to the backend.
@@ -294,6 +308,7 @@ mod endpoints;
 mod engine;
 mod error;
 mod events;
+mod journal;
 mod open_sessions;
 mod rules;
 mod session;
@@ -305,6 +320,7 @@ pub use error::{
     ArmError, DisarmError, EndpointOpenError, EngineStartError, LiveEventsError, NotOpenError, RetuneError,
 };
 pub use events::{EngineEvent, EveryEvent, LiveEvents};
+pub use journal::Journal;
 pub use open_sessions::{OpenSession, SessionEvent};
 pub use rules::{ArmedRules, RuleChanges};
 
@@ -325,7 +341,7 @@ pub mod prelude {
     #[doc(no_inline)]
     pub use crate::{
         ArmError, ArmedRules, DisarmError, EndpointOpenError, Engine, EngineConfiguration, EngineEvent,
-        EngineStartError, EventBacklog, EventBacklogError, EveryEvent, LiveEvents, LiveEventsError, NotOpenError,
-        OpenSession, RetuneError, RuleChanges, SessionEvent,
+        EngineStartError, EventBacklog, EventBacklogError, EveryEvent, Journal, LiveEvents, LiveEventsError,
+        NotOpenError, OpenSession, RetuneError, RuleChanges, SessionEvent,
     };
 }

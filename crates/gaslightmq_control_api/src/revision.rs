@@ -1,23 +1,13 @@
 //! Revisions and runs: what a change expects of what it changes, and what it leaves.
+//!
+//! The revision is the one that an entry of the journal holds, so the control plane has one type for both:
+//! what a client reads beside a rule, and what the journal says a change left.
 
 use std::fmt;
 
 use serde::{Deserialize, Serialize};
 
-gaslightmq_resource::revision! {
-    /// Whatever a request changes has a revision: a definition of the workspace, and a rule in an environment.
-    /// Whoever reads something gets its revision beside it: in an answer, in the
-    /// [snapshot](crate::StreamMessage::Snapshot) and in every message of a change.
-    /// A client that already holds a later revision of a thing drops a message that brings an earlier one.
-    ///
-    /// ```
-    /// use gaslightmq_control_api::prelude::*;
-    ///
-    /// let answer: Revised = serde_json::from_str(r#"{ "revision": 8 }"#).expect("the answer of a change");
-    /// assert!(answer.revision > Revision::new(7));
-    /// ```
-    Revision, serde
-}
+pub use gaslightmq_journal::Revision;
 
 gaslightmq_resource::random_id! {
     /// A run is one life of a process, from its start to its stop.

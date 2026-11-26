@@ -22,6 +22,8 @@ gaslightmq_engine.workspace = true
 gaslightmq_environment.workspace = true
 gaslightmq_field.workspace = true
 gaslightmq_incident.workspace = true
+gaslightmq_journal.workspace = true
+gaslightmq_lie.workspace = true
 gaslightmq_lie_api.workspace = true
 gaslightmq_quick_inject.workspace = true
 gaslightmq_resource.workspace = true
@@ -29,6 +31,7 @@ gaslightmq_rule.workspace = true
 gaslightmq_selector.workspace = true
 gaslightmq_surface.workspace = true
 gaslightmq_traffic.workspace = true
+gaslightmq_trigger.workspace = true
 gaslightmq_workspace.workspace = true
 futures.workspace = true
 thiserror.workspace = true
@@ -43,8 +46,6 @@ gaslightmq_kafka_client_native.workspace = true
 gaslightmq_test_kafka.workspace = true
 # What a test arms and reads: the definitions of lies, the refusal that the build of a test registers, and Kafka's names.
 gaslightmq_kernel.workspace = true
-gaslightmq_lie.workspace = true
 gaslightmq_lie_refusal.workspace = true
-gaslightmq_trigger.workspace = true
 gaslightmq_wire.workspace = true
 tokio = { workspace = true, features = ["rt", "rt-multi-thread", "macros", "net", "time"] }

@@ -214,7 +214,9 @@ impl Process {
                 self.stats.remove(environment);
             }
             StreamMessage::WorkspaceInvalid { reason } => self.workspace_invalid = Some(reason.clone()),
-            StreamMessage::Present { .. }
+            // No view shows the journal yet, so the state keeps no entry of it.
+            StreamMessage::JournalEntry { .. }
+            | StreamMessage::Present { .. }
             | StreamMessage::Snapshot(_)
             | StreamMessage::Call { .. }
             | StreamMessage::Following { .. }

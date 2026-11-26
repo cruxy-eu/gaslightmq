@@ -40,6 +40,7 @@ mod next_to_the_others {
     use gaslightmq_environment::prelude::*;
     use gaslightmq_field::prelude::*;
     use gaslightmq_incident::prelude::*;
+    use gaslightmq_journal::prelude::*;
     use gaslightmq_kernel::prelude::*;
     use gaslightmq_lie::prelude::*;
     use gaslightmq_lie_api::prelude::*;
@@ -116,6 +117,8 @@ mod next_to_the_others {
         let fired: EngineEvent = EngineEvent::IncidentFired(Incident::Rebalance {
             group: "payments".parse().unwrap(),
         });
+        let journal: &Journal = engine.journal();
+        let size: RecentJournalSize = configuration.recent_journal;
         let items = vec![
             format!("{configuration:?}"),
             backlog.to_string(),
@@ -124,6 +127,7 @@ mod next_to_the_others {
             armed.name().to_string(),
             format!("{watching:?} {keeping:?}"),
             format!("{fired:?}"),
+            format!("{journal:?} {size}"),
         ];
         engine.stop().await;
         items
@@ -168,10 +172,11 @@ mod next_to_the_others {
 async fn the_prelude_names_every_item_next_to_the_other_preludes() {
     let items = next_to_the_others::every_item().await;
 
-    assert_eq!(items.len(), 7);
+    assert_eq!(items.len(), 8);
     assert!(items.iter().all(|item| !item.is_empty()));
     assert_eq!(items[1], "16 events");
     assert_eq!(items[4], "blackhole");
+    assert_eq!(items[7], "Journal { entries: 0, .. } 1000 entries");
 }
 
 #[test]

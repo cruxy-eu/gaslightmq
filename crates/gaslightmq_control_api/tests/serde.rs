@@ -18,6 +18,9 @@ use gaslightmq_control_api::environment::{
 };
 use gaslightmq_control_api::field::{ClientSoftware, ConnectionNumber, Endpoint, Field, Fields};
 use gaslightmq_control_api::incident::{IncidentKind, IncidentSupport};
+use gaslightmq_control_api::journal::{
+    Change, ChangeCause, ChangeSource, ChangeSurface, JournalEntry, JournalEntryId, Parameter,
+};
 use gaslightmq_control_api::kernel::{ApiKey, BrokerId, ClientId};
 use gaslightmq_control_api::prelude::*;
 use gaslightmq_control_api::rule::{PresetName, Rule, RuleName, RuleState};
@@ -1015,8 +1018,12 @@ fn an_operation_names_itself_as_its_form_does() {
             rule,
         }),
         AnyOperation::from(ParseSentence {
-            environment,
+            environment: environment.clone(),
             text: "delay produce".to_owned(),
+        }),
+        AnyOperation::from(QueryJournal {
+            environment,
+            after: None,
         }),
     ];
 
@@ -1339,4 +1346,170 @@ fn a_client_follows_the_calls_that_a_selector_matches() {
     .writes(json!({ "follow": "calls", "environment": "orders-sim", "selector": {} }));
 
     Form(Subscription::Nothing).writes(json!({ "follow": "nothing" }));
+}
+
+// The journal
+
+#[test]
+fn a_client_queries_the_journal_of_an_environment_and_reads_on_after_an_entry() {
+    let environment: EnvironmentName = "orders-sim".parse().unwrap();
+    let whole = QueryJournal {
+        environment: environment.clone(),
+        after: None,
+    };
+    let last_read = JournalEntryId::new(41).unwrap();
+    let rest = QueryJournal {
+        environment,
+        after: Some(last_read),
+    };
+
+    Form(OperationRequest::new(RequestSurface::Cli, whole)).writes(json!({
+        "from": { "surface": "cli" },
+        "operation": "query-journal",
+        "environment": "orders-sim",
+    }));
+    Form(rest).writes(json!({ "environment": "orders-sim", "after": 41 }));
+    // The entries of an environment count from one.
+    Form::<QueryJournal>::rejects(
+        json!({ "environment": "orders-sim", "after": 0 }),
+        "a journal entry ID is at least one",
+    );
+}
+
+#[test]
+fn an_entry_of_the_journal_travels_with_its_environment() {
+    // Someone armed a rule at a pad 4.2 seconds after the environment started, which left the rule at revision 8.
+    let armed = JournalEntry {
+        id: JournalEntryId::new(7).unwrap(),
+        at: Instant::ZERO + Duration::from_millis(4200),
+        revision: Some(NOW),
+        from: ChangeSource::new(ChangeSurface::Pad),
+        change: Change::RuleArmed {
+            rule: "slow-order-producers".parse().unwrap(),
+        },
+    };
+
+    Form(StreamMessage::JournalEntry {
+        environment: "orders-sim".parse().unwrap(),
+        entry: armed,
+    })
+    .writes(json!({
+        "message": "journal-entry",
+        "environment": "orders-sim",
+        "entry": {
+            "id": 7,
+            "at": 4_200_000_000_u64,
+            "revision": 8,
+            "from": { "surface": "pad" },
+            "change": "rule-armed",
+            "rule": "slow-order-producers",
+        },
+    }));
+}
+
+#[test]
+fn the_journal_answers_with_its_entries_the_oldest_first() {
+    let rule = || "slow-order-producers".parse().unwrap();
+    // Someone turned the delay of a live rule up and took that back with ⌘Z, someone fired the rule by hand,
+    // and its lifetime ended.
+    let turned = JournalEntry {
+        id: JournalEntryId::new(3).unwrap(),
+        at: Instant::ZERO + Duration::from_secs(10),
+        revision: Some(SEEN),
+        from: ChangeSource::new(ChangeSurface::Pad),
+        change: Change::ParameterChanged {
+            rule: rule(),
+            parameter: Parameter::Delay,
+            old: "1s".to_owned(),
+            new: "1100ms".to_owned(),
+        },
+    };
+    let taken_back = JournalEntry {
+        id: JournalEntryId::new(4).unwrap(),
+        at: Instant::ZERO + Duration::from_secs(12),
+        revision: Some(NOW),
+        from: ChangeSource::new(ChangeSurface::Ui).with_cause(ChangeCause::Undo),
+        change: Change::LiveRuleChanged { rule: rule() },
+    };
+    let fired = JournalEntry {
+        id: JournalEntryId::new(5).unwrap(),
+        at: Instant::ZERO + Duration::from_secs(20),
+        revision: None,
+        from: ChangeSource::new(ChangeSurface::Cli),
+        change: Change::RuleFiredByHand { rule: rule() },
+    };
+    let ended = JournalEntry {
+        id: JournalEntryId::new(6).unwrap(),
+        at: Instant::ZERO + Duration::from_secs(30),
+        revision: Some(Revision::new(9)),
+        from: ChangeSource::new(ChangeSurface::Lifetime),
+        change: Change::RuleDisarmed { rule: rule() },
+    };
+    let answer: <QueryJournal as Operation>::Answer = vec![turned, taken_back, fired, ended];
+
+    Form(answer).writes(json!([
+        {
+            "id": 3,
+            "at": 10_000_000_000_u64,
+            "revision": 7,
+            "from": { "surface": "pad" },
+            "change": "parameter-changed",
+            "rule": "slow-order-producers",
+            "parameter": "delay",
+            "old": "1s",
+            "new": "1100ms",
+        },
+        {
+            "id": 4,
+            "at": 12_000_000_000_u64,
+            "revision": 8,
+            "from": { "surface": "ui", "cause": "undo" },
+            "change": "live-rule-changed",
+            "rule": "slow-order-producers",
+        },
+        // A firing left no revision.
+        {
+            "id": 5,
+            "at": 20_000_000_000_u64,
+            "from": { "surface": "cli" },
+            "change": "rule-fired-by-hand",
+            "rule": "slow-order-producers",
+        },
+        // No request names the surface `lifetime`, and an entry does.
+        {
+            "id": 6,
+            "at": 30_000_000_000_u64,
+            "revision": 9,
+            "from": { "surface": "lifetime" },
+            "change": "rule-disarmed",
+            "rule": "slow-order-producers",
+        },
+    ]));
+}
+
+#[test]
+fn the_journal_records_the_surface_and_the_cause_of_a_request_and_not_its_presence() {
+    let tab: PresenceId = "9f86d081884c7d659a2feaa0c55ad015".parse().unwrap();
+    let undo_of_a_tab = RequestSource::new(RequestSurface::Pad)
+        .with_cause(RequestCause::Undo)
+        .with_presence(tab);
+
+    assert_eq!(
+        ChangeSource::from(undo_of_a_tab),
+        ChangeSource::new(ChangeSurface::Pad).with_cause(ChangeCause::Undo)
+    );
+    assert_eq!(ChangeCause::from(RequestCause::Redo), ChangeCause::Redo);
+    // Every surface of a request is a surface of the journal, under the same name.
+    let surfaces = [
+        (RequestSurface::Pad, ChangeSurface::Pad),
+        (RequestSurface::QuickInject, ChangeSurface::QuickInject),
+        (RequestSurface::Ui, ChangeSurface::Ui),
+        (RequestSurface::Cli, ChangeSurface::Cli),
+        (RequestSurface::Test, ChangeSurface::Test),
+        (RequestSurface::Api, ChangeSurface::Api),
+    ];
+    for (of_a_request, of_the_journal) in surfaces {
+        assert_eq!(ChangeSurface::from(of_a_request), of_the_journal);
+        assert_eq!(Form(of_a_request).json(), Form(of_the_journal).json());
+    }
 }

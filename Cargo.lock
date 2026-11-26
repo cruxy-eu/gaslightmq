@@ -1413,6 +1413,7 @@ dependencies = [
  "gaslightmq_environment",
  "gaslightmq_field",
  "gaslightmq_incident",
+ "gaslightmq_journal",
  "gaslightmq_kernel",
  "gaslightmq_lie",
  "gaslightmq_resource",
@@ -1512,6 +1513,7 @@ dependencies = [
  "gaslightmq_environment",
  "gaslightmq_field",
  "gaslightmq_incident",
+ "gaslightmq_journal",
  "gaslightmq_kafka_client_api",
  "gaslightmq_kafka_client_native",
  "gaslightmq_kernel",
@@ -1591,6 +1593,7 @@ dependencies = [
  "gaslightmq_environment",
  "gaslightmq_field",
  "gaslightmq_incident",
+ "gaslightmq_journal",
  "gaslightmq_kafka_client_native",
  "gaslightmq_kernel",
  "gaslightmq_lie",
@@ -1629,6 +1632,19 @@ dependencies = [
  "gaslightmq_field",
  "gaslightmq_kernel",
  "gaslightmq_selector",
+]
+
+[[package]]
+name = "gaslightmq_journal"
+version = "0.1.0"
+dependencies = [
+ "gaslightmq_clock",
+ "gaslightmq_incident",
+ "gaslightmq_kernel",
+ "gaslightmq_resource",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.21",
 ]
 
 [[package]]
