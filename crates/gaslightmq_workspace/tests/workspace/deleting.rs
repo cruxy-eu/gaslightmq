@@ -22,7 +22,7 @@ fn a_selector_that_a_rule_uses_cannot_be_deleted() -> anyhow::Result<()> {
         workspace.create(OrderDesk::delay_1s()).await?;
         workspace.create(OrderDesk::slow_order_producers()).await?;
 
-        let error = workspace.delete(order_producers.clone()).await.unwrap_err();
+        let error = workspace.delete(order_producers.clone(), None).await.unwrap_err();
 
         assert_eq!(
             error,
@@ -39,8 +39,8 @@ fn a_selector_that_a_rule_uses_cannot_be_deleted() -> anyhow::Result<()> {
         assert!(workspace.stores().selectors().get(&order_producers).await?.is_some());
 
         // Without the rule, nothing uses the selector.
-        workspace.delete(slow_order_producers).await?;
-        workspace.delete(order_producers.clone()).await?;
+        workspace.delete(slow_order_producers, None).await?;
+        workspace.delete(order_producers.clone(), None).await?;
         assert_eq!(workspace.stores().selectors().get(&order_producers).await?, None);
         Ok(())
     })
@@ -62,7 +62,7 @@ fn the_error_names_everyone_who_uses_a_selector() -> anyhow::Result<()> {
         workspace.create(OrderDesk::slow_order_producers()).await?;
         workspace.create(OrderDesk::layout()).await?;
 
-        let error = workspace.delete(order_producers.clone()).await.unwrap_err();
+        let error = workspace.delete(order_producers.clone(), None).await.unwrap_err();
 
         // A selector includes it, a rule uses it, and a layout has a row for it.
         assert_eq!(
@@ -95,8 +95,8 @@ fn a_preset_that_a_rule_or_a_layout_uses_cannot_be_deleted() -> anyhow::Result<(
         workspace.create(OrderDesk::slow_order_producers()).await?;
         workspace.create(OrderDesk::layout()).await?;
 
-        let of_the_delay = workspace.delete(delay.clone()).await.unwrap_err();
-        let of_the_blackhole = workspace.delete(blackhole.clone()).await.unwrap_err();
+        let of_the_delay = workspace.delete(delay.clone(), None).await.unwrap_err();
+        let of_the_blackhole = workspace.delete(blackhole.clone(), None).await.unwrap_err();
 
         assert_eq!(
             of_the_delay.to_string(),
@@ -129,9 +129,9 @@ fn a_definition_that_only_shares_its_name_with_another_kind_is_not_in_use() -> a
             .create(Rule::new(rule, Conditions::new(), preset.clone()))
             .await?;
 
-        workspace.delete(selector).await?;
+        workspace.delete(selector, None).await?;
 
-        let error = workspace.delete(preset).await.unwrap_err();
+        let error = workspace.delete(preset, None).await.unwrap_err();
         assert_eq!(error.to_string(), "preset \"blackhole\" is used by rule \"blackhole\"");
         Ok(())
     })
@@ -152,10 +152,10 @@ fn rules_layouts_and_environments_are_deleted_whenever_someone_asks() -> anyhow:
 
         // Nothing refers to a rule, a layout or an environment by name.
         workspace
-            .delete(OrderDesk::slow_order_producers().name().clone())
+            .delete(OrderDesk::slow_order_producers().name().clone(), None)
             .await?;
-        workspace.delete(OrderDesk::layout().name().clone()).await?;
-        workspace.delete(OrderDesk::environment().name().clone()).await?;
+        workspace.delete(OrderDesk::layout().name().clone(), None).await?;
+        workspace.delete(OrderDesk::environment().name().clone(), None).await?;
 
         assert_eq!(workspace.stores().rules().list().await?, []);
         assert_eq!(workspace.stores().layouts().list().await?, []);
@@ -175,7 +175,7 @@ fn delete_needs_a_name_that_exists() -> anyhow::Result<()> {
         let rule = Rule::new("order-producers".parse()?, Conditions::new(), LieDefinition::Silence);
         workspace.create(rule).await?;
 
-        let error = workspace.delete(order_producers.clone()).await.unwrap_err();
+        let error = workspace.delete(order_producers.clone(), None).await.unwrap_err();
 
         assert_eq!(
             error,
@@ -197,7 +197,7 @@ fn a_store_that_lets_go_of_nothing_is_why_a_definition_was_not_deleted() -> anyh
     let blackhole: PresetName = "blackhole".parse()?;
 
     block_on(async {
-        let error = workspace.delete(blackhole.clone()).await.unwrap_err();
+        let error = workspace.delete(blackhole.clone(), None).await.unwrap_err();
 
         assert_eq!(
             error,
@@ -228,7 +228,7 @@ fn a_store_that_cannot_read_is_why_nobody_knows_who_uses_a_definition() -> anyho
             .await?;
 
         // A rule may use the selector, and the store of the rules does not say.
-        let error = workspace.delete(order_producers.clone()).await.unwrap_err();
+        let error = workspace.delete(order_producers.clone(), None).await.unwrap_err();
 
         assert_eq!(
             error,

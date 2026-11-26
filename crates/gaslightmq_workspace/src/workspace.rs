@@ -1,5 +1,7 @@
 //! The workspace: the stores of every kind, and the rules that span them.
 
+use std::collections::BTreeMap;
+
 use gaslightmq_definition_api::{Definition, Store, StoreChangeError, StoreCreateError, StoreReadError};
 use gaslightmq_environment::Environment;
 use gaslightmq_rule::{Preset, Rule, RuleStore};
@@ -9,8 +11,8 @@ use gaslightmq_surface::{LayoutStore, PadLayout};
 use crate::contents::Contents;
 use crate::kind::AnyDefinition;
 use crate::{
-    CreateError, DefinitionName, DeleteError, Stores, UpdateError, ValidationError, WorkspaceContext,
-    WorkspaceDefinition,
+    CreateError, DefinitionName, DeleteError, Revision, RevisionCounter, Stores, UpdateError, ValidationError,
+    WorkspaceContext, WorkspaceDefinition,
 };
 
 /// Every definition of a workspace, as one model that holds together.
@@ -28,6 +30,22 @@ use crate::{
 /// and then asks one store for it.
 /// A change that would break one of the rules fails, and changes nothing.
 /// Reading goes to the [stores](Self::stores) directly.
+///
+/// # Revisions
+///
+/// A workspace also holds what no store holds: the [`Revision`] of every definition, in memory.
+/// It holds the [counter](Self::counter) of the process too, and every change takes its next number from there.
+///
+/// | When | The revision of the definition |
+/// |---|---|
+/// | The workspace [loads](Self::new). | The number of the load, for every definition that its stores hold. |
+/// | Someone [creates](Self::create) or [updates](Self::update) the definition. | The number of that change. |
+/// | Someone [deletes](Self::delete) the definition. | Forgotten. A definition that comes back under the name has a higher one. |
+///
+/// An update and a delete can name the revision they expect.
+/// When the definition has another one, someone changed it since, and the change is refused before a store is
+/// asked: see [`UpdateError::Changed`] and [`DeleteError::Changed`].
+/// Without a revision, the last change wins.
 ///
 /// # One change at a time
 ///
@@ -69,7 +87,7 @@ use crate::{
 ///     workspace.create(rule).await?;
 ///
 ///     // The rule uses the selector, so the selector stays.
-///     let in_use = workspace.delete(produce.name().clone()).await.unwrap_err();
+///     let in_use = workspace.delete(produce.name().clone(), None).await.unwrap_err();
 ///     assert_eq!(
 ///         in_use.to_string(),
 ///         "selector \"order-producers\" is used by rule \"blackhole-order-producers\""
@@ -81,14 +99,29 @@ use crate::{
 #[derive(Debug, Clone)]
 pub struct Workspace<C: WorkspaceContext> {
     context: C,
+    /// The counter of the process, which gives the revision of every change.
+    counter: RevisionCounter,
+    /// The revision of the load, which every definition has that nobody changed since.
+    loaded: Revision,
+    /// The revision of every definition that someone created or updated since the load.
+    changed: BTreeMap<DefinitionName, Revision>,
 }
 
 impl<C: WorkspaceContext> Workspace<C> {
-    /// The workspace over the stores of that context.
+    /// Loads the workspace over the stores of that context.
     ///
+    /// The load is the first change of the process: it starts the [counter](Self::counter),
+    /// and every definition that the stores hold has [its revision](Self::loaded).
     /// It checks nothing yet: [`validate`](Self::validate) says whether what the stores hold fits together.
     pub fn new(context: C) -> Self {
-        Self { context }
+        let counter = RevisionCounter::new();
+        let loaded = counter.next_revision();
+        Self {
+            context,
+            counter,
+            loaded,
+            changed: BTreeMap::new(),
+        }
     }
 
     /// The stores, to list and to get definitions.
@@ -96,7 +129,33 @@ impl<C: WorkspaceContext> Workspace<C> {
         self.context.stores()
     }
 
-    /// Adds a definition.
+    /// The counter of the process, which gives the revision of every change, whoever makes it.
+    ///
+    /// A process has one counter, and the workspace holds it.
+    /// Whoever changes something that is no definition, such as the state of a rule in an environment,
+    /// takes the number of that change from a clone of it.
+    pub const fn counter(&self) -> &RevisionCounter {
+        &self.counter
+    }
+
+    /// The revision of the load: the one that a definition has until someone changes it.
+    pub const fn loaded(&self) -> Revision {
+        self.loaded
+    }
+
+    /// The revision of the definition of that kind and name, which a store of the workspace holds.
+    ///
+    /// It is the number of the change that last created or updated the definition,
+    /// and the [revision of the load](Self::loaded) for a definition that nobody changed since.
+    /// The workspace reads no store here, so it cannot say whether the definition exists:
+    /// whoever asks holds the definition, and a name that no definition has gets the revision of the load too.
+    pub fn revision(&self, name: impl Into<DefinitionName>) -> Revision {
+        self.revision_of(&name.into())
+    }
+
+    /// Adds a definition, and returns the revision it has.
+    ///
+    /// A create expects nothing: it refuses a name that is taken, so it never overwrites.
     ///
     /// # Errors
     ///
@@ -104,23 +163,31 @@ impl<C: WorkspaceContext> Workspace<C> {
     /// - [`CreateError::DoesNotFit`] when the definitions would not fit each other with this one:
     ///   it refers to a name that does not exist, or it is a rule that can never fire.
     /// - [`CreateError::StoreFailed`] when a store could not read its definitions, or could not keep this one.
-    pub async fn create<D: WorkspaceDefinition>(&mut self, definition: D) -> Result<(), CreateError> {
+    pub async fn create<D: WorkspaceDefinition>(&mut self, definition: D) -> Result<Revision, CreateError> {
         let name: DefinitionName = definition.name().clone().into();
-        self.add(definition, &name).await
+        self.add(definition, &name).await?;
+        Ok(self.count_change_of(name))
     }
 
-    /// Replaces the definition of the same kind and name.
+    /// Replaces the definition of the same kind and name, and returns the revision it has from then on.
     ///
     /// The definition changes in everything but its name.
+    /// With `expects`, the update only changes the definition that has that revision: the one its sender saw.
+    /// Without it, the last change wins.
     ///
     /// # Errors
     ///
     /// - [`UpdateError::NotFound`] when no definition of this kind has the name. Nothing is created.
+    /// - [`UpdateError::Changed`] when the definition has another revision than `expects`. It says which.
     /// - [`UpdateError::DoesNotFit`] when the definitions would not fit each other with the change:
     ///   the definition refers to a name that does not exist, or a rule can never fire with it,
     ///   which can be a rule that uses the selector or the preset that changes.
     /// - [`UpdateError::StoreFailed`] when a store could not read its definitions, or could not keep the change.
-    pub async fn update<D: WorkspaceDefinition>(&mut self, definition: D) -> Result<(), UpdateError> {
+    pub async fn update<D: WorkspaceDefinition>(
+        &mut self,
+        definition: D,
+        expects: Option<Revision>,
+    ) -> Result<Revision, UpdateError> {
         let name: DefinitionName = definition.name().clone().into();
         let contents = match self.contents().await {
             Ok(contents) => contents,
@@ -129,6 +196,9 @@ impl<C: WorkspaceContext> Workspace<C> {
         if contents.get(&name).is_none() {
             return Err(UpdateError::NotFound { name });
         }
+        if let Err(revision) = self.check(&name, expects) {
+            return Err(UpdateError::Changed { name, revision });
+        }
 
         let errors = contents.errors_with(definition.clone().into_any());
         if !errors.is_empty() {
@@ -136,30 +206,44 @@ impl<C: WorkspaceContext> Workspace<C> {
         }
 
         match self.store_update(definition.into_any()).await {
-            Ok(()) => Ok(()),
+            Ok(()) => Ok(self.count_change_of(name)),
             Err(StoreChangeError::NotFound) => Err(UpdateError::NotFound { name }),
             Err(StoreChangeError::Failed { reason }) => Err(UpdateError::StoreFailed { name, reason }),
         }
     }
 
-    /// Removes the definition of this kind and name.
+    /// Removes the definition of this kind and name, and returns the revision of the delete.
     ///
     /// The type of the name says the kind: a `RuleName` deletes a rule.
     /// The workspace asks the stores who uses the definition, and only those whose definitions can refer to it.
+    /// With `expects`, the delete only removes the definition that has that revision: the one its sender saw.
+    /// Without it, the last change wins.
+    ///
+    /// The delete is a change, so it takes a number, and nothing has that revision afterwards:
+    /// the workspace forgets the revision of a definition that went.
+    /// A definition that someone makes again under the name has a higher revision than the delete.
     ///
     /// # Errors
     ///
     /// - [`DeleteError::NotFound`] when no definition of this kind has the name.
+    /// - [`DeleteError::Changed`] when the definition has another revision than `expects`. It says which.
     /// - [`DeleteError::InUse`] when other definitions refer to this one. It names them:
     ///   the selectors that include a selector, the rules that use a selector or a preset,
     ///   and the pad layouts with a row or a column for it.
     /// - [`DeleteError::StoreFailed`] when a store could not read its definitions, or could not remove this one.
-    pub async fn delete(&mut self, name: impl Into<DefinitionName>) -> Result<(), DeleteError> {
+    pub async fn delete(
+        &mut self,
+        name: impl Into<DefinitionName>,
+        expects: Option<Revision>,
+    ) -> Result<Revision, DeleteError> {
         let name = name.into();
         match self.holds(&name).await {
             Ok(true) => {}
             Ok(false) => return Err(DeleteError::NotFound { name }),
             Err(Unread { reason }) => return Err(DeleteError::StoreFailed { name, reason }),
+        }
+        if let Err(revision) = self.check(&name, expects) {
+            return Err(DeleteError::Changed { name, revision });
         }
         let users = match self.users_of(&name).await {
             Ok(users) => users,
@@ -170,7 +254,10 @@ impl<C: WorkspaceContext> Workspace<C> {
         }
 
         match self.store_delete(&name).await {
-            Ok(()) => Ok(()),
+            Ok(()) => {
+                self.changed.remove(&name);
+                Ok(self.counter.next_revision())
+            }
             Err(StoreChangeError::NotFound) => Err(DeleteError::NotFound { name }),
             Err(StoreChangeError::Failed { reason }) => Err(DeleteError::StoreFailed { name, reason }),
         }
@@ -196,6 +283,32 @@ impl<C: WorkspaceContext> Workspace<C> {
         } else {
             Err(ValidationError::Invalid { errors })
         }
+    }
+
+    /// The revision of the definition of that name, which a store holds.
+    fn revision_of(&self, name: &DefinitionName) -> Revision {
+        self.changed.get(name).copied().unwrap_or(self.loaded)
+    }
+
+    /// Whether the definition of that name, which a store holds, has the revision that a change expects.
+    /// A change that expects nothing finds what it expects.
+    ///
+    /// # Errors
+    ///
+    /// The revision that the definition has, when it is another one.
+    fn check(&self, name: &DefinitionName, expects: Option<Revision>) -> Result<(), Revision> {
+        let revision = self.revision_of(name);
+        match expects {
+            Some(expected) if expected != revision => Err(revision),
+            _ => Ok(()),
+        }
+    }
+
+    /// Takes the next number for a change that a store took, and keeps it as the revision of the definition.
+    fn count_change_of(&mut self, name: DefinitionName) -> Revision {
+        let revision = self.counter.next_revision();
+        self.changed.insert(name, revision);
+        revision
     }
 
     /// Checks a new definition against what the stores hold, and asks the store of its kind to take it.

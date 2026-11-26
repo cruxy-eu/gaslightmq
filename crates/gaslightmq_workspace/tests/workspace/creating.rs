@@ -303,8 +303,8 @@ fn a_change_is_a_future_that_another_thread_can_drive() {
     /// and hands every request to a task of its runtime, which may run on any thread.
     fn every_change_is_send<C: WorkspaceContext>(workspace: &mut Workspace<C>) {
         assert_send(&workspace.create(OrderDesk::blackhole()));
-        assert_send(&workspace.update(OrderDesk::blackhole()));
-        assert_send(&workspace.delete(OrderDesk::blackhole().name().clone()));
+        assert_send(&workspace.update(OrderDesk::blackhole(), None));
+        assert_send(&workspace.delete(OrderDesk::blackhole().name().clone(), None));
         assert_send(&workspace.validate());
     }
 
