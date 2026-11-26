@@ -225,7 +225,7 @@ The undo history belongs to the UI, and the engine keeps none.
 - **Each tab has a history of its own, in memory.**
   It holds the changes that this tab made.
   It never holds a change of another tab, of `gmq`, of a scenario or of a reload.
-- **It holds as many steps as `undo.depth` says.**
+- **It holds as many steps as `undo_depth` says.**
   That is a property of the UI's configuration, and 100 unless someone sets it.
   The oldest step goes when a new one would be one too many.
 - **It lives as long as the tab.**
@@ -235,8 +235,12 @@ The undo history belongs to the UI, and the engine keeps none.
   When the stream opens again and its snapshot names another [run](../architecture/identity.md#run), the tab drops every step.
   The process started again, nothing is armed, and no step of the history fits it.
 - **A new change ends what could be redone.**
+  A keep ends it too, though it leaves no step of its own.
 - **A step goes with its environment.**
   When an environment stops, the tab drops the steps that changed it.
+  A step that changed a rule of the workspace stays: the workspace does not stop with an environment.
+- **One undo or redo goes out at a time.**
+  While one waits for its answer, ⌘Z and ⇧⌘Z do nothing.
 
 ### One gesture is one step
 
@@ -246,8 +250,13 @@ One gesture sends one operation, and one operation is one step.
 |---|---|
 | Enter in ⌘K | The live rule that the sentence made, armed. Undo deletes it. |
 | A press in latch | The press. Undo disarms the rule, or deletes it when the press made it. |
-| A press and its release in hold | Both together. They leave a step only when the press made the rule, and undo then deletes it. |
+| A press and its release in hold | Both together. They leave a step only when the press made the rule and the release disarmed it, and undo then deletes it. |
 | Turns of one encoder on one rule, one after another | All of them. Undo sets the rule back to what it was before the first. |
+
+A press in latch that changed nothing leaves no step, and neither does a turn that stood at its bound.
+A release that disarmed nothing leaves no step either: someone else disarmed the rule since, or still holds its pad,
+and deleting the rule would take it from them.
+A turn of another encoder, or of another rule, starts a step of its own, and so does a turn after anything else that the tab did.
 
 ⌘Z does nothing while a pad is held.
 While a text field has the focus, and in the ⌘K palette, ⌘Z and ⇧⌘Z belong to the text.
@@ -256,9 +265,18 @@ While a text field has the focus, and in the ⌘K palette, ⌘Z and ⇧⌘Z belo
 
 An undo is an ordinary operation of the [control plane](../architecture/control-plane.md#undo).
 The UI works out the inverse of each change from what the control plane answered to it, and never from what it expects a press or a turn to do.
+An update expects the revision of the rule that the tab showed, so its success says that the rule before is the one the tab held.
+A turn expects nothing, so the rule before the first turn is the rule as the tab showed it.
+
+Every undo and every redo is a request of the surface `ui`, with its cause, whichever surface made the change:
+⌘Z is a key of the UI, and neither a press at the pads nor a ⌘K sentence.
+A redo of a press or a turn is no intent either: it arms, disarms, makes or updates the rule as the press or the turn left it.
 
 Someone else can change the same rule in between: another tab, `gmq`, a step, a lifetime or a reload.
-Each undo therefore names the [revision](../architecture/control-plane.md#revisions) that its change left, and the run that gave it.
+Each undo therefore names the [revision](../architecture/control-plane.md#revisions) that the tab left on the rule last, and the run that gave it:
+the revision that its change left, or the one that the undo or the redo of a later step of the same rule left.
+Two steps of the tab on one rule, such as an arm and a change of its chance, so undo one after the other.
+A change of a rule of the workspace is a change of that rule in every environment, so an undo of its arm expects what the change left.
 No revision comes back within a run, so a rule that someone deleted and made again under its name never fits an old step.
 
 - **When the revision still holds, the undo applies.**
@@ -268,3 +286,9 @@ No revision comes back within a run, so a rule that someone deleted and made aga
   The UI drops the step, and says that the rule changed since.
   It never forces an undo over a change that the tab did not make.
   The steps before it stay, and the next ⌘Z takes the next one.
+- **When the control plane refuses for another reason, the undo changes nothing either.**
+  The environment stopped, the rule is gone, its name is taken, or it no longer fits the workspace.
+  The UI drops the step, and says why.
+- **When no answer comes, the step stays.**
+  The undo may have applied or not, so the next ⌘Z sends it again.
+  When the first one had applied, the second finds the revision moved on, and changes nothing.

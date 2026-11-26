@@ -274,7 +274,8 @@ It acts on the rule as the rule is, and it says the state that it wants.
 The control plane has no operation that undoes, and it keeps no history for it.
 A surface keeps the history of its own changes, as the [UI](../domains/control-surfaces.md#undo-and-redo) does for each tab.
 An undo is an ordinary operation: the inverse of the change, with the cause `undo`.
-Its `expects` names the run of the change and the revision that the change left.
+Its `expects` names the run of the change and the revision that the change left,
+or the one that a later undo or redo of the same thing by the same surface left.
 
 | A change | Its inverse |
 |---|---|
@@ -289,9 +290,12 @@ Its `expects` names the run of the change and the revision that the change left.
 | A pad press that armed a rule | Disarm it, or delete the live rule when the answer says that the press made it. |
 | A pad press that disarmed a rule | Arm it. |
 | A pad press that changed nothing | Nothing. The answer says so, and the surface keeps no step. |
+| A pad press in hold that made a rule, and its release that disarmed it | Delete the live rule. |
 | Turns of an encoder | Update the live rule to the definition before the first turn. |
 
 A redo is the change again, with the revision that the undo left and the cause `redo`.
+The redo of a pad press or a turn is no intent, because an intent expects nothing:
+it arms, disarms, creates or updates the rule as the press or the turn left it.
 
 - **The inverse restores a state, and never replays a gesture.**
   The undo of a turn of +3 is no turn of −3: an encoder stops at its bounds, and the turn may have changed less.
