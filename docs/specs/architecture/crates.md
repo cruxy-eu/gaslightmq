@@ -978,6 +978,34 @@ A proxy in front of that broker gives the test such a cluster behind a proxy.
 From there, a test works the same way with both crates:
 it activates a scenario, runs its clients and [asserts on the recording](control-plane.md#tests).
 
+`test` puts a process together, as `gmq` does:
+
+- **The test holds GaslightMQ as one value.**
+  The value holds the host, the control server in front of it and a client of the control plane.
+  The listeners accept connections once the test holds it.
+  A stop waits until everything has stopped and every address is free.
+  A test that lets go of the value without a stop stops it a moment later, and waits for nothing.
+- **It runs one environment.**
+  The workspace gets the environment of the instance, under a name that the test may pick, so the control plane knows it by that name.
+  `test` starts it, so it configures it: every instance runs with its defaults, on the listeners of the test.
+- **The proxy tells every lie that GaslightMQ has.**
+  A test of a user arms whatever lie it needs, without naming the lies of its build.
+- **Its client is the surface `test`.**
+  Every request says that it comes from a [test](control-plane.md#where-a-request-comes-from), and names no presence.
+  The test has the process to itself, so it leaves `expects` out of its changes, and the [last change wins](control-plane.md#revisions).
+  A test that wants another client, such as the UI in a browser, takes the address of the control plane.
+- **The test names its run, or gets one.**
+  A test may name the [run ID](identity.md#run), and compare it with what it reads.
+  A test that names none gets one from the randomness of the system.
+- **Everything tunable is a property.**
+  The address that the listeners listen on, the host that clients reach the brokers under,
+  the configuration of the host and the one of the control server each have a default, which a test may change.
+
+Until scenarios and recordings arrive, a test of `test` arms its rules one by one through the control plane, and
+asserts on what its clients saw and on what the cluster holds.
+Until `environment` can give a free port to every broker that a cluster reports, a proxy in front of a real cluster
+needs the IDs of its brokers to give each of them a free port: the test names them, and a cluster of one broker has the ID 1 until the test says otherwise.
+
 ## A real cluster in a test
 
 `test_kafka` gives a test of this workspace a cluster of real brokers.
@@ -985,7 +1013,7 @@ it activates a scenario, runs its clients and [asserts on the recording](control
 
 It stands with the applications, because nothing of the product depends on it.
 A crate that speaks to a real cluster takes it as a dev-dependency:
-`kafka_client_native`, `backend_upstream`, `engine`, `host` and `control_server` today, and `test` and `testcontainers` once they exist.
+`kafka_client_native`, `backend_upstream`, `engine`, `host`, `control_server` and `test` today, and `testcontainers` once it exists.
 It depends on vocabulary alone, so every crate above `wire` can use it without a cycle.
 
 - **One cluster, several brokers.**
