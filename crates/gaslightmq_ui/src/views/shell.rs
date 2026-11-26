@@ -32,6 +32,22 @@ pub fn Shell() -> Element {
             open.set(true);
         }
     });
+    // ⌘Z and ⇧⌘Z go through the undo history of the tab. While ⌘K is open, the keys belong to its text.
+    use_future(move || {
+        let ui = ui.clone();
+        async move {
+            let mut script = browser::listen_for_history_keys();
+            while let Some(cause) = browser::history_key_pressed(&mut script).await {
+                if *ui.quick_inject.peek() {
+                    continue;
+                }
+                match cause {
+                    RequestCause::Undo => ui.undo(),
+                    RequestCause::Redo => ui.redo(),
+                }
+            }
+        }
+    });
     rsx! {
         div { class: "relative flex h-full overflow-hidden rounded-xl border border-edge bg-app",
             Sidebar {}

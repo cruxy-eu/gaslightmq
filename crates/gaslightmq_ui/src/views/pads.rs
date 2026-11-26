@@ -3,7 +3,7 @@
 use dioxus::prelude::*;
 use gaslightmq_control_api::environment::EnvironmentName;
 use gaslightmq_control_api::prelude::*;
-use gaslightmq_control_api::rule::{Action, Preset, PresetName, RuleState};
+use gaslightmq_control_api::rule::{Action, Preset, PresetName, Rule, RuleState};
 use gaslightmq_control_api::selector::SelectorName;
 use gaslightmq_control_api::surface::{
     Column, Encoder, Hold, Intent, Layer, LayoutName, Pad, PadState, PlayMode, Row, Steps,
@@ -15,6 +15,8 @@ use crate::app::Ui;
 use crate::browser;
 use crate::components::LieBadge;
 use crate::components::{Icon, Shape, Tone};
+use crate::history::Step;
+use crate::process::rule_status;
 use crate::style::{CRUMB, EMPTY, HEADER, KEY, SEGMENT, SEGMENT_ON, SEGMENTS};
 
 /// The card of the focused pad, left of the encoders.
@@ -243,14 +245,44 @@ fn let_go(ui: &Ui, release: impl FnOnce(&mut Desk) -> Option<SendIntent>) {
 ///
 /// A press in hold and its release each go their own way: a hold belongs to the presence of the tab,
 /// and its release arrives, or the presence ends.
+///
+/// What the answer says the intent did leaves a step in the undo history of the tab: a press that changed a rule,
+/// and a turn that changed one, which joins the turns of its encoder before it.
 fn send(ui: &Ui, send: SendIntent) {
+    let environment = send.environment.clone();
     match &send.intent {
         Intent::Hold { pad } => hold(ui, pad.clone(), send),
         Intent::Release { .. } => release(ui, send),
-        Intent::Arm { .. } | Intent::Disarm { .. } | Intent::Turn { .. } => {
-            ui.send_from(RequestSurface::Pad, send, |_| {});
+        Intent::Arm { .. } | Intent::Disarm { .. } => {
+            let recorder = ui.clone();
+            ui.send_from(RequestSurface::Pad, send, move |effect| {
+                if let Some(step) = Step::pressed(&environment, &effect) {
+                    recorder.record(step);
+                }
+            });
+        }
+        Intent::Turn { pad, turn } => {
+            // The rule before the turn, as the tab shows it: its undo sets the rule back to it.
+            let was = turned(ui, &environment, pad);
+            let encoder = turn.encoder();
+            let recorder = ui.clone();
+            ui.send_from(RequestSurface::Pad, send, move |effect| {
+                if let Some(was) = was
+                    && let Some(step) = Step::turned(&environment, encoder, &was, &effect)
+                {
+                    recorder.record(step);
+                }
+            });
         }
     }
+}
+
+/// The rule that a turn of `pad` changes in `environment`, as the tab shows it before the turn.
+fn turned(ui: &Ui, environment: &EnvironmentName, pad: &Pad) -> Option<Rule> {
+    let live = ui.live.peek();
+    let running = live.process()?.environment(environment)?;
+    let name = ui.desk.peek().as_ref()?.layout().rule_name(pad)?;
+    rule_status(running, &name).map(|status| status.rule.clone())
 }
 
 /// Sends a press in hold of `pad`. Its answer goes back to the desk, which keeps the hold for the release,
@@ -273,7 +305,12 @@ fn hold(ui: &Ui, pad: Pad, send: SendIntent) {
     let ui = ui.clone();
     spawn(async move {
         let hold = match ui.client.send_from(from, send).await {
-            Ok(Ok(effect)) => effect.hold,
+            Ok(Ok(effect)) => {
+                // A press that made the rule of the pad is one step with its release.
+                let mut live = ui.live;
+                live.write().history_mut().held(&effect);
+                effect.hold
+            }
             Ok(Err(refused)) => {
                 ui.notify(refused.to_string(), true);
                 None
@@ -324,7 +361,15 @@ fn release(ui: &Ui, release: SendIntent) {
                 .send_from(ui.source(RequestSurface::Pad), release.clone())
                 .await;
             match sent {
-                Ok(Ok(_)) => return,
+                Ok(Ok(effect)) => {
+                    if let Intent::Release { hold, .. } = &release.intent {
+                        let mut live = ui.live;
+                        live.write()
+                            .history_mut()
+                            .released(&release.environment, *hold, &effect);
+                    }
+                    return;
+                }
                 Ok(Err(refused)) => return ui.notify(refused.to_string(), true),
                 Err(SendError::Unreachable { reason }) => {
                     if !told {

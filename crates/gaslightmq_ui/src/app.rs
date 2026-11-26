@@ -1,12 +1,13 @@
 //! The application: what every view shares, and the views by their path.
 
 use dioxus::prelude::*;
-use gaslightmq_control_api::{Operation, RequestSource, RequestSurface};
-use gaslightmq_control_client::{ControlClient, ControlClientConfiguration};
+use gaslightmq_control_api::{Expects, Operation, RequestCause, RequestSource, RequestSurface, Revised};
+use gaslightmq_control_client::{ControlClient, ControlClientConfiguration, SendError};
 
 use crate::browser;
 use crate::configuration::UiConfiguration;
 use crate::connection::{self, Changed};
+use crate::history::{Change, Outcome, Step, Subject};
 use crate::live::Live;
 use crate::pads::Desk;
 use crate::views::{Pads, Record, Rules, Shell};
@@ -148,6 +149,61 @@ impl Ui {
         });
     }
 
+    /// What a change of `subject` expects: the run and the revision that the tab shows.
+    /// Every change that the UI makes sends it.
+    pub fn expects(&self, subject: &Subject) -> Option<Expects> {
+        self.live.peek().expects(subject)
+    }
+
+    /// The control plane applied a change of this tab, and `step` takes it back.
+    pub fn record(&self, step: Step) {
+        let mut live = self.live;
+        live.write().history_mut().record(step);
+    }
+
+    /// ⌘Z: takes back the last change of this tab. It does nothing while someone holds a pad.
+    pub fn undo(&self) {
+        self.go_through_history(RequestCause::Undo);
+    }
+
+    /// ⇧⌘Z: makes the last change that this tab took back again. It does nothing while someone holds a pad.
+    pub fn redo(&self) {
+        self.go_through_history(RequestCause::Redo);
+    }
+
+    /// Sends the undo or the redo of the history, as an ordinary operation with its cause, and says what came of it.
+    fn go_through_history(&self, cause: RequestCause) {
+        if self.desk.peek().as_ref().is_some_and(Desk::holding) {
+            return;
+        }
+        let mut live = self.live;
+        let change = match cause {
+            RequestCause::Undo => live.write().history_mut().undo(),
+            RequestCause::Redo => live.write().history_mut().redo(),
+        };
+        let Some(change) = change else {
+            return;
+        };
+        // ⌘Z is a key of the UI: neither a press at the pads nor a ⌘K sentence.
+        let from = self.source(RequestSurface::Ui).with_cause(cause);
+        let ui = self.clone();
+        spawn(async move {
+            let client = &ui.client;
+            let outcome = match change {
+                Change::ArmRule(arm) => outcome(client.send_from(from, arm).await),
+                Change::DisarmRule(disarm) => outcome(client.send_from(from, disarm).await),
+                Change::CreateLiveRule(create) => outcome(client.send_from(from, create).await),
+                Change::UpdateLiveRule(update) => outcome(client.send_from(from, update).await),
+                Change::DeleteLiveRule(delete) => outcome(client.send_from(from, delete).await),
+                Change::UpdateRule(update) => outcome(client.send_from(from, update).await),
+            };
+            let report = live.write().history_mut().settled(outcome);
+            if let Some(report) = report {
+                ui.notify(report.text, report.refused);
+            }
+        });
+    }
+
     /// Shows `text` until it fades.
     pub fn notify(&self, text: String, failed: bool) {
         let mut notices = self.notices;
@@ -158,6 +214,26 @@ impl Ui {
             browser::sleep(fades_after).await;
             notices.write().retain(|notice| notice.id != id);
         });
+    }
+}
+
+/// What came of an undo or a redo, from what the client returned.
+///
+/// A request that got no answer may have applied. A request that the control plane did not take, or whose answer
+/// nobody can read, will not apply when it goes out again.
+fn outcome<E>(sent: Result<Result<Revised, E>, SendError>) -> Outcome
+where
+    Outcome: From<E>,
+{
+    match sent {
+        Ok(Ok(answer)) => Outcome::Applied {
+            revision: answer.revision,
+        },
+        Ok(Err(refused)) => Outcome::from(refused),
+        Err(SendError::Unreachable { reason }) => Outcome::Unanswered { reason },
+        Err(error @ (SendError::Rejected { .. } | SendError::Unreadable { .. })) => Outcome::Refused {
+            reason: error.to_string(),
+        },
     }
 }
 
