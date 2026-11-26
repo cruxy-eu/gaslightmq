@@ -81,7 +81,7 @@ No layout adds one, and none leaves one out.
 | Key | Holds |
 |---|---|
 | `environment` | The name of the environment. |
-| `started` | The instant the recording started, in UTC and to the millisecond. |
+| `started` | The instant the recording started, in UTC and to the millisecond. Whoever starts the recording hands it in: no crate of a recording reads a clock. |
 | `clock` | The instant of the clock of the environment at that moment. Every entry tells its time on that clock, so this pair says when an entry was. |
 | `mode` | The recording mode: `full` or `metadata-only`. |
 | `backend` | `upstream` or `simulated`: what stood behind the proxy. |
@@ -301,10 +301,9 @@ For every frame, `recording` reads the API of its call from the header of the re
 | The frame | In a full recording | In a metadata-only recording |
 |---|---|---|
 | A `SaslAuthenticate` request, or a response to one | Redacted: its authentication bytes are empty. | The same. |
-| A frame that holds records, such as a Produce request and a Fetch response | Whole. | Redacted: every record is there without its key, its value and its headers. |
+| A frame that holds records: a Produce request, and a Fetch or a `ShareFetch` response | Whole. | Redacted: every record is there without its key, its value and its headers. |
 | A frame of any other API that the codec reads | Whole. | Whole. |
-| A frame of a known API that cannot be read or cannot be rewritten | Whole, and withheld when the API is `SaslAuthenticate`. | Withheld. |
-| A frame of a call whose API nobody can tell | Withheld. | Withheld. |
+| A frame that the codec cannot read: its API is unknown, or its header or its body does not decode | Withheld. | Withheld. |
 
 - **A redacted frame is a frame.**
   It decodes at the version it had, and it says everything else that it said.
@@ -313,8 +312,11 @@ For every frame, `recording` reads the API of its call from the header of the re
   The batch is kept without compression and with a new checksum.
 - **The response to `SaslAuthenticate` is blanked too.**
   With SCRAM, what the server answers is enough to test guessed passwords against, next to what an attacker can guess.
-- **Whatever cannot be proven harmless is withheld.**
-  An API that a later Kafka adds can carry records, so a metadata-only recording never keeps a frame that nobody could read.
+- **A control batch stays whole.**
+  It marks the end of a transaction, and holds nothing that a client wrote.
+- **Whatever cannot be read is withheld, in a full recording too.**
+  A frame that nobody could read can hold records, or a password, and nobody can tell.
+  The price is that a full recording does not keep the one frame that the codec failed on: it keeps its length, and the call record says what GaslightMQ made of it.
 
 `recording` needs the Kafka codec for this, and for nothing else.
 
@@ -367,17 +369,18 @@ The model is the tree of metadata of Apache Iceberg: a root that lists small fil
   A reader checks every length against the bytes that are there before it uses it.
   A recording can come from anywhere, so a reader trusts nothing that it says.
 - **A checksum is a CRC-32C**, the checksum that Kafka gives its record batches.
-- **What has a structure is CBOR.**
-  A description, a summary, the body of an entry and the items of an index chunk are CBOR ([RFC 8949](https://www.rfc-editor.org/rfc/rfc8949)), a binary encoding that describes itself.
-  A map has text keys, and every map, list and text says its length at its start.
+- **What has a structure is JSON.**
+  A description, a summary, the body of an entry and the items of an index chunk are JSON, in UTF-8 and without white space between its parts.
+  JSON describes itself, which the forms of a call record and of a journal entry need.
 - **What is a frame is the frame.**
   The bytes of a Kafka frame stand in a segment as they were on the wire, without the four bytes of their length.
 
 The layout therefore has two layers.
 Its framing is fixed binary: marks, lengths and checksums, which a reader finds without decoding anything.
-What it says is in CBOR, in the forms that the types already have.
-A call record and a journal entry have one form each, the form that their crate gives them:
-the control plane writes it as JSON, and a segment writes it as CBOR.
+What it says is in JSON, in the forms that the types already have.
+A call record and a journal entry have one form each, the form that their crate gives them, and one encoding:
+a segment holds the bytes that the control plane sends.
+Anyone reads an entry with the tools they have.
 
 Every object starts with a mark of 8 bytes and the [version](#versions) of the layout.
 
@@ -393,7 +396,7 @@ segment = segment header  block …  end
 | 8 | 2 | The version of the layout: `1`. |
 | 10 | 2 | Zero. |
 | 12 | 4 | The length of what follows. |
-| 16 | … | A CBOR map: the [description](#description) of the recording, and `first`, the position of the first entry of the segment. |
+| 16 | … | A JSON map: the [description](#description) of the recording, and `first`, the position of the first entry of the segment. |
 | … | 4 | The checksum of every byte of the header before it. |
 
 Every segment holds the description, so every segment says which recording it belongs to, and a recording without a manifest still knows what it is.
@@ -412,6 +415,7 @@ The last segment of a recording that ended in order ends with the end:
 
 A recording that [stops by itself](storage.md#recordings) still ends in order.
 The recorder writes everything it took from its queue, and then the end.
+Its last entry is the journal entry that says why it stopped, and the end says it again, so whoever lists the recordings reads no entry.
 A recording that could not be written has no end, because a recording cannot say that it could not be written.
 The journal in memory and the control plane say it.
 
@@ -436,7 +440,7 @@ block = block header  summary  entries  frames
 | 40 | 1 | The compression of the entries: `0`, none. See [compression](#compression). |
 | 41 | 7 | Zero. |
 
-The summary is the [summary](#summary) of the block, in CBOR.
+The summary is the [summary](#summary) of the block, in JSON.
 The frames take the rest of the block.
 
 The entries and the frames stand apart on purpose.
@@ -450,7 +454,7 @@ An entry:
 |---|---|---|
 | 0 | 4 | The length of the body. |
 | 4 | 1 | The kind: `1` a session event, `2` a call, `3` a journal entry. |
-| 5 | … | The body: CBOR, and for a call 72 bytes before it. |
+| 5 | … | The body: JSON, and for a call 72 bytes before it. |
 
 The 72 bytes of a call say where its frames are:
 
@@ -491,7 +495,7 @@ index chunk = index header  item …
 | 10 | 6 | Zero. |
 | 16 | 8 | The position of the first entry that the chunk describes. |
 
-An item is a length of 4 bytes, a checksum of 4 bytes, and a CBOR map that describes one segment:
+An item is a length of 4 bytes, a checksum of 4 bytes, and a JSON map that describes one segment:
 
 | Key | Holds |
 |---|---|
@@ -514,7 +518,7 @@ An index chunk describes sealed segments only.
 | 8 | 2 | The version of the layout: `1`. |
 | 10 | 2 | Zero. |
 | 12 | 4 | The length of what follows. |
-| 16 | … | A CBOR map. |
+| 16 | … | A JSON map. |
 | … | 4 | The checksum of every byte before it. |
 
 | Key | Holds |
@@ -654,7 +658,7 @@ Nothing is measured yet.
 Version 1 compresses nothing.
 
 The byte for it is in the header of a block, and it covers the entries alone.
-The entries are where compression pays: their keys repeat in every entry.
+The entries are where compression pays: they are text, and their keys repeat in every entry.
 A reader decodes them anyway, so it loses nothing when they are compressed.
 The frames stay plain in every version: a frame that is compressed in a segment cannot be handed out without a copy,
 and the record batches in it are often compressed already.
@@ -893,7 +897,7 @@ The others are the segment layout's.
 | What does the manifest say about an index chunk? | Where it starts, and for a full one what it covers and the sum of its summaries. | A list of names alone. A reader would read every index chunk to find a position, a moment or a topic. |
 | Where do the bytes of the layout live? | Behind a second contract of three kinds of object. Files are the first backing. | A layout that opens files itself. It could not be tested without a disk, and could never move to an object store. |
 | Does a reader copy? | No frame. A frame is a buffer that is shared, from the socket to the storage and from the storage to the codec. Records are decoded. | Slices that borrow from the storage. The trait would need lending types, and every storage would have to hold its bytes in one place. |
-| Which encoding? | Framing of our own around the frames, and an encoding that describes itself for what has a structure. | A format with a schema and zero-copy access: a second set of every type of a call, kept in step by hand, to borrow a few hundred bytes. An encoding that copies the layout of the types in memory: every change of a type would end every old recording. |
+| Which encoding? | Framing of our own around the frames, and JSON for what has a structure: the forms that the types have, in the encoding that the control plane sends and that their tests check. | A binary encoding that describes itself, such as CBOR: a second encoding of the same forms, for fewer bytes, which compressing the entries gets later anyway. A format with a schema and zero-copy access: a second set of every type of a call, kept in step by hand, to borrow a few hundred bytes. An encoding that copies the layout of the types in memory: every change of a type would end every old recording. |
 | What closes each level? | A size. An interval commits. | A count of entries, which bounds neither memory nor loss. An age for segments, which only a log with retention needs. |
 | What is in a summary? | The values of every field, as lists with a limit. | Bloom filters, which answer `is` and cannot answer `matches`. Ranges of values, which no operator asks for. |
 | What is left after a crash? | Everything that was committed. The segments describe themselves, so a missing index chunk or manifest is rebuilt from them. | A manifest that must be right. A crash between two writes would then lose what the segments still hold. |
