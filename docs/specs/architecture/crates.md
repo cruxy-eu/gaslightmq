@@ -407,7 +407,7 @@ Transactions arrive later as `sim_txn`, next to `sim_log` and `sim_group`.
 | `kafka_client_native` | Our own Kafka client behind those traits, as three types: a producer, a consumer and an admin. Every instance has its own connections, its own view of the cluster, its own configuration and its own `client.id`, so a fault or a lie reaches one role alone. The consumer is one member of each group it joins, and everything it says about a group travels on connections of its own, so a Fetch that waits never delays a Heartbeat. Each role follows partition leaders, negotiates API versions on every connection, and reports every failure as the `ClientError` of `kafka_client_api`. What a role decides is sans-IO code inside the crate, and the async part only owns sockets and timers. This crate does IO. | `kafka_client_api`, `wire`, `kernel`, `clock` |
 | `test_kafka` | A real Kafka cluster for the tests of this workspace: brokers of the version the workspace tests against, each with an address for the clients of a test. Its own handles create topics, write records, read them back and open transactions, with one request at a fixed version each. They share the codec with the client a test is about, and no decision of a client. It starts no GaslightMQ. This crate is [test support](#test-support-crates). This crate does IO. See [a real cluster in a test](#a-real-cluster-in-a-test). | `wire`, `kernel`, `clock` |
 | `gaslightmq` | The facade crate: `Proxy`, `Broker` and `Host`, and re-exports of what library users need. This crate does IO. | The public crates |
-| `gmq` | The binary: `gmq proxy`, `gmq broker`, `gmq start`, `gmq run`, `gmq init`, `gmq health` and `gmq reload`. It reads the flags, the variables and the files once, and hands the host and the control server their configuration. It writes the context of the workspace, and picks its stores there: files, or memory when there are none. It makes the [ID of the run](identity.md#run) from the randomness of the system, and hands it to the host. This crate does IO. | `host`, `control_server`, `control_client`, `workspace_fs`, `workspace`, `environment` |
+| `gmq` | The binary: `gmq proxy`, `gmq broker`, `gmq start`, `gmq run`, `gmq init`, `gmq health` and `gmq reload`. It reads the flags, the variables and the files once, and hands the host and the control server their configuration. It writes the context of the workspace, and picks its stores there: files, or memory when there are none. It makes the [ID of the run](identity.md#run) from the randomness of the system, and hands it to the host. It names the lies of its build, one feature for each crate of a lie kind. `gmq proxy` in front of a real cluster and `gmq reload` are there, with the [flags](storage.md#the-flags-of-gmq) that they take; `gmq health`, `gmq broker`, `gmq start`, `gmq run` and `gmq init` come next, and so does reading `gaslight.yaml`. This crate does IO. | `host`, `control_server`, `control_client`, `control_api`, `workspace_fs`, `workspace`, `definition_api`, `environment`, `lie_api`, `lie_refusal` |
 
 ## The pipeline is sans-IO
 
@@ -1049,6 +1049,7 @@ It depends on vocabulary alone, so every crate above `wire` can use it without a
 - `control_client` has one feature per transport: native and WebAssembly.
 - `gmq` has one feature per backend and one per crate of a lie kind,
   so a build can ship the proxy without the fake broker.
+  Today it has `refusal`, on by default. The one backend, in front of a real cluster, comes with `host`, so it has no feature yet.
 
 ## Build order
 
@@ -1089,6 +1090,8 @@ the [check before a write](storage.md#the-check-before-a-write), and the [reload
 Nothing in step 5 watches a file.
 
 In step 5, `gmq` runs a proxy in front of a real cluster, as [example 09](../../../examples/09-proxy-in-front-of-real-kafka/README.md) does.
+`gmq proxy --upstream` runs it from its flags, over the files of a workspace or over memory, and its test arms the rule of the example.
+Starting the environment of the example by its name, with `gmq start`, comes with that command, and its TLS and SASL with the backend that speaks them.
 The stores of files read the definitions of every example: the selectors, presets, rules, scenarios, layouts and environments.
 The worlds, templates, schemas and data files of the examples wait for step 6.
 The views of the UI for scenarios, the journal and recordings come after step 5.
