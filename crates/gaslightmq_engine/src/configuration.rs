@@ -11,6 +11,7 @@ use std::net::SocketAddr;
 use gaslightmq_clock::TimeSpan;
 use gaslightmq_environment::Listeners;
 use gaslightmq_field::Endpoint;
+use gaslightmq_journal::RecentJournalSize;
 use gaslightmq_listener::{FrameSizeLimit, ListenerConfiguration};
 use gaslightmq_trigger::Seed;
 
@@ -64,6 +65,13 @@ pub struct EngineConfiguration {
     /// The engine keeps at least that many: it rounds the number up to the next power of two.
     /// A listener of [every event](crate::Engine::every_event) has no backlog, because the engine drops nothing for it.
     pub event_backlog: EventBacklog,
+    /// Ours. Default: 1000 entries.
+    ///
+    /// How many entries of its [journal](crate::Engine::journal) the engine keeps in memory.
+    /// An entry that comes to a full journal pushes the oldest one out of memory.
+    /// The journal is what someone sees who looks back at what changed, so it is as large as the stretch they want
+    /// to look back on. Every entry it keeps is memory that the engine holds.
+    pub recent_journal: RecentJournalSize,
     /// Kafka: `socket.request.max.bytes`. Default: 100 MiB.
     ///
     /// The largest frame a client may send, on every endpoint.
@@ -110,6 +118,7 @@ impl EngineConfiguration {
             seed: Seed::new(0),
             client_context_linger: TimeSpan::from_secs(60),
             event_backlog: EventBacklog::default(),
+            recent_journal: RecentJournalSize::default(),
             socket_request_max_bytes: of_a_listener.socket_request_max_bytes,
             accept_retry_backoff: of_a_listener.accept_retry_backoff,
             close_timeout: of_a_listener.close_timeout,
@@ -237,6 +246,7 @@ mod tests {
         assert_eq!(configuration.seed, Seed::new(0));
         assert_eq!(configuration.client_context_linger, TimeSpan::from_secs(60));
         assert_eq!(configuration.event_backlog.events(), 4096);
+        assert_eq!(configuration.recent_journal.entries(), 1000);
         assert_eq!(configuration.socket_request_max_bytes.bytes(), 100 * 1024 * 1024);
         assert_eq!(configuration.accept_retry_backoff, TimeSpan::from_millis(100));
         assert_eq!(configuration.close_timeout, TimeSpan::from_secs(1));

@@ -17,7 +17,9 @@ use tokio::task::JoinHandle;
 use crate::endpoints::{Listening, OpenEndpoints};
 use crate::events::EventBus;
 use crate::session::Sessions;
-use crate::{ArmedRules, EngineConfiguration, EngineStartError, EveryEvent, LiveEvents, NotOpenError, OpenSession};
+use crate::{
+    ArmedRules, EngineConfiguration, EngineStartError, EveryEvent, Journal, LiveEvents, NotOpenError, OpenSession,
+};
 
 /// The runtime of one proxy: its sessions, its armed rules, its clock and its endpoints.
 ///
@@ -30,6 +32,7 @@ use crate::{ArmedRules, EngineConfiguration, EngineStartError, EveryEvent, LiveE
 /// | The sessions | Wait for frames of the client, answers of the backend, timers and new snapshots, report each to their pipeline, and perform what it returns. They count their calls together, so a call ID names one call of the proxy. |
 /// | The [armed rules](Self::rules) | Arm and disarm rules, and publish a new snapshot to every session. |
 /// | The events | Hand over the record of every call, and every incident that a rule fired: to whoever [watches](Self::live_events), and to whoever [keeps every one](Self::every_event). |
+/// | The [journal](Self::journal) | Numbers what changed in the environment of the proxy, keeps the recent entries in memory, and hands each one over with the events. |
 /// | The [clock](WaitableClock) | Tells every session the time, and ends every wait: a delay, a lifetime, the time a client context stays. |
 /// | The endpoints | Follow the backend: an endpoint that closes ends its sessions, and one that opens gets a listener, whose address the backend hears. |
 ///
@@ -86,8 +89,10 @@ impl<B: Backend + 'static, C: WaitableClock> Engine<B, C> {
         );
         let of_the_rules: Arc<dyn Clock + Send + Sync> = Arc::<C>::clone(&clock);
         let rules = ArmedRules::new(configuration.seed, of_the_rules);
-        let events = EventBus::new(configuration.event_backlog);
-        let (sessions, lingered) = Sessions::new(backend, clock, shared, rules, events);
+        let events = Arc::new(EventBus::new(configuration.event_backlog));
+        let of_the_journal: Arc<dyn Clock + Send + Sync> = Arc::<C>::clone(&clock);
+        let journal = Journal::new(configuration.recent_journal, of_the_journal, Arc::clone(&events));
+        let (sessions, lingered) = Sessions::new(backend, clock, shared, rules, events, journal);
         let sessions = Arc::new(sessions);
 
         let (mut endpoints, listening) = OpenEndpoints::none(Arc::clone(&sessions), configuration);
@@ -152,8 +157,13 @@ impl<B: Backend + 'static, C: WaitableClock> Engine<B, C> {
         &self.sessions.rules
     }
 
+    /// The journal of the proxy: the handle records what changed in its environment, and reads the recent entries.
+    pub fn journal(&self) -> &Journal {
+        &self.sessions.journal
+    }
+
     /// A listener of what the sessions hand over from now on, as it happens: the records of their calls, and the
-    /// incidents that their rules fire.
+    /// incidents that their rules fire. The entries of the [journal](Self::journal) come with them.
     ///
     /// It is for whoever watches, such as a traffic view. No session waits for it.
     /// The engine keeps a [backlog](EngineConfiguration::event_backlog) of events for it,
@@ -241,6 +251,7 @@ impl<B, C> fmt::Debug for Engine<B, C> {
         f.debug_struct("Engine")
             .field("listening", &*self.listening.borrow())
             .field("rules", &self.sessions.rules)
+            .field("journal", &self.sessions.journal)
             .field("shared_by_sessions", &self.sessions.shared)
             .finish_non_exhaustive()
     }

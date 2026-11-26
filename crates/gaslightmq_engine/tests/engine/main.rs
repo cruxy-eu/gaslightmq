@@ -10,6 +10,7 @@ mod backend;
 mod calls;
 mod endpoints;
 mod events;
+mod journal;
 mod lies;
 mod rules;
 mod running;
