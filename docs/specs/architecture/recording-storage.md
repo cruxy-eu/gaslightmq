@@ -371,18 +371,35 @@ The model is the tree of metadata of Apache Iceberg: a root that lists small fil
   A reader checks every length against the bytes that are there before it uses it.
   A recording can come from anywhere, so a reader trusts nothing that it says.
 - **A checksum is a CRC-32C**, the checksum that Kafka gives its record batches.
-- **What has a structure is JSON.**
-  A description, a summary, the body of an entry and the items of an index chunk are JSON, in UTF-8 and without white space between its parts.
-  JSON describes itself, which the forms of a call record and of a journal entry need.
+- **What has a structure is a Protocol Buffers message.**
+  A description, a summary, the body of an entry, the items of an index chunk and the manifest are messages of one schema.
+  Every field of a message has a number, and a reader steps over a field by its length.
 - **What is a frame is the frame.**
   The bytes of a Kafka frame stand in a segment as they were on the wire, without the four bytes of their length.
 
 The layout therefore has two layers.
 Its framing is fixed binary: marks, lengths and checksums, which a reader finds without decoding anything.
-What it says is in JSON, in the forms that the types already have.
-A call record and a journal entry have one form each, the form that their crate gives them, and one encoding:
-a segment holds the bytes that the control plane sends.
-Anyone reads an entry with the tools they have.
+What it says is in messages of a schema that the layout owns.
+
+### The schema
+
+The types of a recording are the contract's, and their bytes are the layout's.
+`recording_segments` holds the schema of its messages, and the conversion between a message and the type it stands for.
+
+- **Reading builds every type through its own checks**, as reading a workspace file does.
+  A message that could not have been a call is damage, and the reader says so.
+- **A value is a number where it is one.**
+  An API, an error code, an instant and a count are numbers, and not the text that a person reads.
+  Text is for what is text: a topic, a `client.id`, the name of a rule.
+- **The fields of a call are one message inside the call.**
+  A reader that only matches a selector decodes that message, and steps over the explanation by its length.
+- **The schema is a file of the crate.**
+  A tool in another language reads a recording with it.
+- **The conversion is checked against the types.**
+  A test writes values of every type and reads them back, so a type that grows without its message fails a test.
+
+The control plane keeps its own encoding.
+It sends a call from a recording as it sends a live one.
 
 Every object starts with a mark of 8 bytes and the [version](#versions) of the layout.
 
@@ -398,7 +415,7 @@ segment = segment header  block …  end
 | 8 | 2 | The version of the layout: `1`. |
 | 10 | 2 | Zero. |
 | 12 | 4 | The length of what follows. |
-| 16 | … | A JSON map: the [description](#description) of the recording, and `first`, the position of the first entry of the segment. |
+| 16 | … | A message: the [description](#description) of the recording, and `first`, the position of the first entry of the segment. |
 | … | 4 | The checksum of every byte of the header before it. |
 
 Every segment holds the description, so every segment says which recording it belongs to, and a recording without a manifest still knows what it is.
@@ -442,7 +459,7 @@ block = block header  summary  entries  frames
 | 40 | 1 | The compression of the entries: `0`, none. See [compression](#compression). |
 | 41 | 7 | Zero. |
 
-The summary is the [summary](#summary) of the block, in JSON.
+The summary is the [summary](#summary) of the block, as a message.
 The frames take the rest of the block.
 
 The entries and the frames stand apart on purpose.
@@ -456,7 +473,7 @@ An entry:
 |---|---|---|
 | 0 | 4 | The length of the body. |
 | 4 | 1 | The kind: `1` a session event, `2` a call, `3` a journal entry. |
-| 5 | … | The body: JSON, and for a call 72 bytes before it. |
+| 5 | … | The body: a message, and for a call 72 bytes before it. |
 
 The 72 bytes of a call say where its frames are:
 
@@ -497,7 +514,7 @@ index chunk = index header  item …
 | 10 | 6 | Zero. |
 | 16 | 8 | The position of the first entry that the chunk describes. |
 
-An item is a length of 4 bytes, a checksum of 4 bytes, and a JSON map that describes one segment:
+An item is a length of 4 bytes, a checksum of 4 bytes, and a message that describes one segment:
 
 | Key | Holds |
 |---|---|
@@ -520,7 +537,7 @@ An index chunk describes sealed segments only.
 | 8 | 2 | The version of the layout: `1`. |
 | 10 | 2 | Zero. |
 | 12 | 4 | The length of what follows. |
-| 16 | … | A JSON map. |
+| 16 | … | A message. |
 | … | 4 | The checksum of every byte before it. |
 
 | Key | Holds |
@@ -632,7 +649,8 @@ A value that half of the calls have prunes nowhere, and such a query reads most 
 ### Sizes
 
 The numbers below are estimates for a metadata-only recording: about 1 KiB for a call with its frames, and about 2 KiB of index for a block.
-Nothing is measured yet.
+A call record [measured](#the-encoding-measured) 470 to 700 bytes.
+The frames and the index are not measured yet.
 
 | | With the defaults |
 |---|---|
@@ -660,7 +678,7 @@ Nothing is measured yet.
 Version 1 compresses nothing.
 
 The byte for it is in the header of a block, and it covers the entries alone.
-The entries are where compression pays: they are text, and their keys repeat in every entry.
+The entries are where compression pays: the same names of topics, clients and rules repeat in every entry.
 A reader decodes them anyway, so it loses nothing when they are compressed.
 The frames stay plain in every version: a frame that is compressed in a segment cannot be handed out without a copy,
 and the record batches in it are often compressed already.
@@ -788,11 +806,11 @@ Every object holds the version of the layout.
   It keeps the reading code of every version that was ever released.
 - **A reader refuses a version that is newer than itself**, and the message names both versions.
 - **Every change of the layout takes a new number**:
-  a new kind of entry, a new state of a slot, a compression, a new level, a new key or a new value in a form.
-- **A form only grows.**
-  A later version adds a key that a reader of an old recording does without, or a value that an old recording never has.
-  When a form must change in another way, the reader lifts an old entry to the new form before it builds the type.
-  It can, because an entry describes itself: a reader reads an old entry as maps, lists and values without the types that wrote it.
+  a new kind of entry, a new state of a slot, a compression, a new level, a new field or a new value in a message.
+- **A message only grows.**
+  A later version adds a field that a reader of an old recording does without, or a value that an old recording never has.
+  The number of a field is never used again, and its meaning never changes.
+  When a message must change in another way, the reader keeps the old message for the old version, and lifts it to the new one.
 - **The bytes that are zero today are free for a later version.**
 - **Version 1 is fixed with the first release.**
   Until then it changes with the types it holds, and no recording of an earlier build has to open.
@@ -809,9 +827,9 @@ Nothing of these crates runs in the browser.
 `recording` needs the Kafka codec, which never [compiles to WebAssembly](crates.md#what-compiles-to-webassembly),
 and a browser opens no file: the UI asks the control plane, and the engine answers from the recording.
 
-What the UI shares is the form of an entry.
+What the UI shares is the type of an entry.
 A call record and a journal entry are the types of `call` and `journal`, which the UI has already.
-The call that the control plane sends from a recording is the call that the recording holds, in another encoding.
+The control plane sends a call from a recording in the encoding it sends every call in.
 
 ## Who reads a recording
 
@@ -878,7 +896,7 @@ The others are the segment layout's.
 | What does the manifest say about an index chunk? | Where it starts, and for a full one what it covers and the sum of its summaries. | A list of names alone. A reader would read every index chunk to find a position, a moment or a topic. |
 | Where do the bytes of the layout live? | Behind a second contract of three kinds of object. Files are the first backing. | A layout that opens files itself. It could not be tested without a disk, and could never move to an object store. |
 | Does a reader copy? | No frame. A frame is a buffer that is shared, from the socket to the storage and from the storage to the codec. Records are decoded. | Slices that borrow from the storage. The trait would need lending types, and every storage would have to hold its bytes in one place. |
-| Which encoding? | Framing of our own around the frames, and JSON for what has a structure: the forms that the types have, in the encoding that the control plane sends and that their tests check. | A binary encoding that describes itself, such as CBOR: a second encoding of the same forms, for fewer bytes, which compressing the entries gets later anyway. A format with a schema and zero-copy access: a second set of every type of a call, kept in step by hand, to borrow a few hundred bytes. An encoding that copies the layout of the types in memory: every change of a type would end every old recording. |
+| Which encoding? | Framing of our own around the frames, and Protocol Buffers messages for what has a structure. See [the encoding, measured](#the-encoding-measured). | JSON, the forms that the types have already: two and a half times the bytes and more than twice the time to write, on the thread that must keep up. CBOR: slower than JSON to read, for a quarter fewer bytes. Cap'n Proto: a scan in place, for the bytes of JSON. An encoding that copies the layout of the types in memory: every change of a type would end every old recording. |
 | What closes each level? | A size. An interval commits. | A count of entries, which bounds neither memory nor loss. An age for segments, which only a log with retention needs. |
 | What is in a summary? | The values of every field, as lists with a limit. | Bloom filters, which answer `is` and cannot answer `matches`. Ranges of values, which no operator asks for. |
 | What is left after a crash? | Everything that was committed. The segments describe themselves, so a missing index chunk or manifest is rebuilt from them. | A manifest that must be right. A crash between two writes would then lose what the segments still hold. |
@@ -887,3 +905,35 @@ The others are the segment layout's.
 | What does metadata-only keep of a frame? | The frame, without the keys, values and headers of its records. | No frame at all. The usual recording of a real cluster could then seed no World and run no replay. |
 | Is a recording one file? | No. It is a directory of segments, and whoever reads it reads it through the storage contract. Whether it exports to one file is not decided. | One file for each recording. A recording can be many gigabytes, and one file of that size has to be walked to be queried. |
 | Is a recording compressed? | Not in version 1. A later version compresses the entries of a block, and never the frames. | Compression of whole blocks, which would end the frames without a copy. |
+
+### The encoding, measured
+
+One call record in four encodings, built from the real types: a Produce for two partitions with three lines of explanation, and a Fetch for five partitions with two.
+The numbers are the mean of both calls, on one core of one machine, in November 2026.
+Frames are not a part of them.
+
+| | Bytes | Write | Read to a `Call` | Find one field: the whole `Call` | Find one field: the least a reader can do |
+|---|---|---|---|---|---|
+| JSON, the forms the types have | 1470 | 4.2 µs | 6.8 µs | 6.7 µs | 2.1 µs: the fields, and the rest skipped as text |
+| CBOR, the same forms | 1110 | 4.7 µs | 10.6 µs | 11.0 µs | 6.0 µs |
+| Protocol Buffers | 580 | 1.9 µs | 3.5 µs | 3.8 µs | 0.34 µs: the fields, and the rest stepped over |
+| Cap'n Proto | 1600, or 770 packed | 1.9 µs | 4.7 µs | 4.4 µs | 0.06 to 0.11 µs: in place, nothing decoded |
+
+- **Half of the time to read is the types.**
+  Building a `Call` from plain values through its checks takes about 2 µs, whatever the encoding is.
+  No encoding gets under that for a reader that wants the call.
+- **Writing is what the recorder must keep up with.**
+  One thread writes about 240 000 calls a second as JSON and about 530 000 as Protocol Buffers, before it redacts a frame or waits for a disk.
+- **Zero-copy wins the scan, and only the scan.**
+  Cap'n Proto finds a field in a third to a sixth of the time of Protocol Buffers.
+  It pays with the bytes of JSON, because a message that is read in place is not packed, and it reads a whole `Call` no faster.
+- **The fields get no part of their own in a second encoding.**
+  A scan with Protocol Buffers decodes the fields and steps over the explanation: about 2.4 ms for a block of 4 MiB, which holds 7000 calls.
+  A reader that builds the real fields for a selector takes 1.3 µs for a call.
+  The summaries keep a query from most blocks before that.
+  A part that is read in place would be a third schema of the same fields, for the difference.
+
+What Protocol Buffers costs is a second schema: a message for every type of an entry, and the conversion both ways.
+For the calls of this measurement the conversion was about 300 lines, next to the messages, and `Explanation` is most of it.
+A test holds the two in step.
+In return, the rules for growing a message are known ones, and a tool in Java or Python reads a recording with the schema.
