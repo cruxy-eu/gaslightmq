@@ -265,6 +265,10 @@ impl<C: WorkspaceContext + 'static> ControlPlane<C> {
             }),
             Err(SaveError::ChangedOutside { reason }) => Err(SaveWorkspaceError::ChangedOutside { reason }),
             Err(SaveError::StoreFailed { reason }) => Err(SaveWorkspaceError::StoreFailed { reason }),
+            Err(SaveError::PartlySaved { saved, reason }) => Err(SaveWorkspaceError::PartlySaved {
+                saved: saved.into_iter().map(reference).collect(),
+                reason,
+            }),
         }
     }
 

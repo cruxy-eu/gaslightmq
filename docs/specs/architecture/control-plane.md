@@ -360,7 +360,8 @@ A save that had nothing to write answers `{}`.
 | Error | When | The other keys |
 |---|---|---|
 | `changed-outside` | Someone edited a file that the save would write, since the process read it. The save wrote nothing. | The `reason`, with every such file and how it changed. |
-| `store-failed` | A file could not be written. What the save did not write still waits. | The `reason`, with the file, what the system said and what the save wrote before. |
+| `store-failed` | A temporary file could not be written, so the save changed no file. Every edit still waits. | The `reason`, with the file and what the system said. |
+| `partly-saved` | A rename failed after earlier ones went through. Every edit that is not in `saved` still waits. | `saved`, each with its kind, and the `reason`, with the file and what the system said. |
 
 A workspace that writes each change has nothing to save, and a save there answers `{}`.
 

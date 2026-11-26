@@ -160,3 +160,62 @@ async fn a_rule_deleted_before_the_save_takes_its_file_away_with_the_save() -> a
     assert!(!rules.join("fetches.yaml").exists());
     Ok(())
 }
+
+/// A save that stops during its renames says what it saved, and keeps the rest waiting.
+///
+/// The directory of the rules takes no change, so the rule cannot go, and the selector before it is saved already.
+/// A system that runs the test as a user who may change anything takes no such refusal, and the test needs Unix
+/// permissions.
+#[cfg(unix)]
+#[tokio::test(flavor = "multi_thread")]
+async fn a_save_that_stops_during_its_renames_names_what_it_saved_and_keeps_the_rest() -> anyhow::Result<()> {
+    use std::os::unix::fs::PermissionsExt;
+
+    let directory = tempfile::tempdir()?;
+    fs::write(directory.path().join("selectors.yaml"), SELECTORS)?;
+    fs::write(directory.path().join("presets.yaml"), PRESETS)?;
+    let rules = directory.path().join("rules");
+    fs::create_dir(&rules)?;
+    fs::write(
+        rules.join("fetches.yaml"),
+        "- name: blackhole-order-fetches\n  selector: order-fetches\n  action: blackhole\n",
+    )?;
+    let stores = FileStores::open(directory.path(), Access::WriteOnSave).await?;
+    let mut workspace = Workspace::new(FileContext::new(stores));
+    let producers: SelectorName = "order-producers".parse()?;
+    let titled = Selector::new(
+        producers.clone(),
+        Conditions::new().with(Condition::is(ApiKey::PRODUCE)),
+    )
+    .with_title("Order producers".parse()?);
+    let blackhole_fetches: RuleName = "blackhole-order-fetches".parse()?;
+    workspace.update(titled, None).await?;
+    workspace.delete(blackhole_fetches.clone(), None).await?;
+
+    // Nobody may take a file out of the directory of the rules any more.
+    let writable = fs::metadata(&rules)?.permissions();
+    fs::set_permissions(&rules, fs::Permissions::from_mode(0o555))?;
+    let stopped = workspace.save().await;
+    fs::set_permissions(&rules, writable)?;
+
+    let Err(SaveError::PartlySaved { saved, reason }) = stopped else {
+        anyhow::bail!("a save that could not take a file away did not stop: {stopped:?}");
+    };
+    // The selector came before the rule, and its file holds it. The rule still waits, and its file is there.
+    assert_eq!(saved, [DefinitionName::from(producers)]);
+    assert!(
+        reason.starts_with("the rule store did not save: rules/fetches.yaml: "),
+        "{reason}"
+    );
+    assert!(fs::read_to_string(directory.path().join("selectors.yaml"))?.contains("title: Order producers"));
+    assert!(rules.join("fetches.yaml").exists());
+    assert_eq!(
+        workspace.unsaved().await,
+        [DefinitionName::from(blackhole_fetches.clone())]
+    );
+
+    // The next save writes what waited.
+    assert_eq!(workspace.save().await?, [DefinitionName::from(blackhole_fetches)]);
+    assert!(!rules.join("fetches.yaml").exists());
+    Ok(())
+}

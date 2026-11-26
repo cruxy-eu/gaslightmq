@@ -251,6 +251,11 @@ pub struct WorkspaceStatus {
 ///   When someone edited one of them since the process read it, the save fails with `changed-outside`,
 ///   names every such file, and writes nothing. A [reload](ReloadWorkspace) with `discard-unsaved` takes the edits
 ///   in, and whoever made the changes makes them again on top of them.
+/// - **Then it writes every file beside its place, and only then renames them in place, one at a time.**
+///   A file that cannot be written leaves every file as it was, and the save fails with `store-failed`.
+///   A rename that fails stops the save there: it fails with `partly-saved`, which names what it saved before,
+///   and everything else still waits. The save is not one step across files: a crash during the renames leaves
+///   some files saved and some not.
 /// - **A save changes no definition.** Every definition keeps its revision, so the save expects nothing and
 ///   answers with no revision, and no journal records it.
 /// - **A workspace with nothing unsaved saves nothing**, and answers so.
@@ -297,8 +302,13 @@ pub enum SaveWorkspaceError {
     /// `reason` names every such file, and how it changed: its bytes changed, it is gone, or it exists now.
     #[error("the workspace saved nothing, because {reason}")]
     ChangedOutside { reason: String },
-    /// A file could not be written. `reason` says which, what the system said, and what the save wrote before.
-    /// What it did not write stays unsaved.
+    /// A file could not be written, and the save saved nothing: every edit still waits.
+    /// `reason` says which file, and what the system said.
     #[error("the workspace was not saved: {reason}")]
     StoreFailed { reason: String },
+    /// The save stopped on the way, after it saved the definitions of `saved`: a file did not take its rename.
+    /// Every other edit still waits for the next save, and none of them is among `saved`.
+    /// `reason` says which file, and what the system said.
+    #[error("the workspace saved {} and stopped: {reason}", all(.saved))]
+    PartlySaved { saved: Vec<DefinitionRef>, reason: String },
 }

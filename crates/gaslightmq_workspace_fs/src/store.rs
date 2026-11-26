@@ -41,15 +41,19 @@ use crate::{Access, FileDefinition, FileError, disk, error};
 /// # Writing on save
 ///
 /// A store of [`Access::WriteOnSave`] makes every change to the text that it holds, and lists the change at once,
-/// but writes no file until someone [saves](Store::save).
+/// but writes no file until someone saves.
 ///
 /// - **A change waits in memory.** The store keeps the text of every file after the change, and the hash of the bytes
 ///   on the disk from when it last read or wrote the file.
 /// - **The store names what it has not written**: see [`unsaved`](Store::unsaved).
 /// - **A save checks every file before it writes one.** When the bytes of one file differ from what the store
-///   expects, or a file is gone or appeared, the save fails with `ChangedOutside`, names every such file, and
-///   writes nothing. Otherwise it replaces every file in one step each, as a change of a store that writes each
-///   change does.
+///   expects, or a file is gone or appeared, the stage fails with `ChangedOutside`, names every such file, and
+///   writes nothing.
+/// - **A stage writes every file beside its place.** The text of each file goes to a temporary file next to it,
+///   whose bytes are on the disk before the stage returns. A stage that fails leaves no temporary file.
+/// - **A commit renames them over their files, one at a time**, and asks the system to keep each rename through a
+///   crash. A rename that fails stops the commit: every file before it is saved, and it and every file after it
+///   still wait.
 /// - **Reading again lets go of what was not saved.** The store holds what it read once the reading is taken.
 ///
 /// Whoever shares the store shares one set of definitions: put it behind an `Arc`, or lend it out.
@@ -68,6 +72,16 @@ struct Shared<D: FileDefinition> {
     held: Mutex<Held<D>>,
     /// What the last reading read, until the store takes it.
     reading: Mutex<Option<Held<D>>>,
+    /// What the last stage of a save wrote beside the files, until the save commits it or drops it.
+    staged: Mutex<Vec<Staged>>,
+}
+
+/// One file that a stage of a save prepared.
+struct Staged {
+    /// The file, below the directory of the workspace.
+    file: PathBuf,
+    /// The temporary file next to it that holds its text after the save, or `None` when the file goes.
+    temporary: Option<PathBuf>,
 }
 
 impl<D: FileDefinition> FileStore<D> {
@@ -85,6 +99,7 @@ impl<D: FileDefinition> FileStore<D> {
                 files: Mutex::new(()),
                 held: Mutex::new(Held::new()),
                 reading: Mutex::new(None),
+                staged: Mutex::new(Vec::new()),
             }),
         }
     }
@@ -160,37 +175,57 @@ impl<D: FileDefinition> Shared<D> {
         Ok((!changed.is_empty()).then(|| changed.join("; ")))
     }
 
-    /// Checks every file that a save would write, and writes them when nobody changed one since.
-    fn save(&self) -> Result<(), StoreSaveError> {
+    /// Checks every file that a save would write, and writes the text of each to a temporary file next to it,
+    /// when nobody changed one since. A file that goes needs no temporary file.
+    fn stage(&self) -> Result<(), StoreSaveError> {
         let _files = lock(&self.files);
+        drop_all(std::mem::take(&mut *lock(&self.staged)));
         let pending = lock(&self.held).pending();
         match self.changed_outside(&pending) {
             Ok(None) => {}
             Ok(Some(reason)) => return Err(StoreSaveError::ChangedOutside { reason }),
             Err(reason) => return Err(StoreSaveError::Failed { reason }),
         }
-        let mut written = Vec::new();
+        let mut staged = Vec::with_capacity(pending.len());
         for Pending { file, text, .. } in pending {
-            let wrote = match &text {
-                Some(text) => disk::replace(&self.directory, &file, text),
+            let temporary = match &text {
+                Some(text) => match disk::write_beside(&self.directory, &file, text) {
+                    Ok(temporary) => Some(temporary),
+                    Err(reason) => {
+                        drop_all(staged);
+                        return Err(StoreSaveError::Failed {
+                            reason: format!("{}: {reason}", file.display()),
+                        });
+                    }
+                },
+                None => None,
+            };
+            staged.push(Staged { file, temporary });
+        }
+        *lock(&self.staged) = staged;
+        Ok(())
+    }
+
+    /// Puts every file that the last stage wrote in its place, one at a time, and holds each one saved once it is.
+    fn commit(&self) -> Result<(), StoreSaveError> {
+        let _files = lock(&self.files);
+        let mut staged = std::mem::take(&mut *lock(&self.staged)).into_iter();
+        while let Some(Staged { file, temporary }) = staged.next() {
+            let put = match &temporary {
+                Some(temporary) => disk::put_in_place(&self.directory, temporary, &file),
                 None => match disk::read(&self.directory, &file) {
                     Ok(None) => Ok(()),
                     Ok(Some(_)) => disk::remove(&self.directory, &file),
                     Err(reason) => Err(reason),
                 },
             };
-            if let Err(reason) = wrote {
-                let before = if written.is_empty() {
-                    "it wrote no file before".to_owned()
-                } else {
-                    format!("it wrote {} before", written.join(", "))
-                };
+            if let Err(reason) = put {
+                drop_all(staged.collect());
                 return Err(StoreSaveError::Failed {
-                    reason: format!("{}: {reason}, and {before}", file.display()),
+                    reason: format!("{}: {reason}", file.display()),
                 });
             }
             lock(&self.held).saved(&file);
-            written.push(file.display().to_string());
         }
         Ok(())
     }
@@ -333,14 +368,34 @@ impl<D: FileDefinition> Store<D> for FileStore<D> {
         })
     }
 
-    async fn save(&self) -> Result<(), StoreSaveError> {
+    async fn stage_unsaved(&self) -> Result<(), StoreSaveError> {
         let shared = Arc::clone(&self.shared);
-        let saved = tokio::task::spawn_blocking(move || shared.save());
-        saved.await.unwrap_or_else(|stopped| {
+        let staged = tokio::task::spawn_blocking(move || shared.stage());
+        staged.await.unwrap_or_else(|stopped| {
             Err(StoreSaveError::Failed {
-                reason: format!("the save stopped before it ended: {stopped}"),
+                reason: format!("the stage stopped before it ended: {stopped}"),
             })
         })
+    }
+
+    async fn commit_staged(&self) -> Result<(), StoreSaveError> {
+        let shared = Arc::clone(&self.shared);
+        let committed = tokio::task::spawn_blocking(move || shared.commit());
+        committed.await.unwrap_or_else(|stopped| {
+            Err(StoreSaveError::Failed {
+                reason: format!("the commit stopped before it ended: {stopped}"),
+            })
+        })
+    }
+
+    async fn drop_staged(&self) {
+        let shared = Arc::clone(&self.shared);
+        let dropped = tokio::task::spawn_blocking(move || {
+            let _files = lock(&shared.files);
+            drop_all(std::mem::take(&mut *lock(&shared.staged)));
+        });
+        // A drop that stopped left temporary files whose names start with a `.`, which nobody reads.
+        let _ = dropped.await;
     }
 
     async fn read_again(&self) -> Result<Option<Vec<D>>, StoreReadError> {
@@ -398,6 +453,15 @@ impl<D: FileDefinition<Name: fmt::Debug>> fmt::Debug for FileStore<D> {
             .field("access", &self.shared.access)
             .field("names", &names)
             .finish()
+    }
+}
+
+/// Takes away the temporary files of what a stage prepared, which nobody puts in place.
+fn drop_all(staged: Vec<Staged>) {
+    for Staged { temporary, .. } in staged {
+        if let Some(temporary) = temporary {
+            disk::throw_away(&temporary);
+        }
     }
 }
 

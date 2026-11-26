@@ -1356,11 +1356,18 @@ fn a_save_says_nothing_but_its_operation_and_answers_with_what_it_wrote() {
     })
     .writes(json!({ "error": "changed-outside", "reason": changed }));
     Form(SaveWorkspaceError::StoreFailed {
-        reason: "the rule store did not save: rules/slow.yaml: disk full, and it wrote no file before".to_owned(),
+        reason: "the rule store did not save: rules/slow.yaml: disk full".to_owned(),
+    })
+    .writes(json!({ "error": "store-failed", "reason": "the rule store did not save: rules/slow.yaml: disk full" }));
+    // The renames stopped after the selector: the rule still waits.
+    Form(SaveWorkspaceError::PartlySaved {
+        saved: vec!["order-producers".parse::<SelectorName>().unwrap().into()],
+        reason: "the rule store did not save: rules/slow.yaml: permission denied".to_owned(),
     })
     .writes(json!({
-        "error": "store-failed",
-        "reason": "the rule store did not save: rules/slow.yaml: disk full, and it wrote no file before",
+        "error": "partly-saved",
+        "saved": [{ "selector": "order-producers" }],
+        "reason": "the rule store did not save: rules/slow.yaml: permission denied",
     }));
 }
 

@@ -322,7 +322,8 @@ The store of files therefore checks each file before it writes it.
 - **The check is per file.**
   An edit of one selector in `selectors.yaml` holds up the write of every other selector, until someone reloads.
 - **A write replaces the file in one step.**
-  The store writes the new content to a temporary file next to it, and renames that over the file.
+  The store writes the new content to a temporary file next to it, waits until its bytes are on the disk, and renames that over the file.
+  Then it asks the system to keep the entries of the directory on the disk, so the rename survives a crash too.
   A reader never sees half a file, and a crash leaves the old file or the new one.
   The name of the temporary file starts with a `.`, so the engine never reads it as a definition.
 - **A write reads back.**
@@ -345,11 +346,20 @@ Whoever starts the process picks when the engine writes an edit of the UI: `writ
   Only the files do not have it yet.
 - **The engine says what waits.**
   The control plane names every definition that someone created, updated or deleted since the last save.
-- **A save writes every file that an edit touched, or none of them.**
-  It makes the [check before a write](#the-check-before-a-write) for every one of them before it writes one.
+- **A save checks every file that an edit touched before it writes one.**
+  It makes the [check before a write](#the-check-before-a-write) for every one of them.
   When someone edited one since the engine read it, the save fails with `changed-outside`, names every such file, and writes nothing.
-  Otherwise it writes each file as a single write does: the one written form of what changed, every other byte as it was, in one step per file.
-  A file that the system refuses to write in between stops the save there, and what it did not write still waits.
+- **Then it writes every file beside its place.**
+  The text of each file goes to a temporary file next to it, and its bytes are on the disk before the next step.
+  Each file gets the one written form of what changed, and keeps every other byte as it was.
+  A temporary file that the system refuses to write stops the save: it takes every temporary file away, and no file changed.
+- **Then it renames each temporary file over its file, one at a time.**
+  After each rename it asks the system to keep the entries of the directory on the disk too, so a rename survives a crash.
+  A single write of a workspace that writes each change does the same.
+- **A save is not one step across files.**
+  Each file changes in one step, and the renames come one after the other.
+  A rename that fails stops the save there: it fails with `partly-saved`, names the definitions it saved before, and every other edit still waits for the next save.
+  A crash during the renames leaves some files with their edits and some without, and the engine that starts again reads what each file holds.
 - **A save changes no definition.**
   Every definition keeps its revision, no journal records the save, and nobody undoes it.
 - **An edit that waits is live state.**

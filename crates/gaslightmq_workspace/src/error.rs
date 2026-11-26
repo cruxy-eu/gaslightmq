@@ -229,7 +229,8 @@ pub enum ReloadError {
 /// Why a workspace did not [save](crate::Workspace::save) the changes that its stores hold.
 ///
 /// A save checks every store before any writes, so a change that someone made outside holds up the whole save,
-/// and nothing is written.
+/// and nothing is written. It stages every store before any commits, so a store that cannot write stops the save
+/// before anything changed. Only the commit itself can stop on the way, and then the error says what it saved.
 ///
 /// ```
 /// use gaslightmq_workspace::prelude::*;
@@ -250,10 +251,15 @@ pub enum SaveError {
     /// A [reload](crate::Workspace::reload) takes the change in. `reason` names every place that changed, and how.
     #[error("the workspace saved nothing, because {reason}")]
     ChangedOutside { reason: String },
-    /// A store could not check or write its changes. `reason` names every store that failed, what it said,
-    /// and what it wrote before. What a store did not write, it still holds unsaved.
+    /// A store could not check, stage or commit its changes, and nothing was saved: every change still waits.
+    /// `reason` names every store that failed, and what it said.
     #[error("the workspace was not saved: {reason}")]
     StoreFailed { reason: String },
+    /// The save stopped on the way, after it saved the definitions of `saved`: a place did not take its change.
+    /// Every other change still waits for the next save, and none of them is among `saved`.
+    /// `reason` names the store and the place that failed, and what it said.
+    #[error("the workspace saved {} and stopped: {reason}", all(.saved))]
+    PartlySaved { saved: Vec<DefinitionName>, reason: String },
 }
 
 /// Every error in one line, with `; ` between them.
