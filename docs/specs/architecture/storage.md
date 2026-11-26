@@ -45,7 +45,7 @@ flowchart TB
 | Live rules from pads and ⌘K | Memory and a scratch file, per environment | No | The proxy |
 | Edits of the UI that wait for a [save](#saving) | Memory | No | The engine |
 | Journal: who armed what, and when | Memory and recordings, per environment | No | The proxy |
-| Recordings | Append-only files | No | The engine |
+| Recordings | Append-only segments, in a directory for each recording | No | The engine |
 | View preferences, and the [undo history](../domains/control-surfaces.md#undo-and-redo) of a tab | The browser | No | The UI |
 
 ## Process configuration
@@ -87,9 +87,11 @@ recordings:
   directory: recordings
   backlog: 10000                # the calls and journal entries that the recorder may be behind
   backlog_size: 256MiB          # the bytes of the frames that may wait with them
-  chunk_size: 4MiB              # the size at which a chunk of a recording closes
-  chunk_age: 1s                 # how long a chunk stays open at most
-  summary_values: 128           # the values of one field that the summary of a chunk lists
+  commit_interval: 1s           # how long an entry waits at most before it is in the recording for good
+  block_size: 4MiB              # the entries and frames that one block of a recording holds
+  segment_size: 256MiB          # the size at which a data segment is sealed
+  index_size: 8MiB              # the size at which an index chunk is full
+  summary_values: 64            # the values of one field that a summary lists
 ```
 
 ## Workspace
@@ -124,8 +126,8 @@ gaslight/
 ├── data/                    # fixed record sets for a World
 │   └── payments.jsonl
 ├── secrets/                 # gitignored
-├── recordings/              # gitignored
-│   └── orders-sim.2026-11-21T14-02-11.527Z.rec
+├── recordings/              # gitignored, one directory for each recording
+│   └── orders-sim.2026-11-21T14-02-11.527Z/
 └── .gaslight/               # gitignored
     └── scratch/
         └── orders-sim.yaml
@@ -578,10 +580,15 @@ It does not hold armed state.
 
 ## Recordings
 
-A recording file is append-only.
-It holds a header, the sessions, and the calls and [journal](../domains/observation.md#journal) entries in the order they happened.
-It is one file, so it is easy to attach to a bug report or to seed a World from.
-The [recording format](recording-format.md) gives its bytes, and says how a writer makes a file and how a reader opens one.
+A recording is append-only.
+It holds a description, the sessions, and the calls and [journal](../domains/observation.md#journal) entries in the order they happened.
+
+The engine keeps a recording through a [storage contract](recording-storage.md#the-storage-contract), and names no format.
+The first layout behind it keeps a recording as [data segments, index chunks and a manifest](recording-storage.md#the-segment-layout), in a directory of its own under `recordings.directory`.
+That layout asks a [second contract](recording-storage.md#the-segment-backing) for the place of its bytes: files first, and memory for tests.
+
+A recording exports to [one file](recording-storage.md#one-file), so it is easy to attach to a bug report or to seed a World from.
+That file opens in place, as the directory does.
 
 Each call holds:
 
@@ -592,27 +599,30 @@ Each call holds:
 - the real cluster's response, when the overlay changed it,
 - the verdict and the explanation.
 
-The name of the file is the [ID of the recording](identity.md#recording-id): its environment and the instant it started.
+The name of its directory is the [ID of the recording](identity.md#recording-id): its environment and the instant it started.
+The file it exports to has the same name, with `.rec`.
 
 The engine hands the recorder the raw frames of a call next to the call, and only while a recording runs.
 A call itself holds no frames, so a call that nobody records costs no copy of its bytes.
-What it hands over [shares the bytes](recording-format.md#handing-frames-to-the-recorder) that the session holds already, so a call that someone records costs no copy in its session either.
+What it hands over [shares the bytes](recording-storage.md#handing-frames-to-the-recorder) that the session holds already, so a call that someone records costs no copy in its session either.
 
 The recorder writes on a thread of its own, behind a queue of the calls and journal entries it has not written yet.
 The queue holds as many as `recordings.backlog` says, and no more bytes of frames than `recordings.backlog_size` says.
 A session never waits for the disk.
 When the queue is full, the recording stops, and its last entry and the control plane say why.
-What the file holds up to there is a complete recording.
+What the recording holds up to there is a complete recording.
 
-The file is split into [chunks](recording-format.md#chunks), so a long recording can be opened from the end.
-A chunk closes at `recordings.chunk_size`, or when it has been open for `recordings.chunk_age`.
-Each chunk carries a [summary](recording-format.md#the-summary) of the field values it contains.
-A query with a selector skips the chunks that cannot match.
+The recorder commits what it wrote every `recordings.commit_interval`.
+What a commit covers is in the recording for good, and a reader sees it while the recording runs.
+A recording that a crash cut short opens up to its last commit.
 
-A reader copies no frame: the engine maps the file into memory, and a frame is a range of its bytes.
-A recording that a crash cut short opens up to its last whole chunk.
+A recording is split into segments, so nothing in it grows without a bound, and a long recording opens from the end.
+Every stretch of it carries a [summary](recording-storage.md#summary) of the field values it contains: a block, a segment and an index chunk.
+A query with a selector reads the manifest, then the index chunks that can match, then the blocks that can match, and skips the rest.
 
-The index is not stored.
+A reader copies no frame: the files of a recording are mapped into memory, and a frame is a range of their bytes.
+
+The [index](../domains/observation.md#index) of the engine, with its facets, is not stored.
 The engine rebuilds it when it opens a recording.
 
 ### Privacy
@@ -620,7 +630,7 @@ The engine rebuilds it when it opens a recording.
 Records can hold personal or secret data.
 A **metadata-only** recording drops record keys, values and headers,
 and keeps everything else.
-It keeps the frames: a frame with records is there [without their contents](recording-format.md#what-a-recording-must-not-keep), and still decodes.
+It keeps the frames: a frame with records is there [without their contents](recording-storage.md#what-a-recording-must-not-keep), and still decodes.
 
 | Backend | Default | Reason |
 |---|---|---|
@@ -636,7 +646,7 @@ The engine blanks that payload in every recording, full ones included,
 and in every call it streams to the UI.
 A client's credentials never reach the disk.
 
-The [writer of a recording](recording-format.md#what-a-recording-must-not-keep) does the blanking and applies privacy, so no caller can forget either.
+The crate that holds the [entries of a recording](recording-storage.md#what-a-recording-must-not-keep) does the blanking and applies privacy where an entry is made, so no caller and no storage can forget either.
 It blanks what the server answers to `SaslAuthenticate` too.
 
 ## Browser
