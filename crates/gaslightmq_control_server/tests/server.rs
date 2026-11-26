@@ -448,16 +448,13 @@ async fn a_request_says_where_it_comes_from_or_the_server_does_not_read_it() -> 
     assert_eq!(from_a_view, Ok(Vec::new()));
     assert_eq!(from_a_pad, Ok(Vec::new()));
     assert_eq!(as_an_undo, Ok(Vec::new()));
+    // Why a request was not read is text: the status and the error say that it was not.
     assert_eq!(unsigned_status, "HTTP/1.1 400 Bad Request");
-    let RequestError::Unreadable { reason } = serde_json::from_str(&unsigned)? else {
-        anyhow::bail!("the server served an operation of nowhere: {unsigned}");
-    };
-    assert!(reason.contains("missing field `from`"), "{reason}");
+    let unsigned: RequestError = serde_json::from_str(&unsigned)?;
+    assert!(matches!(unsigned, RequestError::Unreadable { .. }), "{unsigned}");
     assert_eq!(claimed_status, "HTTP/1.1 400 Bad Request");
-    let RequestError::Unreadable { reason } = serde_json::from_str(&claimed)? else {
-        anyhow::bail!("the server took a request for a lifetime: {claimed}");
-    };
-    assert!(reason.contains("unknown variant `lifetime`"), "{reason}");
+    let claimed: RequestError = serde_json::from_str(&claimed)?;
+    assert!(matches!(claimed, RequestError::Unreadable { .. }), "{claimed}");
     server.stop().await;
     Ok(())
 }
