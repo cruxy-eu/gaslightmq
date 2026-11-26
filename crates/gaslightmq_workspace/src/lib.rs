@@ -7,7 +7,8 @@
 //!
 //! | Type | Is |
 //! |---|---|
-//! | [`Workspace`] | The door for every change: create, update, delete and validate. |
+//! | [`Workspace`] | The door for every change: create, update, delete, validate and reload. |
+//! | [`Reload`], [`DefinitionChange`] | A reload that fits and is not taken in yet, and what it changes in one definition. |
 //! | [`WorkspaceContext`] | Everything a workspace is handed, as one type: its stores. |
 //! | [`Stores`] | The five stores that a workspace works over, one for each kind. |
 //! | [`WorkspaceDefinition`] | A definition of a kind that a workspace holds. |
@@ -17,6 +18,7 @@
 //! | [`WorkspaceError`] | One thing that keeps definitions from fitting each other. |
 //! | [`CreateError`], [`UpdateError`], [`DeleteError`] | Why a workspace did not make a change. |
 //! | [`ValidationError`] | Why the definitions of a workspace are not valid. |
+//! | [`ReloadError`] | Why a workspace did not reload what its stores hold. |
 //!
 //! The [`prelude`] holds all of them, and those of the `memory` feature when it is on.
 //!
@@ -78,10 +80,11 @@
 //!
 //! | Asked | Error | What is wrong |
 //! |---|---|---|
-//! | [`Workspace::create`] | [`CreateError`] | The name is taken, the definition does not fit the others, or a store failed. |
-//! | [`Workspace::update`] | [`UpdateError`] | No definition has the name, it changed since, the definition does not fit the others, or a store failed. |
-//! | [`Workspace::delete`] | [`DeleteError`] | No definition has the name, it changed since, other definitions use it, or a store failed. |
+//! | [`Workspace::create`] | [`CreateError`] | The name is taken, the definition does not fit the others, someone changed the store behind it, or a store failed. |
+//! | [`Workspace::update`] | [`UpdateError`] | No definition has the name, it changed since, the definition does not fit the others, someone changed the store behind it, or a store failed. |
+//! | [`Workspace::delete`] | [`DeleteError`] | No definition has the name, it changed since, other definitions use it, someone changed the store behind it, or a store failed. |
 //! | [`Workspace::validate`] | [`ValidationError`] | The definitions do not fit each other, or a store failed. |
+//! | [`Workspace::reload`] | [`ReloadError`] | What the stores read again does not fit together, or a store could not read again. |
 //!
 //! A [`WorkspaceError`] is one thing that does not fit, and an error that says so holds every one of them.
 //! The message of an error is complete: it writes them all, in one line.
@@ -109,14 +112,14 @@ mod stores;
 mod workspace;
 
 pub use context::WorkspaceContext;
-pub use error::{CreateError, DeleteError, UpdateError, ValidationError, WorkspaceError};
+pub use error::{CreateError, DeleteError, ReloadError, UpdateError, ValidationError, WorkspaceError};
 pub use kind::WorkspaceDefinition;
 #[cfg(feature = "memory")]
 pub use memory::{MemoryContext, MemoryStores};
 pub use name::DefinitionName;
 pub use revision::{Revision, RevisionCounter};
 pub use stores::Stores;
-pub use workspace::Workspace;
+pub use workspace::{DefinitionChange, Reload, Workspace};
 
 /// Every item of this crate.
 ///
@@ -136,8 +139,8 @@ pub use workspace::Workspace;
 pub mod prelude {
     #[doc(no_inline)]
     pub use crate::{
-        CreateError, DefinitionName, DeleteError, Revision, RevisionCounter, Stores, UpdateError, ValidationError,
-        Workspace, WorkspaceContext, WorkspaceDefinition, WorkspaceError,
+        CreateError, DefinitionChange, DefinitionName, DeleteError, Reload, ReloadError, Revision, RevisionCounter,
+        Stores, UpdateError, ValidationError, Workspace, WorkspaceContext, WorkspaceDefinition, WorkspaceError,
     };
     #[cfg(feature = "memory")]
     #[doc(no_inline)]

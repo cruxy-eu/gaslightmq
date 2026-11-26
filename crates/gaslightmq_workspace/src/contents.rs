@@ -10,7 +10,7 @@ use gaslightmq_selector::{Selector, SelectorName, SelectorSet};
 use gaslightmq_surface::PadLayout;
 
 use crate::kind::AnyDefinition;
-use crate::{DefinitionName, WorkspaceError};
+use crate::{DefinitionChange, DefinitionName, WorkspaceError};
 
 /// The definitions of every kind, as the stores listed them.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -41,6 +41,33 @@ impl Contents {
     /// The definition of this kind and name.
     pub(crate) fn get(&self, name: &DefinitionName) -> Option<&AnyDefinition> {
         self.definitions.iter().find(|definition| definition.name() == *name)
+    }
+
+    /// What changed from these contents to `after`, by name, in the order of the kinds and the names.
+    ///
+    /// A name that only `after` has is created, a name that only these contents have is deleted,
+    /// and a name whose definition differs is updated.
+    pub(crate) fn changes_to(&self, after: &Contents) -> Vec<DefinitionChange> {
+        let before: BTreeMap<DefinitionName, &AnyDefinition> = self
+            .definitions
+            .iter()
+            .map(|definition| (definition.name(), definition))
+            .collect();
+        let now: BTreeMap<DefinitionName, &AnyDefinition> = after
+            .definitions
+            .iter()
+            .map(|definition| (definition.name(), definition))
+            .collect();
+        let names: BTreeSet<&DefinitionName> = before.keys().chain(now.keys()).collect();
+        names
+            .into_iter()
+            .filter_map(|name| match (before.get(name), now.get(name)) {
+                (None, Some(_)) => Some(DefinitionChange::Created(name.clone())),
+                (Some(_), None) => Some(DefinitionChange::Deleted(name.clone())),
+                (Some(held), Some(read)) if held != read => Some(DefinitionChange::Updated(name.clone())),
+                _ => None,
+            })
+            .collect()
     }
 
     /// What is wrong with the contents once they hold `definition`.

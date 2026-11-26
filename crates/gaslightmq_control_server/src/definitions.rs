@@ -168,8 +168,9 @@ impl DefinitionOperations {
                 name: reference(name),
                 reason: each(&errors),
             }),
+            // The control plane has no answer of its own yet for a file that someone changed since it was read.
             Err(Host::NotCreated {
-                error: CreateError::StoreFailed { name, reason },
+                error: CreateError::ChangedOutside { name, reason } | CreateError::StoreFailed { name, reason },
             }) => Err(CreateDefinitionError::StoreFailed {
                 name: reference(name),
                 reason,
@@ -201,10 +202,13 @@ impl DefinitionOperations {
                 name: reference(name),
                 reason: each(&errors),
             },
-            UpdateError::StoreFailed { name, reason } => UpdateDefinitionError::StoreFailed {
-                name: reference(name),
-                reason,
-            },
+            // The control plane has no answer of its own yet for a file that someone changed since it was read.
+            UpdateError::ChangedOutside { name, reason } | UpdateError::StoreFailed { name, reason } => {
+                UpdateDefinitionError::StoreFailed {
+                    name: reference(name),
+                    reason,
+                }
+            }
         })
     }
 
@@ -232,10 +236,13 @@ impl DefinitionOperations {
                 name: reference(name),
                 users: users.into_iter().map(reference).collect(),
             },
-            DeleteError::StoreFailed { name, reason } => DeleteDefinitionError::StoreFailed {
-                name: reference(name),
-                reason,
-            },
+            // The control plane has no answer of its own yet for a file that someone changed since it was read.
+            DeleteError::ChangedOutside { name, reason } | DeleteError::StoreFailed { name, reason } => {
+                DeleteDefinitionError::StoreFailed {
+                    name: reference(name),
+                    reason,
+                }
+            }
         })
     }
 }

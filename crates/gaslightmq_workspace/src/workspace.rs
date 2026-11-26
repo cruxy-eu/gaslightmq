@@ -1,5 +1,9 @@
 //! The workspace: the stores of every kind, and the rules that span them.
 
+mod reload;
+
+pub use reload::{DefinitionChange, Reload};
+
 use std::collections::BTreeMap;
 
 use gaslightmq_definition_api::{Definition, Store, StoreChangeError, StoreCreateError, StoreReadError};
@@ -41,6 +45,9 @@ use crate::{
 /// | The workspace [loads](Self::new). | The number of the load, for every definition that its stores hold. |
 /// | Someone [creates](Self::create) or [updates](Self::update) the definition. | The number of that change. |
 /// | Someone [deletes](Self::delete) the definition. | Forgotten. A definition that comes back under the name has a higher one. |
+/// | A [reload](Self::reload) finds the definition new or changed. | The number of the reload. |
+/// | A reload finds the definition as it was. | The one it had. |
+/// | A reload finds the definition gone. | Forgotten. |
 ///
 /// An update and a delete can name the revision they expect.
 /// When the definition has another one, someone changed it since, and the change is refused before a store is
@@ -55,7 +62,8 @@ use crate::{
 /// Whoever shares a workspace between tasks puts it behind the lock of its runtime.
 ///
 /// A store can still change behind the back of the workspace, as when someone edits a file.
-/// [`validate`](Self::validate) says whether the definitions still fit each other.
+/// The store goes on holding what it read, and refuses to write over the edit.
+/// A [reload](Self::reload) reads every store again, and takes the edit in as one change.
 ///
 /// ```
 /// use futures::executor::block_on;
@@ -164,6 +172,7 @@ impl<C: WorkspaceContext> Workspace<C> {
     /// - [`CreateError::NameTaken`] when a definition of this kind has the name. Nothing overwrites it.
     /// - [`CreateError::DoesNotFit`] when the definitions would not fit each other with this one:
     ///   it refers to a name that does not exist, or it is a rule that can never fire.
+    /// - [`CreateError::ChangedOutside`] when someone changed where the store would keep it, since the store read it.
     /// - [`CreateError::StoreFailed`] when a store could not read its definitions, or could not keep this one.
     pub async fn create<D: WorkspaceDefinition>(&mut self, definition: D) -> Result<Revision, CreateError> {
         let name: DefinitionName = definition.name().clone().into();
@@ -184,6 +193,7 @@ impl<C: WorkspaceContext> Workspace<C> {
     /// - [`UpdateError::DoesNotFit`] when the definitions would not fit each other with the change:
     ///   the definition refers to a name that does not exist, or a rule can never fire with it,
     ///   which can be a rule that uses the selector or the preset that changes.
+    /// - [`UpdateError::ChangedOutside`] when someone changed where the store keeps it, since the store read it.
     /// - [`UpdateError::StoreFailed`] when a store could not read its definitions, or could not keep the change.
     pub async fn update<D: WorkspaceDefinition>(
         &mut self,
@@ -210,6 +220,7 @@ impl<C: WorkspaceContext> Workspace<C> {
         match self.store_update(definition.into_any()).await {
             Ok(()) => Ok(self.count_change_of(name)),
             Err(StoreChangeError::NotFound) => Err(UpdateError::NotFound { name }),
+            Err(StoreChangeError::ChangedOutside { reason }) => Err(UpdateError::ChangedOutside { name, reason }),
             Err(StoreChangeError::Failed { reason }) => Err(UpdateError::StoreFailed { name, reason }),
         }
     }
@@ -232,6 +243,7 @@ impl<C: WorkspaceContext> Workspace<C> {
     /// - [`DeleteError::InUse`] when other definitions refer to this one. It names them:
     ///   the selectors that include a selector, the rules that use a selector or a preset,
     ///   and the pad layouts with a row or a column for it.
+    /// - [`DeleteError::ChangedOutside`] when someone changed where the store keeps it, since the store read it.
     /// - [`DeleteError::StoreFailed`] when a store could not read its definitions, or could not remove this one.
     pub async fn delete(
         &mut self,
@@ -261,6 +273,7 @@ impl<C: WorkspaceContext> Workspace<C> {
                 Ok(self.counter.next_revision())
             }
             Err(StoreChangeError::NotFound) => Err(DeleteError::NotFound { name }),
+            Err(StoreChangeError::ChangedOutside { reason }) => Err(DeleteError::ChangedOutside { name, reason }),
             Err(StoreChangeError::Failed { reason }) => Err(DeleteError::StoreFailed { name, reason }),
         }
     }
@@ -335,6 +348,10 @@ impl<C: WorkspaceContext> Workspace<C> {
         match self.store_create(definition.into_any()).await {
             Ok(()) => Ok(()),
             Err(StoreCreateError::NameTaken) => Err(CreateError::NameTaken { name: name.clone() }),
+            Err(StoreCreateError::ChangedOutside { reason }) => Err(CreateError::ChangedOutside {
+                name: name.clone(),
+                reason,
+            }),
             Err(StoreCreateError::Failed { reason }) => Err(failed(reason)),
         }
     }

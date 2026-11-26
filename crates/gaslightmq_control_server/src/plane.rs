@@ -396,7 +396,10 @@ impl<C: WorkspaceContext + 'static> ControlPlane<C> {
                     rule,
                     reason: each(&errors),
                 },
-                CreateError::StoreFailed { reason, .. } => KeepRuleError::StoreFailed { rule, reason },
+                // The control plane has no answer of its own yet for a file that someone changed since it was read.
+                CreateError::ChangedOutside { reason, .. } | CreateError::StoreFailed { reason, .. } => {
+                    KeepRuleError::StoreFailed { rule, reason }
+                }
             }),
         }
     }
