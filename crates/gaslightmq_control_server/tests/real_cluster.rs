@@ -20,7 +20,7 @@ use gaslightmq_control_api::environment::{
 };
 use gaslightmq_control_api::field::{Endpoint, Field, FieldSource};
 use gaslightmq_control_api::journal::{
-    Change, ChangeSource, ChangeSurface, JournalEntry, RecordedDefinition, RecordedName,
+    Change, ChangeCause, ChangeSource, ChangeSurface, JournalEntry, RecordedDefinition, RecordedName,
 };
 use gaslightmq_control_api::kernel::{ApiKey, ClientId};
 use gaslightmq_control_api::lie::TimingLie;
@@ -1479,6 +1479,89 @@ async fn the_journal_of_an_environment_says_what_each_request_changed_and_where_
         );
     }
 
+    server.stop().await;
+    host.stop_all().await;
+    Ok(())
+}
+
+#[tokio::test]
+async fn an_undo_that_arms_a_rule_again_is_an_entry_of_the_journal_with_its_cause() -> anyhow::Result<()> {
+    let cluster = KafkaCluster::plaintext().start().await?;
+    let host = Arc::new(Host::new(
+        HostConfiguration::default(),
+        MemoryContext::new(),
+        Lies::of_every_build(),
+        RUN.parse()?,
+    ));
+    let any = ListenAddress::new(LOCALHOST, ANY_PORT);
+    let brokers = BrokerListeners::pinned(cluster.brokers().iter().map(|broker| (broker.id(), any)))?;
+    let staging = Environment::new(
+        "staging-proxy".parse()?,
+        Instances::ProxyInFrontOfCluster {
+            proxy: ProxyDefinition::new(Listeners::new(any, brokers, LOCALHOST.into())?),
+            upstream: Upstream::new(cluster.brokers()[0].address().to_string().parse()?),
+        },
+    );
+    let hold = Rule::new(
+        "hold-order-producers".parse()?,
+        Conditions::from(Condition::is(ApiKey::PRODUCE)),
+        TimingLie::new().with_delay(TimeSpan::from_millis(20)),
+    );
+    host.create(staging.clone(), ChangeSurface::Test).await?;
+    host.create(hold.clone(), ChangeSurface::Test).await?;
+    let mut configuration = ControlServerConfiguration::default();
+    configuration.listen = SocketAddr::new(LOCALHOST, ANY_PORT);
+    configuration.stats_interval = StatsInterval::new(QUIET)?;
+    let server = ControlServer::start(configuration, Arc::clone(&host)).await?;
+    // A tab of the UI: its requests come from the surface `ui`.
+    let mut tab = ControlClientConfiguration::new(server.address().into());
+    tab.surface = RequestSurface::Ui;
+    let client = ControlClient::new(tab);
+    client
+        .send(StartEnvironment {
+            environment: staging.name().clone(),
+        })
+        .await??;
+    let arm = || ArmRule {
+        environment: staging.name().clone(),
+        rule: hold.name().clone(),
+        expects: None,
+    };
+    let disarm = DisarmRule {
+        environment: staging.name().clone(),
+        rule: hold.name().clone(),
+        expects: None,
+    };
+
+    // Someone arms the rule and disarms it. ⌘Z takes the disarm back: its inverse is an arm, sent with its cause.
+    client.send(arm()).await??;
+    client.send(disarm).await??;
+    let undo = RequestSource::new(RequestSurface::Ui).with_cause(RequestCause::Undo);
+    let armed_again = client.send_from(undo, arm()).await??;
+
+    // The undo is the third entry of the journal, next to the two changes before it. It is an arming like the
+    // first one, and its entry says that it took an earlier change back.
+    let journal = client
+        .send(QueryJournal {
+            environment: staging.name().clone(),
+            after: None,
+        })
+        .await??;
+    let rule: RecordedName = hold.name().as_str().parse()?;
+    let ui = ChangeSource::new(ChangeSurface::Ui);
+    let said: Vec<(u64, ChangeSource, Change)> = journal
+        .iter()
+        .map(|entry| (entry.id.value(), entry.from, entry.change.clone()))
+        .collect();
+    assert_eq!(
+        said,
+        [
+            (1, ui, Change::RuleArmed { rule: rule.clone() }),
+            (2, ui, Change::RuleDisarmed { rule: rule.clone() }),
+            (3, ui.with_cause(ChangeCause::Undo), Change::RuleArmed { rule }),
+        ]
+    );
+    assert_eq!(journal[2].revision, Some(armed_again.revision));
     server.stop().await;
     host.stop_all().await;
     Ok(())
