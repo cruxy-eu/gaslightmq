@@ -11,6 +11,7 @@ use gaslightmq_definition_api::prelude::*;
 use gaslightmq_environment::prelude::*;
 use gaslightmq_field::prelude::*;
 use gaslightmq_host::prelude::*;
+use gaslightmq_journal::prelude::*;
 use gaslightmq_kernel::prelude::*;
 use gaslightmq_lie::prelude::*;
 use gaslightmq_lie_api::prelude::*;
@@ -74,7 +75,7 @@ async fn an_environment_whose_cluster_never_answers_does_not_start() -> anyhow::
 }
 
 #[tokio::test]
-async fn an_environment_that_does_not_run_has_no_listeners_events_or_rules() -> anyhow::Result<()> {
+async fn an_environment_that_does_not_run_has_no_listeners_events_rules_or_journal() -> anyhow::Result<()> {
     let host = Host::new(
         HostConfiguration::default(),
         MemoryContext::new(),
@@ -88,10 +89,11 @@ async fn an_environment_that_does_not_run_has_no_listeners_events_or_rules() -> 
     assert_eq!(host.endpoints(&staging), Err(not_running.clone()));
     assert!(host.live_events(&staging).is_err());
     assert!(host.every_event(&staging).is_err());
-    assert!(host.rules(&staging).is_err());
+    assert!(host.armed_rules(&staging).is_err());
+    assert_eq!(host.journal(&staging, None), Err(not_running.clone()));
     assert_eq!(host.incident_support(&staging), Err(not_running.clone()));
     assert_eq!(
-        host.fire(&staging, &"leader-flap".parse()?).await,
+        host.fire(&staging, &"leader-flap".parse()?, ChangeSurface::Test).await,
         Err(FireRuleError::NotRunning {
             environment: staging.clone()
         })
@@ -113,7 +115,7 @@ async fn a_rule_resolves_against_the_workspace_before_it_is_armed() -> anyhow::R
         "order-producers".parse()?,
         Conditions::new().with(Condition::is(ApiKey::PRODUCE)),
     );
-    host.create(order_producers.clone()).await?;
+    host.create(order_producers.clone(), ChangeSurface::Test).await?;
     let blackhole: PresetName = "blackhole".parse()?;
     let rule = Rule::new(
         "blackhole-order-producers".parse()?,
@@ -122,7 +124,7 @@ async fn a_rule_resolves_against_the_workspace_before_it_is_armed() -> anyhow::R
     );
 
     // The rule names a preset that the workspace does not have.
-    let Err(unresolved) = host.arm(&staging, &rule, None).await else {
+    let Err(unresolved) = host.arm(&staging, &rule, None, ChangeSurface::Test).await else {
         anyhow::bail!("a rule was armed with a preset that does not exist");
     };
     assert!(matches!(unresolved, ArmRuleError::Unresolved { .. }), "{unresolved:?}");
@@ -132,8 +134,9 @@ async fn a_rule_resolves_against_the_workspace_before_it_is_armed() -> anyhow::R
     );
 
     // Once the workspace has it, the rule resolves, and only an environment that runs can arm it.
-    host.create(Preset::new(blackhole, LieDefinition::Silence)).await?;
-    let Err(not_running) = host.arm(&staging, &rule, None).await else {
+    host.create(Preset::new(blackhole, LieDefinition::Silence), ChangeSurface::Test)
+        .await?;
+    let Err(not_running) = host.arm(&staging, &rule, None, ChangeSurface::Test).await else {
         anyhow::bail!("a rule was armed in an environment that does not run");
     };
     assert_eq!(not_running, ArmRuleError::NotRunning { environment: staging });
@@ -154,11 +157,17 @@ async fn a_follower_of_the_host_learns_of_every_change_of_a_definition() -> anyh
         Conditions::new().with(Condition::is(ApiKey::PRODUCE)),
     );
 
-    host.create(order_producers.clone()).await?;
-    host.update(order_producers.clone().with_title("Order producers".parse()?), None)
+    host.create(order_producers.clone(), ChangeSurface::Test).await?;
+    host.update(
+        order_producers.clone().with_title("Order producers".parse()?),
+        None,
+        ChangeSurface::Test,
+    )
+    .await?;
+    host.delete(order_producers.name().clone(), None, ChangeSurface::Test)
         .await?;
-    host.delete(order_producers.name().clone(), None).await?;
 
+    // No environment runs, so no journal records the changes, and no entry comes between them.
     let name = DefinitionName::from(order_producers.name().clone());
     assert_eq!(
         changes.next().await?,
@@ -196,43 +205,47 @@ async fn live_rules_pads_and_sessions_need_an_environment_that_runs() -> anyhow:
         })
     );
     assert_eq!(
-        host.create_live_rule(&staging, silence.clone()).await,
+        host.create_live_rule(&staging, silence.clone(), ChangeSurface::Test)
+            .await,
         Err(CreateLiveRuleError::NotRunning {
             environment: staging.clone()
         })
     );
     assert_eq!(
-        host.create_live_rule_armed(&staging, silence.clone()).await,
+        host.create_live_rule_armed(&staging, silence.clone(), ChangeSurface::Test)
+            .await,
         Err(CreateLiveRuleError::NotRunning {
             environment: staging.clone()
         })
     );
     assert_eq!(
-        host.update_live_rule(&staging, silence.clone(), None).await,
+        host.update_live_rule(&staging, silence.clone(), None, ChangeSurface::Test)
+            .await,
         Err(UpdateLiveRuleError::NotRunning {
             environment: staging.clone()
         })
     );
     assert_eq!(
-        host.delete_live_rule(&staging, silence.name(), None),
+        host.delete_live_rule(&staging, silence.name(), None, ChangeSurface::Test),
         Err(DeleteLiveRuleError::NotRunning {
             environment: staging.clone()
         })
     );
     assert_eq!(
-        host.disarm(&staging, silence.name(), None).await,
+        host.disarm(&staging, silence.name(), None, ChangeSurface::Test).await,
         Err(DisarmRuleError::NotRunning {
             environment: staging.clone()
         })
     );
     assert_eq!(
-        host.keep(&staging, silence.name(), None).await,
+        host.keep(&staging, silence.name(), None, ChangeSurface::Test).await,
         Err(KeepRuleError::NotRunning {
             environment: staging.clone()
         })
     );
     assert_eq!(
-        host.send_intent(&staging, &Intent::Arm { pad }).await,
+        host.send_intent(&staging, &Intent::Arm { pad }, ChangeSurface::Pad)
+            .await,
         Err(IntentError::NotRunning {
             environment: staging.clone()
         })
@@ -275,16 +288,20 @@ async fn every_change_of_a_definition_answers_with_the_revision_it_left() -> any
     );
     let blackhole = Preset::new("blackhole".parse()?, LieDefinition::Silence);
 
-    let created = host.create(blackhole.clone()).await?;
+    let created = host.create(blackhole.clone(), ChangeSurface::Test).await?;
     let updated = host
-        .update(blackhole.clone().with_title("Blackhole".parse()?), None)
+        .update(
+            blackhole.clone().with_title("Blackhole".parse()?),
+            None,
+            ChangeSurface::Test,
+        )
         .await?;
 
     // Every change takes the next number of the one counter of the process, so a later change has a higher revision.
     assert!(created < updated, "{created} and then {updated}");
     // The answer is the revision that the workspace holds beside the definition.
     assert_eq!(host.workspace().await.revision(blackhole.name().clone()), updated);
-    let deleted = host.delete(blackhole.name().clone(), None).await?;
+    let deleted = host.delete(blackhole.name().clone(), None, ChangeSurface::Test).await?;
     assert!(updated < deleted, "{updated} and then {deleted}");
     assert_eq!(host.run(), RUN);
     Ok(())
@@ -303,16 +320,18 @@ async fn a_change_that_expects_another_revision_changes_nothing() -> anyhow::Res
     // Two tabs read the preset as it was created.
     let seen = Expects {
         run: host.run(),
-        revision: host.create(blackhole.clone()).await?,
+        revision: host.create(blackhole.clone(), ChangeSurface::Test).await?,
     };
     // The first tab gives it a title.
     let titled = blackhole.clone().with_title("Blackhole".parse()?);
-    let now = host.update(titled.clone(), Some(seen)).await?;
+    let now = host.update(titled.clone(), Some(seen), ChangeSurface::Test).await?;
 
     // The second tab changes and deletes what it saw, which is no longer what the workspace holds.
     let late = blackhole.clone().with_title("Silence".parse()?);
-    let updated_late = host.update(late, Some(seen)).await;
-    let deleted_late = host.delete(blackhole.name().clone(), Some(seen)).await;
+    let updated_late = host.update(late, Some(seen), ChangeSurface::Test).await;
+    let deleted_late = host
+        .delete(blackhole.name().clone(), Some(seen), ChangeSurface::Test)
+        .await;
 
     let name = DefinitionName::from(blackhole.name().clone());
     assert_eq!(
@@ -351,7 +370,8 @@ async fn a_change_that_expects_another_revision_changes_nothing() -> anyhow::Res
         run: host.run(),
         revision: now,
     };
-    host.delete(blackhole.name().clone(), Some(seen_now)).await?;
+    host.delete(blackhole.name().clone(), Some(seen_now), ChangeSurface::Test)
+        .await?;
     assert_eq!(changes.next().await?, HostChange::DefinitionDeleted { name });
     Ok(())
 }
@@ -371,7 +391,7 @@ async fn a_change_that_expects_a_revision_of_another_run_changes_nothing() -> an
         Conditions::new(),
         blackhole.name().clone(),
     );
-    let created = host.create(blackhole.clone()).await?;
+    let created = host.create(blackhole.clone(), ChangeSurface::Test).await?;
     // A client read the preset before the process started again. The load gave it the same number in both runs,
     // so the revision alone fits, and the run does not.
     let before_the_restart = Some(Expects {
@@ -381,33 +401,37 @@ async fn a_change_that_expects_a_revision_of_another_run_changes_nothing() -> an
 
     let titled = blackhole.clone().with_title("Blackhole".parse()?);
     assert_eq!(
-        host.update(titled, before_the_restart).await,
+        host.update(titled, before_the_restart, ChangeSurface::Test).await,
         Err(UpdateDefinitionError::OtherRun { run: RUN })
     );
     assert_eq!(
-        host.delete(blackhole.name().clone(), before_the_restart).await,
+        host.delete(blackhole.name().clone(), before_the_restart, ChangeSurface::Test)
+            .await,
         Err(DeleteDefinitionError::OtherRun { run: RUN })
     );
     // No change of a rule in an environment looks further than the run either.
     assert_eq!(
-        host.arm(&staging, &silence, before_the_restart).await,
+        host.arm(&staging, &silence, before_the_restart, ChangeSurface::Test)
+            .await,
         Err(ArmRuleError::OtherRun { run: RUN })
     );
     assert_eq!(
-        host.disarm(&staging, silence.name(), before_the_restart).await,
+        host.disarm(&staging, silence.name(), before_the_restart, ChangeSurface::Test)
+            .await,
         Err(DisarmRuleError::OtherRun { run: RUN })
     );
     assert_eq!(
-        host.update_live_rule(&staging, silence.clone(), before_the_restart)
+        host.update_live_rule(&staging, silence.clone(), before_the_restart, ChangeSurface::Test)
             .await,
         Err(UpdateLiveRuleError::OtherRun { run: RUN })
     );
     assert_eq!(
-        host.delete_live_rule(&staging, silence.name(), before_the_restart),
+        host.delete_live_rule(&staging, silence.name(), before_the_restart, ChangeSurface::Test),
         Err(DeleteLiveRuleError::OtherRun { run: RUN })
     );
     assert_eq!(
-        host.keep(&staging, silence.name(), before_the_restart).await,
+        host.keep(&staging, silence.name(), before_the_restart, ChangeSurface::Test)
+            .await,
         Err(KeepRuleError::OtherRun { run: RUN })
     );
     // The preset is as it was created.

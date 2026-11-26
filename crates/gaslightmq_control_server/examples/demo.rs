@@ -22,6 +22,7 @@ use gaslightmq_control_api::environment::{
     BrokerListeners, Environment, Instances, ListenAddress, Listeners, ProxyDefinition, Upstream,
 };
 use gaslightmq_control_api::field::{Endpoint, Field};
+use gaslightmq_control_api::journal::ChangeSurface;
 use gaslightmq_control_api::kernel::{ApiKey, ClientId, ErrorCode};
 use gaslightmq_control_api::lie::{HangUpLie, LieDefinition, RefusalLie, TimingLie};
 use gaslightmq_control_api::prelude::*;
@@ -76,7 +77,8 @@ async fn main() -> anyhow::Result<()> {
         },
     )
     .with_title("Staging proxy".parse()?);
-    host.create(staging.clone()).await?;
+    // The demo is a program of its own, and no environment runs yet, so no journal records this change.
+    host.create(staging.clone(), ChangeSurface::Api).await?;
     let mut configuration = ControlServerConfiguration::default();
     if let Some(listen) = std::env::args().nth(1) {
         configuration.listen = listen.parse()?;

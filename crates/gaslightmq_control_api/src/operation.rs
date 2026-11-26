@@ -11,7 +11,8 @@ use serde::{Deserialize, Serialize};
 use crate::{
     ArmRule, CloseSession, CreateDefinition, CreateLiveRule, DeleteDefinition, DeleteLiveRule, DisarmRule, FireRule,
     GetBackend, GetDefinition, GetEnvironment, KeepRule, ListDefinitions, ListEnvironmentRules, ListEnvironments,
-    ListSessions, ParseSentence, SendIntent, StartEnvironment, StopEnvironment, UpdateDefinition, UpdateLiveRule,
+    ListSessions, ParseSentence, QueryJournal, SendIntent, StartEnvironment, StopEnvironment, UpdateDefinition,
+    UpdateLiveRule,
 };
 
 /// One thing that a client asks of the control plane, with what it gets back.
@@ -130,6 +131,8 @@ pub enum AnyOperation {
     GetBackend(GetBackend),
     /// [Read a ⌘K sentence](ParseSentence).
     ParseSentence(ParseSentence),
+    /// [Query the journal of an environment](QueryJournal).
+    QueryJournal(QueryJournal),
 }
 
 impl AnyOperation {
@@ -180,6 +183,7 @@ impl AnyOperation {
             AnyOperation::CloseSession(_) => "close-session",
             AnyOperation::GetBackend(_) => "get-backend",
             AnyOperation::ParseSentence(_) => "parse-sentence",
+            AnyOperation::QueryJournal(_) => "query-journal",
         }
     }
 }
@@ -263,4 +267,5 @@ requests! {
     CloseSession => CloseSession;
     GetBackend => GetBackend;
     ParseSentence => ParseSentence;
+    QueryJournal => QueryJournal;
 }

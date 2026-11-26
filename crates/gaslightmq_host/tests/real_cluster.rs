@@ -3,6 +3,7 @@
 //! seen, acts on the presses and the holds of a pad, ends the holds of a presence that ended, and keeps a live rule
 //! only under a name that no other one has.
 //! Whatever someone changes has a revision, and a change says what it expects.
+//! The journal of each environment records every change, with the surface it came from.
 //!
 //! The tests need Docker.
 //! Each test starts the cluster it needs, and a host whose workspace lives in memory.
@@ -20,6 +21,7 @@ use gaslightmq_environment::prelude::*;
 use gaslightmq_field::prelude::*;
 use gaslightmq_host::prelude::*;
 use gaslightmq_incident::prelude::*;
+use gaslightmq_journal::prelude::*;
 use gaslightmq_kafka_client_native::{KafkaProducer, ProducerConfiguration};
 use gaslightmq_kernel::prelude::*;
 use gaslightmq_lie::prelude::*;
@@ -28,7 +30,7 @@ use gaslightmq_lie_refusal::prelude::*;
 use gaslightmq_quick_inject::prelude::*;
 use gaslightmq_rule::prelude::*;
 use gaslightmq_selector::prelude::*;
-use gaslightmq_surface::{Column, Intent, Layer, PadLayout, PresenceId, Row};
+use gaslightmq_surface::{Column, Encoder, EncoderTurn, Intent, Layer, PadLayout, PresenceId, Row, Steps};
 use gaslightmq_test_kafka::KafkaCluster;
 use gaslightmq_trigger::prelude::*;
 use gaslightmq_wire::{Offset, Partition, Record};
@@ -83,14 +85,14 @@ async fn a_rule_armed_in_one_environment_leaves_the_other_alone() -> anyhow::Res
             upstream,
         },
     );
-    host.create(staging.clone()).await?;
-    host.create(canary.clone()).await?;
+    host.create(staging.clone(), ChangeSurface::Test).await?;
+    host.create(canary.clone(), ChangeSurface::Test).await?;
     // The workspace has a preset that both environments can use.
     let leader_flap = Preset::new(
         "leader-flap".parse()?,
         RefusalLie::new(ErrorCode::NOT_LEADER_OR_FOLLOWER),
     );
-    host.create(leader_flap.clone()).await?;
+    host.create(leader_flap.clone(), ChangeSurface::Test).await?;
     host.start(EnvironmentConfiguration::new(&staging)?).await?;
     host.start(EnvironmentConfiguration::new(&canary)?).await?;
     // Someone arms a rule in the canary alone: "tell the 1st Produce that its broker no longer leads the partition".
@@ -100,7 +102,7 @@ async fn a_rule_armed_in_one_environment_leaves_the_other_alone() -> anyhow::Res
         leader_flap.name().clone(),
     )
     .with_trigger(TriggerParts::new().with_nth(MatchNumber::new(1)?));
-    host.arm(canary.name(), &flap, None).await?;
+    host.arm(canary.name(), &flap, None, ChangeSurface::Test).await?;
     let mut staging_events = host.live_events(staging.name())?;
     let mut canary_events = host.live_events(canary.name())?;
     let through_staging = host
@@ -265,15 +267,15 @@ async fn a_rule_fired_by_hand_lies_on_the_next_call_and_an_incident_needs_a_back
         },
     )
     .with_trigger(Trigger::Manual);
-    let not_armed = host.fire(staging.name(), flap.name()).await;
-    host.arm(staging.name(), &flap, None).await?;
-    host.arm(staging.name(), &election, None).await?;
+    let not_armed = host.fire(staging.name(), flap.name(), ChangeSurface::Test).await;
+    host.arm(staging.name(), &flap, None, ChangeSurface::Test).await?;
+    host.arm(staging.name(), &election, None, ChangeSurface::Test).await?;
     let mut events = host.live_events(staging.name())?;
     let bootstrap = host
         .address_of(staging.name(), Endpoint::Bootstrap)?
         .context("the bootstrap endpoint of the staging proxy is open")?;
 
-    host.fire(staging.name(), flap.name()).await?;
+    host.fire(staging.name(), flap.name(), ChangeSurface::Test).await?;
     let written = KafkaProducer::from(bootstrap)
         .send(
             orders.name().as_str(),
@@ -281,7 +283,7 @@ async fn a_rule_fired_by_hand_lies_on_the_next_call_and_an_incident_needs_a_back
             &[Record::new("placed").with_key("o-1").with_timestamp(PLACED_AT)],
         )
         .await;
-    let moved = host.fire(staging.name(), election.name()).await;
+    let moved = host.fire(staging.name(), election.name(), ChangeSurface::Test).await;
 
     assert_eq!(
         not_armed,
@@ -310,6 +312,19 @@ async fn a_rule_fired_by_hand_lies_on_the_next_call_and_an_incident_needs_a_back
         anyhow::bail!("a real cluster applied an incident: {moved:?}");
     };
     assert_eq!(&rule, election.name());
+    // The journal records the firing that happened, after the two armings, and nothing of the one that was rejected.
+    // A firing is no change of what someone set, so its entry holds no revision.
+    let journal = host.journal(staging.name(), None)?;
+    let fired = journal.last().context("the journal recorded the firing")?;
+    assert_eq!(journal.len(), 3, "{journal:?}");
+    assert_eq!(
+        fired.change,
+        Change::RuleFiredByHand {
+            rule: flap.name().as_str().parse()?
+        }
+    );
+    assert_eq!(fired.from, ChangeSource::new(ChangeSurface::Test));
+    assert_eq!(fired.revision, None);
     host.stop_all().await;
     Ok(())
 }
@@ -345,12 +360,15 @@ async fn a_live_rule_is_made_armed_in_one_step_or_not_at_all() -> anyhow::Result
         Conditions::from(Condition::is(ApiKey::FETCH)),
         LieDefinition::Silence,
     );
-    host.arm(staging.name(), &quiet_fetch, None).await?;
+    host.arm(staging.name(), &quiet_fetch, None, ChangeSurface::Test)
+        .await?;
 
     let made = host
-        .create_live_rule_armed(staging.name(), quiet_produce.clone())
+        .create_live_rule_armed(staging.name(), quiet_produce.clone(), ChangeSurface::Test)
         .await?;
-    let refused = host.create_live_rule_armed(staging.name(), quiet_fetch.clone()).await;
+    let refused = host
+        .create_live_rule_armed(staging.name(), quiet_fetch.clone(), ChangeSurface::Test)
+        .await;
 
     // A rule that cannot arm, because one of its name is armed already, is no live rule either.
     assert_eq!(
@@ -395,10 +413,13 @@ async fn a_sentence_knows_the_names_of_the_workspace_and_those_the_traffic_has_s
         },
     );
     // The workspace has a preset and a selector with a title.
-    host.create(Preset::new(
-        "leader-flap".parse()?,
-        RefusalLie::new(ErrorCode::NOT_LEADER_OR_FOLLOWER),
-    ))
+    host.create(
+        Preset::new(
+            "leader-flap".parse()?,
+            RefusalLie::new(ErrorCode::NOT_LEADER_OR_FOLLOWER),
+        ),
+        ChangeSurface::Test,
+    )
     .await?;
     host.create(
         Selector::new(
@@ -406,6 +427,7 @@ async fn a_sentence_knows_the_names_of_the_workspace_and_those_the_traffic_has_s
             Conditions::from(Condition::is(ApiKey::PRODUCE)),
         )
         .with_title("Order producers".parse()?),
+        ChangeSurface::Test,
     )
     .await?;
     host.start(EnvironmentConfiguration::new(&staging)?).await?;
@@ -502,7 +524,7 @@ async fn a_rule_of_the_workspace_has_one_revision_in_an_environment_for_its_defi
             .context("the environment holds every rule of the workspace")
     };
     // The workspace gets the rule while the environment runs, so its last change there is the create.
-    let created = host.create(blackhole.clone()).await?;
+    let created = host.create(blackhole.clone(), ChangeSurface::Test).await?;
     assert_eq!(
         of_staging().await?,
         EnvironmentRule {
@@ -518,16 +540,20 @@ async fn a_rule_of_the_workspace_has_one_revision_in_an_environment_for_its_defi
         run: host.run(),
         revision: created,
     };
-    let armed = host.arm(staging.name(), &blackhole, Some(seen_created)).await?;
+    let armed = host
+        .arm(staging.name(), &blackhole, Some(seen_created), ChangeSurface::Test)
+        .await?;
     // Another tab gives the rule a title in the workspace.
     let titled = blackhole.clone().with_title("Blackhole everything".parse()?);
-    let retitled = host.update(titled.clone(), None).await?;
+    let retitled = host.update(titled.clone(), None, ChangeSurface::Test).await?;
     // The first tab disarms what it armed, and has not seen the title.
     let seen_armed = Expects {
         run: host.run(),
         revision: armed,
     };
-    let late = host.disarm(staging.name(), blackhole.name(), Some(seen_armed)).await;
+    let late = host
+        .disarm(staging.name(), blackhole.name(), Some(seen_armed), ChangeSurface::Test)
+        .await;
 
     assert!(
         created < armed && armed < retitled,
@@ -556,7 +582,9 @@ async fn a_rule_of_the_workspace_has_one_revision_in_an_environment_for_its_defi
         run: host.run(),
         revision: retitled,
     };
-    let disarmed = host.disarm(staging.name(), blackhole.name(), Some(seen_titled)).await?;
+    let disarmed = host
+        .disarm(staging.name(), blackhole.name(), Some(seen_titled), ChangeSurface::Test)
+        .await?;
     assert!(retitled < disarmed, "{retitled} and then {disarmed}");
     assert_eq!(
         of_staging().await?,
@@ -596,7 +624,9 @@ async fn a_live_rule_changes_goes_and_is_kept_only_as_its_sender_saw_it() -> any
         Conditions::from(Condition::is(ApiKey::PRODUCE)),
         TimingLie::new().with_delay(TimeSpan::from_millis(20)),
     );
-    let made = host.create_live_rule(staging.name(), hold.clone()).await?;
+    let made = host
+        .create_live_rule(staging.name(), hold.clone(), ChangeSurface::Test)
+        .await?;
     let seen_made = Some(Expects {
         run: host.run(),
         revision: made,
@@ -607,11 +637,14 @@ async fn a_live_rule_changes_goes_and_is_kept_only_as_its_sender_saw_it() -> any
         Conditions::from(Condition::is(ApiKey::PRODUCE)),
         TimingLie::new().with_delay(TimeSpan::from_millis(50)),
     );
-    let turned = host.update_live_rule(staging.name(), longer.clone(), None).await?;
+    let turned = host
+        .update_live_rule(staging.name(), longer.clone(), None, ChangeSurface::Test)
+        .await?;
 
     // Whoever still sees the rule of 20 ms changes, deletes and keeps nothing.
     assert_eq!(
-        host.update_live_rule(staging.name(), hold.clone(), seen_made).await,
+        host.update_live_rule(staging.name(), hold.clone(), seen_made, ChangeSurface::Test)
+            .await,
         Err(UpdateLiveRuleError::Changed {
             environment: staging.name().clone(),
             rule: hold.name().clone(),
@@ -619,7 +652,7 @@ async fn a_live_rule_changes_goes_and_is_kept_only_as_its_sender_saw_it() -> any
         })
     );
     assert_eq!(
-        host.delete_live_rule(staging.name(), hold.name(), seen_made),
+        host.delete_live_rule(staging.name(), hold.name(), seen_made, ChangeSurface::Test),
         Err(DeleteLiveRuleError::Changed {
             environment: staging.name().clone(),
             rule: hold.name().clone(),
@@ -627,7 +660,8 @@ async fn a_live_rule_changes_goes_and_is_kept_only_as_its_sender_saw_it() -> any
         })
     );
     assert_eq!(
-        host.keep(staging.name(), hold.name(), seen_made).await,
+        host.keep(staging.name(), hold.name(), seen_made, ChangeSurface::Test)
+            .await,
         Err(KeepRuleError::Changed {
             environment: staging.name().clone(),
             rule: hold.name().clone(),
@@ -653,7 +687,9 @@ async fn a_live_rule_changes_goes_and_is_kept_only_as_its_sender_saw_it() -> any
         run: host.run(),
         revision: turned,
     });
-    let kept = host.keep(staging.name(), hold.name(), seen_turned).await?;
+    let kept = host
+        .keep(staging.name(), hold.name(), seen_turned, ChangeSurface::Test)
+        .await?;
 
     assert!(made < turned && turned < kept, "{made}, {turned} and then {kept}");
     // The keep is one change, so the rule has its number in the workspace and in the environment.
@@ -698,7 +734,7 @@ async fn an_environment_that_starts_again_gives_every_rule_a_higher_revision() -
         Conditions::new(),
         LieDefinition::Silence,
     );
-    let created = host.create(blackhole.clone()).await?;
+    let created = host.create(blackhole.clone(), ChangeSurface::Test).await?;
     let revision_in_staging = async || {
         let rule = host.rule_of(staging.name(), blackhole.name()).await?;
         anyhow::Ok(
@@ -714,7 +750,9 @@ async fn an_environment_that_starts_again_gives_every_rule_a_higher_revision() -
         run: host.run(),
         revision: started,
     };
-    let armed = host.arm(staging.name(), &blackhole, Some(seen_started)).await?;
+    let armed = host
+        .arm(staging.name(), &blackhole, Some(seen_started), ChangeSurface::Test)
+        .await?;
     // The environment stops, and nothing is armed in the one that starts under its name.
     host.stop(staging.name()).await?;
     host.start(EnvironmentConfiguration::new(&staging)?).await?;
@@ -730,7 +768,8 @@ async fn an_environment_that_starts_again_gives_every_rule_a_higher_revision() -
         revision: armed,
     };
     assert_eq!(
-        host.disarm(staging.name(), blackhole.name(), Some(seen_armed)).await,
+        host.disarm(staging.name(), blackhole.name(), Some(seen_armed), ChangeSurface::Test)
+            .await,
         Err(DisarmRuleError::Changed {
             environment: staging.name().clone(),
             rule: blackhole.name().clone(),
@@ -768,8 +807,9 @@ async fn a_rule_that_spends_its_budget_takes_a_revision_as_it_disarms() -> anyho
         TimingLie::new().with_delay(TimeSpan::from_millis(20)),
     )
     .with_lifetime(Lifetime::Firings(Count::ONE));
-    host.create_live_rule(staging.name(), once.clone()).await?;
-    let armed = host.arm(staging.name(), &once, None).await?;
+    host.create_live_rule(staging.name(), once.clone(), ChangeSurface::Test)
+        .await?;
+    let armed = host.arm(staging.name(), &once, None, ChangeSurface::Test).await?;
     let mut changes = host.changes();
     let bootstrap = host
         .address_of(staging.name(), Endpoint::Bootstrap)?
@@ -797,13 +837,28 @@ async fn a_rule_that_spends_its_budget_takes_a_revision_as_it_disarms() -> anyho
     assert_eq!(spent.state, RuleState::Disarmed);
     // Nobody asked for that change, and it took the next number all the same.
     assert!(armed < spent.revision, "{armed} and then {}", spent.revision);
+    // The journal says what disarmed the rule: its lifetime, and no surface that someone uses.
+    let journal = host.journal(staging.name(), None)?;
+    let disarmed = journal.last().context("the journal recorded that the rule disarmed")?;
+    assert_eq!(
+        disarmed.change,
+        Change::RuleDisarmed {
+            rule: once.name().as_str().parse()?
+        }
+    );
+    assert_eq!(disarmed.from, ChangeSource::new(ChangeSurface::Lifetime));
+    assert_eq!(
+        disarmed.revision,
+        Some(gaslightmq_journal::Revision::new(spent.revision.number()))
+    );
     // Whoever still sees the rule armed arms nothing over it.
     let seen_armed = Expects {
         run: host.run(),
         revision: armed,
     };
     assert_eq!(
-        host.arm(staging.name(), &once, Some(seen_armed)).await,
+        host.arm(staging.name(), &once, Some(seen_armed), ChangeSurface::Test)
+            .await,
         Err(ArmRuleError::Changed {
             environment: staging.name().clone(),
             rule: once.name().clone(),
@@ -844,9 +899,9 @@ async fn two_presses_that_want_a_pad_armed_arm_it_once() -> anyhow::Result<()> {
         [delay.name().clone()],
         [Layer::all_clients()],
     )?;
-    host.create(order_producers).await?;
-    host.create(delay).await?;
-    host.create(desk.clone()).await?;
+    host.create(order_producers, ChangeSurface::Test).await?;
+    host.create(delay, ChangeSurface::Test).await?;
+    host.create(desk.clone(), ChangeSurface::Test).await?;
     host.start(EnvironmentConfiguration::new(&staging)?).await?;
     let pad = desk
         .pad(&Layer::all_clients(), Row::from_index(0), Column::from_index(0))
@@ -855,8 +910,8 @@ async fn two_presses_that_want_a_pad_armed_arm_it_once() -> anyhow::Result<()> {
 
     // Two people see the pad empty, and both press it to arm it.
     let arm = Intent::Arm { pad: pad.clone() };
-    let first = host.send_intent(staging.name(), &arm).await?;
-    let second = host.send_intent(staging.name(), &arm).await?;
+    let first = host.send_intent(staging.name(), &arm, ChangeSurface::Pad).await?;
+    let second = host.send_intent(staging.name(), &arm, ChangeSurface::Pad).await?;
 
     assert_eq!((first.made, first.changed), (true, true));
     // The second press finds the rule armed and changes nothing, so it leaves nothing to undo.
@@ -873,8 +928,8 @@ async fn two_presses_that_want_a_pad_armed_arm_it_once() -> anyhow::Result<()> {
 
     // Two people who press it to disarm it both find it disarmed.
     let disarm = Intent::Disarm { pad };
-    let disarmed = host.send_intent(staging.name(), &disarm).await?;
-    let again = host.send_intent(staging.name(), &disarm).await?;
+    let disarmed = host.send_intent(staging.name(), &disarm, ChangeSurface::Pad).await?;
+    let again = host.send_intent(staging.name(), &disarm, ChangeSurface::Pad).await?;
 
     assert!(disarmed.changed);
     assert!(!again.changed);
@@ -921,9 +976,9 @@ async fn a_held_pad_stays_armed_until_its_last_hold_goes_and_a_disarm_ends_every
         [delay.name().clone()],
         [Layer::all_clients()],
     )?;
-    host.create(order_producers).await?;
-    host.create(delay).await?;
-    host.create(desk.clone()).await?;
+    host.create(order_producers, ChangeSurface::Test).await?;
+    host.create(delay, ChangeSurface::Test).await?;
+    host.create(desk.clone(), ChangeSurface::Test).await?;
     host.start(EnvironmentConfiguration::new(&staging)?).await?;
     let pad = desk
         .pad(&Layer::all_clients(), Row::from_index(0), Column::from_index(0))
@@ -933,8 +988,8 @@ async fn a_held_pad_stays_armed_until_its_last_hold_goes_and_a_disarm_ends_every
     let release = |hold| Intent::Release { pad: pad.clone(), hold };
 
     // Ana and Dan hold the pad. Ana's hold makes its rule and arms it, and each press adds a hold of its own.
-    let ana = host.send_intent(staging.name(), &hold).await?;
-    let dan = host.send_intent(staging.name(), &hold).await?;
+    let ana = host.send_intent(staging.name(), &hold, ChangeSurface::Pad).await?;
+    let dan = host.send_intent(staging.name(), &hold, ChangeSurface::Pad).await?;
     let (Some(anas_hold), Some(dans_hold)) = (ana.hold, dan.hold) else {
         anyhow::bail!("a press in hold adds a hold: {ana:?}, {dan:?}");
     };
@@ -943,16 +998,18 @@ async fn a_held_pad_stays_armed_until_its_last_hold_goes_and_a_disarm_ends_every
     assert_ne!(anas_hold, dans_hold);
 
     // Dan lets go, and the rule stays armed while Ana still holds it.
-    let dan_gone = host.send_intent(staging.name(), &release(dans_hold)).await?;
+    let dan_gone = host
+        .send_intent(staging.name(), &release(dans_hold), ChangeSurface::Pad)
+        .await?;
     assert!(!dan_gone.changed);
     assert_eq!(state(&dan_gone), Some(RuleState::Armed));
 
     // Ben presses the pad in latch to disarm it, which ends Ana's hold. Cleo holds the pad again, which arms it anew.
     let ben = host
-        .send_intent(staging.name(), &Intent::Disarm { pad: pad.clone() })
+        .send_intent(staging.name(), &Intent::Disarm { pad: pad.clone() }, ChangeSurface::Pad)
         .await?;
     assert!(ben.changed);
-    let cleo = host.send_intent(staging.name(), &hold).await?;
+    let cleo = host.send_intent(staging.name(), &hold, ChangeSurface::Pad).await?;
     let Some(cleos_hold) = cleo.hold else {
         anyhow::bail!("a press in hold adds a hold: {cleo:?}");
     };
@@ -960,11 +1017,15 @@ async fn a_held_pad_stays_armed_until_its_last_hold_goes_and_a_disarm_ends_every
 
     // Ana lets go after Ben's disarm ended her hold: her release changes nothing, and the rule stays armed for Cleo.
     // A count of holds alone would take Ana's release for Cleo's hold.
-    let ana_late = host.send_intent(staging.name(), &release(anas_hold)).await?;
+    let ana_late = host
+        .send_intent(staging.name(), &release(anas_hold), ChangeSurface::Pad)
+        .await?;
     assert!(!ana_late.changed);
     assert_eq!(state(&ana_late), Some(RuleState::Armed));
     // Cleo lets go, the last hold goes, and the rule disarms.
-    let cleo_gone = host.send_intent(staging.name(), &release(cleos_hold)).await?;
+    let cleo_gone = host
+        .send_intent(staging.name(), &release(cleos_hold), ChangeSurface::Pad)
+        .await?;
     assert!(cleo_gone.changed);
     assert_eq!(state(&cleo_gone), Some(RuleState::Disarmed));
     host.stop_all().await;
@@ -1001,9 +1062,9 @@ async fn a_release_never_disarms_a_rule_that_a_press_in_latch_armed() -> anyhow:
         [delay.name().clone()],
         [Layer::all_clients()],
     )?;
-    host.create(order_producers).await?;
-    host.create(delay).await?;
-    host.create(desk.clone()).await?;
+    host.create(order_producers, ChangeSurface::Test).await?;
+    host.create(delay, ChangeSurface::Test).await?;
+    host.create(desk.clone(), ChangeSurface::Test).await?;
     host.start(EnvironmentConfiguration::new(&staging)?).await?;
     let pad = desk
         .pad(&Layer::all_clients(), Row::from_index(0), Column::from_index(0))
@@ -1012,10 +1073,10 @@ async fn a_release_never_disarms_a_rule_that_a_press_in_latch_armed() -> anyhow:
 
     // Ben arms the pad in latch. Ana holds it, which finds it armed, and still answers with a hold.
     let ben = host
-        .send_intent(staging.name(), &Intent::Arm { pad: pad.clone() })
+        .send_intent(staging.name(), &Intent::Arm { pad: pad.clone() }, ChangeSurface::Pad)
         .await?;
     let ana = host
-        .send_intent(staging.name(), &Intent::Hold { pad: pad.clone() })
+        .send_intent(staging.name(), &Intent::Hold { pad: pad.clone() }, ChangeSurface::Pad)
         .await?;
     let Some(anas_hold) = ana.hold else {
         anyhow::bail!("a press in hold adds a hold: {ana:?}");
@@ -1025,7 +1086,11 @@ async fn a_release_never_disarms_a_rule_that_a_press_in_latch_armed() -> anyhow:
 
     // Ana lets go: her hold did not arm the rule, so her release leaves it armed for Ben.
     let ana_gone = host
-        .send_intent(staging.name(), &Intent::Release { pad, hold: anas_hold })
+        .send_intent(
+            staging.name(),
+            &Intent::Release { pad, hold: anas_hold },
+            ChangeSurface::Pad,
+        )
         .await?;
 
     assert!(!ana_gone.changed);
@@ -1065,9 +1130,9 @@ async fn a_presence_that_ends_takes_its_holds_away_and_the_rule_stays_armed_whil
         [delay.name().clone()],
         [Layer::all_clients()],
     )?;
-    host.create(order_producers).await?;
-    host.create(delay).await?;
-    host.create(desk.clone()).await?;
+    host.create(order_producers, ChangeSurface::Test).await?;
+    host.create(delay, ChangeSurface::Test).await?;
+    host.create(desk.clone(), ChangeSurface::Test).await?;
     host.start(EnvironmentConfiguration::new(&staging)?).await?;
     let pad = desk
         .pad(&Layer::all_clients(), Row::from_index(0), Column::from_index(0))
@@ -1079,8 +1144,12 @@ async fn a_presence_that_ends_takes_its_holds_away_and_the_rule_stays_armed_whil
     host.open_presence(ANAS_TAB);
     host.open_presence(DANS_TAB);
     // Both hold the pad. Ana's hold makes its rule and arms it, and each hold belongs to the presence of its press.
-    let ana = host.send_intent_from(ANAS_TAB, staging.name(), &hold).await?;
-    let dan = host.send_intent_from(DANS_TAB, staging.name(), &hold).await?;
+    let ana = host
+        .send_intent_from(ANAS_TAB, staging.name(), &hold, ChangeSurface::Pad)
+        .await?;
+    let dan = host
+        .send_intent_from(DANS_TAB, staging.name(), &hold, ChangeSurface::Pad)
+        .await?;
     assert!(ana.hold.is_some(), "{ana:?}");
     assert!(dan.hold.is_some(), "{dan:?}");
     assert_eq!((ana.made, ana.changed), (true, true));
@@ -1097,7 +1166,9 @@ async fn a_presence_that_ends_takes_its_holds_away_and_the_rule_stays_armed_whil
     assert_eq!(for_nobody.map(|rule| rule.state), Some(RuleState::Disarmed));
 
     // A presence that ended holds nothing any more: nothing would end the hold of a client that is gone.
-    let late = host.send_intent_from(ANAS_TAB, staging.name(), &hold).await;
+    let late = host
+        .send_intent_from(ANAS_TAB, staging.name(), &hold, ChangeSurface::Pad)
+        .await;
     assert_eq!(
         late,
         Err(IntentError::Refused {
@@ -1140,9 +1211,9 @@ async fn a_presence_that_ends_the_last_hold_of_a_rule_gives_the_rule_a_later_rev
         [delay.name().clone()],
         [Layer::all_clients()],
     )?;
-    host.create(order_producers).await?;
-    host.create(delay).await?;
-    host.create(desk.clone()).await?;
+    host.create(order_producers, ChangeSurface::Test).await?;
+    host.create(delay, ChangeSurface::Test).await?;
+    host.create(desk.clone(), ChangeSurface::Test).await?;
     host.start(EnvironmentConfiguration::new(&staging)?).await?;
     let pad = desk
         .pad(&Layer::all_clients(), Row::from_index(0), Column::from_index(0))
@@ -1153,8 +1224,12 @@ async fn a_presence_that_ends_the_last_hold_of_a_rule_gives_the_rule_a_later_rev
     host.open_presence(DANS_TAB);
 
     // Ana's hold makes the rule of the pad and arms it, which is one change. Dan's hold changes nothing.
-    let ana = host.send_intent_from(ANAS_TAB, staging.name(), &hold).await?;
-    let dan = host.send_intent_from(DANS_TAB, staging.name(), &hold).await?;
+    let ana = host
+        .send_intent_from(ANAS_TAB, staging.name(), &hold, ChangeSurface::Pad)
+        .await?;
+    let dan = host
+        .send_intent_from(DANS_TAB, staging.name(), &hold, ChangeSurface::Pad)
+        .await?;
     let armed = ana.rule.context("a press in hold answers with its rule")?.revision;
     assert_eq!(dan.rule.map(|rule| rule.revision), Some(armed));
     let mut changes = host.changes();
@@ -1182,13 +1257,28 @@ async fn a_presence_that_ends_the_last_hold_of_a_rule_gives_the_rule_a_later_rev
         .context("the environment still holds its live rule")?;
     assert_eq!(for_nobody.state, RuleState::Disarmed);
     assert!(armed < for_nobody.revision, "{armed} and then {}", for_nobody.revision);
+    // The journal records the disarm as the release that Dan's tab never sent: it came from the pads.
+    let journal = host.journal(staging.name(), None)?;
+    let released = journal.last().context("the journal recorded that the rule disarmed")?;
+    assert_eq!(
+        released.change,
+        Change::RuleDisarmed {
+            rule: rule.as_str().parse()?
+        }
+    );
+    assert_eq!(released.from, ChangeSource::new(ChangeSurface::Pad));
+    assert_eq!(
+        released.revision,
+        Some(gaslightmq_journal::Revision::new(for_nobody.revision.number()))
+    );
     // Whoever still sees the rule as Ana and Dan held it arms nothing over it.
     let seen_armed = Expects {
         run: host.run(),
         revision: armed,
     };
     assert_eq!(
-        host.arm(staging.name(), &for_nobody.rule, Some(seen_armed)).await,
+        host.arm(staging.name(), &for_nobody.rule, Some(seen_armed), ChangeSurface::Test)
+            .await,
         Err(ArmRuleError::Changed {
             environment: staging.name().clone(),
             rule,
@@ -1231,10 +1321,10 @@ async fn a_presence_that_ends_leaves_a_hold_of_no_presence_and_a_rule_that_a_pre
         [delay.name().clone()],
         [Layer::all_clients()],
     )?;
-    host.create(order_producers).await?;
-    host.create(fetches).await?;
-    host.create(delay).await?;
-    host.create(desk.clone()).await?;
+    host.create(order_producers, ChangeSurface::Test).await?;
+    host.create(fetches, ChangeSurface::Test).await?;
+    host.create(delay, ChangeSurface::Test).await?;
+    host.create(desk.clone(), ChangeSurface::Test).await?;
     host.start(EnvironmentConfiguration::new(&staging)?).await?;
     let slow_producers = desk
         .pad(&Layer::all_clients(), Row::from_index(0), Column::from_index(0))
@@ -1249,17 +1339,21 @@ async fn a_presence_that_ends_leaves_a_hold_of_no_presence_and_a_rule_that_a_pre
     let hold_producers = Intent::Hold {
         pad: slow_producers.clone(),
     };
-    let of_the_cli = host.send_intent(staging.name(), &hold_producers).await?;
+    let of_the_cli = host
+        .send_intent(staging.name(), &hold_producers, ChangeSurface::Cli)
+        .await?;
     let Some(hold_of_the_cli) = of_the_cli.hold else {
         anyhow::bail!("a press in hold adds a hold: {of_the_cli:?}");
     };
-    host.send_intent_from(ANAS_TAB, staging.name(), &hold_producers).await?;
+    host.send_intent_from(ANAS_TAB, staging.name(), &hold_producers, ChangeSurface::Pad)
+        .await?;
     // Ben arms the pad of the fetches in latch, and Ana holds that pad too.
     host.send_intent(
         staging.name(),
         &Intent::Arm {
             pad: slow_fetches.clone(),
         },
+        ChangeSurface::Pad,
     )
     .await?;
     host.send_intent_from(
@@ -1268,6 +1362,7 @@ async fn a_presence_that_ends_leaves_a_hold_of_no_presence_and_a_rule_that_a_pre
         &Intent::Hold {
             pad: slow_fetches.clone(),
         },
+        ChangeSurface::Pad,
     )
     .await?;
 
@@ -1276,7 +1371,7 @@ async fn a_presence_that_ends_leaves_a_hold_of_no_presence_and_a_rule_that_a_pre
 
     // The pad of the fetches stays armed for Ben: holds did not arm its rule, so no hold that ends disarms it.
     let fetches_now = host
-        .send_intent(staging.name(), &Intent::Arm { pad: slow_fetches })
+        .send_intent(staging.name(), &Intent::Arm { pad: slow_fetches }, ChangeSurface::Pad)
         .await?;
     assert_eq!(
         (fetches_now.changed, state(&fetches_now)),
@@ -1290,6 +1385,7 @@ async fn a_presence_that_ends_leaves_a_hold_of_no_presence_and_a_rule_that_a_pre
                 pad: slow_producers,
                 hold: hold_of_the_cli,
             },
+            ChangeSurface::Cli,
         )
         .await?;
     assert_eq!((released.changed, state(&released)), (true, Some(RuleState::Disarmed)));
@@ -1335,16 +1431,18 @@ async fn a_name_that_a_live_rule_of_another_environment_has_is_no_name_for_the_w
         order_producers.name().clone(),
         delay.name().clone(),
     );
-    host.create(order_producers).await?;
-    host.create(delay).await?;
+    host.create(order_producers, ChangeSurface::Test).await?;
+    host.create(delay, ChangeSurface::Test).await?;
     host.start(EnvironmentConfiguration::new(&staging)?).await?;
     host.start(EnvironmentConfiguration::new(&canary)?).await?;
     // Each environment holds a live rule of the same name.
-    host.create_live_rule(staging.name(), slow.clone()).await?;
-    host.create_live_rule(canary.name(), slow.clone()).await?;
+    host.create_live_rule(staging.name(), slow.clone(), ChangeSurface::Test)
+        .await?;
+    host.create_live_rule(canary.name(), slow.clone(), ChangeSurface::Test)
+        .await?;
 
-    let kept = host.keep(staging.name(), slow.name(), None).await;
-    let created = host.create(slow.clone()).await;
+    let kept = host.keep(staging.name(), slow.name(), None, ChangeSurface::Test).await;
+    let created = host.create(slow.clone(), ChangeSurface::Test).await;
 
     // A rule of the workspace is in every environment, so it never stands next to a live rule of its name.
     assert_eq!(
@@ -1360,8 +1458,10 @@ async fn a_name_that_a_live_rule_of_another_environment_has_is_no_name_for_the_w
     );
 
     // Once the canary deleted its live rule, the staging proxy keeps its own.
-    host.delete_live_rule(canary.name(), slow.name(), None)?;
-    let kept = host.keep(staging.name(), slow.name(), None).await?;
+    host.delete_live_rule(canary.name(), slow.name(), None, ChangeSurface::Test)?;
+    let kept = host
+        .keep(staging.name(), slow.name(), None, ChangeSurface::Test)
+        .await?;
     assert_eq!(
         host.rule_of(staging.name(), slow.name()).await?,
         Some(EnvironmentRule {
@@ -1370,6 +1470,329 @@ async fn a_name_that_a_live_rule_of_another_environment_has_is_no_name_for_the_w
             state: RuleState::Disarmed,
             revision: kept,
         })
+    );
+    host.stop_all().await;
+    Ok(())
+}
+
+#[tokio::test]
+async fn the_journal_of_an_environment_records_every_change_with_where_it_came_from() -> anyhow::Result<()> {
+    let cluster = KafkaCluster::plaintext().start().await?;
+    let host = Host::new(
+        HostConfiguration::default(),
+        MemoryContext::new(),
+        Lies::of_every_build(),
+        RUN,
+    );
+    let any = ListenAddress::new(LOCALHOST, 0);
+    let brokers = BrokerListeners::pinned(cluster.brokers().iter().map(|broker| (broker.id(), any)))?;
+    let staging = Environment::new(
+        "staging-proxy".parse()?,
+        Instances::ProxyInFrontOfCluster {
+            proxy: ProxyDefinition::new(Listeners::new(any, brokers, LOCALHOST.into())?),
+            upstream: Upstream::new(cluster.brokers()[0].address().to_string().parse()?),
+        },
+    );
+    host.start(EnvironmentConfiguration::new(&staging)?).await?;
+    let mut changes = host.changes();
+    // "Hold every Produce 20 ms."
+    let slow = Rule::new(
+        "slow-produce".parse()?,
+        Conditions::from(Condition::is(ApiKey::PRODUCE)),
+        TimingLie::new().with_delay(TimeSpan::from_millis(20)),
+    );
+    // The revision that a change left, as an entry holds it: the journal and the host each have a type for it.
+    let left = |revision: gaslightmq_workspace::Revision| Some(gaslightmq_journal::Revision::new(revision.number()));
+    let sentence = ChangeSource::new(ChangeSurface::QuickInject);
+    let undo = ChangeSource::new(ChangeSurface::Ui).with_cause(ChangeCause::Undo);
+    let redo = ChangeSource::new(ChangeSurface::Ui).with_cause(ChangeCause::Redo);
+    let gmq = ChangeSource::new(ChangeSurface::Cli);
+
+    // Someone types a ⌘K sentence, which makes the live rule armed. They take the arming back with ⌘Z,
+    // make it again with ⇧⌘Z, and `gmq` deletes the rule while it is armed.
+    let made = host
+        .create_live_rule_armed(staging.name(), slow.clone(), sentence)
+        .await?;
+    let disarmed = host.disarm(staging.name(), slow.name(), None, undo).await?;
+    let armed_again = host.arm(staging.name(), &slow, None, redo).await?;
+    let deleted = host.delete_live_rule(staging.name(), slow.name(), None, gmq)?;
+
+    // Nothing took an entry out: the journal shows the arming, that someone took it back, and that they made it
+    // again. Each entry holds the revision that its change left. Making the rule armed is one change in two
+    // entries, and so is deleting it while it is armed: every arming in the journal ends with a disarm.
+    let journal = host.journal(staging.name(), None)?;
+    let rule: RecordedName = slow.name().as_str().parse()?;
+    let said: Vec<(u64, Option<gaslightmq_journal::Revision>, ChangeSource, Change)> = journal
+        .iter()
+        .map(|entry| (entry.id.value(), entry.revision, entry.from, entry.change.clone()))
+        .collect();
+    assert_eq!(
+        said,
+        [
+            (1, left(made), sentence, Change::LiveRuleMade { rule: rule.clone() }),
+            (2, left(made), sentence, Change::RuleArmed { rule: rule.clone() }),
+            (3, left(disarmed), undo, Change::RuleDisarmed { rule: rule.clone() }),
+            (4, left(armed_again), redo, Change::RuleArmed { rule: rule.clone() }),
+            (5, left(deleted), gmq, Change::RuleDisarmed { rule: rule.clone() }),
+            (6, left(deleted), gmq, Change::LiveRuleDeleted { rule }),
+        ]
+    );
+    // The entries tell their time on the clock of the environment, so a later entry is no earlier one.
+    assert!(journal.is_sorted_by_key(|entry| entry.at), "{journal:?}");
+
+    // Whoever read the journal up to the redo reads on from there.
+    let the_redo = journal[3].id;
+    assert_eq!(host.journal(staging.name(), Some(the_redo))?, &journal[4..]);
+
+    // Whoever follows the host got every entry, in the order of their IDs.
+    let mut told = Vec::new();
+    while told.len() < journal.len() {
+        let change = tokio::time::timeout(PATIENCE, changes.next()).await??;
+        if let HostChange::Journaled { environment, entry } = change {
+            assert_eq!(&environment, staging.name());
+            told.push(entry);
+        }
+    }
+    assert_eq!(told, journal);
+    host.stop_all().await;
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_change_of_a_definition_enters_the_journal_of_every_environment_that_runs() -> anyhow::Result<()> {
+    let cluster = KafkaCluster::plaintext().start().await?;
+    let host = Host::new(
+        HostConfiguration::default(),
+        MemoryContext::new(),
+        Lies::of_every_build(),
+        RUN,
+    );
+    // Two environments stand in front of the same cluster. Every listener of both takes a free port.
+    let any = ListenAddress::new(LOCALHOST, 0);
+    let brokers = BrokerListeners::pinned(cluster.brokers().iter().map(|broker| (broker.id(), any)))?;
+    let listen = Listeners::new(any, brokers, LOCALHOST.into())?;
+    let upstream = Upstream::new(cluster.brokers()[0].address().to_string().parse()?);
+    let staging = Environment::new(
+        "staging-proxy".parse()?,
+        Instances::ProxyInFrontOfCluster {
+            proxy: ProxyDefinition::new(listen.clone()),
+            upstream: upstream.clone(),
+        },
+    );
+    let canary = Environment::new(
+        "canary-proxy".parse()?,
+        Instances::ProxyInFrontOfCluster {
+            proxy: ProxyDefinition::new(listen),
+            upstream,
+        },
+    );
+    let delay = Preset::new("delay-1s".parse()?, TimingLie::new().with_delay(TimeSpan::from_secs(1)));
+    let preset = RecordedDefinition::Preset(delay.name().as_str().parse()?);
+    let said = |journal: Vec<JournalEntry>| -> Vec<(u64, Option<gaslightmq_journal::Revision>, ChangeSource, Change)> {
+        let said = journal
+            .into_iter()
+            .map(|entry| (entry.id.value(), entry.revision, entry.from, entry.change));
+        said.collect()
+    };
+    // The revision that a change left, as an entry holds it: the journal and the host each have a type for it.
+    let left = |revision: gaslightmq_workspace::Revision| Some(gaslightmq_journal::Revision::new(revision.number()));
+    let ui = ChangeSource::new(ChangeSurface::Ui);
+    let gmq = ChangeSource::new(ChangeSurface::Cli);
+
+    // `gmq` creates the preset while no environment runs, so no journal records it.
+    host.create(delay.clone(), gmq).await?;
+    host.start(EnvironmentConfiguration::new(&staging)?).await?;
+    host.start(EnvironmentConfiguration::new(&canary)?).await?;
+    assert_eq!(host.journal(staging.name(), None)?, Vec::<JournalEntry>::new());
+    assert_eq!(host.journal(canary.name(), None)?, Vec::<JournalEntry>::new());
+
+    // Someone gives the preset a title in the UI, while both environments run.
+    let titled = host
+        .update(delay.clone().with_title("Delay 1 s".parse()?), None, ui)
+        .await?;
+
+    // A definition belongs to the workspace, so the change is the first entry of both journals.
+    // One counter gives every revision, so the entry has the same one in both.
+    let changed = Change::DefinitionChanged {
+        definition: preset.clone(),
+    };
+    let in_both = [(1, left(titled), ui, changed)];
+    assert_eq!(said(host.journal(staging.name(), None)?), in_both);
+    assert_eq!(said(host.journal(canary.name(), None)?), in_both);
+
+    // The canary stops, and its journal ends with it. `gmq` deletes the preset, which the staging proxy records.
+    host.stop(canary.name()).await?;
+    let deleted = host.delete(delay.name().clone(), None, gmq).await?;
+    assert_eq!(
+        host.journal(canary.name(), None),
+        Err(NotRunningError {
+            name: canary.name().clone()
+        })
+    );
+    let of_staging = said(host.journal(staging.name(), None)?);
+    let gone = Change::DefinitionDeleted { definition: preset };
+    assert_eq!(of_staging.last(), Some(&(2, left(deleted), gmq, gone)));
+    host.stop_all().await;
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_live_rule_that_someone_keeps_goes_on_where_it_lived_and_is_a_new_rule_everywhere_else() -> anyhow::Result<()>
+{
+    let cluster = KafkaCluster::plaintext().start().await?;
+    let host = Host::new(
+        HostConfiguration::default(),
+        MemoryContext::new(),
+        Lies::of_every_build(),
+        RUN,
+    );
+    // Two environments stand in front of the same cluster. Every listener of both takes a free port.
+    let any = ListenAddress::new(LOCALHOST, 0);
+    let brokers = BrokerListeners::pinned(cluster.brokers().iter().map(|broker| (broker.id(), any)))?;
+    let listen = Listeners::new(any, brokers, LOCALHOST.into())?;
+    let upstream = Upstream::new(cluster.brokers()[0].address().to_string().parse()?);
+    let staging = Environment::new(
+        "staging-proxy".parse()?,
+        Instances::ProxyInFrontOfCluster {
+            proxy: ProxyDefinition::new(listen.clone()),
+            upstream: upstream.clone(),
+        },
+    );
+    let canary = Environment::new(
+        "canary-proxy".parse()?,
+        Instances::ProxyInFrontOfCluster {
+            proxy: ProxyDefinition::new(listen),
+            upstream,
+        },
+    );
+    host.start(EnvironmentConfiguration::new(&staging)?).await?;
+    host.start(EnvironmentConfiguration::new(&canary)?).await?;
+    // "Hold every Produce 20 ms."
+    let slow = Rule::new(
+        "slow-produce".parse()?,
+        Conditions::from(Condition::is(ApiKey::PRODUCE)),
+        TimingLie::new().with_delay(TimeSpan::from_millis(20)),
+    );
+    let said = |journal: Vec<JournalEntry>| -> Vec<(u64, Option<gaslightmq_journal::Revision>, ChangeSource, Change)> {
+        let said = journal
+            .into_iter()
+            .map(|entry| (entry.id.value(), entry.revision, entry.from, entry.change));
+        said.collect()
+    };
+    // The revision that a change left, as an entry holds it: the journal and the host each have a type for it.
+    let left = |revision: gaslightmq_workspace::Revision| Some(gaslightmq_journal::Revision::new(revision.number()));
+    let pad = ChangeSource::new(ChangeSurface::Pad);
+    let ui = ChangeSource::new(ChangeSurface::Ui);
+
+    // A pad of the staging proxy makes the live rule, and someone keeps it in the UI.
+    let made = host.create_live_rule(staging.name(), slow.clone(), pad).await?;
+    let kept = host.keep(staging.name(), slow.name(), None, ui).await?;
+
+    // In the staging proxy the rule goes on: the keep is one more entry of its history.
+    let rule: RecordedName = slow.name().as_str().parse()?;
+    assert_eq!(
+        said(host.journal(staging.name(), None)?),
+        [
+            (1, left(made), pad, Change::LiveRuleMade { rule: rule.clone() }),
+            (2, left(kept), ui, Change::LiveRuleKept { rule: rule.clone() }),
+        ]
+    );
+    // The canary never held the rule. For it, the workspace has a new rule, which begins there.
+    let created = Change::DefinitionCreated {
+        definition: RecordedDefinition::Rule(rule),
+    };
+    assert_eq!(said(host.journal(canary.name(), None)?), [(1, left(kept), ui, created)]);
+    host.stop_all().await;
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_press_and_a_turn_at_a_pad_leave_what_they_changed_in_the_journal() -> anyhow::Result<()> {
+    let cluster = KafkaCluster::plaintext().start().await?;
+    let host = Host::new(
+        HostConfiguration::default(),
+        MemoryContext::new(),
+        Lies::of_every_build(),
+        RUN,
+    );
+    let any = ListenAddress::new(LOCALHOST, 0);
+    let brokers = BrokerListeners::pinned(cluster.brokers().iter().map(|broker| (broker.id(), any)))?;
+    let staging = Environment::new(
+        "staging-proxy".parse()?,
+        Instances::ProxyInFrontOfCluster {
+            proxy: ProxyDefinition::new(Listeners::new(any, brokers, LOCALHOST.into())?),
+            upstream: Upstream::new(cluster.brokers()[0].address().to_string().parse()?),
+        },
+    );
+    // A desk with one pad: a delay of 1 s on the order producers, for every client.
+    let order_producers = Selector::new(
+        "order-producers".parse()?,
+        Conditions::from(Condition::is(ApiKey::PRODUCE)),
+    );
+    let delay = Preset::new("delay-1s".parse()?, TimingLie::new().with_delay(TimeSpan::from_secs(1)));
+    let desk = PadLayout::new(
+        "order-desk".parse()?,
+        [order_producers.name().clone()],
+        [delay.name().clone()],
+        [Layer::all_clients()],
+    )?;
+    host.create(order_producers, ChangeSurface::Test).await?;
+    host.create(delay, ChangeSurface::Test).await?;
+    host.create(desk.clone(), ChangeSurface::Test).await?;
+    host.start(EnvironmentConfiguration::new(&staging)?).await?;
+    let pad = desk
+        .pad(&Layer::all_clients(), Row::from_index(0), Column::from_index(0))
+        .context("the desk has a pad at its first row and column")?;
+    let rule: RecordedName = desk
+        .rule_name(&pad)
+        .context("the pad points at a rule by its name")?
+        .as_str()
+        .parse()?;
+    // The revision that an intent left, as an entry holds it: the journal and the host each have a type for it.
+    let left = |effect: &IntentEffect| {
+        let rule = effect.rule.as_ref()?;
+        Some(gaslightmq_journal::Revision::new(rule.revision.number()))
+    };
+    let pads = ChangeSource::new(ChangeSurface::Pad);
+
+    // Someone presses the empty pad, which makes its rule and arms it. A second press finds it armed.
+    let arm = Intent::Arm { pad: pad.clone() };
+    let pressed = host.send_intent(staging.name(), &arm, pads).await?;
+    let pressed_again = host.send_intent(staging.name(), &arm, pads).await?;
+    // They turn the delay up by two steps of 50 ms, and press the pad to disarm it.
+    let two_steps_up = EncoderTurn::new(Encoder::Delay, Steps::new(2));
+    let slower = Intent::Turn {
+        pad: pad.clone(),
+        turn: two_steps_up,
+    };
+    let turned = host.send_intent(staging.name(), &slower, pads).await?;
+    let released = host.send_intent(staging.name(), &Intent::Disarm { pad }, pads).await?;
+
+    // The press that changed nothing left no entry. The turn says which parameter it changed, from what to what.
+    assert!(!pressed_again.changed);
+    let journal = host.journal(staging.name(), None)?;
+    let said: Vec<(u64, Option<gaslightmq_journal::Revision>, ChangeSource, Change)> = journal
+        .into_iter()
+        .map(|entry| (entry.id.value(), entry.revision, entry.from, entry.change))
+        .collect();
+    assert_eq!(
+        said,
+        [
+            (1, left(&pressed), pads, Change::LiveRuleMade { rule: rule.clone() }),
+            (2, left(&pressed), pads, Change::RuleArmed { rule: rule.clone() }),
+            (
+                3,
+                left(&turned),
+                pads,
+                Change::ParameterChanged {
+                    rule: rule.clone(),
+                    parameter: Parameter::Delay,
+                    old: "1s".to_owned(),
+                    new: "1100ms".to_owned(),
+                }
+            ),
+            (4, left(&released), pads, Change::RuleDisarmed { rule }),
+        ]
     );
     host.stop_all().await;
     Ok(())

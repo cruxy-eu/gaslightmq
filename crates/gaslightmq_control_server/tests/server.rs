@@ -17,6 +17,7 @@ use gaslightmq_control_api::environment::{
     BrokerDefinition, Environment, EnvironmentName, Instances, Listeners, ProxyDefinition,
 };
 use gaslightmq_control_api::field::ConnectionNumber;
+use gaslightmq_control_api::journal::ChangeSurface;
 use gaslightmq_control_api::kernel::ApiKey;
 use gaslightmq_control_api::lie::TimingLie;
 use gaslightmq_control_api::prelude::*;
@@ -205,6 +206,13 @@ async fn a_command_on_an_environment_that_does_not_run_fails_as_its_operation_sa
             text: "delay produce".to_owned(),
         })
         .await?;
+    // An environment that does not run has no journal either: a journal begins and ends with its environment.
+    let journal = client
+        .send(QueryJournal {
+            environment: staging.clone(),
+            after: None,
+        })
+        .await?;
 
     assert_eq!(
         stopped,
@@ -224,7 +232,13 @@ async fn a_command_on_an_environment_that_does_not_run_fails_as_its_operation_sa
             environment: staging.clone()
         })
     );
-    assert_eq!(parsed, Err(EnvironmentReadError::NotRunning { environment: staging }));
+    assert_eq!(
+        parsed,
+        Err(EnvironmentReadError::NotRunning {
+            environment: staging.clone()
+        })
+    );
+    assert_eq!(journal, Err(EnvironmentNotRunning { environment: staging }));
     server.stop().await;
     Ok(())
 }
@@ -256,7 +270,7 @@ async fn an_environment_that_the_workspace_does_not_have_or_that_runs_a_broker_d
     );
     // The host answers the create with the revision of the environment, which the control plane hands out by its
     // number.
-    let created = Revision::new(host.create(orders.clone()).await?.number());
+    let created = Revision::new(host.create(orders.clone(), ChangeSurface::Test).await?.number());
     let staging: EnvironmentName = "staging-proxy".parse()?;
 
     let unknown = client

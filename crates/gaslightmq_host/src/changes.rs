@@ -2,6 +2,7 @@
 
 use gaslightmq_engine::SessionEvent;
 use gaslightmq_environment::EnvironmentName;
+use gaslightmq_journal::JournalEntry;
 use gaslightmq_rule::RuleName;
 use gaslightmq_workspace::DefinitionName;
 use tokio::sync::broadcast;
@@ -12,6 +13,7 @@ use tokio::sync::broadcast::error::RecvError;
 /// A change names what changed, and no more: whoever follows the host asks it for the state of what it names.
 /// A change can therefore come after a later one changed the same thing again,
 /// and the state it finds is the newest. Applying it twice changes nothing.
+/// What happened is no state, so it comes whole: what happened to a session, and an entry of a journal.
 ///
 /// | Change | Comes when |
 /// |---|---|
@@ -20,6 +22,7 @@ use tokio::sync::broadcast::error::RecvError;
 /// | [`RuleChanged`](Self::RuleChanged) | A rule of an environment armed or disarmed, by a command, a pad, a firing that spent its budget or a lifetime that ended, or a live rule was made or changed. |
 /// | [`RuleRemoved`](Self::RuleRemoved) | A live rule left its environment: someone deleted or kept it. |
 /// | [`Session`](Self::Session) | A session of an environment opened, said who its client is, or closed. |
+/// | [`Journaled`](Self::Journaled) | The journal of an environment got an entry: something changed there, or a definition of the workspace changed. |
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum HostChange {
     /// The environment started.
@@ -45,6 +48,11 @@ pub enum HostChange {
     Session {
         environment: EnvironmentName,
         event: SessionEvent,
+    },
+    /// The journal of the environment got this entry. The entries of one environment come in the order of their IDs.
+    Journaled {
+        environment: EnvironmentName,
+        entry: JournalEntry,
     },
 }
 

@@ -57,7 +57,8 @@
 //! The server answers every operation of `gaslightmq_control_api` with the host.
 //! A request says where it comes from, next to its operation: the surface that sends it, and the cause of an undo
 //! or a redo. A request that does not say so, or that claims a surface which only the process names, is unreadable.
-//! Nothing records where a request comes from yet: the journal does, once it exists.
+//! The server hands the surface and the cause to the host with every change, and the host records them in the
+//! journal of the environment.
 //!
 //! - **Whatever a request changes has a revision**, and the server hands it out beside the thing:
 //!   with every definition, with every rule of an environment, and in the snapshot, which names the run of the host.
@@ -69,12 +70,15 @@
 //! - **A rule of an environment** is a rule of the workspace or a live rule of that environment.
 //!   A live rule that is created armed is there and armed, or neither.
 //!   Pads, live rules, keeping one and the sessions of an environment are the host's.
+//! - **The journal of an environment** is the host's too: a query answers with the entries that the environment
+//!   keeps in memory, or with those after the entry that the client read last.
 //!
 //! # The live stream follows the host
 //!
 //! The server follows every change of the host, whoever makes it, and sends each one to every client with the state
 //! and the revision that its subject has then: a definition changed or deleted, a rule armed, disarmed, changed or removed, a session
 //! that opened, said who its client is or closed, and an environment that started or stopped.
+//! Every entry that the journal of an environment gets comes too, as it is, in the order of the entries.
 //! The statistics of every environment that runs come at the
 //! [interval](ControlServerConfiguration::stats_interval) of the configuration.
 //! A server that falls behind the host sends every client a new snapshot.

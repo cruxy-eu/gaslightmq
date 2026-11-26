@@ -6,15 +6,17 @@ use std::sync::atomic::Ordering;
 use gaslightmq_clock::Clock;
 use gaslightmq_definition_api::Store;
 use gaslightmq_environment::EnvironmentName;
+use gaslightmq_journal::{Change, ChangeSource, ChangeSurface};
 use gaslightmq_rule::{ArmedRule, Preset, PresetSet, Rule, RuleName};
 use gaslightmq_selector::{Selector, SelectorSet};
 use gaslightmq_surface::{Hold, Intent, LayoutName, Pad, PadLayout, PresenceId};
 use gaslightmq_workspace::{Stores, WorkspaceContext};
 
+use super::live::LiveRuleChange;
 use super::{Host, Running, caught_up, unread};
 use crate::{
     ArmRuleError, CreateLiveRuleError, EnvironmentRule, EnvironmentRulesError, HostChange, IntentEffect, IntentError,
-    UpdateLiveRuleError,
+    UpdateLiveRuleError, journaling,
 };
 
 impl<C: WorkspaceContext> Host<C> {
@@ -47,6 +49,10 @@ impl<C: WorkspaceContext> Host<C> {
     /// revision that the intent found it at, before it changed it, so a surface knows which rule it changed.
     /// An intent that changed the rule took one number for it, also where it made the rule and armed it.
     ///
+    /// `from` says where the intent comes from, and the journal of the environment records what the intent changed:
+    /// a rule that was made, armed or disarmed, and the parameter that a turn changed, with its old and its new
+    /// value. An intent that changes nothing leaves no entry.
+    ///
     /// The intent comes from no [presence](Self::open_presence): from `gmq`, a test or another program.
     /// A hold that it adds ends by its release or by a disarm, and by nothing else.
     /// An intent of a client that can go away without a word comes [from its presence](Self::send_intent_from).
@@ -62,8 +68,9 @@ impl<C: WorkspaceContext> Host<C> {
         &self,
         environment: &EnvironmentName,
         intent: &Intent,
+        from: impl Into<ChangeSource>,
     ) -> Result<IntentEffect, IntentError> {
-        self.act_on(None, environment, intent).await
+        self.act_on(None, environment, intent, from.into()).await
     }
 
     /// Acts on what the client of `presence` did at a pad, as [`send_intent`](Self::send_intent) does.
@@ -80,8 +87,9 @@ impl<C: WorkspaceContext> Host<C> {
         presence: PresenceId,
         environment: &EnvironmentName,
         intent: &Intent,
+        from: impl Into<ChangeSource>,
     ) -> Result<IntentEffect, IntentError> {
-        self.act_on(Some(presence), environment, intent).await
+        self.act_on(Some(presence), environment, intent, from.into()).await
     }
 
     /// Opens `presence`: a client of a control surface is there, such as a tab of the UI, and its holds end with it.
@@ -99,7 +107,8 @@ impl<C: WorkspaceContext> Host<C> {
     /// A rule disarms when that was its last hold and holds armed it, so it stays armed while another presence
     /// still holds its pad, and when something else armed it: a press in latch, a command, a scenario step or a
     /// create. A rule that disarms takes the next number, as with a release, and whoever follows the host learns
-    /// of it.
+    /// of it. Nobody asked for that disarm, and the journal records it with the surface `pad`:
+    /// it is the release that the client never sent.
     ///
     /// No press adds a hold to the presence from here on: see [`send_intent_from`](Self::send_intent_from).
     /// A presence that is not open has no holds, and ending it changes nothing.
@@ -122,7 +131,11 @@ impl<C: WorkspaceContext> Host<C> {
                     // A rule that someone disarmed in this moment is disarmed, and that disarm took its number.
                     disarmed.retain(|rule| rules.disarm(rule).is_ok());
                     for rule in &disarmed {
-                        revisions.count(rule, &rules.snapshot());
+                        let revision = revisions.count(rule, &rules.snapshot());
+                        let change = Change::RuleDisarmed {
+                            rule: journaling::rule(rule),
+                        };
+                        running.record(change, ChangeSurface::Pad, revision);
                     }
                     disarmed
                 });
@@ -135,12 +148,13 @@ impl<C: WorkspaceContext> Host<C> {
         }
     }
 
-    /// Acts on an intent that comes from `from`, or from no presence.
+    /// Acts on an intent of the client of `presence`, or of no presence, which comes from `from`.
     async fn act_on(
         &self,
-        from: Option<PresenceId>,
+        presence: Option<PresenceId>,
         environment: &EnvironmentName,
         intent: &Intent,
+        from: ChangeSource,
     ) -> Result<IntentEffect, IntentError> {
         let refused = |reason: String| IntentError::Refused { reason };
         if !self.environments().contains_key(environment) {
@@ -148,7 +162,7 @@ impl<C: WorkspaceContext> Host<C> {
                 environment: environment.clone(),
             });
         }
-        if let (Intent::Hold { .. }, Some(presence)) = (intent, from)
+        if let (Intent::Hold { .. }, Some(presence)) = (intent, presence)
             && !self.presences().contains(&presence)
         {
             return Err(not_open(presence));
@@ -165,23 +179,23 @@ impl<C: WorkspaceContext> Host<C> {
         let changed = match intent {
             Intent::Arm { .. } | Intent::Hold { .. } => {
                 let armed = if let Some(existing) = existing {
-                    self.arm_unless_armed(environment, &existing.rule).await?
+                    self.arm_unless_armed(environment, &existing.rule, from).await?
                 } else if let Some(made_by_another) = self
-                    .make_armed(environment, &name, pad, &layout, &selectors, &presets)
+                    .make_armed(environment, pad, &layout, &selectors, &presets, from)
                     .await?
                 {
-                    self.arm_unless_armed(environment, &made_by_another).await?
+                    self.arm_unless_armed(environment, &made_by_another, from).await?
                 } else {
                     made = true;
                     true
                 };
                 if matches!(intent, Intent::Hold { .. }) {
-                    hold = self.add_hold(environment, &name, armed, from)?;
+                    hold = self.add_hold(environment, &name, armed, presence, from)?;
                 }
                 armed
             }
-            Intent::Disarm { .. } => existing.is_some() && self.disarm_if_armed(environment, &name)?,
-            Intent::Release { hold: released, .. } => self.release_hold(environment, &name, *released)?,
+            Intent::Disarm { .. } => existing.is_some() && self.disarm_if_armed(environment, &name, from)?,
+            Intent::Release { hold: released, .. } => self.release_hold(environment, &name, *released, from)?,
             Intent::Turn { turn, .. } => {
                 let Some(existing) = existing else {
                     return Err(refused(format!("the {pad} has no rule to turn")));
@@ -198,7 +212,17 @@ impl<C: WorkspaceContext> Host<C> {
                     .map_err(|error| refused(error.to_string()))?;
                 let changed = turned != existing.rule;
                 if changed {
-                    self.update_live_rule(environment, turned, None)
+                    // The journal says which parameter the turn changed, from which value to which.
+                    let parameter = journaling::parameter(turn.encoder());
+                    let old = journaling::value(parameter, &existing.rule, &presets);
+                    let new = journaling::value(parameter, &turned, &presets);
+                    let change = match (old, new) {
+                        (Some(old), Some(new)) => LiveRuleChange::Parameter { parameter, old, new },
+                        // A turn only changes a parameter that the rule has.
+                        _ => LiveRuleChange::Definition,
+                    };
+                    // An intent expects no revision: it acts on the rule as the rule is.
+                    self.change_live_rule(environment, turned, None, from, change)
                         .await
                         .map_err(|error| match error {
                             UpdateLiveRuleError::NotRunning { environment } => IntentError::NotRunning { environment },
@@ -231,28 +255,29 @@ impl<C: WorkspaceContext> Host<C> {
         })
     }
 
-    /// Makes the live rule of the position of `pad`, which has the name `name`, and arms it, in one step.
+    /// Makes the live rule of the position of `pad`, and arms it, in one step.
     ///
     /// Returns `None` when this call made it. When another press made it in the meantime, it returns that rule, which
     /// this call neither made nor armed.
     async fn make_armed(
         &self,
         environment: &EnvironmentName,
-        name: &RuleName,
         pad: &Pad,
         layout: &PadLayout,
         selectors: &SelectorSet,
         presets: &PresetSet,
+        from: ChangeSource,
     ) -> Result<Option<Rule>, IntentError> {
         let refused = |reason: String| IntentError::Refused { reason };
         let Some(rule) = layout.rule(pad, selectors, presets) else {
             return Err(refused(format!("the {pad} has no rule to make")));
         };
-        match self.create_live_rule_armed(environment, rule).await {
+        let name = rule.name().clone();
+        match self.create_live_rule_armed(environment, rule, from).await {
             Ok(_) => Ok(None),
             Err(CreateLiveRuleError::NotRunning { environment }) => Err(IntentError::NotRunning { environment }),
             Err(CreateLiveRuleError::StoreFailed { reason, .. }) => Err(IntentError::StoreFailed { reason }),
-            Err(taken @ CreateLiveRuleError::NameTaken { .. }) => match self.rule_at(environment, name).await? {
+            Err(taken @ CreateLiveRuleError::NameTaken { .. }) => match self.rule_at(environment, &name).await? {
                 // Another press made the rule of the pad first.
                 Some(made) => Ok(Some(made.rule)),
                 None => Err(refused(taken.to_string())),
@@ -262,9 +287,14 @@ impl<C: WorkspaceContext> Host<C> {
     }
 
     /// Arms `rule` in the environment, and returns whether it was not armed. A rule that is armed stays as it is.
-    async fn arm_unless_armed(&self, environment: &EnvironmentName, rule: &Rule) -> Result<bool, IntentError> {
+    async fn arm_unless_armed(
+        &self,
+        environment: &EnvironmentName,
+        rule: &Rule,
+        from: ChangeSource,
+    ) -> Result<bool, IntentError> {
         // An intent expects no revision: it acts on the rule as the rule is.
-        match self.arm(environment, rule, None).await {
+        match self.arm(environment, rule, None, from).await {
             Ok(_) => Ok(true),
             Err(ArmRuleError::AlreadyArmed { .. }) => Ok(false),
             Err(ArmRuleError::NotRunning { environment }) => Err(IntentError::NotRunning { environment }),
@@ -276,25 +306,36 @@ impl<C: WorkspaceContext> Host<C> {
     }
 
     /// Disarms the rule `name` in the environment, and returns whether it was armed.
-    fn disarm_if_armed(&self, environment: &EnvironmentName, name: &RuleName) -> Result<bool, IntentError> {
-        self.disarm_when(environment, name, |_| true)
+    fn disarm_if_armed(
+        &self,
+        environment: &EnvironmentName,
+        name: &RuleName,
+        from: ChangeSource,
+    ) -> Result<bool, IntentError> {
+        self.disarm_when(environment, name, from, |_| true)
     }
 
     /// Disarms the rule `name` in the environment when `wanted` says so, and returns whether the rule disarmed.
     ///
     /// `wanted` and the disarm are one step: nobody else reads or changes the environment in between.
-    /// A rule that disarmed takes the next number, and whoever follows the host learns of it.
+    /// A rule that disarmed takes the next number, the journal records that it disarmed, with `from` as where that
+    /// comes from, and whoever follows the host learns of it.
     fn disarm_when(
         &self,
         environment: &EnvironmentName,
         name: &RuleName,
+        from: ChangeSource,
         wanted: impl FnOnce(&mut Running) -> bool,
     ) -> Result<bool, IntentError> {
         let not_running = |environment| IntentError::NotRunning { environment };
         let disarmed = self.change_rules(environment, not_running, |running, revisions| {
             let disarmed = wanted(running) && running.engine.rules().disarm(name).is_ok();
             if disarmed {
-                revisions.count(name, &running.engine.rules().snapshot());
+                let revision = revisions.count(name, &running.engine.rules().snapshot());
+                let change = Change::RuleDisarmed {
+                    rule: journaling::rule(name),
+                };
+                running.record(change, from, revision);
             }
             Ok(disarmed)
         })?;
@@ -311,7 +352,8 @@ impl<C: WorkspaceContext> Host<C> {
     /// rule since it was armed, so there is nothing to hold.
     ///
     /// `armed_it` says whether the press of the hold armed the rule. Only a rule that holds armed disarms when its last
-    /// hold goes. `of` names the presence that the press came from, when it came from one.
+    /// hold goes. `of` names the presence that the press came from, when it came from one, and `from` says where
+    /// the press comes from.
     ///
     /// # Errors
     ///
@@ -323,10 +365,11 @@ impl<C: WorkspaceContext> Host<C> {
         name: &RuleName,
         armed_it: bool,
         of: Option<PresenceId>,
+        from: ChangeSource,
     ) -> Result<Option<Hold>, IntentError> {
         let mut added = Ok(None);
         // Adding the hold, or disarming the rule that nobody holds after all, is one step with the look at the presence.
-        self.disarm_when(environment, name, |running| {
+        self.disarm_when(environment, name, from, |running| {
             if let Some(presence) = of
                 && !self.presences().contains(&presence)
             {
@@ -345,8 +388,14 @@ impl<C: WorkspaceContext> Host<C> {
 
     /// Takes `hold` away from the rule `name`, and disarms the rule when that was its last hold and holds armed it.
     /// Returns whether the rule disarmed.
-    fn release_hold(&self, environment: &EnvironmentName, name: &RuleName, hold: Hold) -> Result<bool, IntentError> {
-        self.disarm_when(environment, name, |running| {
+    fn release_hold(
+        &self,
+        environment: &EnvironmentName,
+        name: &RuleName,
+        hold: Hold,
+        from: ChangeSource,
+    ) -> Result<bool, IntentError> {
+        self.disarm_when(environment, name, from, |running| {
             let armed = armed_now(running, name);
             running.holds.release(name, hold, armed.as_ref())
         })

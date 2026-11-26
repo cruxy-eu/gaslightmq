@@ -101,6 +101,7 @@ impl<C: WorkspaceContext + 'static> Feed<C> {
             }
             HostChange::RuleRemoved { environment, rule } => Some(StreamMessage::RuleRemoved { environment, rule }),
             HostChange::Session { environment, event } => Some(session_message(environment, event)),
+            HostChange::Journaled { environment, entry } => Some(StreamMessage::JournalEntry { environment, entry }),
         }
     }
 
@@ -108,7 +109,7 @@ impl<C: WorkspaceContext + 'static> Feed<C> {
     fn stats(&self, environment: &EnvironmentName) -> Option<StreamMessage> {
         let host = self.plane.host();
         let statistics = host.statistics(environment).ok()?;
-        let armed = host.rules(environment).ok()?.snapshot();
+        let armed = host.armed_rules(environment).ok()?;
         // Every rule that a call met, and every rule that is armed, which has a budget to tell even before a call.
         let counted = statistics
             .rules()

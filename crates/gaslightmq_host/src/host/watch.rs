@@ -2,13 +2,13 @@
 
 use std::sync::{Arc, Mutex};
 
-use gaslightmq_engine::{ArmedRules, EngineEvent, EveryEvent, RuleChanges};
+use gaslightmq_engine::{ArmedRules, EngineEvent, EveryEvent, Journal, RuleChanges};
 use gaslightmq_environment::EnvironmentName;
 use tokio::sync::broadcast;
 
-use crate::HostChange;
 use crate::calls::{Watched, lock};
 use crate::revisions::{self, RuleRevisions};
+use crate::{HostChange, journaling};
 
 /// Watches the environment `environment` until its proxy stopped and every event of it is taken.
 ///
@@ -16,64 +16,68 @@ use crate::revisions::{self, RuleRevisions};
 /// |---|---|
 /// | The record of a call | Counts it in `traffic`, which hands it to the followers of the calls its selectors match. |
 /// | What happened to a session | Tells it as a [`HostChange::Session`]. |
-/// | A change of the armed rules | Counts every rule that armed or disarmed without anyone counting it, so it takes its number in `revisions`, and tells a [`HostChange::RuleChanged`] for it. |
+/// | An entry of the journal | Tells it as a [`HostChange::Journaled`]. |
+/// | A change of the armed rules | Counts every rule that disarmed without anyone counting it, so it takes its number in `revisions`, records it in `journal` with the surface `lifetime`, and tells a [`HostChange::RuleChanged`] for it. |
 ///
-/// The host counts and tells what someone arms or disarms through it.
-/// What is left for the task is what nobody asked the host for: a rule whose lifetime ended or whose budget is spent,
-/// and a change through the handle of the armed rules.
-/// A rule can arm and disarm between two looks at the armed rules, and then nothing counts it:
-/// the rule is in the state it was, and every change is a state.
+/// The host counts, records and tells what someone arms or disarms through it.
+/// What is left for the task is what nobody asked the host for: a rule whose lifetime ended or whose budget is spent.
 ///
-/// `rules` follows the armed rules `armed` from before the environment took its first change,
-/// so the task misses none of them.
-pub(super) async fn watch(
+/// The task follows the armed rules `armed` from the moment of this call, before the environment takes its first
+/// change, so it misses none of them.
+pub(super) fn watch(
     environment: EnvironmentName,
     mut events: EveryEvent,
     armed: ArmedRules,
-    rules: RuleChanges,
+    journal: Journal,
     revisions: Arc<Mutex<RuleRevisions>>,
     traffic: Arc<Mutex<Watched>>,
     changes: broadcast::Sender<HostChange>,
-) {
-    let tell = |change: HostChange| {
-        // A change that nobody follows is gone.
-        let _ = changes.send(change);
-    };
-    let mut rules = Some(rules);
-    loop {
-        tokio::select! {
-            event = events.next() => match event {
-                Some(EngineEvent::CallRecorded(call)) => lock(&traffic).record(&call),
-                Some(EngineEvent::Session(event)) => tell(HostChange::Session {
-                    environment: environment.clone(),
-                    event,
-                }),
-                // Whoever runs a scenario applies an incident, and no scenario runs yet.
-                Some(_) => {}
-                // The proxy stopped, and every event is taken: the followers of its calls get no more.
-                None => {
-                    lock(&traffic).end();
-                    return;
-                }
-            },
-            armed_or_disarmed = next_change(&mut rules) => match armed_or_disarmed {
-                Some(()) => {
-                    // The armed rules are read under the lock, so a change that the host is counting is counted
-                    // once, by the host.
-                    let uncounted = {
-                        let mut revisions = revisions::lock(&revisions);
-                        revisions.catch_up(&armed.snapshot())
-                    };
-                    for rule in uncounted {
-                        tell(HostChange::RuleChanged {
-                            environment: environment.clone(),
-                            rule,
-                        });
+) -> impl Future<Output = ()> + Send + 'static {
+    let mut rules = Some(armed.changes());
+    async move {
+        let tell = |change: HostChange| {
+            // A change that nobody follows is gone.
+            let _ = changes.send(change);
+        };
+        loop {
+            tokio::select! {
+                event = events.next() => match event {
+                    Some(EngineEvent::CallRecorded(call)) => lock(&traffic).record(&call),
+                    Some(EngineEvent::Session(event)) => tell(HostChange::Session {
+                        environment: environment.clone(),
+                        event,
+                    }),
+                    Some(EngineEvent::Journaled(entry)) => tell(HostChange::Journaled {
+                        environment: environment.clone(),
+                        entry,
+                    }),
+                    // Whoever runs a scenario applies an incident, and no scenario runs yet.
+                    Some(_) => {}
+                    // The proxy stopped, and every event is taken: the followers of its calls get no more.
+                    None => {
+                        lock(&traffic).end();
+                        return;
                     }
-                }
-                // The armed rules are gone with the proxy, and the events tell the end.
-                None => rules = None,
-            },
+                },
+                armed_or_disarmed = next_change(&mut rules) => match armed_or_disarmed {
+                    Some(()) => {
+                        // The armed rules are read under the lock, so a change that the host is counting is
+                        // counted once, by the host.
+                        let uncounted = {
+                            let mut revisions = revisions::lock(&revisions);
+                            journaling::catch_up(&mut revisions, &armed.snapshot(), &journal)
+                        };
+                        for rule in uncounted {
+                            tell(HostChange::RuleChanged {
+                                environment: environment.clone(),
+                                rule,
+                            });
+                        }
+                    }
+                    // The armed rules are gone with the proxy, and the events tell the end.
+                    None => rules = None,
+                },
+            }
         }
     }
 }

@@ -19,6 +19,9 @@ use gaslightmq_control_api::environment::{
     BrokerListeners, Environment, Instances, ListenAddress, Listeners, ProxyDefinition, Upstream,
 };
 use gaslightmq_control_api::field::{Endpoint, Field, FieldSource};
+use gaslightmq_control_api::journal::{
+    Change, ChangeSource, ChangeSurface, JournalEntry, RecordedDefinition, RecordedName,
+};
 use gaslightmq_control_api::kernel::{ApiKey, ClientId};
 use gaslightmq_control_api::lie::TimingLie;
 use gaslightmq_control_api::prelude::*;
@@ -80,13 +83,14 @@ impl Watched {
         tokio::time::timeout(PATIENCE, next).await?
     }
 
-    /// The next message that is no message of a session and no call: a change of a definition, a rule or an
-    /// environment, or the answer to a subscription.
+    /// The next message that is no message of a session, no call and no entry of a journal: a change of a
+    /// definition, a rule or an environment, or the answer to a subscription.
     async fn next_change(&mut self) -> anyhow::Result<StreamMessage> {
         self.next_where(|message| {
             !matches!(
                 message,
                 StreamMessage::Call { .. }
+                    | StreamMessage::JournalEntry { .. }
                     | StreamMessage::SessionOpened { .. }
                     | StreamMessage::SessionIdentified { .. }
                     | StreamMessage::SessionSoftwareNamed { .. }
@@ -117,7 +121,7 @@ async fn an_environment_started_by_its_name_streams_its_calls_until_it_stops() -
             upstream: Upstream::new(cluster.brokers()[0].address().to_string().parse()?),
         },
     );
-    host.create(staging.clone()).await?;
+    host.create(staging.clone(), ChangeSurface::Test).await?;
     let mut configuration = ControlServerConfiguration::default();
     configuration.listen = SocketAddr::new(LOCALHOST, ANY_PORT);
     configuration.stats_interval = StatsInterval::new(QUIET)?;
@@ -228,7 +232,7 @@ async fn a_rule_of_the_workspace_arms_and_fires_in_the_environment_that_runs() -
             upstream: Upstream::new(cluster.brokers()[0].address().to_string().parse()?),
         },
     );
-    host.create(staging.clone()).await?;
+    host.create(staging.clone(), ChangeSurface::Test).await?;
     let mut configuration = ControlServerConfiguration::default();
     configuration.listen = SocketAddr::new(LOCALHOST, ANY_PORT);
     configuration.stats_interval = StatsInterval::new(QUIET)?;
@@ -331,7 +335,7 @@ async fn a_rule_arms_and_disarms_only_as_its_sender_saw_it() -> anyhow::Result<(
             upstream: Upstream::new(cluster.brokers()[0].address().to_string().parse()?),
         },
     );
-    host.create(staging.clone()).await?;
+    host.create(staging.clone(), ChangeSurface::Test).await?;
     let mut configuration = ControlServerConfiguration::default();
     configuration.listen = SocketAddr::new(LOCALHOST, ANY_PORT);
     configuration.stats_interval = StatsInterval::new(QUIET)?;
@@ -430,7 +434,7 @@ async fn a_press_of_an_empty_pad_makes_its_live_rule_and_arms_it() -> anyhow::Re
             upstream: Upstream::new(cluster.brokers()[0].address().to_string().parse()?),
         },
     );
-    host.create(staging.clone()).await?;
+    host.create(staging.clone(), ChangeSurface::Test).await?;
     let mut configuration = ControlServerConfiguration::default();
     configuration.listen = SocketAddr::new(LOCALHOST, ANY_PORT);
     configuration.stats_interval = StatsInterval::new(QUIET)?;
@@ -529,7 +533,7 @@ async fn a_turn_changes_the_live_rule_of_a_pad_and_it_stays_armed() -> anyhow::R
             upstream: Upstream::new(cluster.brokers()[0].address().to_string().parse()?),
         },
     );
-    host.create(staging.clone()).await?;
+    host.create(staging.clone(), ChangeSurface::Test).await?;
     let mut configuration = ControlServerConfiguration::default();
     configuration.listen = SocketAddr::new(LOCALHOST, ANY_PORT);
     configuration.stats_interval = StatsInterval::new(QUIET)?;
@@ -642,7 +646,7 @@ async fn a_kept_live_rule_leaves_its_environment_for_the_workspace_and_stays_arm
             upstream: Upstream::new(cluster.brokers()[0].address().to_string().parse()?),
         },
     );
-    host.create(staging.clone()).await?;
+    host.create(staging.clone(), ChangeSurface::Test).await?;
     let mut configuration = ControlServerConfiguration::default();
     configuration.listen = SocketAddr::new(LOCALHOST, ANY_PORT);
     configuration.stats_interval = StatsInterval::new(QUIET)?;
@@ -749,7 +753,7 @@ async fn a_session_is_listed_while_it_is_open_and_closes_when_someone_closes_it(
             upstream: Upstream::new(cluster.brokers()[0].address().to_string().parse()?),
         },
     );
-    host.create(staging.clone()).await?;
+    host.create(staging.clone(), ChangeSurface::Test).await?;
     let mut configuration = ControlServerConfiguration::default();
     configuration.listen = SocketAddr::new(LOCALHOST, ANY_PORT);
     configuration.stats_interval = StatsInterval::new(QUIET)?;
@@ -854,7 +858,7 @@ async fn a_rule_that_spends_its_budget_disarms_and_the_statistics_count_its_firi
             upstream: Upstream::new(cluster.brokers()[0].address().to_string().parse()?),
         },
     );
-    host.create(staging.clone()).await?;
+    host.create(staging.clone(), ChangeSurface::Test).await?;
     let mut configuration = ControlServerConfiguration::default();
     configuration.listen = SocketAddr::new(LOCALHOST, ANY_PORT);
     configuration.stats_interval = StatsInterval::new(STATS_INTERVAL)?;
@@ -963,7 +967,7 @@ async fn a_sentence_knows_the_client_that_wrote_through_the_environment_and_ente
             upstream: Upstream::new(cluster.brokers()[0].address().to_string().parse()?),
         },
     );
-    host.create(staging.clone()).await?;
+    host.create(staging.clone(), ChangeSurface::Test).await?;
     let mut configuration = ControlServerConfiguration::default();
     configuration.listen = SocketAddr::new(LOCALHOST, ANY_PORT);
     let server = ControlServer::start(configuration, Arc::clone(&host)).await?;
@@ -1079,10 +1083,10 @@ async fn a_client_that_stays_away_for_the_grace_period_loses_its_holds() -> anyh
         [delay.name().clone()],
         [Layer::all_clients()],
     )?;
-    host.create(staging.clone()).await?;
-    host.create(order_producers).await?;
-    host.create(delay).await?;
-    host.create(desk.clone()).await?;
+    host.create(staging.clone(), ChangeSurface::Test).await?;
+    host.create(order_producers, ChangeSurface::Test).await?;
+    host.create(delay, ChangeSurface::Test).await?;
+    host.create(desk.clone(), ChangeSurface::Test).await?;
     let mut configuration = ControlServerConfiguration::default();
     configuration.listen = SocketAddr::new(LOCALHOST, ANY_PORT);
     configuration.stats_interval = StatsInterval::new(QUIET)?;
@@ -1185,11 +1189,11 @@ async fn a_client_that_comes_back_within_the_grace_period_keeps_its_holds_until_
         [delay.name().clone()],
         [Layer::all_clients()],
     )?;
-    host.create(staging.clone()).await?;
-    host.create(order_producers).await?;
-    host.create(fetches).await?;
-    host.create(delay).await?;
-    host.create(desk.clone()).await?;
+    host.create(staging.clone(), ChangeSurface::Test).await?;
+    host.create(order_producers, ChangeSurface::Test).await?;
+    host.create(fetches, ChangeSurface::Test).await?;
+    host.create(delay, ChangeSurface::Test).await?;
+    host.create(desk.clone(), ChangeSurface::Test).await?;
     let mut configuration = ControlServerConfiguration::default();
     configuration.listen = SocketAddr::new(LOCALHOST, ANY_PORT);
     configuration.stats_interval = StatsInterval::new(QUIET)?;
@@ -1293,10 +1297,10 @@ async fn a_client_that_goes_silent_loses_its_holds_after_the_grace_period() -> a
         [delay.name().clone()],
         [Layer::all_clients()],
     )?;
-    host.create(staging.clone()).await?;
-    host.create(order_producers).await?;
-    host.create(delay).await?;
-    host.create(desk.clone()).await?;
+    host.create(staging.clone(), ChangeSurface::Test).await?;
+    host.create(order_producers, ChangeSurface::Test).await?;
+    host.create(delay, ChangeSurface::Test).await?;
+    host.create(desk.clone(), ChangeSurface::Test).await?;
     let mut configuration = ControlServerConfiguration::default();
     configuration.listen = SocketAddr::new(LOCALHOST, ANY_PORT);
     configuration.stats_interval = StatsInterval::new(QUIET)?;
@@ -1363,6 +1367,118 @@ async fn a_client_that_goes_silent_loses_its_holds_after_the_grace_period() -> a
     };
     tokio::time::timeout(PATIENCE, disarmed).await??;
     drop(anas_tab);
+    server.stop().await;
+    host.stop_all().await;
+    Ok(())
+}
+
+#[tokio::test]
+async fn the_journal_of_an_environment_says_what_each_request_changed_and_where_it_came_from() -> anyhow::Result<()> {
+    let cluster = KafkaCluster::plaintext().start().await?;
+    let host = Arc::new(Host::new(
+        HostConfiguration::default(),
+        MemoryContext::new(),
+        Lies::of_every_build(),
+        RUN.parse()?,
+    ));
+    let any = ListenAddress::new(LOCALHOST, ANY_PORT);
+    let brokers = BrokerListeners::pinned(cluster.brokers().iter().map(|broker| (broker.id(), any)))?;
+    let staging = Environment::new(
+        "staging-proxy".parse()?,
+        Instances::ProxyInFrontOfCluster {
+            proxy: ProxyDefinition::new(Listeners::new(any, brokers, LOCALHOST.into())?),
+            upstream: Upstream::new(cluster.brokers()[0].address().to_string().parse()?),
+        },
+    );
+    host.create(staging.clone(), ChangeSurface::Test).await?;
+    let mut configuration = ControlServerConfiguration::default();
+    configuration.listen = SocketAddr::new(LOCALHOST, ANY_PORT);
+    configuration.stats_interval = StatsInterval::new(QUIET)?;
+    let server = ControlServer::start(configuration, Arc::clone(&host)).await?;
+    // A client that says nothing about itself: its requests come from the surface `api`.
+    let client = ControlClient::new(ControlClientConfiguration::new(server.address().into()));
+    let hold = Rule::new(
+        "hold-order-producers".parse()?,
+        Conditions::from(Condition::is(ApiKey::PRODUCE)),
+        TimingLie::new().with_delay(TimeSpan::from_millis(20)),
+    );
+    client
+        .send(StartEnvironment {
+            environment: staging.name().clone(),
+        })
+        .await??;
+    let mut stream = Watched {
+        stream: client.live_stream().await?,
+    };
+    let query = |after| QueryJournal {
+        environment: staging.name().clone(),
+        after,
+    };
+    // The journal begins with its environment, and a start is no entry of it.
+    assert_eq!(client.send(query(None)).await??, Vec::<JournalEntry>::new());
+
+    // The client creates a rule in the workspace. Someone arms it at a pad, and takes that back with ⌘Z in the UI.
+    let created = client
+        .send(CreateDefinition {
+            definition: hold.clone(),
+        })
+        .await??;
+    let pad = RequestSource::new(RequestSurface::Pad);
+    let arm = ArmRule {
+        environment: staging.name().clone(),
+        rule: hold.name().clone(),
+        expects: None,
+    };
+    let armed = client.send_from(pad, arm).await??;
+    let undo = RequestSource::new(RequestSurface::Ui).with_cause(RequestCause::Undo);
+    let disarm = DisarmRule {
+        environment: staging.name().clone(),
+        rule: hold.name().clone(),
+        expects: None,
+    };
+    let disarmed = client.send_from(undo, disarm).await??;
+
+    // The journal holds an entry for each, with the revision that the request answered with and the surface and
+    // the cause that the request named. The undo took nothing out: it is one more entry.
+    let journal = client.send(query(None)).await??;
+    let rule: RecordedName = hold.name().as_str().parse()?;
+    let definition = RecordedDefinition::Rule(rule.clone());
+    let api = ChangeSource::new(ChangeSurface::Api);
+    let said: Vec<(u64, Option<Revision>, ChangeSource, Change)> = journal
+        .iter()
+        .map(|entry| (entry.id.value(), entry.revision, entry.from, entry.change.clone()))
+        .collect();
+    assert_eq!(
+        said,
+        [
+            (1, Some(created.revision), api, Change::DefinitionCreated { definition }),
+            (
+                2,
+                Some(armed.revision),
+                pad.into(),
+                Change::RuleArmed { rule: rule.clone() }
+            ),
+            (3, Some(disarmed.revision), undo.into(), Change::RuleDisarmed { rule }),
+        ]
+    );
+    // A client that read up to the arming reads on from there.
+    let the_arming = journal[1].id;
+    assert_eq!(client.send(query(Some(the_arming))).await??, &journal[2..]);
+
+    // Every entry also came as a message of the live stream, in the order of the entries.
+    for entry in &journal {
+        let message = stream
+            .next_where(|message| matches!(message, StreamMessage::JournalEntry { .. }))
+            .await?;
+        assert_eq!(
+            message,
+            StreamMessage::JournalEntry {
+                environment: staging.name().clone(),
+                entry: entry.clone(),
+            }
+        );
+    }
+
     server.stop().await;
     host.stop_all().await;
     Ok(())

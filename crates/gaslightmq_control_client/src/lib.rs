@@ -54,6 +54,11 @@
 //! and every message after it is one change, or one call that the stream follows.
 //! A client that falls behind gets a new snapshot, and goes on from there.
 //!
+//! The [journal](gaslightmq_control_api::QueryJournal) of an environment is no part of the snapshot.
+//! A client reads it with an operation, and every entry after that comes as a
+//! [message](gaslightmq_control_api::StreamMessage::JournalEntry) of the stream.
+//! A client that got a new snapshot asks for the entries after the last one it holds.
+//!
 //! A client that follows the stream is there, and the control plane knows it as a
 //! [presence](LiveStream::presence). A request that names the presence adds holds that end with it,
 //! so a pad never stays held for a client that is gone.

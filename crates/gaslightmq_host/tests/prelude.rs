@@ -39,6 +39,7 @@ mod next_to_the_others {
     use gaslightmq_environment::prelude::*;
     use gaslightmq_field::prelude::*;
     use gaslightmq_host::prelude::*;
+    use gaslightmq_journal::prelude::*;
     use gaslightmq_kernel::prelude::*;
     use gaslightmq_lie::prelude::*;
     use gaslightmq_lie_api::prelude::*;
