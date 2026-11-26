@@ -43,7 +43,8 @@ impl<C: WorkspaceContext> Host<C> {
     /// Whoever follows the host learns what the rule became.
     ///
     /// An intent expects no revision: it acts on the rule as the rule is, and says the state it wants.
-    /// The rule of the answer has the revision that the rule has in the environment now.
+    /// The rule of the answer has the revision that the rule has in the environment now, and the answer says the
+    /// revision that the intent found it at, before it changed it, so a surface knows which rule it changed.
     /// An intent that changed the rule took one number for it, also where it made the rule and armed it.
     ///
     /// The intent comes from no [presence](Self::open_presence): from `gmq`, a test or another program.
@@ -158,6 +159,7 @@ impl<C: WorkspaceContext> Host<C> {
             return Err(refused(format!("the {pad} lies outside its layout")));
         };
         let existing = self.rule_at(environment, &name).await?;
+        let found = existing.as_ref().map(|existing| existing.revision);
         let mut made = false;
         let mut hold = None;
         let changed = match intent {
@@ -210,6 +212,7 @@ impl<C: WorkspaceContext> Host<C> {
         let rule = self.rule_at(environment, &name).await?;
         Ok(IntentEffect {
             rule,
+            found,
             made,
             changed,
             hold,

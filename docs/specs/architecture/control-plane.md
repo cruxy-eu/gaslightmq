@@ -258,7 +258,9 @@ It acts on the rule as the rule is, and it says the state that it wants.
   Two people who press the same pad to arm it both find it armed, and the second press changes nothing.
 - **The answer says what the intent did.**
   It holds the rule it acted on, whether it made that rule, whether it changed the state of the rule,
-  and the definition, the state and the revision that the rule has now.
+  the definition, the state and the revision that the rule has now,
+  and the revision that the intent found the rule at, before it changed it: `found`, which a press that made the rule leaves out.
+  A surface compares `found` with the revision it showed, and so knows that the rule it held is the one that the intent changed.
 - **An intent that changes a rule takes one number.**
   A press that makes the live rule of its pad and arms it is one change.
   An intent that finds the state it wants takes none, and answers with the revision that the rule had.
@@ -274,7 +276,8 @@ It acts on the rule as the rule is, and it says the state that it wants.
 The control plane has no operation that undoes, and it keeps no history for it.
 A surface keeps the history of its own changes, as the [UI](../domains/control-surfaces.md#undo-and-redo) does for each tab.
 An undo is an ordinary operation: the inverse of the change, with the cause `undo`.
-Its `expects` names the run of the change and the revision that the change left.
+Its `expects` names the run of the change and the revision that the change left,
+or the one that a later undo or redo of the same thing by the same surface left.
 
 | A change | Its inverse |
 |---|---|
@@ -289,9 +292,12 @@ Its `expects` names the run of the change and the revision that the change left.
 | A pad press that armed a rule | Disarm it, or delete the live rule when the answer says that the press made it. |
 | A pad press that disarmed a rule | Arm it. |
 | A pad press that changed nothing | Nothing. The answer says so, and the surface keeps no step. |
+| A pad press in hold that made a rule, and its release that disarmed it | Delete the live rule. |
 | Turns of an encoder | Update the live rule to the definition before the first turn. |
 
 A redo is the change again, with the revision that the undo left and the cause `redo`.
+The redo of a pad press or a turn is no intent, because an intent expects nothing:
+it arms, disarms, creates or updates the rule as the press or the turn left it.
 
 - **The inverse restores a state, and never replays a gesture.**
   The undo of a turn of +3 is no turn of −3: an encoder stops at its bounds, and the turn may have changed less.

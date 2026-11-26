@@ -7,6 +7,8 @@ use gaslightmq_control_api::rule::{Rule, RuleName, RuleState};
 use gaslightmq_control_api::selector::{Condition, Scope};
 use gaslightmq_control_api::trigger::{Chance, Lifetime, Trigger, TriggerParts};
 
+use crate::history::Subject;
+
 /// Which rules of the environment the Rules view lists.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
 pub enum RuleTab {
@@ -183,9 +185,48 @@ pub enum RuleOperation {
     UpdateWorkspace(UpdateDefinition<Rule>),
 }
 
+impl RuleOperation {
+    /// What the operation changes, which its revision belongs to, or `None` for a firing, which changes nothing.
+    ///
+    /// A live rule, and a rule of the workspace with its state, change in their environment.
+    /// An update of a rule of the workspace changes its definition, for every environment.
+    pub fn subject(&self) -> Option<Subject> {
+        match self {
+            RuleOperation::Arm(ArmRule { environment, rule, .. })
+            | RuleOperation::Disarm(DisarmRule { environment, rule, .. })
+            | RuleOperation::Keep(KeepRule { environment, rule, .. })
+            | RuleOperation::Delete(DeleteLiveRule { environment, rule, .. }) => Some(Subject::rule(environment, rule)),
+            RuleOperation::UpdateLive(UpdateLiveRule { environment, rule, .. }) => {
+                Some(Subject::rule(environment, rule.name()))
+            }
+            RuleOperation::UpdateWorkspace(update) => Some(Subject::Definition(DefinitionRef::Rule(
+                update.definition.name().clone(),
+            ))),
+            RuleOperation::Fire(_) => None,
+        }
+    }
+
+    /// The same operation, expecting `expects` of its [subject](Self::subject): the run and the revision that the
+    /// view showed. A firing expects nothing, and stays as it is.
+    #[must_use]
+    pub fn expecting(self, expects: Option<Expects>) -> Self {
+        match self {
+            RuleOperation::Arm(arm) => RuleOperation::Arm(ArmRule { expects, ..arm }),
+            RuleOperation::Disarm(disarm) => RuleOperation::Disarm(DisarmRule { expects, ..disarm }),
+            RuleOperation::Keep(keep) => RuleOperation::Keep(KeepRule { expects, ..keep }),
+            RuleOperation::Delete(delete) => RuleOperation::Delete(DeleteLiveRule { expects, ..delete }),
+            RuleOperation::UpdateLive(update) => RuleOperation::UpdateLive(UpdateLiveRule { expects, ..update }),
+            RuleOperation::UpdateWorkspace(update) => {
+                RuleOperation::UpdateWorkspace(UpdateDefinition { expects, ..update })
+            }
+            fire @ RuleOperation::Fire(_) => fire,
+        }
+    }
+}
+
 /// The operation that carries out `command` on the rule of an environment.
 ///
-/// The operation says nothing of what it expects yet, so the last change wins.
+/// It expects nothing until the view says [what it expects](RuleOperation::expecting), as it does for every change.
 pub fn operation(environment: &EnvironmentName, status: &RuleStatus, command: RuleCommand) -> RuleOperation {
     let environment = environment.clone();
     let rule = status.rule.name().clone();
@@ -217,7 +258,7 @@ pub fn operation(environment: &EnvironmentName, status: &RuleStatus, command: Ru
 
 /// The operation that replaces a rule with `changed`, which has its name: a live rule changes in its environment,
 /// and a rule of the workspace changes in the workspace, for every environment.
-/// It says nothing of what it expects yet, so the last change wins.
+/// It expects nothing until the view says [what it expects](RuleOperation::expecting), as it does for every change.
 pub fn update(environment: &EnvironmentName, status: &RuleStatus, changed: Rule) -> RuleOperation {
     if status.live {
         RuleOperation::UpdateLive(UpdateLiveRule {

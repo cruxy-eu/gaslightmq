@@ -1,8 +1,9 @@
-//! What the UI takes from the browser: where the control plane is, and a timer.
+//! What the UI takes from the browser: where the control plane is, a timer, and the keys of the whole page.
 //!
 //! The UI draws in the browser alone. A native build only checks the components and runs the tests of what the UI
 //! knows: it never draws, so it never needs the address of a page, and never waits.
 
+use gaslightmq_control_api::RequestCause;
 use gaslightmq_control_api::clock::TimeSpan;
 use gaslightmq_control_client::ControlPlaneAddress;
 
@@ -80,6 +81,36 @@ pub fn listen_for_quick_inject() -> dioxus::document::Eval {
                 event.preventDefault();
                 dioxus.send(true);
             }
+        });
+        await new Promise(() => {});",
+    )
+}
+
+/// Waits until someone presses ⌘Z or ⇧⌘Z, or Ctrl-Z or Ctrl-Shift-Z, outside a text field: the undo or the redo
+/// that they ask for. `None` once the script no longer listens.
+pub async fn history_key_pressed(script: &mut dioxus::document::Eval) -> Option<RequestCause> {
+    match script.recv::<String>().await.ok()?.as_str() {
+        "undo" => Some(RequestCause::Undo),
+        "redo" => Some(RequestCause::Redo),
+        _ => None,
+    }
+}
+
+/// Listens for ⌘Z and ⇧⌘Z, and Ctrl-Z and Ctrl-Shift-Z, on the whole page, for as long as the returned script runs.
+///
+/// A text field keeps the keys for its own text, as the ⌘K input does, so the browser undoes what someone typed.
+pub fn listen_for_history_keys() -> dioxus::document::Eval {
+    dioxus::document::eval(
+        "window.addEventListener('keydown', (event) => {
+            if (!(event.metaKey || event.ctrlKey) || event.altKey || event.key.toLowerCase() !== 'z') {
+                return;
+            }
+            const target = event.target;
+            if (target instanceof Element && (target.closest('input, textarea, select, [contenteditable]'))) {
+                return;
+            }
+            event.preventDefault();
+            dioxus.send(event.shiftKey ? 'redo' : 'undo');
         });
         await new Promise(() => {});",
     )

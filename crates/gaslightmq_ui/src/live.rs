@@ -9,6 +9,7 @@ use gaslightmq_control_api::surface::PresenceId;
 use crate::configuration::UiConfiguration;
 use crate::filter::TrafficFilter;
 use crate::following::Following;
+use crate::history::{History, Subject};
 use crate::process::Process;
 use crate::traffic::Traffic;
 
@@ -33,6 +34,8 @@ pub enum Link {
 ///
 /// Whoever holds the stream asks it for the [next subscription](Self::next_subscription) after every change,
 /// and sends what it returns.
+///
+/// It keeps the undo [history](Self::history) of the tab, which ends with the run of the process.
 ///
 /// The UI is one [presence](Self::presence) of the control plane, which the live stream names.
 /// Every request of the UI [says so](Self::source), so the pads that it holds end with the presence
@@ -65,6 +68,7 @@ pub struct Live {
     following: Following,
     traffic: Traffic,
     inspected: Option<Call>,
+    history: History,
 }
 
 impl Live {
@@ -80,6 +84,7 @@ impl Live {
             following: Following::default(),
             traffic: Traffic::new(configuration.calls_kept),
             inspected: None,
+            history: History::new(configuration.undo_depth),
         }
     }
 
@@ -158,6 +163,9 @@ impl Live {
     pub fn present_as(&mut self, presence: PresenceId) -> bool {
         let ended = self.presence.is_some_and(|before| before != presence);
         self.presence = Some(presence);
+        if ended {
+            self.history.holds_ended();
+        }
         ended
     }
 
@@ -168,6 +176,7 @@ impl Live {
     /// and the UI does not know which hold to release.
     pub fn let_go_of_presence(&mut self) {
         self.presence = None;
+        self.history.holds_ended();
     }
 
     /// The live stream ended, or did not open. `reason` says why.
@@ -176,8 +185,31 @@ impl Live {
         self.following = Following::default();
     }
 
-    /// Applies one message of the live stream.
+    /// The undo history of this tab.
+    pub fn history(&self) -> &History {
+        &self.history
+    }
+
+    /// The undo history of this tab, to record a change, or to undo or redo one.
+    pub fn history_mut(&mut self) -> &mut History {
+        &mut self.history
+    }
+
+    /// What a change of `subject` expects: the run of the snapshot, and the revision that the tab shows.
+    /// `None` before the first snapshot, and while the process holds no such subject.
+    ///
+    /// The UI sends it with every change it makes, so a change never overwrites what the tab has not shown.
+    pub fn expects(&self, subject: &Subject) -> Option<Expects> {
+        let process = self.process.as_ref()?;
+        Some(Expects {
+            run: process.run(),
+            revision: process.revision_of(subject)?,
+        })
+    }
+
+    /// Applies one message of the live stream. The [history](Self::history) follows it too.
     pub fn apply(&mut self, message: StreamMessage) {
+        self.history.apply(&message);
         match message {
             StreamMessage::Snapshot(state) => {
                 let process = Process::new(state, self.configuration.stats_kept);

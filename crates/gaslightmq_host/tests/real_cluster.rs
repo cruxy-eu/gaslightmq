@@ -867,6 +867,9 @@ async fn two_presses_that_want_a_pad_armed_arm_it_once() -> anyhow::Result<()> {
     let revision = |effect: &IntentEffect| effect.rule.as_ref().map(|rule| rule.revision);
     assert!(revision(&first).is_some(), "{first:?}");
     assert_eq!(revision(&second), revision(&first));
+    // Each answer says the revision that the press found: none before the rule was there.
+    assert_eq!(first.found, None);
+    assert_eq!(second.found, revision(&first));
 
     // Two people who press it to disarm it both find it disarmed.
     let disarm = Intent::Disarm { pad };
@@ -882,6 +885,8 @@ async fn two_presses_that_want_a_pad_armed_arm_it_once() -> anyhow::Result<()> {
         "{first:?} and then {disarmed:?}"
     );
     assert_eq!(revision(&again), revision(&disarmed));
+    // The disarm found the rule as the presses left it.
+    assert_eq!(disarmed.found, revision(&first));
     host.stop_all().await;
     Ok(())
 }

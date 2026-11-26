@@ -7,6 +7,7 @@ use gaslightmq_control_api::rule::Rule;
 use crate::app::{Route, Ui};
 use crate::browser;
 use crate::components::{Icon, LieBadge, Shape};
+use crate::history::Step;
 use crate::palette::{Jump, Palette, PaletteItem, Question};
 use crate::process::{Process, rule_label};
 use crate::rules::{scope_label, trigger_text};
@@ -92,13 +93,11 @@ pub fn QuickInject() -> Element {
                     drop(live);
                     let label = rule_label(&creation.rule);
                     let done = ui.clone();
-                    ui.send_from(
-                        RequestSurface::QuickInject,
-                        creation,
-                        move |_: gaslightmq_control_api::Revised| {
-                            done.notify(format!("Armed the live rule {label}"), false);
-                        },
-                    );
+                    // Enter is one gesture, and one step: its undo deletes the live rule it made.
+                    ui.send_from(RequestSurface::QuickInject, creation.clone(), move |answer| {
+                        done.record(Step::created(creation, answer));
+                        done.notify(format!("Armed the live rule {label}"), false);
+                    });
                     palette.set(Palette::default());
                     open.set(false);
                     navigator.push(Route::Rules {});

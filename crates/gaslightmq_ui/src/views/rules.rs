@@ -9,6 +9,7 @@ use gaslightmq_control_api::trigger::{Chance, Lifetime};
 
 use crate::app::Ui;
 use crate::components::{ConditionChip, Icon, InspectorPanel, LieBadge, Shape, StateIcon, Tone};
+use crate::history::Step;
 use crate::live::Live;
 use crate::process::{Process, rule_label};
 use crate::rules::{
@@ -102,34 +103,49 @@ fn nothing_runs(live: &Live) -> String {
     }
 }
 
-/// Sends an operation on a rule, and says what it did when it worked.
-fn send(ui: &Ui, operation: RuleOperation) {
-    let done = |text: String| {
-        let ui = ui.clone();
-        move |()| ui.notify(text, false)
+/// Sends an operation on the rule `was`, expecting the revision that the view shows, and says what it did when it
+/// worked. Every change that applied leaves a step in the undo history of the tab, but keep, which leaves none.
+fn send(ui: &Ui, was: &RuleStatus, operation: RuleOperation) {
+    let subject = operation.subject();
+    let operation = match &subject {
+        Some(subject) => operation.expecting(ui.expects(subject)),
+        None => operation,
     };
-    // A change answers with the revision it left, which the view does not keep yet.
-    let changed = |text: String| {
-        let ui = ui.clone();
-        move |_: gaslightmq_control_api::Revised| ui.notify(text, false)
-    };
+    let (ui, was) = (ui.clone(), was.clone());
     match operation {
-        RuleOperation::Arm(arm) => ui.send(arm),
-        RuleOperation::Disarm(disarm) => ui.send(disarm),
+        RuleOperation::Arm(arm) => ui.clone().send_then(arm.clone(), move |answer| {
+            ui.record(Step::armed(arm, answer));
+        }),
+        RuleOperation::Disarm(disarm) => ui.clone().send_then(disarm.clone(), move |answer| {
+            ui.record(Step::disarmed(disarm, answer));
+        }),
         RuleOperation::Fire(fire) => {
             let text = format!("Fired {} by hand", fire.rule);
-            ui.send_then(fire, done(text));
+            ui.clone().send_then(fire, move |()| ui.notify(text, false));
         }
         RuleOperation::Keep(keep) => {
             let text = format!("Kept {} in the workspace", keep.rule);
-            ui.send_then(keep, changed(text));
+            ui.clone().send_then(keep, move |answer: Revised| {
+                if let Some(subject) = subject {
+                    let mut live = ui.live;
+                    live.write().history_mut().changed(&subject, answer.revision);
+                }
+                ui.notify(text, false);
+            });
         }
         RuleOperation::Delete(delete) => {
             let text = format!("Deleted the live rule {}", delete.rule);
-            ui.send_then(delete, changed(text));
+            ui.clone().send_then(delete.clone(), move |answer| {
+                ui.record(Step::deleted(delete, &was, answer));
+                ui.notify(text, false);
+            });
         }
-        RuleOperation::UpdateLive(update) => ui.send(update),
-        RuleOperation::UpdateWorkspace(update) => ui.send(update),
+        RuleOperation::UpdateLive(update) => ui.clone().send_then(update.clone(), move |answer| {
+            ui.record(Step::updated_live(update, was.rule, answer));
+        }),
+        RuleOperation::UpdateWorkspace(update) => ui.clone().send_then(update.clone(), move |answer| {
+            ui.record(Step::updated_rule(update, was.rule, answer));
+        }),
     }
 }
 
@@ -157,7 +173,7 @@ fn RuleRow(status: RuleStatus, on: bool, environment: EnvironmentName, onpick: E
         move |event: MouseEvent| {
             event.stop_propagation();
             let command = if armed { RuleCommand::Disarm } else { RuleCommand::Arm };
-            send(&ui, operation(&environment, &status, command));
+            send(&ui, &status, operation(&environment, &status, command));
         }
     };
     let name = rule.name().clone();
@@ -369,7 +385,7 @@ fn CommandButton(environment: EnvironmentName, status: RuleStatus, command: Rule
         RuleCommand::Delete => Shape::Close,
     };
     rsx! {
-        button { class, onclick: move |_| send(&ui, operation(&environment, &status, command)),
+        button { class, onclick: move |_| send(&ui, &status, operation(&environment, &status, command)),
             Icon { shape, size: 12 }
             "{command.name()}"
         }
@@ -385,7 +401,7 @@ fn ChanceButton(environment: EnvironmentName, status: RuleStatus, percent: u8, o
             .ok()
             .filter(|chance| *chance != Chance::ALWAYS);
         let changed = with_chance(&status.rule, chance);
-        send(&ui, update(&environment, &status, changed));
+        send(&ui, &status, update(&environment, &status, changed));
     };
     rsx! {
         button { class: if on { SEGMENT_ON } else { SEGMENT }, onclick: pick, "{percent}%" }
@@ -398,7 +414,7 @@ fn LifetimeButton(environment: EnvironmentName, status: RuleStatus, lifetime: Li
     let ui = use_context::<Ui>();
     let pick = move |_| {
         let changed = with_lifetime(&status.rule, lifetime);
-        send(&ui, update(&environment, &status, changed));
+        send(&ui, &status, update(&environment, &status, changed));
     };
     rsx! {
         button { class: if on { SEGMENT_ON } else { SEGMENT }, onclick: pick, "{lifetime}" }

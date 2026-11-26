@@ -591,14 +591,15 @@ async fn a_turn_changes_the_live_rule_of_a_pad_and_it_stays_armed() -> anyhow::R
             if environment == staging.name() && &status.rule == rule && status.live && status.state == RuleState::Armed)
     };
 
-    // Someone presses the empty pad, which makes its live rule and arms it.
-    client
+    // Someone presses the empty pad, which makes its live rule and arms it. The pad pointed at no rule.
+    let pressing = client
         .send(SendIntent {
             environment: staging.name().clone(),
             intent: Intent::Arm { pad: pad.clone() },
         })
         .await??;
     stream.next_where(|message| armed(message, &made)).await?;
+    assert_eq!(pressing.found, None);
 
     // Someone turns the delay encoder two steps up: the live rule changes, and stays armed.
     let turning = client
@@ -615,6 +616,8 @@ async fn a_turn_changes_the_live_rule_of_a_pad_and_it_stays_armed() -> anyhow::R
         rule,
     });
     assert_eq!(answered, Some(told));
+    // The turn found the rule at the revision that the press left, which a surface compares with what it showed.
+    assert_eq!(turning.found, pressing.rule.map(|rule| rule.revision));
 
     server.stop().await;
     host.stop_all().await;
