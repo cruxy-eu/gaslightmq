@@ -177,12 +177,13 @@ The counter starts at 1 with every [run](#run), and every change takes the next 
 | Has a revision | Its revision is the number of |
 |---|---|
 | A definition of the workspace | The change that last created or updated it: the load, a request, or a [reload](storage.md#reloading). |
-| A rule in an environment | The last change of its definition or of its state there. Its state changes when the environment starts, and when the rule arms or disarms, whether a person, a step or a lifetime does it. |
+| A rule in an environment | The last change of its definition or of its state there. Its state changes when the environment starts, and when the rule arms or disarms, whether a person, a step or a lifetime does it. A disarm by a lifetime or a budget takes its number when the process [next looks](control-plane.md#revisions) at the armed rules. |
 | The scenario of an environment | The last time the environment started, someone activated or deactivated a scenario, or a step advanced. |
 
 - **One change takes one number.**
   A load is one change, so every definition that it brings has the same revision.
   A request is one change too, whatever it changes.
+  A delete takes a number as well, and nothing has that revision afterwards.
 - **A number never comes back in one run.**
   A definition that someone deletes and makes again under its name has a higher revision than the one that went.
   An environment that stops and starts again gives every rule a higher revision than it had before.
@@ -194,6 +195,9 @@ The counter starts at 1 with every [run](#run), and every change takes the next 
   A higher revision is a later change, across everything the process holds.
 - **What traffic does takes no number.**
   Not a match, a firing, a counter or a budget.
+
+A revision checks nothing: it is a number, and any number is one.
+A number that the counter never gave is the revision of nothing, so a change that expects it changes nothing.
 
 A revision is live state.
 The process keeps it in memory, [beside the definition](#what-a-definition-holds), and no file holds one.
@@ -259,6 +263,7 @@ Every run has a run ID, a `RunId`.
 It is 128 random bits, written as 32 hexadecimal digits in lower case.
 Whoever puts the process together reads the randomness of the system once, at the start, and hands the ID to the host.
 A test names its own.
+A text of another length, or with a character that is no digit and no letter from `a` to `f`, is no run ID.
 
 Revisions start again with every run.
 A definition that the workspace loads has the revision of the load, which is the same number in every run.

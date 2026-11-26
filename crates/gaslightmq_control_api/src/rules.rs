@@ -4,13 +4,17 @@ use gaslightmq_environment::EnvironmentName;
 use gaslightmq_rule::{Rule, RuleName, RuleState};
 use serde::{Deserialize, Serialize};
 
-use crate::{EnvironmentReadError, Operation};
+use crate::{EnvironmentReadError, Expects, Operation, Revised, Revision, RunId};
 
-/// A rule of an environment, and its state there.
+/// A rule of an environment, with its state and its revision there.
 ///
 /// An environment holds every rule of the workspace, and its own live rules.
 /// A workspace rule has a state in each environment: arming it in one does not arm it in another.
 /// A live rule belongs to one environment, and no workspace rule has its name.
+///
+/// A rule in an environment has one revision, for its definition and its state together: the number of the last
+/// change of either. Someone who arms a rule of the workspace after another client changed its definition
+/// therefore arms nothing they have not seen.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct RuleStatus {
@@ -20,6 +24,9 @@ pub struct RuleStatus {
     pub live: bool,
     /// Whether the rule is a draft, armed or disarmed in this environment.
     pub state: RuleState,
+    /// The revision of the rule in this environment: the later of the last change of its definition,
+    /// and the last change of its state here.
+    pub revision: Revision,
 }
 
 /// List the rules of an environment, each with its state there: the rules of the workspace, and the live rules.
@@ -83,13 +90,14 @@ pub struct CreateLiveRule {
 }
 
 impl Operation for CreateLiveRule {
-    type Answer = ();
+    type Answer = Revised;
     type Error = CreateLiveRuleError;
 }
 
 /// Replace the live rule that has the name of this one.
 ///
 /// Everything but the name changes. Changing a rule that is armed resets none of its counters.
+/// With `serde`, an update that expects nothing leaves `expects` out.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct UpdateLiveRule {
@@ -97,14 +105,20 @@ pub struct UpdateLiveRule {
     pub environment: EnvironmentName,
     /// The rule as it is to be, with the name of the one it replaces.
     pub rule: Rule,
+    /// What the update [expects](Expects) of the live rule it replaces, or `None` when the last change wins.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub expects: Option<Expects>,
 }
 
 impl Operation for UpdateLiveRule {
-    type Answer = ();
+    type Answer = Revised;
     type Error = UpdateLiveRuleError;
 }
 
 /// Remove a live rule from its environment, armed or not.
+///
+/// The delete answers with the revision of the delete, which nothing has afterwards.
+/// With `serde`, a delete that expects nothing leaves `expects` out.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct DeleteLiveRule {
@@ -112,10 +126,13 @@ pub struct DeleteLiveRule {
     pub environment: EnvironmentName,
     /// The name of the live rule.
     pub rule: RuleName,
+    /// What the delete [expects](Expects) of the live rule it removes, or `None` when the last change wins.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub expects: Option<Expects>,
 }
 
 impl Operation for DeleteLiveRule {
-    type Answer = ();
+    type Answer = Revised;
     type Error = DeleteLiveRuleError;
 }
 
@@ -123,6 +140,12 @@ impl Operation for DeleteLiveRule {
 ///
 /// The rule keeps its name, and it stays in the state it has.
 /// From then on it is a rule of the workspace, which every environment holds.
+///
+/// A keep expects the live rule as its sender saw it: a turn of an encoder by someone else in between is a change,
+/// so the workspace never gets a rule that nobody looked at.
+/// The keep is one change, and it answers with the revision that the rule has from then on,
+/// in the workspace and in the environment.
+/// With `serde`, a keep that expects nothing leaves `expects` out.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct KeepRule {
@@ -130,10 +153,13 @@ pub struct KeepRule {
     pub environment: EnvironmentName,
     /// The name of the live rule.
     pub rule: RuleName,
+    /// What the keep [expects](Expects) of the live rule it saves, or `None` when the last change wins.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub expects: Option<Expects>,
 }
 
 impl Operation for KeepRule {
-    type Answer = ();
+    type Answer = Revised;
     type Error = KeepRuleError;
 }
 
@@ -141,6 +167,10 @@ impl Operation for KeepRule {
 ///
 /// Arming resets the counters, the budget and the time window of the rule.
 /// A rule that is armed is not armed again: disarm it first.
+///
+/// An arm expects the rule in its environment: its definition and its state together.
+/// It answers with the revision that the rule has there from then on.
+/// With `serde`, an arm that expects nothing leaves `expects` out.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ArmRule {
@@ -148,14 +178,21 @@ pub struct ArmRule {
     pub environment: EnvironmentName,
     /// The name of the rule: a rule of the workspace, or a live rule of the environment.
     pub rule: RuleName,
+    /// What the arm [expects](Expects) of the rule in the environment, or `None` when the last change wins.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub expects: Option<Expects>,
 }
 
 impl Operation for ArmRule {
-    type Answer = ();
+    type Answer = Revised;
     type Error = RuleCommandError;
 }
 
 /// Disarm a rule that is armed in an environment.
+///
+/// A disarm expects the rule in its environment: its definition and its state together.
+/// It answers with the revision that the rule has there from then on.
+/// With `serde`, a disarm that expects nothing leaves `expects` out.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct DisarmRule {
@@ -163,16 +200,20 @@ pub struct DisarmRule {
     pub environment: EnvironmentName,
     /// The name of the rule.
     pub rule: RuleName,
+    /// What the disarm [expects](Expects) of the rule in the environment, or `None` when the last change wins.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub expects: Option<Expects>,
 }
 
 impl Operation for DisarmRule {
-    type Answer = ();
+    type Answer = Revised;
     type Error = RuleCommandError;
 }
 
 /// Fire a rule that is armed in an environment by hand: skip its trigger once.
 ///
 /// An incident fires at once. A lie applies to the next call that the rule matches.
+/// A firing is what happens, and no change of what someone set: it expects nothing, and it leaves no revision.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct FireRule {
@@ -184,7 +225,7 @@ pub struct FireRule {
 
 impl Operation for FireRule {
     type Answer = ();
-    type Error = RuleCommandError;
+    type Error = FireRuleError;
 }
 
 /// Why an environment did not [add a live rule](CreateLiveRule).
@@ -242,6 +283,22 @@ pub enum UpdateLiveRuleError {
     /// it said.
     #[error("rule {:?} was not checked: {reason}", .rule.as_str())]
     StoreFailed { rule: RuleName, reason: String },
+    /// The change expects another revision than the rule has in the environment: someone changed its definition
+    /// or its state there since. `revision` is the one it has now.
+    #[error(
+        "rule {:?} changed in environment {:?} since: it has revision {revision} now",
+        .rule.as_str(),
+        .environment.as_str()
+    )]
+    Changed {
+        environment: EnvironmentName,
+        rule: RuleName,
+        revision: Revision,
+    },
+    /// The change expects a revision of another run than the run of the process, which is `run`:
+    /// the process started again since the sender read.
+    #[error("the change expects a revision of another run than {run}, which is the run of the process")]
+    OtherRun { run: RunId },
 }
 
 /// Why an environment did not [remove a live rule](DeleteLiveRule).
@@ -257,6 +314,22 @@ pub enum DeleteLiveRuleError {
         environment: EnvironmentName,
         rule: RuleName,
     },
+    /// The change expects another revision than the rule has in the environment: someone changed its definition
+    /// or its state there since. `revision` is the one it has now.
+    #[error(
+        "rule {:?} changed in environment {:?} since: it has revision {revision} now",
+        .rule.as_str(),
+        .environment.as_str()
+    )]
+    Changed {
+        environment: EnvironmentName,
+        rule: RuleName,
+        revision: Revision,
+    },
+    /// The change expects a revision of another run than the run of the process, which is `run`:
+    /// the process started again since the sender read.
+    #[error("the change expects a revision of another run than {run}, which is the run of the process")]
+    OtherRun { run: RunId },
 }
 
 /// Why an environment did not [keep a live rule](KeepRule).
@@ -303,9 +376,30 @@ pub enum KeepRuleError {
     /// A store could not keep the rule. `reason` is what the store said.
     #[error("rule {:?} was not kept: {reason}", .rule.as_str())]
     StoreFailed { rule: RuleName, reason: String },
+    /// The change expects another revision than the rule has in the environment: someone changed its definition
+    /// or its state there since. `revision` is the one it has now.
+    #[error(
+        "rule {:?} changed in environment {:?} since: it has revision {revision} now",
+        .rule.as_str(),
+        .environment.as_str()
+    )]
+    Changed {
+        environment: EnvironmentName,
+        rule: RuleName,
+        revision: Revision,
+    },
+    /// The change expects a revision of another run than the run of the process, which is `run`:
+    /// the process started again since the sender read.
+    #[error("the change expects a revision of another run than {run}, which is the run of the process")]
+    OtherRun { run: RunId },
 }
 
-/// Why an environment did not [arm](ArmRule), [disarm](DisarmRule) or [fire](FireRule) a rule.
+/// Why an environment did not [arm](ArmRule) or [disarm](DisarmRule) a rule.
+///
+/// With `serde`, a rule that changed since is
+/// `{ "error": "changed", "environment": "orders-sim", "rule": "slow-order-producers", "revision": 9 }`,
+/// and a change that expects a revision of another run is
+/// `{ "error": "other-run", "run": "4be0643f1d98573b97cdca98a65347dd" }`.
 ///
 /// ```
 /// use gaslightmq_control_api::prelude::*;
@@ -333,7 +427,7 @@ pub enum RuleCommandError {
         rule: RuleName,
     },
     /// The rule cannot do this from where it stands: it is armed already, it is not armed,
-    /// its selector or its preset does not exist, or its incident needs a call to fire. `reason` says which.
+    /// or its selector or its preset does not exist. `reason` says which.
     #[error("rule {:?} in environment {:?}: {reason}", .rule.as_str(), .environment.as_str())]
     Refused {
         environment: EnvironmentName,
@@ -341,6 +435,62 @@ pub enum RuleCommandError {
         reason: String,
     },
     /// A store of the workspace could not read the rule, or what it names. `reason` says which store, and what it said.
+    #[error("rule {:?} was not read: {reason}", .rule.as_str())]
+    StoreFailed { rule: RuleName, reason: String },
+    /// The change expects another revision than the rule has in the environment: someone changed its definition
+    /// or its state there since. `revision` is the one it has now.
+    #[error(
+        "rule {:?} changed in environment {:?} since: it has revision {revision} now",
+        .rule.as_str(),
+        .environment.as_str()
+    )]
+    Changed {
+        environment: EnvironmentName,
+        rule: RuleName,
+        revision: Revision,
+    },
+    /// The change expects a revision of another run than the run of the process, which is `run`:
+    /// the process started again since the sender read.
+    #[error("the change expects a revision of another run than {run}, which is the run of the process")]
+    OtherRun { run: RunId },
+}
+
+/// Why an environment did not [fire](FireRule) a rule by hand.
+///
+/// ```
+/// use gaslightmq_control_api::prelude::*;
+///
+/// let error = FireRuleError::Refused {
+///     environment: "orders-sim".parse().expect("an environment name"),
+///     rule: "slow-order-producers".parse().expect("a rule name"),
+///     reason: "it is not armed".to_owned(),
+/// };
+/// assert_eq!(
+///     error.to_string(),
+///     "rule \"slow-order-producers\" in environment \"orders-sim\": it is not armed",
+/// );
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error, Serialize, Deserialize)]
+#[serde(tag = "error", rename_all = "kebab-case", deny_unknown_fields)]
+pub enum FireRuleError {
+    /// The environment does not run.
+    #[error("environment {:?} does not run", .environment.as_str())]
+    NotRunning { environment: EnvironmentName },
+    /// Neither the workspace nor the environment has a rule of that name.
+    #[error("environment {:?} has no rule {:?}", .environment.as_str(), .rule.as_str())]
+    NotFound {
+        environment: EnvironmentName,
+        rule: RuleName,
+    },
+    /// The rule cannot fire from where it stands: it is not armed, it fires no more,
+    /// or its incident needs a call to fire. `reason` says which.
+    #[error("rule {:?} in environment {:?}: {reason}", .rule.as_str(), .environment.as_str())]
+    Refused {
+        environment: EnvironmentName,
+        rule: RuleName,
+        reason: String,
+    },
+    /// A store of the workspace could not read the rule. `reason` says which store, and what it said.
     #[error("rule {:?} was not read: {reason}", .rule.as_str())]
     StoreFailed { rule: RuleName, reason: String },
 }

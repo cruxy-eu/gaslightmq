@@ -1,6 +1,7 @@
 //! A host runs several environments in front of real Kafka brokers, each with a proxy of its own,
 //! makes a live rule armed in one step, reads a ⌘K sentence with the names that the traffic of one of them has
 //! seen, acts on the presses and the holds of a pad, and keeps a live rule only under a name that no other one has.
+//! Whatever someone changes has a revision, and a change says what it expects.
 //!
 //! The tests need Docker.
 //! Each test starts the cluster it needs, and a host whose workspace lives in memory.
@@ -42,6 +43,9 @@ const PLACED_AT: i64 = 1_700_000_000_000;
 /// The address that the listeners of a test listen on, and that its clients connect to.
 const LOCALHOST: IpAddr = IpAddr::V4(Ipv4Addr::LOCALHOST);
 
+/// The run of the host of a test. A test names its own, and `gmq` makes one from the randomness of the system.
+const RUN: RunId = RunId::from_random_bits(0x4be0_643f_1d98_573b_97cd_ca98_a653_47dd);
+
 #[tokio::test]
 async fn a_rule_armed_in_one_environment_leaves_the_other_alone() -> anyhow::Result<()> {
     let cluster = KafkaCluster::plaintext().with_brokers(3).start().await?;
@@ -50,6 +54,7 @@ async fn a_rule_armed_in_one_environment_leaves_the_other_alone() -> anyhow::Res
         HostConfiguration::default(),
         MemoryContext::new(),
         Lies::of_every_build().with(Refusal)?,
+        RUN,
     );
     // Two environments stand in front of the same cluster. Every listener of both takes a free port.
     let any = ListenAddress::new(LOCALHOST, 0);
@@ -87,7 +92,7 @@ async fn a_rule_armed_in_one_environment_leaves_the_other_alone() -> anyhow::Res
         leader_flap.name().clone(),
     )
     .with_trigger(TriggerParts::new().with_nth(MatchNumber::new(1)?));
-    host.arm(canary.name(), &flap).await?;
+    host.arm(canary.name(), &flap, None).await?;
     let mut staging_events = host.live_events(staging.name())?;
     let mut canary_events = host.live_events(canary.name())?;
     let through_staging = host
@@ -157,6 +162,7 @@ async fn an_environment_runs_once_and_keeps_its_ports_until_it_stops() -> anyhow
         HostConfiguration::default(),
         MemoryContext::new(),
         Lies::of_every_build(),
+        RUN,
     );
     let any = ListenAddress::new(LOCALHOST, 0);
     // A port that the system has just handed out, and that the staging proxy names for its bootstrap endpoint.
@@ -222,6 +228,7 @@ async fn a_rule_fired_by_hand_lies_on_the_next_call_and_an_incident_needs_a_back
         HostConfiguration::default(),
         MemoryContext::new(),
         Lies::of_every_build().with(Refusal)?,
+        RUN,
     );
     let any = ListenAddress::new(LOCALHOST, 0);
     let brokers = BrokerListeners::pinned(cluster.brokers().iter().map(|broker| (broker.id(), any)))?;
@@ -251,8 +258,8 @@ async fn a_rule_fired_by_hand_lies_on_the_next_call_and_an_incident_needs_a_back
     )
     .with_trigger(Trigger::Manual);
     let not_armed = host.fire(staging.name(), flap.name()).await;
-    host.arm(staging.name(), &flap).await?;
-    host.arm(staging.name(), &election).await?;
+    host.arm(staging.name(), &flap, None).await?;
+    host.arm(staging.name(), &election, None).await?;
     let mut events = host.live_events(staging.name())?;
     let bootstrap = host
         .address_of(staging.name(), Endpoint::Bootstrap)?
@@ -306,6 +313,7 @@ async fn a_live_rule_is_made_armed_in_one_step_or_not_at_all() -> anyhow::Result
         HostConfiguration::default(),
         MemoryContext::new(),
         Lies::of_every_build(),
+        RUN,
     );
     let any = ListenAddress::new(LOCALHOST, 0);
     let brokers = BrokerListeners::pinned(cluster.brokers().iter().map(|broker| (broker.id(), any)))?;
@@ -329,27 +337,30 @@ async fn a_live_rule_is_made_armed_in_one_step_or_not_at_all() -> anyhow::Result
         Conditions::from(Condition::is(ApiKey::FETCH)),
         LieDefinition::Silence,
     );
-    host.arm(staging.name(), &quiet_fetch).await?;
+    host.arm(staging.name(), &quiet_fetch, None).await?;
 
-    let made = host.create_live_rule_armed(staging.name(), quiet_produce.clone()).await;
+    let made = host
+        .create_live_rule_armed(staging.name(), quiet_produce.clone())
+        .await?;
     let refused = host.create_live_rule_armed(staging.name(), quiet_fetch.clone()).await;
 
-    // The rule is a live rule of the environment, and it is armed.
-    assert_eq!(made.map(|armed| armed.name().clone()), Ok(quiet_produce.name().clone()));
     // A rule that cannot arm, because one of its name is armed already, is no live rule either.
     assert_eq!(
-        refused.map(|armed| armed.name().clone()),
+        refused,
         Err(CreateLiveRuleError::NameTaken {
             environment: staging.name().clone(),
             rule: quiet_fetch.name().clone(),
         })
     );
+    // The other rule is a live rule of the environment, and it is armed. Making it and arming it was one change,
+    // so the rule has the revision that the one step answered with.
     assert_eq!(
         host.rules_of(staging.name()).await?,
         [EnvironmentRule {
             rule: quiet_produce,
             live: true,
             state: RuleState::Armed,
+            revision: made,
         }]
     );
     host.stop_all().await;
@@ -364,6 +375,7 @@ async fn a_sentence_knows_the_names_of_the_workspace_and_those_the_traffic_has_s
         HostConfiguration::default(),
         MemoryContext::new(),
         Lies::of_every_build(),
+        RUN,
     );
     let any = ListenAddress::new(LOCALHOST, 0);
     let brokers = BrokerListeners::pinned(cluster.brokers().iter().map(|broker| (broker.id(), any)))?;
@@ -452,12 +464,356 @@ async fn a_sentence_knows_the_names_of_the_workspace_and_those_the_traffic_has_s
 }
 
 #[tokio::test]
+async fn a_rule_of_the_workspace_has_one_revision_in_an_environment_for_its_definition_and_its_state()
+-> anyhow::Result<()> {
+    let cluster = KafkaCluster::plaintext().start().await?;
+    let host = Host::new(
+        HostConfiguration::default(),
+        MemoryContext::new(),
+        Lies::of_every_build(),
+        RUN,
+    );
+    let any = ListenAddress::new(LOCALHOST, 0);
+    let brokers = BrokerListeners::pinned(cluster.brokers().iter().map(|broker| (broker.id(), any)))?;
+    let staging = Environment::new(
+        "staging-proxy".parse()?,
+        Instances::ProxyInFrontOfCluster {
+            proxy: ProxyDefinition::new(Listeners::new(any, brokers, LOCALHOST.into())?),
+            upstream: Upstream::new(cluster.brokers()[0].address().to_string().parse()?),
+        },
+    );
+    host.start(EnvironmentConfiguration::new(&staging)?).await?;
+    let blackhole = Rule::new(
+        "blackhole-everything".parse()?,
+        Conditions::new(),
+        LieDefinition::Silence,
+    );
+    let of_staging = async || {
+        host.rule_of(staging.name(), blackhole.name())
+            .await?
+            .context("the environment holds every rule of the workspace")
+    };
+    // The workspace gets the rule while the environment runs, so its last change there is the create.
+    let created = host.create(blackhole.clone()).await?;
+    assert_eq!(
+        of_staging().await?,
+        EnvironmentRule {
+            rule: blackhole.clone(),
+            live: false,
+            state: RuleState::Disarmed,
+            revision: created,
+        }
+    );
+
+    // One tab arms the rule as it saw it.
+    let seen_created = Expects {
+        run: host.run(),
+        revision: created,
+    };
+    let armed = host.arm(staging.name(), &blackhole, Some(seen_created)).await?;
+    // Another tab gives the rule a title in the workspace.
+    let titled = blackhole.clone().with_title("Blackhole everything".parse()?);
+    let retitled = host.update(titled.clone(), None).await?;
+    // The first tab disarms what it armed, and has not seen the title.
+    let seen_armed = Expects {
+        run: host.run(),
+        revision: armed,
+    };
+    let late = host.disarm(staging.name(), blackhole.name(), Some(seen_armed)).await;
+
+    assert!(
+        created < armed && armed < retitled,
+        "{created}, {armed} and then {retitled}"
+    );
+    assert_eq!(
+        late,
+        Err(DisarmRuleError::Changed {
+            environment: staging.name().clone(),
+            rule: blackhole.name().clone(),
+            revision: retitled,
+        })
+    );
+    // The rule is still armed, and its one revision is the later of its two changes: the title.
+    assert_eq!(
+        of_staging().await?,
+        EnvironmentRule {
+            rule: titled.clone(),
+            live: false,
+            state: RuleState::Armed,
+            revision: retitled,
+        }
+    );
+    // Whoever saw the title disarms the rule.
+    let seen_titled = Expects {
+        run: host.run(),
+        revision: retitled,
+    };
+    let disarmed = host.disarm(staging.name(), blackhole.name(), Some(seen_titled)).await?;
+    assert!(retitled < disarmed, "{retitled} and then {disarmed}");
+    assert_eq!(
+        of_staging().await?,
+        EnvironmentRule {
+            rule: titled,
+            live: false,
+            state: RuleState::Disarmed,
+            revision: disarmed,
+        }
+    );
+    host.stop_all().await;
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_live_rule_changes_goes_and_is_kept_only_as_its_sender_saw_it() -> anyhow::Result<()> {
+    let cluster = KafkaCluster::plaintext().start().await?;
+    let host = Host::new(
+        HostConfiguration::default(),
+        MemoryContext::new(),
+        Lies::of_every_build(),
+        RUN,
+    );
+    let any = ListenAddress::new(LOCALHOST, 0);
+    let brokers = BrokerListeners::pinned(cluster.brokers().iter().map(|broker| (broker.id(), any)))?;
+    let staging = Environment::new(
+        "staging-proxy".parse()?,
+        Instances::ProxyInFrontOfCluster {
+            proxy: ProxyDefinition::new(Listeners::new(any, brokers, LOCALHOST.into())?),
+            upstream: Upstream::new(cluster.brokers()[0].address().to_string().parse()?),
+        },
+    );
+    host.start(EnvironmentConfiguration::new(&staging)?).await?;
+    // ⌘K made a live rule: "hold every Produce 20 ms".
+    let hold = Rule::new(
+        "hold-produce".parse()?,
+        Conditions::from(Condition::is(ApiKey::PRODUCE)),
+        TimingLie::new().with_delay(TimeSpan::from_millis(20)),
+    );
+    let made = host.create_live_rule(staging.name(), hold.clone()).await?;
+    let seen_made = Some(Expects {
+        run: host.run(),
+        revision: made,
+    });
+    // Someone else turns an encoder: the rule holds every Produce 50 ms from here on.
+    let longer = Rule::new(
+        hold.name().clone(),
+        Conditions::from(Condition::is(ApiKey::PRODUCE)),
+        TimingLie::new().with_delay(TimeSpan::from_millis(50)),
+    );
+    let turned = host.update_live_rule(staging.name(), longer.clone(), None).await?;
+
+    // Whoever still sees the rule of 20 ms changes, deletes and keeps nothing.
+    assert_eq!(
+        host.update_live_rule(staging.name(), hold.clone(), seen_made).await,
+        Err(UpdateLiveRuleError::Changed {
+            environment: staging.name().clone(),
+            rule: hold.name().clone(),
+            revision: turned,
+        })
+    );
+    assert_eq!(
+        host.delete_live_rule(staging.name(), hold.name(), seen_made),
+        Err(DeleteLiveRuleError::Changed {
+            environment: staging.name().clone(),
+            rule: hold.name().clone(),
+            revision: turned,
+        })
+    );
+    assert_eq!(
+        host.keep(staging.name(), hold.name(), seen_made).await,
+        Err(KeepRuleError::Changed {
+            environment: staging.name().clone(),
+            rule: hold.name().clone(),
+            revision: turned,
+        })
+    );
+    let live = host
+        .rule_of(staging.name(), hold.name())
+        .await?
+        .context("the environment still holds its live rule")?;
+    assert_eq!(
+        live,
+        EnvironmentRule {
+            rule: longer.clone(),
+            live: true,
+            state: RuleState::Disarmed,
+            revision: turned,
+        }
+    );
+
+    // Whoever saw the turn keeps the rule: the workspace gets the rule that someone looked at.
+    let seen_turned = Some(Expects {
+        run: host.run(),
+        revision: turned,
+    });
+    let kept = host.keep(staging.name(), hold.name(), seen_turned).await?;
+
+    assert!(made < turned && turned < kept, "{made}, {turned} and then {kept}");
+    // The keep is one change, so the rule has its number in the workspace and in the environment.
+    assert_eq!(host.workspace().await.revision(hold.name().clone()), kept);
+    let of_the_workspace = host
+        .rule_of(staging.name(), hold.name())
+        .await?
+        .context("the environment holds every rule of the workspace")?;
+    assert_eq!(
+        of_the_workspace,
+        EnvironmentRule {
+            rule: longer,
+            live: false,
+            state: RuleState::Disarmed,
+            revision: kept,
+        }
+    );
+    host.stop_all().await;
+    Ok(())
+}
+
+#[tokio::test]
+async fn an_environment_that_starts_again_gives_every_rule_a_higher_revision() -> anyhow::Result<()> {
+    let cluster = KafkaCluster::plaintext().start().await?;
+    let host = Host::new(
+        HostConfiguration::default(),
+        MemoryContext::new(),
+        Lies::of_every_build(),
+        RUN,
+    );
+    let any = ListenAddress::new(LOCALHOST, 0);
+    let brokers = BrokerListeners::pinned(cluster.brokers().iter().map(|broker| (broker.id(), any)))?;
+    let staging = Environment::new(
+        "staging-proxy".parse()?,
+        Instances::ProxyInFrontOfCluster {
+            proxy: ProxyDefinition::new(Listeners::new(any, brokers, LOCALHOST.into())?),
+            upstream: Upstream::new(cluster.brokers()[0].address().to_string().parse()?),
+        },
+    );
+    let blackhole = Rule::new(
+        "blackhole-everything".parse()?,
+        Conditions::new(),
+        LieDefinition::Silence,
+    );
+    let created = host.create(blackhole.clone()).await?;
+    let revision_in_staging = async || {
+        let rule = host.rule_of(staging.name(), blackhole.name()).await?;
+        anyhow::Ok(
+            rule.context("the environment holds every rule of the workspace")?
+                .revision,
+        )
+    };
+
+    // The start of an environment is a change of every rule in it.
+    host.start(EnvironmentConfiguration::new(&staging)?).await?;
+    let started = revision_in_staging().await?;
+    let seen_started = Expects {
+        run: host.run(),
+        revision: started,
+    };
+    let armed = host.arm(staging.name(), &blackhole, Some(seen_started)).await?;
+    // The environment stops, and nothing is armed in the one that starts under its name.
+    host.stop(staging.name()).await?;
+    host.start(EnvironmentConfiguration::new(&staging)?).await?;
+    let started_again = revision_in_staging().await?;
+
+    assert!(
+        created < started && started < armed && armed < started_again,
+        "{created}, {started}, {armed} and then {started_again}"
+    );
+    // A change that expects the rule as it was armed before the stop changes nothing.
+    let seen_armed = Expects {
+        run: host.run(),
+        revision: armed,
+    };
+    assert_eq!(
+        host.disarm(staging.name(), blackhole.name(), Some(seen_armed)).await,
+        Err(DisarmRuleError::Changed {
+            environment: staging.name().clone(),
+            rule: blackhole.name().clone(),
+            revision: started_again,
+        })
+    );
+    host.stop_all().await;
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_rule_that_spends_its_budget_takes_a_revision_as_it_disarms() -> anyhow::Result<()> {
+    let cluster = KafkaCluster::plaintext().with_brokers(3).start().await?;
+    let orders = cluster.topics().create("orders").await?;
+    let host = Host::new(
+        HostConfiguration::default(),
+        MemoryContext::new(),
+        Lies::of_every_build(),
+        RUN,
+    );
+    let any = ListenAddress::new(LOCALHOST, 0);
+    let brokers = BrokerListeners::pinned(cluster.brokers().iter().map(|broker| (broker.id(), any)))?;
+    let staging = Environment::new(
+        "staging-proxy".parse()?,
+        Instances::ProxyInFrontOfCluster {
+            proxy: ProxyDefinition::new(Listeners::new(any, brokers, LOCALHOST.into())?),
+            upstream: Upstream::new(cluster.brokers()[0].address().to_string().parse()?),
+        },
+    );
+    host.start(EnvironmentConfiguration::new(&staging)?).await?;
+    // "Hold the next Produce 20 ms, once."
+    let once = Rule::new(
+        "hold-the-next-produce".parse()?,
+        Conditions::from(Condition::is(ApiKey::PRODUCE)),
+        TimingLie::new().with_delay(TimeSpan::from_millis(20)),
+    )
+    .with_lifetime(Lifetime::Firings(Count::ONE));
+    host.create_live_rule(staging.name(), once.clone()).await?;
+    let armed = host.arm(staging.name(), &once, None).await?;
+    let mut changes = host.changes();
+    let bootstrap = host
+        .address_of(staging.name(), Endpoint::Bootstrap)?
+        .context("the bootstrap endpoint of the staging proxy is open")?;
+
+    let written = KafkaProducer::from(bootstrap)
+        .send(
+            orders.name().as_str(),
+            Partition::new(0),
+            &[Record::new("placed").with_key("o-1").with_timestamp(PLACED_AT)],
+        )
+        .await;
+    // The Produce spent the only firing, so the rule disarmed itself, and whoever follows the host learns of it.
+    let disarmed_itself = HostChange::RuleChanged {
+        environment: staging.name().clone(),
+        rule: once.name().clone(),
+    };
+    while tokio::time::timeout(PATIENCE, changes.next()).await?? != disarmed_itself {}
+
+    assert_eq!(written, Ok(Offset::new(0)));
+    let spent = host
+        .rule_of(staging.name(), once.name())
+        .await?
+        .context("the environment still holds its live rule")?;
+    assert_eq!(spent.state, RuleState::Disarmed);
+    // Nobody asked for that change, and it took the next number all the same.
+    assert!(armed < spent.revision, "{armed} and then {}", spent.revision);
+    // Whoever still sees the rule armed arms nothing over it.
+    let seen_armed = Expects {
+        run: host.run(),
+        revision: armed,
+    };
+    assert_eq!(
+        host.arm(staging.name(), &once, Some(seen_armed)).await,
+        Err(ArmRuleError::Changed {
+            environment: staging.name().clone(),
+            rule: once.name().clone(),
+            revision: spent.revision,
+        })
+    );
+    host.stop_all().await;
+    Ok(())
+}
+
+#[tokio::test]
 async fn two_presses_that_want_a_pad_armed_arm_it_once() -> anyhow::Result<()> {
     let cluster = KafkaCluster::plaintext().start().await?;
     let host = Host::new(
         HostConfiguration::default(),
         MemoryContext::new(),
         Lies::of_every_build(),
+        RUN,
     );
     let any = ListenAddress::new(LOCALHOST, 0);
     let brokers = BrokerListeners::pinned(cluster.brokers().iter().map(|broker| (broker.id(), any)))?;
@@ -498,6 +854,11 @@ async fn two_presses_that_want_a_pad_armed_arm_it_once() -> anyhow::Result<()> {
     // The second press finds the rule armed and changes nothing, so it leaves nothing to undo.
     assert_eq!((second.made, second.changed), (false, false));
     assert_eq!(state(&second), Some(RuleState::Armed));
+    // Making the rule and arming it was one change. The press that changed nothing took no number:
+    // it answers with the rule at the revision that the first press left.
+    let revision = |effect: &IntentEffect| effect.rule.as_ref().map(|rule| rule.revision);
+    assert!(revision(&first).is_some(), "{first:?}");
+    assert_eq!(revision(&second), revision(&first));
 
     // Two people who press it to disarm it both find it disarmed.
     let disarm = Intent::Disarm { pad };
@@ -507,6 +868,12 @@ async fn two_presses_that_want_a_pad_armed_arm_it_once() -> anyhow::Result<()> {
     assert!(disarmed.changed);
     assert!(!again.changed);
     assert_eq!(state(&again), Some(RuleState::Disarmed));
+    // The disarm is a later change of the rule, and the press after it changed nothing again.
+    assert!(
+        revision(&first) < revision(&disarmed),
+        "{first:?} and then {disarmed:?}"
+    );
+    assert_eq!(revision(&again), revision(&disarmed));
     host.stop_all().await;
     Ok(())
 }
@@ -518,6 +885,7 @@ async fn a_held_pad_stays_armed_until_its_last_hold_goes_and_a_disarm_ends_every
         HostConfiguration::default(),
         MemoryContext::new(),
         Lies::of_every_build(),
+        RUN,
     );
     let any = ListenAddress::new(LOCALHOST, 0);
     let brokers = BrokerListeners::pinned(cluster.brokers().iter().map(|broker| (broker.id(), any)))?;
@@ -597,6 +965,7 @@ async fn a_release_never_disarms_a_rule_that_a_press_in_latch_armed() -> anyhow:
         HostConfiguration::default(),
         MemoryContext::new(),
         Lies::of_every_build(),
+        RUN,
     );
     let any = ListenAddress::new(LOCALHOST, 0);
     let brokers = BrokerListeners::pinned(cluster.brokers().iter().map(|broker| (broker.id(), any)))?;
@@ -659,6 +1028,7 @@ async fn a_name_that_a_live_rule_of_another_environment_has_is_no_name_for_the_w
         HostConfiguration::default(),
         MemoryContext::new(),
         Lies::of_every_build(),
+        RUN,
     );
     // Two environments stand in front of the same cluster. Every listener of both takes a free port.
     let any = ListenAddress::new(LOCALHOST, 0);
@@ -697,7 +1067,7 @@ async fn a_name_that_a_live_rule_of_another_environment_has_is_no_name_for_the_w
     host.create_live_rule(staging.name(), slow.clone()).await?;
     host.create_live_rule(canary.name(), slow.clone()).await?;
 
-    let kept = host.keep(staging.name(), slow.name()).await;
+    let kept = host.keep(staging.name(), slow.name(), None).await;
     let created = host.create(slow.clone()).await;
 
     // A rule of the workspace is in every environment, so it never stands next to a live rule of its name.
@@ -714,8 +1084,17 @@ async fn a_name_that_a_live_rule_of_another_environment_has_is_no_name_for_the_w
     );
 
     // Once the canary deleted its live rule, the staging proxy keeps its own.
-    host.delete_live_rule(canary.name(), slow.name())?;
-    assert_eq!(host.keep(staging.name(), slow.name()).await?, slow);
+    host.delete_live_rule(canary.name(), slow.name(), None)?;
+    let kept = host.keep(staging.name(), slow.name(), None).await?;
+    assert_eq!(
+        host.rule_of(staging.name(), slow.name()).await?,
+        Some(EnvironmentRule {
+            rule: slow,
+            live: false,
+            state: RuleState::Disarmed,
+            revision: kept,
+        })
+    );
     host.stop_all().await;
     Ok(())
 }

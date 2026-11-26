@@ -20,6 +20,14 @@ use tokio_tungstenite::tungstenite::Message;
 use tokio_tungstenite::tungstenite::protocol::CloseFrame;
 use tokio_tungstenite::tungstenite::protocol::frame::coding::CloseCode;
 
+/// The run of the scripted control plane, as its snapshot writes it.
+const RUN: &str = "4be0643f1d98573b97cdca98a65347dd";
+
+/// What the scripted control plane answers a change with: the revision that the change left.
+const LEFT: Revised = Revised {
+    revision: Revision::new(8),
+};
+
 mod operations {
     use super::*;
 
@@ -30,6 +38,7 @@ mod operations {
         let arm = ArmRule {
             environment: "orders-sim".parse()?,
             rule: "delay-1s-on-order-producers".parse()?,
+            expects: None,
         };
 
         let (answer, request) = tokio::join!(
@@ -69,16 +78,21 @@ mod operations {
         let arm = ArmRule {
             environment: "orders-sim".parse()?,
             rule: "delay-1s-on-order-producers".parse()?,
+            expects: None,
         };
         let disarm = DisarmRule {
             environment: arm.environment.clone(),
             rule: arm.rule.clone(),
+            expects: None,
         };
         let undo = RequestSource::new(RequestSurface::Ui).with_cause(RequestCause::Undo);
 
-        let (_, from_a_view) = tokio::join!(ui.send(arm.clone()), control_plane.answer(()));
-        let (_, from_a_pad) = tokio::join!(ui.send_from(RequestSurface::Pad, arm.clone()), control_plane.answer(()));
-        let (_, taken_back) = tokio::join!(ui.send_from(undo, disarm.clone()), control_plane.answer(()));
+        let (_, from_a_view) = tokio::join!(ui.send(arm.clone()), control_plane.answer(LEFT));
+        let (_, from_a_pad) = tokio::join!(
+            ui.send_from(RequestSurface::Pad, arm.clone()),
+            control_plane.answer(LEFT)
+        );
+        let (_, taken_back) = tokio::join!(ui.send_from(undo, disarm.clone()), control_plane.answer(LEFT));
 
         assert_eq!(
             serde_json::from_str::<OperationRequest>(&from_a_view?.body)?,
@@ -92,6 +106,66 @@ mod operations {
             serde_json::from_str::<OperationRequest>(&taken_back?.body)?,
             OperationRequest::new(undo, disarm),
         );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn a_change_says_what_it_expects_and_returns_the_revision_it_left() -> anyhow::Result<()> {
+        let control_plane = ScriptedControlPlane::start().await?;
+        let client = ControlClient::new(ControlClientConfiguration::new(control_plane.address()?));
+        // What the client read before: the run of the snapshot, and the revision beside the rule.
+        let seen = Expects {
+            run: RUN.parse()?,
+            revision: Revision::new(LEFT.revision.number() - 1),
+        };
+        let arm = ArmRule {
+            environment: "orders-sim".parse()?,
+            rule: "delay-1s-on-order-producers".parse()?,
+            expects: Some(seen),
+        };
+
+        let (answer, request) = tokio::join!(client.send(arm), control_plane.answer(LEFT));
+
+        assert_eq!(answer?, Ok(LEFT));
+        assert_eq!(
+            serde_json::from_str::<serde_json::Value>(&request?.body)?,
+            serde_json::json!({
+                "from": { "surface": "api" },
+                "operation": "arm-rule",
+                "environment": "orders-sim",
+                "rule": "delay-1s-on-order-producers",
+                "expects": { "run": RUN, "revision": seen.revision.number() },
+            }),
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn a_change_that_expects_another_revision_or_another_run_returns_what_holds_now() -> anyhow::Result<()> {
+        let control_plane = ScriptedControlPlane::start().await?;
+        let client = ControlClient::new(ControlClientConfiguration::new(control_plane.address()?));
+        let seen = Expects {
+            run: RUN.parse()?,
+            revision: Revision::new(LEFT.revision.number() - 1),
+        };
+        let disarm = DisarmRule {
+            environment: "orders-sim".parse()?,
+            rule: "delay-1s-on-order-producers".parse()?,
+            expects: Some(seen),
+        };
+        let changed = RuleCommandError::Changed {
+            environment: disarm.environment.clone(),
+            rule: disarm.rule.clone(),
+            revision: LEFT.revision,
+        };
+        let other_run = RuleCommandError::OtherRun { run: RUN.parse()? };
+
+        let (moved_on, _) = tokio::join!(client.send(disarm.clone()), control_plane.refuse(changed.clone()));
+        let (started_again, _) = tokio::join!(client.send(disarm), control_plane.refuse(other_run.clone()));
+
+        // Each is an answer of the operation, which the caller decides on: read the rule again, or the snapshot.
+        assert_eq!(moved_on?, Err(changed));
+        assert_eq!(started_again?, Err(other_run));
         Ok(())
     }
 
@@ -143,6 +217,7 @@ mod operations {
         let keep = KeepRule {
             environment: "orders-sim".parse()?,
             rule: "delay-1s-on-order-producers".parse()?,
+            expects: None,
         };
 
         let (answer, request) = tokio::join!(
@@ -198,7 +273,11 @@ mod live_stream {
             selector: SelectorRef::Inline(Conditions::new()),
         };
 
-        let snapshot = StreamMessage::Snapshot(ProcessState::default());
+        let snapshot = StreamMessage::Snapshot(ProcessState {
+            run: RUN.parse()?,
+            definitions: Definitions::default(),
+            environments: Vec::new(),
+        });
         server_side.send(&snapshot).await?;
         stream.follow(every_call.clone()).await;
 

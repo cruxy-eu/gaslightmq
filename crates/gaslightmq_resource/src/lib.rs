@@ -1,4 +1,5 @@
-//! The resource vocabulary: the name and the title of a resource, with the one rule that each of them follows.
+//! The resource vocabulary: the name and the title of a resource, with the one rule that each of them follows,
+//! and what a process keeps beside a resource while it runs: its revision, and the ID of the run.
 //!
 //! A resource is a definition that someone names: a selector, a preset, a rule or an environment.
 //! A name is the identity of its resource between domains, and nothing else:
@@ -18,6 +19,8 @@
 //! | [`ResourceTitle`] | The title of a resource: free text that follows [the rule for titles](ResourceTitle#the-rule-for-titles). |
 //! | [`ResourceTitleError`] | Why a text is no title: the part of the rule it breaks. |
 //! | [`title!`] | The title of one kind of resource and its error, written into the crate of that kind. |
+//! | [`revision!`] | The revision of a resource, and the counter that gives it, written into the crate that gives or carries revisions. |
+//! | [`run_id!`] | The ID of a run and its error, written into the crate that holds or carries it. |
 //!
 //! ```
 //! use gaslightmq_resource::{ResourceName, ResourceNameError};
@@ -56,15 +59,36 @@
 //! A call of the macro passes that check, because it names no type of this crate,
 //! and what a macro writes keeps the [`ResourceName`] or the [`ResourceTitle`] in a private field.
 //!
+//! # Beside a resource
+//!
+//! A definition holds what a person writes, and a process keeps two things beside it for as long as it runs.
+//! Neither is a part of a resource, and no file holds one.
+//!
+//! - **A revision** says which state of something someone saw.
+//!   It is a number, and one counter gives the revisions of everything that a process holds:
+//!   every change takes the next number, so no revision comes back while the process runs.
+//! - **A run ID** names one life of a process: 128 random bits, written as 32 hexadecimal digits in lower case.
+//!   The counter starts again with every run, so a revision means something only together with its run.
+//!
+//! [`revision!`] and [`run_id!`] write these types into the crates that give, hold or carry them,
+//! and each of those crates offers them as its own:
+//! `gaslightmq_resource::revision!(Revision, RevisionCounter);` and
+//! `gaslightmq_resource::run_id!(RunId, RunIdError);`
+//! Both macros write whole types, so this crate exports no type for them.
+//!
 //! # No IO
 //!
 //! The crate depends on no other crate of the workspace.
 //! It has no async code, no IO, no system clock and no randomness, and it compiles to WebAssembly.
+//! A run ID is made of random bits, and whoever calls for one hands the bits in.
 //!
 //! The `serde` feature maps a [`ResourceName`] and a [`ResourceTitle`] to their text.
+//! A revision and a run ID have a `serde` form where the call of their macro asks for one.
 
 mod kind;
 mod name;
+mod revision;
+mod run;
 mod title;
 
 pub use name::{ResourceName, ResourceNameError};

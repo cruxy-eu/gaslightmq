@@ -35,6 +35,8 @@ gaslightmq_control_client.workspace = true
 gaslightmq_workspace = { workspace = true, features = ["memory"] }
 # The lies that the host of a test tells.
 gaslightmq_lie_api.workspace = true
+# The demo is a process of its own: it reads the randomness of the system once, for the ID of its run.
+getrandom.workspace = true
 # The environment of `tests/real_cluster`: a real client in front, and real Kafka brokers behind.
 gaslightmq_kafka_client_native.workspace = true
 gaslightmq_test_kafka.workspace = true

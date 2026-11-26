@@ -14,6 +14,7 @@ use crate::{Operation, RuleStatus};
 /// A press that finds the state it wants changes nothing, so two people who press one pad to arm it both find it armed.
 /// The answer says what the intent did, and what the rule became reaches every client as a
 /// [`StreamMessage::RuleChanged`](crate::StreamMessage::RuleChanged).
+/// An intent expects no revision: it acts on the rule as the rule is, and says the state it wants.
 ///
 /// The environment counts the holds of a rule: a press in hold adds one and answers with it, and its release names it.
 /// A rule that holds armed disarms when its last hold goes, and a release never disarms a rule that something else
@@ -57,7 +58,8 @@ impl Operation for SendIntent {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct IntentEffect {
-    /// The rule of the pad as the environment holds it now, with its state there.
+    /// The rule of the pad as the environment holds it now, with its state and its revision there.
+    /// An undo of the intent expects that revision.
     /// `None` when the pad points at no rule, which a disarm and a release of such a pad leave as it is.
     pub rule: Option<RuleStatus>,
     /// Whether the intent made the rule: the pad had none, so it got the live rule of its position.

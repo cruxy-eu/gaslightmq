@@ -92,9 +92,13 @@ pub fn QuickInject() -> Element {
                     drop(live);
                     let label = rule_label(&creation.rule);
                     let done = ui.clone();
-                    ui.send_from(RequestSurface::QuickInject, creation, move |()| {
-                        done.notify(format!("Armed the live rule {label}"), false);
-                    });
+                    ui.send_from(
+                        RequestSurface::QuickInject,
+                        creation,
+                        move |_: gaslightmq_control_api::Revised| {
+                            done.notify(format!("Armed the live rule {label}"), false);
+                        },
+                    );
                     palette.set(Palette::default());
                     open.set(false);
                     navigator.push(Route::Rules {});

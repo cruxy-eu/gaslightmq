@@ -53,10 +53,17 @@ async fn main() -> anyhow::Result<()> {
             .create(NewTopic::named(topic).with_partitions(partitions))
             .await?;
     }
+    // A process reads the randomness of the system once, for the ID of its run. A tab of the UI that still holds
+    // what an earlier demo told it sees another run in the snapshot, and drops it.
+    let mut random = [0; 16];
+    getrandom::fill(&mut random)
+        .map_err(|error| anyhow::anyhow!("the system gave no randomness for the ID of the run: {error}"))?;
+    let run = gaslightmq_host::RunId::from_random_bits(u128::from_be_bytes(random));
     let host = Arc::new(Host::new(
         HostConfiguration::default(),
         MemoryContext::new(),
         Lies::of_every_build(),
+        run,
     ));
     // Every listener of the proxy takes a free port, which the UI shows under Endpoints.
     let any = ListenAddress::new(LOCALHOST, 0);

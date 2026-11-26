@@ -12,6 +12,8 @@ use gaslightmq_workspace::{
     WorkspaceError,
 };
 
+use crate::revisions::{expected, revised, revision, run};
+
 /// A kind of definition that the server reads from the stores of a workspace, and hands out as its store holds it.
 pub(crate) trait Stored: Definition {
     /// The store of this kind among the stores of a workspace.
@@ -71,18 +73,44 @@ pub(crate) async fn get<D: Stored, C: WorkspaceContext>(
     D::store(workspace.stores()).get(name).await.map_err(unread::<D>)
 }
 
-/// Every definition of the workspace, by kind.
+/// Every definition of the kind `D`, each with the revision that the workspace keeps beside it.
+///
+/// # Errors
+///
+/// What the store said when it could not read, after the word for its kind.
+pub(crate) async fn list_with_revisions<D: Stored + WorkspaceDefinition, C: WorkspaceContext>(
+    workspace: &Workspace<C>,
+) -> Result<Vec<DefinitionStatus<D>>, String> {
+    let definitions = list::<D, C>(workspace).await?;
+    Ok(definitions
+        .into_iter()
+        .map(|definition| with_revision(workspace, definition))
+        .collect())
+}
+
+/// The definition, with the revision that the workspace keeps beside it.
+pub(crate) fn with_revision<D: WorkspaceDefinition, C: WorkspaceContext>(
+    workspace: &Workspace<C>,
+    definition: D,
+) -> DefinitionStatus<D> {
+    DefinitionStatus {
+        revision: revision(workspace.revision(definition.name().clone())),
+        definition,
+    }
+}
+
+/// Every definition of the workspace, by kind, each with its revision.
 ///
 /// # Errors
 ///
 /// What the first store that could not read said, after the word for its kind.
 pub(crate) async fn every<C: WorkspaceContext>(workspace: &Workspace<C>) -> Result<Definitions, String> {
     Ok(Definitions {
-        selectors: list(workspace).await?,
-        presets: list(workspace).await?,
-        rules: list(workspace).await?,
-        layouts: list(workspace).await?,
-        environments: list(workspace).await?,
+        selectors: list_with_revisions(workspace).await?,
+        presets: list_with_revisions(workspace).await?,
+        rules: list_with_revisions(workspace).await?,
+        layouts: list_with_revisions(workspace).await?,
+        environments: list_with_revisions(workspace).await?,
     })
 }
 
@@ -93,8 +121,8 @@ impl DefinitionOperations {
     /// Answers [`ListDefinitions`].
     pub(crate) async fn list<D: Editable, C: WorkspaceContext>(
         workspace: &Workspace<C>,
-    ) -> Result<Vec<D>, ListDefinitionsError> {
-        list(workspace)
+    ) -> Result<Vec<DefinitionStatus<D>>, ListDefinitionsError> {
+        list_with_revisions(workspace)
             .await
             .map_err(|reason| ListDefinitionsError::StoreFailed { reason })
     }
@@ -103,9 +131,9 @@ impl DefinitionOperations {
     pub(crate) async fn get<D: Editable, C: WorkspaceContext>(
         workspace: &Workspace<C>,
         name: <D as EditableDefinition>::Name,
-    ) -> Result<D, GetDefinitionError> {
+    ) -> Result<DefinitionStatus<D>, GetDefinitionError> {
         match get::<D, C>(workspace, &name).await {
-            Ok(Some(definition)) => Ok(definition),
+            Ok(Some(definition)) => Ok(with_revision(workspace, definition)),
             Ok(None) => Err(GetDefinitionError::NotFound {
                 name: Into::<DefinitionRef>::into(name),
             }),
@@ -120,10 +148,10 @@ impl DefinitionOperations {
     pub(crate) async fn create<D: Editable, C: WorkspaceContext>(
         host: &Host<C>,
         definition: D,
-    ) -> Result<(), CreateDefinitionError> {
+    ) -> Result<Revised, CreateDefinitionError> {
         use gaslightmq_host::CreateDefinitionError as Host;
         match host.create(definition).await {
-            Ok(()) => Ok(()),
+            Ok(created) => Ok(revised(created)),
             Err(Host::NameTaken { rule, environment }) => Err(CreateDefinitionError::NameTaken {
                 name: rule.into(),
                 environment: Some(environment),
@@ -152,39 +180,63 @@ impl DefinitionOperations {
     /// Answers [`UpdateDefinition`], through the host, which tells whoever follows it.
     pub(crate) async fn update<D: Editable, C: WorkspaceContext>(
         host: &Host<C>,
-        definition: D,
-    ) -> Result<(), UpdateDefinitionError> {
-        match host.update(definition).await {
-            Ok(()) => Ok(()),
-            Err(UpdateError::NotFound { name }) => Err(UpdateDefinitionError::NotFound { name: reference(name) }),
-            Err(UpdateError::DoesNotFit { name, errors }) => Err(UpdateDefinitionError::DoesNotFit {
+        update: UpdateDefinition<D>,
+    ) -> Result<Revised, UpdateDefinitionError> {
+        use gaslightmq_host::UpdateDefinitionError as Host;
+        let UpdateDefinition { expects, definition } = update;
+        let error = match host.update(definition, expected(expects)).await {
+            Ok(updated) => return Ok(revised(updated)),
+            Err(Host::OtherRun { run: of_the_host }) => {
+                return Err(UpdateDefinitionError::OtherRun { run: run(of_the_host) });
+            }
+            Err(Host::NotUpdated { error }) => error,
+        };
+        Err(match error {
+            UpdateError::NotFound { name } => UpdateDefinitionError::NotFound { name: reference(name) },
+            UpdateError::Changed { name, revision: now } => UpdateDefinitionError::Changed {
+                name: reference(name),
+                revision: revision(now),
+            },
+            UpdateError::DoesNotFit { name, errors } => UpdateDefinitionError::DoesNotFit {
                 name: reference(name),
                 reason: each(&errors),
-            }),
-            Err(UpdateError::StoreFailed { name, reason }) => Err(UpdateDefinitionError::StoreFailed {
+            },
+            UpdateError::StoreFailed { name, reason } => UpdateDefinitionError::StoreFailed {
                 name: reference(name),
                 reason,
-            }),
-        }
+            },
+        })
     }
 
     /// Answers [`DeleteDefinition`], through the host, which tells whoever follows it.
     pub(crate) async fn delete<D: Editable, C: WorkspaceContext>(
         host: &Host<C>,
-        name: <D as EditableDefinition>::Name,
-    ) -> Result<(), DeleteDefinitionError> {
-        match host.delete(name).await {
-            Ok(()) => Ok(()),
-            Err(DeleteError::NotFound { name }) => Err(DeleteDefinitionError::NotFound { name: reference(name) }),
-            Err(DeleteError::InUse { name, users }) => Err(DeleteDefinitionError::InUse {
+        delete: DeleteDefinition<D>,
+    ) -> Result<Revised, DeleteDefinitionError> {
+        use gaslightmq_host::DeleteDefinitionError as Host;
+        let DeleteDefinition { name, expects } = delete;
+        let error = match host.delete(name, expected(expects)).await {
+            Ok(deleted) => return Ok(revised(deleted)),
+            Err(Host::OtherRun { run: of_the_host }) => {
+                return Err(DeleteDefinitionError::OtherRun { run: run(of_the_host) });
+            }
+            Err(Host::NotDeleted { error }) => error,
+        };
+        Err(match error {
+            DeleteError::NotFound { name } => DeleteDefinitionError::NotFound { name: reference(name) },
+            DeleteError::Changed { name, revision: now } => DeleteDefinitionError::Changed {
+                name: reference(name),
+                revision: revision(now),
+            },
+            DeleteError::InUse { name, users } => DeleteDefinitionError::InUse {
                 name: reference(name),
                 users: users.into_iter().map(reference).collect(),
-            }),
-            Err(DeleteError::StoreFailed { name, reason }) => Err(DeleteDefinitionError::StoreFailed {
+            },
+            DeleteError::StoreFailed { name, reason } => DeleteDefinitionError::StoreFailed {
                 name: reference(name),
                 reason,
-            }),
-        }
+            },
+        })
     }
 }
 

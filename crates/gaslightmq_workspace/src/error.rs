@@ -3,7 +3,7 @@
 use gaslightmq_rule::RuleError;
 use gaslightmq_selector::SelectorSetError;
 
-use crate::DefinitionName;
+use crate::{DefinitionName, Revision};
 
 /// One thing that keeps the definitions of a workspace from fitting each other.
 ///
@@ -90,6 +90,10 @@ pub enum UpdateError {
     /// No definition of this kind has the name. Updating never creates one.
     #[error("{name} does not exist")]
     NotFound { name: DefinitionName },
+    /// The update expects another revision than the definition has: someone changed the definition since.
+    /// `revision` is the one it has now.
+    #[error("{name} changed since: it has revision {revision} now")]
+    Changed { name: DefinitionName, revision: Revision },
     /// The definitions would not fit each other with the change. `errors` holds everything that would be wrong:
     /// with the definition itself, and with the definitions that use it.
     #[error("{name} does not fit the workspace: {}", each(.errors))]
@@ -123,6 +127,10 @@ pub enum DeleteError {
     /// No definition of this kind has the name.
     #[error("{name} does not exist")]
     NotFound { name: DefinitionName },
+    /// The delete expects another revision than the definition has: someone changed the definition since.
+    /// `revision` is the one it has now.
+    #[error("{name} changed since: it has revision {revision} now")]
+    Changed { name: DefinitionName, revision: Revision },
     /// Other definitions refer to this one, and would refer to nothing without it. `users` names each of them.
     #[error("{name} is used by {}", all(.users))]
     InUse {
@@ -321,6 +329,22 @@ mod tests {
             validated.to_string(),
             format!("the definitions were not validated: {reason}")
         );
+    }
+
+    #[test]
+    fn a_definition_that_changed_says_the_revision_it_has_now() {
+        let name = rule("slow-order-producers");
+        let revision = Revision::new(9);
+        let message = "rule \"slow-order-producers\" changed since: it has revision 9 now";
+
+        let updated = UpdateError::Changed {
+            name: name.clone(),
+            revision,
+        };
+        let deleted = DeleteError::Changed { name, revision };
+
+        assert_eq!(updated.to_string(), message);
+        assert_eq!(deleted.to_string(), message);
     }
 
     #[test]

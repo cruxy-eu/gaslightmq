@@ -21,6 +21,7 @@ memory = [
 gaslightmq_definition_api.workspace = true
 gaslightmq_definition_memory = { workspace = true, optional = true }
 gaslightmq_environment.workspace = true
+gaslightmq_resource.workspace = true
 gaslightmq_rule.workspace = true
 gaslightmq_selector.workspace = true
 gaslightmq_surface.workspace = true

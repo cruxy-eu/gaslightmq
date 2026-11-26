@@ -2,12 +2,17 @@
 
 use gaslightmq_rule::{Rule, RuleState};
 use gaslightmq_surface::Hold;
+use gaslightmq_workspace::Revision;
 
 /// A rule of an environment, and its state there.
 ///
 /// An environment holds every rule of the workspace, and its own live rules.
 /// A rule of the workspace has a state in each environment: arming it in one does not arm it in another.
 /// A live rule belongs to one environment, and no rule of the workspace has its name.
+///
+/// A rule in an environment has one revision, for its definition and its state together:
+/// the number of the last change of either. Whoever arms a rule therefore says which definition they saw,
+/// and not only which state.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EnvironmentRule {
     /// The definition of the rule.
@@ -16,6 +21,9 @@ pub struct EnvironmentRule {
     pub live: bool,
     /// Whether the rule is armed or disarmed in the environment.
     pub state: RuleState,
+    /// The revision of the rule in the environment: the later of the last change of its definition,
+    /// and the last change of its state there.
+    pub revision: Revision,
 }
 
 /// What an intent of a pad did in an environment: see [`send_intent`](crate::Host::send_intent).
@@ -24,7 +32,7 @@ pub struct EnvironmentRule {
 /// two people who press one pad to arm it both find it armed, and only the first press changed it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct IntentEffect {
-    /// The rule of the pad as the environment holds it now, with its state there.
+    /// The rule of the pad as the environment holds it now, with its state and its revision there.
     /// `None` when the pad points at no rule, which a disarm and a release of such a pad leave as it is.
     pub rule: Option<EnvironmentRule>,
     /// Whether the intent made the rule: the pad had none, so the intent gave it the live rule of its position.

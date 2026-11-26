@@ -3,18 +3,18 @@
 use gaslightmq_definition_api::Store;
 use gaslightmq_engine::ArmError;
 use gaslightmq_environment::EnvironmentName;
-use gaslightmq_rule::{ArmedRule, ResolvedRule, Rule, RuleName, RuleState};
-use gaslightmq_workspace::{Stores, WorkspaceContext};
+use gaslightmq_rule::{Rule, RuleName, RuleState};
+use gaslightmq_workspace::{Revision, Stores, WorkspaceContext};
 
-use super::{Host, Running, Unresolvable, unread};
+use super::{Host, Unresolvable, resolve, unread};
 use crate::{
-    CreateLiveRuleError, DeleteLiveRuleError, EnvironmentRule, EnvironmentRulesError, HostChange, KeepRuleError,
-    UpdateLiveRuleError,
+    CreateLiveRuleError, DeleteLiveRuleError, EnvironmentRule, EnvironmentRulesError, Expects, HostChange,
+    KeepRuleError, UpdateLiveRuleError,
 };
 
 impl<C: WorkspaceContext> Host<C> {
-    /// The rules of an environment, each with its state there: the rules of the workspace in the order of their
-    /// names, and then the live rules of the environment in the order of theirs.
+    /// The rules of an environment, each with its state and its revision there: the rules of the workspace in the
+    /// order of their names, and then the live rules of the environment in the order of theirs.
     ///
     /// # Errors
     ///
@@ -23,43 +23,42 @@ impl<C: WorkspaceContext> Host<C> {
     pub async fn rules_of(&self, environment: &EnvironmentName) -> Result<Vec<EnvironmentRule>, EnvironmentRulesError> {
         self.check_running(environment)
             .map_err(|environment| EnvironmentRulesError::NotRunning { environment })?;
-        let workspace_rules = {
-            let workspace = self.workspace.lock().await;
-            workspace.stores().rules().list().await
-        };
+        // The workspace stays as it is until the rules are read: each one has the revision of the definition read.
+        let workspace = self.workspace.lock().await;
+        let workspace_rules = workspace.stores().rules().list().await;
         let workspace_rules = workspace_rules.map_err(|error| EnvironmentRulesError::StoreFailed {
             environment: environment.clone(),
             reason: unread::<Rule>(error),
         })?;
-        let environments = self.environments();
-        let Some(running) = environments.get(environment) else {
-            return Err(EnvironmentRulesError::NotRunning {
-                environment: environment.clone(),
+        let not_running = |environment| EnvironmentRulesError::NotRunning { environment };
+        self.change_rules(environment, not_running, |running, revisions| {
+            let armed = running.engine.rules().snapshot();
+            let state = |name: &RuleName| {
+                if armed.get(name).is_some() {
+                    RuleState::Armed
+                } else {
+                    RuleState::Disarmed
+                }
+            };
+            let of_the_workspace = workspace_rules.into_iter().map(|rule| EnvironmentRule {
+                state: state(rule.name()),
+                // The later of the two: the last change of the definition, and the last change of the state here.
+                revision: revisions.of(rule.name()).max(workspace.revision(rule.name().clone())),
+                rule,
+                live: false,
             });
-        };
-        let armed = running.engine.rules().snapshot();
-        let state = |name: &RuleName| {
-            if armed.get(name).is_some() {
-                RuleState::Armed
-            } else {
-                RuleState::Disarmed
-            }
-        };
-        let of_the_workspace = workspace_rules.into_iter().map(|rule| EnvironmentRule {
-            state: state(rule.name()),
-            rule,
-            live: false,
-        });
-        let live = running.live.values().map(|rule| EnvironmentRule {
-            state: state(rule.name()),
-            rule: rule.clone(),
-            live: true,
-        });
-        Ok(of_the_workspace.chain(live).collect())
+            let live = running.live.values().map(|rule| EnvironmentRule {
+                state: state(rule.name()),
+                revision: revisions.of(rule.name()),
+                rule: rule.clone(),
+                live: true,
+            });
+            Ok(of_the_workspace.chain(live).collect())
+        })
     }
 
-    /// The rule of an environment that has the name, with its state there, or `None` when neither the workspace
-    /// nor the environment has a rule of that name.
+    /// The rule of an environment that has the name, with its state and its revision there, or `None` when neither
+    /// the workspace nor the environment has a rule of that name.
     ///
     /// # Errors
     ///
@@ -74,11 +73,11 @@ impl<C: WorkspaceContext> Host<C> {
         Ok(rules.into_iter().find(|rule| rule.rule.name() == name))
     }
 
-    /// Adds a live rule to an environment, disarmed, and returns it.
+    /// Adds a live rule to an environment, disarmed, and returns the revision it has there.
     ///
     /// The rule stays in the memory of the environment, and never in the workspace, until someone
     /// [keeps](Self::keep) it. It resolves against the workspace first, so a rule that could never work is no live
-    /// rule. Whoever follows the host learns of it.
+    /// rule. A create expects nothing: it refuses a name that is taken. Whoever follows the host learns of it.
     ///
     /// # Errors
     ///
@@ -92,15 +91,14 @@ impl<C: WorkspaceContext> Host<C> {
         &self,
         environment: &EnvironmentName,
         rule: Rule,
-    ) -> Result<Rule, CreateLiveRuleError> {
-        self.resolve_new_live_rule(environment, &rule).await?;
-        self.add_live_rule(environment, rule.clone(), |_| Ok(())).await?;
-        Ok(rule)
+    ) -> Result<Revision, CreateLiveRuleError> {
+        self.add_live_rule(environment, rule, false).await
     }
 
-    /// Adds a live rule to an environment and arms it, as one step, and returns the rule as it is armed.
+    /// Adds a live rule to an environment and arms it, as one step, and returns the revision it has there.
     ///
     /// The rule is a live rule of the environment and armed, or neither: a rule that does not arm is not added.
+    /// The two are one change, which takes one number.
     /// Everything else is as on [`create_live_rule`](Self::create_live_rule), and the rule arms as on
     /// [`arm`](Self::arm), above every rule that is armed in the environment.
     ///
@@ -112,116 +110,102 @@ impl<C: WorkspaceContext> Host<C> {
         &self,
         environment: &EnvironmentName,
         rule: Rule,
-    ) -> Result<ArmedRule, CreateLiveRuleError> {
-        let resolved = self.resolve_new_live_rule(environment, &rule).await?;
-        self.add_live_rule(environment, rule, |running| {
-            running
-                .engine
-                .rules()
-                .arm(resolved)
-                .map_err(|ArmError::AlreadyArmed { rule }| CreateLiveRuleError::NameTaken {
-                    environment: environment.clone(),
-                    rule,
-                })
-        })
-        .await
+    ) -> Result<Revision, CreateLiveRuleError> {
+        self.add_live_rule(environment, rule, true).await
     }
 
-    /// Resolves a rule that is to become a live rule of an environment against the workspace, in an environment that
-    /// runs. [`add_live_rule`](Self::add_live_rule) checks its name.
-    async fn resolve_new_live_rule(
-        &self,
-        environment: &EnvironmentName,
-        rule: &Rule,
-    ) -> Result<ResolvedRule, CreateLiveRuleError> {
-        let name = rule.name();
-        self.check_running(environment)
-            .map_err(|environment| CreateLiveRuleError::NotRunning { environment })?;
-        self.resolve(rule).await.map_err(|unresolvable| match unresolvable {
-            Unresolvable::StoreFailed { reason } => CreateLiveRuleError::StoreFailed {
-                rule: name.clone(),
-                reason,
-            },
-            Unresolvable::WorkspaceInvalid { reason } => CreateLiveRuleError::WorkspaceInvalid {
-                rule: name.clone(),
-                reason,
-            },
-            Unresolvable::Unresolved { error } => CreateLiveRuleError::Unresolved { error },
-        })
-    }
-
-    /// Puts a rule among the live rules of an environment, once `arm` did what the rule needs there first,
-    /// and tells whoever follows the host. Returns what `arm` returned.
+    /// Resolves a rule against the workspace, puts it among the live rules of an environment, armed when `armed`
+    /// says so, and tells whoever follows the host. Returns the revision that the rule has there.
     ///
-    /// `arm` runs while nobody else reads or changes the environments, so the rule is armed and a live rule from
-    /// the same moment. When it fails, the rule is no live rule.
+    /// The rule arms while nobody else reads or changes the environments, so it is armed and a live rule from the
+    /// same moment. When it does not arm, it is no live rule.
     ///
     /// The workspace stays taken from the check of the name until the live rule is in, so no rule of the workspace
     /// gets its name in between. Creating a rule of the workspace takes it too, and checks the live rules.
-    async fn add_live_rule<A>(
+    async fn add_live_rule(
         &self,
         environment: &EnvironmentName,
         rule: Rule,
-        arm: impl FnOnce(&Running) -> Result<A, CreateLiveRuleError>,
-    ) -> Result<A, CreateLiveRuleError> {
+        armed: bool,
+    ) -> Result<Revision, CreateLiveRuleError> {
         let name = rule.name().clone();
-        let armed = {
-            let workspace = self.workspace.lock().await;
-            match workspace.stores().rules().get(&name).await {
-                Ok(None) => {}
-                Ok(Some(_)) => {
-                    return Err(CreateLiveRuleError::NameTaken {
-                        environment: environment.clone(),
-                        rule: name,
-                    });
-                }
-                Err(error) => {
-                    return Err(CreateLiveRuleError::StoreFailed {
-                        rule: name,
-                        reason: unread::<Rule>(error),
-                    });
-                }
-            }
-            let mut environments = self.environments();
-            let Some(running) = environments.get_mut(environment) else {
-                return Err(CreateLiveRuleError::NotRunning {
-                    environment: environment.clone(),
-                });
-            };
-            if running.live.contains_key(&name) {
-                return Err(CreateLiveRuleError::NameTaken {
-                    environment: environment.clone(),
-                    rule: name,
-                });
-            }
-            let armed = arm(running)?;
-            running.live.insert(name.clone(), rule);
-            armed
+        let taken = || CreateLiveRuleError::NameTaken {
+            environment: environment.clone(),
+            rule: name.clone(),
         };
+        self.check_running(environment)
+            .map_err(|environment| CreateLiveRuleError::NotRunning { environment })?;
+        // The workspace stays as it is until the environment holds the rule: nobody creates a rule of the workspace
+        // under the name in between.
+        let workspace = self.workspace.lock().await;
+        match workspace.stores().rules().get(&name).await {
+            Ok(None) => {}
+            Ok(Some(_)) => return Err(taken()),
+            Err(error) => {
+                return Err(CreateLiveRuleError::StoreFailed {
+                    rule: name.clone(),
+                    reason: unread::<Rule>(error),
+                });
+            }
+        }
+        let resolved = resolve(&workspace, &rule)
+            .await
+            .map_err(|unresolvable| match unresolvable {
+                Unresolvable::StoreFailed { reason } => CreateLiveRuleError::StoreFailed {
+                    rule: name.clone(),
+                    reason,
+                },
+                Unresolvable::WorkspaceInvalid { reason } => CreateLiveRuleError::WorkspaceInvalid {
+                    rule: name.clone(),
+                    reason,
+                },
+                Unresolvable::Unresolved { error } => CreateLiveRuleError::Unresolved { error },
+            })?;
+        let not_running = |environment| CreateLiveRuleError::NotRunning { environment };
+        let revision = self.change_rules(environment, not_running, |running, revisions| {
+            if running.live.contains_key(&name) {
+                return Err(taken());
+            }
+            let rules = running.engine.rules();
+            if armed {
+                rules.arm(resolved).map_err(|ArmError::AlreadyArmed { .. }| taken())?;
+            }
+            running.live.insert(name.clone(), rule);
+            // Making the rule and arming it are one change, and take one number.
+            Ok(revisions.count(&name, &rules.snapshot()))
+        })?;
+        drop(workspace);
         self.publish(HostChange::RuleChanged {
             environment: environment.clone(),
             rule: name,
         });
-        Ok(armed)
+        Ok(revision)
     }
 
-    /// Replaces the live rule of an environment that has the name of `rule`, and returns it as the environment holds
-    /// it now.
+    /// Replaces the live rule of an environment that has the name of `rule`, and returns the revision it has there
+    /// from then on.
     ///
     /// Everything but the name changes. A rule that is armed stays armed with the change, and none of its counters
-    /// resets. Whoever follows the host learns of it.
+    /// resets. With `expects`, the rule only changes while it has the revision that its sender saw.
+    /// Whoever follows the host learns of the change.
     ///
     /// # Errors
     ///
+    /// - [`UpdateLiveRuleError::OtherRun`] when the change expects a revision of another run.
     /// - [`UpdateLiveRuleError::NotRunning`] when no environment of that name runs.
     /// - [`UpdateLiveRuleError::NotFound`] when the environment has no live rule of that name.
     /// - [`UpdateLiveRuleError::StoreFailed`], [`UpdateLiveRuleError::WorkspaceInvalid`] and
     ///   [`UpdateLiveRuleError::Unresolved`] when the rule does not resolve against the workspace.
+    /// - [`UpdateLiveRuleError::Changed`] when the live rule has another revision than the change expects.
     pub async fn update_live_rule(
         &self,
         environment: &EnvironmentName,
         rule: Rule,
-    ) -> Result<Rule, UpdateLiveRuleError> {
+        expects: Option<Expects>,
+    ) -> Result<Revision, UpdateLiveRuleError> {
+        let expects = self
+            .expected(expects)
+            .map_err(|run| UpdateLiveRuleError::OtherRun { run })?;
         let name = rule.name().clone();
         let not_found = || UpdateLiveRuleError::NotFound {
             environment: environment.clone(),
@@ -238,117 +222,160 @@ impl<C: WorkspaceContext> Host<C> {
                 return Err(not_found());
             }
         }
-        let resolved = self.resolve(&rule).await.map_err(|unresolvable| match unresolvable {
-            Unresolvable::StoreFailed { reason } => UpdateLiveRuleError::StoreFailed {
-                rule: name.clone(),
-                reason,
-            },
-            Unresolvable::WorkspaceInvalid { reason } => UpdateLiveRuleError::WorkspaceInvalid {
-                rule: name.clone(),
-                reason,
-            },
-            Unresolvable::Unresolved { error } => UpdateLiveRuleError::Unresolved { error },
-        })?;
-        {
-            let mut environments = self.environments();
-            let Some(running) = environments.get_mut(environment) else {
-                return Err(UpdateLiveRuleError::NotRunning {
-                    environment: environment.clone(),
-                });
-            };
+        // The workspace stays as it is until the rule changed: what it resolved against is what it runs against.
+        let workspace = self.workspace.lock().await;
+        let resolved = resolve(&workspace, &rule)
+            .await
+            .map_err(|unresolvable| match unresolvable {
+                Unresolvable::StoreFailed { reason } => UpdateLiveRuleError::StoreFailed {
+                    rule: name.clone(),
+                    reason,
+                },
+                Unresolvable::WorkspaceInvalid { reason } => UpdateLiveRuleError::WorkspaceInvalid {
+                    rule: name.clone(),
+                    reason,
+                },
+                Unresolvable::Unresolved { error } => UpdateLiveRuleError::Unresolved { error },
+            })?;
+        let not_running = |environment| UpdateLiveRuleError::NotRunning { environment };
+        let revision = self.change_rules(environment, not_running, |running, revisions| {
             let Some(live) = running.live.get_mut(&name) else {
                 return Err(not_found());
             };
-            *live = rule.clone();
+            let revision = revisions.of(&name);
+            if expects.is_some_and(|expected| expected != revision) {
+                return Err(UpdateLiveRuleError::Changed {
+                    environment: environment.clone(),
+                    rule: name.clone(),
+                    revision,
+                });
+            }
+            *live = rule;
+            let armed = running.engine.rules();
             // A rule that is not armed has no arming to keep, and arms with the change when someone arms it.
-            let _ = running.engine.rules().retune(resolved);
-        }
+            let _ = armed.retune(resolved);
+            Ok(revisions.count(&name, &armed.snapshot()))
+        })?;
+        drop(workspace);
         self.publish(HostChange::RuleChanged {
             environment: environment.clone(),
             rule: name,
         });
-        Ok(rule)
+        Ok(revision)
     }
 
-    /// Removes a live rule from an environment, armed or not. Whoever follows the host learns of it.
+    /// Removes a live rule from an environment, armed or not, and returns the revision of the delete.
+    ///
+    /// With `expects`, the rule only goes while it has the revision that its sender saw.
+    /// Nothing has the revision of the delete afterwards: a live rule that someone makes again under the name has a
+    /// higher one. Whoever follows the host learns of the change.
     ///
     /// # Errors
     ///
+    /// - [`DeleteLiveRuleError::OtherRun`] when the change expects a revision of another run.
     /// - [`DeleteLiveRuleError::NotRunning`] when no environment of that name runs.
     /// - [`DeleteLiveRuleError::NotFound`] when the environment has no live rule of that name.
-    pub fn delete_live_rule(&self, environment: &EnvironmentName, name: &RuleName) -> Result<(), DeleteLiveRuleError> {
-        {
-            let mut environments = self.environments();
-            let Some(running) = environments.get_mut(environment) else {
-                return Err(DeleteLiveRuleError::NotRunning {
-                    environment: environment.clone(),
-                });
-            };
-            if running.live.remove(name).is_none() {
+    /// - [`DeleteLiveRuleError::Changed`] when the live rule has another revision than the change expects.
+    pub fn delete_live_rule(
+        &self,
+        environment: &EnvironmentName,
+        name: &RuleName,
+        expects: Option<Expects>,
+    ) -> Result<Revision, DeleteLiveRuleError> {
+        let expects = self
+            .expected(expects)
+            .map_err(|run| DeleteLiveRuleError::OtherRun { run })?;
+        let not_running = |environment| DeleteLiveRuleError::NotRunning { environment };
+        let revision = self.change_rules(environment, not_running, |running, revisions| {
+            if !running.live.contains_key(name) {
                 return Err(DeleteLiveRuleError::NotFound {
                     environment: environment.clone(),
                     rule: name.clone(),
                 });
             }
+            let revision = revisions.of(name);
+            if expects.is_some_and(|expected| expected != revision) {
+                return Err(DeleteLiveRuleError::Changed {
+                    environment: environment.clone(),
+                    rule: name.clone(),
+                    revision,
+                });
+            }
+            running.live.remove(name);
             // A rule that is not armed has nothing to disarm.
             let _ = running.engine.rules().disarm(name);
-        }
+            Ok(revisions.count_removed(name))
+        })?;
         self.publish(HostChange::RuleRemoved {
             environment: environment.clone(),
             rule: name.clone(),
         });
-        Ok(())
+        Ok(revision)
     }
 
-    /// Keeps a live rule of an environment in the workspace, under its name, and returns it as the workspace holds it.
+    /// Keeps a live rule of an environment in the workspace, under its name, and returns the revision that the rule
+    /// has from then on: in the workspace, and in the environment.
     ///
     /// The rule stays in the state it has in the environment, and every other environment holds it disarmed,
     /// as every rule of the workspace. Whoever follows the host learns that the live rule left the environment,
     /// that the workspace has the rule, and the state of the rule in the environment, in that order.
     ///
+    /// With `expects`, the workspace only gets the live rule that its sender saw: a rule that someone changed since,
+    /// as with a turn of an encoder, is not kept.
+    ///
     /// # Errors
     ///
+    /// - [`KeepRuleError::OtherRun`] when the change expects a revision of another run.
     /// - [`KeepRuleError::NotRunning`] when no environment of that name runs.
     /// - [`KeepRuleError::NotFound`] when the environment has no live rule of that name.
+    /// - [`KeepRuleError::Changed`] when the live rule has another revision than the change expects.
     /// - [`KeepRuleError::NameTaken`] when a live rule of another environment that runs has the name.
     ///   Whoever wants the rule in the workspace deletes that live rule first.
     /// - [`KeepRuleError::NotKept`] when the workspace did not take the rule.
-    pub async fn keep(&self, environment: &EnvironmentName, name: &RuleName) -> Result<Rule, KeepRuleError> {
-        let live = {
-            let environments = self.environments();
-            let Some(running) = environments.get(environment) else {
-                return Err(KeepRuleError::NotRunning {
+    pub async fn keep(
+        &self,
+        environment: &EnvironmentName,
+        name: &RuleName,
+        expects: Option<Expects>,
+    ) -> Result<Revision, KeepRuleError> {
+        let expects = self.expected(expects).map_err(|run| KeepRuleError::OtherRun { run })?;
+        // Whoever changes a live rule resolves it against the workspace first, so the rule stays as it is read here
+        // until the workspace holds it. The workspace also stays taken from the check of the name to the write,
+        // as it does while a live rule goes in.
+        let mut workspace = self.workspace.lock().await;
+        let not_running = |environment| KeepRuleError::NotRunning { environment };
+        let rule = self.change_rules(environment, not_running, |running, revisions| {
+            let Some(rule) = running.live.get(name) else {
+                return Err(KeepRuleError::NotFound {
                     environment: environment.clone(),
+                    rule: name.clone(),
                 });
             };
-            running.live.get(name).cloned()
-        };
-        let Some(rule) = live else {
-            return Err(KeepRuleError::NotFound {
-                environment: environment.clone(),
-                rule: name.clone(),
-            });
-        };
-        {
-            // The workspace stays taken from the check to the write, as it does while a live rule goes in.
-            let mut workspace = self.workspace.lock().await;
-            if let Some(holder) = self.live_rule_of_another(name, Some(environment)) {
-                return Err(KeepRuleError::NameTaken {
+            let revision = revisions.of(name);
+            if expects.is_some_and(|expected| expected != revision) {
+                return Err(KeepRuleError::Changed {
+                    environment: environment.clone(),
                     rule: name.clone(),
-                    environment: holder,
+                    revision,
                 });
             }
-            workspace
-                .create(rule.clone())
-                .await
-                .map_err(|error| KeepRuleError::NotKept {
-                    rule: name.clone(),
-                    error,
-                })?;
+            Ok(rule.clone())
+        })?;
+        if let Some(holder) = self.live_rule_of_another(name, Some(environment)) {
+            return Err(KeepRuleError::NameTaken {
+                rule: name.clone(),
+                environment: holder,
+            });
         }
+        // The keep is one change: the rule has its number in the workspace, and in the environment that held it.
+        let revision = workspace.create(rule).await.map_err(|error| KeepRuleError::NotKept {
+            rule: name.clone(),
+            error,
+        })?;
         if let Some(running) = self.environments().get_mut(environment) {
             running.live.remove(name);
         }
+        drop(workspace);
         self.publish(HostChange::RuleRemoved {
             environment: environment.clone(),
             rule: name.clone(),
@@ -360,7 +387,7 @@ impl<C: WorkspaceContext> Host<C> {
             environment: environment.clone(),
             rule: name.clone(),
         });
-        Ok(rule)
+        Ok(revision)
     }
 
     /// The environment that runs and holds a live rule of that name, other than `except`.

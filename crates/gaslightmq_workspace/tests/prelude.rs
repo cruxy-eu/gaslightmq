@@ -71,13 +71,16 @@ mod next_to_the_others {
         let label: &str = label_of::<Rule>();
         let mut workspace: Workspace<_> = Workspace::new(MemoryContext::new());
         let blackhole = Preset::new("blackhole".parse().unwrap(), LieDefinition::Silence);
-        futures::executor::block_on(workspace.create(blackhole)).unwrap();
+        let counter: RevisionCounter = workspace.counter().clone();
+        let created: Revision = futures::executor::block_on(workspace.create(blackhole)).unwrap();
         let held = presets_of(&workspace);
 
         vec![
             name.to_string(),
             label.to_owned(),
             held.iter().map(ToString::to_string).collect(),
+            // The load took the first number, the create the next one, and this change takes the one after it.
+            format!("{} < {created} < {}", RevisionCounter::FIRST, counter.next_revision()),
         ]
     }
 
@@ -107,6 +110,10 @@ mod next_to_the_others {
                 errors: vec![unknown.clone()],
             }),
             message_of(UpdateError::NotFound { name: rule.clone() }),
+            message_of(UpdateError::Changed {
+                name: rule.clone(),
+                revision: RevisionCounter::FIRST,
+            }),
             message_of(DeleteError::InUse {
                 name: selector,
                 users: vec![rule],
@@ -120,7 +127,12 @@ mod next_to_the_others {
 fn the_prelude_names_every_item_next_to_the_other_preludes() {
     assert_eq!(
         next_to_the_others::every_item(),
-        ["rule \"slow-order-producers\"", "rule", "preset \"blackhole\"",]
+        [
+            "rule \"slow-order-producers\"",
+            "rule",
+            "preset \"blackhole\"",
+            "1 < 2 < 3"
+        ]
     );
 }
 
@@ -136,6 +148,7 @@ fn the_prelude_names_the_error_of_every_type() {
             "rule \"slow-order-producers\" does not fit the workspace: \
              rule \"slow-order-producers\" refers to selector \"order-producers\", which does not exist",
             "rule \"slow-order-producers\" does not exist",
+            "rule \"slow-order-producers\" changed since: it has revision 1 now",
             "selector \"order-producers\" is used by rule \"slow-order-producers\"",
             "the definitions do not fit each other: \
              rule \"slow-order-producers\" refers to selector \"order-producers\", which does not exist",

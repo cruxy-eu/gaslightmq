@@ -12,5 +12,6 @@ mod support;
 
 mod creating;
 mod deleting;
+mod revisions;
 mod updating;
 mod validating;

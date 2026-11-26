@@ -66,6 +66,6 @@ pub use configuration::UiConfiguration;
 pub use filter::TrafficFilter;
 pub use following::Following;
 pub use live::{Link, Live};
-pub use process::{Process, rule_label, rule_status};
+pub use process::{Process, WorkspaceDefinitions, rule_label, rule_status};
 pub use theme::ThemeChoice;
 pub use traffic::Traffic;

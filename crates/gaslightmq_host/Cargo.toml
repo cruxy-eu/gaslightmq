@@ -9,7 +9,7 @@ workspace = true
 
 # The modules that hold values and never wait: `cargo xtask sans-io` holds them to that.
 [package.metadata.gaslightmq]
-sans_io_modules = ["configuration", "error", "holds"]
+sans_io_modules = ["configuration", "error", "holds", "run"]
 
 [dependencies]
 gaslightmq_backend.workspace = true
@@ -24,6 +24,7 @@ gaslightmq_field.workspace = true
 gaslightmq_incident.workspace = true
 gaslightmq_lie_api.workspace = true
 gaslightmq_quick_inject.workspace = true
+gaslightmq_resource.workspace = true
 gaslightmq_rule.workspace = true
 gaslightmq_selector.workspace = true
 gaslightmq_surface.workspace = true

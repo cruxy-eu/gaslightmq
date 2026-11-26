@@ -108,6 +108,7 @@ mod tests {
         ArmRule {
             environment: "orders-sim".parse().expect("an environment name"),
             rule: "delay-1s-on-order-producers".parse().expect("a rule name"),
+            expects: None,
         }
     }
 

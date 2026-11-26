@@ -9,9 +9,12 @@
 //! | [`HostConfiguration`] | What holds for every environment of a host: how it reads a ⌘K sentence. |
 //! | [`EnvironmentConfiguration`] | What a host starts one environment with: the configuration of its proxy and of its backend. |
 //! | [`EnvironmentStartError`], [`NotRunningError`] | Why an environment did not start, and that an environment does not run. |
-//! | [`ArmRuleError`], [`FireRuleError`], [`ReadSentenceError`] | Why a rule was not armed or fired, and why a sentence was not read. |
+//! | [`RunId`], [`RunIdError`] | The ID of the run of a host: of one life of the process. |
+//! | [`Expects`] | What a change expects of what it changes: the run that its sender read from, and the revision that it saw. |
+//! | [`UpdateDefinitionError`], [`DeleteDefinitionError`] | Why a definition of the workspace was not updated or deleted. |
+//! | [`ArmRuleError`], [`DisarmRuleError`], [`FireRuleError`], [`ReadSentenceError`] | Why a rule was not armed, disarmed or fired, and why a sentence was not read. |
 //! | [`EnvironmentConfigurationError`] | Why an environment has no configuration that a host can start. |
-//! | [`EnvironmentRule`] | A rule of an environment, and its state there: a rule of the workspace, or a live rule. |
+//! | [`EnvironmentRule`] | A rule of an environment, with its state and its revision there: a rule of the workspace, or a live rule. |
 //! | [`IntentEffect`] | What an intent of a pad did: the rule it acted on, whether it made or changed it, and the hold it added. |
 //! | [`HostChange`], [`HostChanges`] | One change of the host, whoever made it, and the changes for one follower. |
 //! | [`ChangeBacklog`], [`CallBacklog`] | How many changes, and how many calls, a host keeps for a follower that falls behind. |
@@ -31,7 +34,12 @@
 //!
 //! # #[tokio::main(flavor = "current_thread")]
 //! # async fn main() -> Result<(), EnvironmentStartError> {
-//! let host = Host::new(HostConfiguration::default(), MemoryContext::new(), Lies::of_every_build());
+//! let host = Host::new(
+//!     HostConfiguration::default(),
+//!     MemoryContext::new(),
+//!     Lies::of_every_build(),
+//!     RunId::from_random_bits(0x4be0_643f_1d98_573b_97cd_ca98_a653_47dd),
+//! );
 //!
 //! // A proxy in front of the staging cluster, as `environments/staging-proxy.yaml` describes it.
 //! let listen = Listeners::new(
@@ -73,6 +81,10 @@
 //! - **One start or stop at a time.**
 //!   The host checks the listeners and opens them as one step, so two starts never claim one port.
 //!   What the environments that run hand over, and their rules, do not wait for a start.
+//! - **Whatever someone changes has a revision.**
+//!   One counter of the process gives the [`Revision`](gaslightmq_workspace::Revision) of every definition and of
+//!   every rule in an environment. A change answers with the revision it left, and it can say what it [`Expects`]:
+//!   a change that expects another revision, or a revision of another [run](RunId), changes nothing.
 //!
 //! The host does not care where an environment comes from.
 //! [`EnvironmentConfiguration::new`] takes an environment of the workspace as well as one that the flags of a
@@ -103,21 +115,28 @@
 //! | [`EnvironmentConfiguration::new`] | [`EnvironmentConfigurationError`] | The environment runs a broker. |
 //! | [`Host::start`] | [`EnvironmentStartError`] | The environment runs already, its listeners meet those of another, or its backend or its proxy did not start. |
 //! | [`Host::stop`], and every question about an environment that runs | [`NotRunningError`] | No environment of that name runs. |
-//! | [`Host::arm`] | [`ArmRuleError`] | The environment does not run, the workspace could not be read or is not valid, the rule does not resolve, or it is armed already. |
+//! | [`Host::update`] | [`UpdateDefinitionError`] | The change expects another run, or the workspace did not take the update. |
+//! | [`Host::delete`] | [`DeleteDefinitionError`] | The change expects another run, or the workspace did not take the delete. |
+//! | [`Host::arm`] | [`ArmRuleError`] | The environment does not run, the workspace could not be read or is not valid, the rule does not resolve, it is armed already, or it changed since. |
+//! | [`Host::disarm`] | [`DisarmRuleError`] | The environment does not run, the rule is not armed, or it changed since. |
 //! | [`Host::fire`] | [`FireRuleError`] | The environment does not run, the rule is not armed or fires no more, its incident needs a call, or the backend rejects it. |
 //! | [`Host::read_sentence`] | [`ReadSentenceError`] | The environment does not run, or the workspace could not be read. |
 //! | [`Host::rules_of`], [`Host::rule_of`] | [`EnvironmentRulesError`] | The environment does not run, or the rules could not be read. |
 //! | [`Host::create_live_rule`], [`Host::create_live_rule_armed`] | [`CreateLiveRuleError`] | The environment does not run, a rule has the name, or the rule does not resolve. |
-//! | [`Host::update_live_rule`] | [`UpdateLiveRuleError`] | The environment does not run, it has no live rule of the name, or the rule does not resolve. |
-//! | [`Host::delete_live_rule`] | [`DeleteLiveRuleError`] | The environment does not run, or it has no live rule of the name. |
+//! | [`Host::update_live_rule`] | [`UpdateLiveRuleError`] | The environment does not run, it has no live rule of the name, the rule does not resolve, or it changed since. |
+//! | [`Host::delete_live_rule`] | [`DeleteLiveRuleError`] | The environment does not run, it has no live rule of the name, or it changed since. |
 //! | [`Host::create`] | [`CreateDefinitionError`] | A live rule of an environment that runs has the name of the rule, or the workspace did not take the definition. |
-//! | [`Host::keep`] | [`KeepRuleError`] | The environment does not run, it has no live rule of the name, a live rule of another environment has the name, or the workspace did not take it. |
+//! | [`Host::keep`] | [`KeepRuleError`] | The environment does not run, it has no live rule of the name, it changed since, a live rule of another environment has the name, or the workspace did not take it. |
 //! | [`Host::send_intent`] | [`IntentError`] | The environment does not run, the layout does not exist, a store could not read, or the host cannot act on the intent. An intent that finds the state it wants changes nothing, and is no error. |
 //! | [`Host::close_session`] | [`CloseSessionError`] | The environment does not run, or no session is open on the connection. |
 //! | [`Host::follow_calls`] | [`FollowCallsError`] | The environment does not run, the selectors could not be read, or the selector does not resolve. |
 //! | [`CallBacklog::new`] | [`CallBacklogError`] | The backlog is zero, or larger than the largest. |
 //! | [`HostChanges::next`] | [`HostChangesError`] | The follower fell behind, or the host is gone. |
 //! | [`ChangeBacklog::new`] | [`ChangeBacklogError`] | The backlog is zero, or larger than the largest. |
+//! | [`RunId::new`] | [`RunIdError`] | The text is no run ID: it has another length than 32, or holds what is no hexadecimal digit in lower case. |
+//!
+//! A change that names what it [`Expects`] fails with `Changed` when the thing has another revision,
+//! and with `OtherRun` when the revision is of another run. Either way it changed nothing.
 //!
 //! A variant is something its caller decides on, and the rest is text.
 //! The error of the backend, of the proxy and of a rule is kept as it is, in a field `error`,
@@ -138,7 +157,9 @@ mod configuration;
 mod error;
 mod holds;
 mod host;
+mod revisions;
 mod rules;
+mod run;
 
 pub use calls::CallSubscription;
 pub use changes::{HostChange, HostChanges, HostChangesError};
@@ -147,12 +168,14 @@ pub use configuration::{
     EnvironmentConfigurationError, HostConfiguration,
 };
 pub use error::{
-    ArmRuleError, CloseSessionError, CreateDefinitionError, CreateLiveRuleError, DeleteLiveRuleError,
-    EnvironmentRulesError, EnvironmentStartError, FireRuleError, FollowCallsError, IntentError, KeepRuleError,
-    NotRunningError, ReadSentenceError, UpdateLiveRuleError,
+    ArmRuleError, CloseSessionError, CreateDefinitionError, CreateLiveRuleError, DeleteDefinitionError,
+    DeleteLiveRuleError, DisarmRuleError, EnvironmentRulesError, EnvironmentStartError, FireRuleError,
+    FollowCallsError, IntentError, KeepRuleError, NotRunningError, ReadSentenceError, UpdateDefinitionError,
+    UpdateLiveRuleError,
 };
 pub use host::Host;
 pub use rules::{EnvironmentRule, IntentEffect};
+pub use run::{Expects, RunId, RunIdError};
 
 /// Every item of this crate.
 ///
@@ -172,9 +195,10 @@ pub mod prelude {
     #[doc(no_inline)]
     pub use crate::{
         ArmRuleError, CallBacklog, CallBacklogError, CallSubscription, ChangeBacklog, ChangeBacklogError,
-        CloseSessionError, CreateDefinitionError, CreateLiveRuleError, DeleteLiveRuleError, EnvironmentConfiguration,
-        EnvironmentConfigurationError, EnvironmentRule, EnvironmentRulesError, EnvironmentStartError, FireRuleError,
-        FollowCallsError, Host, HostChange, HostChanges, HostChangesError, HostConfiguration, IntentEffect,
-        IntentError, KeepRuleError, NotRunningError, ReadSentenceError, UpdateLiveRuleError,
+        CloseSessionError, CreateDefinitionError, CreateLiveRuleError, DeleteDefinitionError, DeleteLiveRuleError,
+        DisarmRuleError, EnvironmentConfiguration, EnvironmentConfigurationError, EnvironmentRule,
+        EnvironmentRulesError, EnvironmentStartError, Expects, FireRuleError, FollowCallsError, Host, HostChange,
+        HostChanges, HostChangesError, HostConfiguration, IntentEffect, IntentError, KeepRuleError, NotRunningError,
+        ReadSentenceError, RunId, RunIdError, UpdateDefinitionError, UpdateLiveRuleError,
     };
 }

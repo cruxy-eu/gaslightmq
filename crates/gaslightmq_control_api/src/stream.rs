@@ -8,8 +8,8 @@ use gaslightmq_selector::SelectorRef;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    AnyDefinition, BackendStatus, DefinitionRef, Definitions, RuleStatus, SessionCloser, SessionIdentity,
-    SessionStatus, Stats,
+    AnyDefinition, BackendStatus, DefinitionRef, Definitions, Revision, RuleStatus, RunId, SessionCloser,
+    SessionIdentity, SessionStatus, Stats,
 };
 
 /// One message of the live stream, from the control plane to a client.
@@ -18,6 +18,11 @@ use crate::{
 /// Every message after it is one change to that state, or one call.
 /// A message about something live names its environment.
 /// A client that applies every change to the snapshot holds what the process holds.
+///
+/// Whatever has a [`Revision`] comes with it: a definition, and a rule in an environment.
+/// A message is a state, and the later revision is the newer state: a client that already holds a later revision
+/// of a thing, from the answer to its own change, drops a message that brings an earlier one.
+/// A snapshot that names another [run](ProcessState::run) is another process, and the client drops what it held.
 ///
 /// With `serde`, a message is a map whose `message` key says which one it is:
 /// `{ "message": "environment-started", "environment": "orders-sim" }`.
@@ -41,8 +46,11 @@ pub enum StreamMessage {
         environment: EnvironmentName,
         rule: RuleName,
     },
-    /// Someone created or updated a definition of the workspace.
-    DefinitionChanged { definition: AnyDefinition },
+    /// Someone created or updated a definition of the workspace. `revision` is the one it has from here on.
+    DefinitionChanged {
+        definition: AnyDefinition,
+        revision: Revision,
+    },
     /// Someone deleted a definition of the workspace.
     DefinitionDeleted { name: DefinitionRef },
     /// A client connected.
@@ -86,10 +94,15 @@ pub enum StreamMessage {
 }
 
 /// The whole state of a process, which a client gets when it connects.
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+///
+/// It names the run of the process. Every revision in it, and in every message and answer after it, means something
+/// in that run, and in no other.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ProcessState {
-    /// Every definition of the workspace, which every environment shares.
+    /// The run of the process: this life of it, from its start to its stop.
+    pub run: RunId,
+    /// Every definition of the workspace, which every environment shares, each with its revision.
     pub definitions: Definitions,
     /// Every environment that runs, with what is live in it.
     pub environments: Vec<RunningEnvironment>,
@@ -103,7 +116,8 @@ pub struct RunningEnvironment {
     pub environment: EnvironmentName,
     /// The backend of the environment.
     pub backend: BackendStatus,
-    /// The rules of the environment with their state: the rules of the workspace, and the live rules.
+    /// The rules of the environment with their state and their revision there: the rules of the workspace,
+    /// and the live rules.
     pub rules: Vec<RuleStatus>,
     /// The sessions that are open.
     pub sessions: Vec<SessionStatus>,

@@ -41,7 +41,12 @@ pub enum Link {
 /// live.opened();
 ///
 /// // Nothing runs yet, so the UI follows no calls.
-/// live.apply(StreamMessage::Snapshot(ProcessState::default()));
+/// let snapshot = ProcessState {
+///     run: "4be0643f1d98573b97cdca98a65347dd".parse().expect("a run ID"),
+///     definitions: Definitions::default(),
+///     environments: Vec::new(),
+/// };
+/// live.apply(StreamMessage::Snapshot(snapshot));
 /// assert_eq!(live.next_subscription(), None);
 /// ```
 #[derive(Debug, Clone, PartialEq)]

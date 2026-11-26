@@ -12,6 +12,8 @@
 //! | [`Stores`] | The five stores that a workspace works over, one for each kind. |
 //! | [`WorkspaceDefinition`] | A definition of a kind that a workspace holds. |
 //! | [`DefinitionName`] | The name of one definition of any kind, such as `rule "slow-order-producers"`. |
+//! | [`Revision`] | Which state of a definition someone saw: the number of the change that last created or updated it. |
+//! | [`RevisionCounter`] | The counter of the process, which gives the revision of every change. |
 //! | [`WorkspaceError`] | One thing that keeps definitions from fitting each other. |
 //! | [`CreateError`], [`UpdateError`], [`DeleteError`] | Why a workspace did not make a change. |
 //! | [`ValidationError`] | Why the definitions of a workspace are not valid. |
@@ -55,6 +57,20 @@
 //!
 //! An environment names a world, and no store holds worlds yet, so nothing checks that name.
 //!
+//! # Revisions
+//!
+//! A definition holds what a person writes, and no store keeps anything else.
+//! The workspace keeps the [`Revision`] of every definition in memory, beside the definition,
+//! and it holds the one [`RevisionCounter`] of the process.
+//!
+//! - **Every change takes the next number**, whoever makes it: the load, a create, an update and a delete,
+//!   and whatever changes outside the workspace and takes its number from [`Workspace::counter`].
+//! - **A number never comes back.** A definition that someone deletes and makes again under its name has a
+//!   higher revision than the one that went.
+//! - **A change can name the revision it expects.** An update or a delete that expects another revision than the
+//!   definition has changes nothing, and says which revision the definition has now. Without one, the last change wins.
+//! - **No file holds a revision.** The counter starts again with every process.
+//!
 //! # Errors
 //!
 //! Each thing that someone asks of a workspace has an error of its own, because its caller does something else
@@ -63,8 +79,8 @@
 //! | Asked | Error | What is wrong |
 //! |---|---|---|
 //! | [`Workspace::create`] | [`CreateError`] | The name is taken, the definition does not fit the others, or a store failed. |
-//! | [`Workspace::update`] | [`UpdateError`] | No definition has the name, the definition does not fit the others, or a store failed. |
-//! | [`Workspace::delete`] | [`DeleteError`] | No definition has the name, other definitions use it, or a store failed. |
+//! | [`Workspace::update`] | [`UpdateError`] | No definition has the name, it changed since, the definition does not fit the others, or a store failed. |
+//! | [`Workspace::delete`] | [`DeleteError`] | No definition has the name, it changed since, other definitions use it, or a store failed. |
 //! | [`Workspace::validate`] | [`ValidationError`] | The definitions do not fit each other, or a store failed. |
 //!
 //! A [`WorkspaceError`] is one thing that does not fit, and an error that says so holds every one of them.
@@ -88,6 +104,7 @@ mod kind;
 #[cfg(feature = "memory")]
 mod memory;
 mod name;
+mod revision;
 mod stores;
 mod workspace;
 
@@ -97,6 +114,7 @@ pub use kind::WorkspaceDefinition;
 #[cfg(feature = "memory")]
 pub use memory::{MemoryContext, MemoryStores};
 pub use name::DefinitionName;
+pub use revision::{Revision, RevisionCounter};
 pub use stores::Stores;
 pub use workspace::Workspace;
 
@@ -118,8 +136,8 @@ pub use workspace::Workspace;
 pub mod prelude {
     #[doc(no_inline)]
     pub use crate::{
-        CreateError, DefinitionName, DeleteError, Stores, UpdateError, ValidationError, Workspace, WorkspaceContext,
-        WorkspaceDefinition, WorkspaceError,
+        CreateError, DefinitionName, DeleteError, Revision, RevisionCounter, Stores, UpdateError, ValidationError,
+        Workspace, WorkspaceContext, WorkspaceDefinition, WorkspaceError,
     };
     #[cfg(feature = "memory")]
     #[doc(no_inline)]

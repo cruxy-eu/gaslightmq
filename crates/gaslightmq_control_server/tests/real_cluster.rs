@@ -19,6 +19,8 @@ use gaslightmq_control_api::field::{Endpoint, Field, FieldSource};
 use gaslightmq_control_api::kernel::{ApiKey, ClientId};
 use gaslightmq_control_api::lie::TimingLie;
 use gaslightmq_control_api::prelude::*;
+// The revision of the control plane, and not the one of the workspace behind it, whose prelude names its own.
+use gaslightmq_control_api::Revision;
 use gaslightmq_control_api::rule::{Preset, PresetSet, Rule, RuleState};
 use gaslightmq_control_api::selector::{Condition, Conditions, Selector, SelectorRef, SelectorSet};
 use gaslightmq_control_api::surface::{
@@ -48,6 +50,9 @@ const STATS_INTERVAL: TimeSpan = TimeSpan::from_millis(100);
 
 /// The address that the listeners and the server of the test listen on, and that its clients connect to.
 const LOCALHOST: IpAddr = IpAddr::V4(Ipv4Addr::LOCALHOST);
+
+/// The run of the host of a test, as the snapshot writes it. A test names its own run.
+const RUN: &str = "4be0643f1d98573b97cdca98a65347dd";
 
 /// Port 0: the system picks a free port.
 const ANY_PORT: u16 = 0;
@@ -96,6 +101,7 @@ async fn an_environment_started_by_its_name_streams_its_calls_until_it_stops() -
         HostConfiguration::default(),
         MemoryContext::new(),
         Lies::of_every_build(),
+        RUN.parse()?,
     ));
     // The environment stands in front of the cluster, and every listener of it takes a free port.
     let any = ListenAddress::new(LOCALHOST, ANY_PORT);
@@ -121,8 +127,15 @@ async fn an_environment_started_by_its_name_streams_its_calls_until_it_stops() -
     let StreamMessage::Snapshot(state) = stream.next_change().await? else {
         anyhow::bail!("the stream started with another message than the snapshot");
     };
-    assert_eq!(state.definitions.environments, std::slice::from_ref(&staging));
+    let environments: Vec<&Environment> = state
+        .definitions
+        .environments
+        .iter()
+        .map(|held| &held.definition)
+        .collect();
+    assert_eq!(environments, [&staging]);
     assert_eq!(state.environments, []);
+    assert_eq!(state.run, RUN.parse()?);
 
     let started = client
         .send(StartEnvironment {
@@ -200,6 +213,7 @@ async fn a_rule_of_the_workspace_arms_and_fires_in_the_environment_that_runs() -
         HostConfiguration::default(),
         MemoryContext::new(),
         Lies::of_every_build(),
+        RUN.parse()?,
     ));
     let any = ListenAddress::new(LOCALHOST, ANY_PORT);
     let brokers = BrokerListeners::pinned(cluster.brokers().iter().map(|broker| (broker.id(), any)))?;
@@ -223,23 +237,11 @@ async fn a_rule_of_the_workspace_arms_and_fires_in_the_environment_that_runs() -
         TimingLie::new().with_delay(TimeSpan::from_millis(20)),
     )
     .with_trigger(Trigger::Manual);
-    assert_eq!(
-        client
-            .send(CreateDefinition {
-                definition: hold.clone()
-            })
-            .await?,
-        Ok(())
-    );
-    let disarmed = RuleStatus {
-        rule: hold.clone(),
-        live: false,
-        state: RuleState::Disarmed,
-    };
-    let armed = RuleStatus {
-        state: RuleState::Armed,
-        ..disarmed.clone()
-    };
+    client
+        .send(CreateDefinition {
+            definition: hold.clone(),
+        })
+        .await??;
     client
         .send(StartEnvironment {
             environment: staging.name().clone(),
@@ -248,18 +250,18 @@ async fn a_rule_of_the_workspace_arms_and_fires_in_the_environment_that_runs() -
     let mut stream = Watched {
         stream: client.live_stream().await?,
     };
+    let on_the_rule = |expects| ArmRule {
+        environment: staging.name().clone(),
+        rule: hold.name().clone(),
+        expects,
+    };
 
     let rules = client
         .send(ListEnvironmentRules {
             environment: staging.name().clone(),
         })
-        .await?;
-    let arming = client
-        .send(ArmRule {
-            environment: staging.name().clone(),
-            rule: hold.name().clone(),
-        })
-        .await?;
+        .await??;
+    let arming = client.send(on_the_rule(None)).await??;
     // A change from before the stream opened can still come after its snapshot, as the start of the environment.
     let changed = stream
         .next_where(|message| matches!(message, StreamMessage::RuleChanged { .. }))
@@ -270,20 +272,27 @@ async fn a_rule_of_the_workspace_arms_and_fires_in_the_environment_that_runs() -
             rule: hold.name().clone(),
         })
         .await?;
-    let again = client
-        .send(ArmRule {
-            environment: staging.name().clone(),
-            rule: hold.name().clone(),
-        })
-        .await?;
+    let again = client.send(on_the_rule(None)).await?;
 
-    assert_eq!(rules, Ok(vec![disarmed]));
-    assert_eq!(arming, Ok(()));
+    let [listed] = rules.as_slice() else {
+        anyhow::bail!("the environment holds another set of rules than the one of the workspace: {rules:?}");
+    };
+    assert_eq!(
+        (&listed.rule, listed.live, listed.state),
+        (&hold, false, RuleState::Disarmed)
+    );
+    // The arm answered with the revision that the rule has in the environment, and the stream tells the same.
+    assert!(listed.revision < arming.revision, "{listed:?} and then {arming:?}");
     assert_eq!(
         changed,
         StreamMessage::RuleChanged {
             environment: staging.name().clone(),
-            rule: armed,
+            rule: RuleStatus {
+                rule: hold.clone(),
+                live: false,
+                state: RuleState::Armed,
+                revision: arming.revision,
+            },
         }
     );
     assert_eq!(firing, Ok(()));
@@ -301,12 +310,112 @@ async fn a_rule_of_the_workspace_arms_and_fires_in_the_environment_that_runs() -
 }
 
 #[tokio::test]
+async fn a_rule_arms_and_disarms_only_as_its_sender_saw_it() -> anyhow::Result<()> {
+    let cluster = KafkaCluster::plaintext().start().await?;
+    let host = Arc::new(Host::new(
+        HostConfiguration::default(),
+        MemoryContext::new(),
+        Lies::of_every_build(),
+        RUN.parse()?,
+    ));
+    let any = ListenAddress::new(LOCALHOST, ANY_PORT);
+    let brokers = BrokerListeners::pinned(cluster.brokers().iter().map(|broker| (broker.id(), any)))?;
+    let staging = Environment::new(
+        "staging-proxy".parse()?,
+        Instances::ProxyInFrontOfCluster {
+            proxy: ProxyDefinition::new(Listeners::new(any, brokers, LOCALHOST.into())?),
+            upstream: Upstream::new(cluster.brokers()[0].address().to_string().parse()?),
+        },
+    );
+    host.create(staging.clone()).await?;
+    let mut configuration = ControlServerConfiguration::default();
+    configuration.listen = SocketAddr::new(LOCALHOST, ANY_PORT);
+    configuration.stats_interval = StatsInterval::new(QUIET)?;
+    let server = ControlServer::start(configuration, Arc::clone(&host)).await?;
+    let client = ControlClient::new(ControlClientConfiguration::new(server.address().into()));
+    let hold = Rule::new(
+        "hold-order-producers".parse()?,
+        Conditions::from(Condition::is(ApiKey::PRODUCE)),
+        TimingLie::new().with_delay(TimeSpan::from_millis(20)),
+    );
+    let created = client
+        .send(CreateDefinition {
+            definition: hold.clone(),
+        })
+        .await??;
+    client
+        .send(StartEnvironment {
+            environment: staging.name().clone(),
+        })
+        .await??;
+    // Two tabs open, and both read the rule in the environment: the snapshot names the run, and the rule comes
+    // with its revision there.
+    let mut stream = Watched {
+        stream: client.live_stream().await?,
+    };
+    let StreamMessage::Snapshot(snapshot) = stream.next_change().await? else {
+        anyhow::bail!("the stream started with another message than the snapshot");
+    };
+    let read = snapshot.environments.first().and_then(|running| running.rules.first());
+    let read = read.context("the snapshot holds the rule of the workspace in the environment that runs")?;
+    let seen = |revision| {
+        Some(Expects {
+            run: snapshot.run,
+            revision,
+        })
+    };
+    let arm = |expects| ArmRule {
+        environment: staging.name().clone(),
+        rule: hold.name().clone(),
+        expects,
+    };
+    let disarm = |expects| DisarmRule {
+        environment: staging.name().clone(),
+        rule: hold.name().clone(),
+        expects,
+    };
+
+    // One tab arms the rule as it read it. The other one still shows it disarmed, and arms nothing over that.
+    let armed = client.send(arm(seen(read.revision))).await??;
+    let armed_late = client.send(arm(seen(read.revision))).await?;
+    // Someone gives the rule a title in the workspace, and the first tab disarms what it armed without seeing that.
+    let retitled = client
+        .send(UpdateDefinition {
+            expects: None,
+            definition: hold.clone().with_title("Hold order producers".parse()?),
+        })
+        .await??;
+    let disarmed_late = client.send(disarm(seen(armed.revision))).await?;
+    // Whoever saw the title disarms the rule.
+    let disarmed = client.send(disarm(seen(retitled.revision))).await??;
+
+    // The environment started after the workspace got the rule, and its start is the last change of the rule there.
+    assert!(created.revision < read.revision, "{created:?} and then {read:?}");
+    let changed = |revision| RuleCommandError::Changed {
+        environment: staging.name().clone(),
+        rule: hold.name().clone(),
+        revision,
+    };
+    assert_eq!(armed_late, Err(changed(armed.revision)));
+    // A rule in an environment has one revision, for its definition and its state together.
+    assert_eq!(disarmed_late, Err(changed(retitled.revision)));
+    assert!(
+        retitled.revision < disarmed.revision,
+        "{retitled:?} and then {disarmed:?}"
+    );
+    server.stop().await;
+    host.stop_all().await;
+    Ok(())
+}
+
+#[tokio::test]
 async fn a_press_of_an_empty_pad_makes_its_live_rule_and_arms_it() -> anyhow::Result<()> {
     let cluster = KafkaCluster::plaintext().with_brokers(3).start().await?;
     let host = Arc::new(Host::new(
         HostConfiguration::default(),
         MemoryContext::new(),
         Lies::of_every_build(),
+        RUN.parse()?,
     ));
     let any = ListenAddress::new(LOCALHOST, ANY_PORT);
     let brokers = BrokerListeners::pinned(cluster.brokers().iter().map(|broker| (broker.id(), any)))?;
@@ -371,13 +480,10 @@ async fn a_press_of_an_empty_pad_makes_its_live_rule_and_arms_it() -> anyhow::Re
     let made = desk
         .rule(&pad, &selectors, &presets)
         .context("the pad stands on a selector and a preset of the workspace")?;
-    let armed = |rule: &Rule| StreamMessage::RuleChanged {
-        environment: staging.name().clone(),
-        rule: RuleStatus {
-            rule: rule.clone(),
-            live: true,
-            state: RuleState::Armed,
-        },
+    // The stream tells that `rule` is a live rule of the environment, and armed.
+    let armed = |message: &StreamMessage, rule: &Rule| {
+        matches!(message, StreamMessage::RuleChanged { environment, rule: status }
+            if environment == staging.name() && &status.rule == rule && status.live && status.state == RuleState::Armed)
     };
 
     // Someone presses the empty pad: the environment makes its live rule, and arms it.
@@ -387,9 +493,14 @@ async fn a_press_of_an_empty_pad_makes_its_live_rule_and_arms_it() -> anyhow::Re
             intent: Intent::Arm { pad },
         })
         .await??;
-    stream.next_where(|message| *message == armed(&made)).await?;
+    let told = stream.next_where(|message| armed(message, &made)).await?;
     assert_eq!((pressed.made, pressed.changed, pressed.hold), (true, true, None));
-    assert_eq!(pressed.rule.map(|status| status.rule), Some(made));
+    // The answer holds the rule as the stream tells it, with the revision that the press left.
+    let answered = pressed.rule.map(|rule| StreamMessage::RuleChanged {
+        environment: staging.name().clone(),
+        rule,
+    });
+    assert_eq!(answered, Some(told));
 
     server.stop().await;
     host.stop_all().await;
@@ -403,6 +514,7 @@ async fn a_turn_changes_the_live_rule_of_a_pad_and_it_stays_armed() -> anyhow::R
         HostConfiguration::default(),
         MemoryContext::new(),
         Lies::of_every_build(),
+        RUN.parse()?,
     ));
     let any = ListenAddress::new(LOCALHOST, ANY_PORT);
     let brokers = BrokerListeners::pinned(cluster.brokers().iter().map(|broker| (broker.id(), any)))?;
@@ -469,13 +581,10 @@ async fn a_turn_changes_the_live_rule_of_a_pad_and_it_stays_armed() -> anyhow::R
         .context("the pad stands on a selector and a preset of the workspace")?;
     let turn = EncoderTurn::new(Encoder::Delay, Steps::new(2));
     let turned = EncoderMapping::default().apply(turn, &made, &presets)?;
-    let armed = |rule: &Rule| StreamMessage::RuleChanged {
-        environment: staging.name().clone(),
-        rule: RuleStatus {
-            rule: rule.clone(),
-            live: true,
-            state: RuleState::Armed,
-        },
+    // The stream tells that `rule` is a live rule of the environment, and armed.
+    let armed = |message: &StreamMessage, rule: &Rule| {
+        matches!(message, StreamMessage::RuleChanged { environment, rule: status }
+            if environment == staging.name() && &status.rule == rule && status.live && status.state == RuleState::Armed)
     };
 
     // Someone presses the empty pad, which makes its live rule and arms it.
@@ -485,7 +594,7 @@ async fn a_turn_changes_the_live_rule_of_a_pad_and_it_stays_armed() -> anyhow::R
             intent: Intent::Arm { pad: pad.clone() },
         })
         .await??;
-    stream.next_where(|message| *message == armed(&made)).await?;
+    stream.next_where(|message| armed(message, &made)).await?;
 
     // Someone turns the delay encoder two steps up: the live rule changes, and stays armed.
     let turning = client
@@ -494,9 +603,14 @@ async fn a_turn_changes_the_live_rule_of_a_pad_and_it_stays_armed() -> anyhow::R
             intent: Intent::Turn { pad, turn },
         })
         .await??;
-    stream.next_where(|message| *message == armed(&turned)).await?;
+    let told = stream.next_where(|message| armed(message, &turned)).await?;
     assert_eq!((turning.made, turning.changed), (false, true));
-    assert_eq!(turning.rule.map(|status| status.rule), Some(turned));
+    // The answer holds the rule as the stream tells it, with the revision that the turn left.
+    let answered = turning.rule.map(|rule| StreamMessage::RuleChanged {
+        environment: staging.name().clone(),
+        rule,
+    });
+    assert_eq!(answered, Some(told));
 
     server.stop().await;
     host.stop_all().await;
@@ -510,6 +624,7 @@ async fn a_kept_live_rule_leaves_its_environment_for_the_workspace_and_stays_arm
         HostConfiguration::default(),
         MemoryContext::new(),
         Lies::of_every_build(),
+        RUN.parse()?,
     ));
     let any = ListenAddress::new(LOCALHOST, ANY_PORT);
     let brokers = BrokerListeners::pinned(cluster.brokers().iter().map(|broker| (broker.id(), any)))?;
@@ -537,33 +652,30 @@ async fn a_kept_live_rule_leaves_its_environment_for_the_workspace_and_stays_arm
             environment: staging.name().clone(),
         })
         .await??;
-    client
+    let armed = client
         .send(CreateLiveRule {
             environment: staging.name().clone(),
             rule: made.clone(),
-            armed: false,
-        })
-        .await??;
-    client
-        .send(ArmRule {
-            environment: staging.name().clone(),
-            rule: made.name().clone(),
+            armed: true,
         })
         .await??;
     // The stream opens once the rule is armed, so its snapshot holds it.
     let mut stream = Watched {
         stream: client.live_stream().await?,
     };
-    let first = stream.next_change().await?;
-    assert!(matches!(first, StreamMessage::Snapshot(_)), "{first:?}");
+    let StreamMessage::Snapshot(snapshot) = stream.next_change().await? else {
+        anyhow::bail!("the stream started with another message than the snapshot");
+    };
 
-    // Someone keeps the rule: it leaves the environment as a live rule, the workspace has it, and it stays armed.
-    let kept = client
-        .send(KeepRule {
-            environment: staging.name().clone(),
-            rule: made.name().clone(),
-        })
-        .await?;
+    // Someone keeps the rule as they armed it: it leaves the environment as a live rule, the workspace has it,
+    // and it stays armed.
+    let (run, revision) = (snapshot.run, armed.revision);
+    let keep = KeepRule {
+        environment: staging.name().clone(),
+        rule: made.name().clone(),
+        expects: Some(Expects { run, revision }),
+    };
+    let kept = client.send(keep).await??;
     // Changes from before the stream opened can still come after its snapshot: the start, the rule made and armed.
     let mut heard = vec![
         stream
@@ -573,7 +685,8 @@ async fn a_kept_live_rule_leaves_its_environment_for_the_workspace_and_stays_arm
     while heard.len() < 3 {
         heard.push(stream.next_change().await?);
     }
-    assert_eq!(kept, Ok(()));
+    // The keep is one change: the rule has its revision in the workspace, and in the environment that held it.
+    assert!(armed.revision < kept.revision, "{armed:?} and then {kept:?}");
     assert_eq!(
         heard,
         [
@@ -583,6 +696,7 @@ async fn a_kept_live_rule_leaves_its_environment_for_the_workspace_and_stays_arm
             },
             StreamMessage::DefinitionChanged {
                 definition: AnyDefinition::Rule(made.clone()),
+                revision: kept.revision,
             },
             StreamMessage::RuleChanged {
                 environment: staging.name().clone(),
@@ -590,22 +704,20 @@ async fn a_kept_live_rule_leaves_its_environment_for_the_workspace_and_stays_arm
                     rule: made.clone(),
                     live: false,
                     state: RuleState::Armed,
+                    revision: kept.revision,
                 },
             },
         ]
     );
-    let elsewhere = client
+    let listed = client
         .send(ListEnvironmentRules {
             environment: staging.name().clone(),
         })
-        .await?;
+        .await??;
+    assert_eq!(listed.len(), 1, "{listed:?}");
     assert_eq!(
-        elsewhere,
-        Ok(vec![RuleStatus {
-            rule: made,
-            live: false,
-            state: RuleState::Armed,
-        }])
+        (&listed[0].rule, listed[0].live, listed[0].revision),
+        (&made, false, kept.revision)
     );
     server.stop().await;
     host.stop_all().await;
@@ -619,6 +731,7 @@ async fn a_session_is_listed_while_it_is_open_and_closes_when_someone_closes_it(
         HostConfiguration::default(),
         MemoryContext::new(),
         Lies::of_every_build(),
+        RUN.parse()?,
     ));
     let any = ListenAddress::new(LOCALHOST, ANY_PORT);
     let brokers = BrokerListeners::pinned(cluster.brokers().iter().map(|broker| (broker.id(), any)))?;
@@ -675,23 +788,17 @@ async fn a_session_is_listed_while_it_is_open_and_closes_when_someone_closes_it(
     assert_eq!(listed, Ok(vec![session.clone()]));
 
     // Someone closes the session: the client finds its connection closed, and the stream says the proxy did it.
-    let closing = client
-        .send(CloseSession {
-            environment: staging.name().clone(),
-            connection: session.connection,
-        })
-        .await?;
+    let close = CloseSession {
+        environment: staging.name().clone(),
+        connection: session.connection,
+    };
+    let closing = client.send(close.clone()).await?;
     let closed = stream
         .next_where(|message| matches!(message, StreamMessage::SessionClosed { .. }))
         .await?;
     let mut nothing = Vec::new();
     let read = tokio::time::timeout(PATIENCE, connection.read_to_end(&mut nothing)).await??;
-    let again = client
-        .send(CloseSession {
-            environment: staging.name().clone(),
-            connection: session.connection,
-        })
-        .await?;
+    let again = client.send(close).await?;
     let after = client
         .send(ListSessions {
             environment: staging.name().clone(),
@@ -729,6 +836,7 @@ async fn a_rule_that_spends_its_budget_disarms_and_the_statistics_count_its_firi
         HostConfiguration::default(),
         MemoryContext::new(),
         Lies::of_every_build(),
+        RUN.parse()?,
     ));
     let any = ListenAddress::new(LOCALHOST, ANY_PORT);
     let brokers = BrokerListeners::pinned(cluster.brokers().iter().map(|broker| (broker.id(), any)))?;
@@ -752,12 +860,13 @@ async fn a_rule_that_spends_its_budget_disarms_and_the_statistics_count_its_firi
         TimingLie::new().with_delay(TimeSpan::from_millis(20)),
     )
     .with_lifetime(Lifetime::Firings(Count::ONE));
-    let live = |state: RuleState| StreamMessage::RuleChanged {
+    let live = |state: RuleState, revision: Revision| StreamMessage::RuleChanged {
         environment: staging.name().clone(),
         rule: RuleStatus {
             rule: once.clone(),
             live: true,
             state,
+            revision,
         },
     };
     client
@@ -768,20 +877,16 @@ async fn a_rule_that_spends_its_budget_disarms_and_the_statistics_count_its_firi
     let mut stream = Watched {
         stream: client.live_stream().await?,
     };
-    client
+    let armed = client
         .send(CreateLiveRule {
             environment: staging.name().clone(),
             rule: once.clone(),
-            armed: false,
+            armed: true,
         })
         .await??;
-    client
-        .send(ArmRule {
-            environment: staging.name().clone(),
-            rule: once.name().clone(),
-        })
-        .await??;
-    stream.next_where(|message| *message == live(RuleState::Armed)).await?;
+    stream
+        .next_where(|message| *message == live(RuleState::Armed, armed.revision))
+        .await?;
     let bootstrap = client
         .send(GetBackend {
             environment: staging.name().clone(),
@@ -798,9 +903,13 @@ async fn a_rule_that_spends_its_budget_disarms_and_the_statistics_count_its_firi
         .send(orders.name().as_str(), Partition::new(0), &[placed])
         .await;
     // The Produce spent the only firing, so the rule disarmed itself.
-    stream
-        .next_where(|message| *message == live(RuleState::Disarmed))
-        .await?;
+    let disarmed = |message: &StreamMessage| matches!(message, StreamMessage::RuleChanged { rule, .. } if rule.state == RuleState::Disarmed);
+    let spent = stream.next_where(disarmed).await?;
+    let StreamMessage::RuleChanged { rule: spent, .. } = spent else {
+        anyhow::bail!("the stream told another message than the rule that disarmed");
+    };
+    // Nobody asked for that change, and it took the next number all the same: the stream tells the rule with it.
+    assert!(armed.revision < spent.revision, "{armed:?} and then {spent:?}");
     let counted = stream
         .next_where(|message| {
             matches!(message, StreamMessage::Stats { stats, .. }
@@ -836,6 +945,7 @@ async fn a_sentence_knows_the_client_that_wrote_through_the_environment_and_ente
         HostConfiguration::default(),
         MemoryContext::new(),
         Lies::of_every_build(),
+        RUN.parse()?,
     ));
     let any = ListenAddress::new(LOCALHOST, ANY_PORT);
     let brokers = BrokerListeners::pinned(cluster.brokers().iter().map(|broker| (broker.id(), any)))?;
@@ -915,13 +1025,15 @@ async fn a_sentence_knows_the_client_that_wrote_through_the_environment_and_ente
         rule: rule.clone(),
         armed: true,
     };
-    client.send_from(RequestSurface::QuickInject, enter).await??;
+    let entered = client.send_from(RequestSurface::QuickInject, enter).await??;
+    // Making the rule and arming it was one change, so the stream tells the rule with the revision of that answer.
     let armed_rule = StreamMessage::RuleChanged {
         environment: staging.name().clone(),
         rule: RuleStatus {
             rule,
             live: true,
             state: RuleState::Armed,
+            revision: entered.revision,
         },
     };
     stream.next_where(|message| *message == armed_rule).await?;

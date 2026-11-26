@@ -20,7 +20,7 @@ fn an_update_changes_everything_but_the_name() -> anyhow::Result<()> {
 
         // The preset becomes a hang-up with a title.
         let change = Preset::new(blackhole.clone(), HangUpLie::new()).with_title("Hang up".parse()?);
-        workspace.update(change.clone()).await?;
+        workspace.update(change.clone(), None).await?;
 
         assert_eq!(workspace.stores().presets().get(&blackhole).await?, Some(change));
         Ok(())
@@ -33,7 +33,7 @@ fn update_needs_a_name_that_exists() -> anyhow::Result<()> {
     let blackhole: PresetName = "blackhole".parse()?;
 
     block_on(async {
-        let error = workspace.update(OrderDesk::blackhole()).await.unwrap_err();
+        let error = workspace.update(OrderDesk::blackhole(), None).await.unwrap_err();
 
         assert_eq!(error, UpdateError::NotFound { name: blackhole.into() });
         assert_eq!(error.to_string(), "preset \"blackhole\" does not exist");
@@ -53,7 +53,7 @@ fn a_definition_that_someone_put_into_its_store_is_updated_like_any_other() -> a
         workspace.stores().presets().create(OrderDesk::blackhole()).await?;
 
         let change = OrderDesk::blackhole().with_title("Blackhole".parse()?);
-        workspace.update(change.clone()).await?;
+        workspace.update(change.clone(), None).await?;
 
         assert_eq!(workspace.stores().presets().get(&blackhole).await?, Some(change));
         Ok(())
@@ -71,7 +71,7 @@ fn an_update_names_what_exists() -> anyhow::Result<()> {
 
         // The rule changes its inline silence for a preset that nobody created.
         let change = OrderDesk::blackhole_metadata().with_action(blackhole.clone());
-        let error = workspace.update(change).await.unwrap_err();
+        let error = workspace.update(change, None).await.unwrap_err();
 
         assert_eq!(
             error,
@@ -108,7 +108,7 @@ fn a_selector_does_not_change_into_one_that_a_rule_can_never_fire_with() -> anyh
 
         // The selector would test a response field, and the silence of the rule acts before the truth is known.
         let change = OrderDesk::order_producers().with_conditions(OrderDesk::answered_conditions());
-        let error = workspace.update(change).await.unwrap_err();
+        let error = workspace.update(change, None).await.unwrap_err();
 
         // Nothing is wrong with the selector itself. The error is the rule that uses it.
         assert_eq!(
@@ -143,7 +143,7 @@ fn a_selector_does_not_change_into_one_that_includes_itself() -> anyhow::Result<
 
         // `order-producers-from-ingest` includes `order-producers`, which would include it back.
         let error = workspace
-            .update(OrderDesk::order_producers().including(from_ingest.clone()))
+            .update(OrderDesk::order_producers().including(from_ingest.clone()), None)
             .await
             .unwrap_err();
 
@@ -184,11 +184,14 @@ fn what_was_wrong_before_does_not_stand_in_the_way_of_another_change() -> anyhow
         // Other definitions still come and change: they break nothing.
         workspace.create(OrderDesk::blackhole()).await?;
         workspace
-            .update(OrderDesk::blackhole().with_title("Blackhole".parse()?))
+            .update(OrderDesk::blackhole().with_title("Blackhole".parse()?), None)
             .await?;
 
         // The rule itself does not change while it names nothing.
-        let error = workspace.update(OrderDesk::slow_order_producers()).await.unwrap_err();
+        let error = workspace
+            .update(OrderDesk::slow_order_producers(), None)
+            .await
+            .unwrap_err();
         assert!(
             matches!(&error, UpdateError::DoesNotFit { name, errors } if *name == rule.clone().into() && errors.len() == 2),
             "{error}"
@@ -197,7 +200,7 @@ fn what_was_wrong_before_does_not_stand_in_the_way_of_another_change() -> anyhow
         // Once what it names exists, it does, and the workspace is valid.
         workspace.create(OrderDesk::order_producers()).await?;
         workspace.create(OrderDesk::delay_1s()).await?;
-        workspace.update(OrderDesk::slow_order_producers()).await?;
+        workspace.update(OrderDesk::slow_order_producers(), None).await?;
         assert_eq!(workspace.validate().await, Ok(()));
         Ok(())
     })
@@ -212,7 +215,7 @@ fn a_store_that_keeps_no_change_is_why_a_definition_was_not_updated() -> anyhow:
 
     block_on(async {
         let change = OrderDesk::blackhole().with_title("Blackhole".parse()?);
-        let error = workspace.update(change).await.unwrap_err();
+        let error = workspace.update(change, None).await.unwrap_err();
 
         assert_eq!(
             error,

@@ -10,7 +10,7 @@ use gaslightmq_surface::{LayoutName, PadLayout};
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 
-use crate::{AnyOperation, Operation};
+use crate::{AnyOperation, Expects, Operation, Revised, Revision, RunId};
 
 /// A kind of definition that the control plane lists, gets, creates, updates and deletes:
 /// a [`Selector`], a [`Preset`], a [`Rule`] or a [`PadLayout`].
@@ -181,28 +181,65 @@ impl From<EnvironmentName> for DefinitionRef {
     }
 }
 
-/// Every definition of the workspace, by kind.
+/// A definition of the workspace, with what the process keeps beside it: its revision.
+///
+/// A definition holds what a person writes, and nothing else.
+/// Live state travels beside it, never inside it: the definition is one key, and its [`Revision`] is a key next to
+/// it.
+///
+/// With `serde`, it is a map of its fields:
+/// `{ "definition": { "name": "slow-order-producers", … }, "revision": 7 }`.
+///
+/// ```
+/// use gaslightmq_control_api::prelude::*;
+/// use gaslightmq_control_api::rule::{PresetName, Rule};
+/// use gaslightmq_control_api::selector::SelectorName;
+///
+/// let definition = Rule::new(
+///     "slow-order-producers".parse().expect("a rule name"),
+///     "order-producers".parse::<SelectorName>().expect("a selector name"),
+///     "delay-1s".parse::<PresetName>().expect("a preset name"),
+/// );
+/// let held = DefinitionStatus { definition, revision: Revision::new(7) };
+/// assert_eq!(
+///     serde_json::to_value(&held).expect("an answer has a form"),
+///     serde_json::json!({
+///         "definition": { "name": "slow-order-producers", "selector": "order-producers", "action": "delay-1s" },
+///         "revision": 7,
+///     }),
+/// );
+/// ```
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct DefinitionStatus<D> {
+    /// The definition, as its file holds it.
+    pub definition: D,
+    /// The revision of the definition: the number of the change that last created or updated it.
+    pub revision: Revision,
+}
+
+/// Every definition of the workspace, by kind, each with its revision.
 ///
 /// The [state of a process](crate::ProcessState) carries them, so a client that connects knows the workspace at once.
-/// A definition travels as its file holds it.
+/// A definition travels as its file holds it, with its revision beside it.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Definitions {
     /// Every selector.
-    pub selectors: Vec<Selector>,
+    pub selectors: Vec<DefinitionStatus<Selector>>,
     /// Every preset.
-    pub presets: Vec<Preset>,
+    pub presets: Vec<DefinitionStatus<Preset>>,
     /// Every rule of the workspace. Live rules belong to an environment, and are not here.
-    pub rules: Vec<Rule>,
+    pub rules: Vec<DefinitionStatus<Rule>>,
     /// Every pad layout.
-    pub layouts: Vec<PadLayout>,
+    pub layouts: Vec<DefinitionStatus<PadLayout>>,
     /// Every environment, whether it runs or not.
-    pub environments: Vec<Environment>,
+    pub environments: Vec<DefinitionStatus<Environment>>,
 }
 
 /// List every definition of a kind in the workspace.
 ///
-/// The answer holds each definition as its file holds it.
+/// The answer holds each definition as its file holds it, with its revision beside it.
 ///
 /// ```
 /// use gaslightmq_control_api::prelude::*;
@@ -235,13 +272,13 @@ impl<D: EditableDefinition> Operation for ListDefinitions<D>
 where
     Self: Into<AnyOperation>,
 {
-    type Answer = Vec<D>;
+    type Answer = Vec<DefinitionStatus<D>>;
     type Error = ListDefinitionsError;
 }
 
 /// Get the definition of a kind that has a name.
 ///
-/// The answer is the definition as its file holds it.
+/// The answer is the definition as its file holds it, with its revision beside it.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(bound = "", deny_unknown_fields)]
 pub struct GetDefinition<D: EditableDefinition> {
@@ -253,11 +290,14 @@ impl<D: EditableDefinition> Operation for GetDefinition<D>
 where
     Self: Into<AnyOperation>,
 {
-    type Answer = D;
+    type Answer = DefinitionStatus<D>;
     type Error = GetDefinitionError;
 }
 
 /// Create a definition in the workspace, under a name that no definition of its kind has.
+///
+/// A create expects nothing: it refuses a name that is taken, so it never overwrites.
+/// It answers with the revision of the new definition.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(bound = "", deny_unknown_fields)]
 pub struct CreateDefinition<D: EditableDefinition> {
@@ -269,16 +309,47 @@ impl<D: EditableDefinition> Operation for CreateDefinition<D>
 where
     Self: Into<AnyOperation>,
 {
-    type Answer = ();
+    type Answer = Revised;
     type Error = CreateDefinitionError;
 }
 
 /// Replace the definition that has the name of this one: everything but the name changes, the title included.
 ///
 /// Nothing renames a definition.
+/// The update answers with the revision that the definition has from then on.
+///
+/// With `serde`, an update that expects nothing leaves `expects` out.
+///
+/// ```
+/// use gaslightmq_control_api::prelude::*;
+/// use gaslightmq_control_api::rule::{PresetName, Rule};
+/// use gaslightmq_control_api::selector::SelectorName;
+///
+/// let definition = Rule::new(
+///     "slow-order-producers".parse().expect("a rule name"),
+///     "order-producers".parse::<SelectorName>().expect("a selector name"),
+///     "delay-1s".parse::<PresetName>().expect("a preset name"),
+/// );
+/// // The UI says what it saw: the run of its snapshot, and the revision beside the rule.
+/// let run: RunId = "4be0643f1d98573b97cdca98a65347dd".parse().expect("a run ID");
+/// let expects = Some(Expects { run, revision: Revision::new(7) });
+/// let request = OperationRequest::new(RequestSurface::Ui, UpdateDefinition { expects, definition });
+/// assert_eq!(
+///     serde_json::to_value(request).expect("a request has a form"),
+///     serde_json::json!({
+///         "from": { "surface": "ui" },
+///         "operation": "update-rule",
+///         "expects": { "run": "4be0643f1d98573b97cdca98a65347dd", "revision": 7 },
+///         "definition": { "name": "slow-order-producers", "selector": "order-producers", "action": "delay-1s" },
+///     }),
+/// );
+/// ```
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(bound = "", deny_unknown_fields)]
 pub struct UpdateDefinition<D: EditableDefinition> {
+    /// What the update [expects](Expects) of the definition it replaces, or `None` when the last change wins.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub expects: Option<Expects>,
     /// The definition as it is to be, with the name of the one it replaces.
     pub definition: D,
 }
@@ -287,23 +358,31 @@ impl<D: EditableDefinition> Operation for UpdateDefinition<D>
 where
     Self: Into<AnyOperation>,
 {
-    type Answer = ();
+    type Answer = Revised;
     type Error = UpdateDefinitionError;
 }
 
 /// Delete the definition of a kind that has a name, when no other definition uses it.
+///
+/// The delete answers with the revision of the delete, which nothing has afterwards:
+/// a definition that someone makes again under the name is another definition, with a higher revision.
+///
+/// With `serde`, a delete that expects nothing leaves `expects` out.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(bound = "", deny_unknown_fields)]
 pub struct DeleteDefinition<D: EditableDefinition> {
     /// The name of the definition.
     pub name: D::Name,
+    /// What the delete [expects](Expects) of the definition it removes, or `None` when the last change wins.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub expects: Option<Expects>,
 }
 
 impl<D: EditableDefinition> Operation for DeleteDefinition<D>
 where
     Self: Into<AnyOperation>,
 {
-    type Answer = ();
+    type Answer = Revised;
     type Error = DeleteDefinitionError;
 }
 
@@ -388,6 +467,8 @@ pub enum CreateDefinitionError {
 /// Why the control plane did not [update](UpdateDefinition) a definition.
 ///
 /// An update that fails changed nothing.
+/// With `serde`, the update of a definition that changed since is
+/// `{ "error": "changed", "name": { "rule": "slow-order-producers" }, "revision": 9 }`.
 ///
 /// ```
 /// use gaslightmq_control_api::prelude::*;
@@ -403,6 +484,14 @@ pub enum UpdateDefinitionError {
     /// No definition of the kind has the name. Updating never creates one.
     #[error("{name} does not exist")]
     NotFound { name: DefinitionRef },
+    /// The change expects another revision than the definition has: someone changed the definition since.
+    /// `revision` is the one it has now.
+    #[error("{name} changed since: it has revision {revision} now")]
+    Changed { name: DefinitionRef, revision: Revision },
+    /// The change expects a revision of another run than the run of the process, which is `run`:
+    /// the process started again since the sender read.
+    #[error("the change expects a revision of another run than {run}, which is the run of the process")]
+    OtherRun { run: RunId },
     /// The definitions of the workspace would not fit each other with the change:
     /// the definition itself, or the definitions that use it. `reason` says everything that would be wrong.
     #[error("{name} does not fit the workspace: {reason}")]
@@ -432,6 +521,14 @@ pub enum DeleteDefinitionError {
     /// No definition of the kind has the name.
     #[error("{name} does not exist")]
     NotFound { name: DefinitionRef },
+    /// The change expects another revision than the definition has: someone changed the definition since.
+    /// `revision` is the one it has now.
+    #[error("{name} changed since: it has revision {revision} now")]
+    Changed { name: DefinitionRef, revision: Revision },
+    /// The change expects a revision of another run than the run of the process, which is `run`:
+    /// the process started again since the sender read.
+    #[error("the change expects a revision of another run than {run}, which is the run of the process")]
+    OtherRun { run: RunId },
     /// Other definitions refer to this one, and would refer to nothing without it. `users` names each of them.
     #[error("{name} is used by {}", all(.users))]
     InUse {
