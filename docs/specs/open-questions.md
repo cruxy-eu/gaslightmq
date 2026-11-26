@@ -52,6 +52,10 @@ The second part lists the decisions that were settled, with the reason and the s
 
 ### Storage
 
+- **Does a recording export to one file?**
+  A [recording](architecture/recording-storage.md) is a directory of segments, and it can hold many gigabytes.
+  One file would attach to a bug report and travel to another machine.
+  Nothing exports a recording yet, and no format for such a file is chosen.
 - **Where do a World's initial records live?**
   A [seeded](domains/world.md#seeding) World can start with recorded records.
   A world definition is in git, and recordings are not.
@@ -140,7 +144,7 @@ The second part lists the decisions that were settled, with the reason and the s
 | Where does free text go? | In an optional title on the definition itself. See [titles](domains/rules.md#titles). | Nothing references a title, so it changes without breaking anything. |
 | Can someone rename a definition? | No. Another name means a new definition, and the old one is deleted. | A rename had to rewrite every reference, and its history hung on a name that no longer existed. |
 | What is the default for recordings? | Metadata-only on Upstream, full on Simulated. See [privacy](architecture/storage.md#privacy). | The real cluster can carry sensitive data. The World's data is synthetic. |
-| Does GaslightMQ need a database? | No. Definitions are files, live state is memory, recordings are append-only segments in files. See [storage](architecture/storage.md). | A recording is a write-once stream that travels as one file, and selectors already are the query language. |
+| Does GaslightMQ need a database? | No. Definitions are files, live state is memory, recordings are append-only segments in files. See [storage](architecture/storage.md). | A recording is a write-once stream of segments, and selectors already are the query language. |
 | What survives a restart? | Definitions and recordings. Nothing is armed. See [a restart is a clean slate](architecture/storage.md#a-restart-is-a-clean-slate). | A fault injector that resumes on its own is a hazard. |
 | What happens to live rules in a crash? | A [scratch file](architecture/storage.md#scratch) keeps their definitions. They load disarmed. | Work is not lost, and git stays clean. |
 | Where does the history of changes live? | In the [journal](domains/observation.md#journal): in memory, and inside recordings. | A recording then explains itself, and Capture has one source. |

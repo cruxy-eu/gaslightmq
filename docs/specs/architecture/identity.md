@@ -306,7 +306,6 @@ A run that takes the same requests in the same order gives every call the same I
 A recording is identified by its environment and the instant it started, in UTC and to the millisecond.
 An environment writes one recording at a time, so no two recordings share both.
 The name of its directory holds both: `orders-sim.2026-11-21T14-02-11.527Z`.
-The one file that a recording [exports to](recording-storage.md#one-file) has the same name, with `.rec`.
 A name holds no `.`, so the first one ends the name of the environment.
 
 ### Journal entry ID

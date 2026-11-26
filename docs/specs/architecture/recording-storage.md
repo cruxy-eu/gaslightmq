@@ -19,7 +19,7 @@ The design follows from six things that it must do:
 - **A recording that was cut short still opens.**
   A crash, a full disk or a full queue leaves a recording that is complete up to a known point.
 - **An old recording still opens.**
-  A recording that someone attached to a bug report a year ago opens in the build of today.
+  A recording that someone kept a year ago opens in the build of today.
 
 ## Two seams
 
@@ -34,7 +34,7 @@ engine · world_seed · tests
         ▼
   segment backing          the contract of `recording_segments`
         │
-  files │ memory │ a bundle │ later: an object store
+  files │ memory │ later: an object store
 ```
 
 | Seam | Its contract speaks of | Behind it |
@@ -46,7 +46,7 @@ engine · world_seed · tests
 |---|---|---|
 | `recording` | The storage contract and its errors. What a recording holds: its ID, its description, the entries, a position, a summary, how it ended. What the [recording mode](#what-a-recording-must-not-keep) drops, and the blanking of credentials. | Sans-IO. |
 | `recording_conformance` | What every storage does, as a check. | Test support. |
-| `recording_segments` | The segment layout, as a storage over any backing: every encoding, the summaries of each level, the manifest and when it changes, and recovery. The backing contract and its errors. The backing in memory, behind a feature. The [bundle](#one-file). | Sans-IO. It awaits the backing it is handed, and nothing else. |
+| `recording_segments` | The segment layout, as a storage over any backing: every encoding, the summaries of each level, the manifest and when it changes, and recovery. The backing contract and its errors. The backing in memory, behind a feature. | Sans-IO. It awaits the backing it is handed, and nothing else. |
 | `recording_segments_conformance` | What every backing does, as a check. | Test support. |
 | `recording_segments_fs` | The backing on files: it opens, appends, syncs, renames and maps. | This crate does IO. |
 
@@ -280,8 +280,8 @@ The bytes of a frame are copied once, into the storage.
 
 A frame that waits in the queue keeps its bytes in memory.
 A count of calls does not bound that: ten thousand fetches can wait with ten gigabytes.
-The queue is therefore full when it holds `recordings.backlog` calls and journal entries,
-or when the frames that wait hold `recordings.backlog_size` bytes, which is `256MiB` until someone sets it.
+The queue is therefore full when it holds `recordings.queue_entries` entries,
+or when the frames that wait hold `recordings.queue_size` bytes, which is `256MiB` until someone sets it.
 
 The recorder commits when `recordings.commit_interval` has passed since the last commit, which is `1s` until someone sets it,
 and before someone reads the recording that runs.
@@ -310,6 +310,8 @@ For every frame, `recording` reads the API of its call from the header of the re
   A record batch keeps its base offset, its number of records, its timestamps, and the ID, the epoch and the sequence of its producer.
   A record keeps its offset and its timestamp.
   The batch is kept without compression and with a new checksum.
+  It keeps its attributes too, such as the type of its timestamps.
+  The rewrite in `wire` loses the type of the timestamps today, because the encoder it uses drops it, and that is a gap to close.
 - **The response to `SaslAuthenticate` is blanked too.**
   With SCRAM, what the server answers is enough to test guessed passwords against, next to what an attacker can guess.
 - **A control batch stays whole.**
@@ -738,7 +740,6 @@ The layout turns each of them into an error of the [storage contract](#errors), 
 |---|---|---|
 | Files | As files in one directory for each recording. See [files](#files). | `recording_segments_fs` |
 | Memory | In memory, for tests, and for an engine whose recordings need not outlive it. | `recording_segments`, behind a feature |
-| A bundle | In [one file](#one-file), to read. It refuses every write. | `recording_segments` |
 | An object store | Later. A sealed segment, an index chunk and the manifest are one object each, and each `put` is one request. The segment that grows is what such a backing must solve, for instance as parts that a seal joins. | — |
 
 `recording_segments_conformance` holds what every backing does, as a check.
@@ -776,27 +777,8 @@ The file that a `put` did not rename yet is such a file.
 Mapping a file is unsafe code, and it is in this crate alone.
 A sealed segment never changes, which is what makes a map of it sound.
 
-## One file
-
-A recording in a directory does not attach to a bug report.
-A recording therefore exports to one file, a **bundle**.
-
-- **A bundle is a tar archive of the directory of a recording**, without compression: the manifest first, then the index chunks, then the segments.
-  Its name is the ID of the recording with `.rec`: `orders-sim.2026-11-21T14-02-11.527Z.rec`.
-- **Export is an operation of the control plane, and a command of `gmq`.**
-  It reads every object from a backing and writes the archive to anything that takes bytes in order.
-  A recording that was cut short exports as it is.
-- **A bundle opens in place.**
-  The bundle is a backing: an object is a range of the one file.
-  Whoever opens it maps the file, and the segment layout reads it as it reads a directory, with no frame copied.
-  Seeding a World and a replay take a bundle or a recording in a directory, and see no difference.
-- **A bundle unpacks to a recording.**
-  Whoever unpacks it into the directory of recordings, with `tar`, has the recording there.
-  Nothing has to import it.
-
-A tar archive is the plainest container that keeps every object in one unbroken stretch, which is what a map needs.
-Everyone has the tool that makes and opens one.
-The reader of a bundle walks the headers of the archive as it walks the blocks of a segment, by their lengths, and takes the members with the names of the layout.
+A recording is a directory, and it can hold many gigabytes.
+Whether a recording also exports to one file is [not decided](../open-questions.md#storage).
 
 ## Versions
 
@@ -841,7 +823,6 @@ The call that the control plane sends from a recording is the call that the reco
 | The UI that shows the latest calls | The last entries. | A reading from the end, backwards. |
 | [Replay](crates.md#the-pipeline-is-sans-io) | The description, every entry, and the request and the truth of every call. | The rules that were armed at the start, the journal entries that changed them, the sessions, and the frames, which go into a pipeline without a copy. The record of every call holds the verdict and the explanation to compare with. |
 | [Seeding a World](../domains/world.md#seeding) | The index, and the frames of the calls that describe the cluster or carry records. | `Wanted` for `Metadata`, Produce and Fetch calls, and only their frames are read. |
-| Someone with a bug report | One file. | A [bundle](#one-file), which opens in place. |
 
 A metadata-only recording serves all of them.
 Its frames still decode, so a replay runs and a World gets its topics, its partitions and its offsets.
@@ -875,8 +856,8 @@ A key in the call record or in the description carries it.
 # gaslight.yaml
 recordings:
   directory: recordings
-  backlog: 10000          # the calls and journal entries that the recorder may be behind
-  backlog_size: 256MiB    # the bytes of the frames that may wait with them
+  queue_entries: 10000    # the entries that may wait for the recorder
+  queue_size: 256MiB      # the bytes of the frames that may wait with them
   commit_interval: 1s     # how long an entry waits at most before it is in the recording for good
   block_size: 4MiB        # the entries and frames that one block holds
   segment_size: 256MiB    # the size at which a data segment is sealed
@@ -885,7 +866,7 @@ recordings:
 ```
 
 A size is a number of bytes with its unit.
-`backlog`, `backlog_size` and `commit_interval` are the recorder's, whatever the layout is.
+`queue_entries`, `queue_size` and `commit_interval` are the recorder's, whatever the layout is.
 The others are the segment layout's.
 
 ## Decisions
@@ -904,5 +885,5 @@ The others are the segment layout's.
 | How does metadata change? | An object is written before what describes it, and a description is replaced in one step. | Changing an index or a manifest in place, which a crash can leave half done. |
 | Where is the recording mode applied? | In `recording`, where an entry is made. A storage never sees what must not be kept. | In the engine, where every caller would have to remember it. In a layout, where every layout would have to. |
 | What does metadata-only keep of a frame? | The frame, without the keys, values and headers of its records. | No frame at all. The usual recording of a real cluster could then seed no World and run no replay. |
-| How is a recording one file? | It exports to a bundle, a tar archive that opens in place. | A second layout of one file, which would be a second format to keep. A container of our own, which no other tool opens. |
+| Is a recording one file? | No. It is a directory of segments, and whoever reads it reads it through the storage contract. Whether it exports to one file is not decided. | One file for each recording. A recording can be many gigabytes, and one file of that size has to be walked to be queried. |
 | Is a recording compressed? | Not in version 1. A later version compresses the entries of a block, and never the frames. | Compression of whole blocks, which would end the frames without a copy. |

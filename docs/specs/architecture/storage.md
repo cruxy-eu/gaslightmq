@@ -85,8 +85,8 @@ control:
   presence_grace: 10s           # how long a presence stays once its live stream ended
 recordings:
   directory: recordings
-  backlog: 10000                # the calls and journal entries that the recorder may be behind
-  backlog_size: 256MiB          # the bytes of the frames that may wait with them
+  queue_entries: 10000          # the entries that may wait for the recorder
+  queue_size: 256MiB            # the bytes of the frames that may wait with them
   commit_interval: 1s           # how long an entry waits at most before it is in the recording for good
   block_size: 4MiB              # the entries and frames that one block of a recording holds
   segment_size: 256MiB          # the size at which a data segment is sealed
@@ -587,8 +587,8 @@ The engine keeps a recording through a [storage contract](recording-storage.md#t
 The first layout behind it keeps a recording as [data segments, index chunks and a manifest](recording-storage.md#the-segment-layout), in a directory of its own under `recordings.directory`.
 That layout asks a [second contract](recording-storage.md#the-segment-backing) for the place of its bytes: files first, and memory for tests.
 
-A recording exports to [one file](recording-storage.md#one-file), so it is easy to attach to a bug report or to seed a World from.
-That file opens in place, as the directory does.
+A recording is a directory, and it can hold many gigabytes.
+Whoever reads one reads it through the storage contract: a query, a replay, and [seeding a World](../domains/world.md#seeding).
 
 Each call holds:
 
@@ -600,14 +600,14 @@ Each call holds:
 - the verdict and the explanation.
 
 The name of its directory is the [ID of the recording](identity.md#recording-id): its environment and the instant it started.
-The file it exports to has the same name, with `.rec`.
 
 The engine hands the recorder the raw frames of a call next to the call, and only while a recording runs.
 A call itself holds no frames, so a call that nobody records costs no copy of its bytes.
 What it hands over [shares the bytes](recording-storage.md#handing-frames-to-the-recorder) that the session holds already, so a call that someone records costs no copy in its session either.
 
 The recorder writes on a thread of its own, behind a queue of the calls and journal entries it has not written yet.
-The queue holds as many as `recordings.backlog` says, and no more bytes of frames than `recordings.backlog_size` says.
+The queue holds as many entries as `recordings.queue_entries` says, and no more bytes of frames than `recordings.queue_size` says.
+A count alone would not bound the memory of the queue, because a frame can be many megabytes.
 A session never waits for the disk.
 When the queue is full, the recording stops, and its last entry and the control plane say why.
 What the recording holds up to there is a complete recording.
