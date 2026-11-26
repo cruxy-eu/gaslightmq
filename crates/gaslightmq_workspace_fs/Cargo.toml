@@ -34,11 +34,13 @@ anyhow.workspace = true
 # What every store of each kind does, which the tests hold these stores to.
 gaslightmq_environment_conformance.workspace = true
 gaslightmq_rule_conformance.workspace = true
+gaslightmq_scenario_conformance.workspace = true
 gaslightmq_selector_conformance.workspace = true
 gaslightmq_surface_conformance.workspace = true
 # What the definitions of the tests are made of.
 gaslightmq_clock.workspace = true
 gaslightmq_kernel.workspace = true
 gaslightmq_lie.workspace = true
+gaslightmq_trigger.workspace = true
 tempfile.workspace = true
 tokio = { workspace = true, features = ["rt", "rt-multi-thread", "macros"] }
