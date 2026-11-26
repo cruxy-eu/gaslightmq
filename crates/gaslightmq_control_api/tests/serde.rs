@@ -629,6 +629,7 @@ fn an_environment_says_its_revision_and_whether_it_runs() {
         environment: environment.clone(),
         revision: SEEN,
         running: true,
+        loses_comment: false,
     })
     .writes(json!({ "environment": Form(&environment).json(), "revision": SEEN.number(), "running": true }));
 }
@@ -641,6 +642,7 @@ fn a_definition_travels_as_its_file_holds_it_with_its_revision_beside_it() {
     Form(DefinitionStatus {
         definition: rule.clone(),
         revision: SEEN,
+        loses_comment: false,
     })
     .writes(json!({ "definition": Form(&rule).json(), "revision": SEEN.number() }));
     Form::<DefinitionStatus<Rule>>::rejects(
@@ -655,6 +657,135 @@ fn a_definition_travels_as_its_file_holds_it_with_its_revision_beside_it() {
         }),
         "unknown field `revision`",
     );
+}
+
+#[test]
+fn a_definition_whose_write_would_lose_a_comment_says_so_beside_it() {
+    let selector = OrderDesk::selector();
+
+    // Someone wrote a comment inside the selector in `selectors.yaml`, and a write of it would lose that comment.
+    Form(DefinitionStatus {
+        definition: selector.clone(),
+        revision: SEEN,
+        loses_comment: true,
+    })
+    .writes(json!({ "definition": Form(&selector).json(), "revision": SEEN.number(), "loses-comment": true }));
+    Form(StreamMessage::DefinitionChanged {
+        definition: AnyDefinition::Selector(selector.clone()),
+        revision: NOW,
+        loses_comment: true,
+    })
+    .writes(json!({
+        "message": "definition-changed",
+        "definition": { "selector": Form(&selector).json() },
+        "revision": NOW.number(),
+        "loses-comment": true,
+    }));
+}
+
+#[test]
+fn a_reload_says_nothing_but_its_operation_and_answers_with_what_it_changed() {
+    Form(OperationRequest::new(RequestSurface::Cli, ReloadWorkspace {}))
+        .writes(json!({ "from": { "surface": "cli" }, "operation": "reload-workspace" }));
+    let producers: SelectorName = "order-producers".parse().unwrap();
+    let slow: RuleName = "slow-order-producers".parse().unwrap();
+    let blackhole: PresetName = "blackhole".parse().unwrap();
+
+    // Someone edited a selector, wrote a new rule and took a preset away, and the reload took all of it in.
+    Form(Reloaded {
+        revision: NOW,
+        changes: vec![
+            DefinitionChange::Updated(producers.into()),
+            DefinitionChange::Deleted(blackhole.into()),
+            DefinitionChange::Created(slow.into()),
+        ],
+    })
+    .writes(json!({
+        "revision": NOW.number(),
+        "changes": [
+            { "updated": { "selector": "order-producers" } },
+            { "deleted": { "preset": "blackhole" } },
+            { "created": { "rule": "slow-order-producers" } },
+        ],
+    }));
+    // A reload that changed nothing still took a number.
+    Form(Reloaded {
+        revision: NOW,
+        changes: Vec::new(),
+    })
+    .writes(json!({ "revision": NOW.number() }));
+}
+
+#[test]
+fn a_reload_that_changed_nothing_says_why() {
+    let environment: EnvironmentName = "orders-sim".parse().unwrap();
+    let rule: RuleName = "slow-order-producers".parse().unwrap();
+
+    Form(ReloadWorkspaceError::NameTaken {
+        rule: rule.clone(),
+        holder: RuleHolder::Environment(environment.clone()),
+    })
+    .writes(json!({
+        "error": "name-taken",
+        "rule": "slow-order-producers",
+        "holder": { "environment": "orders-sim" },
+    }));
+    Form(ReloadWorkspaceError::LiveRuleDoesNotFit {
+        environment,
+        rule,
+        reason: "rule \"slow-order-producers\": no selector is named \"order-producers\"".to_owned(),
+    })
+    .writes(json!({
+        "error": "live-rule-does-not-fit",
+        "environment": "orders-sim",
+        "rule": "slow-order-producers",
+        "reason": "rule \"slow-order-producers\": no selector is named \"order-producers\"",
+    }));
+    Form(ReloadWorkspaceError::DoesNotFit {
+        reason: "rule \"slow-order-producers\" refers to preset \"delay-1s\", which does not exist".to_owned(),
+    })
+    .writes(json!({
+        "error": "does-not-fit",
+        "reason": "rule \"slow-order-producers\" refers to preset \"delay-1s\", which does not exist",
+    }));
+    Form(ReloadWorkspaceError::StoreFailed {
+        reason: "the rule store could not be read again: rules/orders.yaml: [2].trigger.every: \
+                 a count is at least one"
+            .to_owned(),
+    })
+    .writes(json!({
+        "error": "store-failed",
+        "reason": "the rule store could not be read again: rules/orders.yaml: [2].trigger.every: \
+                   a count is at least one",
+    }));
+}
+
+#[test]
+fn a_write_over_a_file_that_someone_changed_since_is_changed_outside() {
+    let selector: DefinitionRef = "order-producers".parse::<SelectorName>().unwrap().into();
+    let changed = "selectors.yaml changed since the store read it";
+
+    Form(CreateDefinitionError::ChangedOutside {
+        name: selector.clone(),
+        reason: changed.to_owned(),
+    })
+    .writes(json!({ "error": "changed-outside", "name": { "selector": "order-producers" }, "reason": changed }));
+    Form(UpdateDefinitionError::ChangedOutside {
+        name: selector.clone(),
+        reason: changed.to_owned(),
+    })
+    .writes(json!({ "error": "changed-outside", "name": { "selector": "order-producers" }, "reason": changed }));
+    Form(DeleteDefinitionError::ChangedOutside {
+        name: selector,
+        reason: changed.to_owned(),
+    })
+    .writes(json!({ "error": "changed-outside", "name": { "selector": "order-producers" }, "reason": changed }));
+    let appeared = "rules/slow-order-producers.yaml exists now, and did not when the store read its files";
+    Form(KeepRuleError::ChangedOutside {
+        rule: "slow-order-producers".parse().unwrap(),
+        reason: appeared.to_owned(),
+    })
+    .writes(json!({ "error": "changed-outside", "rule": "slow-order-producers", "reason": appeared }));
 }
 
 #[test]
@@ -1042,6 +1173,7 @@ fn an_operation_names_itself_as_its_form_does() {
             environment,
             after: None,
         }),
+        AnyOperation::from(ReloadWorkspace {}),
     ];
 
     for operation in operations {
@@ -1120,6 +1252,31 @@ fn a_refused_subscription_says_why() {
 }
 
 #[test]
+fn the_state_of_a_process_over_a_read_only_workspace_says_so() {
+    let state = ProcessState {
+        run: RUN.parse().unwrap(),
+        definitions: Definitions::default(),
+        environments: Vec::new(),
+        read_only: true,
+    };
+
+    Form(StreamMessage::Snapshot(state)).writes(json!({
+        "message": "snapshot",
+        "run": RUN,
+        "definitions": {
+            "selectors": [],
+            "presets": [],
+            "rules": [],
+            "scenarios": [],
+            "layouts": [],
+            "environments": [],
+        },
+        "read-only": true,
+        "environments": [],
+    }));
+}
+
+#[test]
 fn a_client_that_connects_gets_the_state_of_the_process() {
     let environment = OrderDesk::environment();
     let state = ProcessState {
@@ -1128,10 +1285,12 @@ fn a_client_that_connects_gets_the_state_of_the_process() {
             selectors: vec![DefinitionStatus {
                 definition: OrderDesk::selector(),
                 revision: NOW,
+                loses_comment: false,
             }],
             environments: vec![DefinitionStatus {
                 definition: environment.clone(),
                 revision: SEEN,
+                loses_comment: false,
             }],
             ..Definitions::default()
         },
@@ -1145,6 +1304,7 @@ fn a_client_that_connects_gets_the_state_of_the_process() {
             rules: Vec::new(),
             sessions: Vec::new(),
         }],
+        read_only: false,
     };
 
     // The snapshot names the run, and whatever has a revision comes with it.
@@ -1234,10 +1394,12 @@ fn an_environment_with_brokers_travels_inside_a_message() {
             environments: vec![DefinitionStatus {
                 definition: staging.clone(),
                 revision: SEEN,
+                loses_comment: false,
             }],
             ..Definitions::default()
         },
         environments: vec![running.clone()],
+        read_only: false,
     }))
     .writes(json!({
         "message": "snapshot",
@@ -1255,6 +1417,7 @@ fn an_environment_with_brokers_travels_inside_a_message() {
     Form(StreamMessage::DefinitionChanged {
         definition: AnyDefinition::Environment(staging),
         revision: NOW,
+        loses_comment: false,
     })
     .writes(json!({
         "message": "definition-changed",
@@ -1308,6 +1471,7 @@ fn a_change_to_the_workspace_names_the_kind_of_its_definition() {
     Form(StreamMessage::DefinitionChanged {
         definition: AnyDefinition::Selector(OrderDesk::selector()),
         revision: NOW,
+        loses_comment: false,
     })
     .writes(json!({
         "message": "definition-changed",
@@ -1333,6 +1497,7 @@ fn a_scenario_travels_as_its_file_holds_it() {
     Form(StreamMessage::DefinitionChanged {
         definition: AnyDefinition::Scenario(scenario.clone()),
         revision: NOW,
+        loses_comment: false,
     })
     .writes(json!({
         "message": "definition-changed",

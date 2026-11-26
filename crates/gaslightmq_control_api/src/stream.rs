@@ -58,12 +58,17 @@ pub enum StreamMessage {
         environment: EnvironmentName,
         rule: RuleName,
     },
-    /// Someone created or updated a definition of the workspace. `revision` is the one it has from here on.
+    /// Someone created or updated a definition of the workspace, through the control plane or with a
+    /// [reload](crate::ReloadWorkspace). `revision` is the one it has from here on, and `loses-comment` says whether
+    /// a write of it would lose a comment of its file: a message that leaves it out loses nothing.
     DefinitionChanged {
         definition: AnyDefinition,
         revision: Revision,
+        #[serde(rename = "loses-comment", default, skip_serializing_if = "std::ops::Not::not")]
+        loses_comment: bool,
     },
-    /// Someone deleted a definition of the workspace.
+    /// Someone deleted a definition of the workspace, through the control plane or with a
+    /// [reload](crate::ReloadWorkspace).
     DefinitionDeleted { name: DefinitionRef },
     /// A client connected.
     SessionOpened {
@@ -126,6 +131,11 @@ pub struct ProcessState {
     pub run: RunId,
     /// Every definition of the workspace, which every environment shares, each with its revision.
     pub definitions: Definitions,
+    /// Whether the workspace is read-only: the process reads its files, and reads them again, and refuses every
+    /// change of a definition. Whoever starts the process says so. With `serde`, a workspace that takes changes
+    /// leaves `read-only` out.
+    #[serde(rename = "read-only", default, skip_serializing_if = "std::ops::Not::not")]
+    pub read_only: bool,
     /// Every environment that runs, with what is live in it.
     pub environments: Vec<RunningEnvironment>,
 }

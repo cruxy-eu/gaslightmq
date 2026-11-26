@@ -1,6 +1,6 @@
 //! The process as the live stream tells it: the snapshot, with every change applied to it.
 
-use std::collections::{BTreeMap, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::num::NonZeroUsize;
 
 use gaslightmq_control_api::environment::{Environment, EnvironmentName};
@@ -15,8 +15,8 @@ use crate::history::Subject;
 
 /// Every definition of the workspace, by kind, each as its file holds it.
 ///
-/// A definition holds what a person writes. What the process keeps beside it, its revision, is no part of it:
-/// see [`Process::revision`].
+/// A definition holds what a person writes. What the process keeps beside it is no part of it:
+/// see [`Process::revision`] and [`Process::loses_comment`].
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct WorkspaceDefinitions {
     /// Every selector.
@@ -48,6 +48,10 @@ pub struct Process {
     definitions: WorkspaceDefinitions,
     /// The revision of every definition, beside it.
     revisions: BTreeMap<DefinitionRef, Revision>,
+    /// The definitions whose write would lose a comment of their file.
+    losing_comments: BTreeSet<DefinitionRef>,
+    /// Whether the workspace refuses every change of a definition.
+    read_only: bool,
     environments: Vec<RunningEnvironment>,
     /// The statistics of each environment, the newest last, as many as `stats_kept` says.
     stats: BTreeMap<EnvironmentName, VecDeque<Stats>>,
@@ -61,31 +65,46 @@ impl Process {
         let ProcessState {
             run,
             definitions,
+            read_only,
             environments,
         } = state;
         let mut revisions = BTreeMap::new();
+        let mut losing_comments = BTreeSet::new();
         let definitions = WorkspaceDefinitions {
-            selectors: held(definitions.selectors, &mut revisions, |selector| {
-                selector.name().clone().into()
-            }),
-            presets: held(definitions.presets, &mut revisions, |preset| {
+            selectors: held(
+                definitions.selectors,
+                &mut revisions,
+                &mut losing_comments,
+                |selector| selector.name().clone().into(),
+            ),
+            presets: held(definitions.presets, &mut revisions, &mut losing_comments, |preset| {
                 preset.name().clone().into()
             }),
-            rules: held(definitions.rules, &mut revisions, |rule| rule.name().clone().into()),
-            scenarios: held(definitions.scenarios, &mut revisions, |scenario| {
-                scenario.name().clone().into()
+            rules: held(definitions.rules, &mut revisions, &mut losing_comments, |rule| {
+                rule.name().clone().into()
             }),
-            layouts: held(definitions.layouts, &mut revisions, |layout| {
+            scenarios: held(
+                definitions.scenarios,
+                &mut revisions,
+                &mut losing_comments,
+                |scenario| scenario.name().clone().into(),
+            ),
+            layouts: held(definitions.layouts, &mut revisions, &mut losing_comments, |layout| {
                 layout.name().clone().into()
             }),
-            environments: held(definitions.environments, &mut revisions, |environment| {
-                environment.name().clone().into()
-            }),
+            environments: held(
+                definitions.environments,
+                &mut revisions,
+                &mut losing_comments,
+                |environment| environment.name().clone().into(),
+            ),
         };
         Self {
             run,
             definitions,
             revisions,
+            losing_comments,
+            read_only,
             environments,
             stats: BTreeMap::new(),
             stats_kept,
@@ -106,6 +125,17 @@ impl Process {
     /// The revision of the definition of that kind and name, when the workspace has one.
     pub fn revision(&self, name: &DefinitionRef) -> Option<Revision> {
         self.revisions.get(name).copied()
+    }
+
+    /// Whether a write of the definition of that kind and name would lose a comment that someone wrote inside it, in
+    /// its file. The UI asks before it saves an edit of such a definition.
+    pub fn loses_comment(&self, name: &DefinitionRef) -> bool {
+        self.losing_comments.contains(name)
+    }
+
+    /// Whether the workspace is read-only: the process refuses every change of a definition.
+    pub const fn read_only(&self) -> bool {
+        self.read_only
     }
 
     /// The revision that `subject` has, as far as the live stream told it, or `None` when the process holds no such
@@ -168,7 +198,16 @@ impl Process {
                     running.rules.retain(|status| status.rule.name() != rule);
                 }
             }
-            StreamMessage::DefinitionChanged { definition, revision } => {
+            StreamMessage::DefinitionChanged {
+                definition,
+                revision,
+                loses_comment,
+            } => {
+                if *loses_comment {
+                    self.losing_comments.insert(definition.name());
+                } else {
+                    self.losing_comments.remove(&definition.name());
+                }
                 self.definition_changed(definition, *revision);
             }
             StreamMessage::DefinitionDeleted { name } => self.definition_deleted(name),
@@ -297,6 +336,7 @@ impl Process {
     /// A definition of the workspace went, and a rule of the workspace leaves every environment with it.
     fn definition_deleted(&mut self, name: &DefinitionRef) {
         self.revisions.remove(name);
+        self.losing_comments.remove(name);
         let definitions = &mut self.definitions;
         match name {
             DefinitionRef::Selector(name) => definitions.selectors.retain(|held| held.name() != name),
@@ -314,19 +354,30 @@ impl Process {
     }
 }
 
-/// The definitions of one kind as their files hold them. The revision of each goes to `revisions`, under the name
-/// that `named` gives the definition.
+/// The definitions of one kind as their files hold them. The revision of each goes to `revisions`, and the name of
+/// each whose write would lose a comment to `losing_comments`, under the name that `named` gives the definition.
 fn held<D>(
     definitions: Vec<DefinitionStatus<D>>,
     revisions: &mut BTreeMap<DefinitionRef, Revision>,
+    losing_comments: &mut BTreeSet<DefinitionRef>,
     named: impl Fn(&D) -> DefinitionRef,
 ) -> Vec<D> {
     definitions
         .into_iter()
-        .map(|DefinitionStatus { definition, revision }| {
-            revisions.insert(named(&definition), revision);
-            definition
-        })
+        .map(
+            |DefinitionStatus {
+                 definition,
+                 revision,
+                 loses_comment,
+             }| {
+                let name = named(&definition);
+                if loses_comment {
+                    losing_comments.insert(name.clone());
+                }
+                revisions.insert(name, revision);
+                definition
+            },
+        )
         .collect()
 }
 

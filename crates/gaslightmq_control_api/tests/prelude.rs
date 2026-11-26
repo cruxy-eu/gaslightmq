@@ -91,6 +91,8 @@ mod next_to_std_and_every_domain {
         let _: Option<<ParseSentence as Operation>::Error> = None::<EnvironmentReadError>;
         let _: Option<<QueryJournal as Operation>::Answer> = None::<Vec<JournalEntry>>;
         let _: Option<<QueryJournal as Operation>::Error> = None::<EnvironmentNotRunning>;
+        let _: Option<<ReloadWorkspace as Operation>::Answer> = None::<Reloaded>;
+        let _: Option<<ReloadWorkspace as Operation>::Error> = None::<ReloadWorkspaceError>;
     }
 
     /// Every other type of the prelude, named without a path.
@@ -105,6 +107,7 @@ mod next_to_std_and_every_domain {
         let _: Option<RequestError> = None;
         let _: Option<AnyDefinition> = None;
         let _: Option<DefinitionRef> = None;
+        let _: Option<DefinitionChange> = None;
         let _: Option<Definitions> = None;
         let _: Option<Revision> = None;
         let _: Option<RunId> = None;

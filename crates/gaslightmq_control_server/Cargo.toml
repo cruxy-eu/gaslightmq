@@ -34,8 +34,11 @@ tokio = { workspace = true, features = ["net", "sync", "time", "rt"] }
 anyhow.workspace = true
 # Every test speaks to the server through the client, as the UI, the CLI and tests do.
 gaslightmq_control_client.workspace = true
-# The workspace of every test: stores in memory.
+# The workspace of every test: stores in memory, and the files of a workspace in a temporary directory for
+# `tests/workspace_files`.
 gaslightmq_workspace = { workspace = true, features = ["memory"] }
+gaslightmq_workspace_fs.workspace = true
+tempfile.workspace = true
 # The lies that the host of a test tells.
 gaslightmq_lie_api.workspace = true
 # The environment of `tests/real_cluster`: a real client in front, and real Kafka brokers behind.

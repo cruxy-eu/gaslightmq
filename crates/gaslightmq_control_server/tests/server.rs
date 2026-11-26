@@ -52,6 +52,10 @@ const RUN: &str = "4be0643f1d98573b97cdca98a65347dd";
 const EARLIER_RUN: &str = "1f0a52c79be34d168a703c5ed2946b08";
 
 #[tokio::test]
+#[expect(
+    clippy::too_many_lines,
+    reason = "the test follows one workspace from its first create to its last delete"
+)]
 async fn a_definition_changes_in_the_workspace_and_every_client_of_the_stream_hears_of_it() -> anyhow::Result<()> {
     let host = Arc::new(Host::new(
         HostConfiguration::default(),
@@ -100,12 +104,14 @@ async fn a_definition_changes_in_the_workspace_and_every_client_of_the_stream_he
         StreamMessage::DefinitionChanged {
             definition: AnyDefinition::Selector(order_producers.clone()),
             revision: created.revision,
+            loses_comment: false,
         }
     );
     // A definition travels as its file holds it, and its revision is no part of it.
     let held = DefinitionStatus {
         definition: order_producers.clone(),
         revision: created.revision,
+        loses_comment: false,
     };
     assert_eq!(got, Ok(held.clone()));
     assert_eq!(listed, Ok(vec![held]));
@@ -299,6 +305,7 @@ async fn an_environment_that_the_workspace_does_not_have_or_that_runs_a_broker_d
             environment: orders,
             revision: created,
             running: false,
+            loses_comment: false,
         }])
     );
     assert_eq!(host.running(), Vec::<EnvironmentName>::new());
@@ -630,6 +637,7 @@ async fn a_change_that_expects_another_revision_changes_nothing_and_says_which_r
         Ok(DefinitionStatus {
             definition: titled,
             revision: first.revision,
+            loses_comment: false,
         })
     );
     // The other tab changes the preset as it is now: it expects the revision that the error named.
@@ -735,6 +743,7 @@ async fn a_change_that_expects_a_revision_of_another_run_changes_nothing_and_nam
         Ok(DefinitionStatus {
             definition: blackhole,
             revision: created.revision,
+            loses_comment: false,
         })
     );
     server.stop().await;
