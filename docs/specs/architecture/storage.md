@@ -45,7 +45,7 @@ flowchart TB
 | Live rules from pads and ⌘K | Memory and a scratch file, per environment | No | The proxy |
 | Edits of the UI that wait for a [save](#saving) | Memory | No | The engine |
 | Journal: who armed what, and when | Memory and recordings, per environment | No | The proxy |
-| Recordings | Append-only files | No | The engine |
+| Recordings | Append-only segments, in a directory for each recording | No | The engine |
 | View preferences, and the [undo history](../domains/control-surfaces.md#undo-and-redo) of a tab | The browser | No | The UI |
 
 ## Process configuration
@@ -87,7 +87,19 @@ control:
   presence_grace: 10s           # how long a presence stays once its live stream ended
 recordings:
   directory: recordings
-  backlog: 10000                # the calls that the recorder may be behind
+  queue_entries: 10000          # the entries that may wait for the recorder
+  queue_size: 256MiB            # the bytes of the frames that may wait with them
+  commit_interval: 1s           # how long an entry waits at most before it is in the recording for good
+  commit_size: 16MiB            # the entries and frames that wait for a commit at most, before it comes early
+  compression: zstd             # the codec of a new recording: zstd, or none
+  compression_level: 3          # how hard the codec works, in the levels of the codec
+  block_size: 4MiB              # the entries and frames of one block, before they are compressed: what a reader holds at a time
+  span_size: 64MiB              # the entries and frames of the blocks that one summary covers, before they are compressed
+  segment_size: 1GiB            # the size at which a data segment is sealed, as it is stored
+  index_size: 256MiB            # the size at which an index chunk is full
+  summary_values: 256           # the values of one field that a summary lists
+  reader_memory: 16MiB          # the unpacked blocks that one reader holds at most, with what it read ahead
+  all_readers_memory: 256MiB    # the unpacked blocks that all readers of the process hold together at most
 ```
 
 Nothing reads `gaslight.yaml` yet: until it does, a setting comes from a flag, a variable or its default.
@@ -168,8 +180,8 @@ gaslight/
 ├── data/                    # fixed record sets for a World
 │   └── payments.jsonl
 ├── secrets/                 # gitignored
-├── recordings/              # gitignored
-│   └── orders-sim.2026-11-21T14-02-11.527Z.rec
+├── recordings/              # gitignored, one directory for each recording
+│   └── orders-sim.2026-11-21T14-02-11.527Z/
 └── .gaslight/               # gitignored
     └── scratch/
         └── orders-sim.yaml
@@ -623,9 +635,16 @@ It does not hold armed state.
 
 ## Recordings
 
-A recording file is append-only.
-It holds a header, the sessions, and the calls and [journal](../domains/observation.md#journal) entries in the order they happened.
-It is one file, so it is easy to attach to a bug report or to seed a World from.
+A recording is append-only.
+It holds a description, the sessions, and the calls and [journal](../domains/observation.md#journal) entries in the order they happened.
+
+The engine keeps a recording through a [storage contract](recording-storage.md#the-storage-contract), and names no format.
+The first layout behind it keeps a recording as [data segments, index chunks and a manifest](recording-storage.md#the-segment-layout), in a directory of its own under `recordings.directory`.
+A segment is [compressed](recording-storage.md#the-codec), with Zstandard unless someone sets another codec.
+That layout asks a [second contract](recording-storage.md#the-segment-backing) for the place of its bytes: files first, and memory for tests.
+
+A recording is a directory, and it can hold many gigabytes.
+Whoever reads one reads it through the storage contract: a query, a replay, and [seeding a World](../domains/world.md#seeding).
 
 Each call holds:
 
@@ -636,22 +655,40 @@ Each call holds:
 - the real cluster's response, when the overlay changed it,
 - the verdict and the explanation.
 
-The name of the file is the [ID of the recording](identity.md#recording-id): its environment and the instant it started.
+The name of its directory is the [ID of the recording](identity.md#recording-id): its environment and the instant it started.
 
 The engine hands the recorder the raw frames of a call next to the call, and only while a recording runs.
 A call itself holds no frames, so a call that nobody records costs no copy of its bytes.
+What it hands over [shares the bytes](recording-storage.md#handing-frames-to-the-recorder) that the session holds already, so a call that someone records costs no copy in its session either.
 
 The recorder writes on a thread of its own, behind a queue of the calls and journal entries it has not written yet.
-The queue holds as many as `recordings.backlog` says.
+The queue holds as many entries as `recordings.queue_entries` says, and no more bytes of frames than `recordings.queue_size` says.
+A count alone would not bound the memory of the queue, because a frame can be many megabytes.
 A session never waits for the disk.
 When the queue is full, the recording stops, and its last entry and the control plane say why.
-What the file holds up to there is a complete recording.
+What the recording holds up to there is a complete recording.
 
-The file is split into chunks, so a long recording can be opened from the end.
-Each chunk carries a summary of the field values it contains.
-A query with a selector skips the chunks that cannot match.
+The recorder commits what it wrote every `recordings.commit_interval`.
+What a commit covers is in the recording for good, and a reader sees it while the recording runs.
+A recording that a crash cut short opens up to its last commit.
 
-The index is not stored.
+A recording is split into segments, so nothing in it grows without a bound.
+A segment is split into [blocks](recording-storage.md#blocks-and-chunks), each compressed by itself, and a reader starts a stream at any of them.
+A block is small, because a reader holds one at a time: what one reader holds, and what all readers of a process hold together, each has a [budget](recording-storage.md#memory) that a property names.
+Nothing waits for memory: a stream that finds no room for one block is refused, with an error that names the budget.
+Every stretch of a recording carries a [summary](recording-storage.md#summary) of the field values it contains: a [span of blocks](recording-storage.md#spans), a segment and an index chunk.
+A query with a selector reads the manifest, then the index chunks that can match, and then streams the spans that can match, and skips the rest.
+
+Every reader is a stream: a replay, the index, a seed and a query each read a stretch of the recording in order.
+[Nothing is copied twice](recording-storage.md#nothing-is-copied-twice) on the way: the decompressor writes the bytes of an entry once, a reader checks the block once, and from there it reads the fields, the verdict and the explanation of a call through views, and a frame as a slice.
+A reader that asks for a call as its type gets one built.
+Whoever keeps a view keeps its block, so a reader that keeps a call beyond its stream asks for the type.
+
+An entry is written as its type lies in memory, so it cannot grow.
+The encoding of a recording has [versions](recording-storage.md#versions): a recording says the version it was written in, and a build converts a recording of an older version when it reads it.
+No tool in another language reads a recording, which is a [known limit](recording-storage.md#known-limits).
+
+The [index](../domains/observation.md#index) of the engine, with its facets, is not stored.
 The engine rebuilds it when it opens a recording.
 
 ### Privacy
@@ -659,6 +696,7 @@ The engine rebuilds it when it opens a recording.
 Records can hold personal or secret data.
 A **metadata-only** recording drops record keys, values and headers,
 and keeps everything else.
+It keeps the frames: a frame with records is there [without their contents](recording-storage.md#what-a-recording-must-not-keep), and still decodes.
 
 | Backend | Default | Reason |
 |---|---|---|
@@ -673,6 +711,9 @@ A `SaslAuthenticate` request carries a client's password or token.
 The engine blanks that payload in every recording, full ones included,
 and in every call it streams to the UI.
 A client's credentials never reach the disk.
+
+The crate that holds the [entries of a recording](recording-storage.md#what-a-recording-must-not-keep) does the blanking and applies privacy where an entry is made, so no caller and no storage can forget either.
+It blanks what the server answers to `SaslAuthenticate` too.
 
 ## Browser
 
