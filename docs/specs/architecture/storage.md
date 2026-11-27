@@ -92,9 +92,10 @@ recordings:
   compression: zstd             # the codec of a new recording: zstd, or none
   compression_level: 3          # how hard the codec works, in the levels of the codec
   block_size: 4MiB              # the entries and frames of one block, before they are compressed: what a reader holds at a time
+  run_size: 64MiB               # the entries and frames of the blocks that one summary covers, before they are compressed
   segment_size: 1GiB            # the size at which a data segment is sealed, as it is stored
   index_size: 256MiB            # the size at which an index chunk is full
-  summary_values: 64            # the values of one field that a summary lists
+  summary_values: 256           # the values of one field that a summary lists
   reader_memory: 16MiB          # the unpacked blocks that one reader holds at most, with what it read ahead
   all_readers_memory: 256MiB    # the unpacked blocks that all readers of the process hold together at most
 ```
@@ -625,8 +626,9 @@ A recording that a crash cut short opens up to its last commit.
 A recording is split into segments, so nothing in it grows without a bound.
 A segment is split into [blocks](recording-storage.md#blocks-and-chunks), each compressed by itself, and a reader starts a stream at any of them.
 A block is small, because a reader holds one at a time: what one reader holds, and what all readers of a process hold together, each has a [budget](recording-storage.md#memory) that a property names.
-Every stretch of a recording carries a [summary](recording-storage.md#summary) of the field values it contains: a block, a segment and an index chunk.
-A query with a selector reads the manifest, then the index chunks that can match, and then streams the blocks that can match, and skips the rest.
+Nothing waits for memory: a stream that finds no room for one block is refused, with an error that names the budget.
+Every stretch of a recording carries a [summary](recording-storage.md#summary) of the field values it contains: a [run of blocks](recording-storage.md#runs), a segment and an index chunk.
+A query with a selector reads the manifest, then the index chunks that can match, and then streams the runs that can match, and skips the rest.
 
 Every reader is a stream: a replay, the index, a seed and a query each read a stretch of the recording in order.
 [Nothing is copied twice](recording-storage.md#nothing-is-copied-twice) on the way: the decompressor writes the bytes of an entry once, a reader checks the block once, and from there it reads the fields, the verdict and the explanation of a call through views, and a frame as a slice.

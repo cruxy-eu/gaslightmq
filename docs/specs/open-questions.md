@@ -58,15 +58,8 @@ The second part lists the decisions that were settled, with the reason and the s
   Nothing exports a recording yet, and no format for such a file is chosen.
 - **How long does a build read a recording of an old version?**
   A [message of a recording](architecture/recording-storage.md#a-message) cannot grow, so every change of what an entry holds is a new version of the encoding, and a reader keeps the types of every version that it reads.
-  The [recommendation](architecture/recording-storage.md#how-long-a-version-is-kept) is two years, and a version goes only with a major release, after a build that writes such a recording again.
-  Keeping every version for good is the other choice.
-- **Does a reader of a recording wait for memory, or is it refused?**
-  The readers of a process share a [budget](architecture/recording-storage.md#when-a-budget-is-reached).
-  The recommendation is that nothing waits: a stream that finds no room for one block is refused, and says so.
-  A stream that waits for room, with a limit on the wait, is the other choice.
-- **Does a summary cover each block of a recording, or a run of blocks?**
-  With blocks of 4 MiB, a summary for each block makes the [index](architecture/recording-storage.md#sizes) about 0.7% of a recording, by an estimate that nobody measured.
-  A summary for a run of blocks would take it back to a sixteenth, with one more thing between a block and a segment.
+  Until someone decides otherwise, a build reads [every version](architecture/recording-storage.md#how-long-a-version-is-kept) that a release wrote.
+  Whether a version ever goes, after how long, and how a recording of such a version is written again, is open.
 - **Where do a World's initial records live?**
   A [seeded](domains/world.md#seeding) World can start with recorded records.
   A world definition is in git, and recordings are not.
@@ -155,6 +148,8 @@ The second part lists the decisions that were settled, with the reason and the s
 | Where does free text go? | In an optional title on the definition itself. See [titles](domains/rules.md#titles). | Nothing references a title, so it changes without breaking anything. |
 | Can someone rename a definition? | No. Another name means a new definition, and the old one is deleted. | A rename had to rewrite every reference, and its history hung on a name that no longer existed. |
 | What is the default for recordings? | Metadata-only on Upstream, full on Simulated. See [privacy](architecture/storage.md#privacy). | The real cluster can carry sensitive data. The World's data is synthetic. |
+| What does a reader of a recording do when its memory budget is reached? | Nothing waits. A reader stops reading ahead, and a stream that finds no room for one block is refused with an error that names the budget. See [memory](architecture/recording-storage.md#when-a-budget-is-reached). | A reader that waits can wait for its own consumer, and a wait says nothing to whoever asked. |
+| What does a summary of a recording cover? | A run of blocks, of a size that a property names: 64 MiB by default. See [runs](architecture/recording-storage.md#runs). | A reader holds a block, so a block is small. A summary for every small block made the index sixteen times as large. |
 | Does GaslightMQ need a database? | No. Definitions are files, live state is memory, recordings are append-only segments in files. See [storage](architecture/storage.md). | A recording is a write-once stream of segments, and selectors already are the query language. |
 | What survives a restart? | Definitions and recordings. Nothing is armed. See [a restart is a clean slate](architecture/storage.md#a-restart-is-a-clean-slate). | A fault injector that resumes on its own is a hazard. |
 | What happens to live rules in a crash? | A [scratch file](architecture/storage.md#scratch) keeps their definitions. They load disarmed. | Work is not lost, and git stays clean. |
