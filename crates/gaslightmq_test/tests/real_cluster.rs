@@ -15,7 +15,7 @@ use gaslightmq_control_api::selector::{Condition, Conditions};
 use gaslightmq_kafka_client_api::ClientError;
 use gaslightmq_kafka_client_native::KafkaProducer;
 use gaslightmq_test::GaslightMq;
-use gaslightmq_test_kafka::{Broker, KafkaCluster, NewTopic};
+use gaslightmq_test_kafka::{KafkaCluster, NewTopic};
 use gaslightmq_wire::{Offset, Partition, Record, ResponseError};
 
 /// When the orders of these tests were placed, in milliseconds since 1970.
@@ -86,10 +86,9 @@ async fn a_proxy_in_front_of_several_brokers_runs_in_the_run_that_the_test_names
         .topics()
         .create(NewTopic::named("orders").with_partitions(3))
         .await?;
-    // The proxy gives each broker of the cluster a listener of its own.
+    // The proxy gives each broker that it finds in the cluster a listener of its own: the test names none.
     let run = RunId::from_random_bits(0x4be0_643f_1d98_573b_97cd_ca98_a653_47dd);
     let gaslight = GaslightMq::proxy_in_front_of(cluster.brokers()[0].address().to_string().parse()?)
-        .with_brokers(cluster.brokers().iter().map(Broker::id))?
         .with_run(run)
         .start()
         .await?;

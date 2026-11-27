@@ -139,6 +139,11 @@ impl ScriptedBackend {
             .send_modify(|endpoints| endpoints.open(Endpoint::Broker(broker)));
     }
 
+    /// A broker that the cluster did not have joins it: its endpoint opens.
+    pub fn join(&self, broker: BrokerId) {
+        self.bring_back(broker);
+    }
+
     /// The broker goes down and comes back before the engine looks: its endpoint closes, and opens again.
     pub fn bounce(&self, broker: BrokerId) {
         self.endpoints.send_modify(|endpoints| {
@@ -324,10 +329,10 @@ pub struct EngineUnderTest {
 
 impl EngineUnderTest {
     /// The configuration of an engine whose endpoints each take a free port of this machine:
-    /// the bootstrap endpoint, and the one of every broker of a [`ScriptedBackend`].
+    /// the bootstrap endpoint, and the one of every broker that the backend reports, whatever its ID.
     pub fn configuration() -> anyhow::Result<EngineConfiguration> {
         let any: ListenAddress = "127.0.0.1:0".parse()?;
-        let brokers = BrokerListeners::pinned(ScriptedBackend::brokers().map(|broker| (broker, any)))?;
+        let brokers: BrokerListeners = "127.0.0.1:0".parse()?;
         let listeners = Listeners::new(any, brokers, "localhost".parse()?)?;
         Ok(EngineConfiguration::new(listeners))
     }

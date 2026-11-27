@@ -400,7 +400,7 @@ fn listeners_that_do_not_hold_together_are_an_error() {
 }
 
 #[test]
-fn broker_listeners_write_a_range_as_text() {
+fn broker_listeners_write_a_range_and_any_port_as_text() {
     // brokers: 0.0.0.0:19092-19191
     writes(
         &"0.0.0.0:19092-19191".parse::<BrokerListeners>().unwrap(),
@@ -410,15 +410,20 @@ fn broker_listeners_write_a_range_as_text() {
         &"0.0.0.0:19092".parse::<BrokerListeners>().unwrap(),
         r#""0.0.0.0:19092""#,
     );
+    // brokers: 127.0.0.1:0
+    writes(
+        &BrokerListeners::any_port("127.0.0.1".parse().unwrap()),
+        r#""127.0.0.1:0""#,
+    );
     rejects::<BrokerListeners>(
         r#""0.0.0.0:19191-19092""#,
         "broker listeners \"0.0.0.0:19191-19092\": port range 19191-19092 ends before it starts",
     );
     rejects::<BrokerListeners>(
         r#""19092-19191""#,
-        "broker listeners \"19092-19191\" are not an IP address and a range of ports",
+        "broker listeners \"19092-19191\" are not an IP address and a range of ports or port 0",
     );
-    rejects::<BrokerListeners>("19092", "an IP address and a range of ports, or a map");
+    rejects::<BrokerListeners>("19092", "an IP address and a range of ports or port 0, or a map");
 }
 
 #[test]

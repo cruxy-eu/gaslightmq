@@ -11,15 +11,18 @@ use crate::ports::{PortRange, PortRangeError, Taken};
 
 /// Where the brokers of a cluster listen: one listener per broker.
 ///
-/// There are two ways to say it.
+/// There are three ways to say it.
 ///
 /// | Way | Says | Example |
 /// |---|---|---|
 /// | A range | One IP address and a range of ports. The brokers take the ports in the order of their IDs. | `0.0.0.0:19092-19191` |
+/// | Any port | One IP address and port 0. Each broker takes a free port that the system picks when its listener opens. | `127.0.0.1:0` |
 /// | Pinned | The address of each broker, for ports that are published one by one. | `1` on `0.0.0.0:19092`, `2` on `0.0.0.0:19093` |
 ///
 /// Nobody lists the brokers of a real cluster: the proxy discovers them.
 /// [`assign`](Self::assign) then gives each broker its address.
+/// Where a broker asks for port 0, nobody knows its port before its listener is open,
+/// and the listener says which port it got.
 ///
 /// ```
 /// use gaslightmq_environment::prelude::*;
@@ -32,6 +35,12 @@ use crate::ports::{PortRange, PortRangeError, Taken};
 /// assert_eq!(addresses[&BrokerId::from(1)], "0.0.0.0:19092".parse().expect("a listen address"));
 /// assert_eq!(addresses[&BrokerId::from(2)], "0.0.0.0:19093".parse().expect("a listen address"));
 /// assert_eq!(addresses[&BrokerId::from(5)], "0.0.0.0:19094".parse().expect("a listen address"));
+///
+/// // Any port: every broker the proxy finds, however many and whichever IDs they have, asks for a free port.
+/// let listeners: BrokerListeners = "127.0.0.1:0".parse()?;
+/// let addresses = listeners.assign([5, 1, 2].map(BrokerId::from))?;
+/// assert_eq!(addresses[&BrokerId::from(5)], "127.0.0.1:0".parse().expect("a listen address"));
+/// assert_eq!(addresses.len(), 3);
 /// # Ok::<(), BrokerListenersError>(())
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -40,13 +49,25 @@ pub struct BrokerListeners(Way);
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum Way {
     Range { ip: IpAddr, ports: PortRange },
+    AnyPort { ip: IpAddr },
     Pinned(BTreeMap<BrokerId, ListenAddress>),
 }
+
+/// Port 0: the system picks a free port when the listener opens.
+const ANY_PORT: u16 = 0;
 
 impl BrokerListeners {
     /// One listener per broker on `ip`, on the ports of the range in the order of the broker IDs.
     pub fn range(ip: IpAddr, ports: PortRange) -> Self {
         Self(Way::Range { ip, ports })
+    }
+
+    /// One listener per broker on `ip`, each on a free port that the system picks when the listener opens.
+    ///
+    /// Every broker of the cluster gets one, a broker that joins later too, and no broker is named up front.
+    /// A broker keeps its listener while it stays in the cluster, whichever brokers join or leave.
+    pub fn any_port(ip: IpAddr) -> Self {
+        Self(Way::AnyPort { ip })
     }
 
     /// Each broker on the address it is pinned to.
@@ -83,14 +104,22 @@ impl BrokerListeners {
     pub fn as_range(&self) -> Option<(IpAddr, PortRange)> {
         match &self.0 {
             Way::Range { ip, ports } => Some((*ip, *ports)),
-            Way::Pinned(_) => None,
+            Way::AnyPort { .. } | Way::Pinned(_) => None,
+        }
+    }
+
+    /// The IP address, when every broker takes a free port of it.
+    pub fn as_any_port(&self) -> Option<IpAddr> {
+        match &self.0 {
+            Way::AnyPort { ip } => Some(*ip),
+            Way::Range { .. } | Way::Pinned(_) => None,
         }
     }
 
     /// The address of each broker, when the brokers are pinned.
     pub fn as_pinned(&self) -> Option<&BTreeMap<BrokerId, ListenAddress>> {
         match &self.0 {
-            Way::Range { .. } => None,
+            Way::Range { .. } | Way::AnyPort { .. } => None,
             Way::Pinned(pinned) => Some(pinned),
         }
     }
@@ -99,6 +128,8 @@ impl BrokerListeners {
     ///
     /// A range gives its ports in the order of the broker IDs,
     /// so a broker keeps its port for as long as the set of brokers stays the same.
+    /// Any port gives every broker port 0 of its IP address, whatever the set is: the port is the one that the
+    /// listener gets when it opens.
     /// Pinned brokers keep their address whatever the set is, and a pin for a broker that is not there is left out.
     ///
     /// # Errors
@@ -121,6 +152,10 @@ impl BrokerListeners {
                 let addresses = ports.ports().map(|port| ListenAddress::new(*ip, port));
                 Ok(brokers.into_iter().zip(addresses).collect())
             }
+            Way::AnyPort { ip } => {
+                let any = ListenAddress::new(*ip, ANY_PORT);
+                Ok(brokers.into_iter().map(|broker| (broker, any)).collect())
+            }
             Way::Pinned(pinned) => brokers
                 .into_iter()
                 .map(|broker| match pinned.get(&broker) {
@@ -135,12 +170,15 @@ impl BrokerListeners {
     pub(crate) fn taken(&self) -> Vec<Taken> {
         match &self.0 {
             Way::Range { ip, ports } => vec![Taken::range(*ip, *ports)],
+            // A listener on port 0 shares its port with no other listener.
+            Way::AnyPort { .. } => Vec::new(),
             Way::Pinned(pinned) => pinned.values().copied().filter_map(Taken::one).collect(),
         }
     }
 }
 
-/// Reads a range, such as `0.0.0.0:19092-19191`. An IPv6 address stands in brackets: `[::]:19092-19191`.
+/// Reads a range, such as `0.0.0.0:19092-19191`, or any port, such as `127.0.0.1:0`.
+/// An IPv6 address stands in brackets: `[::]:19092-19191`, `[::1]:0`.
 impl FromStr for BrokerListeners {
     type Err = BrokerListenersError;
 
@@ -155,6 +193,9 @@ impl FromStr for BrokerListeners {
             None => ip.parse::<Ipv4Addr>().map(IpAddr::V4).ok(),
         };
         let ip = ip.ok_or_else(invalid_address)?;
+        if ports == ANY_PORT.to_string() {
+            return Ok(Self::any_port(ip));
+        }
         let ports = ports
             .parse()
             .map_err(|error| BrokerListenersError::InvalidPorts { input: input(), error })?;
@@ -170,10 +211,11 @@ impl TryFrom<&str> for BrokerListeners {
     }
 }
 
-/// Writes a range as it is read, and pinned brokers as `1 on 0.0.0.0:19092, 2 on 0.0.0.0:19093`.
+/// Writes a range and any port as they are read, and pinned brokers as `1 on 0.0.0.0:19092, 2 on 0.0.0.0:19093`.
 impl fmt::Display for BrokerListeners {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match &self.0 {
+            Way::AnyPort { ip } => write!(f, "{}", ListenAddress::new(*ip, ANY_PORT)),
             Way::Range {
                 ip: IpAddr::V4(ip),
                 ports,
@@ -207,9 +249,12 @@ impl fmt::Display for BrokerListeners {
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum BrokerListenersError {
     /// The text does not start with an IP address and a colon.
-    #[error("broker listeners {input:?} are not an IP address and a range of ports, such as 0.0.0.0:19092-19191")]
+    #[error(
+        "broker listeners {input:?} are not an IP address and a range of ports or port 0, \
+         such as 0.0.0.0:19092-19191 or 127.0.0.1:0"
+    )]
     InvalidAddress { input: String },
-    /// What follows the IP address is not a range of ports.
+    /// What follows the IP address is not a range of ports, and not port 0.
     #[error("broker listeners {input:?}: {error}")]
     InvalidPorts { input: String, error: PortRangeError },
     /// No broker is pinned.
@@ -467,6 +512,51 @@ mod tests {
     }
 
     #[test]
+    fn any_port_is_an_ip_address_and_port_zero() {
+        for (text, ip) in [
+            ("127.0.0.1:0", "127.0.0.1"),
+            ("0.0.0.0:0", "0.0.0.0"),
+            ("[::1]:0", "::1"),
+        ] {
+            let listeners = range(text);
+            assert_eq!(listeners, BrokerListeners::any_port(ip.parse().unwrap()));
+            assert_eq!(listeners.as_any_port(), Some(ip.parse().unwrap()));
+            assert_eq!(listeners.as_range(), None);
+            assert!(listeners.as_pinned().is_none());
+            assert_eq!(listeners.to_string(), text);
+        }
+        // Port 0 stands alone: in a range it is no port.
+        assert!(matches!(
+            "127.0.0.1:0-5".parse::<BrokerListeners>(),
+            Err(BrokerListenersError::InvalidPorts { .. })
+        ));
+        assert!(matches!(
+            "127.0.0.1:00".parse::<BrokerListeners>(),
+            Err(BrokerListenersError::InvalidPorts { .. })
+        ));
+    }
+
+    #[test]
+    fn any_port_gives_every_broker_a_free_port_whatever_its_id() {
+        let listeners = range("127.0.0.1:0");
+
+        let assigned = listeners.assign(brokers([7, 1, 3])).unwrap();
+        assert_eq!(
+            assigned.into_iter().collect::<Vec<_>>(),
+            [
+                (BrokerId::from(1), address("127.0.0.1:0")),
+                (BrokerId::from(3), address("127.0.0.1:0")),
+                (BrokerId::from(7), address("127.0.0.1:0")),
+            ]
+        );
+        // Broker 1 leaves and broker 9 joins: the others keep what they asked for, so their listeners stay.
+        let assigned = listeners.assign(brokers([3, 7, 9])).unwrap();
+        assert_eq!(assigned[&BrokerId::from(3)], address("127.0.0.1:0"));
+        assert_eq!(assigned[&BrokerId::from(9)], address("127.0.0.1:0"));
+        assert!(listeners.assign([]).unwrap().is_empty());
+    }
+
+    #[test]
     fn pinned_brokers_keep_their_address() {
         let listeners = pinned([(1, "0.0.0.0:19092"), (2, "0.0.0.0:19093"), (3, "0.0.0.0:19094")]).unwrap();
 
@@ -559,5 +649,7 @@ mod tests {
         // Another IP address, or a port that the system picks, is free.
         assert!(listeners("127.0.0.1:19100", range("10.0.4.27:19092-19191")).is_ok());
         assert!(listeners("0.0.0.0:0", range("0.0.0.0:19092-19191")).is_ok());
+        assert!(listeners("127.0.0.1:19092", range("127.0.0.1:0")).is_ok());
+        assert!(listeners("127.0.0.1:0", range("127.0.0.1:0")).is_ok());
     }
 }

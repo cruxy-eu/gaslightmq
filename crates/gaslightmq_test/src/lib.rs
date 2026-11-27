@@ -61,6 +61,8 @@
 //! - **Free ports.**
 //!   Every listener of the proxy and the control plane takes a port that the system picks,
 //!   so tests run side by side in one binary. The listeners accept connections once the test holds the value.
+//!   The proxy gives each broker that it finds in the cluster a listener of its own, so a test names no broker,
+//!   however many the cluster has.
 //! - **A workspace in memory.**
 //!   It holds nothing but the environment of the proxy, until the test creates definitions through the control
 //!   plane. A test that wants other stores, or stores that hold definitions already, hands over their
@@ -76,8 +78,6 @@
 //!
 //! - **Brokers.** GaslightMQ runs no broker yet, so a test starts a proxy in front of a real cluster alone.
 //!   A broker, and a proxy in front of one, arrive with the crate `broker`.
-//! - **Brokers that the test does not list.** The proxy gives each broker of the cluster a listener of its own, and
-//!   it needs the IDs of the brokers to give each one a free port: see [`GaslightMqConfiguration::with_brokers`].
 //! - **Scenarios and recordings.** A test arms its rules one by one. Activating a scenario and asserting on the
 //!   recording arrive with the crates `scenario` and `recording`.
 //!

@@ -103,7 +103,7 @@
 //! | A name, an [`EnvironmentTitle`], a [`HostName`], an address, a [`PortRange`], a [`SchemaRegistryUrl`], a [`FilePath`], a [`VariableName`] | The text. |
 //! | [`RecordingMode`], [`SaslMechanism`], [`SettingSource`] | The name. |
 //! | [`SecretRef`] | A map with one entry: `file` and the path, or `env` and the name of the variable. |
-//! | [`BrokerListeners`] | The text of a range, or a map from broker IDs to addresses. |
+//! | [`BrokerListeners`] | The text of a range or of any port, or a map from broker IDs to addresses. |
 //! | [`Listeners`] | A map with `bootstrap`, `brokers` and `advertise`. |
 //! | [`Upstream`] | A map with `bootstrap`, and with `tls` and `sasl` when it has them. |
 //! | [`Tls`] | A map with `ca` when it has one. |
@@ -142,7 +142,7 @@
 //! | [`ServerAddress`] | [`ServerAddressError`] | The host or the port is missing or wrong. |
 //! | [`ListenAddress`] | [`ListenAddressError`] | The text is not an IP address and a port. |
 //! | [`PortRange`] | [`PortRangeError`] | A port is no port, or the range ends before it starts. |
-//! | [`BrokerListeners`] | [`BrokerListenersError`] | The text is no range, pins do not hold together, or a broker gets no address. |
+//! | [`BrokerListeners`] | [`BrokerListenersError`] | The text is no range and no port 0, pins do not hold together, or a broker gets no address. |
 //! | [`Listeners`] | [`ListenersError`] | The bootstrap listener takes a port of a broker listener. |
 //! | [`SchemaRegistryUrl`] | [`SchemaRegistryUrlError`] | The text breaks a part of the rule for URLs. |
 //! | [`FilePath`], [`VariableName`] | [`FilePathError`], [`VariableNameError`] | The text is empty, or holds a character it cannot hold. |

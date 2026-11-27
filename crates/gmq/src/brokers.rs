@@ -9,16 +9,17 @@ const PIN: char = '=';
 /// What stands between two pins: `1=0.0.0.0:19092,2=0.0.0.0:19093`.
 const PINS: char = ',';
 
-/// The broker listeners that `text` names: a range of ports, or a pin for every broker.
+/// The broker listeners that `text` names: a range of ports, any port, or a pin for every broker.
 ///
 /// A range, `0.0.0.0:19092-19191`, gives the brokers that the proxy discovers a port each, in the order of their
-/// IDs. Pins, `1=0.0.0.0:19092,2=0.0.0.0:19093`, give each broker its own address, and port 0 takes a free port.
-/// The text of a range is the one an environment file holds.
+/// IDs. Any port, `127.0.0.1:0`, gives each broker that the proxy discovers a free port that the system picks.
+/// Pins, `1=0.0.0.0:19092,2=0.0.0.0:19093`, give each broker its own address, and port 0 takes a free port.
+/// The text of a range or of any port is the one an environment file holds.
 ///
 /// # Errors
 ///
-/// [`BrokersError`] when the text is no range, a pin is no broker ID and an address, or the pins do not hold
-/// together.
+/// [`BrokersError`] when the text is no range and no port 0, a pin is no broker ID and an address, or the pins do
+/// not hold together.
 pub(crate) fn broker_listeners(text: &str) -> Result<BrokerListeners, BrokersError> {
     if !text.contains(PIN) {
         return text.parse().map_err(|error| BrokersError::InvalidListeners { error });
@@ -50,7 +51,7 @@ fn pinned(pin: &str) -> Result<(BrokerId, ListenAddress), BrokersError> {
 /// Why the text of `--brokers` names no broker listeners.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub(crate) enum BrokersError {
-    /// The text is no range of ports, or the pins do not hold together: two pin one broker, or two brokers share an
+    /// The text is no range of ports and no port 0, or the pins do not hold together: two pin one broker, or two brokers share an
     /// address.
     #[error("{error}")]
     InvalidListeners { error: BrokerListenersError },
@@ -74,6 +75,13 @@ mod tests {
         let listeners = broker_listeners("0.0.0.0:19092-19191").unwrap();
 
         assert_eq!(listeners, "0.0.0.0:19092-19191".parse().unwrap());
+    }
+
+    #[test]
+    fn port_zero_gives_every_broker_a_free_port() {
+        let listeners = broker_listeners("127.0.0.1:0").unwrap();
+
+        assert_eq!(listeners.as_any_port(), Some("127.0.0.1".parse().unwrap()));
     }
 
     #[test]

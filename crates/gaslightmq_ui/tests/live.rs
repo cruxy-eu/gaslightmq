@@ -19,7 +19,7 @@ use gaslightmq_control_api::environment::{
 };
 use gaslightmq_control_api::field::{ClientSoftware, ConnectionNumber, Endpoint, FieldValue, Fields};
 use gaslightmq_control_api::incident::IncidentSupport;
-use gaslightmq_control_api::kernel::{ApiKey, BrokerId, ClientId};
+use gaslightmq_control_api::kernel::{ApiKey, ClientId};
 use gaslightmq_control_api::prelude::*;
 use gaslightmq_control_api::rule::{PresetName, Rule, RuleState};
 use gaslightmq_control_api::selector::{Condition, Conditions, SelectorName, SelectorRef};
@@ -36,9 +36,9 @@ const RUN: &str = "4be0643f1d98573b97cdca98a65347dd";
 struct Workspace;
 
 impl Workspace {
-    /// A proxy in front of a real cluster, with a port pinned for its one broker.
+    /// A proxy in front of a real cluster, with a range of ports for its brokers.
     fn environment(name: &str) -> Environment {
-        let brokers = BrokerListeners::pinned([(BrokerId::from(1), "0.0.0.0:19092".parse().unwrap())]).unwrap();
+        let brokers: BrokerListeners = "0.0.0.0:19092-19191".parse().unwrap();
         let listen = Listeners::new("0.0.0.0:9092".parse().unwrap(), brokers, "localhost".parse().unwrap()).unwrap();
         Environment::new(
             name.parse().unwrap(),

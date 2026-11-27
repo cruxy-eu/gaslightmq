@@ -113,7 +113,7 @@ async fn an_environment_started_by_its_name_streams_its_calls_until_it_stops() -
     ));
     // The environment stands in front of the cluster, and every listener of it takes a free port.
     let any = ListenAddress::new(LOCALHOST, ANY_PORT);
-    let brokers = BrokerListeners::pinned(cluster.brokers().iter().map(|broker| (broker.id(), any)))?;
+    let brokers = BrokerListeners::any_port(LOCALHOST);
     let staging = Environment::new(
         "staging-proxy".parse()?,
         Instances::ProxyInFrontOfCluster {
@@ -224,7 +224,7 @@ async fn a_rule_of_the_workspace_arms_and_fires_in_the_environment_that_runs() -
         RUN.parse()?,
     ));
     let any = ListenAddress::new(LOCALHOST, ANY_PORT);
-    let brokers = BrokerListeners::pinned(cluster.brokers().iter().map(|broker| (broker.id(), any)))?;
+    let brokers = BrokerListeners::any_port(LOCALHOST);
     let staging = Environment::new(
         "staging-proxy".parse()?,
         Instances::ProxyInFrontOfCluster {
@@ -327,7 +327,7 @@ async fn a_rule_arms_and_disarms_only_as_its_sender_saw_it() -> anyhow::Result<(
         RUN.parse()?,
     ));
     let any = ListenAddress::new(LOCALHOST, ANY_PORT);
-    let brokers = BrokerListeners::pinned(cluster.brokers().iter().map(|broker| (broker.id(), any)))?;
+    let brokers = BrokerListeners::any_port(LOCALHOST);
     let staging = Environment::new(
         "staging-proxy".parse()?,
         Instances::ProxyInFrontOfCluster {
@@ -426,7 +426,7 @@ async fn a_press_of_an_empty_pad_makes_its_live_rule_and_arms_it() -> anyhow::Re
         RUN.parse()?,
     ));
     let any = ListenAddress::new(LOCALHOST, ANY_PORT);
-    let brokers = BrokerListeners::pinned(cluster.brokers().iter().map(|broker| (broker.id(), any)))?;
+    let brokers = BrokerListeners::any_port(LOCALHOST);
     let staging = Environment::new(
         "staging-proxy".parse()?,
         Instances::ProxyInFrontOfCluster {
@@ -525,7 +525,7 @@ async fn a_turn_changes_the_live_rule_of_a_pad_and_it_stays_armed() -> anyhow::R
         RUN.parse()?,
     ));
     let any = ListenAddress::new(LOCALHOST, ANY_PORT);
-    let brokers = BrokerListeners::pinned(cluster.brokers().iter().map(|broker| (broker.id(), any)))?;
+    let brokers = BrokerListeners::any_port(LOCALHOST);
     let staging = Environment::new(
         "staging-proxy".parse()?,
         Instances::ProxyInFrontOfCluster {
@@ -638,7 +638,7 @@ async fn a_kept_live_rule_leaves_its_environment_for_the_workspace_and_stays_arm
         RUN.parse()?,
     ));
     let any = ListenAddress::new(LOCALHOST, ANY_PORT);
-    let brokers = BrokerListeners::pinned(cluster.brokers().iter().map(|broker| (broker.id(), any)))?;
+    let brokers = BrokerListeners::any_port(LOCALHOST);
     let staging = Environment::new(
         "staging-proxy".parse()?,
         Instances::ProxyInFrontOfCluster {
@@ -746,7 +746,7 @@ async fn a_session_is_listed_while_it_is_open_and_closes_when_someone_closes_it(
         RUN.parse()?,
     ));
     let any = ListenAddress::new(LOCALHOST, ANY_PORT);
-    let brokers = BrokerListeners::pinned(cluster.brokers().iter().map(|broker| (broker.id(), any)))?;
+    let brokers = BrokerListeners::any_port(LOCALHOST);
     let staging = Environment::new(
         "staging-proxy".parse()?,
         Instances::ProxyInFrontOfCluster {
@@ -851,7 +851,7 @@ async fn a_rule_that_spends_its_budget_disarms_and_the_statistics_count_its_firi
         RUN.parse()?,
     ));
     let any = ListenAddress::new(LOCALHOST, ANY_PORT);
-    let brokers = BrokerListeners::pinned(cluster.brokers().iter().map(|broker| (broker.id(), any)))?;
+    let brokers = BrokerListeners::any_port(LOCALHOST);
     let staging = Environment::new(
         "staging-proxy".parse()?,
         Instances::ProxyInFrontOfCluster {
@@ -960,7 +960,7 @@ async fn a_sentence_knows_the_client_that_wrote_through_the_environment_and_ente
         RUN.parse()?,
     ));
     let any = ListenAddress::new(LOCALHOST, ANY_PORT);
-    let brokers = BrokerListeners::pinned(cluster.brokers().iter().map(|broker| (broker.id(), any)))?;
+    let brokers = BrokerListeners::any_port(LOCALHOST);
     let staging = Environment::new(
         "staging-proxy".parse()?,
         Instances::ProxyInFrontOfCluster {
@@ -1064,7 +1064,7 @@ async fn a_client_that_stays_away_for_the_grace_period_loses_its_holds() -> anyh
         RUN.parse()?,
     ));
     let any = ListenAddress::new(LOCALHOST, ANY_PORT);
-    let brokers = BrokerListeners::pinned(cluster.brokers().iter().map(|broker| (broker.id(), any)))?;
+    let brokers = BrokerListeners::any_port(LOCALHOST);
     let staging = Environment::new(
         "staging-proxy".parse()?,
         Instances::ProxyInFrontOfCluster {
@@ -1169,7 +1169,7 @@ async fn a_client_that_comes_back_within_the_grace_period_keeps_its_holds_until_
         RUN.parse()?,
     ));
     let any = ListenAddress::new(LOCALHOST, ANY_PORT);
-    let brokers = BrokerListeners::pinned(cluster.brokers().iter().map(|broker| (broker.id(), any)))?;
+    let brokers = BrokerListeners::any_port(LOCALHOST);
     let staging = Environment::new(
         "staging-proxy".parse()?,
         Instances::ProxyInFrontOfCluster {
@@ -1278,7 +1278,7 @@ async fn a_client_that_goes_silent_loses_its_holds_after_the_grace_period() -> a
         RUN.parse()?,
     ));
     let any = ListenAddress::new(LOCALHOST, ANY_PORT);
-    let brokers = BrokerListeners::pinned(cluster.brokers().iter().map(|broker| (broker.id(), any)))?;
+    let brokers = BrokerListeners::any_port(LOCALHOST);
     let staging = Environment::new(
         "staging-proxy".parse()?,
         Instances::ProxyInFrontOfCluster {
@@ -1383,7 +1383,7 @@ async fn the_journal_of_an_environment_says_what_each_request_changed_and_where_
         RUN.parse()?,
     ));
     let any = ListenAddress::new(LOCALHOST, ANY_PORT);
-    let brokers = BrokerListeners::pinned(cluster.brokers().iter().map(|broker| (broker.id(), any)))?;
+    let brokers = BrokerListeners::any_port(LOCALHOST);
     let staging = Environment::new(
         "staging-proxy".parse()?,
         Instances::ProxyInFrontOfCluster {
@@ -1495,7 +1495,7 @@ async fn an_undo_that_arms_a_rule_again_is_an_entry_of_the_journal_with_its_caus
         RUN.parse()?,
     ));
     let any = ListenAddress::new(LOCALHOST, ANY_PORT);
-    let brokers = BrokerListeners::pinned(cluster.brokers().iter().map(|broker| (broker.id(), any)))?;
+    let brokers = BrokerListeners::any_port(LOCALHOST);
     let staging = Environment::new(
         "staging-proxy".parse()?,
         Instances::ProxyInFrontOfCluster {
