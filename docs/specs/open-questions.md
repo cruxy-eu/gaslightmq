@@ -56,6 +56,17 @@ The second part lists the decisions that were settled, with the reason and the s
   A [recording](architecture/recording-storage.md) is a directory of segments, and it can hold many gigabytes.
   One file would attach to a bug report and travel to another machine.
   Nothing exports a recording yet, and no format for such a file is chosen.
+- **How long does a build read a recording of an old version?**
+  A [message of a recording](architecture/recording-storage.md#a-message) cannot grow, so every change of what an entry holds is a new version of the encoding, and a reader keeps the types of every version that it reads.
+  The [recommendation](architecture/recording-storage.md#how-long-a-version-is-kept) is two years, and a version goes only with a major release, after a build that writes such a recording again.
+  Keeping every version for good is the other choice.
+- **Does a reader of a recording wait for memory, or is it refused?**
+  The readers of a process share a [budget](architecture/recording-storage.md#when-a-budget-is-reached).
+  The recommendation is that nothing waits: a stream that finds no room for one block is refused, and says so.
+  A stream that waits for room, with a limit on the wait, is the other choice.
+- **Does a summary cover each block of a recording, or a run of blocks?**
+  With blocks of 4 MiB, a summary for each block makes the [index](architecture/recording-storage.md#sizes) about 0.7% of a recording, by an estimate that nobody measured.
+  A summary for a run of blocks would take it back to a sixteenth, with one more thing between a block and a segment.
 - **Where do a World's initial records live?**
   A [seeded](domains/world.md#seeding) World can start with recorded records.
   A world definition is in git, and recordings are not.
