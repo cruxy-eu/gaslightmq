@@ -188,7 +188,7 @@ impl<W: AsyncWrite + Unpin> BackgroundCompressor<W> {
     }
 
     /// Hands over what was gathered, ends as `end` says, and waits until its bytes reached the sink.
-    /// `needed` says whether there is anything to end.
+    /// It hands over nothing when there is nothing to end.
     fn poll_end(&mut self, cx: &mut Context<'_>, end: PackEnd) -> Poll<io::Result<()>> {
         loop {
             ready!(self.poll_ready(cx))?;
