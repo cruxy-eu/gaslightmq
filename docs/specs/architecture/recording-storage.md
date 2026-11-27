@@ -55,7 +55,7 @@ A block that an older build wrote takes one more step, between the codec and the
 | Step | Does | In | IO |
 |---|---|---|---|
 | The encoder and the decoder | Write entries into the bytes of a block. Check the buffer of a block, and read it as entries. Convert a block of an older version. | `recording` | No. |
-| The codec | Compresses the bytes of a block, and unpacks them again. It is a [seam](#the-codec): Zstandard is the first codec, and none is one. | `recording_compression` | No. |
+| The codec | Compresses the bytes of a block, and unpacks them again. It is a [seam](#the-codec): Zstandard is the first codec, and none is one. | `recording_compression` | The codec itself, no. Its compressor packs on threads of its own. |
 | The layout | Cuts a segment into blocks and chunks, keeps the index and the manifest, holds the readers to their [memory](#memory), and finds its way after a crash. | `recording_segments` | No. It awaits the backing, and nothing else. |
 | The backing | Keeps bytes, and hands them out as a stream. | `recording_segments_fs` | Yes. |
 
@@ -72,7 +72,7 @@ There are three seams, and each has a contract:
 | `recording` | The storage contract and its errors. What a recording holds: its ID, its description, the entries, a position, a summary, how it ended. The [encoding](#a-message) of every message of a recording, as stored types for every [version](#versions), with the way from each version to the next. The [check of a block](#the-check-of-a-block), the views, and the way from a view to the types of `call` and `journal`. What the [recording mode](#what-a-recording-must-not-keep) drops, and the blanking of credentials. | Sans-IO. |
 | `recording_conformance` | What every storage does, as a check. A storage in memory, which is the smallest storage that keeps the contract: the check is held to it, and it is no layout. | Test support. |
 | `recording_segments` | The segment layout, as a storage over any backing: the framing of segments, [spans](#spans), blocks and chunks, the [records](#records) of each level, the index, the manifest and when it changes, recovery, and the [memory budgets](#memory). It has no message of its own. The backing contract and its errors. The backing in memory, behind a feature. | Sans-IO. It awaits the backing it is handed, and nothing else. |
-| `recording_compression` | The [codecs](#the-codec): a compressor and a decompressor as adapters of a stream of bytes, over a closed set of codecs, which is none and Zstandard with its level. It is a crate of its own because it brings the library that compresses. | Sans-IO. |
+| `recording_compression` | The [codecs](#the-codec): a compressor and a decompressor as adapters of a stream of bytes, over a closed set of codecs, which is none and Zstandard with its level. A block is a frame of its own. The threads that compress. It is a crate of its own because it brings the library that compresses. | This crate does IO: its streams are async and it runs the threads that compress. The codec itself is sans-IO. |
 | `recording_segments_conformance` | What every backing does, as a check. | Test support. |
 | `recording_segments_fs` | The backing on files: it opens, appends, syncs, renames, maps and reads. | This crate does IO. |
 
@@ -602,7 +602,7 @@ the request it read, the answer of the backend, and the bytes it sends to the cl
 - **While nothing records**, the session keeps no handle, and a call costs what it costs today.
 
 The recorder takes the record and the handles from its queue, on its own thread.
-Everything that costs time happens there: redaction, encoding, compression, checksums, and the wait for the storage.
+Everything that costs time happens there, or on the [threads that compress](#the-codec): redaction, encoding, compression, checksums, and the wait for the storage.
 The bytes of a frame are copied once, into the compressor.
 
 A frame that waits in the queue keeps its bytes in memory.
@@ -773,47 +773,76 @@ It is a seam: the header of a block names the codec that wrote it, by a number, 
 The codecs are a closed set, in one crate, `recording_compression`.
 
 ```rust
-/// The ways to compress a recording: a closed set.
+/// The ways to compress a recording, with what each needs to know: a closed set.
 pub enum Compression {
     None,
-    Zstandard { level: i32 },
+    Zstandard { level: ZstandardLevel },
+}
+
+/// A codec of this build. The header of a block names it by its number: `0` is none, `1` is Zstandard.
+pub enum Codec {
+    None,
+    Zstandard,
 }
 
 impl Compression {
-    /// The number that a block names the codec by.
-    pub fn id(&self) -> CodecId;
+    /// The codec that unpacks what this compression packed. A reader needs no level.
+    pub const fn codec(&self) -> Codec;
 }
 
-/// Compresses a stream of bytes. It knows nothing yet: it is for one block, or for the frames of one chunk.
-impl Compressor {
-    pub fn new(compression: Compression) -> Compressor;
-    /// Takes bytes. What it has ready goes after `out`.
-    pub fn write(&mut self, bytes: &[u8], out: &mut Vec<u8>) -> Result<(), CodecError>;
-    /// Lets go of everything it took, so a reader can unpack all of it. The stream goes on.
-    pub fn flush(&mut self, out: &mut Vec<u8>) -> Result<(), CodecError>;
+impl Codec {
+    pub const fn id(self) -> u8;
+    pub const fn from_id(id: u8) -> Result<Codec, CodecError>;
 }
 
-/// Unpacks a stream of bytes, with the codec that a header names.
-impl Decompressor {
-    /// The decompressor of the codec with that number, as the header of a block says it.
-    pub fn of(codec: CodecId) -> Result<Decompressor, CodecError>;
-    /// Unpacks the next chunk of a block after what `out` holds of that block. `out` has the room for the whole
-    /// block and starts at a multiple of 16, and the chunks come in the order they were written.
-    pub fn read(&mut self, chunk: &[u8], out: &mut BatchBuffer) -> Result<(), CodecError>;
+/// Packs what it is written into the sink `W`, one block at a time, on the threads of the pool.
+impl<W: AsyncWrite + Unpin> Compressor<W> {
+    pub fn new(config: &CompressionConfig, pool: &CompressionPool, writer: W) -> Compressor<W>;
+    /// Ends the block: its frame is finished, its last bytes are in the sink, and the sink is flushed.
+    /// The sink stays open, and the next byte starts a new block.
+    pub async fn finish_block(&mut self) -> io::Result<()>;
+}
+// `AsyncWrite`: `flush` is a commit, after which a reader unpacks every byte, and the block goes on.
+
+/// Unpacks the blocks of a stream of bytes `R`, with the codec that a header names.
+impl<R: AsyncBufRead + Unpin> Decompressor<R> {
+    pub fn new(codec: Codec, reader: R) -> Decompressor<R>;
+    /// Unpacks the next block behind what `out` holds, and takes no byte of the block after it.
+    /// `None` when the stream has no more bytes, before a block starts.
+    pub async fn read_block(&mut self, out: &mut BatchBuffer) -> Result<Option<BlockEnd>, DecompressError>;
+}
+
+pub enum BlockEnd {
+    /// Where its writer finished it.
+    Finished,
+    /// The stream ended before the block did: the block that was open when a recording was cut short.
+    Unfinished,
 }
 ```
 
 | Codec | Is |
 |---|---|
 | Zstandard | The first codec, and the default. `recordings.compression_level` says how hard it works, and is `3` until someone sets it. A reader needs no level. |
-| None | The bytes of a block as they are. It copies a chunk into the buffer of its block, which is the one write that every codec does. |
+| None | The bytes of a block as they are. It copies a chunk into the buffer of its block, which is the one write that every codec does. A block ends where its buffer is full. |
 
 - **A codec is a transform.**
-  It takes bytes and gives bytes, and it does no IO, so a test drives it with bytes in memory.
+  It takes bytes and gives bytes, and it knows no IO of its own: a compressor writes to the sink that it is handed, and a decompressor reads the stream that it is handed.
+  So a test drives it with bytes in memory.
   On the way out it stands between two streams: the bytes of a segment go in, and blocks come out.
+- **A block is a frame of its own.**
+  `finish_block` finishes the frame of the block, and the next byte starts a new one, on the same sink.
+  A reader starts at any block that the index names, with a decompressor that knows nothing yet.
+  A torn tail loses one block at most: the frame of the block that was open is not finished, and a reader unpacks it up to the last flush that reached the segment, as `BlockEnd::Unfinished`.
+- **A flush is a commit.**
+  After a flush a reader unpacks every byte that the compressor was written, and the frame goes on.
+  The layout flushes at a commit, which is always between two entries, so a chunk is what one commit added to the frame of its block.
+- **The layout hands the decompressor the chunks of a block, without their headers.**
+  It checks the length and the checksum of a chunk before a byte of it reaches the codec, and hands the bytes of the chunks one after the other.
+  The decompressor takes the bytes of one frame, and leaves the rest of the stream where it is.
 - **A codec writes a block once, into the buffer that the reader hands out.**
   The chunks of a block unpack one after the other into one `BatchBuffer`, which the layout makes with the room for the whole block.
-  The codec looks back into that buffer for what a chunk repeats, and keeps no second copy of the block.
+  Zstandard looks back into that buffer for what a chunk repeats, and keeps no window and no second copy of the block.
+  A block that unpacks into more than its room is not unpacked.
 - **The buffer starts at a multiple of 16.**
   The layout makes it so, and the codec writes from its start.
   An entry keeps its multiple of 16 in there, whatever the place of its chunk in the file is, and a [message](#a-message) asks for no more.
@@ -821,7 +850,11 @@ impl Decompressor {
   A slot of a call says where its frame is in that buffer.
 - **A codec knows no entry.**
   It never sees where one entry ends.
-  The layout flushes it at a commit, which is always between two entries.
+- **Whoever writes never runs the codec.**
+  A compressor gathers what it is written, up to `recordings.compression_buffer_size`, and hands it to one of the threads of the `CompressionPool`, of which there are `recordings.compression_threads`.
+  One job of a compressor is out at a time, and a write waits for it.
+  A flush and the end of a block hand over what was gathered, however little it is.
+  A decompressor unpacks on the task that reads: a block of 4 MiB unpacks in 1.5 ms.
 - **A recording has one codec, and a block names it.**
   `recordings.compression` says which codec a new recording takes: `zstd` or `none`.
   A writer makes its compressor from that property, and a reader makes its decompressor from the number in the header of the block, at run time.
@@ -829,14 +862,26 @@ impl Decompressor {
 - **The codecs are a closed set.**
   A compressor and a decompressor are one type each, over the codecs that this build has, and not a trait that a crate implements.
   A new codec is a new case, with a new number.
-  A reader that meets a number it does not know says so, and reads nothing of that block.
-- **A codec fails in two ways.**
-  `CodecError::NotUnpacked { reason }` means that the bytes are not what the codec wrote.
-  `CodecError::CodecNotKnown { id }` means that this build has no codec with the number that the header names.
+  A reader that meets a number it does not know says so, with `CodecError`, and reads nothing of that block.
+- **A block fails to unpack in two ways.**
+  `DecompressError::NotUnpacked { reason }` means that the bytes are not what the codec wrote, or that they unpack into more than the room of the buffer.
+  `DecompressError::Unreadable { reason }` means that the stream of bytes failed.
   The layout reports the positions of the block as lost with either.
+- **A compressor fails as a stream does.**
+  It is an `AsyncWrite`, so it returns what its sink returns, and an error that says that the codec failed when it did.
+- **The codec itself is sans-IO, and the crate is not.**
+  What packs and unpacks bytes does no IO.
+  The streams around it are async, and the pool is threads, so `recording_compression` does IO.
+
+| Property | Is | Default |
+|---|---|---|
+| `recordings.compression` | The codec of a new recording: `zstd` or `none`. | `zstd` |
+| `recordings.compression_level` | How hard Zstandard works, in its own levels: from its fastest, which is negative, to 22, and not 0. | `3` |
+| `recordings.compression_buffer_size` | What a compressor gathers before it hands a job to the pool. A job that is too small costs more than it compresses. | `256KiB` |
+| `recordings.compression_threads` | The threads of the pool, which is how many compressors pack at once. | `4` |
 
 Why Zstandard at level 3, from the [measurement](#the-encoding-measured):
-it takes a call from 1780 bytes to 122, and costs 1.3 µs for a call on the thread that records.
+it takes a call from 1780 bytes to 122, and costs 1.3 µs for a call on the thread that compresses.
 From the disk a compressed recording streams more than twice as fast as a plain one, because the disk has a fourteenth of the bytes to give.
 
 Why none is not the default, although a plain recording that is already in memory reads three times as fast:
@@ -1061,7 +1106,7 @@ What speaks against a larger value of each, and against a smaller one:
 | `segment_size` | Leaves more for a reader to walk after a crash, makes a longer item in the index, and makes the writer hold more records of spans. | Makes more files: a pebibyte is a million segments of a gibibyte. |
 | `index_size` | Makes one summary of the manifest cover more, so it rules out less. | Makes a longer manifest, which is replaced more often. |
 | `summary_values` | Makes a larger index. | Lets a summary say `any` for a field that a query asks for. |
-| `compression_level` | Costs more on the thread that records, for a few bytes. | Stores more: a sixth more at level 1 than at level 3, in the [measurement](#the-encoding-measured). |
+| `compression_level` | Costs more on the threads that compress, for a few bytes. | Stores more: a sixth more at level 1 than at level 3, in the [measurement](#the-encoding-measured). |
 
 ### Writing
 
@@ -1538,6 +1583,8 @@ recordings:
   commit_size: 16MiB        # the entries and frames that wait for a commit at most, before it comes early
   compression: zstd         # the codec of a new recording: zstd, or none
   compression_level: 3      # how hard the codec works, in the levels of the codec
+  compression_buffer_size: 256KiB  # what a compressor gathers before a thread of the pool packs it
+  compression_threads: 4    # the threads that compress, for all recordings of the process
   block_size: 4MiB          # the entries and frames of one block, before they are compressed: what a reader holds at a time
   span_size: 64MiB          # the entries and frames of the blocks that one summary covers, before they are compressed
   segment_size: 1GiB        # the size at which a data segment is sealed, as it is stored
