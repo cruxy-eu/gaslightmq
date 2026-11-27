@@ -7,12 +7,7 @@ license.workspace = true
 [lints]
 workspace = true
 
-# The codec packs and unpacks bytes with no IO. The adapters around it are async, and compress on threads of their own.
-[package.metadata.gaslightmq]
-sans_io_modules = ["codec", "error"]
-
 [dependencies]
-futures = { workspace = true, features = ["thread-pool"] }
 gaslightmq_recording.workspace = true
 thiserror.workspace = true
 zstd-safe.workspace = true

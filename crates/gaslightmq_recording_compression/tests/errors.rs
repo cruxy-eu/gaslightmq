@@ -1,11 +1,8 @@
 //! What a reader is told when a block cannot be read.
 
-use futures::AsyncWriteExt;
-use futures::executor::block_on;
 use gaslightmq_recording::BatchBuffer;
 use gaslightmq_recording_compression::{
-    Codec, CodecError, CompressionConfig, CompressionPool, Compressor, DecompressError, Decompressor, ZstandardLevel,
-    ZstandardLevelError,
+    Codec, CodecError, Compression, Compressor, Decompressor, ZstandardLevel, ZstandardLevelError,
 };
 
 const BLOCK: &[u8] = b"a call to Produce, a call to Fetch, a call to Produce, a call to Fetch";
@@ -33,25 +30,23 @@ fn level_zero_is_no_level() {
 #[test]
 fn bytes_that_zstandard_did_not_write_are_not_unpacked() {
     let stored: &[u8] = b"these bytes were never compressed";
-    let mut decompressor = Decompressor::new(Codec::Zstandard, stored);
+    let mut decompressor = Decompressor::new(Codec::Zstandard);
 
-    let read = block_on(decompressor.read_block(&mut BatchBuffer::with_room(stored.len())));
+    let read = decompressor.read_block([stored], &mut BatchBuffer::with_room(stored.len()));
 
-    assert!(matches!(read, Err(DecompressError::NotUnpacked { .. })));
+    assert!(read.is_err());
 }
 
 #[test]
 fn a_block_larger_than_its_room_is_not_unpacked() -> anyhow::Result<()> {
-    let config = CompressionConfig::default();
-    let pool = CompressionPool::new(&config)?;
-    let mut compressor = Compressor::new(&config, &pool, Vec::new());
-    block_on(compressor.write_all(BLOCK))?;
-    block_on(compressor.close())?;
-    let segment = compressor.into_inner();
+    let mut compressor = Compressor::new(Compression::default())?;
+    let mut segment = Vec::new();
+    compressor.write(BLOCK, &mut segment)?;
+    compressor.finish_block(&mut segment)?;
+    let mut decompressor = Decompressor::new(Codec::Zstandard);
 
-    let mut decompressor = Decompressor::new(Codec::Zstandard, segment.as_slice());
-    let read = block_on(decompressor.read_block(&mut BatchBuffer::with_room(BLOCK.len() - 1)));
+    let read = decompressor.read_block([segment.as_slice()], &mut BatchBuffer::with_room(BLOCK.len() - 1));
 
-    assert!(matches!(read, Err(DecompressError::NotUnpacked { .. })));
+    assert!(read.is_err());
     Ok(())
 }

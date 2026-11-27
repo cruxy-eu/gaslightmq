@@ -1,6 +1,6 @@
-//! The codecs themselves: what packs the bytes of a block and unpacks them again, with no IO.
+//! The codecs themselves: what packs the bytes of a block and unpacks them again.
 //!
-//! [`Compressor`](crate::Compressor) and [`Decompressor`](crate::Decompressor) are the streams around them.
+//! [`Compressor`](crate::Compressor) and [`Decompressor`](crate::Decompressor) choose among them.
 
 use std::fmt;
 
@@ -172,7 +172,7 @@ impl ZstandardPacker {
 
 /// What one call of [`ZstandardUnpacker::unpack`] did.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct Unpacked {
+pub(crate) struct Step {
     /// The bytes of the input that it took.
     pub(crate) taken: usize,
     /// Whether the frame of the block ended.
@@ -207,7 +207,7 @@ impl ZstandardUnpacker {
     /// Unpacks what it can of `input` into `room`, behind the first `written` bytes, and moves `written` on.
     ///
     /// Every call of one block hands over the same `room`, and `written` as the call before left it.
-    pub(crate) fn unpack(&mut self, input: &[u8], room: &mut [u8], written: &mut usize) -> Result<Unpacked, String> {
+    pub(crate) fn unpack(&mut self, input: &[u8], room: &mut [u8], written: &mut usize) -> Result<Step, String> {
         let mut input = InBuffer::around(input);
         let mut output = OutBuffer::around_pos(room, *written);
         let left = self
@@ -215,7 +215,7 @@ impl ZstandardUnpacker {
             .decompress_stream(&mut output, &mut input)
             .map_err(reason)?;
         *written = output.pos();
-        Ok(Unpacked {
+        Ok(Step {
             taken: input.pos(),
             finished: left == 0,
         })

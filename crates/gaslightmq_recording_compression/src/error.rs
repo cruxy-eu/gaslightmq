@@ -22,29 +22,21 @@ pub struct ZstandardLevelError {
     pub hardest: i32,
 }
 
-/// Why a [`Decompressor`](crate::Decompressor) read no block.
-///
-/// Either way the layout reports the positions of the block as lost.
+/// The compressor failed. Zstandard says why, and nothing that it packed after the last flush is safe.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-pub enum DecompressError {
-    /// The bytes are not what the codec wrote, or they unpack into more than the room of the buffer.
-    #[error("the block was not unpacked: {reason}")]
-    NotUnpacked {
-        /// What the codec said.
-        reason: String,
-    },
-    /// The stream of bytes that the block comes from failed.
-    #[error("the bytes of the block could not be read: {reason}")]
-    Unreadable {
-        /// What the stream said.
-        reason: String,
-    },
+#[error("the block was not compressed: {reason}")]
+pub struct CompressError {
+    /// What the codec said.
+    pub reason: String,
 }
 
-/// The threads that compress could not start.
+/// A block was not unpacked: the bytes are not what the codec wrote, or they unpack into more than the room of the
+/// buffer.
+///
+/// The layout reports the positions of the block as lost.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-#[error("the threads that compress recordings could not start: {reason}")]
-pub struct CompressionPoolError {
-    /// What the system said.
+#[error("the block was not unpacked: {reason}")]
+pub struct DecompressError {
+    /// What the codec said.
     pub reason: String,
 }

@@ -1,6 +1,5 @@
-//! The decompressor: a stream of bytes in, one block at a time out, into the buffer of its batch.
+//! The decompressor: the bytes of a block in, the block out, into the buffer of its batch.
 
-use futures::{AsyncBufRead, AsyncBufReadExt};
 use gaslightmq_recording::BatchBuffer;
 
 use crate::codec::{Codec, ZstandardUnpacker};
@@ -11,17 +10,29 @@ use crate::error::DecompressError;
 pub enum BlockEnd {
     /// Where its writer finished it. With [`Codec::None`], where the buffer was full.
     Finished,
-    /// Before its writer finished it: the stream had no more bytes.
-    /// The buffer holds every byte up to the last flush that reached the stream.
+    /// Before its writer finished it: the bytes ran out.
+    /// The buffer holds every byte up to the last flush whose bytes were all there, and perhaps a little more.
     /// That is the block that was open when a recording was cut short.
     Unfinished,
 }
 
-/// Unpacks the blocks of a stream of bytes `R`, one after the other, with the codec that a header names.
+/// What [`Decompressor::read_block`] unpacked.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct UnpackedBlock {
+    /// How the block ended.
+    pub end: BlockEnd,
+    /// The bytes of the chunks, one after the other, that the block took.
+    /// What follows them is the start of the next block.
+    pub taken: usize,
+}
+
+/// Unpacks blocks with the codec that a header names, each into a [`BatchBuffer`].
 ///
 /// It starts wherever a block starts, so a reader starts at any block that the index names.
-/// Each block unpacks into a [`BatchBuffer`], which is the one place where its bytes are written:
-/// Zstandard looks back into that buffer for what a later byte repeats, and keeps no copy of the block.
+/// The buffer is the one place where the bytes of a block are written:
+/// Zstandard looks back into it for what a later byte repeats, and keeps no window and no copy of the block.
+///
+/// It does no IO: it unpacks the bytes that it is handed, on the thread that calls it.
 ///
 /// ```
 /// use gaslightmq_recording::BatchBuffer;
@@ -29,35 +40,33 @@ pub enum BlockEnd {
 ///
 /// # fn main() -> Result<(), DecompressError> {
 /// let stored: &[u8] = b"a block that was stored without compression";
-/// let mut decompressor = Decompressor::new(Codec::None, stored);
+/// let mut decompressor = Decompressor::new(Codec::None);
 /// let mut buffer = BatchBuffer::with_room(stored.len());
 ///
-/// let end = futures::executor::block_on(decompressor.read_block(&mut buffer))?;
+/// let unpacked = decompressor.read_block([stored], &mut buffer)?;
 ///
-/// assert_eq!(end, Some(BlockEnd::Finished));
+/// assert_eq!(unpacked.end, BlockEnd::Finished);
 /// assert_eq!(buffer.written(), stored);
 /// # Ok(())
 /// # }
 /// ```
 #[derive(Debug)]
-pub struct Decompressor<R> {
-    inner: Inner<R>,
+pub struct Decompressor {
+    inner: Inner,
 }
 
 #[derive(Debug)]
-enum Inner<R> {
-    None { reader: R },
-    Zstandard { reader: R, unpacker: ZstandardUnpacker },
+enum Inner {
+    None,
+    Zstandard { unpacker: ZstandardUnpacker },
 }
 
-impl<R: AsyncBufRead + Unpin> Decompressor<R> {
-    /// A decompressor that unpacks the stream `reader` with `codec`, which the header of a block names.
-    /// The first byte of `reader` is the first byte of a block.
-    pub fn new(codec: Codec, reader: R) -> Decompressor<R> {
+impl Decompressor {
+    /// A decompressor of `codec`, which the header of a block names.
+    pub fn new(codec: Codec) -> Decompressor {
         let inner = match codec {
-            Codec::None => Inner::None { reader },
+            Codec::None => Inner::None,
             Codec::Zstandard => Inner::Zstandard {
-                reader,
                 unpacker: ZstandardUnpacker::new(),
             },
         };
@@ -65,99 +74,88 @@ impl<R: AsyncBufRead + Unpin> Decompressor<R> {
     }
 
     /// The codec that it unpacks with.
-    pub fn codec(&self) -> Codec {
+    pub const fn codec(&self) -> Codec {
         match &self.inner {
-            Inner::None { .. } => Codec::None,
+            Inner::None => Codec::None,
             Inner::Zstandard { .. } => Codec::Zstandard,
         }
     }
 
-    /// The stream.
-    pub fn get_ref(&self) -> &R {
-        match &self.inner {
-            Inner::None { reader } | Inner::Zstandard { reader, .. } => reader,
-        }
-    }
-
-    /// The stream, from the first byte that the decompressor did not take.
-    pub fn into_inner(self) -> R {
-        match self.inner {
-            Inner::None { reader } | Inner::Zstandard { reader, .. } => reader,
-        }
-    }
-
-    /// Unpacks the next block of the stream behind what `out` holds, and takes no byte of the block after it.
+    /// Unpacks one block from `chunks`, behind what `out` holds.
     ///
+    /// `chunks` are the bytes of the chunks of the block, one after the other, without their headers,
+    /// and the first byte of the first chunk is the first byte of the block.
+    /// The whole block comes in one call: the next call starts a block of its own.
     /// `out` has the room for the whole block, which the layout knows before it unpacks.
+    ///
     /// With Zstandard a block ends where its writer [finished](crate::Compressor::finish_block) it,
     /// and with [`Codec::None`] where `out` is full.
-    /// It is `None` when the stream has no more bytes, before a block starts.
+    /// The block takes no byte of the chunks behind its end, and [`UnpackedBlock::taken`] says how many it took.
     ///
     /// # Errors
     ///
-    /// - [`DecompressError::NotUnpacked`] when the bytes are not what the codec wrote,
-    ///   or when the block is larger than the room of `out`.
-    /// - [`DecompressError::Unreadable`] when the stream fails.
-    pub async fn read_block(&mut self, out: &mut BatchBuffer) -> Result<Option<BlockEnd>, DecompressError> {
+    /// [`DecompressError`] when the bytes are not what the codec wrote, or when the block is larger than the room
+    /// of `out`.
+    pub fn read_block<'a>(
+        &mut self,
+        chunks: impl IntoIterator<Item = &'a [u8]>,
+        out: &mut BatchBuffer,
+    ) -> Result<UnpackedBlock, DecompressError> {
         match &mut self.inner {
-            Inner::None { reader } => read_stored(reader, out).await,
-            Inner::Zstandard { reader, unpacker } => read_zstandard(reader, unpacker, out).await,
+            Inner::None => Ok(read_stored(chunks, out)),
+            Inner::Zstandard { unpacker } => read_zstandard(unpacker, chunks, out),
         }
     }
 }
 
 /// A block of [`Codec::None`]: the bytes as they are, until `out` is full.
-async fn read_stored<R: AsyncBufRead + Unpin>(
-    reader: &mut R,
-    out: &mut BatchBuffer,
-) -> Result<Option<BlockEnd>, DecompressError> {
-    let mut started = false;
-    while out.written().len() < out.room() {
-        let input = reader.fill_buf().await.map_err(|error| DecompressError::Unreadable {
-            reason: error.to_string(),
-        })?;
-        if input.is_empty() {
-            return Ok(started.then_some(BlockEnd::Unfinished));
+fn read_stored<'a>(chunks: impl IntoIterator<Item = &'a [u8]>, out: &mut BatchBuffer) -> UnpackedBlock {
+    let mut taken = 0;
+    for chunk in chunks {
+        if out.written().len() == out.room() {
+            break;
         }
-        started = true;
-        let taken = out.write(input);
-        reader.consume_unpin(taken);
+        taken += out.write(chunk);
     }
-    Ok(Some(BlockEnd::Finished))
+    let end = if out.written().len() == out.room() {
+        BlockEnd::Finished
+    } else {
+        BlockEnd::Unfinished
+    };
+    UnpackedBlock { end, taken }
 }
 
 /// A block of Zstandard: one frame, unpacked into the room of `out`.
-async fn read_zstandard<R: AsyncBufRead + Unpin>(
-    reader: &mut R,
+fn read_zstandard<'a>(
     unpacker: &mut ZstandardUnpacker,
+    chunks: impl IntoIterator<Item = &'a [u8]>,
     out: &mut BatchBuffer,
-) -> Result<Option<BlockEnd>, DecompressError> {
-    let not_unpacked = |reason| DecompressError::NotUnpacked { reason };
+) -> Result<UnpackedBlock, DecompressError> {
+    let not_unpacked = |reason| DecompressError { reason };
     unpacker.start().map_err(not_unpacked)?;
     let room = out.unwritten();
     let mut written = 0;
-    let mut started = false;
-    let end = loop {
-        let input = reader.fill_buf().await.map_err(|error| DecompressError::Unreadable {
-            reason: error.to_string(),
-        })?;
-        if input.is_empty() {
-            break started.then_some(BlockEnd::Unfinished);
+    let mut taken = 0;
+    let mut end = BlockEnd::Unfinished;
+    'chunks: for chunk in chunks {
+        let mut rest = chunk;
+        while !rest.is_empty() {
+            let before = written;
+            let step = unpacker.unpack(rest, room, &mut written).map_err(not_unpacked)?;
+            rest = &rest[step.taken..];
+            taken += step.taken;
+            if step.finished {
+                end = BlockEnd::Finished;
+                break 'chunks;
+            }
+            if step.taken == 0 && written == before {
+                return Err(not_unpacked(format!(
+                    "the block unpacks into more than its room of {} bytes",
+                    room.len()
+                )));
+            }
         }
-        started = true;
-        let before = written;
-        let step = unpacker.unpack(input, room, &mut written).map_err(not_unpacked)?;
-        reader.consume_unpin(step.taken);
-        if step.finished {
-            break Some(BlockEnd::Finished);
-        }
-        if step.taken == 0 && written == before {
-            return Err(not_unpacked(format!(
-                "the block unpacks into more than its room of {} bytes",
-                room.len()
-            )));
-        }
-    };
+    }
     out.advance(written);
-    Ok(end)
+    Ok(UnpackedBlock { end, taken })
 }
