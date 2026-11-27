@@ -499,7 +499,7 @@ Three bounds say what it holds, and each is made of properties.
 
 | Who | Holds at most | Property | Default |
 |---|---|---|---|
-| One reader, which is one stream | The unpacked blocks that it handed out and that someone still holds, their frames, and what it read ahead. | `recordings.reader_memory` | `16MiB` |
+| One reader, which is one stream | The unpacked blocks that it handed out and that someone still holds, and their frames. The segment layout reads nothing ahead. | `recordings.reader_memory` | `16MiB` |
 | All readers of a process | The same, for all of them together. | `recordings.all_readers_memory` | `256MiB` |
 | The writer | The frames that wait in its queue, what waits for a commit, and the block that is open. | `recordings.queue_size`, `recordings.commit_size` and `recordings.block_size`, added up | `276MiB` |
 
@@ -511,17 +511,26 @@ Blocks of 4 MiB cost 7 MiB and 38 MiB.
 
 - **One block at a time.**
   That is the buffer of its entries, and the buffer of its frames when the reader asked for them: 4 MiB together, with the default.
-- **What it read ahead, as far as its budget goes.**
-  With the defaults that is three more blocks.
-  A reader never passes its budget by reading ahead.
+- **Nothing that it read ahead.**
+  The segment layout reads nothing ahead: it awaits its backing and starts no task, so a block that it read ahead
+  would be read in the same wait as the block that the consumer asked for.
+  Reading ahead belongs to the backing, which can start the next read while the layout unpacks a block:
+  the backing on files tells the system which ranges of a mapped segment come next, and a backing that fetches can
+  fetch the next range.
+- **Not what the backing holds ahead.**
+  The backing contract has no way for a backing to say how many bytes it holds ahead, so no budget counts them.
+  What the backing on files reads ahead is pages of the cache of the system, which the system takes back, and which
+  no budget of a process counts in any case.
+  A backing that fetches into buffers of its own holds them outside the budgets, and bounds them itself.
 - **One block, however large it is.**
   A call with a frame of 100 MiB makes a block of 100 MiB, and an entry is never cut in two.
   A reader may always hold one block with its frames, also when that is more than its budget, and nothing else while it does.
   A budget never makes a recording unreadable.
 - **The bytes as they are stored, when the backing read them into a buffer.**
   A backing that maps a file hands out ranges of the map, which the system keeps and takes back, and they do not count.
-- **One record of the index at a time.**
-  A reader streams an [index chunk](#an-index-chunk) record by record, and holds none of it afterwards, but the rows of the span that it reads.
+- **One record of the index at a time, and the rows of one segment.**
+  A reader streams an [index chunk](#an-index-chunk) record by record, and keeps of it the place of each segment that can hold what it wants: a few numbers for each.
+  It takes the records of the spans of a segment from the [footer](#a-data-segment) of that segment, and keeps the rows of the spans that can hold what it wants, for one segment at a time: about 0.1 MiB for a segment of a gibibyte.
   The manifest stays in memory for as long as the recording is open: about 2 KiB for every index chunk.
 - **A block of an older version, twice.**
   The [conversion](#an-older-version-is-converted) holds the block that it reads and the block that it writes, and both count.
@@ -553,10 +562,9 @@ Nothing waits for memory.
 
 | The budget is reached | The storage |
 |---|---|
-| Of a reader, by what it read ahead | Stops reading ahead. Nothing waits, and nothing fails. |
 | Of a reader, by batches that the consumer still holds | Fails the next read with `NextBatchError::ReaderBudgetSpent { held, budget }`, which names `recordings.reader_memory`. The consumer lets go, or copies out, and reads on from the position it had. |
-| Of all readers, when a stream starts and there is no room for one block | Drops what the other readers read ahead and did not hand out yet. When that is not enough, it refuses the stream with `ReadError::AllReadersBudgetSpent { held, budget }`, which names `recordings.all_readers_memory`. |
-| Of all readers, while a stream runs | Reads on without reading ahead. A stream set the room for one block aside when it started, so it never stops half way. |
+| Of all readers, when a stream starts and there is no room for one block | Refuses the stream with `ReadError::AllReadersBudgetSpent { held, budget }`, which names `recordings.all_readers_memory`. The room for one block is `recordings.block_size`. When no reader holds anything, a stream is never refused. |
+| Of all readers, while a stream runs | Reads on. A stream set the room for one block aside when it started, so it never stops half way. |
 
 - **A reader that waited would wait for its own process.**
   The consumer that holds the bytes may be the one that asks, and then nothing ever lets go.
@@ -564,9 +572,12 @@ Nothing waits for memory.
 - **A refusal says what is wrong, and a wait says nothing.**
   A query from the UI that is refused says that the engine is busy reading, and the UI asks again.
   A query that waits looks like a recording that is slow.
-- **What was read ahead goes first.**
-  Reading ahead is a guess, and a reader reads the block again when it gets there.
-  With the defaults sixteen readers read ahead in full, and sixty-four read at all, before a stream is refused.
+- **A stream counts what it holds, and at least the room it set aside.**
+  All readers together hold the sum of that, so a stream that holds less than one block still counts one.
+  What a consumer still holds when its stream ends stays counted until it lets go.
+- **A stream that starts asks for one block.**
+  With the defaults sixty-four streams read at once before a stream is refused, and sixteen of them can each hold
+  all that one reader may.
 - **A stream that waited for room, with a limit on the wait, was the other way.**
   It hides the bound until the limit passes, and then it is a refusal all the same.
 
@@ -702,6 +713,10 @@ Under heavy traffic a commit covers several blocks, and writes them with one app
 - **The frames of a chunk are compressed by themselves.**
   A reader that asked for no frames steps over them by their length.
   Nobody measured this: [no measurement](#known-limits) held a frame, so what the frames of a real recording compress to is not known.
+- **A block may end at a flush.**
+  The writer finishes the stream of a block with its last chunk when the block fills between two commits.
+  When a commit cut the last chunk already, no chunk is left to carry the end of the stream, and none is needed:
+  the chunks of a block say how many entries it holds, and a reader stops there.
 - **A torn tail is a chunk that is not whole.**
   Every chunk says its length and has a checksum of its bytes as they are stored.
   A reader checks both before it hands a byte to the codec, so the codec never sees what a crash left half written.
@@ -958,7 +973,7 @@ record = record head  fixed part  row …  message …
 | Record | Mark | Its fixed part holds | Its rows | Its messages |
 |---|---|---|---|---|
 | Of a span | `GMQP` | 48 bytes: where the span starts in its segment (8), its length as it is stored, without this record (8), the position of its first entry (8), the number of its entries (8), the number of its blocks (4), zero (12). | One row of 32 bytes for every block of the span: where the block starts in its segment (8), the position of its first entry (8), the number of its entries (4), the length of its entries, unpacked (4), the length of its frames, unpacked (8). | The [summary](#summary) of the span. |
-| Of a segment | `GMQS` | 48 bytes: the position of its first entry, which is the name of the segment (8), the number of its entries (8), the length of the segment (8), the number of its spans (4), zero (4), the length of the records of its spans, which follow (8), zero (8). | None. | The summary of the segment: the sum of the summaries of its spans. |
+| Of a segment | `GMQS` | 48 bytes: the position of its first entry, which is the name of the segment (8), the number of its entries (8), the length of the segment up to its footer, which is where the footer starts (8), the number of its spans (4), zero (4), the length of the records of its spans, which follow (8), zero (8). | None. | The summary of the segment: the sum of the summaries of its spans. |
 | Of an index chunk | `GMQI` | 16 bytes: the position of the first entry that it describes (8), and the number of entries that it describes, which is zero while it grows (8). | None. | The summary of the index chunk, once it is full: the sum of the summaries of its segments. |
 | Of the end | `GMQE` | Nothing. | None. | The end of the recording. |
 
@@ -972,6 +987,8 @@ record = record head  fixed part  row …  message …
   The instants, the call IDs and the counts that a span covers are in its [summary](#summary), so the fixed part does not hold them again.
 - **A block has no summary of its own.**
   One summary covers a [span](#spans), and a row of 32 bytes is all that the index holds of a block.
+- **The record of a segment says where its footer starts.**
+  A reader goes from the item of a segment straight to its footer, without the trailer.
 
 ### A data segment
 
@@ -979,7 +996,7 @@ record = record head  fixed part  row …  message …
 segment        = segment header  span …  segment footer
 span            = block …  record of the span
 block          = block header  chunk …
-chunk          = chunk header  entries, as stored  frames, as stored
+chunk          = chunk header  entries, as stored  frames, as stored  zeros up to a multiple of 16
 segment footer = record of the segment  record of a span …  record of the end, in the last segment  trailer
 ```
 
@@ -1007,13 +1024,19 @@ Every segment holds the description, so every segment says which recording it be
 | Offset | Size | The chunk header holds |
 |---|---|---|
 | 0 | 4 | The mark of a chunk: `GMQC`. |
-| 4 | 4 | The checksum of the bytes 8 to 31. |
-| 8 | 4 | The number of its entries. |
-| 12 | 4 | The checksum of its entries and its frames, as they are stored. |
+| 4 | 4 | The checksum of the bytes 8 to 47. |
+| 8 | 4 | The number of its entries, which is never zero. |
+| 12 | 4 | Zero. |
 | 16 | 4 | The length of its entries, as they are stored. |
 | 20 | 4 | The length of its entries, unpacked. |
 | 24 | 4 | The length of its frames, as they are stored. |
 | 28 | 4 | The length of its frames, unpacked. |
+| 32 | 4 | The checksum of its entries, as they are stored. |
+| 36 | 4 | The checksum of its frames, as they are stored. |
+| 40 | 8 | Zero. |
+
+The entries and the frames of a chunk have a checksum each.
+A reader that asked for no frames steps over them unread, and still checks every byte that it unpacks.
 
 The unpacked lengths of the entries of the chunks of a block add up to the room that a reader makes for the block.
 It makes that room once, before the codec writes into it.
@@ -1021,6 +1044,7 @@ The row of the block says the sum.
 A block of the span that still grows has no row yet, so the reader takes its chunks first, and adds up their headers.
 
 A block ends where the next header of a block, the record of its span or the end of the segment stands.
+The header of a block goes into the segment with its first chunk, so no block is ever empty.
 The writer ends a span with its record when the span is full, or when it seals the segment, and it ends a segment with a footer.
 A span without a record is the one that still grows, or the one that a crash cut short, and so is a segment without a footer.
 
@@ -1057,6 +1081,7 @@ item        = record of a segment  record of a span …
 | 24 | 8 | Zero. |
 
 An item describes one segment, and it is the footer of that segment without its trailer.
+The item of the last segment of a recording that ended in order therefore holds the record of the end.
 
 - **An index chunk holds everything that a reader needs to pick a span and a block**, and to start a stream there.
 - **A reader takes an item record by record.**
@@ -1121,11 +1146,11 @@ The layout holds what the compressor gave back since the last commit, the summar
 
 | When | The layout writes, in this order |
 |---|---|
-| The recording starts | The manifest, with the description and no index chunk. Then the first segment, with its header and the header of its first block. |
-| The block is full | It ends the chunk and the stream of the compressor, and puts the header of the next block behind the chunk. All of it waits for the commit. |
+| The recording starts | The first segment, with its header. Then the manifest, with the description and no index chunk. Creating the first segment comes first because it refuses a recording that is there: the manifest is replaced as a whole, and would replace the manifest of that recording. |
+| The block is full | It ends the chunk and the stream of the compressor. The header of the next block goes into the segment with the first chunk of that block. All of it waits for the commit. |
 | The span is full | It puts the record of the span behind its last block, before the header of the next block. It waits for the commit too. |
 | A commit | It flushes the compressor, and appends what waits to the segment that grows, as one append: one chunk under light traffic, and the chunks and headers of the blocks that filled since the last commit, with the records of the spans that did, under heavy traffic. |
-| The segment reached its size | It appends the record of the span that is open and the footer of the segment, and seals the segment. It appends the item of the segment, which is that footer without its trailer, to the index chunk that grows. It creates the next segment. |
+| The segment reached its size | It appends the record of the span that is open and the footer of the segment, and seals the segment. It appends the item of the segment, which is that footer without its trailer, to the index chunk that grows. The first item creates the first index chunk, and the manifest is replaced to name it. It creates the next segment. The writer checks the size when a block closes, so a segment is sealed between two blocks. |
 | The index chunk is full | It seals that index chunk, and creates the next one with the item that did not fit. Then it replaces the manifest, which has a record for the new one and the summary of the full one. |
 | The recording ends | A commit. The record of the span that is open, and the footer of the segment with the record of the end. Then it seals the segment, appends its item, seals the index chunk, and replaces the manifest, which now holds the end. |
 
@@ -1136,6 +1161,9 @@ Two rules make every crash harmless:
   After a crash, the most that is missing is a description, and a description can be rebuilt from below.
 - **Every step leaves a recording.**
   The backing gives each write [what it promises](#the-segment-backing), so no step leaves the manifest half replaced, and what a crash leaves half appended fails a checksum.
+
+The order of writing is a plain function: it takes the entries and the commits, and gives the steps for the backing, in order.
+The writer hands each step to the backing and stops at the first that fails, so it runs in a test without a backing.
 
 A write that fails ends the recording.
 The layout says so and takes nothing more.
@@ -1157,6 +1185,7 @@ The header of every object says the [versions](#versions) of the layout and of t
    A segment with a footer says everything about itself there.
    The reader walks a segment without one: block header, then chunk header after chunk header, and the record of a span where a span has one.
    It checks every mark and every checksum, and that the whole chunk is there, and steps over the chunk by its length, to the next multiple of 16. It unpacks nothing.
+   A sealed segment that no item describes yet says everything in its footer, which the reader finds from the trailer.
 4. **The end of the recording.**
    The end in the footer of the last segment means that the recording ended in order.
    Otherwise the last chunk that is whole is where the recording stops: it still runs, or it was cut short.
@@ -1164,6 +1193,9 @@ The header of every object says the [versions](#versions) of the layout and of t
 A recording that was cut short opens like any other.
 The reader says that it was cut short, and how many bytes behind the last whole chunk it left unread.
 It changes nothing in the backing.
+
+The walk stops at whatever is not whole: a chunk that a crash left half written, a chunk that a commit is still writing, and a chunk whose bytes fail their checksum, which look the same at the end of a segment that grows.
+A reader of a recording that runs walks on from there when it looks again, and finds what later commits added.
 
 The walk follows lengths that a checksum covers, and never searches for a mark,
 so the bytes of a frame can never pass for the start of a chunk.
@@ -1173,23 +1205,27 @@ A span without a record has no summary, and needs none: a reader streams it.
 | What is missing or damaged | The reader |
 |---|---|
 | The manifest | Lists the index chunks and the segments itself, and takes the description from the header of a segment. |
-| An index chunk, or an item of one | Reads the footers of the segments that it described. |
+| An index chunk, or an item of one | Reads the footers of the segments that it described: the items that are whole come from the index chunk, and the backing lists the segments that the rest described. |
+| A segment that an item names | Reports the positions of the segment as lost, and goes on with the next one. |
 | A chunk in the middle of a block | Reports the positions from that chunk to the end of its block as lost, and goes on with the next block. |
 | The end of the segment that grew | Stops at the last whole chunk. |
 
 Recovery is a function: it takes what the backing lists and the bytes it reads, and returns what the recording holds.
 It runs in a test without a file.
+Each walk, over a segment, over an index chunk and over a footer, says how many bytes it wants next and takes them, and the reader asks the backing for them.
 
 ### How a stream starts
 
 Every reader is a stream, and the levels above the segments say where it starts and what it leaves out.
 
 1. It reads the manifest, and keeps the index chunks whose summary can hold what it wants.
-2. It streams those index chunks record by record, and keeps the segments, and then the [spans](#spans), whose summary can hold it.
+2. It streams those index chunks record by record, and keeps the segments whose summary can hold it.
+   It takes the records of the spans of each such segment from its footer, which holds the same bytes as its item, and keeps the [spans](#spans) whose summary can hold it.
+   A stream backwards takes the segments of an index chunk from the last, so it reads them in the order that it needs them.
 3. It asks the backing for the bytes of a segment from the start of a block, which a row of the span gives, takes them chunk by chunk, and hands each to the codec.
 4. It makes a batch of each block once the codec has filled its buffer, which [checks the block](#the-check-of-a-block), and the consumer reads its entries through views.
 5. It steps over the frames of a chunk when the reader asked for none.
-6. It reads ahead as far as its [budget](#memory) lets it, and no further.
+6. It reads nothing ahead: the backing does, as [memory](#what-a-reader-holds) says.
 
 | A reader that wants | Streams |
 |---|---|
@@ -1257,8 +1293,8 @@ It hands bytes out as a stream.
 
 ```rust
 /// Where the objects of recordings live. The segment layout works over any of them.
-pub trait SegmentBacking {
-    type Bytes: ByteStream;
+pub trait SegmentBacking: Send + Sync {
+    type Stream: ByteStream;
 
     async fn recordings(&self) -> Result<Vec<RecordingId>, ListingError>;
 
@@ -1268,7 +1304,7 @@ pub trait SegmentBacking {
     async fn seal(&self, recording: &RecordingId, object: Object) -> Result<(), StoreError>;
     async fn list(&self, recording: &RecordingId, kind: ObjectKind, from: Position) -> Result<Vec<Listed>, ListingError>;
     /// The bytes of the object from an offset on.
-    async fn read(&self, recording: &RecordingId, object: Object, from: u64) -> Result<Self::Bytes, FetchError>;
+    async fn read(&self, recording: &RecordingId, object: Object, from: u64) -> Result<Self::Stream, FetchError>;
 
     // The manifest is replaced as a whole.
     async fn put_manifest(&self, recording: &RecordingId, manifest: Bytes) -> Result<(), StoreError>;
@@ -1276,11 +1312,19 @@ pub trait SegmentBacking {
 }
 
 /// A place in an object that moves forward.
-pub trait ByteStream {
+pub trait ByteStream: Send {
     /// The next `wanted` bytes as one buffer, fewer at the end of the object, and `None` behind it.
     async fn next(&mut self, wanted: usize) -> Result<Option<Bytes>, FetchError>;
 }
+
+/// A segment or an index chunk, named by the position of the first entry that it holds or describes.
+pub struct Object { pub kind: ObjectKind, pub first: Position }
+pub enum ObjectKind { Segment, IndexChunk }
+/// What a listing says of an object.
+pub struct Listed { pub first: Position, pub length: u64, pub sealed: bool }
 ```
+
+The traits declare their async methods as the storage contract does: each returns a future that is `Send`.
 
 | Operation | Whole or not at all | When it returns |
 |---|---|---|
@@ -1298,7 +1342,7 @@ pub trait ByteStream {
   The layout frames what it appends, so it finds the end of a torn segment and of a torn index chunk by itself.
   It frames nothing against a manifest that is half new, so the backing must never show one.
 - **Reading is a stream that the layout pulls.**
-  The layout always knows how much it wants next: the 32 bytes of a chunk header, and then the bytes that the header names.
+  The layout always knows how much it wants next: the 48 bytes of a chunk header, and then the bytes that the header names.
   It asks for that many, so a chunk comes as one buffer, and the layout joins nothing.
   A reader that starts at a block opens the stream at the offset that the index gives.
 - **A piece of a stream is a shared buffer.**
@@ -1324,7 +1368,7 @@ The layout turns each of them into an error of the [storage contract](#errors), 
 | Backing | Keeps the objects | Crate |
 |---|---|---|
 | Files | As files in one directory for each recording. See [files](#files). | `recording_segments_fs` |
-| Memory | In memory, for tests, and for an engine whose recordings need not outlive it. | `recording_segments`, behind a feature |
+| Memory | In memory, for tests, and for an engine whose recordings need not outlive it. It keeps each append as one buffer, and hands out a header or a chunk as a slice of it. For the tests of recovery it also tears an object, damages a byte, and takes an object or the manifest away. | `recording_segments`, behind the feature `memory` |
 | An object store | Later. A sealed segment, a full index chunk and the manifest are one object each, and a stream is a read of a range. The object that grows is what such a backing must solve, for instance as parts that a seal joins. | — |
 
 `recording_segments_conformance` holds what every backing does, as a check.
@@ -1594,7 +1638,7 @@ recordings:
   segment_size: 1GiB        # the size at which a data segment is sealed, as it is stored
   index_size: 256MiB        # the size at which an index chunk is full
   summary_values: 256       # the values of one field that a summary lists
-  reader_memory: 16MiB      # the unpacked blocks that one reader holds at most, with what it read ahead
+  reader_memory: 16MiB      # the unpacked blocks that one reader holds at most: those that its consumer still holds
   all_readers_memory: 256MiB  # the unpacked blocks that all readers of the process hold together at most
 ```
 
@@ -1629,7 +1673,7 @@ What changed with blocks of 4 MiB, and what did not:
 | Who has a message? | `recording`, for all of them: an entry, a description, a summary and an end. A layout carries them between records of fixed binary. | Messages of the layout for its footers, its index and its manifest. The layout would have had stored types and versions of its own, with the summaries of `recording` inside them. |
 | What does a reader do before the first view? | `recording` checks the block once: every head, every reference, every length, every text and every choice. | A check at every step of every view, which costs a reader of a whole entry more than decoding it. No check, which reads whatever a forged recording points at. |
 | What bounds memory? | Named budgets: one for a reader, one for all readers of a process, and for the writer the sizes of its queue, of a commit and of a block. A block is small, so a budget is a few blocks. See [memory](#memory). | Blocks of 64 MiB, which a reader holds whole: eight readers held 0.5 GiB. A reader without a bound, whose read-ahead and kept views decide what it holds. |
-| What happens when a budget is reached? | [Nothing waits](#when-a-budget-is-reached). A reader stops reading ahead, a consumer that holds too much gets `ReaderBudgetSpent`, and a stream that finds no room for one block is refused with `AllReadersBudgetSpent`. Each error names its budget. | A reader that waits for room. It can wait for its own consumer, and a wait says nothing to whoever asked. |
+| What happens when a budget is reached? | [Nothing waits](#when-a-budget-is-reached). A budget counts the blocks that a reader holds, and the backing, not the layout, reads ahead. A consumer that holds too much gets `ReaderBudgetSpent`, and a stream that finds no room for one block is refused with `AllReadersBudgetSpent`. Each error names its budget. | A reader that waits for room. It can wait for its own consumer, and a wait says nothing to whoever asked. |
 | Who pays for an entry that is kept? | Whoever keeps it: a kept view or frame keeps its block in memory, and counts against the budget of its reader. A consumer that keeps entries beyond its stream copies them out. | A storage that copies every entry it hands out, so that nothing is ever kept alive: every reader would pay for the few that keep. |
 | Who owns the encoding of an entry? | The contract. A layout keeps batches and never looks into one. | The layout. Views would be the layout's, and a reader would be written against one layout. |
 | What does the manifest say about an index chunk? | Where it starts, and for a full one what it covers and the sum of its summaries. | A list of names alone. A reader would read every index chunk to find a position, a moment or a topic. |

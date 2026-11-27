@@ -28,6 +28,8 @@ members = [
     "crates/gaslightmq_recording",
     "crates/gaslightmq_recording/conformance",
     "crates/gaslightmq_recording_compression",
+    "crates/gaslightmq_recording_segments",
+    "crates/gaslightmq_recording_segments/conformance",
     "crates/gaslightmq_resource",
     "crates/gaslightmq_rule",
     "crates/gaslightmq_rule/conformance",
@@ -91,6 +93,8 @@ gaslightmq_pipeline = { path = "crates/gaslightmq_pipeline" }
 gaslightmq_quick_inject = { path = "crates/gaslightmq_quick_inject" }
 gaslightmq_recording = { path = "crates/gaslightmq_recording" }
 gaslightmq_recording_compression = { path = "crates/gaslightmq_recording_compression" }
+gaslightmq_recording_conformance = { path = "crates/gaslightmq_recording/conformance" }
+gaslightmq_recording_segments = { path = "crates/gaslightmq_recording_segments" }
 gaslightmq_resource = { path = "crates/gaslightmq_resource" }
 gaslightmq_rule = { path = "crates/gaslightmq_rule" }
 gaslightmq_rule_conformance = { path = "crates/gaslightmq_rule/conformance" }
@@ -116,8 +120,9 @@ axum = { version = "0.8", default-features = false, features = ["http1", "tokio"
 bytes = "1"
 # Only `gmq` names it: the flags and the environment variables of the binary.
 clap = { version = "4", default-features = false, features = ["std", "derive", "env", "help", "usage", "error-context", "suggestions"] }
-# Only `gaslightmq_wire` names it: the checksum of a record batch whose attributes it wrote again.
-# It is the checksum that Kafka gives its record batches, and `kafka-protocol` builds with the same crate.
+# Only `gaslightmq_wire` and `gaslightmq_recording_segments` name it. `wire`: the checksum of a record batch whose
+# attributes it wrote again. It is the checksum that Kafka gives its record batches, and `kafka-protocol` builds with
+# the same crate. `recording_segments`: the checksum of every header, record and chunk of a recording, as stored.
 crc32c = "0.6"
 # Only `gaslightmq_ui` names it: the web UI, a Dioxus application. The renderer of the browser comes on wasm32 alone.
 dioxus = { version = "0.7", default-features = false, features = ["lib", "launch", "router"] }

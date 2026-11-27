@@ -136,12 +136,18 @@ const PATHS: [(&[&str], Reach); 6] = [
 /// The check of that trait is a crate of its own, in its directory.
 /// The contract has a module `store` too: its trait answers for a store that nobody else changes,
 /// in the methods with a body that such a store keeps as they are.
-const AWAITS_STORES: [(&str, &[&str]); 14] = [
+///
+/// The segment layout awaits its backing in the same way, in two modules: `storage` hands bytes to the backing and
+/// takes bytes from it, and `memory` is the backing in memory. Its framing, its order of writing, its recovery and its
+/// budgets are held to the rule of every sans-IO crate. The check of a backing is a crate of its own.
+const AWAITS_STORES: [(&str, &[&str]); 16] = [
     ("gaslightmq_definition_api", &["store"]),
     ("gaslightmq_definition_conformance", &[]),
     ("gaslightmq_definition_memory", &[]),
     ("gaslightmq_environment_conformance", &[]),
     ("gaslightmq_recording_conformance", &[]),
+    ("gaslightmq_recording_segments", &["storage", "memory"]),
+    ("gaslightmq_recording_segments_conformance", &[]),
     ("gaslightmq_rule", &["store"]),
     ("gaslightmq_rule_conformance", &[]),
     ("gaslightmq_scenario", &["store"]),
