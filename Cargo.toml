@@ -111,6 +111,9 @@ axum = { version = "0.8", default-features = false, features = ["http1", "tokio"
 bytes = "1"
 # Only `gmq` names it: the flags and the environment variables of the binary.
 clap = { version = "4", default-features = false, features = ["std", "derive", "env", "help", "usage", "error-context", "suggestions"] }
+# Only `gaslightmq_wire` names it: the checksum of a record batch whose attributes it wrote again.
+# It is the checksum that Kafka gives its record batches, and `kafka-protocol` builds with the same crate.
+crc32c = "0.6"
 # Only `gaslightmq_ui` names it: the web UI, a Dioxus application. The renderer of the browser comes on wasm32 alone.
 dioxus = { version = "0.7", default-features = false, features = ["lib", "launch", "router"] }
 futures = "0.3"

@@ -1,5 +1,7 @@
 use bytes::{Bytes, BytesMut};
-use kafka_protocol::records::{RecordBatchDecoder, RecordBatchEncoder, RecordEncodeOptions, RecordSet};
+use kafka_protocol::records::{
+    Compression, RecordBatchDecoder, RecordBatchEncoder, RecordEncodeOptions, RecordSet, TimestampType,
+};
 
 use crate::{DecodeError, EncodeError};
 
@@ -8,7 +10,7 @@ use crate::{DecodeError, EncodeError};
 ///
 /// A [`RecordBatch`](crate::RecordBatch) is what someone writes records with, and it keeps their content only.
 /// `RecordBatches` keeps the rest too: the producer ID and epoch, the sequence numbers, the leader epoch,
-/// whether a batch is transactional or a control batch, and its compression.
+/// whether a batch is transactional or a control batch, the type of its timestamps, and its compression.
 /// It is what a rewrite of a `records` field reads, changes and writes again.
 ///
 /// ```
@@ -59,16 +61,24 @@ impl RecordBatches {
 
     /// The same batches, with the key, the value and the headers of every record taken out.
     ///
-    /// Everything else stays: the offsets, the timestamps, the sequence numbers, the producer and the attributes
-    /// of each batch. A control batch, which marks the end of a transaction, keeps its records as they are:
-    /// their key and value are the marker, and no data of a producer.
+    /// Everything else stays: the offsets, the timestamps and their type, the sequence numbers, the producer,
+    /// and whether a batch is transactional. A control batch, which marks the end of a transaction, keeps its
+    /// records as they are: their key and value are the marker, and no data of a producer.
+    ///
+    /// A batch that lost its payloads encodes without compression: what is left of it is a few numbers,
+    /// and whoever keeps it compresses what it keeps.
     #[must_use]
     pub fn without_payloads(mut self) -> Self {
-        for record in self.0.iter_mut().flat_map(|set| set.records.iter_mut()) {
-            if !record.control {
+        for set in &mut self.0 {
+            let mut stripped = false;
+            for record in set.records.iter_mut().filter(|record| !record.control) {
                 record.key = None;
                 record.value = None;
                 record.headers.clear();
+                stripped = true;
+            }
+            if stripped {
+                set.compression = Compression::None;
             }
         }
         self
@@ -93,10 +103,48 @@ impl RecordBatches {
                 version: set.version,
                 compression: set.compression,
             };
+            let start = out.len();
             RecordBatchEncoder::encode(&mut out, &set.records, &options)
                 .map_err(|e| EncodeError::new("record batch", e))?;
+            let appended_by_the_log = set
+                .records
+                .first()
+                .is_some_and(|record| record.timestamp_type == TimestampType::LogAppend);
+            if appended_by_the_log {
+                mark_log_append_time(&mut out[start..]);
+            }
         }
         Ok(out.freeze())
+    }
+}
+
+/// Says in every batch of `batches` that its timestamps are the time the log appended it.
+///
+/// The encoder writes the attributes of a batch without the type of its timestamps, which is one bit of them.
+/// This sets the bit, and writes the checksum of the batch again, because the checksum covers the attributes.
+/// `batches` holds whole batches of the message format version 2, one after the other, as the encoder wrote them.
+fn mark_log_append_time(batches: &mut [u8]) {
+    /// The base offset (8 bytes) and the length of the rest (4 bytes).
+    const PREFIX: usize = 12;
+    /// The checksum stands behind the leader epoch (4 bytes) and the magic byte, and covers everything behind itself.
+    const CHECKSUM: std::ops::Range<usize> = 17..21;
+    /// The attributes are the two bytes behind the checksum, and the type of the timestamps is bit 3 of them.
+    const ATTRIBUTES_LOW_BYTE: usize = 22;
+    const LOG_APPEND_TIME: u8 = 1 << 3;
+
+    let mut rest = batches;
+    while let Some(&[.., l0, l1, l2, l3]) = rest.first_chunk::<PREFIX>() {
+        let Ok(len) = usize::try_from(i32::from_be_bytes([l0, l1, l2, l3])) else {
+            return;
+        };
+        if rest.len() < PREFIX + len || PREFIX + len <= ATTRIBUTES_LOW_BYTE {
+            return;
+        }
+        let (batch, following) = rest.split_at_mut(PREFIX + len);
+        batch[ATTRIBUTES_LOW_BYTE] |= LOG_APPEND_TIME;
+        let checksum = crc32c::crc32c(&batch[CHECKSUM.end..]);
+        batch[CHECKSUM].copy_from_slice(&checksum.to_be_bytes());
+        rest = following;
     }
 }
 
@@ -146,7 +194,7 @@ mod tests {
             .unwrap();
 
         let decoded = RecordBatch::decode_all(&kept).unwrap();
-        assert_eq!(decoded[0].compression, Compression::Gzip);
+        assert_eq!(decoded[0].compression, Compression::None);
         let records = &decoded[0].records;
         assert_eq!(
             records,
@@ -155,6 +203,46 @@ mod tests {
                 Record::empty().with_offset(41u64).with_timestamp(1_001)
             ]
         );
+    }
+
+    #[test]
+    fn a_control_batch_keeps_its_records_and_its_compression() {
+        let mut batches = RecordBatches::decode(&field(&[RecordBatch::new(vec![
+            Record::new("commit").with_key("marker"),
+        ])
+        .with_compression(Compression::Gzip)]))
+        .unwrap();
+        for record in batches.0.iter_mut().flat_map(|set| set.records.iter_mut()) {
+            record.control = true;
+        }
+
+        let kept = batches.clone().without_payloads();
+
+        assert_eq!(kept, batches);
+    }
+
+    #[test]
+    fn a_batch_keeps_the_type_of_its_timestamps() {
+        let mut batches = RecordBatches::decode(&field(&[
+            RecordBatch::new(vec![
+                Record::new("a").with_timestamp(1_000),
+                Record::new("b").with_timestamp(1_001),
+            ]),
+            RecordBatch::new(vec![Record::new("c").with_offset(2u64).with_timestamp(1_002)]),
+        ]))
+        .unwrap();
+        // The broker appended the first batch with its own time, and left the second with the time of the producer.
+        for record in &mut batches.0[0].records {
+            record.timestamp_type = TimestampType::LogAppend;
+        }
+
+        let read_again = RecordBatches::decode(&batches.encode().unwrap()).unwrap();
+
+        assert_eq!(read_again, batches);
+        assert_eq!(read_again.0[0].records[0].timestamp_type, TimestampType::LogAppend);
+        assert_eq!(read_again.0[1].records[0].timestamp_type, TimestampType::Creation);
+        // The decoder checks the checksum of every batch, so the one that was written again is right.
+        assert_eq!(read_again.without_payloads().records(), 3);
     }
 
     #[test]

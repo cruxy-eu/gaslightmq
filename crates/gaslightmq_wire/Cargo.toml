@@ -9,6 +9,7 @@ workspace = true
 
 [dependencies]
 bytes.workspace = true
+crc32c.workspace = true
 indexmap.workspace = true
 kafka-protocol.workspace = true
 thiserror.workspace = true

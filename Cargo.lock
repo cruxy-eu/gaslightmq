@@ -2064,6 +2064,7 @@ name = "gaslightmq_wire"
 version = "0.1.0"
 dependencies = [
  "bytes",
+ "crc32c",
  "gaslightmq_kernel",
  "indexmap",
  "kafka-protocol",
