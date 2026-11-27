@@ -1978,6 +1978,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "gaslightmq_recording_segments_fs"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "bytes",
+ "gaslightmq_clock",
+ "gaslightmq_environment",
+ "gaslightmq_field",
+ "gaslightmq_recording",
+ "gaslightmq_recording_conformance",
+ "gaslightmq_recording_segments",
+ "gaslightmq_recording_segments_conformance",
+ "memmap2",
+ "tempfile",
+ "tokio",
+]
+
+[[package]]
 name = "gaslightmq_resource"
 version = "0.1.0"
 dependencies = [
