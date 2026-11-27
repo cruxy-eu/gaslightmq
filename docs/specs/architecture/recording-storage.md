@@ -1638,7 +1638,7 @@ recordings:
   segment_size: 1GiB        # the size at which a data segment is sealed, as it is stored
   index_size: 256MiB        # the size at which an index chunk is full
   summary_values: 256       # the values of one field that a summary lists
-  reader_memory: 16MiB      # the unpacked blocks that one reader holds at most, with what it read ahead
+  reader_memory: 16MiB      # the unpacked blocks that one reader holds at most: those that its consumer still holds
   all_readers_memory: 256MiB  # the unpacked blocks that all readers of the process hold together at most
 ```
 
@@ -1673,7 +1673,7 @@ What changed with blocks of 4 MiB, and what did not:
 | Who has a message? | `recording`, for all of them: an entry, a description, a summary and an end. A layout carries them between records of fixed binary. | Messages of the layout for its footers, its index and its manifest. The layout would have had stored types and versions of its own, with the summaries of `recording` inside them. |
 | What does a reader do before the first view? | `recording` checks the block once: every head, every reference, every length, every text and every choice. | A check at every step of every view, which costs a reader of a whole entry more than decoding it. No check, which reads whatever a forged recording points at. |
 | What bounds memory? | Named budgets: one for a reader, one for all readers of a process, and for the writer the sizes of its queue, of a commit and of a block. A block is small, so a budget is a few blocks. See [memory](#memory). | Blocks of 64 MiB, which a reader holds whole: eight readers held 0.5 GiB. A reader without a bound, whose read-ahead and kept views decide what it holds. |
-| What happens when a budget is reached? | [Nothing waits](#when-a-budget-is-reached). A reader stops reading ahead, a consumer that holds too much gets `ReaderBudgetSpent`, and a stream that finds no room for one block is refused with `AllReadersBudgetSpent`. Each error names its budget. | A reader that waits for room. It can wait for its own consumer, and a wait says nothing to whoever asked. |
+| What happens when a budget is reached? | [Nothing waits](#when-a-budget-is-reached). A budget counts the blocks that a reader holds, and the backing, not the layout, reads ahead. A consumer that holds too much gets `ReaderBudgetSpent`, and a stream that finds no room for one block is refused with `AllReadersBudgetSpent`. Each error names its budget. | A reader that waits for room. It can wait for its own consumer, and a wait says nothing to whoever asked. |
 | Who pays for an entry that is kept? | Whoever keeps it: a kept view or frame keeps its block in memory, and counts against the budget of its reader. A consumer that keeps entries beyond its stream copies them out. | A storage that copies every entry it hands out, so that nothing is ever kept alive: every reader would pay for the few that keep. |
 | Who owns the encoding of an entry? | The contract. A layout keeps batches and never looks into one. | The layout. Views would be the layout's, and a reader would be written against one layout. |
 | What does the manifest say about an index chunk? | Where it starts, and for a full one what it covers and the sum of its summaries. | A list of names alone. A reader would read every index chunk to find a position, a moment or a topic. |
