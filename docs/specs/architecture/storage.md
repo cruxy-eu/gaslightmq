@@ -88,10 +88,13 @@ recordings:
   queue_entries: 10000          # the entries that may wait for the recorder
   queue_size: 256MiB            # the bytes of the frames that may wait with them
   commit_interval: 1s           # how long an entry waits at most before it is in the recording for good
-  batch_size: 64MiB             # what waits for a commit at most, before the commit comes early
-  segment_size: 1GiB            # the size at which a data segment is sealed
-  index_size: 32MiB             # the size at which an index chunk is full
-  summary_values: 1024          # the values of one field that a summary lists
+  commit_size: 16MiB            # the entries and frames that wait for a commit at most, before it comes early
+  compression: zstd             # the codec of a new recording: zstd, or none
+  compression_level: 3          # how hard the codec works, in the levels of the codec
+  block_size: 64MiB             # the entries and frames of one block, before they are compressed
+  segment_size: 1GiB            # the size at which a data segment is sealed, as it is stored
+  index_size: 256MiB            # the size at which an index chunk is full
+  summary_values: 256           # the values of one field that a summary lists
 ```
 
 ## Workspace
@@ -585,6 +588,7 @@ It holds a description, the sessions, and the calls and [journal](../domains/obs
 
 The engine keeps a recording through a [storage contract](recording-storage.md#the-storage-contract), and names no format.
 The first layout behind it keeps a recording as [data segments, index chunks and a manifest](recording-storage.md#the-segment-layout), in a directory of its own under `recordings.directory`.
+A segment is [compressed](recording-storage.md#the-codec), with Zstandard unless someone sets another codec.
 That layout asks a [second contract](recording-storage.md#the-segment-backing) for the place of its bytes: files first, and memory for tests.
 
 A recording is a directory, and it can hold many gigabytes.
@@ -616,12 +620,13 @@ The recorder commits what it wrote every `recordings.commit_interval`.
 What a commit covers is in the recording for good, and a reader sees it while the recording runs.
 A recording that a crash cut short opens up to its last commit.
 
-A recording is split into segments, so nothing in it grows without a bound, and a long recording opens from the end.
-Every stretch of it carries a [summary](recording-storage.md#summary) of the field values it contains: a segment and an index chunk.
-A commit writes a [batch](recording-storage.md#a-batch), which holds each of its texts once, and the fields of its calls side by side.
-A query with a selector reads the manifest, then the index chunks and the segments that can match, and then compares numbers in the rows of the batches that have its values.
+A recording is split into segments, so nothing in it grows without a bound.
+A segment is split into [blocks](recording-storage.md#blocks-and-chunks), each compressed by itself, and a reader starts a stream at any of them.
+Every stretch of a recording carries a [summary](recording-storage.md#summary) of the field values it contains: a block, a segment and an index chunk.
+A query with a selector reads the manifest, then the index chunks that can match, and then streams the blocks that can match, and skips the rest.
 
-A reader copies nothing and decodes nothing: the files of a recording are mapped into memory, a frame is a range of their bytes, and a reader reads the fields, the verdict and the explanation of a call [where they lie](recording-storage.md#entries-are-read-in-place).
+Every reader is a stream: a replay, the index, a seed and a query each read a stretch of the recording in order.
+[Nothing is copied twice](recording-storage.md#nothing-is-copied-twice) on the way: the decompressor writes the bytes of an entry once, and from there a reader reads the fields, the verdict and the explanation of a call through views, and a frame as a slice.
 A reader that asks for a call as its type gets one built.
 
 The [index](../domains/observation.md#index) of the engine, with its facets, is not stored.

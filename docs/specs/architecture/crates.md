@@ -261,7 +261,7 @@ flowchart BT
   T["Targeting and injection<br/>selector · selector_conformance · trigger · rule · rule_conformance · combine · wire_edit · lie_*"]
   P["Session and pipeline<br/>session · pipeline"]
   S["Scenarios<br/>scenario · scenario_conformance"]
-  O["Observation<br/>journal · traffic · index · recording · recording_segments"]
+  O["Observation<br/>journal · traffic · index · recording · recording_segments · recording_segments_zstd"]
   W["World and backends<br/>backend · virtual_log · world · sim_* · broker · overlay"]
   F["Workspace<br/>environment · environment_conformance · workspace"]
   C["Control<br/>surface · surface_conformance · quick_inject · control_api"]
@@ -358,9 +358,10 @@ Every other crate speaks in them.
 | `traffic` | The live window of recent calls, subscriptions by selector, statistics per rule and per API, and the topics, groups and clients that the calls named. It takes the record of each call and says which subscriptions it goes to, and it sends nothing itself. | `call`, `selector`, `rule`, `field`, `kernel` |
 | `index` | The [index](../domains/observation.md#index): facets, counts under the active filters, suggested patterns. | `call`, `selector`, `field` |
 | `journal` | The [journal](../domains/observation.md#journal): its entries, each with its [number](identity.md#journal-entry-id), its time, its [surface](../domains/observation.md#surfaces), its cause and the revision that its change left, and what changed. Also the name by which an entry names a rule or a definition, the parameter of a rule that an entry names, and the recent journal: it numbers the entries of one environment and keeps the latest in memory, as many as its size says. | `incident`, `resource`, `clock` |
-| `recording` | The [storage contract](recording-storage.md#the-storage-contract) of recordings: the traits through which a recording is started, appended to, committed, ended, listed, opened and read, and the errors of each. What a recording holds: its [ID](identity.md#recording-id), its description, its entries, which are session events, calls with their raw frames and journal entries, the position of an entry, the summary of a stretch, and how a recording ended. It owns the encoding of an entry: it writes entries into a batch, and it reads a batch in place, through views of a call, its fields, its explanation, a journal entry and a session event, which copy nothing and decode nothing. A view builds the type of `call` or `journal` through its checks when a reader asks for it. It applies the recording mode and blanks credentials where an entry is made, so no storage sees what a recording must not keep. It knows no layout, and it needs no runtime. | `call`, `journal`, `wire`, `field`, `clock`, `environment` |
+| `recording` | The [storage contract](recording-storage.md#the-storage-contract) of recordings: the traits through which a recording is started, appended to, committed, ended, listed, opened and read, and the errors of each. What a recording holds: its [ID](identity.md#recording-id), its description, its entries, which are session events, calls with their raw frames and journal entries, the position of an entry, the summary of a stretch, and how a recording ended. It owns the encoding of an entry: it writes entries into a batch, and it reads a batch through views of a call, its fields, its explanation, a journal entry and a session event, which copy nothing and decode nothing. A view builds the type of `call` or `journal` through its checks when a reader asks for it. It applies the recording mode and blanks credentials where an entry is made, so no storage sees what a recording must not keep. It knows no layout, and it needs no runtime. | `call`, `journal`, `wire`, `field`, `clock`, `environment` |
 | `recording_conformance` | What every storage of recordings does, as a check that the tests of any storage run. This crate is [test support](#test-support-crates). | `recording` |
-| `recording_segments` | The [segment layout](recording-storage.md#the-segment-layout), as a storage of recordings over any backing: data segments of batches, index chunks that describe the segments, and a manifest that lists the index chunks. It keeps the batches of entries that `recording` wrote, and never looks into one. It holds the framing and the schema of its own objects, the summaries of each level, the order of writing, and the recovery of a recording that was cut short, each as plain functions over bytes. Also the [backing contract](recording-storage.md#the-segment-backing): the one async trait through which the layout keeps and reads its three kinds of object, and its errors. Behind a feature, the backing in memory. It awaits the backing it is handed, and does nothing else that is async. | `recording`, `call`, `journal`, `wire`, `field`, `clock` |
+| `recording_segments` | The [segment layout](recording-storage.md#the-segment-layout), as a storage of recordings over any backing: data segments of compressed blocks, index chunks that describe the segments, and a manifest that lists the index chunks. It keeps the batches of entries that `recording` wrote, and never looks into one. It holds the framing and the schema of its own objects, the summaries of each level, the order of writing, and the recovery of a recording that was cut short, each as plain functions over bytes. Also the [codec contract](recording-storage.md#the-codec): a compressor and a decompressor as transforms of a stream of bytes, and the codec that does nothing. Also the [backing contract](recording-storage.md#the-segment-backing): the one async trait through which the layout keeps its three kinds of object and reads them as streams, and its errors. Behind a feature, the backing in memory. It awaits the backing it is handed, and does nothing else that is async. | `recording`, `call`, `journal`, `wire`, `field`, `clock` |
+| `recording_segments_zstd` | The Zstandard codec of the segment layout, which is its default: a compressor and a decompressor behind the codec contract. It is a crate of its own because it brings the library that compresses. | `recording_segments` |
 | `recording_segments_conformance` | What every backing of the segment layout does, as a check that the tests of any backing run. This crate is [test support](#test-support-crates). | `recording_segments`, `recording` |
 | `recording_segments_fs` | The backing on files: one directory for each recording, with its segments, its index chunks and its manifest as files. An append is on the disk when it returns, a seal and a replacement happen in one step, and a sealed segment is mapped into memory, so a frame is a range of the map. This crate does IO. | `recording_segments`, `recording` |
 
@@ -757,12 +758,13 @@ The conformance crates are [test support](#test-support-crates): no code that sh
 ### The recording seam
 
 A recording is not tied to one format, and a format is not tied to files.
-Two contracts keep them apart, and [recording storage](recording-storage.md) describes both.
+Three contracts keep them apart, and [recording storage](recording-storage.md) describes them.
 
 | Contract | In | Speaks of | Behind it |
 |---|---|---|---|
 | [Recording storage](recording-storage.md#the-storage-contract) | `recording` | Recordings and their entries. It knows no bytes. | A layout: `recording_segments` is the first. |
-| [Segment backing](recording-storage.md#the-segment-backing) | `recording_segments` | The data segments, the index chunks and the manifest of a recording, as bytes. It knows no entry. | A place for bytes: `recording_segments_fs` for files, and memory behind a feature of `recording_segments`. |
+| [The codec](recording-storage.md#the-codec) | `recording_segments` | Bytes in and bytes out, as a stream. It knows no entry and no segment. | A way to compress: `recording_segments_zstd` is the first and the default, and none is one. |
+| [Segment backing](recording-storage.md#the-segment-backing) | `recording_segments` | The data segments, the index chunks and the manifest of a recording, as streams of bytes. It knows no entry. | A place for bytes: `recording_segments_fs` for files, and memory behind a feature of `recording_segments`. |
 
 - **The engine holds a storage, and names no layout.**
   Whoever puts a process together picks one, as it picks the stores of the workspace:
@@ -770,15 +772,15 @@ Two contracts keep them apart, and [recording storage](recording-storage.md) des
 - **Each contract holds its errors.**
   A storage returns the errors of `recording`, in the words of a recording, and none of them names a segment or a file.
   A backing returns the errors of `recording_segments`, and the layout turns each into one of `recording`.
-- **A reader reads in place, on both sides of both contracts.**
-  A backing hands out a shared buffer: on files, a range of a mapped file.
-  A storage hands out a batch of entries that shares it, and `recording` reads an entry through views into the batch.
-  A frame is a range of the same buffer, so a reader copies no frame and decodes no entry.
+- **Every reader is a stream, and nothing is copied twice.**
+  A backing hands out the bytes of a segment as a stream of shared buffers: on files, ranges of a mapped file.
+  The codec unpacks a chunk into a buffer, once.
+  A storage hands out that buffer as a batch, and `recording` reads an entry through views into it, and a frame as a slice of it.
 - **The encoding of an entry is the contract's.**
   Every layout keeps the same batches, so a reader is written once, against the views.
 - **What decides is sans-IO.**
   The entries with their encoding and their views, the summaries, the recording mode and the blanking of credentials are in `recording`.
-  The framing, the manifest, the order of writing and recovery are in `recording_segments`, as functions over bytes.
+  The framing, the manifest, the order of writing and recovery are in `recording_segments`, as functions over bytes, and a codec is a transform of bytes.
   Only `recording_segments_fs` touches a file.
 - **Both traits are async, for the reason the store traits are.**
   A backing waits for a disk, and it can be a service somewhere else.
@@ -1102,7 +1104,7 @@ The crates arrive in the order the [first version](../README.md#first-version) n
 | 2 | `wire_edit`, `lie_api`, `lie_refusal`, `session`, `call`, `pipeline` | The pipeline runs in tests, with partial refusals and explanations. |
 | 3 | `environment`, `backend`, `overlay`, `backend_upstream`, `listener`, `clock_waitable`, `engine` | A proxy that lies. |
 | 4 | `host`, `control_api`, `control_server`, `control_client`, `traffic`, `index`, `surface`, `quick_inject`, `definition_api`, `definition_memory`, `definition_conformance`, `selector_conformance`, `rule_conformance`, `surface_conformance`, `environment_conformance`, `workspace`, `ui` | The UI with live traffic, rules, pads and ⌘K. Definitions live in stores in memory. |
-| 5 | `journal`, `scenario`, `scenario_conformance`, `workspace_fs`, `recording`, `recording_conformance`, `recording_segments`, `recording_segments_conformance`, `recording_segments_fs`, `test`, `testcontainers`, `gmq` | Definitions and scenarios in files, the journal, recordings, undo and redo in the UI, and tests in CI. |
+| 5 | `journal`, `scenario`, `scenario_conformance`, `workspace_fs`, `recording`, `recording_conformance`, `recording_segments`, `recording_segments_zstd`, `recording_segments_conformance`, `recording_segments_fs`, `test`, `testcontainers`, `gmq` | Definitions and scenarios in files, the journal, recordings, undo and redo in the UI, and tests in CI. |
 | 6 | `schema`, `schema_registry`, `virtual_log`, `world`, `sim_log`, `sim_group`, `broker`, `world_seed`, `gaslightmq` | The broker, alone and behind a proxy, and the facade for library users. |
 | 7 | `lie_topology`, `lie_data`, `lie_progress`, `lie_config`, `sim_txn` | The remaining lies and transactions. |
 
