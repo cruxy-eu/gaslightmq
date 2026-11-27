@@ -12,9 +12,9 @@
 
 use bytes::Bytes;
 use gaslightmq_recording::{BatchEncoder, Description, End, Entry, Position, Summary};
+use gaslightmq_recording_compression::Compressor;
 
 use crate::backing::Object;
-use crate::codec::{Codec, Compressor};
 use crate::configuration::SegmentConfiguration;
 use crate::framing::{
     BlockHeader, BlockRow, ChunkHeader, IndexChunkRecord, IndexHeader, Manifest, Record, SegmentHeader, SegmentRecord,
@@ -35,7 +35,10 @@ pub(crate) enum Step {
 #[derive(Debug)]
 pub(crate) struct Writing {
     configuration: SegmentConfiguration,
-    codec: Codec,
+    /// The compressor of the entries of the block that is open. It is ready again when a block ends.
+    entries: Compressor,
+    /// The compressor of the frames of the chunk that is open. It is ready again when a chunk ends.
+    frames: Compressor,
     description: Bytes,
     next: Position,
     segment: OpenSegment,
@@ -104,7 +107,6 @@ struct OpenBlock {
     at: Option<u64>,
     entries: u64,
     encoder: BatchEncoder,
-    compressor: Compressor,
     entries_room: u64,
     frames_room: u64,
     chunk: OpenChunk,
@@ -122,21 +124,19 @@ struct OpenChunk {
     entries: u32,
     entries_out: Vec<u8>,
     entries_unpacked: u64,
-    frames: Compressor,
     frames_out: Vec<u8>,
     frames_unpacked: u64,
 }
 
 impl OpenChunk {
-    fn new(codec: Codec) -> Result<OpenChunk, String> {
-        Ok(OpenChunk {
+    const fn new() -> OpenChunk {
+        OpenChunk {
             entries: 0,
             entries_out: Vec::new(),
             entries_unpacked: 0,
-            frames: Compressor::new(codec)?,
             frames_out: Vec::new(),
             frames_unpacked: 0,
-        })
+        }
     }
 }
 
@@ -156,7 +156,10 @@ impl Writing {
     /// Starts a recording: the steps that create its first segment and its manifest wait for the first commit.
     ///
     /// The first segment comes first, because creating it refuses a recording that is there.
-    pub(crate) fn start(description: &Description, configuration: SegmentConfiguration, codec: Codec) -> Writing {
+    ///
+    /// It fails with what the codec said, when the codec of `recordings.compression` does not start.
+    pub(crate) fn start(description: &Description, configuration: SegmentConfiguration) -> Result<Writing, String> {
+        let compressor = || Compressor::new(configuration.compression).map_err(|error| error.to_string());
         let description = description.encode();
         let first = Object::segment(Position::FIRST);
         let header = SegmentHeader {
@@ -166,7 +169,8 @@ impl Writing {
         .encode();
         let mut writing = Writing {
             configuration,
-            codec,
+            entries: compressor()?,
+            frames: compressor()?,
             next: Position::FIRST,
             segment: OpenSegment::at(Position::FIRST, header.len() as u64),
             block: None,
@@ -176,7 +180,7 @@ impl Writing {
             description,
         };
         writing.put_manifest(None);
-        writing
+        Ok(writing)
     }
 
     /// Takes `entry`, and says which position it has. It waits for the next commit.
@@ -206,10 +210,9 @@ impl Writing {
                 at: None,
                 entries: 0,
                 encoder: BatchEncoder::new(),
-                compressor: Compressor::new(self.codec)?,
                 entries_room: 0,
                 frames_room: 0,
-                chunk: OpenChunk::new(self.codec)?,
+                chunk: OpenChunk::new(),
             });
         }
         let block = self.block.as_mut().expect("the block that the entry goes into is open");
@@ -217,9 +220,12 @@ impl Writing {
 
         let encoded = block.encoder.encode(entry);
         let chunk = &mut block.chunk;
-        block.compressor.write(encoded.entry(), &mut chunk.entries_out)?;
+        let failed = |error: gaslightmq_recording_compression::CompressError| error.to_string();
+        self.entries
+            .write(encoded.entry(), &mut chunk.entries_out)
+            .map_err(failed)?;
         for frame in encoded.frames() {
-            chunk.frames.write(frame, &mut chunk.frames_out)?;
+            self.frames.write(frame, &mut chunk.frames_out).map_err(failed)?;
         }
         chunk.entries += 1;
         chunk.entries_unpacked += entries;
@@ -269,17 +275,23 @@ impl Writing {
         let Some(block) = &mut self.block else {
             return Ok(());
         };
+        let failed = |error: gaslightmq_recording_compression::CompressError| error.to_string();
         let chunk = &mut block.chunk;
         if chunk.entries == 0 {
+            if ends_block {
+                // A commit cut the last chunk of the block already, so the block ends at that flush. The end of the
+                // stream has no chunk to stand in, and the compressor is ready for the next block.
+                self.entries.finish_block(&mut Vec::new()).map_err(failed)?;
+            }
             return Ok(());
         }
         if ends_block {
-            block.compressor.finish_block(&mut chunk.entries_out)?;
+            self.entries.finish_block(&mut chunk.entries_out).map_err(failed)?;
         } else {
-            block.compressor.flush(&mut chunk.entries_out)?;
+            self.entries.flush(&mut chunk.entries_out).map_err(failed)?;
         }
         // The frames of a chunk are a stream of their own.
-        chunk.frames.finish_block(&mut chunk.frames_out)?;
+        self.frames.finish_block(&mut chunk.frames_out).map_err(failed)?;
         let entries = Bytes::from(std::mem::take(&mut chunk.entries_out));
         let frames = Bytes::from(std::mem::take(&mut chunk.frames_out));
         let header = ChunkHeader {
@@ -291,12 +303,12 @@ impl Writing {
             entries_checksum: checksum(&entries),
             frames_checksum: checksum(&frames),
         };
-        *chunk = OpenChunk::new(self.codec)?;
+        *chunk = OpenChunk::new();
         if block.at.is_none() {
             block.at = Some(self.segment.length);
             let header = BlockHeader {
                 first: block.first,
-                codec: self.codec.id(),
+                codec: self.configuration.compression.codec().id(),
             };
             self.segment.put(header.encode());
         }

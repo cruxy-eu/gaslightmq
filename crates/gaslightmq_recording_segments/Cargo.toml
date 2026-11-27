@@ -15,6 +15,9 @@ memory = []
 bytes.workspace = true
 crc32c.workspace = true
 gaslightmq_recording.workspace = true
+# The codecs: a block is compressed with the codec that a new recording is set to, and unpacked with the one its
+# header names.
+gaslightmq_recording_compression.workspace = true
 thiserror.workspace = true
 
 [dev-dependencies]

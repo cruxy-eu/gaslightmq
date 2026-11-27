@@ -10,10 +10,10 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use bytes::Bytes;
 use gaslightmq_recording::prelude::*;
+use gaslightmq_recording_compression::{Codec, Decompressor};
 
 use crate::backing::{ByteStream, FetchError, ListingError, Object, ObjectKind, SegmentBacking, StoreError};
 use crate::budget::{ReadersMemory, Spent, StreamMemory};
-use crate::codec::{Codec, Decompressor};
 use crate::configuration::SegmentConfiguration;
 use crate::framing::{
     BlockHeader, BlockRow, ChunkHeader, LAYOUT_VERSION, Manifest, Trailer, Versions, checksum, padding,
@@ -71,7 +71,10 @@ impl<B: SegmentBacking + 'static> RecordingStorage for SegmentStorage<B> {
     type Reader = SegmentReader<B>;
 
     async fn start(&self, description: Description) -> Result<SegmentWriter<B>, StartError> {
-        let mut writing = Writing::start(&description, self.configuration, Codec::None);
+        let mut writing =
+            Writing::start(&description, self.configuration).map_err(|reason| StartError::NotStarted {
+                reason: format!("the codec did not start: {reason}"),
+            })?;
         let mut writer = SegmentWriter {
             backing: Arc::clone(&self.backing),
             recording: description.id(),
@@ -1096,6 +1099,8 @@ impl<B: SegmentBacking + 'static> SegmentEntries<B> {
         // The entries of the chunks of a block are one stream, which the codec unpacks in one call, into the one
         // buffer of the block. The stream takes every chunk that is whole, up to the first that is not.
         let mut chunks = Vec::new();
+        // The frames of each chunk are a block of their own for the codec, and one decompressor unpacks them in turn.
+        let mut frames_codec = Decompressor::new(codec);
         let mut whole = 0;
         while whole < row.entries {
             let chunk = exactly(&mut stream, ChunkHeader::LEN).await.map_err(not_read)?;
@@ -1116,7 +1121,7 @@ impl<B: SegmentBacking + 'static> SegmentEntries<B> {
                 let whole_frames = stored_frames.len() == chunk.frames_stored as usize
                     && checksum(&stored_frames) == chunk.frames_checksum;
                 let before = frames.written().len();
-                let read = Decompressor::new(codec).read_block([&stored_frames[..]], frames);
+                let read = frames_codec.read_block([&stored_frames[..]], frames);
                 let all_of_them = frames.written().len() - before == chunk.frames_unpacked as usize;
                 if !whole_frames || read.is_err() || !all_of_them {
                     break;

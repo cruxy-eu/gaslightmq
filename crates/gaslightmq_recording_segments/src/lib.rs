@@ -52,7 +52,6 @@
 
 mod backing;
 mod budget;
-mod codec;
 mod configuration;
 mod framing;
 #[cfg(feature = "memory")]

@@ -659,7 +659,6 @@ mod tests {
 
     use super::*;
     use crate::backing::Object;
-    use crate::codec::Codec;
     use crate::configuration::SegmentConfiguration;
     use crate::framing::ChunkHeader;
     use crate::writing::{Step, Writing};
@@ -705,7 +704,7 @@ mod tests {
         // hold chunks, headers of blocks and records of spans in every order.
         configuration.block_size = 2 * entry_size;
         configuration.span_size = 4 * entry_size;
-        let mut writing = Writing::start(&description, configuration, Codec::None);
+        let mut writing = Writing::start(&description, configuration).expect("the codec starts");
         let segment = Object::segment(Position::FIRST);
         let commits = [0..3, 3..6, 6..9, 9..12];
 
@@ -780,7 +779,7 @@ mod tests {
             at: Instant::ZERO,
             change: SessionChange::Closed { by: Closer::Client },
         };
-        let mut writing = Writing::start(&description, SegmentConfiguration::new(), Codec::None);
+        let mut writing = Writing::start(&description, SegmentConfiguration::new()).expect("the codec starts");
         let segment = Object::segment(Position::FIRST);
         let mut bytes = Vec::new();
         let mut first_commit = 0;
@@ -802,9 +801,9 @@ mod tests {
             }
         }
 
-        // The last byte of the second chunk goes bad: it is in its entries, behind its header.
-        let last = bytes.len() - 1;
-        bytes[last] = !bytes[last];
+        // The first byte of the entries of the second chunk goes bad: it stands behind the header of the chunk.
+        let damaged = first_commit + ChunkHeader::LEN;
+        bytes[damaged] = !bytes[damaged];
         let mut walk = SegmentWalk::new(Position::FIRST);
         feed(&mut walk, &Bytes::from(bytes));
 
@@ -845,7 +844,7 @@ mod tests {
             entries: 1,
             calls: 0,
         };
-        let mut writing = Writing::start(&description, SegmentConfiguration::new(), Codec::None);
+        let mut writing = Writing::start(&description, SegmentConfiguration::new()).expect("the codec starts");
         writing
             .append(Entry::session(&event))
             .expect("the codec takes every entry");

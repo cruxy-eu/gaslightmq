@@ -1962,6 +1962,7 @@ dependencies = [
  "gaslightmq_environment",
  "gaslightmq_field",
  "gaslightmq_recording",
+ "gaslightmq_recording_compression",
  "gaslightmq_recording_conformance",
  "thiserror 2.0.21",
 ]

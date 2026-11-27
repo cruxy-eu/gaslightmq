@@ -2,6 +2,8 @@
 //!
 //! A property is a public field, and each one has a default.
 
+use gaslightmq_recording_compression::{Compression, ZstandardLevel};
+
 /// What a [`SegmentStorage`](crate::SegmentStorage) is configured with: the properties `recordings.*` of the
 /// segment layout.
 ///
@@ -21,6 +23,10 @@
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[non_exhaustive]
 pub struct SegmentConfiguration {
+    /// `recordings.compression` and `recordings.compression_level`. Default: Zstandard at level 3.
+    ///
+    /// The codec that a new recording takes. A reader takes the codec of a block from its header, and needs none.
+    pub compression: Compression,
     /// `recordings.block_size`. Default: 4 MiB.
     ///
     /// The bytes of the entries and frames of one block, before they are compressed: what a reader holds at a time,
@@ -61,6 +67,9 @@ impl SegmentConfiguration {
     /// The defaults.
     pub const fn new() -> SegmentConfiguration {
         SegmentConfiguration {
+            compression: Compression::Zstandard {
+                level: ZstandardLevel::DEFAULT,
+            },
             block_size: 4 * Self::MIB,
             span_size: 64 * Self::MIB,
             segment_size: 1024 * Self::MIB,
