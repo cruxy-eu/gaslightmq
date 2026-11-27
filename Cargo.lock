@@ -1880,6 +1880,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "gaslightmq_recording_conformance"
+version = "0.1.0"
+dependencies = [
+ "bytes",
+ "futures",
+ "gaslightmq_call",
+ "gaslightmq_clock",
+ "gaslightmq_environment",
+ "gaslightmq_field",
+ "gaslightmq_journal",
+ "gaslightmq_kernel",
+ "gaslightmq_lie",
+ "gaslightmq_recording",
+ "gaslightmq_wire",
+]
+
+[[package]]
 name = "gaslightmq_resource"
 version = "0.1.0"
 dependencies = [

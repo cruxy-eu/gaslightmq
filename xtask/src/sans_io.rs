@@ -136,11 +136,12 @@ const PATHS: [(&[&str], Reach); 6] = [
 /// The check of that trait is a crate of its own, in its directory.
 /// The contract has a module `store` too: its trait answers for a store that nobody else changes,
 /// in the methods with a body that such a store keeps as they are.
-const AWAITS_STORES: [(&str, &[&str]); 13] = [
+const AWAITS_STORES: [(&str, &[&str]); 14] = [
     ("gaslightmq_definition_api", &["store"]),
     ("gaslightmq_definition_conformance", &[]),
     ("gaslightmq_definition_memory", &[]),
     ("gaslightmq_environment_conformance", &[]),
+    ("gaslightmq_recording_conformance", &[]),
     ("gaslightmq_rule", &["store"]),
     ("gaslightmq_rule_conformance", &[]),
     ("gaslightmq_scenario", &["store"]),

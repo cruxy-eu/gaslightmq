@@ -26,6 +26,7 @@ members = [
     "crates/gaslightmq_pipeline",
     "crates/gaslightmq_quick_inject",
     "crates/gaslightmq_recording",
+    "crates/gaslightmq_recording/conformance",
     "crates/gaslightmq_resource",
     "crates/gaslightmq_rule",
     "crates/gaslightmq_rule/conformance",

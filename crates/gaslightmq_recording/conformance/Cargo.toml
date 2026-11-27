@@ -1,0 +1,28 @@
+[package]
+name = "gaslightmq_recording_conformance"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lints]
+workspace = true
+
+# Only the tests of a crate depend on this one: `cargo xtask test-support` holds every crate to that.
+[package.metadata.gaslightmq]
+test_support = true
+
+[dependencies]
+bytes.workspace = true
+gaslightmq_call.workspace = true
+gaslightmq_clock.workspace = true
+gaslightmq_environment.workspace = true
+gaslightmq_field.workspace = true
+gaslightmq_journal.workspace = true
+gaslightmq_kernel.workspace = true
+gaslightmq_lie.workspace = true
+gaslightmq_recording.workspace = true
+gaslightmq_wire.workspace = true
+
+[dev-dependencies]
+# The executor that drives the check in the test and the example. The crate itself needs no runtime.
+futures.workspace = true
