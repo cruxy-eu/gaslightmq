@@ -1951,6 +1951,32 @@ dependencies = [
 ]
 
 [[package]]
+name = "gaslightmq_recording_segments"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "bytes",
+ "crc32c",
+ "futures",
+ "gaslightmq_clock",
+ "gaslightmq_environment",
+ "gaslightmq_field",
+ "gaslightmq_recording",
+ "gaslightmq_recording_conformance",
+ "thiserror 2.0.21",
+]
+
+[[package]]
+name = "gaslightmq_recording_segments_conformance"
+version = "0.1.0"
+dependencies = [
+ "bytes",
+ "futures",
+ "gaslightmq_recording",
+ "gaslightmq_recording_segments",
+]
+
+[[package]]
 name = "gaslightmq_resource"
 version = "0.1.0"
 dependencies = [

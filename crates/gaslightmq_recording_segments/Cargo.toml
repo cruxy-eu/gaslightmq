@@ -1,0 +1,34 @@
+[package]
+name = "gaslightmq_recording_segments"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lints]
+workspace = true
+
+[features]
+# The backing in memory: for tests, and for an engine whose recordings need not outlive it.
+memory = []
+
+[dependencies]
+bytes.workspace = true
+crc32c.workspace = true
+gaslightmq_recording.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+anyhow.workspace = true
+# The executor that drives the storage in the tests. The crate itself needs no runtime.
+futures.workspace = true
+# What the entries of the tests are made of.
+gaslightmq_clock.workspace = true
+gaslightmq_environment.workspace = true
+gaslightmq_field.workspace = true
+# What every storage of recordings does, which the tests hold the layout to.
+gaslightmq_recording_conformance.workspace = true
+
+# The tests write their recordings to the backing in memory.
+[[test]]
+name = "storage"
+required-features = ["memory"]
