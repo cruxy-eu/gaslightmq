@@ -27,6 +27,7 @@ members = [
     "crates/gaslightmq_quick_inject",
     "crates/gaslightmq_recording",
     "crates/gaslightmq_recording/conformance",
+    "crates/gaslightmq_recording_compression",
     "crates/gaslightmq_resource",
     "crates/gaslightmq_rule",
     "crates/gaslightmq_rule/conformance",
@@ -89,6 +90,7 @@ gaslightmq_overlay = { path = "crates/gaslightmq_overlay" }
 gaslightmq_pipeline = { path = "crates/gaslightmq_pipeline" }
 gaslightmq_quick_inject = { path = "crates/gaslightmq_quick_inject" }
 gaslightmq_recording = { path = "crates/gaslightmq_recording" }
+gaslightmq_recording_compression = { path = "crates/gaslightmq_recording_compression" }
 gaslightmq_resource = { path = "crates/gaslightmq_resource" }
 gaslightmq_rule = { path = "crates/gaslightmq_rule" }
 gaslightmq_rule_conformance = { path = "crates/gaslightmq_rule/conformance" }
@@ -131,6 +133,8 @@ indexmap = "2"
 kafka-protocol = "0.17"
 # Only the checks in `xtask/` parse Rust. Line numbers come from `span-locations`.
 proc-macro2 = { version = "1", default-features = false, features = ["span-locations"] }
+# Only tests name it: the codec of recordings checks that whatever it packs unpacks to the same bytes.
+proptest = "1"
 # Only `gaslightmq_recording` names it: a message of a recording is the archive of a stored type, read in place.
 # The features say the bytes that a recording holds: the lowest byte first, references of 32 bits, and every value at
 # the address that its type asks for. Another set of them is another version of the encoding.
@@ -164,6 +168,10 @@ tracing-subscriber = { version = "0.3", default-features = false, features = ["f
 url = "2"
 # Only `gaslightmq_ui` names it, on wasm32, for the address of the page that the browser shows.
 web-sys = { version = "0.3", features = ["Location", "Window"] }
+# Only `gaslightmq_recording_compression` names it: Zstandard, the first codec of a recording.
+# `experimental` lets a block unpack into its own buffer, which the decoder then reads back from, so no second copy
+# of the block is made.
+zstd-safe = { version = "7", default-features = false, features = ["std", "experimental"] }
 
 [workspace.lints.clippy]
 pedantic = { level = "warn", priority = -1 }
