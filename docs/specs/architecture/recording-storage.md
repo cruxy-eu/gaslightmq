@@ -71,7 +71,7 @@ There are three seams, and each has a contract:
 |---|---|---|
 | `recording` | The storage contract and its errors. What a recording holds: its ID, its description, the entries, a position, a summary, how it ended. The [encoding](#a-message) of every message of a recording, as stored types for every [version](#versions), with the way from each version to the next. The [check of a block](#the-check-of-a-block), the views, and the way from a view to the types of `call` and `journal`. What the [recording mode](#what-a-recording-must-not-keep) drops, and the blanking of credentials. | Sans-IO. |
 | `recording_conformance` | What every storage does, as a check. | Test support. |
-| `recording_segments` | The segment layout, as a storage over any backing: the framing of segments, [runs](#runs), blocks and chunks, the [records](#records) of each level, the index, the manifest and when it changes, recovery, and the [memory budgets](#memory). It has no message of its own. The codec contract, and the codec that does nothing. The backing contract and its errors. The backing in memory, behind a feature. | Sans-IO. It awaits the backing it is handed, and nothing else. |
+| `recording_segments` | The segment layout, as a storage over any backing: the framing of segments, [spans](#spans), blocks and chunks, the [records](#records) of each level, the index, the manifest and when it changes, recovery, and the [memory budgets](#memory). It has no message of its own. The codec contract, and the codec that does nothing. The backing contract and its errors. The backing in memory, behind a feature. | Sans-IO. It awaits the backing it is handed, and nothing else. |
 | `recording_segments_zstd` | The Zstandard codec. It is a crate of its own because it brings the library that compresses. | Sans-IO. |
 | `recording_segments_conformance` | What every backing does, as a check. | Test support. |
 | `recording_segments_fs` | The backing on files: it opens, appends, syncs, renames, maps and reads. | This crate does IO. |
@@ -92,7 +92,7 @@ No layout adds one, and none leaves one out.
 | Recording ID | The [environment and the instant it started](identity.md#recording-id). |
 | Description | What the recording is. It is written once, when the recording starts. |
 | Entry | One thing that the recording keeps: a session event, a call or a journal entry. |
-| Batch | A run of entries in one buffer: what a storage hands out at a time. A storage keeps the bytes of a [batch](#a-batch) as they were written. In the segment layout a batch is a [block](#blocks-and-chunks). |
+| Batch | A series of entries in one buffer: what a storage hands out at a time. A storage keeps the bytes of a [batch](#a-batch) as they were written. In the segment layout a batch is a [block](#blocks-and-chunks). |
 | Message | The bytes of one entry, description, summary or end, in the [encoding](#a-message) that `recording` owns. |
 | Position | Which entry of its recording this is: a number that counts from 0. A higher position is a later entry. |
 | Summary | What a stretch of a recording holds, so a reader knows whether to read it. |
@@ -337,7 +337,7 @@ That is what lets another layout exist: it keeps the same entries in another way
 
 ### A batch
 
-A batch is a run of entries that a storage hands out together, in the buffers that it has them in.
+A batch is a series of entries that a storage hands out together, in the buffers that it has them in.
 It has two parts, and a storage keeps them apart:
 
 | Part | Holds | A reader |
@@ -466,7 +466,7 @@ Blocks of 4 MiB cost 7 MiB and 38 MiB.
 - **The bytes as they are stored, when the backing read them into a buffer.**
   A backing that maps a file hands out ranges of the map, which the system keeps and takes back, and they do not count.
 - **One record of the index at a time.**
-  A reader streams an [index chunk](#an-index-chunk) record by record, and holds none of it afterwards, but the rows of the run that it reads.
+  A reader streams an [index chunk](#an-index-chunk) record by record, and holds none of it afterwards, but the rows of the span that it reads.
   The manifest stays in memory for as long as the recording is open: about 2 KiB for every index chunk.
 - **A block of an older version, twice.**
   The [conversion](#an-older-version-is-converted) holds the block that it reads and the block that it writes, and both count.
@@ -526,7 +526,7 @@ Whoever gets `AllReadersBudgetSpent` raises `recordings.all_readers_memory`, or 
 | The call records and journal entries that wait in the queue | `recordings.queue_entries` of them | 10 000 entries |
 | What waits for the next commit, compressed | `recordings.commit_size` | 16 MiB |
 | The block that is open: what the codec remembers of it | `recordings.block_size` | 4 MiB |
-| The records of the runs of the segment that is open, for its footer, and the summary of the run that is open | One [record](#records) for a run | About 0.6 MiB |
+| The records of the spans of the segment that is open, for its footer, and the summary of the span that is open | One [record](#records) for a span | About 0.6 MiB |
 
 The first, the third and the fourth are bytes that a property names, and they add up to 276 MiB.
 The second and the fifth are counts of small things.
@@ -604,7 +604,7 @@ Each kind describes the one below it.
 manifest                      one, small, replaced as a whole
   └─ index chunk              up to `recordings.index_size` each
        └─ data segment        up to `recordings.segment_size` each, as it is stored
-            └─ run            up to `recordings.run_size` of entries and frames: what one summary covers
+            └─ span           up to `recordings.span_size` of entries and frames: what one summary covers
                  └─ block     up to `recordings.block_size` of entries and frames: what a reader holds, and where a stream can start
                       └─ chunk  what one commit wrote of a block, compressed
 ```
@@ -612,7 +612,7 @@ manifest                      one, small, replaced as a whole
 | Object | Holds | Changes |
 |---|---|---|
 | Data segment | The blocks of the recording, one after the other, and when it is sealed a footer that sums them up. | It grows with every commit, until it is sealed. A sealed segment never changes. |
-| Index chunk | For a series of segments: the summary of each one, the summary of each of its [runs](#runs) of blocks, and where each block is, with the positions it covers. | It grows by one item with every segment that is sealed, until it is full. A full index chunk never changes. |
+| Index chunk | For a series of segments: the summary of each one, the summary of each of its [spans](#spans) of blocks, and where each block is, with the positions it covers. | It grows by one item with every segment that is sealed, until it is full. A full index chunk never changes. |
 | Manifest | The description of the recording, the list of its index chunks, each with what it covers, and the end of the recording. | It is replaced as a whole when an index chunk begins, and when the recording ends. |
 
 The segments are the recording.
@@ -659,7 +659,7 @@ The default is 4 MiB, because a reader holds a block.
 
 | A smaller block | By how much |
 |---|---|
-| Makes more rows in the index: every block has a row in the [record](#records) of its run. | 32 bytes for a block. The summary is not the block's: it covers a [run](#runs). |
+| Makes more rows in the index: every block has a row in the [record](#records) of its span. | 32 bytes for a block. The summary is not the block's: it covers a [span](#spans). |
 | Stores a little more, because the codec starts anew with every block. | A call took 122 bytes in blocks of 4 MiB and 117 in blocks of 64 MiB. |
 
 | The size of a block does not | Because |
@@ -671,41 +671,41 @@ The default is 4 MiB, because a reader holds a block.
 A block and a segment are not the same thing.
 A segment is as large as one file should be, and it is counted as it is stored.
 A block is as large as a reader should hold, and it is counted before compression.
-With the ratio of the measurement a segment of a gibibyte holds about 3700 blocks, in 230 runs.
+With the ratio of the measurement a segment of a gibibyte holds about 3700 blocks, in 230 spans.
 
-### Runs
+### Spans
 
-A run is a series of blocks that one summary covers.
+A span is a series of blocks that one summary covers.
 
-| | A block | A run |
+| | A block | A span |
 |---|---|---|
 | Is | What a reader holds, and what the codec compresses as one stream. | The blocks that one [summary](#summary) covers, one after the other. |
-| Closes when | Its entries and frames reach `recordings.block_size`. | The entries and frames of its blocks reach `recordings.run_size`, which is `64MiB` until someone sets it. Or its segment is sealed. |
+| Closes when | Its entries and frames reach `recordings.block_size`. | The entries and frames of its blocks reach `recordings.span_size`, which is `64MiB` until someone sets it. Or its segment is sealed. |
 | In the index | A row of 32 bytes. | A [record](#records) with a summary, of about 2 KiB. |
 
 - **Memory wants a small block, and the index wants few summaries.**
   A summary is about 2 KiB and a block as it is stored is about 280 KiB, so a summary for every block made the index 0.7% of a recording.
-  A summary for a run of sixteen blocks takes it back to 0.06%.
-- **A run is nothing to the codec, and nothing to the memory of a reader.**
-  The blocks of a run unpack without each other, and a reader holds one of them.
-- **A run is whole blocks of one segment.**
-  A block is never cut in two, and a run that is open when its segment is sealed closes there.
-- **The record of a run has a row for every block.**
-  So a stream starts at any block, and readers share out the blocks of a run between them.
+  A summary for a span of sixteen blocks takes it back to 0.06%.
+- **A span is nothing to the codec, and nothing to the memory of a reader.**
+  The blocks of a span unpack without each other, and a reader holds one of them.
+- **A span is whole blocks of one segment.**
+  A block is never cut in two, and a span that is open when its segment is sealed closes there.
+- **The record of a span has a row for every block.**
+  So a stream starts at any block, and readers share out the blocks of a span between them.
 
 How fine a reader skips:
 
 | A reader that looks for | Skips down to | Because | It reads at most, next to what it wants |
 |---|---|---|---|
 | A position | A block. | The row of a block says its first position and the number of its entries. | The rest of one block: 4 MiB, in 1.5 ms. |
-| A moment, or a call ID | A run. | The summary of the run holds the ranges, and a row holds none. | The rest of one run: 64 MiB, in 25 ms on one core. |
-| A value of a field | A run. | The summary of the run lists the values. | The rest of every run that holds the value: 64 MiB for each. |
+| A moment, or a call ID | A span. | The summary of the span holds the ranges, and a row holds none. | The rest of one span: 64 MiB, in 25 ms on one core. |
+| A value of a field | A span. | The summary of the span lists the values. | The rest of every span that holds the value: 64 MiB for each. |
 
 | Property | A larger value | A smaller value |
 |---|---|---|
-| `run_size` | Makes one summary cover more, so it rules out less and says `any` sooner, and makes a reader read more next to what it wants. | Makes a larger index: a summary for every run. |
+| `span_size` | Makes one summary cover more, so it rules out less and says `any` sooner, and makes a reader read more next to what it wants. | Makes a larger index: a summary for every span. |
 
-A run of 64 MiB is what a block was in an earlier form of this layout, so a summary covers what it covered then.
+A span of 64 MiB is what a block was in an earlier form of this layout, so a summary covers what it covered then.
 
 ### The codec
 
@@ -780,7 +780,7 @@ The model is the tree of metadata of Apache Iceberg: a root that lists small fil
 |---|---|
 | Files never change once they are written. | A sealed segment and a full index chunk never change. |
 | New metadata is written beside the old, and one step makes it the current one. | The manifest is replaced in one step: a reader sees the old one or the new one, and never a mix. |
-| Every level says what is below it, with ranges, so a reader skips what cannot match. | The manifest sums up every full index chunk, and an index chunk sums up every segment and every run of blocks. |
+| Every level says what is below it, with ranges, so a reader skips what cannot match. | The manifest sums up every full index chunk, and an index chunk sums up every segment and every span of blocks. |
 | No file of metadata grows with the table. | An index chunk closes at a size. The manifest grows by one small record with every index chunk, which is one for about 420 GiB of segments. |
 
 | Left out | Because |
@@ -820,7 +820,7 @@ Every object starts with a mark of 8 bytes, the [version](#versions) of the layo
 
 ### Records
 
-A record is what the layout says about a run of blocks, a segment or an index chunk, or how the recording ended.
+A record is what the layout says about a span of blocks, a segment or an index chunk, or how the recording ended.
 It is a head, a fixed part, rows where it has them, and the messages that it carries.
 
 ```text
@@ -836,30 +836,30 @@ record = record head  fixed part  row …  message …
 
 | Record | Mark | Its fixed part holds | Its rows | Its messages |
 |---|---|---|---|---|
-| Of a run | `GMQR` | 48 bytes: where the run starts in its segment (8), its length as it is stored, without this record (8), the position of its first entry (8), the number of its entries (8), the number of its blocks (4), zero (12). | One row of 32 bytes for every block of the run: where the block starts in its segment (8), the position of its first entry (8), the number of its entries (4), the length of its entries, unpacked (4), the length of its frames, unpacked (8). | The [summary](#summary) of the run. |
-| Of a segment | `GMQS` | 48 bytes: the position of its first entry, which is the name of the segment (8), the number of its entries (8), the length of the segment (8), the number of its runs (4), zero (4), the length of the records of its runs, which follow (8), zero (8). | None. | The summary of the segment: the sum of the summaries of its runs. |
+| Of a span | `GMQP` | 48 bytes: where the span starts in its segment (8), its length as it is stored, without this record (8), the position of its first entry (8), the number of its entries (8), the number of its blocks (4), zero (12). | One row of 32 bytes for every block of the span: where the block starts in its segment (8), the position of its first entry (8), the number of its entries (4), the length of its entries, unpacked (4), the length of its frames, unpacked (8). | The [summary](#summary) of the span. |
+| Of a segment | `GMQS` | 48 bytes: the position of its first entry, which is the name of the segment (8), the number of its entries (8), the length of the segment (8), the number of its spans (4), zero (4), the length of the records of its spans, which follow (8), zero (8). | None. | The summary of the segment: the sum of the summaries of its spans. |
 | Of an index chunk | `GMQI` | 16 bytes: the position of the first entry that it describes (8), and the number of entries that it describes, which is zero while it grows (8). | None. | The summary of the index chunk, once it is full: the sum of the summaries of its segments. |
 | Of the end | `GMQE` | Nothing. | None. | The end of the recording. |
 
 - **A record is the same bytes wherever it stands.**
-  The record of a run stands behind the last block of the run, it stands again in the footer of its segment, and again in the index chunk.
+  The record of a span stands behind the last block of the span, it stands again in the footer of its segment, and again in the index chunk.
   The writer makes it once.
 - **A row says what a reader needs before it reads a block.**
   The unpacked lengths are the room that a reader makes for the entries and for the frames.
-  A block is as long as the way to the start of the next one, and the last block of a run ends where the run does.
-- **A summary says whether to read the run at all.**
-  The instants, the call IDs and the counts that a run covers are in its [summary](#summary), so the fixed part does not hold them again.
+  A block is as long as the way to the start of the next one, and the last block of a span ends where the span does.
+- **A summary says whether to read the span at all.**
+  The instants, the call IDs and the counts that a span covers are in its [summary](#summary), so the fixed part does not hold them again.
 - **A block has no summary of its own.**
-  One summary covers a [run](#runs), and a row of 32 bytes is all that the index holds of a block.
+  One summary covers a [span](#spans), and a row of 32 bytes is all that the index holds of a block.
 
 ### A data segment
 
 ```text
-segment        = segment header  run …  segment footer
-run            = block …  record of the run
+segment        = segment header  span …  segment footer
+span            = block …  record of the span
 block          = block header  chunk …
 chunk          = chunk header  entries, as stored  frames, as stored
-segment footer = record of the segment  record of a run …  record of the end, in the last segment  trailer
+segment footer = record of the segment  record of a span …  record of the end, in the last segment  trailer
 ```
 
 | Offset | Size | The segment header holds |
@@ -897,13 +897,13 @@ Every segment holds the description, so every segment says which recording it be
 The unpacked lengths of the entries of the chunks of a block add up to the room that a reader makes for the block.
 It makes that room once, before the codec writes into it.
 The row of the block says the sum.
-A block of the run that still grows has no row yet, so the reader takes its chunks first, and adds up their headers.
+A block of the span that still grows has no row yet, so the reader takes its chunks first, and adds up their headers.
 
-A block ends where the next header of a block, the record of its run or the end of the segment stands.
-The writer ends a run with its record when the run is full, or when it seals the segment, and it ends a segment with a footer.
-A run without a record is the one that still grows, or the one that a crash cut short, and so is a segment without a footer.
+A block ends where the next header of a block, the record of its span or the end of the segment stands.
+The writer ends a span with its record when the span is full, or when it seals the segment, and it ends a segment with a footer.
+A span without a record is the one that still grows, or the one that a crash cut short, and so is a segment without a footer.
 
-The footer of a segment is the record of the segment and the records of its runs, as the [index chunk](#an-index-chunk) has them.
+The footer of a segment is the record of the segment and the records of its spans, as the [index chunk](#an-index-chunk) has them.
 The footer of the last segment also holds the record of the end.
 The trailer is 16 bytes: the length of the footer before it, in 8 bytes, and the mark `89 47 4D 51 45 4E 44 0A`, which reads `GMQEND`.
 A reader finds the footer of a sealed segment from the last bytes of the segment.
@@ -923,7 +923,7 @@ An index chunk describes a series of segments, one after the other.
 
 ```text
 index chunk = index header  item …
-item        = record of a segment  record of a run …
+item        = record of a segment  record of a span …
 ```
 
 | Offset | Size | The index header holds |
@@ -937,10 +937,10 @@ item        = record of a segment  record of a run …
 
 An item describes one segment, and it is the footer of that segment without its trailer.
 
-- **An index chunk holds everything that a reader needs to pick a run and a block**, and to start a stream there.
+- **An index chunk holds everything that a reader needs to pick a span and a block**, and to start a stream there.
 - **A reader takes an item record by record.**
-  The record of the segment comes first, with the summary of the segment and the length of the records of its runs.
-  A reader that the summary rules out steps over that length, and reads no record of a run.
+  The record of the segment comes first, with the summary of the segment and the length of the records of its spans.
+  A reader that the summary rules out steps over that length, and reads no record of a span.
   A reader holds one record at a time, so an item never has to fit in memory.
 - **An index chunk grows as a segment does.**
   The layout appends an item when it seals a segment, and nothing of an index chunk is written twice.
@@ -971,7 +971,7 @@ With a list of names alone, every reader would read every index chunk.
 |---|---|---|---|
 | Chunk | The recorder commits: after an interval, or when the entries and frames that wait reach a size. Or its block closes. | `recordings.commit_interval`, `recordings.commit_size` | `1s`, `16MiB` |
 | Block | Its entries and frames reach a size, before compression. An entry is never cut in two, and neither are its frames. | `recordings.block_size` | `4MiB` |
-| Run | The entries and frames of its blocks reach a size, before compression. Or its segment is sealed. A block is never cut in two. | `recordings.run_size` | `64MiB` |
+| Span | The entries and frames of its blocks reach a size, before compression. Or its segment is sealed. A block is never cut in two. | `recordings.span_size` | `64MiB` |
 | Data segment | It reaches a size, as it is stored. A block is never cut in two. | `recordings.segment_size` | `1GiB` |
 | Index chunk | The next item would take it over a size. | `recordings.index_size` | `256MiB` |
 | Summary | A field has more values than a count, and says `any`. | `recordings.summary_values` | `256` |
@@ -987,8 +987,8 @@ What speaks against a larger value of each, and against a smaller one:
 | `commit_interval` | Loses more in a crash, and leaves a reader of a recording that runs further behind. | Makes more chunks, and more waits for the disk. |
 | `commit_size` | Holds more in memory, in the writer before a commit, and loses more in a crash under heavy traffic. | Commits more often under heavy traffic, for nothing. |
 | `block_size` | Makes every reader hold more, and one kept view keep more. See [blocks and chunks](#blocks-and-chunks). | Makes more rows in the index, and stores a little more. |
-| `run_size` | Makes one summary cover more, so it rules out less. See [runs](#runs). | Makes a larger index. |
-| `segment_size` | Leaves more for a reader to walk after a crash, makes a longer item in the index, and makes the writer hold more records of runs. | Makes more files: a pebibyte is a million segments of a gibibyte. |
+| `span_size` | Makes one summary cover more, so it rules out less. See [spans](#spans). | Makes a larger index. |
+| `segment_size` | Leaves more for a reader to walk after a crash, makes a longer item in the index, and makes the writer hold more records of spans. | Makes more files: a pebibyte is a million segments of a gibibyte. |
 | `index_size` | Makes one summary of the manifest cover more, so it rules out less. | Makes a longer manifest, which is replaced more often. |
 | `summary_values` | Makes a larger index. | Lets a summary say `any` for a field that a query asks for. |
 | `compression_level` | Costs more on the thread that records, for a few bytes. | Stores more: a sixth more at level 1 than at level 3, in the [measurement](#the-encoding-measured). |
@@ -996,17 +996,17 @@ What speaks against a larger value of each, and against a smaller one:
 ### Writing
 
 `recording` encodes an entry, and the layout hands its bytes to the compressor of the block as they come.
-The layout holds what the compressor gave back since the last commit, the summary of the run that grows, and the [records](#records) of the runs of the segment that grows.
+The layout holds what the compressor gave back since the last commit, the summary of the span that grows, and the [records](#records) of the spans of the segment that grows.
 
 | When | The layout writes, in this order |
 |---|---|
 | The recording starts | The manifest, with the description and no index chunk. Then the first segment, with its header and the header of its first block. |
 | The block is full | It ends the chunk and the stream of the compressor, and puts the header of the next block behind the chunk. All of it waits for the commit. |
-| The run is full | It puts the record of the run behind its last block, before the header of the next block. It waits for the commit too. |
-| A commit | It flushes the compressor, and appends what waits to the segment that grows, as one append: one chunk under light traffic, and the chunks and headers of the blocks that filled since the last commit, with the records of the runs that did, under heavy traffic. |
-| The segment reached its size | It appends the record of the run that is open and the footer of the segment, and seals the segment. It appends the item of the segment, which is that footer without its trailer, to the index chunk that grows. It creates the next segment. |
+| The span is full | It puts the record of the span behind its last block, before the header of the next block. It waits for the commit too. |
+| A commit | It flushes the compressor, and appends what waits to the segment that grows, as one append: one chunk under light traffic, and the chunks and headers of the blocks that filled since the last commit, with the records of the spans that did, under heavy traffic. |
+| The segment reached its size | It appends the record of the span that is open and the footer of the segment, and seals the segment. It appends the item of the segment, which is that footer without its trailer, to the index chunk that grows. It creates the next segment. |
 | The index chunk is full | It seals that index chunk, and creates the next one with the item that did not fit. Then it replaces the manifest, which has a record for the new one and the summary of the full one. |
-| The recording ends | A commit. The record of the run that is open, and the footer of the segment with the record of the end. Then it seals the segment, appends its item, seals the index chunk, and replaces the manifest, which now holds the end. |
+| The recording ends | A commit. The record of the span that is open, and the footer of the segment with the record of the end. Then it seals the segment, appends its item, seals the index chunk, and replaces the manifest, which now holds the end. |
 
 Two rules make every crash harmless:
 
@@ -1034,7 +1034,7 @@ The header of every object says the [versions](#versions) of the layout and of t
    The reader lists the segments from the first position that no item describes.
    That is one segment while a recording runs, and two at most after a crash.
    A segment with a footer says everything about itself there.
-   The reader walks a segment without one: block header, then chunk header after chunk header, and the record of a run where a run has one.
+   The reader walks a segment without one: block header, then chunk header after chunk header, and the record of a span where a span has one.
    It checks every mark and every checksum, and that the whole chunk is there, and steps over the chunk by its length, to the next multiple of 16. It unpacks nothing.
 4. **The end of the recording.**
    The end in the footer of the last segment means that the recording ended in order.
@@ -1047,7 +1047,7 @@ It changes nothing in the backing.
 The walk follows lengths that a checksum covers, and never searches for a mark,
 so the bytes of a frame can never pass for the start of a chunk.
 
-A run without a record has no summary, and needs none: a reader streams it.
+A span without a record has no summary, and needs none: a reader streams it.
 
 | What is missing or damaged | The reader |
 |---|---|
@@ -1064,8 +1064,8 @@ It runs in a test without a file.
 Every reader is a stream, and the levels above the segments say where it starts and what it leaves out.
 
 1. It reads the manifest, and keeps the index chunks whose summary can hold what it wants.
-2. It streams those index chunks record by record, and keeps the segments, and then the [runs](#runs), whose summary can hold it.
-3. It asks the backing for the bytes of a segment from the start of a block, which a row of the run gives, takes them chunk by chunk, and hands each to the codec.
+2. It streams those index chunks record by record, and keeps the segments, and then the [spans](#spans), whose summary can hold it.
+3. It asks the backing for the bytes of a segment from the start of a block, which a row of the span gives, takes them chunk by chunk, and hands each to the codec.
 4. It makes a batch of each block once the codec has filled its buffer, which [checks the block](#the-check-of-a-block), and the consumer reads its entries through views.
 5. It steps over the frames of a chunk when the reader asked for none.
 6. It reads ahead as far as its [budget](#memory) lets it, and no further.
@@ -1074,12 +1074,12 @@ Every reader is a stream, and the levels above the segments say where it starts 
 |---|---|
 | Everything, as a replay does | Every block of every segment, in order. |
 | A position | The block that holds it, as a whole, and hands out the entries from that one on. |
-| A moment, or a call ID | The run that holds it, from its first block, and hands out the entries from that one on. |
+| A moment, or a call ID | The span that holds it, from its first block, and hands out the entries from that one on. |
 | The latest calls | The last blocks, in turn from the last, and the entries of each from its last. |
-| The calls a selector matches | The runs whose summaries can match, and the selector decides every call in them. |
+| The calls a selector matches | The spans whose summaries can match, and the selector decides every call in them. |
 
 A summary gets coarser with every level, so the levels prune different things.
-A range of time or of call IDs prunes at every level, down to a run, and a range of positions down to a block.
+A range of time or of call IDs prunes at every level, down to a span, and a range of positions down to a block.
 A value that is rare prunes at every level too.
 A value that half of the calls have prunes nowhere, and such a query streams the recording.
 
@@ -1092,18 +1092,18 @@ A block is small, so that costs a millisecond or two.
 
 The numbers below are estimates.
 They take the [measured](#the-encoding-measured) ratio of entries without frames, 14 to 1, which real traffic and frames will change.
-They take about 2 KiB for the summary of a run, which nobody measured, and 32 bytes for the row of a block.
+They take about 2 KiB for the summary of a span, which nobody measured, and 32 bytes for the row of a block.
 
 | | With the defaults |
 |---|---|
 | A chunk | One second of traffic, and 16 MiB at most before compression. |
 | A block | 4 MiB of entries: about 2300 calls, and about 280 KiB as stored. |
-| A run | 64 MiB of entries: 16 blocks, about 37 000 calls, about 4.5 MiB as stored, and 2.6 KiB of index. |
-| A segment | 1 GiB as stored: about 3700 blocks in 230 runs, 8.8 million calls, and 0.6 MiB of index. |
+| A span | 64 MiB of entries: 16 blocks, about 37 000 calls, about 4.5 MiB as stored, and 2.6 KiB of index. |
+| A segment | 1 GiB as stored: about 3700 blocks in 230 spans, 8.8 million calls, and 0.6 MiB of index. |
 | An index chunk | 256 MiB: about 420 segments, which are 420 GiB as stored. |
 | A record of the manifest | About 2 KiB for an index chunk. |
 
-| A recording of, as stored | Segments | Blocks | Runs | Index chunks | All index chunks | The manifest |
+| A recording of, as stored | Segments | Blocks | Spans | Index chunks | All index chunks | The manifest |
 |---|---|---|---|---|---|---|
 | 100 GiB | 100 | 370 000 | 23 000 | 1 | 60 MiB | 1 KiB |
 | 10 TiB | 10 240 | 38 million | 2.4 million | 25 | 6 GiB | 50 KiB |
@@ -1111,15 +1111,15 @@ They take about 2 KiB for the summary of a run, which nobody measured, and 32 by
 
 - **The index is about 0.06% of what it describes.**
   It was 0.04% when a block was 64 MiB, and 0.7% with a summary for every block of 4 MiB.
-  Four fifths of it are the summaries of the runs, as before, and a fifth is new: the rows of the blocks.
+  Four fifths of it are the summaries of the spans, as before, and a fifth is new: the rows of the blocks.
 - **A reader streams the index, and holds one record of it.**
   It steps over the records of every segment that a summary rules out.
   No reader holds an index chunk, and none holds the index.
-- **A query that no level above the runs can rule out reads the whole index.**
-  That is 0.06% of the recording, to find the runs that it then streams.
-  A query for a range of time, of positions or of call IDs never does: the manifest gives it the index chunk, and the record of a segment gives it the runs.
-- **Skipping is as fine as a run for a value, a moment and a call ID, and as fine as a block for a position.**
-  See [runs](#runs).
+- **A query that no level above the spans can rule out reads the whole index.**
+  That is 0.06% of the recording, to find the spans that it then streams.
+  A query for a range of time, of positions or of call IDs never does: the manifest gives it the index chunk, and the record of a segment gives it the spans.
+- **Skipping is as fine as a span for a value, a moment and a call ID, and as fine as a block for a position.**
+  See [spans](#spans).
 - **Nothing of the index is written twice**: a segment that is sealed adds 0.6 MiB to the index chunk that grows.
 - **The manifest is replaced once for every 420 GiB of segments.**
 - **A recording of 10 TiB opens with one read of 50 KiB.**
@@ -1275,6 +1275,9 @@ A message [cannot grow](#a-message), so the encoding does not change: it gets a 
   It holds the stored types of that version, for every message.
   A stored type that did not change from one version to the next is the type of the version before, under its name.
   A stored type that changed is written anew, and so is every stored type that holds it.
+- **A reader reads every version that was ever written.**
+  A build holds the module of every version that a release wrote, and none is ever taken out.
+  A version costs a module that nobody edits, its samples and one conversion: for the calls of the measurement the stored types were about 300 lines.
 - **A module never changes once a release wrote its version.**
   Nobody edits a stored type of a released version, for any reason.
   A [test](#a-type-cannot-change-without-a-version) holds every released module to its bytes.
@@ -1329,7 +1332,7 @@ A reader looks at the versions in the header of an object before it reads anythi
 | A version of the encoding above its own | Refuses the recording with `OpenError::EncodingNotRead { error }`. The error is `EncodingVersionError::Newer { written, known }`, and the message names the version that the recording has and the newest that this build reads. |
 | A version of the layout above its own | Refuses the recording with `OpenError::LayoutNotRead { written, known }`, and the message names the same two versions of the layout. |
 
-A build reads [every version](#how-long-a-version-is-kept) that a release wrote, so no reader meets one that is too old for it, and no error says so.
+A build reads [every version](#the-stored-types-of-a-version) that a release wrote, so no reader meets one that is too old for it, and no error says so.
 A reader never guesses.
 It reads no message of a version that it does not have the stored types of.
 
@@ -1391,20 +1394,6 @@ A change of `call` or `journal` therefore changes `recording`, and no other crat
 
 A change of the layout takes the same steps in `recording_segments`, with the reading code of the old version in the place of a module of stored types.
 
-### How long a version is kept
-
-A build reads every version that a release ever wrote.
-No version goes, and nothing in a build says how a version would.
-
-Whether a version ever goes, and when, is [not decided](../open-questions.md#storage).
-Until someone decides it, a reader keeps them all.
-
-- **A version costs a module that nobody edits, its samples and one conversion.**
-  For the calls of the measurement the stored types were about 300 lines.
-- **A version that an old release of the library that archives wrote keeps that release in the build.**
-  That is the cost that grows, and the reason why the question will come.
-- **Until the first release, no version is kept.**
-
 ## The browser
 
 Nothing of these crates runs in the browser.
@@ -1421,7 +1410,7 @@ The control plane sends a call from a recording in the encoding it sends every c
 |---|---|---|
 | [Replay](crates.md#the-pipeline-is-sans-io) | Every entry in order, with the request and the truth of every call. | The rules that were armed at the start, the journal entries that changed them, the sessions, and the frames as slices, which go into a pipeline without a copy. The view of every call holds the verdict and the explanation to compare with. |
 | The [index](../domains/observation.md#index), which the engine rebuilds when it opens a recording | The fields of every call, once. | The entries of every block in order, and no frame: it neither fetches nor unpacks one. The index of the engine is not stored. |
-| A [query with a selector](control-plane.md#drafts), saved or draft, from the UI, the CLI or a test | The entries of the runs that can match. | `Wanted`, which skips at every level. The manifest stays in memory while the recording is open. A draft that changes with every key streams the index chunks again, which on files come from the cache of the system. |
+| A [query with a selector](control-plane.md#drafts), saved or draft, from the UI, the CLI or a test | The entries of the spans that can match. | `Wanted`, which skips at every level. The manifest stays in memory while the recording is open. A draft that changes with every key streams the index chunks again, which on files come from the cache of the system. |
 | A [test](control-plane.md#tests) that asserts on verdicts and explanations | The same. | The explanation is a part of every call. |
 | The UI that shows the latest calls | The last blocks, backwards. | A stream from the end. |
 | [Seeding a World](../domains/world.md#seeding) | The entries, and the frames of the calls that describe the cluster or carry records. | `Wanted` for `Metadata`, Produce and Fetch calls, and a stream with frames. |
@@ -1457,11 +1446,11 @@ A key in the call record or in the description carries it.
 | Limit | What it means | What there is instead |
 |---|---|---|
 | No reader in another language | A message is the archive of a type of this code base. There is no schema that a tool in Java, Python or Go reads a recording with, and none is planned. | Another tool asks the control plane, which sends a call in its own encoding. |
-| A message cannot grow | Every change of what an entry holds is a new [version of the encoding](#versions), with a module, a conversion and samples. A build keeps every version, and when one may go is [not decided](../open-questions.md#storage). | The steps are [written down](#when-call-or-a-journal-entry-changes), and a test fails when one is left out. |
+| A message cannot grow | Every change of what an entry holds is a new [version of the encoding](#versions), with a module, a conversion and samples. A build holds every version that was ever written. | The steps are [written down](#when-call-or-a-journal-entry-changes), and a test fails when one is left out. |
 | The bytes follow the library that archives | A release of that library that lays a type out in another way is a new version of the encoding. | The [samples](#a-type-cannot-change-without-a-version) fail on it. |
 | An old recording is not read in place | A block of an older version is [converted](#an-older-version-is-converted): one more copy, at the speed of a decoder. That speed was not measured. | A recording of the current version, which is every recording that a build writes itself. |
 | Nobody measured frames | The measurement held entries and no frame. What the frames of a real recording compress to, and what compressing them apart from the entries costs, is not known. | — |
-| Nobody measured a summary | The [size of the index](#sizes) rests on an estimate of 2 KiB for the summary of a run. | `recordings.summary_values` and `recordings.run_size` bound it. |
+| Nobody measured a summary | The [size of the index](#sizes) rests on an estimate of 2 KiB for the summary of a span. | `recordings.summary_values` and `recordings.span_size` bound it. |
 | A redacted record batch loses the type of its timestamps | The [rewrite in `wire`](#what-a-recording-must-not-keep) drops it. | A gap to close in `wire`. |
 | A recording does not export to one file | It is a directory. | [Not decided](../open-questions.md#storage). |
 
@@ -1478,7 +1467,7 @@ recordings:
   compression: zstd         # the codec of a new recording: zstd, or none
   compression_level: 3      # how hard the codec works, in the levels of the codec
   block_size: 4MiB          # the entries and frames of one block, before they are compressed: what a reader holds at a time
-  run_size: 64MiB           # the entries and frames of the blocks that one summary covers, before they are compressed
+  span_size: 64MiB          # the entries and frames of the blocks that one summary covers, before they are compressed
   segment_size: 1GiB        # the size at which a data segment is sealed, as it is stored
   index_size: 256MiB        # the size at which an index chunk is full
   summary_values: 256       # the values of one field that a summary lists
@@ -1496,7 +1485,7 @@ What changed with blocks of 4 MiB, and what did not:
 | Property | Default | Why |
 |---|---|---|
 | `block_size` | `4MiB`, from `64MiB` | A reader holds a block. |
-| `run_size` | `64MiB`, which is new | A summary covers a run of blocks, and not a block, so the index stays small. 64 MiB is what a block was, and what a summary covered. |
+| `span_size` | `64MiB`, which is new | A summary covers a span of blocks, and not a block, so the index stays small. 64 MiB is what a block was, and what a summary covered. |
 | `summary_values` | `256`, as before | A summary covers what it covered before. |
 | `commit_interval`, `commit_size` | `1s` and `16MiB`, as before | They say what a crash loses and what waits in the writer, and neither is about a reader. A commit of 16 MiB covers four blocks, and is still one append and one wait for the disk. |
 | `segment_size` | `1GiB`, as before | It is the size of a file. |
@@ -1512,7 +1501,7 @@ What changed with blocks of 4 MiB, and what did not:
 | Is a segment compressed? | Yes, by block, behind a seam. Zstandard at level 3 is the default, and none is a choice. | No compression: fourteen times the bytes, and slower from the disk. Compression by segment: a reader could only start at the start of a segment. |
 | What does zero-copy mean? | Nothing copies the bytes of an entry after the decompressor wrote them. A reader reads an entry through a view, and a text and a frame as slices of the buffers of their block. | Reading an entry from the file where it lies, which compression rules out. Building the type of every entry, which most readers never look at. A decoder that copies every text into a string of its own. |
 | Which encoding? | A message is the archive of a stored type: the type as it lies in memory. A reader checks a block once and reads it through views. See [the encoding, measured](#the-encoding-measured). | Encodings that are decoded: less than half the speed, and an allocation for every entry. Encodings that are read through views and can grow: a third of the speed, or less. |
-| How does an entry change, when a message cannot grow? | The encoding has [versions](#versions). `recording` keeps the stored types of every version and the way from each to the next, and a reader converts a block of an older version. | A schema whose messages grow, which the encoding does not have. Views of every version, which would put a case for every version into every reading. |
+| How does an entry change, when a message cannot grow? | The encoding has [versions](#versions). `recording` keeps the stored types of every version and the way from each to the next, and a reader converts a block of an older version. A reader reads every version that was ever written. | A schema whose messages grow, which the encoding does not have. Views of every version, which would put a case for every version into every reading. |
 | What keeps a type from changing without a version? | The bytes of samples of every version, committed, and tests that write them and read them. | A fingerprint of the layout of the types, which says nothing about a conversion and has to be written for every type. |
 | Who has a message? | `recording`, for all of them: an entry, a description, a summary and an end. A layout carries them between records of fixed binary. | Messages of the layout for its footers, its index and its manifest. The layout would have had stored types and versions of its own, with the summaries of `recording` inside them. |
 | What does a reader do before the first view? | `recording` checks the block once: every head, every reference, every length, every text and every choice. | A check at every step of every view, which costs a reader of a whole entry more than decoding it. No check, which reads whatever a forged recording points at. |
@@ -1523,7 +1512,7 @@ What changed with blocks of 4 MiB, and what did not:
 | What does the manifest say about an index chunk? | Where it starts, and for a full one what it covers and the sum of its summaries. | A list of names alone. A reader would read every index chunk to find a position, a moment or a topic. |
 | Where do the bytes of the layout live? | Behind a third contract of three kinds of object, which hands out streams. Files are the first backing. | A layout that opens files itself. It could not be tested without a disk, and could never move to an object store. |
 | What closes each level? | A size, and for a chunk an interval. | A count of entries, which bounds neither memory nor loss. An age for segments, which only a log with retention needs. |
-| What does a summary cover? | A [run](#runs) of blocks: 64 MiB of entries and frames, by a property. A block has a row of 32 bytes in the record of its run. | A summary for every block of 4 MiB: sixteen times the index, 0.7% of a recording. |
+| What does a summary cover? | A [span](#spans) of blocks: 64 MiB of entries and frames, by a property. A block has a row of 32 bytes in the record of its span. | A summary for every block of 4 MiB: sixteen times the index, 0.7% of a recording. |
 | Is a block a commit, or a segment? | Neither. A commit writes a chunk, a block is what a reader holds and where a stream can start, and a segment is a file. | A block that was also the commit: under light traffic a second of calls is a block of its own, which compresses badly and fills the index. A block of 64 MiB, which costs every reader that much memory. |
 | What is in a summary? | The values of every field, as lists with a limit. | Bloom filters, which answer `is` and cannot answer `matches`. Ranges of values, which no operator asks for. |
 | What is left after a crash? | Everything that was committed. The segments describe themselves, so a missing index chunk or manifest is rebuilt from them. | A manifest that must be right. A crash between two writes would then lose what the segments still hold. |
@@ -1531,7 +1520,6 @@ What changed with blocks of 4 MiB, and what did not:
 | Where is the recording mode applied? | In `recording`, where an entry is made. A storage never sees what must not be kept. | In the engine, where every caller would have to remember it. In a layout, where every layout would have to. |
 | What does metadata-only keep of a frame? | The frame, without the keys, values and headers of its records. | No frame at all. The usual recording of a real cluster could then seed no World and run no replay. |
 | Is a recording one file? | No. It is a directory of segments, and whoever reads it reads it through the storage contract. Whether it exports to one file is not decided. | One file for each recording. A recording can be many gigabytes. |
-| How long does a build read an old version? | **Not decided.** Until someone decides, a build reads [every version](#how-long-a-version-is-kept) that a release wrote. | — |
 
 ### The encoding, measured
 
@@ -1544,7 +1532,7 @@ Frames are not a part of it, and every read starts from bytes that nobody trusts
 
 The machine: an AMD Ryzen 7 255 with 8 cores and 7 GiB of memory, Debian 13, ext4 on a disk that gave 0.8 GiB a second.
 The code was built for that processor.
-Every number is the median of its runs.
+Every number is the median of its measurements.
 A read from the disk starts with none of the pages of the file in memory.
 
 #### Speed
