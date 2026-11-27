@@ -708,6 +708,10 @@ Under heavy traffic a commit covers several blocks, and writes them with one app
 - **The frames of a chunk are compressed by themselves.**
   A reader that asked for no frames steps over them by their length.
   Nobody measured this: [no measurement](#known-limits) held a frame, so what the frames of a real recording compress to is not known.
+- **A block may end at a flush.**
+  The writer finishes the stream of a block with its last chunk when the block fills between two commits.
+  When a commit cut the last chunk already, no chunk is left to carry the end of the stream, and none is needed:
+  the chunks of a block say how many entries it holds, and a reader stops there.
 - **A torn tail is a chunk that is not whole.**
   Every chunk says its length and has a checksum of its bytes as they are stored.
   A reader checks both before it hands a byte to the codec, so the codec never sees what a crash left half written.

@@ -195,7 +195,7 @@ impl Writing {
         if let Some(block) = &self.block {
             let chunk = &block.chunk;
             if chunk.entries_unpacked + entries > CHUNK_LIMIT || chunk.frames_unpacked + frames > CHUNK_LIMIT {
-                self.cut_chunk();
+                self.cut_chunk(false);
             }
         }
         let codec = self.codec;
@@ -236,14 +236,14 @@ impl Writing {
 
     /// The steps that put every entry that was taken into the recording for good, in their order.
     pub(crate) fn commit(&mut self) -> Vec<Step> {
-        self.cut_chunk();
+        self.cut_chunk(false);
         self.hand_over_what_waits();
         std::mem::take(&mut self.steps)
     }
 
     /// The steps that commit, and end the recording in order.
     pub(crate) fn finish(mut self, end: &End) -> Vec<Step> {
-        self.cut_chunk();
+        self.cut_chunk(true);
         if let Some(block) = self.block.take() {
             self.row_of(&block);
         }
@@ -258,7 +258,11 @@ impl Writing {
     }
 
     /// Ends the chunk that the open block took since the last one, and puts it behind the segment.
-    fn cut_chunk(&mut self) {
+    /// `ends_block` finishes the stream of the entries of the block; otherwise the stream goes on behind the chunk.
+    ///
+    /// A block whose last chunk a commit already cut ends at that flush: no chunk is left to carry the end of the
+    /// stream, and none is needed, because the chunks of a block say how many entries it holds.
+    fn cut_chunk(&mut self, ends_block: bool) {
         let Some(block) = &mut self.block else {
             return;
         };
@@ -266,8 +270,13 @@ impl Writing {
         if chunk.entries == 0 {
             return;
         }
-        block.compressor.flush(&mut chunk.entries_out);
-        chunk.frames.flush(&mut chunk.frames_out);
+        if ends_block {
+            block.compressor.finish_block(&mut chunk.entries_out);
+        } else {
+            block.compressor.flush(&mut chunk.entries_out);
+        }
+        // The frames of a chunk are a stream of their own.
+        chunk.frames.finish_block(&mut chunk.frames_out);
         let entries = Bytes::from(std::mem::take(&mut chunk.entries_out));
         let frames = Bytes::from(std::mem::take(&mut chunk.frames_out));
         let header = ChunkHeader {
@@ -295,7 +304,7 @@ impl Writing {
 
     /// Ends the open block. A span or a segment that reaches its size with it closes too.
     fn close_block(&mut self) {
-        self.cut_chunk();
+        self.cut_chunk(true);
         let Some(block) = self.block.take() else {
             return;
         };

@@ -1074,9 +1074,10 @@ impl<B: SegmentBacking + 'static> SegmentEntries<B> {
         if header.first != row.first {
             return Ok(all_lost);
         }
-        let Ok(mut entries_codec) = Decompressor::of(header.codec) else {
+        let Ok(codec) = Codec::from_id(header.codec) else {
             return Ok(all_lost);
         };
+        let mut entries_codec = Decompressor::new(codec);
 
         let mut entries = self.memory.buffer(row.entries_room);
         let mut frames = match self.frames {
@@ -1108,8 +1109,7 @@ impl<B: SegmentBacking + 'static> SegmentEntries<B> {
                 // The frames of a chunk are a stream of their own, so a reader without frames steps over them unread.
                 let whole_frames = stored_frames.len() == chunk.frames_stored as usize
                     && checksum(&stored_frames) == chunk.frames_checksum;
-                let unpacked = Decompressor::of(header.codec)
-                    .and_then(|mut codec| codec.read(&stored_frames, chunk.frames_unpacked as usize, frames));
+                let unpacked = Decompressor::new(codec).read(&stored_frames, chunk.frames_unpacked as usize, frames);
                 if !whole_frames || unpacked.is_err() {
                     break;
                 }

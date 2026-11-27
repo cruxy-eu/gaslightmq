@@ -3,6 +3,9 @@
 //!
 //! Nothing else in the crate names a codec. The codec that a block names is a number in its header,
 //! and a reader takes the decompressor from that number.
+//!
+//! The seam has the shape of `recording_compression`, which is synchronous and does no IO: a compressor takes bytes,
+//! flushes at a commit and finishes at the end of a block, and a decompressor unpacks into the buffer of a block.
 
 use gaslightmq_recording::BatchBuffer;
 
@@ -18,6 +21,14 @@ impl Codec {
     pub(crate) const fn id(self) -> u8 {
         match self {
             Codec::None => 0,
+        }
+    }
+
+    /// The codec that the header of a block names by `id`.
+    pub(crate) fn from_id(id: u8) -> Result<Codec, String> {
+        match id {
+            0 => Ok(Codec::None),
+            unknown => Err(format!("this build has no codec with the number {unknown}")),
         }
     }
 }
@@ -41,8 +52,15 @@ impl Compressor {
         }
     }
 
-    /// Lets go of everything it took, so a reader can unpack all of it. The stream goes on.
+    /// Lets go of everything it took, so a reader can unpack all of it. The stream goes on: this is a commit.
     pub(crate) fn flush(&mut self, _out: &mut Vec<u8>) {
+        match self.codec {
+            Codec::None => {}
+        }
+    }
+
+    /// Ends the stream: the block, or the frames of a chunk, is whole. The compressor is ready for the next one.
+    pub(crate) fn finish_block(&mut self, _out: &mut Vec<u8>) {
         match self.codec {
             Codec::None => {}
         }
@@ -56,12 +74,9 @@ pub(crate) struct Decompressor {
 }
 
 impl Decompressor {
-    /// The decompressor of the codec with that number.
-    pub(crate) fn of(id: u8) -> Result<Decompressor, String> {
-        match id {
-            0 => Ok(Decompressor { codec: Codec::None }),
-            unknown => Err(format!("this build has no codec with the number {unknown}")),
-        }
+    /// A decompressor at the start of a block, or of the frames of a chunk.
+    pub(crate) const fn new(codec: Codec) -> Decompressor {
+        Decompressor { codec }
     }
 
     /// Unpacks the next chunk behind what `out` holds, and checks that it unpacked to `unpacked` bytes.
