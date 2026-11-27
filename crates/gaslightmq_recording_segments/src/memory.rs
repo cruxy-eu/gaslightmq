@@ -90,6 +90,25 @@ impl MemoryBacking {
         kept.sealed = false;
     }
 
+    /// Turns every bit of the byte at `at` of `object`, as a disk that went bad there does.
+    /// It is how a test makes a recording whose bytes fail their checksum.
+    pub fn damage(&self, recording: &RecordingId, object: Object, at: u64) {
+        self.with(recording, object, |kept| {
+            let mut before = 0;
+            for append in &mut kept.appends {
+                let len = append.len() as u64;
+                if (before..before + len).contains(&at) {
+                    let mut damaged = append.to_vec();
+                    let index = usize::try_from(at - before).unwrap_or_default();
+                    damaged[index] = !damaged[index];
+                    *append = Bytes::from(damaged);
+                    return;
+                }
+                before += len;
+            }
+        });
+    }
+
     /// Takes the manifest of the recording away, as a crash before its first put leaves it.
     pub fn drop_manifest(&self, recording: &RecordingId) {
         if let Some(objects) = locked(&self.recordings).get_mut(recording) {

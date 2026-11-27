@@ -648,3 +648,230 @@ impl Walk for IndexWalk {
         self.stopped
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use bytes::BytesMut;
+    use gaslightmq_clock::Instant;
+    use gaslightmq_environment::RecordingMode;
+    use gaslightmq_field::ConnectionNumber;
+    use gaslightmq_recording::prelude::*;
+
+    use super::*;
+    use crate::backing::Object;
+    use crate::codec::Codec;
+    use crate::configuration::SegmentConfiguration;
+    use crate::framing::ChunkHeader;
+    use crate::writing::{Step, Writing};
+
+    /// Feeds a walk the bytes of an object from where it stands, as a stream of the backing hands them out:
+    /// as many as it wants at a time, and fewer at the end.
+    fn feed(walk: &mut impl Walk, bytes: &Bytes) {
+        let mut at = usize::try_from(walk.offset()).expect("an offset in memory");
+        while let Some(wanted) = walk.wanted() {
+            let piece = bytes.slice(at.min(bytes.len())..(at + wanted).min(bytes.len()));
+            at += piece.len();
+            let ended = piece.len() < wanted;
+            walk.take(piece);
+            if ended || walk.stopped() {
+                break;
+            }
+        }
+    }
+
+    #[test]
+    fn wherever_a_crash_cuts_a_segment_the_walk_stops_at_the_last_whole_chunk_and_goes_on_from_there() {
+        let description = Description {
+            environment: "orders-sim".parse().expect("a name"),
+            started: "2026-11-21T14:02:11.527Z".parse().expect("an instant"),
+            clock: Instant::ZERO,
+            mode: RecordingMode::Full,
+            backend: RecordedBackend::Simulated,
+            written_by: "0.1.0".to_owned(),
+            armed: Vec::new(),
+            scenario: None,
+            journal_after: None,
+        };
+        let closed = |connection| {
+            Entry::session(&SessionEvent {
+                connection: ConnectionNumber::new(connection),
+                at: Instant::ZERO,
+                change: SessionChange::Closed { by: Closer::Client },
+            })
+        };
+        let entry_size = closed(0).size() as u64;
+        let mut configuration = SegmentConfiguration::new();
+        // A block of two entries, a span of two blocks and a commit of three entries, so the appends of the commits
+        // hold chunks, headers of blocks and records of spans in every order.
+        configuration.block_size = 2 * entry_size;
+        configuration.span_size = 4 * entry_size;
+        let mut writing = Writing::start(&description, configuration, Codec::None);
+        let segment = Object::segment(Position::FIRST);
+        let commits = [0..3, 3..6, 6..9, 9..12];
+
+        // The bytes of the segment, and where each chunk that the writer cut ends, with the entries up to it.
+        let mut bytes = BytesMut::new();
+        let mut chunks = Vec::new();
+        let mut entries = 0;
+        for commit in commits.clone() {
+            for connection in commit {
+                writing.append(closed(connection));
+            }
+            for step in writing.commit() {
+                let Step::Append(object, pieces) = step else {
+                    continue;
+                };
+                if object != segment {
+                    continue;
+                }
+                for piece in pieces {
+                    if let Ok(chunk) = ChunkHeader::decode(&piece) {
+                        entries += u64::from(chunk.entries);
+                        let end = bytes.len() as u64 + ChunkHeader::LEN as u64 + chunk.body();
+                        chunks.push((end, entries));
+                    }
+                    bytes.extend_from_slice(&piece);
+                }
+            }
+        }
+        let bytes = bytes.freeze();
+        assert_eq!(entries, commits.len() as u64 * 3, "the chunks hold every entry");
+
+        for cut in 0..=bytes.len() {
+            let mut walk = SegmentWalk::new(Position::FIRST);
+            feed(&mut walk, &bytes.slice(..cut));
+            let whole = chunks
+                .iter()
+                .filter(|(end, _)| *end <= cut as u64)
+                .map(|(_, entries)| *entries)
+                .max()
+                .unwrap_or_default();
+            assert_eq!(
+                walk.outline().entries,
+                whole,
+                "a segment cut at {cut} of {} bytes holds what its whole chunks hold",
+                bytes.len()
+            );
+
+            feed(&mut walk, &bytes);
+            assert_eq!(
+                walk.outline().entries,
+                entries,
+                "a walk that stopped at {cut} goes on from there, and reads every entry once"
+            );
+        }
+    }
+
+    #[test]
+    fn a_walk_stops_at_a_chunk_whose_bytes_fail_their_checksum() {
+        let description = Description {
+            environment: "orders-sim".parse().expect("a name"),
+            started: "2026-11-21T14:02:11.527Z".parse().expect("an instant"),
+            clock: Instant::ZERO,
+            mode: RecordingMode::Full,
+            backend: RecordedBackend::Simulated,
+            written_by: "0.1.0".to_owned(),
+            armed: Vec::new(),
+            scenario: None,
+            journal_after: None,
+        };
+        let event = SessionEvent {
+            connection: ConnectionNumber::new(7),
+            at: Instant::ZERO,
+            change: SessionChange::Closed { by: Closer::Client },
+        };
+        let mut writing = Writing::start(&description, SegmentConfiguration::new(), Codec::None);
+        let segment = Object::segment(Position::FIRST);
+        let mut bytes = Vec::new();
+        let mut first_commit = 0;
+        for _ in 0..2 {
+            writing.append(Entry::session(&event));
+            for step in writing.commit() {
+                if let Step::Append(object, pieces) = step
+                    && object == segment
+                {
+                    for piece in &pieces {
+                        bytes.extend_from_slice(piece);
+                    }
+                }
+            }
+            if first_commit == 0 {
+                first_commit = bytes.len();
+            }
+        }
+
+        // The last byte of the second chunk goes bad: it is in its entries, behind its header.
+        let last = bytes.len() - 1;
+        bytes[last] = !bytes[last];
+        let mut walk = SegmentWalk::new(Position::FIRST);
+        feed(&mut walk, &Bytes::from(bytes));
+
+        assert_eq!(
+            walk.outline().entries,
+            1,
+            "the walk keeps the chunk before the damaged one"
+        );
+        assert_eq!(
+            walk.offset(),
+            first_commit as u64,
+            "the walk stands behind the last whole chunk"
+        );
+        assert_eq!(walk.flaw(), Some("the entries of a chunk fail their checksum"));
+    }
+
+    #[test]
+    fn a_walk_over_a_sealed_segment_reads_its_footer() {
+        let description = Description {
+            environment: "orders-sim".parse().expect("a name"),
+            started: "2026-11-21T14:02:11.527Z".parse().expect("an instant"),
+            clock: Instant::ZERO,
+            mode: RecordingMode::Full,
+            backend: RecordedBackend::Simulated,
+            written_by: "0.1.0".to_owned(),
+            armed: Vec::new(),
+            scenario: None,
+            journal_after: None,
+        };
+        let event = SessionEvent {
+            connection: ConnectionNumber::new(7),
+            at: Instant::ZERO,
+            change: SessionChange::Closed { by: Closer::Client },
+        };
+        let end = End {
+            ending: Ending::Stopped,
+            at: Instant::ZERO,
+            entries: 1,
+            calls: 0,
+        };
+        let mut writing = Writing::start(&description, SegmentConfiguration::new(), Codec::None);
+        writing.append(Entry::session(&event));
+        let segment = Object::segment(Position::FIRST);
+        let mut bytes = BytesMut::new();
+        for step in writing.finish(&end) {
+            if let Step::Append(object, pieces) = step
+                && object == segment
+            {
+                for piece in &pieces {
+                    bytes.extend_from_slice(piece);
+                }
+            }
+        }
+
+        let mut walk = SegmentWalk::new(Position::FIRST);
+        feed(&mut walk, &bytes.freeze());
+
+        let outline = walk.outline();
+        assert!(outline.sealed, "the walk read the footer of the segment");
+        assert_eq!(outline.entries, end.entries);
+        assert_eq!(
+            outline.end,
+            Some(end.encode()),
+            "the footer of the last segment holds the end"
+        );
+        assert!(
+            outline.spans.iter().all(|span| span.summary.is_some()),
+            "every span of a sealed segment has its summary"
+        );
+        assert_eq!(walk.wanted(), None, "a walk that read the footer is over");
+    }
+}

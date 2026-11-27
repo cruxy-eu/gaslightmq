@@ -1221,3 +1221,68 @@ impl<B: SegmentBacking + 'static> RecordedEntries for SegmentEntries<B> {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_reader_refuses_a_version_of_the_layout_or_of_the_encoding_above_its_own() {
+        let current = Versions::current();
+        let later_layout = Versions {
+            layout: LAYOUT_VERSION + 1,
+            ..current
+        };
+        let later_encoding = Versions {
+            encoding: EncodingVersion::CURRENT.number() + 1,
+            ..current
+        };
+
+        assert_eq!(version_of(current), Ok(EncodingVersion::CURRENT));
+        assert_eq!(
+            version_of(later_layout),
+            Err(OpenError::LayoutNotRead {
+                written: later_layout.layout,
+                known: LAYOUT_VERSION
+            })
+        );
+        assert_eq!(
+            version_of(later_encoding),
+            Err(OpenError::EncodingNotRead {
+                error: EncodingVersionError::Newer {
+                    written: later_encoding.encoding,
+                    known: EncodingVersion::CURRENT.number()
+                }
+            })
+        );
+    }
+
+    #[test]
+    fn what_says_zero_as_a_version_is_no_recording() {
+        let current = Versions::current();
+
+        assert!(matches!(
+            version_of(Versions { layout: 0, ..current }),
+            Err(OpenError::NotReadable { .. })
+        ));
+        assert!(matches!(
+            version_of(Versions { encoding: 0, ..current }),
+            Err(OpenError::NotReadable { .. })
+        ));
+    }
+
+    #[test]
+    fn every_object_of_a_recording_says_the_same_versions() {
+        let current = Versions::current();
+        let other = Versions {
+            layout: LAYOUT_VERSION + 1,
+            ..current
+        };
+
+        assert_eq!(same_versions(current, current, "segment"), Ok(()));
+        assert!(matches!(
+            same_versions(current, other, "segment"),
+            Err(Trouble::Unreadable(_))
+        ));
+    }
+}
