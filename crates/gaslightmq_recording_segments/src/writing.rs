@@ -128,15 +128,15 @@ struct OpenChunk {
 }
 
 impl OpenChunk {
-    const fn new(codec: Codec) -> OpenChunk {
-        OpenChunk {
+    fn new(codec: Codec) -> Result<OpenChunk, String> {
+        Ok(OpenChunk {
             entries: 0,
             entries_out: Vec::new(),
             entries_unpacked: 0,
-            frames: Compressor::new(codec),
+            frames: Compressor::new(codec)?,
             frames_out: Vec::new(),
             frames_unpacked: 0,
-        }
+        })
     }
 }
 
@@ -180,7 +180,9 @@ impl Writing {
     }
 
     /// Takes `entry`, and says which position it has. It waits for the next commit.
-    pub(crate) fn append(&mut self, entry: Entry) -> Position {
+    ///
+    /// It fails with what the codec said, when the codec did not take the entry. The recording ends with it.
+    pub(crate) fn append(&mut self, entry: Entry) -> Result<Position, String> {
         let entries = entry.size() as u64;
         let frames = entry.frames_size() as u64;
         if let Some(block) = &self.block
@@ -189,34 +191,35 @@ impl Writing {
             let over_its_size = block.size() + entries + frames > self.configuration.block_size;
             let over_a_header = block.entries_room + entries > CHUNK_LIMIT;
             if over_its_size || over_a_header {
-                self.close_block();
+                self.close_block()?;
             }
         }
         if let Some(block) = &self.block {
             let chunk = &block.chunk;
             if chunk.entries_unpacked + entries > CHUNK_LIMIT || chunk.frames_unpacked + frames > CHUNK_LIMIT {
-                self.cut_chunk(false);
+                self.cut_chunk(false)?;
             }
         }
-        let codec = self.codec;
-        let next = self.next;
-        let block = self.block.get_or_insert_with(|| OpenBlock {
-            first: next,
-            at: None,
-            entries: 0,
-            encoder: BatchEncoder::new(),
-            compressor: Compressor::new(codec),
-            entries_room: 0,
-            frames_room: 0,
-            chunk: OpenChunk::new(codec),
-        });
+        if self.block.is_none() {
+            self.block = Some(OpenBlock {
+                first: self.next,
+                at: None,
+                entries: 0,
+                encoder: BatchEncoder::new(),
+                compressor: Compressor::new(self.codec)?,
+                entries_room: 0,
+                frames_room: 0,
+                chunk: OpenChunk::new(self.codec)?,
+            });
+        }
+        let block = self.block.as_mut().expect("the block that the entry goes into is open");
         self.segment.span.summary.add(&entry, self.configuration.summary_values);
 
         let encoded = block.encoder.encode(entry);
         let chunk = &mut block.chunk;
-        block.compressor.write(encoded.entry(), &mut chunk.entries_out);
+        block.compressor.write(encoded.entry(), &mut chunk.entries_out)?;
         for frame in encoded.frames() {
-            chunk.frames.write(frame, &mut chunk.frames_out);
+            chunk.frames.write(frame, &mut chunk.frames_out)?;
         }
         chunk.entries += 1;
         chunk.entries_unpacked += entries;
@@ -229,21 +232,21 @@ impl Writing {
         let position = self.next;
         self.next = position.next();
         if full {
-            self.close_block();
+            self.close_block()?;
         }
-        position
+        Ok(position)
     }
 
     /// The steps that put every entry that was taken into the recording for good, in their order.
-    pub(crate) fn commit(&mut self) -> Vec<Step> {
-        self.cut_chunk(false);
+    pub(crate) fn commit(&mut self) -> Result<Vec<Step>, String> {
+        self.cut_chunk(false)?;
         self.hand_over_what_waits();
-        std::mem::take(&mut self.steps)
+        Ok(std::mem::take(&mut self.steps))
     }
 
     /// The steps that commit, and end the recording in order.
-    pub(crate) fn finish(mut self, end: &End) -> Vec<Step> {
-        self.cut_chunk(true);
+    pub(crate) fn finish(mut self, end: &End) -> Result<Vec<Step>, String> {
+        self.cut_chunk(true)?;
         if let Some(block) = self.block.take() {
             self.row_of(&block);
         }
@@ -254,7 +257,7 @@ impl Writing {
             self.chunk_is_full(&index);
         }
         self.put_manifest(Some(end));
-        self.steps
+        Ok(self.steps)
     }
 
     /// Ends the chunk that the open block took since the last one, and puts it behind the segment.
@@ -262,21 +265,21 @@ impl Writing {
     ///
     /// A block whose last chunk a commit already cut ends at that flush: no chunk is left to carry the end of the
     /// stream, and none is needed, because the chunks of a block say how many entries it holds.
-    fn cut_chunk(&mut self, ends_block: bool) {
+    fn cut_chunk(&mut self, ends_block: bool) -> Result<(), String> {
         let Some(block) = &mut self.block else {
-            return;
+            return Ok(());
         };
         let chunk = &mut block.chunk;
         if chunk.entries == 0 {
-            return;
+            return Ok(());
         }
         if ends_block {
-            block.compressor.finish_block(&mut chunk.entries_out);
+            block.compressor.finish_block(&mut chunk.entries_out)?;
         } else {
-            block.compressor.flush(&mut chunk.entries_out);
+            block.compressor.flush(&mut chunk.entries_out)?;
         }
         // The frames of a chunk are a stream of their own.
-        chunk.frames.finish_block(&mut chunk.frames_out);
+        chunk.frames.finish_block(&mut chunk.frames_out)?;
         let entries = Bytes::from(std::mem::take(&mut chunk.entries_out));
         let frames = Bytes::from(std::mem::take(&mut chunk.frames_out));
         let header = ChunkHeader {
@@ -288,7 +291,7 @@ impl Writing {
             entries_checksum: checksum(&entries),
             frames_checksum: checksum(&frames),
         };
-        *chunk = OpenChunk::new(self.codec);
+        *chunk = OpenChunk::new(self.codec)?;
         if block.at.is_none() {
             block.at = Some(self.segment.length);
             let header = BlockHeader {
@@ -300,13 +303,14 @@ impl Writing {
         for piece in chunk_pieces(header, entries, frames) {
             self.segment.put(piece);
         }
+        Ok(())
     }
 
     /// Ends the open block. A span or a segment that reaches its size with it closes too.
-    fn close_block(&mut self) {
-        self.cut_chunk(true);
+    fn close_block(&mut self) -> Result<(), String> {
+        self.cut_chunk(true)?;
         let Some(block) = self.block.take() else {
-            return;
+            return Ok(());
         };
         self.row_of(&block);
         if self.segment.span.unpacked >= self.configuration.span_size {
@@ -315,6 +319,7 @@ impl Writing {
         if self.segment.length >= self.configuration.segment_size {
             self.seal_segment(None);
         }
+        Ok(())
     }
 
     /// Puts the row of a block that ended into the span that grows.

@@ -79,7 +79,9 @@ impl<B: SegmentBacking + 'static> RecordingStorage for SegmentStorage<B> {
             failed: None,
         };
         // The first step creates the first segment, which refuses a recording that is there.
-        let first = writing.commit();
+        let first = writing.commit().map_err(|reason| StartError::NotStarted {
+            reason: format!("the codec did not start: {reason}"),
+        })?;
         match writer.run(first).await {
             Ok(()) => {}
             Err(Failure {
@@ -184,6 +186,12 @@ impl<B: SegmentBacking> SegmentWriter<B> {
         Ok(())
     }
 
+    /// The codec did not take what the writer handed it: the recording ends.
+    fn codec_failed(&mut self, reason: &str) -> WriteError {
+        self.failed = Some(format!("the codec did not compress the recording: {reason}"));
+        self.not_written()
+    }
+
     fn not_written(&self) -> WriteError {
         WriteError::NotWritten {
             reason: self.failed.clone().unwrap_or_else(|| "the recording ended".to_owned()),
@@ -197,10 +205,11 @@ impl<B: SegmentBacking + 'static> RecordingWriter for SegmentWriter<B> {
         reason = "the contract is async, and taking an entry waits for nothing: the commit hands it to the backing"
     )]
     async fn append(&mut self, entry: Entry) -> Result<Position, WriteError> {
-        match (&self.failed, &mut self.writing) {
-            (None, Some(writing)) => Ok(writing.append(entry)),
-            _ => Err(self.not_written()),
-        }
+        let appended = match (&self.failed, &mut self.writing) {
+            (None, Some(writing)) => writing.append(entry),
+            _ => return Err(self.not_written()),
+        };
+        appended.map_err(|reason| self.codec_failed(&reason))
     }
 
     async fn commit(&mut self) -> Result<(), WriteError> {
@@ -208,6 +217,7 @@ impl<B: SegmentBacking + 'static> RecordingWriter for SegmentWriter<B> {
             (None, Some(writing)) => writing.commit(),
             _ => return Err(self.not_written()),
         };
+        let steps = steps.map_err(|reason| self.codec_failed(&reason))?;
         self.run(steps).await.map_err(|failure| WriteError::NotWritten {
             reason: failure.reason(),
         })
@@ -218,6 +228,7 @@ impl<B: SegmentBacking + 'static> RecordingWriter for SegmentWriter<B> {
             (None, Some(writing)) => writing.finish(&end),
             _ => return Err(self.not_written()),
         };
+        let steps = steps.map_err(|reason| self.codec_failed(&reason))?;
         self.run(steps).await.map_err(|failure| WriteError::NotWritten {
             reason: failure.reason(),
         })
@@ -1077,13 +1088,14 @@ impl<B: SegmentBacking + 'static> SegmentEntries<B> {
         let Ok(codec) = Codec::from_id(header.codec) else {
             return Ok(all_lost);
         };
-        let mut entries_codec = Decompressor::new(codec);
-
         let mut entries = self.memory.buffer(row.entries_room);
         let mut frames = match self.frames {
             Frames::With => Some(self.memory.buffer(row.frames_room)),
             Frames::Without => None,
         };
+        // The entries of the chunks of a block are one stream, which the codec unpacks in one call, into the one
+        // buffer of the block. The stream takes every chunk that is whole, up to the first that is not.
+        let mut chunks = Vec::new();
         let mut whole = 0;
         while whole < row.entries {
             let chunk = exactly(&mut stream, ChunkHeader::LEN).await.map_err(not_read)?;
@@ -1096,12 +1108,6 @@ impl<B: SegmentBacking + 'static> SegmentEntries<B> {
             if stored.len() != chunk.entries_stored as usize || checksum(&stored) != chunk.entries_checksum {
                 break;
             }
-            if entries_codec
-                .read(&stored, chunk.entries_unpacked as usize, &mut entries)
-                .is_err()
-            {
-                break;
-            }
             let stored_frames = exactly(&mut stream, chunk.frames_stored as usize)
                 .await
                 .map_err(not_read)?;
@@ -1109,16 +1115,25 @@ impl<B: SegmentBacking + 'static> SegmentEntries<B> {
                 // The frames of a chunk are a stream of their own, so a reader without frames steps over them unread.
                 let whole_frames = stored_frames.len() == chunk.frames_stored as usize
                     && checksum(&stored_frames) == chunk.frames_checksum;
-                let unpacked = Decompressor::new(codec).read(&stored_frames, chunk.frames_unpacked as usize, frames);
-                if !whole_frames || unpacked.is_err() {
+                let before = frames.written().len();
+                let read = Decompressor::new(codec).read_block([&stored_frames[..]], frames);
+                let all_of_them = frames.written().len() - before == chunk.frames_unpacked as usize;
+                if !whole_frames || read.is_err() || !all_of_them {
                     break;
                 }
             }
             let stored_len = u64::from(chunk.entries_stored) + u64::from(chunk.frames_stored);
             let zeros = usize::try_from(padding(stored_len)).unwrap_or_default();
             exactly(&mut stream, zeros).await.map_err(not_read)?;
+            chunks.push(stored);
             whole += u64::from(chunk.entries);
         }
+        // A block may end at a flush, so a stream that is not finished behind its last chunk is whole.
+        // When the codec fails, or unpacks less than the headers say, what it unpacked is checked as every block is,
+        // and the entries behind it are reported as lost.
+        // When the codec fails, or unpacks less than the headers say, the check of the batch keeps the entries that it
+        // unpacked whole, and the entries behind them are what the batch lacks: they are reported as lost.
+        let _ = Decompressor::new(codec).read_block(chunks.iter().map(|chunk| &chunk[..]), &mut entries);
 
         let frames = frames.map(Bytes::from_owner);
         let batch = Batch::checked(shared.version, row.first, entries, frames);

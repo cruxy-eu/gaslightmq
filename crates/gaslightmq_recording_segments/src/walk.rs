@@ -715,9 +715,9 @@ mod tests {
         let mut entries = 0;
         for commit in commits.clone() {
             for connection in commit {
-                writing.append(closed(connection));
+                writing.append(closed(connection)).expect("the codec takes every entry");
             }
-            for step in writing.commit() {
+            for step in writing.commit().expect("the codec takes every entry") {
                 let Step::Append(object, pieces) = step else {
                     continue;
                 };
@@ -785,8 +785,10 @@ mod tests {
         let mut bytes = Vec::new();
         let mut first_commit = 0;
         for _ in 0..2 {
-            writing.append(Entry::session(&event));
-            for step in writing.commit() {
+            writing
+                .append(Entry::session(&event))
+                .expect("the codec takes every entry");
+            for step in writing.commit().expect("the codec takes every entry") {
                 if let Step::Append(object, pieces) = step
                     && object == segment
                 {
@@ -844,10 +846,12 @@ mod tests {
             calls: 0,
         };
         let mut writing = Writing::start(&description, SegmentConfiguration::new(), Codec::None);
-        writing.append(Entry::session(&event));
+        writing
+            .append(Entry::session(&event))
+            .expect("the codec takes every entry");
         let segment = Object::segment(Position::FIRST);
         let mut bytes = BytesMut::new();
-        for step in writing.finish(&end) {
+        for step in writing.finish(&end).expect("the codec takes every entry") {
             if let Step::Append(object, pieces) = step
                 && object == segment
             {
