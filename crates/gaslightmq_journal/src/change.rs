@@ -16,6 +16,7 @@ use crate::{RecordedDefinition, RecordedName};
 /// | [`LiveRuleMade`](Self::LiveRuleMade), [`LiveRuleChanged`](Self::LiveRuleChanged), [`LiveRuleKept`](Self::LiveRuleKept), [`LiveRuleDeleted`](Self::LiveRuleDeleted) | The live rule. |
 /// | [`DefinitionCreated`](Self::DefinitionCreated), [`DefinitionChanged`](Self::DefinitionChanged), [`DefinitionDeleted`](Self::DefinitionDeleted) | The definition of the workspace, and its kind. |
 /// | [`IncidentApplied`](Self::IncidentApplied), [`IncidentEmulated`](Self::IncidentEmulated) | The incident and its consequences. |
+/// | [`RecordingStopped`](Self::RecordingStopped) | Why the recording of the environment stopped by itself. |
 ///
 /// An entry names a rule and a definition by the [name it had](RecordedName).
 /// A name can go and come back, so a journal records every creation and every deletion:
@@ -28,7 +29,7 @@ use crate::{RecordedDefinition, RecordedName};
 /// so every arming in a journal ends with a disarm.
 ///
 /// What an environment does not do yet has no entry yet: a scenario that is activated or deactivated,
-/// a step that advances, and a recording that stops by itself. Their entries arrive with scenarios and recordings.
+/// and a step that advances. Their entries arrive with scenarios.
 ///
 /// ```
 /// use gaslightmq_journal::prelude::*;
@@ -88,6 +89,53 @@ pub enum Change {
     /// The backend emulated the incident: the clients that go through GaslightMQ cannot tell,
     /// and the rest of the cluster did not change.
     IncidentEmulated { incident: ExpandedIncident },
+    /// The recording of the environment stopped, and nobody stopped it.
+    /// When the recorder fell behind, this is the last entry of the recording, so the file says why it ends.
+    /// A stop is what happens, and no change of what someone set, so the entry holds no revision.
+    RecordingStopped { why: RecordingStopCause },
+}
+
+/// Why a recording stopped by itself.
+///
+/// ```
+/// use gaslightmq_journal::prelude::*;
+///
+/// let stopped = Change::RecordingStopped { why: RecordingStopCause::FellBehind };
+/// assert_eq!(RecordingStopCause::FellBehind.to_string(), "the recorder could not keep up");
+/// # let _ = stopped;
+/// ```
+///
+/// With the `serde` feature, a cause serializes as its name in kebab case: `fell-behind`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[cfg_attr(
+    feature = "serde",
+    derive(serde::Serialize, serde::Deserialize),
+    serde(rename_all = "kebab-case")
+)]
+pub enum RecordingStopCause {
+    /// The calls and the entries came faster than the recorder wrote them, and its queue was full.
+    /// A session never waits for the disk, so the recording stopped instead.
+    FellBehind,
+    /// The recorder could not write the file, for example because the disk is full.
+    /// The entry is in the journal of the environment, and not in the file.
+    CouldNotWrite,
+}
+
+impl RecordingStopCause {
+    /// What the cause says, as a sentence without its full stop.
+    pub const fn description(self) -> &'static str {
+        match self {
+            RecordingStopCause::FellBehind => "the recorder could not keep up",
+            RecordingStopCause::CouldNotWrite => "the recorder could not write",
+        }
+    }
+}
+
+/// Writes what the cause says.
+impl fmt::Display for RecordingStopCause {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.pad(self.description())
+    }
 }
 
 /// One parameter of a rule: a part of its trigger, of its action or its lifetime that changes by itself.

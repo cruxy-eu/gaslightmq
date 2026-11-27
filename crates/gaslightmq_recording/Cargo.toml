@@ -1,0 +1,25 @@
+[package]
+name = "gaslightmq_recording"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+bytes.workspace = true
+gaslightmq_call.workspace = true
+gaslightmq_clock.workspace = true
+gaslightmq_environment.workspace = true
+gaslightmq_field.workspace = true
+gaslightmq_incident.workspace = true
+gaslightmq_journal.workspace = true
+gaslightmq_kernel.workspace = true
+gaslightmq_lie.workspace = true
+gaslightmq_wire.workspace = true
+rkyv.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+anyhow.workspace = true

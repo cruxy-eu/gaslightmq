@@ -34,7 +34,8 @@ pub enum Consequence {
 
 /// An incident with its consequences: what a backend applies or emulates, and what the journal records.
 ///
-/// [`Incident::expand`] is the only way to make one, apart from reading back one that was written.
+/// [`Incident::expand`] is the only way to make one, apart from reading back one that was written:
+/// from its `serde` form, or with [`from_parts`](Self::from_parts).
 /// The consequences are therefore always those of the incident.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct ExpandedIncident {
@@ -43,6 +44,15 @@ pub struct ExpandedIncident {
 }
 
 impl ExpandedIncident {
+    /// An incident and its consequences as someone wrote them down, read back.
+    ///
+    /// It is the way back from [`into_parts`](Self::into_parts), for whoever keeps an expanded incident in a form
+    /// of its own, as a recording does. It checks nothing, as reading the `serde` form checks nothing:
+    /// the consequences are what [`Incident::expand`] found when the incident was written down.
+    pub const fn from_parts(incident: Incident, consequences: Vec<Consequence>) -> Self {
+        Self { incident, consequences }
+    }
+
     /// The incident that fired.
     pub fn incident(&self) -> &Incident {
         &self.incident

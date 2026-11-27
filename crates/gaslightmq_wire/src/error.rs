@@ -28,7 +28,8 @@ pub enum FrameError {
 /// [`Request::decode`](crate::Request::decode), [`Response::decode`](crate::Response::decode)
 /// and [`Response::peek_correlation_id`](crate::Response::peek_correlation_id) for a header,
 /// [`Request::body`](crate::Request::body) and [`Response::body`](crate::Response::body) for a body,
-/// and [`RecordBatch::decode_all`](crate::RecordBatch::decode_all) for records.
+/// and [`RecordBatch::decode_all`](crate::RecordBatch::decode_all) and [`RecordBatches::decode`](crate::RecordBatches::decode)
+/// for records.
 ///
 /// Whoever asked knows what it asked for, and does the same whatever is wrong with the bytes.
 /// So the error has no variants: its message names what did not decode, and says why.
@@ -72,7 +73,8 @@ impl DecodeError {
 ///
 /// Everything that writes bytes returns it:
 /// [`Request::new`](crate::Request::new), [`Response::new`](crate::Response::new),
-/// [`Request::response`](crate::Request::response) and [`RecordBatch::encode`](crate::RecordBatch::encode).
+/// [`Request::response`](crate::Request::response), [`RecordBatch::encode`](crate::RecordBatch::encode)
+/// and [`RecordBatches::encode`](crate::RecordBatches::encode).
 ///
 /// Whoever asked does the same whatever stood in the way.
 /// So the error has no variants: its message names what did not encode, and says why.

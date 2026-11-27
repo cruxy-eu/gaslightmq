@@ -52,6 +52,7 @@ mod next_to_std_and_every_neighbour {
             definition.to_string(),
             RecentJournalSize::default().to_string(),
             format!("{entry:?}"),
+            RecordingStopCause::FellBehind.to_string(),
         ]
     }
 
@@ -72,6 +73,7 @@ fn the_prelude_names_every_type_next_to_std_and_its_neighbours() {
     assert_eq!(items[0], "1");
     assert_eq!(items[1], "rule \"slow-order-producers\"");
     assert_eq!(items[2], "1000 entries");
+    assert_eq!(items[4], "the recorder could not keep up");
 }
 
 #[test]

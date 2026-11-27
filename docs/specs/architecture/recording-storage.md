@@ -55,7 +55,7 @@ A block that an older build wrote takes one more step, between the codec and the
 | Step | Does | In | IO |
 |---|---|---|---|
 | The encoder and the decoder | Write entries into the bytes of a block. Check the buffer of a block, and read it as entries. Convert a block of an older version. | `recording` | No. |
-| The codec | Compresses the bytes of a block, and unpacks them again. It is a [seam](#the-codec): Zstandard is the first codec, and none is one. | `recording_segments`, and a crate for a codec | No. |
+| The codec | Compresses the bytes of a block, and unpacks them again. It is a [seam](#the-codec): Zstandard is the first codec, and none is one. | `recording_compression` | No. |
 | The layout | Cuts a segment into blocks and chunks, keeps the index and the manifest, holds the readers to their [memory](#memory), and finds its way after a crash. | `recording_segments` | No. It awaits the backing, and nothing else. |
 | The backing | Keeps bytes, and hands them out as a stream. | `recording_segments_fs` | Yes. |
 
@@ -64,15 +64,15 @@ There are three seams, and each has a contract:
 | Seam | Its contract speaks of | Behind it |
 |---|---|---|
 | [Recording storage](#the-storage-contract) | Recordings and streams of their entries: session events, calls with their frames, journal entries. It owns the bytes of an entry, and knows nothing of where they are kept. | A layout. The segment layout is the first, and another format is another implementation. |
-| [The codec](#the-codec) | Bytes in, bytes out, as a stream. It knows no entry and no segment. | A way to compress. Zstandard is the first, and it is the default. |
+| [The codec](#the-codec) | Bytes in, bytes out, as a stream. It knows no entry and no segment. | A way to compress, out of a closed set. Zstandard is the first, and it is the default. A reader takes the codec at run time, from the number that the header of a block names it by. |
 | [Segment backing](#the-segment-backing) | The three kinds of object of the segment layout, as streams of bytes. It knows no entry. | A place for bytes. Files are the first, and memory serves the tests. |
 
 | Crate | Holds | IO |
 |---|---|---|
 | `recording` | The storage contract and its errors. What a recording holds: its ID, its description, the entries, a position, a summary, how it ended. The [encoding](#a-message) of every message of a recording, as stored types for every [version](#versions), with the way from each version to the next. The [check of a block](#the-check-of-a-block), the views, and the way from a view to the types of `call` and `journal`. What the [recording mode](#what-a-recording-must-not-keep) drops, and the blanking of credentials. | Sans-IO. |
-| `recording_conformance` | What every storage does, as a check. | Test support. |
-| `recording_segments` | The segment layout, as a storage over any backing: the framing of segments, [spans](#spans), blocks and chunks, the [records](#records) of each level, the index, the manifest and when it changes, recovery, and the [memory budgets](#memory). It has no message of its own. The codec contract, and the codec that does nothing. The backing contract and its errors. The backing in memory, behind a feature. | Sans-IO. It awaits the backing it is handed, and nothing else. |
-| `recording_segments_zstd` | The Zstandard codec. It is a crate of its own because it brings the library that compresses. | Sans-IO. |
+| `recording_conformance` | What every storage does, as a check. A storage in memory, which is the smallest storage that keeps the contract: the check is held to it, and it is no layout. | Test support. |
+| `recording_segments` | The segment layout, as a storage over any backing: the framing of segments, [spans](#spans), blocks and chunks, the [records](#records) of each level, the index, the manifest and when it changes, recovery, and the [memory budgets](#memory). It has no message of its own. The backing contract and its errors. The backing in memory, behind a feature. | Sans-IO. It awaits the backing it is handed, and nothing else. |
+| `recording_compression` | The [codecs](#the-codec): a compressor and a decompressor as adapters of a stream of bytes, over a closed set of codecs, which is none and Zstandard with its level. It is a crate of its own because it brings the library that compresses. | Sans-IO. |
 | `recording_segments_conformance` | What every backing does, as a check. | Test support. |
 | `recording_segments_fs` | The backing on files: it opens, appends, syncs, renames, maps and reads. | This crate does IO. |
 
@@ -96,7 +96,7 @@ No layout adds one, and none leaves one out.
 | Message | The bytes of one entry, description, summary or end, in the [encoding](#a-message) that `recording` owns. |
 | Position | Which entry of its recording this is: a number that counts from 0. A higher position is a later entry. |
 | Summary | What a stretch of a recording holds, so a reader knows whether to read it. |
-| End | How the recording ended: someone stopped it, or the recorder fell behind. A recording without an end still runs, or was cut short. |
+| End | How the recording ended: someone stopped it, its environment stopped, or the recorder fell behind. A recording without an end still runs, or was cut short. |
 
 ### Description
 
@@ -132,7 +132,7 @@ A recording holds the calls whose request arrived after it started and that ende
 
 | Entry | Holds |
 |---|---|
-| Session event | `opened`: the connection, the instant, the address and the endpoint. `identified`: the `client.id`, when the first request carried one. `software-named`: the `client.software`. `closed`: the instant, and who closed it: the client, the backend, a lie or the proxy. |
+| Session event | `opened`: the connection, the instant, the address and the endpoint, and what the session has learned by then when the recording started later: its `client.id` and its `client.software`. `identified`: the `client.id`, when the first request carried one. `software-named`: the `client.software`. `closed`: the instant, and who closed it: the client, the backend, a lie or the proxy. |
 | Call | The [call record](../domains/observation.md#call), and up to four frames: the request, the upstream response when the overlay changed it, the truth, and the delivered response. |
 | Journal entry | The [journal entry](../domains/observation.md#journal), as its crate has it. |
 
@@ -195,7 +195,7 @@ A stretch with `orders.eu/1` and `payments.settled/3` is therefore read for `ord
 
 ```rust
 /// Where recordings are kept. A layout implements it.
-pub trait RecordingStorage {
+pub trait RecordingStorage: Send + Sync {
     type Writer: RecordingWriter;
     type Reader: RecordingReader;
 
@@ -205,7 +205,7 @@ pub trait RecordingStorage {
     async fn open(&self, recording: &RecordingId) -> Result<Self::Reader, OpenError>;
 }
 
-pub trait RecordingWriter {
+pub trait RecordingWriter: Send {
     /// Takes the entry, and says which position it has.
     async fn append(&mut self, entry: Entry) -> Result<Position, WriteError>;
     /// Every entry that was taken is in the recording when this returns.
@@ -214,26 +214,45 @@ pub trait RecordingWriter {
     async fn finish(self, end: End) -> Result<(), WriteError>;
 }
 
-pub trait RecordingReader {
+pub trait RecordingReader: Send + Sync {
     type Entries: RecordedEntries;
 
     fn description(&self) -> &Description;
     /// How far the recording goes, and whether it ended in order.
-    async fn extent(&self) -> Result<Extent, ReadError>;
+    async fn extent(&self) -> Result<Extent, ExtentError>;
     /// The entries from a place on, in one direction, without the stretches that cannot hold what is wanted.
-    async fn read(&self, from: Place, direction: Direction, wanted: &impl Wanted, frames: Frames)
+    async fn read(&self, from: Place, direction: Direction, wanted: impl Wanted, frames: Frames)
         -> Result<Self::Entries, ReadError>;
 }
 
-pub trait RecordedEntries {
+pub trait RecordedEntries: Send {
     /// The next batch, or `None` at the end. A batch is the buffer that the storage has the entries in.
-    async fn next(&mut self) -> Result<Option<Batch>, ReadError>;
+    async fn next(&mut self) -> Result<Option<Batch>, NextBatchError>;
+}
+
+/// One thing that a recording keeps. Making it encodes it, and for a call it redacts.
+impl Entry {
+    pub fn session(event: &SessionEvent) -> Entry;
+    pub fn call(call: Call, frames: CallFrames, mode: RecordingMode) -> Result<Entry, CallEntryError>;
+    pub fn journal(entry: &JournalEntry) -> Entry;
+}
+
+/// Writes the entries of one batch, one after the other. A storage starts a new one with every batch.
+impl BatchEncoder {
+    pub fn new() -> BatchEncoder;
+    /// The bytes of the entry as they stand in the batch, and its frames, each as a shared buffer.
+    pub fn encode(&mut self, entry: Entry) -> EncodedEntry;
 }
 
 /// The room for the entries of one batch. It starts at an address that is a multiple of 16, it has its size
 /// from the start, and it never moves.
 impl BatchBuffer {
     pub fn with_room(bytes: usize) -> BatchBuffer;
+    /// Calls `released` once, when the last holder of the buffer lets go of it.
+    pub fn when_released(self, released: impl FnOnce() + Send + Sync + 'static) -> BatchBuffer;
+    /// The room that is left, and how much of it was written.
+    pub fn unwritten(&mut self) -> &mut [u8];
+    pub fn advance(&mut self, bytes: usize);
 }
 
 /// Entries where they lie. The batch shares its buffers with the storage, and its views borrow from the batch.
@@ -241,6 +260,10 @@ impl Batch {
     /// Takes the buffers that a storage filled, and checks the entries once. `version` is the version of the
     /// encoding that the recording says, and `first` is the position of the first entry.
     pub fn checked(version: EncodingVersion, first: Position, entries: BatchBuffer, frames: Option<Bytes>) -> Batch;
+    /// The same batch for a stream that starts or ends in the middle of it, and for a stream in a direction.
+    pub fn starting_at(self, position: Position) -> Batch;
+    pub fn ending_at(self, position: Position) -> Batch;
+    pub fn towards(self, direction: Direction) -> Batch;
     /// The entries that the reader asked for, in the order of the reading. An entry that failed the check
     /// comes as its error, in its place.
     pub fn entries(&self) -> impl Iterator<Item = (Position, Result<EntryView<'_>, EntryError>)>;
@@ -256,40 +279,49 @@ pub enum EntryView<'a> {
 
 impl<'a> CallView<'a> {
     pub fn id(&self) -> Result<CallId, EntryError>;
-    /// The fields of the call, as a source that a selector matches.
-    pub fn fields(&self) -> Result<FieldsView<'a>, EntryError>;
-    pub fn explanation(&self) -> Result<ExplanationView<'a>, EntryError>;
+    /// The fields of the call, where they lie. `to_fields` builds the source that a selector matches.
+    pub fn fields(&self) -> FieldsView<'a>;
+    pub fn explanation(&self) -> ExplanationView<'a>;
     /// The frame, as a slice of the buffer of the storage, when the reader asked for frames. It keeps that buffer in memory.
     pub fn frame(&self, slot: FrameSlot) -> Result<RecordedFrame, EntryError>;
     /// The call as its type, built through its checks. It owns what it holds, and keeps no buffer in memory.
     pub fn to_call(&self) -> Result<Call, EntryError>;
 }
 
-/// What a reader looks for, as far as a summary can tell.
-pub trait Wanted {
+/// What a reader looks for, as far as a summary can tell. A function of a summary is one.
+pub trait Wanted: Send + 'static {
     fn may_be_in(&self, summary: &Summary) -> bool;
 }
 ```
 
+The traits declare their async methods as the [backend contract](crates.md#the-backend-seam) does: each returns a future that is `Send`.
+
 | A storage | Keeps to |
 |---|---|
 | Starts | It refuses an ID that a recording has. A recording that started is listed, and opens. |
+| Lists | Every recording that started, in the order of their IDs: by the environment, and then by the instant it started. |
 | Appends | It gives every entry the next position. One writer writes a recording, and nobody writes to a recording again once its writer is gone. |
 | Commits | Every entry that it took is readable, and is still there after a crash of the process or of the machine. A storage may commit by itself, when what it holds reaches a size. |
 | Finishes | The recording has an end. A recording whose writer went away without one was cut short, and opens all the same. |
-| Reads | As a stream: from the start, from the end or from a position, forwards or backwards. A reader sees every entry that a commit covers, also while the recording runs. Entries come in the order of their positions, a batch at a time. |
+| Reads | As a stream: from the start, from the end or from a position, forwards or backwards. A reader sees every entry that a commit covers, also while the recording runs: a stream that reached the end hands out what a later commit added, when it is asked again. Entries come in the order of their positions, a batch at a time. |
 | Holds a bounded number of bytes | A reader holds the batches that it handed out and that someone still holds, and what it read ahead. A storage names the bound, never passes it by reading ahead, and says so when a consumer holds all of it. See [memory](#memory). |
 | Skips | It asks `Wanted` about every summary it has, at every level it has one, and reads no stretch that cannot hold what is wanted. A storage without summaries asks nothing and hands out everything. What it hands out is never less than what is wanted. |
 | Hands out frames | Only when the reader asks for them. A reader that asks for none gets every call with the states and the lengths of its frames, and no storage reads a frame for it. |
-| Keeps entries as they are | It stores the bytes of the entries as `recording` wrote them, compressed or not, and looks into none of them. It keeps the [version of the encoding](#versions) that they were written in, and says it with them. |
+| Keeps entries as they are | It hands every entry to a `BatchEncoder`, and stores the bytes that come out as they are, compressed or not. It looks into none of them. It keeps the [version of the encoding](#versions) that they were written in, and says it with them. |
 | Hands out entries where they lie | A batch is the buffer that the entries were put in. The storage fills a `BatchBuffer`, which starts at an address that is a multiple of 16, and makes the batch with `Batch::checked`, which [checks it once](#the-check-of-a-block). No storage builds a type for a reader. |
 | Says what it lost | A stretch that it cannot read is an error that names its positions, and the reader can go on behind it. |
 
 `Wanted` carries a selector to the storage without the storage knowing one.
 The engine implements it with the check of `selector`, and with a range of time or of call IDs when a reader asks for one.
-A reader that wants everything hands in one that says yes.
+A storage keeps it for as long as its stream runs, so a stream takes it whole, and a function of a summary is one.
+A reader that wants everything hands in `Everything`, which says yes.
 
 `recording_conformance` holds this table as a check, for any storage.
+It checks what shows from outside.
+That a commit outlives a crash, that a storage reads no stretch that a summary rules out, and what a storage says about a stretch that it lost, are for the tests of a layout.
+
+The same crate holds a storage in memory, which keeps every batch as the bytes that were written, and keeps no summary.
+The check is held to it, and the tests of a recorder or of a reader use it where they need no layout.
 
 ### Nothing is copied twice
 
@@ -316,7 +348,7 @@ A reader gets a batch, and a batch gives views.
 - **Whoever keeps a view keeps its buffer.**
   A view borrows from its batch, and a frame shares the buffer of its batch.
   So one call that a consumer keeps holds the whole buffer in memory: megabytes, for an entry of a kilobyte or two.
-  The storage counts such a buffer against the [budget of its reader](#memory) until the last holder lets go.
+  The storage counts such a buffer against the [budget of its reader](#memory) until the last holder lets go, and the buffer tells it so: `BatchBuffer::when_released`.
   A consumer that keeps entries beyond its stream therefore [copies them out](#a-kept-view-keeps-its-block), and says so in its code:
   `copy_of` gives one entry and its frames in buffers of their own, and `to_call` gives the type.
 - **A view hands out values, and the types check them.**
@@ -349,12 +381,18 @@ It has two parts, and a storage keeps them apart:
 |---|---|---|
 | 0 | 4 | The length of its message. |
 | 4 | 1 | The kind of its message: `1` a session event, `2` a call, `3` a journal entry. |
-| 5 | 11 | Zero. |
+| 5 | 3 | Zero. |
+| 8 | 8 | For a call that the recording holds frames of: where they start in the frames of the batch. Zero for every other message. |
 
 The next head stands at the next multiple of 16 behind the message, and the bytes between them are zero.
 
 - **An entry is one message.**
-  A call is its ID, its connection, its fields, its moments, what the client received, its explanation, and for each of its four frames a slot: its state, its length on the wire, and where it is in the frames of the batch.
+  A call is its ID, its connection, its fields, its moments, what the client received, its explanation, and for each of its four frames a slot: its state, its length on the wire, and the length that the recording holds of it.
+  The frames of a call stand back to back in the frames of the batch, in the order of the slots, and the head of the call says where they start.
+- **A message is made once.**
+  The recorder makes the message of an entry before a layout knows which batch the entry goes into.
+  Where the frames of the entry lie in that batch is therefore in the head, which the encoder of the batch writes, and not in the message.
+  A storage keeps the message as it was made.
 - **An entry stands by itself.**
   It names no other entry and no table of the batch.
   What repeats from call to call, such as a topic and the name of a rule, is left to the [codec](#the-codec), which does it better than a table of our own:
@@ -395,11 +433,13 @@ A message is the bytes of one thing that the contract owns: an entry, a descript
 ### The check of a block
 
 In the segment layout a batch is a block, so the check of a batch is the check of a block.
-`Batch::checked` passes over the buffer once, from the first head to the last.
+`Batch::checked` passes over the buffer once, from the first head to the last, when the storage makes the batch.
+The pass checks one message after the other, each by itself, and it is done before the batch hands out its first view.
+Nothing is checked later, as a reader walks the entries, so a batch never hands out a view of an entry that was not checked.
 
 | It checks | So that |
 |---|---|
-| Every head: its length stays inside the buffer, its kind is one that the version has, and its message starts at a multiple of 16. | The walk from entry to entry never leaves the buffer. |
+| Every head: its length stays inside the buffer, its kind is one that an entry of the version has, and its message starts at a multiple of 16. | The walk from entry to entry never leaves the buffer. |
 | Every reference in a message: what it points at lies inside the same message, at an address that the type of the value can stand at. | A view never reads outside its entry. |
 | Every length of a text or a list: its values lie inside the message. | The same. |
 | Every text: it is UTF-8. | A view hands out a text without a look at its bytes. |
@@ -413,10 +453,14 @@ In the segment layout a batch is a block, so the check of a batch is the check o
   It is in `recording` alone: `Batch::checked` is the only way to a view, and nothing makes a `Batch` without the check.
 - **An entry that fails is left out, and the others are read.**
   It comes out of `entries` as an `EntryError`, at its position.
+  Its head still says where the next entry starts, so it hides no entry behind it.
   A head that fails ends the walk, because nothing says where the next entry starts.
   The batch then holds the entries before it, and the layout, which knows from its chunks how many entries the block has, reports the rest as lost.
 - **It does not check what a type checks.**
   That a text is the name of a topic, or that a number is a call ID, is found by the value object that takes it.
+- **It does not check the frames.**
+  A frame is the bytes of Kafka, and nothing follows a reference into them.
+  A slot that says a frame outside the frames of the batch is found when a reader asks for that frame, as an `EntryError`.
 - **The other messages are checked in the same way.**
   A description, a summary and an end pass the same check when `recording` reads them.
 
@@ -434,8 +478,19 @@ None of them names a file, a segment or a backing.
 | Appends, commits, finishes | `WriteError` | `NotWritten { reason }`. The recorder stops the recording, whatever stood in the way. |
 | Lists | `ListError` | `NotListed { reason }`. |
 | Opens | `OpenError` | `NotFound`. `EncodingNotRead { error }`: this build does not read the [version of the encoding](#a-version-that-a-reader-does-not-know) that the recording has. The error is an `EncodingVersionError`, which names that version and the newest that the build reads. `LayoutNotRead { written, known }`: the same for the version of the layout. `NotReadable { reason }`: what is there is no recording. |
-| Reads | `ReadError` | `Damaged { from, to }`: these positions are lost, and the reading goes on behind them. `NotRead { reason }`: the storage did not answer, and the reading can be tried again. `ReaderBudgetSpent { held, budget }`: the consumer holds as many bytes of batches as its reader may hold, which is `recordings.reader_memory`, so it lets go of some, or copies out what it keeps, and reads on. `AllReadersBudgetSpent { held, budget }`: the readers of the process hold as much as they may together, which is `recordings.all_readers_memory`, so the stream is refused, and the caller tries again later, or tells whoever asked. In both, `held` is the bytes that are held and `budget` is the bytes that the property allows. |
+| Asks how far a recording goes | `ExtentError` | `NotRead { reason }`: the storage did not answer, and the question can be asked again. |
+| Starts a stream | `ReadError` | `NotRead { reason }`: the storage did not answer, and the stream can be started again. `AllReadersBudgetSpent { held, budget }`: the readers of the process hold as much as they may together, which is `recordings.all_readers_memory`, so the stream is refused, and the caller tries again later, or tells whoever asked. |
+| Asks a stream for its next batch | `NextBatchError` | `Damaged { from, to }`: these positions are lost, and the reading goes on behind them. `NotRead { reason }`: the storage did not answer, and the stream can ask again. `ReaderBudgetSpent { held, budget }`: the consumer holds as many bytes of batches as its reader may hold, which is `recordings.reader_memory`, so it lets go of some, or copies out what it keeps, and reads on. |
 | Reads a value through a view, or builds the type | `EntryError` | `Damaged { reason }`: the bytes are no entry, or they hold a value that its type does not take. The reader leaves the entry out, and says which position it had. |
+| Reads a description, a summary or an end | `MessageError` | `Damaged { reason }`: the bytes are no such message. A layout reads the message from another place where it has one, or says that what is there is no recording. |
+| Makes the entry of a call | `CallEntryError` | `LieNotStored { lie }`: the call tells a lie that this version of the encoding has no stored type for. The recorder stops the recording. |
+
+Reading has three errors, because its three callers decide on different things, and no caller writes an arm for a variant that cannot come from what it called.
+In both errors of a budget, `held` is the bytes that are held and `budget` is the bytes that the property allows.
+
+A lie comes with a crate of its own, and its definition is open to new cases.
+The encoder therefore cannot name every case, and a lie without a stored type is an error where the entry is made, and no silent loss.
+The encoding learns of a new lie with a new [version](#versions).
 
 ## Memory
 
@@ -499,7 +554,7 @@ Nothing waits for memory.
 | The budget is reached | The storage |
 |---|---|
 | Of a reader, by what it read ahead | Stops reading ahead. Nothing waits, and nothing fails. |
-| Of a reader, by batches that the consumer still holds | Fails the next read with `ReadError::ReaderBudgetSpent { held, budget }`, which names `recordings.reader_memory`. The consumer lets go, or copies out, and reads on from the position it had. |
+| Of a reader, by batches that the consumer still holds | Fails the next read with `NextBatchError::ReaderBudgetSpent { held, budget }`, which names `recordings.reader_memory`. The consumer lets go, or copies out, and reads on from the position it had. |
 | Of all readers, when a stream starts and there is no room for one block | Drops what the other readers read ahead and did not hand out yet. When that is not enough, it refuses the stream with `ReadError::AllReadersBudgetSpent { held, budget }`, which names `recordings.all_readers_memory`. |
 | Of all readers, while a stream runs | Reads on without reading ahead. A stream set the room for one block aside when it started, so it never stops half way. |
 
@@ -576,21 +631,25 @@ For every frame, `recording` reads the API of its call from the header of the re
 | A `SaslAuthenticate` request, or a response to one | Redacted: its authentication bytes are empty. | The same. |
 | A frame that holds records: a Produce request, and a Fetch or a `ShareFetch` response | Whole. | Redacted: every record is there without its key, its value and its headers. |
 | A frame of any other API that the codec reads | Whole. | Whole. |
-| A frame that the codec cannot read: its API is unknown, or its header or its body does not decode | Withheld. | Withheld. |
+| A frame that the codec cannot read: the API of its call is unknown, the header of its request does not decode, or its body does not decode where the recording has to change it | Withheld. | Withheld. |
 
 - **A redacted frame is a frame.**
   It decodes at the version it had, and it says everything else that it said.
   A record batch keeps its base offset, its number of records, its timestamps, and the ID, the epoch and the sequence of its producer.
   A record keeps its offset and its timestamp.
   The batch is kept without compression and with a new checksum.
-  It keeps its attributes too, such as the type of its timestamps.
-  The rewrite in `wire` loses the type of the timestamps today, because the encoder it uses drops it, and that is a gap to close.
+  It keeps its other attributes, such as the type of its timestamps and whether it is transactional.
 - **The response to `SaslAuthenticate` is blanked too.**
   With SCRAM, what the server answers is enough to test guessed passwords against, next to what an attacker can guess.
 - **A control batch stays whole.**
   It marks the end of a transaction, and holds nothing that a client wrote.
 - **Whatever cannot be read is withheld, in a full recording too.**
-  A frame that nobody could read can hold records, or a password, and nobody can tell.
+  The API of a call is in the header of its request.
+  When that header does not decode, or names an API that the codec does not know, a frame of the call can hold records, or a password, and nobody can tell: every frame of the call is withheld.
+- **A body is decoded only where it has to change.**
+  The API says what a frame can hold, so a frame that holds nothing to take out is kept whole without a look at its body.
+  Decoding every body would cost a decode for every frame on the thread that records, and take nothing more out.
+  A frame that has to change, and whose body does not decode, is withheld.
   The price is that a full recording does not keep the one frame that the codec failed on: it keeps its length, and the call record says what GaslightMQ made of it.
 
 `recording` needs the Kafka codec for this, and for nothing else.
@@ -710,32 +769,37 @@ A span of 64 MiB is what a block was in an earlier form of this layout, so a sum
 ### The codec
 
 The codec stands between the bytes of a block and the bytes of its chunks.
-It is a seam: a recording says which codec wrote it, and a reader takes the codec from there.
+It is a seam: the header of a block names the codec that wrote it, by a number, and a reader takes the codec from there, at run time.
+The codecs are a closed set, in one crate, `recording_compression`.
 
 ```rust
-/// One way to compress. A block says which one wrote it.
-pub trait Codec {
-    type Compressor: Compressor;
-    type Decompressor: Decompressor;
+/// The ways to compress a recording: a closed set.
+pub enum Compression {
+    None,
+    Zstandard { level: i32 },
+}
 
+impl Compression {
     /// The number that a block names the codec by.
-    fn id(&self) -> CodecId;
-    /// A compressor that knows nothing yet: for a block, or for the frames of one chunk.
-    fn compressor(&self) -> Self::Compressor;
-    fn decompressor(&self) -> Self::Decompressor;
+    pub fn id(&self) -> CodecId;
 }
 
-pub trait Compressor {
+/// Compresses a stream of bytes. It knows nothing yet: it is for one block, or for the frames of one chunk.
+impl Compressor {
+    pub fn new(compression: Compression) -> Compressor;
     /// Takes bytes. What it has ready goes after `out`.
-    fn write(&mut self, bytes: &[u8], out: &mut Vec<u8>) -> Result<(), CodecError>;
+    pub fn write(&mut self, bytes: &[u8], out: &mut Vec<u8>) -> Result<(), CodecError>;
     /// Lets go of everything it took, so a reader can unpack all of it. The stream goes on.
-    fn flush(&mut self, out: &mut Vec<u8>) -> Result<(), CodecError>;
+    pub fn flush(&mut self, out: &mut Vec<u8>) -> Result<(), CodecError>;
 }
 
-pub trait Decompressor {
+/// Unpacks a stream of bytes, with the codec that a header names.
+impl Decompressor {
+    /// The decompressor of the codec with that number, as the header of a block says it.
+    pub fn of(codec: CodecId) -> Result<Decompressor, CodecError>;
     /// Unpacks the next chunk of a block after what `out` holds of that block. `out` has the room for the whole
     /// block and starts at a multiple of 16, and the chunks come in the order they were written.
-    fn read(&mut self, chunk: &[u8], out: &mut BatchBuffer) -> Result<(), CodecError>;
+    pub fn read(&mut self, chunk: &[u8], out: &mut BatchBuffer) -> Result<(), CodecError>;
 }
 ```
 
@@ -760,10 +824,16 @@ pub trait Decompressor {
   The layout flushes it at a commit, which is always between two entries.
 - **A recording has one codec, and a block names it.**
   `recordings.compression` says which codec a new recording takes: `zstd` or `none`.
-  A reader that meets a codec it does not know says so, and reads nothing of that block.
-- **A codec fails in one way.**
+  A writer makes its compressor from that property, and a reader makes its decompressor from the number in the header of the block, at run time.
+  No reader is built for one codec, and none is told which codec to expect.
+- **The codecs are a closed set.**
+  A compressor and a decompressor are one type each, over the codecs that this build has, and not a trait that a crate implements.
+  A new codec is a new case, with a new number.
+  A reader that meets a number it does not know says so, and reads nothing of that block.
+- **A codec fails in two ways.**
   `CodecError::NotUnpacked { reason }` means that the bytes are not what the codec wrote.
-  The layout reports the positions of the block as lost.
+  `CodecError::CodecNotKnown { id }` means that this build has no codec with the number that the header names.
+  The layout reports the positions of the block as lost with either.
 
 Why Zstandard at level 3, from the [measurement](#the-encoding-measured):
 it takes a call from 1780 bytes to 122, and costs 1.3 µs for a call on the thread that records.
@@ -1297,12 +1367,14 @@ A message [cannot grow](#a-message), so the encoding does not change: it gets a 
   Until then no recording of an earlier build has to open.
 
 `EncodingVersion` is the version as `recording` hands it around.
-It exists only for a number that this build reads:
+It exists only for a number that this build reads.
+Inside `recording` it is a closed set of the versions that a build ever wrote, and whatever reads a message decides on that set without an arm for the rest.
+So a new version does not compile until every reader has the way from the version before.
 
 | | |
 |---|---|
 | `EncodingVersion::CURRENT` | The version that this build writes. |
-| `EncodingVersion::read_by_this_build(number)` | The version, or `EncodingVersionError::Newer { written, known }` for a number above the current one. |
+| `EncodingVersion::read_by_this_build(number)` | The version, or `EncodingVersionError::Newer { written, known }` for a number above the current one, or `EncodingVersionError::Zero` for zero, which no build writes. |
 
 ### An older version is converted
 
@@ -1330,6 +1402,7 @@ A reader looks at the versions in the header of an object before it reads anythi
 | The recording has | The reader |
 |---|---|
 | A version of the encoding above its own | Refuses the recording with `OpenError::EncodingNotRead { error }`. The error is `EncodingVersionError::Newer { written, known }`, and the message names the version that the recording has and the newest that this build reads. |
+| Zero as the version of the encoding | Says that what is there is no recording: `OpenError::NotReadable { reason }`. |
 | A version of the layout above its own | Refuses the recording with `OpenError::LayoutNotRead { written, known }`, and the message names the same two versions of the layout. |
 
 A build reads [every version](#the-stored-types-of-a-version) that a release wrote, so no reader meets one that is too old for it, and no error says so.
@@ -1354,7 +1427,7 @@ It reads no message of a version that it does not have the stored types of.
 
 - **The file of a released version is never written again.**
   A change to one is a change of a file that nobody has a reason to touch, and a review refuses it.
-  The command that writes the file of the open version writes no other.
+  The command that writes the file of the open version writes no other: it is a test of the module of that version that is ignored, and it goes away with the release that first writes the version.
 - **The bytes are the test, and not a fingerprint of the layout.**
   A fingerprint of the sizes, the alignments and the offsets of the archived types fails on the same changes of a type.
   It says nothing about how a text or a list is written, nothing about a conversion, and it needs a fingerprint for every type, by hand or by a macro of our own.
@@ -1451,7 +1524,6 @@ A key in the call record or in the description carries it.
 | An old recording is not read in place | A block of an older version is [converted](#an-older-version-is-converted): one more copy, at the speed of a decoder. That speed was not measured. | A recording of the current version, which is every recording that a build writes itself. |
 | Nobody measured frames | The measurement held entries and no frame. What the frames of a real recording compress to, and what compressing them apart from the entries costs, is not known. | — |
 | Nobody measured a summary | The [size of the index](#sizes) rests on an estimate of 2 KiB for the summary of a span. | `recordings.summary_values` and `recordings.span_size` bound it. |
-| A redacted record batch loses the type of its timestamps | The [rewrite in `wire`](#what-a-recording-must-not-keep) drops it. | A gap to close in `wire`. |
 | A recording does not export to one file | It is a directory. | [Not decided](../open-questions.md#storage). |
 
 ## Properties
@@ -1498,7 +1570,7 @@ What changed with blocks of 4 MiB, and what did not:
 | Is a recording tied to one format? | No. A storage contract speaks of entries, and a layout implements it. | A reader and a writer of one file format. A second format would have been a second set of readers. |
 | What is the first layout? | Data segments of compressed blocks, index chunks that describe them, and a manifest that lists the index chunks. | One file with a summary in every chunk. A query had to walk every chunk of it, and a recording could not grow past one file. |
 | How does a reader read? | As a pipeline of streams: the backing gives bytes, the codec gives blocks, and the decoder gives entries. Every reader is a pass over the blocks that the summaries leave. | Reading one entry, or one field, out of the middle. No reader does that, and a layout that serves it pays for it in every stream. |
-| Is a segment compressed? | Yes, by block, behind a seam. Zstandard at level 3 is the default, and none is a choice. | No compression: fourteen times the bytes, and slower from the disk. Compression by segment: a reader could only start at the start of a segment. |
+| Is a segment compressed? | Yes, by block, behind a seam. Zstandard at level 3 is the default, and none is a choice. A reader takes the codec from the header of the block, at run time. | No compression: fourteen times the bytes, and slower from the disk. Compression by segment: a reader could only start at the start of a segment. |
 | What does zero-copy mean? | Nothing copies the bytes of an entry after the decompressor wrote them. A reader reads an entry through a view, and a text and a frame as slices of the buffers of their block. | Reading an entry from the file where it lies, which compression rules out. Building the type of every entry, which most readers never look at. A decoder that copies every text into a string of its own. |
 | Which encoding? | A message is the archive of a stored type: the type as it lies in memory. A reader checks a block once and reads it through views. See [the encoding, measured](#the-encoding-measured). | Encodings that are decoded: less than half the speed, and an allocation for every entry. Encodings that are read through views and can grow: a third of the speed, or less. |
 | How does an entry change, when a message cannot grow? | The encoding has [versions](#versions). `recording` keeps the stored types of every version and the way from each to the next, and a reader converts a block of an older version. A reader reads every version that was ever written. | A schema whose messages grow, which the encoding does not have. Views of every version, which would put a case for every version into every reading. |

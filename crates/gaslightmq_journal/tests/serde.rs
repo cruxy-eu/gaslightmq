@@ -215,6 +215,18 @@ fn a_change_names_itself_in_its_change_key() {
         },
         &format!(r#"{{"change":"incident-emulated","incident":{BROKER_2_WENT_DOWN}}}"#),
     );
+    writes(
+        &Change::RecordingStopped {
+            why: RecordingStopCause::FellBehind,
+        },
+        r#"{"change":"recording-stopped","why":"fell-behind"}"#,
+    );
+    writes(
+        &Change::RecordingStopped {
+            why: RecordingStopCause::CouldNotWrite,
+        },
+        r#"{"change":"recording-stopped","why":"could-not-write"}"#,
+    );
 }
 
 #[test]
