@@ -10,8 +10,10 @@ The design follows from six things that it must do:
 
 - **A session never pays for it.**
   A session hands over what it already has in memory, and encodes nothing.
-- **A reader copies no frame.**
-  A frame can be many megabytes, and most readers never look at it.
+- **A reader copies nothing, and decodes nothing.**
+  It reads an entry where it lies, in the bytes that the storage has mapped: its fields, its verdict, its explanation.
+  It reads a frame the same way.
+  A reader that looks at one field of a call pays for that field, and for nothing else of the call.
 - **A query reads a little.**
   A query over a recording of many terabytes reads a few small objects, and not the recording.
 - **Nothing grows without a bound.**
@@ -29,7 +31,7 @@ engine · world_seed · tests
         ▼
   recording storage        the contract of `recording`
         │
-  segment layout           `recording_segments`: blocks, segments, index chunks, the manifest
+  segment layout           `recording_segments`: segments of batches, index chunks, the manifest
         │  bytes
         ▼
   segment backing          the contract of `recording_segments`
@@ -39,14 +41,14 @@ engine · world_seed · tests
 
 | Seam | Its contract speaks of | Behind it |
 |---|---|---|
-| [Recording storage](#the-storage-contract) | Recordings and their entries: session events, calls with their frames, journal entries. It knows no bytes. | A layout. The segment layout is the first, and another format is another implementation. |
+| [Recording storage](#the-storage-contract) | Recordings and their entries: session events, calls with their frames, journal entries. It owns the bytes of an entry, and knows nothing of where they are kept. | A layout. The segment layout is the first, and another format is another implementation. |
 | [Segment backing](#the-segment-backing) | The three kinds of object of the segment layout, as bytes. It knows no entry. | A place for bytes. Files are the first, and memory serves the tests. |
 
 | Crate | Holds | IO |
 |---|---|---|
-| `recording` | The storage contract and its errors. What a recording holds: its ID, its description, the entries, a position, a summary, how it ended. What the [recording mode](#what-a-recording-must-not-keep) drops, and the blanking of credentials. | Sans-IO. |
+| `recording` | The storage contract and its errors. What a recording holds: its ID, its description, the entries, a position, a summary, how it ended. The [encoding of an entry](#entries-are-read-in-place), the views that read it in place, and the way from a view to the types of `call` and `journal`. What the [recording mode](#what-a-recording-must-not-keep) drops, and the blanking of credentials. | Sans-IO. |
 | `recording_conformance` | What every storage does, as a check. | Test support. |
-| `recording_segments` | The segment layout, as a storage over any backing: every encoding, the summaries of each level, the manifest and when it changes, and recovery. The backing contract and its errors. The backing in memory, behind a feature. | Sans-IO. It awaits the backing it is handed, and nothing else. |
+| `recording_segments` | The segment layout, as a storage over any backing: the framing of its objects, the summaries of each level, the manifest and when it changes, and recovery. The backing contract and its errors. The backing in memory, behind a feature. | Sans-IO. It awaits the backing it is handed, and nothing else. |
 | `recording_segments_conformance` | What every backing does, as a check. | Test support. |
 | `recording_segments_fs` | The backing on files: it opens, appends, syncs, renames and maps. | This crate does IO. |
 
@@ -54,7 +56,7 @@ Everything that decides is sans-IO, and a test drives it with bytes in memory:
 
 | Sans-IO, in `recording` | Sans-IO, in `recording_segments` | IO, in `recording_segments_fs` |
 |---|---|---|
-| The entries. What a summary holds, and how summaries add up. Redaction of frames. | Encoding and decoding entries. The framing of blocks and segments. Index chunks. What the manifest holds and when it changes. Recovery, as a function of a listing and of bytes. | Opening, appending, syncing, renaming and mapping files. |
+| The entries: their encoding, and the views that read them in place. What a summary holds, and how summaries add up. Redaction of frames. | The framing of batches and segments. Index chunks. What the manifest holds and when it changes. Recovery, as a function of a listing and of bytes. | Opening, appending, syncing, renaming and mapping files. |
 
 `recording_segments` awaits its backing as `workspace` awaits [its stores](crates.md#the-store-seam):
 its rules are plain functions over bytes, and the one part that is async hands bytes to the backing and takes bytes from it.
@@ -72,6 +74,7 @@ No layout adds one, and none leaves one out.
 | Recording ID | The [environment and the instant it started](identity.md#recording-id). |
 | Description | What the recording is. It is written once, when the recording starts. |
 | Entry | One thing that the recording keeps: a session event, a call or a journal entry. |
+| Batch | The entries of one commit, encoded together. A storage keeps a [batch](#a-batch) as it is, and hands it out as it is. |
 | Position | Which entry of its recording this is: a number that counts from 0. A higher position is a later entry. |
 | Summary | What a stretch of a recording holds, so a reader knows whether to read it. |
 | End | How the recording ended: someone stopped it, or the recorder fell behind. A recording without an end still runs, or was cut short. |
@@ -146,7 +149,7 @@ A summary says what a stretch of a recording holds.
 `fields` is a map from the name of a field to one of two things:
 
 - **The list of its values**: every value that a call of the stretch has for the field, for the call as a whole or for one of its parts, each value once.
-- **The text `any`**: the stretch has more values than `recordings.summary_values`, which is `64` until someone sets it.
+- **The text `any`**: the stretch has more values than `recordings.summary_values`, which is `1024` until someone sets it.
 
 A field that no call of the stretch has is not in the map.
 
@@ -204,8 +207,31 @@ pub trait RecordingReader {
 }
 
 pub trait RecordedEntries {
-    /// The next entries, each with its position, or `None` at the end.
-    async fn next(&mut self) -> Result<Option<Vec<Recorded>>, ReadError>;
+    /// The next batch, or `None` at the end. A batch is the buffer that the storage has the entries in.
+    async fn next(&mut self) -> Result<Option<Batch>, ReadError>;
+}
+
+/// Entries where they lie. The batch shares its buffer with the storage, and its views borrow from the batch.
+impl Batch {
+    /// The entries that the reader asked for, in the order of the reading.
+    pub fn entries(&self) -> impl Iterator<Item = (Position, EntryView<'_>)>;
+}
+
+pub enum EntryView<'a> {
+    Session(SessionEventView<'a>),
+    Call(CallView<'a>),
+    Journal(JournalEntryView<'a>),
+}
+
+impl<'a> CallView<'a> {
+    pub fn id(&self) -> Result<CallId, EntryError>;
+    /// The fields of the call, as a source that a selector matches.
+    pub fn fields(&self) -> Result<FieldsView<'a>, EntryError>;
+    pub fn explanation(&self) -> Result<ExplanationView<'a>, EntryError>;
+    /// The frame, as a range of the buffer of the storage, when the reader asked for frames.
+    pub fn frame(&self, slot: FrameSlot) -> Result<RecordedFrame, EntryError>;
+    /// The call as its type, built through its checks. This is the one place that copies.
+    pub fn to_call(&self) -> Result<Call, EntryError>;
 }
 
 /// What a reader looks for, as far as a summary can tell.
@@ -223,7 +249,8 @@ pub trait Wanted {
 | Reads | From the start, from the end or from a position, forwards or backwards. A reader sees every entry that a commit covers, also while the recording runs. Entries come in the order of their positions, a batch at a time. |
 | Skips | It asks `Wanted` about every summary it has, at every level it has one, and reads no stretch that cannot hold what is wanted. A storage without summaries asks nothing and hands out everything. What it hands out is never less than what is wanted. |
 | Hands out frames | Only when the reader asks for them. A reader that asks for none gets every call with the states and the lengths of its frames, and no storage reads a frame for it. |
-| Hands out an entry | Built through the checks of its type. A storage can never hand out a call that could not have been one. |
+| Keeps a batch as it is | It stores the bytes of a batch as `recording` wrote them, in one stretch, and decodes none of them. |
+| Hands out entries where they lie | A batch is the buffer that the storage has the entries in: a range of a mapped file, or what it fetched. It starts at an address that is a multiple of 8. No storage builds a type for a reader. |
 | Says what it lost | A stretch that it cannot read is an error that names its positions, and the reader can go on behind it. |
 
 `Wanted` carries a selector to the storage without the storage knowing one.
@@ -232,23 +259,78 @@ A reader that wants everything hands in one that says yes.
 
 `recording_conformance` holds this table as a check, for any storage.
 
-### Frames are shared, not borrowed
+### Entries are read in place
 
-An entry holds a frame as the codec has it: a buffer that its owners share.
-It holds no slice with a lifetime.
+A reader gets a batch, and a batch gives views.
 
-- **On the way in**, the frame of an entry is the buffer that the session read from its socket.
-- **On the way out**, the frame is whatever buffer the storage has the bytes in.
+- **A batch is a buffer that its owners share.**
+  It is whatever the storage has the bytes in.
   A storage over a file that is mapped into memory hands out a range of the map, and copies nothing.
-  A storage that fetched the bytes from somewhere hands out what it fetched.
-  A storage that holds them in memory hands out what it holds.
+  A storage that fetched the bytes hands out what it fetched.
+  The trait hands out no slice with a lifetime, so it needs no lending types, and a batch outlives the call that returned it.
+- **A view borrows from its batch.**
+  A view of a call, of its fields, of its explanation, of a line of it, of a journal entry or of a session event is a place in the [batch](#a-batch) and nothing more.
+  Reading a value through a view reads the bytes of that value: a number where it stands, a text as the bytes it is.
+- **A view checks what it reads, when it reads it.**
+  A recording from a disk is input from outside.
+  Every step from one part of an entry to the next checks that it stays inside the buffer, and every text that it is text.
+  So a value that is damaged is an error of the read that meets it, and no view checks an entry that nobody reads.
+- **A view hands out values, and the types check them.**
+  A view of the fields gives a topic as text and an error code as a number.
+  `to_call` builds the `Call` through the checks of its types, and it is the one place where a call that could not have been one is found.
+  A reader that shows a call, or hands it to the control plane, asks for the type. A reader that matches, counts or skips does not.
+- **A selector matches a view.**
+  The view of the fields is a field source, as a live call and a call record are.
+  Matching in place needs a field source that lends its values, which `field` does not have yet: its readings own what they hold.
+  Until it does, a selector matches the fields that a view builds, and no more of the call.
+- **A frame is a range of the same kind.**
+  On the way in, the frame of an entry is the buffer that the session read from its socket.
+  On the way out, it is a range of the buffer of the storage, and it goes into the codec and into a pipeline as a frame from a socket does.
 
-So the contract lets every storage hand out a frame without a copy, and forces none to map anything.
-A frame from a recording goes into the codec and into a pipeline as a frame from a socket does.
+`recording` owns the encoding of an entry, and so the views.
+A layout decides where a batch lies, how it is found and what is said about it, and never what is in it.
+That is what lets another layout exist: it keeps the same batches in another way, and every reader reads them with the same views.
+A layout that cannot hand out the bytes of a batch in one stretch cannot be a storage.
 
-A call record is decoded, and not borrowed.
-A record is a few hundred bytes of small values, and its types check what they hold.
-Types that borrow from a storage would be a second set of the same vocabulary.
+### A batch
+
+A batch is what one commit writes: the entries since the last commit.
+`recording` lays it out, and the layout follows from what readers do.
+Almost every reader reads the fields of many calls, and almost none reads the explanation of many.
+
+```text
+batch = rows  details  frames
+```
+
+| Part | Holds | A reader |
+|---|---|---|
+| Rows | One message: the table of the texts of the batch, a row for every entry, and a row for every part of a call. A row has a fixed size, and the rows of a kind lie side by side. | Reads the rows of a whole batch in one pass: a scan, the index, a query. |
+| Details | For every call, a message of its own: its explanation. | Reads the details of one call, when someone looks at that call. |
+| Frames | The frames of the calls, back to back. | Reads one frame, when someone asks for it. |
+
+- **A row of a call holds everything that is not its explanation.**
+  Its ID, its connection, its fields, its moments, what the client received, whether a lie applied, and how the response answered each part.
+  It says where its details and its frames are, how long each is, and the checksum of each.
+- **A text is a number.**
+  The table of the batch holds each text once: a topic, a `client.id`, an address, the name of a rule.
+  A row holds the number of the text, and so does the explanation of a call.
+- **A selector compares numbers.**
+  A reader looks a value up in the table of the batch once.
+  A batch whose table does not have the value has no such call, and the reader reads none of its rows.
+  In every other batch it compares one number in each row, and a pattern is matched once against each text of the table and never against a row.
+- **A part is a row too.**
+  A call names its parts as a range of the part rows of the batch, and its explanation names a part by its place in that range.
+  A part is therefore there once for its call, however many lines of the explanation name it.
+- **The table of a batch is its finest summary.**
+  It holds every text of the batch, without a limit, so it never says `any`.
+- **Each part is checked when it is read.**
+  The rows have one checksum, which a reader checks the first time it reads the rows of the batch while the recording is open.
+  The details and the frames of a call have theirs in its row, and a reader checks one when it reads what it covers.
+  The checks of a view keep a reader inside its buffer, and they do not see a bit that flipped inside a text: the checksum does.
+
+The [measurement](#the-encoding-measured) is why.
+The fields of the 668 000 calls of a gibibyte take 82 MiB as rows, and a reader finds the calls of one `client.id` among them in 4 ms, or in 58 ms when the disk has to give them first.
+The same search over the same calls as entries of their own, each with its explanation, takes 144 ms and 1.2 s: reading in place saves the decoding, and only rows save the reading.
 
 ### Errors
 
@@ -262,6 +344,7 @@ None of them names a file, a segment or a backing.
 | Lists | `ListError` | `NotListed { reason }`. |
 | Opens | `OpenError` | `NotFound`. `WrittenByNewerVersion { written, known }`: the reader is too old. `NotReadable { reason }`: what is there is no recording. |
 | Reads | `ReadError` | `Damaged { from, to }`: these positions are lost, and the reading goes on behind them. `NotRead { reason }`: the storage did not answer, and the reading can be tried again. |
+| Reads a value through a view, or builds the type | `EntryError` | `Damaged { reason }`: the bytes are no entry, or they hold a value that its type does not take. The reader leaves the entry out, and says which position it had. |
 
 ## Handing frames to the recorder
 
@@ -331,18 +414,39 @@ Each kind describes the one below it.
 manifest                      one, small, replaced as a whole
   └─ index chunk              up to `recordings.index_size` each
        └─ data segment        up to `recordings.segment_size` each
-            └─ block          up to `recordings.block_size` each: entries, and the frames of their calls
+            └─ batch          what one commit wrote: rows, details and frames
 ```
 
 | Object | Holds | Changes |
 |---|---|---|
-| Data segment | The entries and their frames, as [blocks](#a-block). Each block says what it holds. | It grows by one block with every commit, until it is sealed. A sealed segment never changes. |
-| Index chunk | For a series of segments: where each one is, what each of its blocks holds, and their summaries. | It is replaced as a whole when a segment is sealed, until it is full. A full index chunk never changes. |
+| Data segment | The [batches](#a-batch) of the recording, one after the other, and when it is sealed a footer that sums them up. | It grows by one batch with every commit, until it is sealed. A sealed segment never changes. |
+| Index chunk | For a series of segments: the summary of each one, and where each of its batches is, with the positions, the time and the call IDs it covers. | It is replaced as a whole when a segment is sealed, until it is full. A full index chunk never changes. |
 | Manifest | The description of the recording, the list of its index chunks, each with what it covers, and the end of the recording. | It is replaced as a whole when an index chunk begins, and when the recording ends. |
 
 The segments are the recording.
 An index chunk and the manifest hold nothing that the segments do not say:
 a reader rebuilds either of them from the segments, and nothing is lost when one is missing.
+
+### Three sizes that were one
+
+An earlier form of this layout cut a segment into blocks of 4 MiB.
+A block was three things at once: what one commit wrote, what one summary covered, and what the writer held in memory.
+It was small because a reader decoded a block as a whole.
+A reader that reads in place decodes nothing, so each of the three gets the size it needs:
+
+| What | Is now | Limited by | Property | Default |
+|---|---|---|---|---|
+| What a crash can lose | The entries since the last commit. | Time. | `recordings.commit_interval` | `1s` |
+| What the writer holds in memory | One batch: its rows and details, and the handles of its frames. A commit comes early when they reach a size. | Memory, and how long one write keeps the recorder from its queue. | `recordings.batch_size` | `64MiB` |
+| What one summary covers | A segment. | How much a reader scans when the summary cannot rule the segment out: [4 ms for a gibibyte](#the-encoding-measured), or 58 ms from the disk. | `recordings.segment_size` | `1GiB` |
+
+So a block and a segment are the same thing now: the stretch that is one file, that is sealed once, and that one summary covers.
+A batch is not a level of the index.
+It is how a segment grows, and the index chunk lists the batches of a segment only to find a position or a moment in it.
+
+Inside a segment a reader needs no finer summary, because the [table of every batch](#a-batch) is one: exact, and read in place.
+
+### What it takes from Iceberg
 
 The model is the tree of metadata of Apache Iceberg: a root that lists small files of metadata, which describe the files of data and say what is in each, so a query prunes at every level.
 
@@ -350,8 +454,8 @@ The model is the tree of metadata of Apache Iceberg: a root that lists small fil
 |---|---|
 | Files never change once they are written. | A sealed segment and a full index chunk never change. |
 | New metadata is written beside the old, and one step makes it the current one. | The manifest and the index chunk that still grows are replaced in one step: a reader sees the old one or the new one, and never a mix. |
-| Every level says what is below it, with ranges, so a reader skips what cannot match. | The manifest sums up every full index chunk, and an index chunk sums up every segment and every block. |
-| No file of metadata grows with the table. | An index chunk closes at a size. The manifest grows by one small item with every index chunk, which is one for about 16 GiB of traffic. |
+| Every level says what is below it, with ranges, so a reader skips what cannot match. | The manifest sums up every full index chunk, an index chunk sums up every segment, and a batch holds the table of its texts. |
+| No file of metadata grows with the table. | An index chunk closes at a size. The manifest grows by one small item with every index chunk, which is one for about a tebibyte of traffic. |
 
 | Left out | Because |
 |---|---|
@@ -359,54 +463,52 @@ The model is the tree of metadata of Apache Iceberg: a root that lists small fil
 | Snapshots, and the history of the metadata | A recording only grows. Nobody asks what it looked like an hour ago. |
 | Commits of several writers | A recording has one writer, so nothing has to settle who was first. |
 | Rewriting, compacting and deleting data | Nobody changes a recording. |
-| Columns | A reader takes an entry whole, and a frame is bytes that only the codec reads. |
-| A change of metadata for every write | A commit of entries is one append to the segment that grows. The blocks at the end describe themselves, so no metadata changes with them. |
+| Columns | A row of a fixed size is as near as a recording comes to one. A reader of one field still reads its row, and a row is small. |
+| A change of metadata for every write | A commit of entries is one append to the segment that grows. The batches at the end describe themselves, so no metadata changes with them. |
 
 ### Bytes
 
 - **A number has a fixed size, and its lowest byte comes first.**
-  A reader reads a number from its bytes, wherever they stand.
-  Nothing is aligned, and nothing is padded.
+- **What is read in place starts at a multiple of 8.**
+  A segment header, a batch, each part of a batch, the details of each call, a footer, the items of an index chunk and the manifest each start at an offset that is a multiple of 8, with zero bytes before them where they must.
+  A file that is mapped starts at an address that is a multiple of a page, so each of them is at an address that is a multiple of 8, which the encoding needs.
+  A frame starts wherever the frame before it ends.
 - **A length counts bytes.**
   A reader checks every length against the bytes that are there before it uses it.
   A recording can come from anywhere, so a reader trusts nothing that it says.
 - **A checksum is a CRC-32C**, the checksum that Kafka gives its record batches.
-- **What has a structure is a Protocol Buffers message.**
-  A description, a summary, the body of an entry, the items of an index chunk and the manifest are messages of one schema.
-  Every field of a message has a number, and a reader steps over a field by its length.
+- **What has a structure is a Cap'n Proto message, without packing.**
+  A description, a summary, the rows and the details of a batch, a footer, the items of an index chunk and the manifest are messages.
+  A message is laid out as a reader reads it, so nothing is decoded: a reader follows a pointer to the part it wants.
 - **What is a frame is the frame.**
   The bytes of a Kafka frame stand in a segment as they were on the wire, without the four bytes of their length.
 
 The layout therefore has two layers.
-Its framing is fixed binary: marks, lengths and checksums, which a reader finds without decoding anything.
-What it says is in messages of a schema that the layout owns.
+Its framing is fixed binary: marks, lengths and checksums, which a reader finds without reading a message.
+What it says is in messages, which a reader reads where they lie.
 
 ### The schema
 
-The types of a recording are the contract's, and their bytes are the layout's.
-`recording_segments` holds the schema of its messages, and the conversion between a message and the type it stands for.
+`recording` holds the schema of what the contract owns: the rows and the details of a batch, a description and a summary.
+`recording_segments` holds the schema of its own objects, which names those: a footer, the item of an index chunk, and the manifest.
 
-- **Reading builds every type through its own checks**, as reading a workspace file does.
-  A message that could not have been a call is damage, and the reader says so.
 - **A value is a number where it is one.**
   An API, an error code, an instant and a count are numbers, and not the text that a person reads.
-  Text is for what is text: a topic, a `client.id`, the name of a rule.
-- **The fields of a call are one message inside the call.**
-  A reader that only matches a selector decodes that message, and steps over the explanation by its length.
 - **The schema is a file of the crate.**
   A tool in another language reads a recording with it.
-- **The conversion is checked against the types.**
+- **Writing is one conversion, and it is checked against the types.**
+  `recording` writes an entry into a batch from the types of `call` and `journal`, and a view builds them again.
   A test writes values of every type and reads them back, so a type that grows without its message fails a test.
 
 The control plane keeps its own encoding.
-It sends a call from a recording as it sends a live one.
+It sends a call from a recording as it sends a live one, from the type.
 
 Every object starts with a mark of 8 bytes and the [version](#versions) of the layout.
 
 ### A data segment
 
 ```text
-segment = segment header  block …  end
+segment = segment header  batch …  footer
 ```
 
 | Offset | Size | The segment header holds |
@@ -420,84 +522,42 @@ segment = segment header  block …  end
 
 Every segment holds the description, so every segment says which recording it belongs to, and a recording without a manifest still knows what it is.
 
-The last segment of a recording that ended in order ends with the end:
+A batch in a segment has a header of 48 bytes, and then its three parts:
 
-| Offset | Size | The end holds |
+| Offset | Size | The batch header holds |
 |---|---|---|
-| 0 | 4 | The mark of the end: `GMQX`. |
-| 4 | 4 | The checksum of the bytes 8 to 39. |
-| 8 | 8 | The number of entries of the recording. |
-| 16 | 8 | The number of its calls. |
-| 24 | 8 | The instant the recording ended, on the clock of the environment. |
-| 32 | 1 | How it ended: `1` someone stopped it, or its environment stopped, `2` the recorder fell behind. |
-| 33 | 7 | Zero. |
+| 0 | 4 | The mark of a batch: `GMQB`. |
+| 4 | 4 | The checksum of the bytes 8 to 47. |
+| 8 | 8 | The length of the batch, with its frames. |
+| 16 | 8 | The position of its first entry. |
+| 24 | 4 | The number of its entries. |
+| 28 | 4 | The length of the rows. |
+| 32 | 4 | The checksum of the rows. |
+| 36 | 1 | The compression of the details: `0`, none. See [compression](#compression). |
+| 37 | 3 | Zero. |
+| 40 | 8 | The length of the details. |
+
+The frames take the rest of the batch.
+
+The writer ends a segment with a footer when it seals it:
+
+| The footer holds | |
+|---|---|
+| The mark of a footer: `GMQF`, and the checksum of the footer. | 8 bytes. |
+| A message: the [summary](#summary) of the segment, the list of its batches as the [index chunk](#an-index-chunk) has it, and the end of the recording in its last segment. | |
+| The length of the footer, and the mark of an end: `GMQE`. | 16 bytes, the last of the segment. |
+
+A reader finds the footer of a sealed segment from its last 16 bytes.
+A segment without a footer is the one that still grows, or the one that a crash cut short.
+
+The end of a recording says how it ended: someone stopped it, or its environment stopped, or the recorder fell behind.
+It holds the instant, and the numbers of the entries and the calls of the recording.
 
 A recording that [stops by itself](storage.md#recordings) still ends in order.
-The recorder writes everything it took from its queue, and then the end.
+The recorder writes everything it took from its queue, and then the footer with the end.
 Its last entry is the journal entry that says why it stopped, and the end says it again, so whoever lists the recordings reads no entry.
 A recording that could not be written has no end, because a recording cannot say that it could not be written.
 The journal in memory and the control plane say it.
-
-### A block
-
-A block is what one commit writes: the entries since the last commit, and the frames of their calls.
-
-```text
-block = block header  summary  entries  frames
-```
-
-| Offset | Size | The block header holds |
-|---|---|---|
-| 0 | 4 | The mark of a block: `GMQB`. |
-| 4 | 4 | The checksum of the bytes 8 to 47. |
-| 8 | 8 | The length of the block. |
-| 16 | 8 | The position of its first entry. |
-| 24 | 4 | The number of its entries. |
-| 28 | 4 | The length of the summary. |
-| 32 | 4 | The length of the entries. |
-| 36 | 4 | The checksum of the summary and the entries. |
-| 40 | 1 | The compression of the entries: `0`, none. See [compression](#compression). |
-| 41 | 7 | Zero. |
-
-The summary is the [summary](#summary) of the block, as a message.
-The frames take the rest of the block.
-
-The entries and the frames stand apart on purpose.
-The entries are small and dense, and almost every reader wants all of them: the index, a query, a replay.
-The frames are large, and most readers want none of them.
-A reader of the entries of a recording never touches a byte of a frame.
-
-An entry:
-
-| Offset | Size | Holds |
-|---|---|---|
-| 0 | 4 | The length of the body. |
-| 4 | 1 | The kind: `1` a session event, `2` a call, `3` a journal entry. |
-| 5 | … | The body: a message, and for a call 72 bytes before it. |
-
-The 72 bytes of a call say where its frames are:
-
-| Offset | Size | Holds |
-|---|---|---|
-| 0 | 8 | Where the frames of the call start, in bytes from the start of the frames of the block. |
-| 8 | 16 | The slot of the request. |
-| 24 | 16 | The slot of the upstream response. |
-| 40 | 16 | The slot of the truth. |
-| 56 | 16 | The slot of the delivered response. |
-
-| Offset | Size | A slot holds |
-|---|---|---|
-| 0 | 1 | The [state](#entries) of the frame: `0` none, `1` whole, `2` redacted, `3` withheld, `4` the same as the truth. |
-| 1 | 3 | Zero. |
-| 4 | 4 | The length the frame had on the wire. |
-| 8 | 4 | The length of the frame in the block. |
-| 12 | 4 | The checksum of the frame in the block. |
-
-The frames of a call stand in the order of their slots, back to back.
-State `4` is for the delivered response alone: the client received the truth, byte for byte, which is the usual case, and the block holds it once.
-
-The slots are fixed binary, and not a part of the record, for two readers:
-one that wants a frame decodes no record, and one that wants a record skips 72 bytes.
 
 ### An index chunk
 
@@ -514,18 +574,19 @@ index chunk = index header  item …
 | 10 | 6 | Zero. |
 | 16 | 8 | The position of the first entry that the chunk describes. |
 
-An item is a length of 4 bytes, a checksum of 4 bytes, and a message that describes one segment:
+An item is a length of 4 bytes, a checksum of 4 bytes, and a message that describes one segment.
+It is the message of the footer of that segment:
 
 | Key | Holds |
 |---|---|
 | `first` | The position of the first entry of the segment, which is the name of the segment. |
 | `entries` | The number of its entries. |
 | `length` | The length of the segment in bytes. |
-| `summary` | The [summary](#summary) of the segment: the sum of the summaries of its blocks. |
-| `blocks` | For every block of the segment: where it starts, its length, the position of its first entry, the number of its entries, the lengths of its summary and its entries, and its summary. |
+| `summary` | The [summary](#summary) of the segment. |
+| `batches` | For every batch of the segment: where it starts, the lengths of its rows and its details, the position of its first entry, the number of its entries, and the ranges of time and of call IDs it covers. |
 
-An index chunk holds everything that a reader needs to pick a block, and to read the entries of that block with one read.
-It finds an entry by its position, by its time and by its call ID, because every block says its range of each.
+An index chunk holds everything that a reader needs to pick a segment, and to go to the batch that holds a position, a moment or a call ID.
+The list of the batches is a list of rows of a fixed size, which a reader searches in place.
 
 An index chunk describes sealed segments only.
 
@@ -554,27 +615,36 @@ With a list of names alone, every reader would read every index chunk.
 
 | Level | Closes when | Property | Default |
 |---|---|---|---|
-| Block | The recorder commits, or the entries and frames that wait reach a size. The call that reaches the size still belongs to the block. | `recordings.block_size` | `4MiB` |
-| Data segment | A commit takes it to a size. A block is never cut in two. | `recordings.segment_size` | `256MiB` |
-| Index chunk | The next segment would take it over a size. | `recordings.index_size` | `8MiB` |
-| Summary | A field has more values than a count, and says `any`. | `recordings.summary_values` | `64` |
+| Batch | The recorder commits, or the rows, details and frames that wait reach a size. The call that reaches the size still belongs to the batch. | `recordings.commit_interval`, `recordings.batch_size` | `1s`, `64MiB` |
+| Data segment | A commit takes it to a size. A batch is never cut in two. | `recordings.segment_size` | `1GiB` |
+| Index chunk | The next segment would take it over a size. | `recordings.index_size` | `32MiB` |
+| Summary | A field has more values than a count, and says `any`. | `recordings.summary_values` | `1024` |
 
 Neither a count of entries nor an age closes a segment.
 A thousand heartbeats and a thousand fetches differ a thousandfold in bytes, so a count bounds nothing.
 An age is for a log that deletes its old segments, and nothing deletes a part of a recording.
-What a crash can lose is bounded by `recordings.commit_interval`, and not by the size of a segment.
+
+What speaks for each default, and against a larger one:
+
+| Property | A larger value | A smaller value |
+|---|---|---|
+| `commit_interval` | Loses more in a crash. | Makes more batches, each with a table of its own, which repeats the texts that the batch before it had. |
+| `batch_size` | Holds more in memory, and keeps the recorder longer at one write: 64 MiB take about 60 ms at a gibibyte a second. | Commits more often under heavy traffic, for nothing. |
+| `segment_size` | Makes a reader scan more when a summary cannot rule a segment out, and a summary says `any` sooner. Leaves more for a reader to walk after a crash. | Makes more files: a pebibyte is a million segments of a gibibyte. |
+| `index_size` | Rewrites more with every segment: half of it on average, which is 1.6% of a gibibyte at 32 MiB. | Makes a longer manifest. |
+| `summary_values` | Makes a larger index. | Lets a summary say `any` for a field that a query asks for. |
 
 ### Writing
 
-The layout holds the entries since the last commit in memory, encoded, with the handles of their frames.
+The layout holds the entries since the last commit in memory, as a batch that `recording` builds, with the handles of their frames.
 
 | When | The layout writes, in this order |
 |---|---|
 | The recording starts | The manifest, with the description and no index chunk. Then the first segment, with its header. |
-| A commit | One block, appended to the segment that grows. |
-| The segment reached its size | It seals the segment. It writes the index chunk that grows again, now with this segment. It creates the next segment. |
+| A commit | One batch, appended to the segment that grows. |
+| The segment reached its size | It appends the footer, and seals the segment. It writes the index chunk that grows again, now with this segment. It creates the next segment. |
 | An index chunk begins: the first one, or the one after a full one | It writes the new index chunk, with its first segment. Then it replaces the manifest, which lists the new one and sums up the full one before it. |
-| The recording ends | A commit. The end, appended to the segment. Then it seals the segment, writes the index chunk again, and replaces the manifest, which now holds the end. |
+| The recording ends | A commit. The footer, with the end. Then it seals the segment, writes the index chunk again, and replaces the manifest, which now holds the end. |
 
 Two rules make every crash harmless:
 
@@ -588,7 +658,7 @@ A write that fails ends the recording.
 The layout says so and takes nothing more.
 Nobody opens a recording to write to it again: a new recording has a new [ID](identity.md#recording-id).
 
-The layout holds at most one block in memory: `recordings.block_size`, and one call more.
+The layout holds at most one batch in memory: `recordings.batch_size`, and one call more.
 
 ### Opening
 
@@ -602,25 +672,29 @@ A reader works from the top down, and trusts each level only as far as it reache
 3. **The segments behind the index chunks.**
    The reader lists the segments from the first position that no index chunk describes.
    That is one segment while a recording runs, and one after a crash.
-   It walks each of them: the segment header, then block header after block header, each with its summary.
-   It checks every mark and every checksum, and that the whole block is there, and steps over the block by its length.
+   A segment with a footer says everything about itself there.
+   The reader walks a segment without one: the segment header, then batch header after batch header.
+   It checks every mark and every checksum, and that the whole batch is there, and steps over the batch by its length.
 4. **The end of the recording.**
-   The end in the last segment means that the recording ended in order.
-   Otherwise the last block that is whole is where the recording stops: it still runs, or it was cut short.
+   The end in the footer of the last segment means that the recording ended in order.
+   Otherwise the last batch that is whole is where the recording stops: it still runs, or it was cut short.
 
 A recording that was cut short opens like any other.
-The reader says that it was cut short, and how many bytes behind the last whole block it left unread.
+The reader says that it was cut short, and how many bytes behind the last whole batch it left unread.
 It changes nothing in the backing.
 
 The walk follows lengths that a checksum covers, and never searches for a mark,
-so the bytes of a frame can never pass for the start of a block.
+so the bytes of a frame can never pass for the start of a batch.
+It reads 48 bytes of every batch, and a segment that grew for an hour at one commit a second has 3600 of them.
+
+The segment that still grows has no summary, and needs none: a reader reads the table of each of its batches.
 
 | What is missing or damaged | The reader |
 |---|---|
 | The manifest | Lists the index chunks and the segments itself, and takes the description from the header of a segment. |
-| An index chunk, or an item of one | Walks the segments that it described, as in step 3. |
-| A block in the middle of a sealed segment | Steps over it with the length that the index chunk has, and reports its positions as lost. |
-| The end of the segment that grew | Stops at the last whole block. |
+| An index chunk, or an item of one | Reads the footers of the segments that it described. |
+| A batch in the middle of a sealed segment | Steps over it with the length that the index chunk has, and reports its positions as lost. |
+| The end of the segment that grew | Stops at the last whole batch. |
 
 Recovery is a function: it takes what the backing lists and the bytes it reads, and returns what the recording holds.
 It runs in a test without a file.
@@ -630,57 +704,74 @@ It runs in a test without a file.
 A query hands in what it wants, and reads from the top down:
 
 1. It reads the manifest, and keeps the index chunks whose summary can hold what it wants.
-2. It reads those index chunks, and keeps the segments, and then the blocks, whose summary can hold it.
-3. It reads the entries of each block that is left, with one read from the start of its summary to the end of its entries, and decides every call with the selector.
-4. It reads a frame only when someone asks for the frames of a call.
+2. It reads those index chunks, and keeps the segments whose summary can hold it, and of each segment the batches in the range of time or of call IDs that it asks for.
+3. It looks its values up in the table of each batch that is left, and reads no row of a batch that does not have them.
+4. It reads the rows of the batches that do, and compares numbers.
+5. It reads the details of a call only when someone looks at the call, and a frame only when someone asks for the frame.
 
 | A reader that wants | Reads |
 |---|---|
-| The latest calls | The manifest, the last index chunk, and the last blocks. |
-| A position, a moment or a call ID | The manifest, one index chunk, one block. |
-| The calls a selector matches | The manifest, the index chunks that can match, and the entries of the blocks that can match. |
-| Everything, as the index of the engine does when a recording opens | The entries of every block, in order, and no frame. |
+| The latest calls | The manifest, the last index chunk, and the rows of the last batches. |
+| A position, a moment or a call ID | The manifest, one index chunk, and one row of one batch. |
+| The calls a selector matches | The manifest, the index chunks and the segments that can match, the tables of their batches, and the rows of the batches that have the value. |
+| Everything, as the index of the engine does when a recording opens | The rows of every batch, in order, and neither details nor frames. |
 
 A summary gets coarser with every level, so the levels prune different things.
-A range of time, of positions or of call IDs prunes at every level, because each level covers one stretch.
-A value that is rare prunes at every level too.
-A value that half of the calls have prunes nowhere, and such a query reads most of the recording whatever the layout is.
+A range of time, of positions or of call IDs prunes at every level, down to a batch.
+A value that is rare prunes at every level too, and the table of a batch is exact.
+A value that half of the calls have prunes nowhere, and such a query reads the rows of the whole recording: less than a tenth of it.
 
 ### Sizes
 
-The numbers below are estimates for a metadata-only recording: about 1 KiB for a call with its frames, and about 2 KiB of index for a block.
-A call record [measured](#the-encoding-measured) 470 to 700 bytes.
-The frames and the index are not measured yet.
+The numbers below are estimates for a metadata-only recording: about 1.5 KiB for a call with its frames, and about 32 KiB of index for a segment.
+The rows of the fields [measured](#the-encoding-measured) 130 bytes for a call.
+A row that also holds the moments of its call and what the client received is larger, and is not measured yet.
+Neither are the details, the frames and the index.
 
 | | With the defaults |
 |---|---|
-| A block | 4 MiB: about 4000 calls. |
-| A segment | 256 MiB: 64 blocks, and about 130 KiB of index. |
-| An index chunk | 8 MiB: about 64 segments, which is 16 GiB of traffic. |
-| An item of the manifest | About 4 KiB for an index chunk. |
+| A batch | One second of traffic, and 64 MiB at most. |
+| A segment | 1 GiB: about 700 000 calls, with 82 MiB of rows. |
+| An index chunk | 32 MiB: about 1000 segments, which is a tebibyte of traffic. |
+| An item of the manifest | About 40 KiB for an index chunk. |
 
 | A recording of | Segments | Index chunks | All index chunks | The manifest |
 |---|---|---|---|---|
-| 1 GiB | 4 | 1 | 0.5 MiB | 5 KiB |
-| 100 GiB | 400 | 7 | 50 MiB | 30 KiB |
-| 10 TiB | 40 960 | 640 | 5 GiB | 2.5 MiB |
-| 1 PiB | 4.2 million | 65 536 | 512 GiB | 256 MiB |
+| 100 GiB | 100 | 1 | 3 MiB | 1 KiB |
+| 10 TiB | 10 240 | 10 | 320 MiB | 400 KiB |
+| 1 PiB | 1 048 576 | 1024 | 32 GiB | 40 MiB |
 
-- The index is about 0.05% of the traffic it describes.
-- The index chunk that grows is written again for every segment: 4 MiB on average for 256 MiB of traffic, which is 1.6% more to write.
-- The manifest is replaced once for every 16 GiB of traffic.
-- A recording of 10 TiB opens with one read of 2.5 MiB, and its latest calls take three reads.
-- At a petabyte the manifest is the one object that got large, and a recording of that size wants larger segments and larger index chunks, which the properties give it.
-  A second level of index chunks is a later [version](#versions) of the layout, and no change of either contract.
+- The index is about 0.003% of the traffic it describes.
+- The index chunk that grows is written again for every segment: 16 MiB on average for a gibibyte of traffic, which is 1.6% more to write.
+- The manifest is replaced once for every tebibyte of traffic.
+- A recording of 10 TiB opens with one read of 400 KiB, and its latest calls take three reads.
+- A query that no summary helps reads the rows of every segment: 4 ms for each from memory, 58 ms from the disk of the measurement, which is 10 minutes for 10 TiB on one core and that disk.
+- A recording of a pebibyte is a million files in one directory. It wants a larger `segment_size`, which the property gives it.
+
+### Keeping entries small
+
+A message that is read in place is larger than one that is decoded: it keeps the room of every number, and a pointer to every part.
+A call record [measured](#the-encoding-measured) 1500 to 1700 bytes as a message of its own, against 470 to 700 as a message that is decoded.
+A [batch](#a-batch) brings that down, and each of these leaves a reader reading in place:
+
+| What | Saves | State |
+|---|---|---|
+| A batch holds each text once. | The texts of a call are 650 of its 1600 bytes, and 100 as numbers into the table. | Measured for the fields: 130 bytes for a call, with its parts and its share of the table. |
+| A call names each of its parts once. Its explanation points at them. | The parts that an explanation repeats, line after line. | In the design. The details are not measured yet. |
+| A filesystem that compresses. | Whatever it saves, under the map. | Nothing of ours. |
+
+The packed form of the encoding is not one of them.
+It leaves out the zero bytes, and a reader must unpack a message before it reads it.
 
 ### Compression
 
 Version 1 compresses nothing.
 
-The byte for it is in the header of a block, and it covers the entries alone.
-The entries are where compression pays: the same names of topics, clients and rules repeat in every entry.
-A reader decodes them anyway, so it loses nothing when they are compressed.
-The frames stay plain in every version: a frame that is compressed in a segment cannot be handed out without a copy,
+The rows are never compressed: they are what a reader scans in place.
+Compressing the details of a batch would save bytes, and a reader would unpack them into memory before the first view of an explanation: one copy, and still no decoding.
+The byte for it is in the header of a batch, so a later version can offer it as a choice of a recording.
+Whether it should is not decided, and wants a measurement on real traffic: the calls of the bench are too alike to say what compression saves.
+The frames stay plain in every version: a frame that is compressed cannot be handed out without a copy,
 and the record batches in it are often compressed already.
 
 ## The segment backing
@@ -729,15 +820,19 @@ pub trait SegmentBacking {
   The layout frames what it appends, so it finds the end of a torn segment by itself.
   It frames nothing against a manifest that is half new, so the backing must never show one.
 - **A read is a pull, and a segment is a stream of pulls.**
-  The layout always knows what it wants next: 48 bytes of a block header, the entries of a block, the frames of one call.
-  It asks for that range, and no read is larger than a block.
+  The layout always knows what it wants next: 48 bytes of a batch header, the rows of a batch, the details of one call, one frame.
+  It asks for that range, and no read is larger than the rows of a batch.
   A reader that wants a segment from an offset on pulls it piece by piece.
 - **A read hands out a shared buffer.**
   The backing on files maps a segment into memory and hands out a range of the map: the system reads from the disk only the pages that someone looks at, and no byte is copied.
   A backing that fetches hands out what it fetched.
-  The layout cuts entries and frames out of that buffer, and every frame it hands on shares it.
+  The layout cuts rows, details and frames out of that buffer, and every view and every frame it hands on shares it.
+- **A read keeps the multiples of 8.**
+  The bytes of an offset that is a multiple of 8 stand at an address that is a multiple of 8.
+  A map does that by itself, and a backing that fetches makes its room that way.
+  The same holds for an index chunk and for the manifest, which are read from their start.
 - **An append takes pieces.**
-  The layout hands over the header, the summary and the entries of a block as one buffer, and every frame as the buffer it already is.
+  The layout hands over the header, the rows and the details of a batch as buffers of its own, and every frame as the buffer it already is.
   It never joins them, so a frame is copied once, by the backing, into the place where it stays.
 - **A backing knows no entry.**
   It keeps bytes under names, and it never looks into them.
@@ -809,8 +904,9 @@ Every object holds the version of the layout.
   a new kind of entry, a new state of a slot, a compression, a new level, a new field or a new value in a message.
 - **A message only grows.**
   A later version adds a field that a reader of an old recording does without, or a value that an old recording never has.
-  The number of a field is never used again, and its meaning never changes.
-  When a message must change in another way, the reader keeps the old message for the old version, and lifts it to the new one.
+  A field keeps its number, its type and its meaning for good, and a new field takes the next number.
+  An old recording then reads with the schema of today: a field that it does not have reads as its default.
+  When a message must change in another way, the reader keeps the old schema for the old version.
 - **The bytes that are zero today are free for a later version.**
 - **Version 1 is fixed with the first release.**
   Until then it changes with the types it holds, and no recording of an earlier build has to open.
@@ -835,8 +931,8 @@ The control plane sends a call from a recording in the encoding it sends every c
 
 | Reader | Reads | The storage gives it |
 |---|---|---|
-| The [index](../domains/observation.md#index), which the engine rebuilds when it opens a recording | Every call record, once. | The entries of every block in order, and no frame. The index of the engine is not stored. |
-| A [query with a selector](control-plane.md#drafts), saved or draft, from the UI, the CLI or a test | The call records that the selector matches. | `Wanted`, which skips at every level. The manifest and the index chunks that a query read stay in memory, so a draft that changes with every key reads them once. |
+| The [index](../domains/observation.md#index), which the engine rebuilds when it opens a recording | The fields of every call, once. | The rows of every batch in order. It reads the fields in place, and neither an explanation nor a frame. The index of the engine is not stored. |
+| A [query with a selector](control-plane.md#drafts), saved or draft, from the UI, the CLI or a test | The rows of the batches that can match, and the details of the calls that someone then looks at. | `Wanted`, which skips at every level. The manifest and the index chunks that a query read stay in memory, so a draft that changes with every key reads them once. |
 | A [test](control-plane.md#tests) that asserts on verdicts and explanations | The same. | The explanation is a part of every call record. |
 | The UI that shows the latest calls | The last entries. | A reading from the end, backwards. |
 | [Replay](crates.md#the-pipeline-is-sans-io) | The description, every entry, and the request and the truth of every call. | The rules that were armed at the start, the journal entries that changed them, the sessions, and the frames, which go into a pipeline without a copy. The record of every call holds the verdict and the explanation to compare with. |
@@ -877,10 +973,10 @@ recordings:
   queue_entries: 10000    # the entries that may wait for the recorder
   queue_size: 256MiB      # the bytes of the frames that may wait with them
   commit_interval: 1s     # how long an entry waits at most before it is in the recording for good
-  block_size: 4MiB        # the entries and frames that one block holds
-  segment_size: 256MiB    # the size at which a data segment is sealed
-  index_size: 8MiB        # the size at which an index chunk is full
-  summary_values: 64      # the values of one field that a summary lists
+  batch_size: 64MiB       # what waits for a commit at most, before the commit comes early
+  segment_size: 1GiB      # the size at which a data segment is sealed
+  index_size: 32MiB       # the size at which an index chunk is full
+  summary_values: 1024    # the values of one field that a summary lists
 ```
 
 A size is a number of bytes with its unit.
@@ -895,45 +991,91 @@ The others are the segment layout's.
 | What is the first layout? | Data segments, index chunks that describe them, and a manifest that lists the index chunks. | One file with a summary in every chunk. A query had to walk every chunk of it, and a recording could not grow past one file. |
 | What does the manifest say about an index chunk? | Where it starts, and for a full one what it covers and the sum of its summaries. | A list of names alone. A reader would read every index chunk to find a position, a moment or a topic. |
 | Where do the bytes of the layout live? | Behind a second contract of three kinds of object. Files are the first backing. | A layout that opens files itself. It could not be tested without a disk, and could never move to an object store. |
-| Does a reader copy? | No frame. A frame is a buffer that is shared, from the socket to the storage and from the storage to the codec. Records are decoded. | Slices that borrow from the storage. The trait would need lending types, and every storage would have to hold its bytes in one place. |
-| Which encoding? | Framing of our own around the frames, and Protocol Buffers messages for what has a structure. See [the encoding, measured](#the-encoding-measured). | JSON, the forms that the types have already: two and a half times the bytes and more than twice the time to write, on the thread that must keep up. CBOR: slower than JSON to read, for a quarter fewer bytes. Cap'n Proto: a scan in place, for the bytes of JSON. An encoding that copies the layout of the types in memory: every change of a type would end every old recording. |
-| What closes each level? | A size. An interval commits. | A count of entries, which bounds neither memory nor loss. An age for segments, which only a log with retention needs. |
+| Does a reader copy or decode? | Neither. A batch is a buffer that is shared, and a reader reads an entry through views into it. A frame is a range of the same buffer. Only a reader that asks for a `Call` gets one built. | Entries that are decoded into their types. Every reader would pay for the whole of every call, also for the one field it looks at. |
+| Which encoding? | Framing of our own around the frames, and Cap'n Proto messages, without packing, for what has a structure. See [the encoding, measured](#the-encoding-measured). | FlatBuffers: half the bytes when a block is one buffer, and a check of the whole buffer before the first read of it. An archive of the layout of the types in memory: the fastest, with no way to grow a type and no reader in another language. Protocol Buffers and JSON: smaller or plainer, and decoded. |
+| Who owns the encoding of an entry? | The contract. A layout keeps batches and never looks into one. | The layout. Views would be the layout's, and a reader would be written against one layout. |
+| What closes each level? | A size, and for a batch an interval. | A count of entries, which bounds neither memory nor loss. An age for segments, which only a log with retention needs. |
+| Is a block a level of its own? | No. A commit writes a batch, a summary covers a segment, and the table of a batch is exact. See [three sizes that were one](#three-sizes-that-were-one). | Blocks of 4 MiB, each with a summary. They were small for a reader that decodes a block, and a reader that reads in place does not. |
+| How is a batch laid out? | The fields of its calls as rows side by side, each text once, and the explanation of a call apart. | Each entry as a message of its own. A reader of one field would still read past every explanation, and from a disk that is the whole cost. |
 | What is in a summary? | The values of every field, as lists with a limit. | Bloom filters, which answer `is` and cannot answer `matches`. Ranges of values, which no operator asks for. |
 | What is left after a crash? | Everything that was committed. The segments describe themselves, so a missing index chunk or manifest is rebuilt from them. | A manifest that must be right. A crash between two writes would then lose what the segments still hold. |
 | How does metadata change? | An object is written before what describes it, and a description is replaced in one step. | Changing an index or a manifest in place, which a crash can leave half done. |
 | Where is the recording mode applied? | In `recording`, where an entry is made. A storage never sees what must not be kept. | In the engine, where every caller would have to remember it. In a layout, where every layout would have to. |
 | What does metadata-only keep of a frame? | The frame, without the keys, values and headers of its records. | No frame at all. The usual recording of a real cluster could then seed no World and run no replay. |
 | Is a recording one file? | No. It is a directory of segments, and whoever reads it reads it through the storage contract. Whether it exports to one file is not decided. | One file for each recording. A recording can be many gigabytes, and one file of that size has to be walked to be queried. |
-| Is a recording compressed? | Not in version 1. A later version compresses the entries of a block, and never the frames. | Compression of whole blocks, which would end the frames without a copy. |
+| Is a recording compressed? | Not in version 1. Whether a later version offers it for the details of a batch is [not decided](#compression). Never the rows, and never the frames. | Compression of whole batches from the start, which ends reading from the map before anyone measured what it saves. |
 
 ### The encoding, measured
 
-One call record in four encodings, built from the real types: a Produce for two partitions with three lines of explanation, and a Fetch for five partitions with two.
-The numbers are the mean of both calls, on one core of one machine, in November 2026.
-Frames are not a part of them.
+One call record in six encodings, built from the real types: a Produce for two partitions with three lines of explanation, and a Fetch for five partitions with two.
+Frames are not a part of it, and every read starts from bytes that nobody trusts.
 
-| | Bytes | Write | Read to a `Call` | Find one field: the whole `Call` | Find one field: the least a reader can do |
-|---|---|---|---|---|---|
-| JSON, the forms the types have | 1470 | 4.2 µs | 6.8 µs | 6.7 µs | 2.1 µs: the fields, and the rest skipped as text |
-| CBOR, the same forms | 1110 | 4.7 µs | 10.6 µs | 11.0 µs | 6.0 µs |
-| Protocol Buffers | 580 | 1.9 µs | 3.5 µs | 3.8 µs | 0.34 µs: the fields, and the rest stepped over |
-| Cap'n Proto | 1600, or 770 packed | 1.9 µs | 4.7 µs | 4.4 µs | 0.06 to 0.11 µs: in place, nothing decoded |
+The machine: an AMD Ryzen 7 255 with 8 cores and 7 GiB of memory, Debian 13, ext4 on a disk that gave 0.8 GiB a second.
+The code was built for that processor.
+Every number is the median of its runs, on one core.
 
-- **Half of the time to read is the types.**
-  Building a `Call` from plain values through its checks takes about 2 µs, whatever the encoding is.
-  No encoding gets under that for a reader that wants the call.
-- **Writing is what the recorder must keep up with.**
-  One thread writes about 240 000 calls a second as JSON and about 530 000 as Protocol Buffers, before it redacts a frame or waits for a disk.
-- **Zero-copy wins the scan, and only the scan.**
-  Cap'n Proto finds a field in a third to a sixth of the time of Protocol Buffers.
-  It pays with the bytes of JSON, because a message that is read in place is not packed, and it reads a whole `Call` no faster.
-- **The fields get no part of their own in a second encoding.**
-  A scan with Protocol Buffers decodes the fields and steps over the explanation: about 2.4 ms for a block of 4 MiB, which holds 7000 calls.
-  A reader that builds the real fields for a selector takes 1.3 µs for a call.
-  The summaries keep a query from most blocks before that.
-  A part that is read in place would be a third schema of the same fields, for the difference.
+**One entry.** The mean of the two calls.
 
-What Protocol Buffers costs is a second schema: a message for every type of an entry, and the conversion both ways.
-For the calls of this measurement the conversion was about 300 lines, next to the messages, and `Explanation` is most of it.
-A test holds the two in step.
-In return, the rules for growing a message are known ones, and a tool in Java or Python reads a recording with the schema.
+| | Bytes | Write | Check before a read | One field | Every value, through views | To a `Call` |
+|---|---|---|---|---|---|---|
+| JSON | 1475 | 4.0 µs | — | 1.17 µs | — | 6.2 µs |
+| CBOR | 1110 | 4.5 µs | — | 7.95 µs | — | 10.4 µs |
+| Protocol Buffers | 580 | 2.2 µs | — | 0.27 µs | — | 3.3 µs |
+| Cap'n Proto | 1600 | 2.5 µs | None: it checks each step | 0.06 µs | 1.5 µs | 4.2 µs |
+| FlatBuffers | 1390 | 4.0 µs | 2.6 µs | 0.01 µs | 0.23 µs | 5.5 µs |
+| An archive of the layout of the types in memory | 1730 | 2.5 µs | 0.14 µs | 0.005 µs | 0.05 µs | 2.9 µs |
+
+The first three are decoded, and are here to compare with: their one field is the least decoding that finds it.
+For the last three, the one field and every value are read through a view, after the check where there is one.
+A journal entry is 100 to 130 bytes in the last three.
+
+**A scan for one `client.id`**, over entries that stand one after the other, each a message of its own.
+A block of 4 MiB in memory, and then files through a map: from the disk, with none of their pages in memory, and again from memory.
+
+| | 4 MiB | 64 MiB: disk, memory | 256 MiB | 1 GiB | Calls in the gibibyte | For a call: memory | Disk |
+|---|---|---|---|---|---|---|---|
+| JSON | 3.3 ms | 86 ms, 54 ms | 352, 217 | 1353, 874 | 715 000 | 1.2 µs | 1.9 µs |
+| CBOR | 29.7 ms | 507, 470 | 1990, 1867 | 7994, 7457 | 935 000 | 8.0 µs | 8.6 µs |
+| Protocol Buffers | 1.9 ms | 88, 34 | 354, 131 | 1274, 520 | 1 785 000 | 0.29 µs | 0.71 µs |
+| Cap'n Proto | 0.16 ms | 75, 8.5 | 288, 36 | 1190, 144 | 668 000 | 0.22 µs | 1.8 µs |
+| FlatBuffers | 7.4 ms | 188, 128 | 716, 512 | 2893, 2031 | 766 000 | 2.7 µs | 3.8 µs |
+| An archive of the layout in memory | 0.33 ms | 79, 7.0 | 317, 26 | 1254, 107 | 619 000 | 0.17 µs | 2.0 µs |
+| **Cap'n Proto, as [rows](#a-batch)**: the fields of the calls of the Cap'n Proto line | | 3.9, 0.03 | 16, 0.25 | 58, 4.4 | 668 000, in 82 MiB | 0.007 µs | 0.09 µs |
+
+- **The time grows with the size, in a straight line.**
+  A file of four times the size takes four times as long, from the disk and from memory, in every encoding.
+  Nothing in a scan gets worse with a larger stretch, so nothing in a scan asks for a small one.
+- **From the disk, the bytes are the cost.**
+  Every encoding reads at the speed of the disk, so what counts is how many bytes a call takes.
+  Entries that are read in place are large, and from the disk a scan of them is slower for a call than one that decodes a small message: 1.8 µs against 0.71 µs.
+- **From memory, reading in place wins, by less than one entry promises.**
+  A field of one entry takes 0.06 µs. Over a gibibyte it is 0.22 µs, because the processor waits for the memory of the explanations between the fields.
+- **Rows are where reading in place pays.**
+  The fields of the same calls, side by side and with each text once, are a twelfth of the bytes.
+  A scan of them is 20 times faster than the entries from the disk and 30 times from memory, and 8 and 40 times faster for a call than decoding the smallest message.
+- **Half of the time to a `Call` is the types.**
+  Building a `Call` from plain values through its checks takes 2 µs, whatever the encoding is.
+  A reader that wants the type gains nothing from reading in place, and a reader that wants a field gains all of it.
+
+What decides between the three that are read in place is what each asks before a reader may trust what it reads:
+
+| | Checks | Grows | Asks of the address | Read in other languages |
+|---|---|---|---|---|
+| Cap'n Proto | Every step, when a reader takes it. No pass over the message, and no unsafe code in a reader. A read of every value costs 1.5 µs for that reason. | A field takes the next number, and an old message reads with the new schema. | A multiple of 8. | Java, Python, C++, Go and more. |
+| FlatBuffers | The whole buffer, before the first read: 2.6 µs for a call, which is what makes its scan the slowest but one. After it a read checks nothing. Without it a reader is unsafe code. | A table takes a field at its end, and an old buffer reads with the new schema. | Nothing, in this implementation. | Java, Python, C++, Go and more, each from the project itself. |
+| An archive of the layout in memory | The whole archive, before the first read: 0.14 µs for a call. | It does not. A type that changes is another layout, and the reader keeps every old type for good. | A multiple of 8. | None. |
+
+- **Cap'n Proto is the one that pays for what it reads.**
+  A reader of one field of one call checks the steps to that field, and nothing else.
+- **FlatBuffers is small where texts repeat, and pays with its check.**
+  With a whole block as one buffer it holds each text once, and a call is 710 bytes in it.
+  The check of the buffer comes before the first read of it, at 2.5 µs for a call.
+- **The archive is the fastest, and it cannot grow.**
+  Its bytes are the layout of the types of one build.
+  "An old recording still opens" would mean a copy of every type for every version, and no tool but ours reads it.
+- **With rows, the three are closer than this table says.**
+  A row of a fixed size is the same thing in each of them, and a list of rows needs little checking in any.
+  What is left to tell them apart is the details of a call, how a schema grows, and who else reads it.
+
+The second schema is the same work in all of them: a message for every type of an entry, and the way from the types to a message and back.
+For the calls of this measurement that was about 300 lines for the types and 300 to 500 for each encoding, and `Explanation` is most of it.

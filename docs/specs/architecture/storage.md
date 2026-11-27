@@ -88,10 +88,10 @@ recordings:
   queue_entries: 10000          # the entries that may wait for the recorder
   queue_size: 256MiB            # the bytes of the frames that may wait with them
   commit_interval: 1s           # how long an entry waits at most before it is in the recording for good
-  block_size: 4MiB              # the entries and frames that one block of a recording holds
-  segment_size: 256MiB          # the size at which a data segment is sealed
-  index_size: 8MiB              # the size at which an index chunk is full
-  summary_values: 64            # the values of one field that a summary lists
+  batch_size: 64MiB             # what waits for a commit at most, before the commit comes early
+  segment_size: 1GiB            # the size at which a data segment is sealed
+  index_size: 32MiB             # the size at which an index chunk is full
+  summary_values: 1024          # the values of one field that a summary lists
 ```
 
 ## Workspace
@@ -617,10 +617,12 @@ What a commit covers is in the recording for good, and a reader sees it while th
 A recording that a crash cut short opens up to its last commit.
 
 A recording is split into segments, so nothing in it grows without a bound, and a long recording opens from the end.
-Every stretch of it carries a [summary](recording-storage.md#summary) of the field values it contains: a block, a segment and an index chunk.
-A query with a selector reads the manifest, then the index chunks that can match, then the blocks that can match, and skips the rest.
+Every stretch of it carries a [summary](recording-storage.md#summary) of the field values it contains: a segment and an index chunk.
+A commit writes a [batch](recording-storage.md#a-batch), which holds each of its texts once, and the fields of its calls side by side.
+A query with a selector reads the manifest, then the index chunks and the segments that can match, and then compares numbers in the rows of the batches that have its values.
 
-A reader copies no frame: the files of a recording are mapped into memory, and a frame is a range of their bytes.
+A reader copies nothing and decodes nothing: the files of a recording are mapped into memory, a frame is a range of their bytes, and a reader reads the fields, the verdict and the explanation of a call [where they lie](recording-storage.md#entries-are-read-in-place).
+A reader that asks for a call as its type gets one built.
 
 The [index](../domains/observation.md#index) of the engine, with its facets, is not stored.
 The engine rebuilds it when it opens a recording.
