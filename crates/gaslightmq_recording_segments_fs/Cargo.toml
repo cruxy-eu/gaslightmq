@@ -1,0 +1,33 @@
+[package]
+name = "gaslightmq_recording_segments_fs"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lints]
+workspace = true
+
+[package.metadata.gaslightmq]
+# The names of the files of a recording: plain functions over text. Everything else touches the files.
+sans_io_modules = ["name"]
+
+[dependencies]
+bytes.workspace = true
+gaslightmq_recording.workspace = true
+gaslightmq_recording_segments.workspace = true
+# A sealed file is mapped, and its bytes go out as ranges of the map. The system is told which ranges come next.
+memmap2.workspace = true
+# The blocking pool, on which every touch of a file runs.
+tokio = { workspace = true, features = ["rt"] }
+
+[dev-dependencies]
+anyhow.workspace = true
+# What the entries of the tests are made of.
+gaslightmq_clock.workspace = true
+gaslightmq_environment.workspace = true
+gaslightmq_field.workspace = true
+# What every storage of recordings and every backing of the segment layout does, which the tests hold the files to.
+gaslightmq_recording_conformance.workspace = true
+gaslightmq_recording_segments_conformance.workspace = true
+tempfile.workspace = true
+tokio = { workspace = true, features = ["rt", "rt-multi-thread", "macros"] }

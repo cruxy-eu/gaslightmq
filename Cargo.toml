@@ -30,6 +30,7 @@ members = [
     "crates/gaslightmq_recording_compression",
     "crates/gaslightmq_recording_segments",
     "crates/gaslightmq_recording_segments/conformance",
+    "crates/gaslightmq_recording_segments_fs",
     "crates/gaslightmq_resource",
     "crates/gaslightmq_rule",
     "crates/gaslightmq_rule/conformance",
@@ -95,6 +96,7 @@ gaslightmq_recording = { path = "crates/gaslightmq_recording" }
 gaslightmq_recording_compression = { path = "crates/gaslightmq_recording_compression" }
 gaslightmq_recording_conformance = { path = "crates/gaslightmq_recording/conformance" }
 gaslightmq_recording_segments = { path = "crates/gaslightmq_recording_segments" }
+gaslightmq_recording_segments_conformance = { path = "crates/gaslightmq_recording_segments/conformance" }
 gaslightmq_resource = { path = "crates/gaslightmq_resource" }
 gaslightmq_rule = { path = "crates/gaslightmq_rule" }
 gaslightmq_rule_conformance = { path = "crates/gaslightmq_rule/conformance" }
@@ -136,6 +138,9 @@ gloo-net = { version = "0.8", default-features = false, features = ["http", "web
 gloo-timers = { version = "0.4", features = ["futures"] }
 indexmap = "2"
 kafka-protocol = "0.17"
+# Only `gaslightmq_recording_segments_fs` names it: a sealed segment is mapped into memory, and its bytes go to the
+# codec as ranges of the map.
+memmap2 = "0.9"
 # Only the checks in `xtask/` parse Rust. Line numbers come from `span-locations`.
 proc-macro2 = { version = "1", default-features = false, features = ["span-locations"] }
 # Only tests name it: the codec of recordings checks that whatever it packs unpacks to the same bytes.
