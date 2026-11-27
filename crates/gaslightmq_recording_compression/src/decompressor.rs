@@ -10,9 +10,12 @@ use crate::error::DecompressError;
 pub enum BlockEnd {
     /// Where its writer finished it. With [`Codec::None`], where the buffer was full.
     Finished,
-    /// Before its writer finished it: the bytes ran out.
-    /// The buffer holds every byte up to the last flush whose bytes were all there, and perhaps a little more.
-    /// That is the block that was open when a recording was cut short.
+    /// The bytes ran out before the frame ended. The buffer holds every byte up to the last flush whose bytes were
+    /// all there, and perhaps a little more.
+    ///
+    /// A block whose last chunk ends at a flush ends so, and it is whole: the layout closed it after a commit had
+    /// already cut its last chunk. A block that was cut short ends so too. The codec cannot tell the two apart, and
+    /// the layout can, from the lengths and the checksums of the chunks.
     Unfinished,
 }
 
@@ -81,7 +84,8 @@ impl Decompressor {
         }
     }
 
-    /// Unpacks one block from `chunks`, behind what `out` holds.
+    /// Unpacks one block from `chunks` into the room of `out`, behind the bytes that `out` already holds.
+    /// So several blocks unpack one after the other into one buffer, as the frames of the chunks of a block do.
     ///
     /// `chunks` are the bytes of the chunks of the block, one after the other, without their headers,
     /// and the first byte of the first chunk is the first byte of the block.

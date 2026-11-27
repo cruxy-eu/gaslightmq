@@ -825,7 +825,7 @@ pub struct UnpackedBlock {
 pub enum BlockEnd {
     /// Where its writer finished it.
     Finished,
-    /// The bytes ran out before the block did: the block that was open when a recording was cut short.
+    /// The bytes ran out before the frame ended, after its last whole flush.
     Unfinished,
 }
 ```
@@ -843,8 +843,12 @@ pub enum BlockEnd {
 - **A block is a frame of its own.**
   `finish_block` finishes the frame of the block, and the next byte starts a new one.
   A reader starts at any block that the index names, with a decompressor that knows nothing yet.
-  A torn tail loses one block at most: the frame of the block that was open is not finished,
-  and a reader unpacks it up to the last flush whose bytes are all there, as `BlockEnd::Unfinished`.
+  A reader unpacks a frame that is not finished up to the last flush whose bytes are all there, as `BlockEnd::Unfinished`.
+- **A block may end at a flush.**
+  When a commit already cut the last chunk of a block and the block then closes, no chunk is left to carry the end of its frame.
+  Such a block is whole, and it unpacks in full as `BlockEnd::Unfinished`.
+  A block that a crash cut short ends the same way, and the codec cannot tell the two apart:
+  the layout finds a torn tail from the lengths and the checksums of its chunks, and not from the codec.
 - **A flush is a commit.**
   After a flush a reader unpacks every byte that the compressor was handed, and the frame goes on.
   The layout flushes at a commit, which is always between two entries, so a chunk is what one commit added to the frame of its block.
@@ -852,7 +856,11 @@ pub enum BlockEnd {
 - **A block unpacks in one call.**
   The layout hands `read_block` the chunks of a block, without their headers, after it checked the length and the checksum of each.
   The block takes the bytes of its frame, and `taken` says how many, so the layout knows where the next block starts.
-  The next call starts a block of its own.
+  The next call starts a block of its own, and unpacks behind what the buffer already holds:
+  the frames of the chunks of a block, which are a frame each, unpack one after the other into one buffer.
+- **A compressor serves a stream for its whole life.**
+  After `finish_block` it is ready for the next block, with nothing to reset.
+  Making one costs the context of the codec, so the frames of each chunk, which are a stream of their own that ends at every chunk, keep one compressor.
 - **A codec writes a block once, into the buffer that the reader hands out.**
   The chunks of a block unpack one after the other into one `BatchBuffer`, which the layout makes with the room for the whole block.
   Zstandard looks back into that buffer for what a chunk repeats, and keeps no window and no second copy of the block.

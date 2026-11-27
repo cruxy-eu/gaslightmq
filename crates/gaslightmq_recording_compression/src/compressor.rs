@@ -16,6 +16,10 @@ use crate::error::CompressError;
 ///
 /// It does no IO and starts no thread: it packs on the thread that calls it.
 ///
+/// One compressor serves a stream for its whole life: after [`finish_block`](Self::finish_block) it is ready for
+/// the next block, with nothing to reset. Making one costs the context of the codec, which holds its tables
+/// and is worth keeping, so a stream of many small blocks keeps its compressor and does not make one for each.
+///
 /// ```
 /// use gaslightmq_recording_compression::{CompressError, Compression, Compressor};
 ///

@@ -123,3 +123,62 @@ fn none_ends_a_block_where_its_buffer_is_full() -> anyhow::Result<()> {
     assert_eq!(first.written(), FIRST_BLOCK);
     Ok(())
 }
+
+#[test]
+fn a_block_may_end_at_a_flush_and_unpacks_in_full() -> anyhow::Result<()> {
+    let mut compressor = Compressor::new(Compression::default())?;
+    let mut first_chunk = Vec::new();
+    let mut last_chunk = Vec::new();
+    compressor.write(FIRST_BLOCK, &mut first_chunk)?;
+    compressor.flush(&mut first_chunk)?;
+    compressor.write(SECOND_BLOCK, &mut last_chunk)?;
+    compressor.flush(&mut last_chunk)?;
+
+    let mut decompressor = Decompressor::new(Codec::Zstandard);
+    let mut block = BatchBuffer::with_room(FIRST_BLOCK.len() + SECOND_BLOCK.len());
+    let unpacked = decompressor.read_block([first_chunk.as_slice(), last_chunk.as_slice()], &mut block)?;
+
+    assert_eq!(
+        unpacked,
+        UnpackedBlock {
+            end: BlockEnd::Unfinished,
+            taken: first_chunk.len() + last_chunk.len(),
+        }
+    );
+    assert_eq!(block.written(), [FIRST_BLOCK, SECOND_BLOCK].concat());
+    Ok(())
+}
+
+#[test]
+fn frames_unpack_one_behind_the_other_into_one_buffer() -> anyhow::Result<()> {
+    let mut compressor = Compressor::new(Compression::default())?;
+    let mut first_frame = Vec::new();
+    let mut second_frame = Vec::new();
+    compressor.write(FIRST_BLOCK, &mut first_frame)?;
+    compressor.finish_block(&mut first_frame)?;
+    compressor.write(SECOND_BLOCK, &mut second_frame)?;
+    compressor.finish_block(&mut second_frame)?;
+
+    let mut decompressor = Decompressor::new(Codec::Zstandard);
+    let mut frames = BatchBuffer::with_room(FIRST_BLOCK.len() + SECOND_BLOCK.len());
+    let first = decompressor.read_block([first_frame.as_slice()], &mut frames)?;
+    let second = decompressor.read_block([second_frame.as_slice()], &mut frames)?;
+
+    assert_eq!(first.end, BlockEnd::Finished);
+    assert_eq!(second.end, BlockEnd::Finished);
+    assert_eq!(frames.written(), [FIRST_BLOCK, SECOND_BLOCK].concat());
+    Ok(())
+}
+
+#[test]
+fn none_unpacks_one_behind_the_other_into_one_buffer() -> anyhow::Result<()> {
+    let mut decompressor = Decompressor::new(Codec::None);
+    let mut frames = BatchBuffer::with_room(FIRST_BLOCK.len() + SECOND_BLOCK.len());
+
+    decompressor.read_block([FIRST_BLOCK], &mut frames)?;
+    let second = decompressor.read_block([SECOND_BLOCK], &mut frames)?;
+
+    assert_eq!(second.end, BlockEnd::Finished);
+    assert_eq!(frames.written(), [FIRST_BLOCK, SECOND_BLOCK].concat());
+    Ok(())
+}
