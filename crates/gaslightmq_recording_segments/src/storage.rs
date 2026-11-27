@@ -37,42 +37,7 @@ fn locked<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
 /// so a reader rebuilds either of them from the segments, and nothing is lost when one is missing.
 ///
 /// A clone is the same storage, and its readers share one budget: whoever puts a process together makes one storage.
-///
-/// ```
-/// use futures::executor::block_on;
-/// use gaslightmq_clock::Instant;
-/// use gaslightmq_environment::RecordingMode;
-/// use gaslightmq_field::ConnectionNumber;
-/// use gaslightmq_recording::prelude::*;
-/// use gaslightmq_recording_segments::prelude::*;
-///
-/// let storage = SegmentStorage::new(MemoryBacking::new(), SegmentConfiguration::new());
-/// let description = Description {
-///     environment: "orders-sim".parse().expect("a name"),
-///     started: "2026-11-21T14:02:11.527Z".parse().expect("an instant"),
-///     clock: Instant::ZERO,
-///     mode: RecordingMode::Full,
-///     backend: RecordedBackend::Simulated,
-///     written_by: "0.1.0".to_owned(),
-///     armed: Vec::new(),
-///     scenario: None,
-///     journal_after: None,
-/// };
-/// let opened = SessionEvent {
-///     connection: ConnectionNumber::new(7),
-///     at: Instant::ZERO,
-///     change: SessionChange::Closed { by: Closer::Client },
-/// };
-///
-/// block_on(async {
-///     let mut writer = storage.start(description.clone()).await.expect("a new recording");
-///     writer.append(Entry::session(&opened)).await.expect("the entry is taken");
-///     writer.commit().await.expect("the entry is in the recording");
-///
-///     let reader = storage.open(&description.id()).await.expect("the recording opens");
-///     assert_eq!(reader.extent().await, Ok(Extent { entries: 1, end: None }));
-/// });
-/// ```
+/// The backing in memory, `MemoryBacking` behind the feature `memory`, shows it at work.
 #[derive(Debug)]
 pub struct SegmentStorage<B> {
     backing: Arc<B>,
