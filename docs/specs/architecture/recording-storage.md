@@ -1393,11 +1393,11 @@ A name is the position of the first entry, with 20 digits, so the names sort as 
 
 | Operation | On files |
 |---|---|
-| Create | Creates `….segment.open` or `….index.open`, and syncs the directory. |
+| Create | Creates `….segment.open` or `….index.open` with the call that refuses a file that is there, and syncs the directory. Of two that create one object, one is refused, so the first segment of a recording refuses an ID that is taken. |
 | Append | Writes the pieces with one write, and syncs the data of the file. |
-| Seal | Syncs the file, renames it to the name without `.open`, and syncs the directory. |
+| Seal | Syncs the file, renames it to the name without `.open`, makes it read-only, and syncs the directory. |
 | Put the manifest | Writes a file beside the old one, syncs it, renames it over the old one, and syncs the directory. |
-| Read | Maps a sealed file once, and hands out ranges of the map. It reads from a file that grows into buffers. |
+| Read | Maps a sealed file once, and hands out ranges of the map. It reads from a file that grows into buffers of `recordings.read_size` at least. |
 | List | Reads the names of the directory. |
 
 A file with another name is no object of the recording, and the backing leaves it alone.
@@ -1405,6 +1405,12 @@ The file that a `put` did not rename yet is such a file.
 
 Mapping a file is unsafe code, and it is in this crate alone.
 A sealed file never changes, which is what makes a map of it sound.
+The backing never opens a sealed file to write, and it makes the file read-only, so no process of its owner writes it by mistake.
+Someone who shortens a sealed file anyway breaks the recording as one who deletes it does, and a read of the map past the new end stops the process.
+
+A stream over a map tells the system which bytes come next, `recordings.read_ahead` of them, so the system reads them from the disk before the codec gets there.
+The layout reads a segment forwards, so the backing knows that without being told.
+Every touch of a file blocks, and runs on the blocking pool of the runtime.
 
 A recording is a directory, and it can hold many gigabytes.
 Whether a recording also exports to one file is [not decided](../open-questions.md#storage).
@@ -1640,10 +1646,13 @@ recordings:
   summary_values: 256       # the values of one field that a summary lists
   reader_memory: 16MiB      # the unpacked blocks that one reader holds at most: those that its consumer still holds
   all_readers_memory: 256MiB  # the unpacked blocks that all readers of the process hold together at most
+  read_size: 256KiB         # the bytes that one read of a file that grows asks for at least
+  read_ahead: 8MiB          # how far ahead of a stream over a sealed file the system reads from the disk
 ```
 
 A size is a number of bytes with its unit.
 `queue_entries`, `queue_size`, `commit_interval` and `commit_size` are the recorder's, whatever the layout is.
+`directory`, `read_size` and `read_ahead` are the backing on files'.
 The others are the segment layout's.
 `reader_memory` and `all_readers_memory` are the only two that a reader needs: a recording says its codec and its versions itself, and its objects say their sizes.
 
