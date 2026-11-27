@@ -25,6 +25,7 @@ members = [
     "crates/gaslightmq_overlay",
     "crates/gaslightmq_pipeline",
     "crates/gaslightmq_quick_inject",
+    "crates/gaslightmq_recording",
     "crates/gaslightmq_resource",
     "crates/gaslightmq_rule",
     "crates/gaslightmq_rule/conformance",
@@ -86,6 +87,7 @@ gaslightmq_listener = { path = "crates/gaslightmq_listener" }
 gaslightmq_overlay = { path = "crates/gaslightmq_overlay" }
 gaslightmq_pipeline = { path = "crates/gaslightmq_pipeline" }
 gaslightmq_quick_inject = { path = "crates/gaslightmq_quick_inject" }
+gaslightmq_recording = { path = "crates/gaslightmq_recording" }
 gaslightmq_resource = { path = "crates/gaslightmq_resource" }
 gaslightmq_rule = { path = "crates/gaslightmq_rule" }
 gaslightmq_rule_conformance = { path = "crates/gaslightmq_rule/conformance" }
@@ -128,6 +130,10 @@ indexmap = "2"
 kafka-protocol = "0.17"
 # Only the checks in `xtask/` parse Rust. Line numbers come from `span-locations`.
 proc-macro2 = { version = "1", default-features = false, features = ["span-locations"] }
+# Only `gaslightmq_recording` names it: a message of a recording is the archive of a stored type, read in place.
+# The features say the bytes that a recording holds: the lowest byte first, references of 32 bits, and every value at
+# the address that its type asks for. Another set of them is another version of the encoding.
+rkyv = { version = "0.8", default-features = false, features = ["std", "bytecheck", "little_endian", "pointer_width_32", "aligned"] }
 # Only `gaslightmq_control_client` names it, for HTTP from a native target. Plain HTTP: no TLS, no proxy.
 reqwest = { version = "0.13", default-features = false }
 # Only `gaslightmq_control_server` names it, for the files of the UI that it serves. A build without the files of the UI
