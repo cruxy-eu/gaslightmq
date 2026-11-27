@@ -499,7 +499,7 @@ Three bounds say what it holds, and each is made of properties.
 
 | Who | Holds at most | Property | Default |
 |---|---|---|---|
-| One reader, which is one stream | The unpacked blocks that it handed out and that someone still holds, their frames, and what it read ahead. | `recordings.reader_memory` | `16MiB` |
+| One reader, which is one stream | The unpacked blocks that it handed out and that someone still holds, and their frames. The segment layout reads nothing ahead. | `recordings.reader_memory` | `16MiB` |
 | All readers of a process | The same, for all of them together. | `recordings.all_readers_memory` | `256MiB` |
 | The writer | The frames that wait in its queue, what waits for a commit, and the block that is open. | `recordings.queue_size`, `recordings.commit_size` and `recordings.block_size`, added up | `276MiB` |
 
@@ -511,11 +511,17 @@ Blocks of 4 MiB cost 7 MiB and 38 MiB.
 
 - **One block at a time.**
   That is the buffer of its entries, and the buffer of its frames when the reader asked for them: 4 MiB together, with the default.
-- **What it read ahead, as far as its budget goes.**
-  With the defaults that is three more blocks.
-  A reader never passes its budget by reading ahead.
-  The segment layout reads nothing ahead yet: it awaits its backing and starts no task, so a block that it read
-  ahead would be read in the same wait as the block that the consumer asked for.
+- **Nothing that it read ahead.**
+  The segment layout reads nothing ahead: it awaits its backing and starts no task, so a block that it read ahead
+  would be read in the same wait as the block that the consumer asked for.
+  Reading ahead belongs to the backing, which can start the next read while the layout unpacks a block:
+  the backing on files tells the system which ranges of a mapped segment come next, and a backing that fetches can
+  fetch the next range.
+- **Not what the backing holds ahead.**
+  The backing contract has no way for a backing to say how many bytes it holds ahead, so no budget counts them.
+  What the backing on files reads ahead is pages of the cache of the system, which the system takes back, and which
+  no budget of a process counts in any case.
+  A backing that fetches into buffers of its own holds them outside the budgets, and bounds them itself.
 - **One block, however large it is.**
   A call with a frame of 100 MiB makes a block of 100 MiB, and an entry is never cut in two.
   A reader may always hold one block with its frames, also when that is more than its budget, and nothing else while it does.
@@ -556,10 +562,9 @@ Nothing waits for memory.
 
 | The budget is reached | The storage |
 |---|---|
-| Of a reader, by what it read ahead | Stops reading ahead. Nothing waits, and nothing fails. |
 | Of a reader, by batches that the consumer still holds | Fails the next read with `NextBatchError::ReaderBudgetSpent { held, budget }`, which names `recordings.reader_memory`. The consumer lets go, or copies out, and reads on from the position it had. |
-| Of all readers, when a stream starts and there is no room for one block | Drops what the other readers read ahead and did not hand out yet. When that is not enough, it refuses the stream with `ReadError::AllReadersBudgetSpent { held, budget }`, which names `recordings.all_readers_memory`. The room for one block is `recordings.block_size`. When no reader holds anything, a stream is never refused. |
-| Of all readers, while a stream runs | Reads on without reading ahead. A stream set the room for one block aside when it started, so it never stops half way. |
+| Of all readers, when a stream starts and there is no room for one block | Refuses the stream with `ReadError::AllReadersBudgetSpent { held, budget }`, which names `recordings.all_readers_memory`. The room for one block is `recordings.block_size`. When no reader holds anything, a stream is never refused. |
+| Of all readers, while a stream runs | Reads on. A stream set the room for one block aside when it started, so it never stops half way. |
 
 - **A reader that waited would wait for its own process.**
   The consumer that holds the bytes may be the one that asks, and then nothing ever lets go.
@@ -570,9 +575,9 @@ Nothing waits for memory.
 - **A stream counts what it holds, and at least the room it set aside.**
   All readers together hold the sum of that, so a stream that holds less than one block still counts one.
   What a consumer still holds when its stream ends stays counted until it lets go.
-- **What was read ahead goes first.**
-  Reading ahead is a guess, and a reader reads the block again when it gets there.
-  With the defaults sixteen readers read ahead in full, and sixty-four read at all, before a stream is refused.
+- **A stream that starts asks for one block.**
+  With the defaults sixty-four streams read at once before a stream is refused, and sixteen of them can each hold
+  all that one reader may.
 - **A stream that waited for room, with a limit on the wait, was the other way.**
   It hides the bound until the limit passes, and then it is a refusal all the same.
 
@@ -1220,7 +1225,7 @@ Every reader is a stream, and the levels above the segments say where it starts 
 3. It asks the backing for the bytes of a segment from the start of a block, which a row of the span gives, takes them chunk by chunk, and hands each to the codec.
 4. It makes a batch of each block once the codec has filled its buffer, which [checks the block](#the-check-of-a-block), and the consumer reads its entries through views.
 5. It steps over the frames of a chunk when the reader asked for none.
-6. It reads ahead as far as its [budget](#memory) lets it, and no further. The segment layout reads nothing ahead yet.
+6. It reads nothing ahead: the backing does, as [memory](#what-a-reader-holds) says.
 
 | A reader that wants | Streams |
 |---|---|
