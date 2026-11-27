@@ -1405,8 +1405,10 @@ The file that a `put` did not rename yet is such a file.
 
 Mapping a file is unsafe code, and it is in this crate alone.
 A sealed file never changes, which is what makes a map of it sound.
-The backing never opens a sealed file to write, and it makes the file read-only, so no process of its owner writes it by mistake.
-Someone who shortens a sealed file anyway breaks the recording as one who deletes it does, and a read of the map past the new end stops the process.
+The backing assumes that nobody but itself writes in the directory of a recording.
+It never opens a sealed file to write, and it makes the file read-only, which lowers the risk and does not remove it: root, or a process that makes the file writable first, can still write it.
+When the assumption breaks, a byte that someone changed fails its checksum, as a damaged disk does.
+A sealed file that someone shortened ends the process with `SIGBUS` on the first read of the map past its new end: that is a signal and no error, so no reader gets it as one, and nothing catches it.
 
 A stream over a map tells the system which bytes come next, `recordings.read_ahead` of them, so the system reads them from the disk before the codec gets there.
 The layout reads a segment forwards, so the backing knows that without being told.

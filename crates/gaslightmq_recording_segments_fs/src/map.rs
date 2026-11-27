@@ -31,12 +31,16 @@ impl Map {
             return Ok(Arc::new(Map { mapped: None }));
         }
         // SAFETY: a map is sound as long as nobody changes or shortens the file underneath it.
-        // The file is a sealed one: the backing reaches it by its sealed name alone, which only a seal gives, after
-        // the last append and after the file was synced. Nothing of this crate opens a sealed file to write it again,
-        // and the seal made it read-only, so no process of its owner opens it to write either.
-        // The length is that of this open file, taken just before, so the map covers bytes that are there.
-        // A process of another owner, or someone who makes the file writable first and then shortens it, breaks the
-        // backing as one who deletes its directory does; a read of the map past the new end then stops the process.
+        // The backing assumes that nobody but itself writes in the directory of a recording.
+        // Under that assumption the file never changes: the backing reaches it by its sealed name alone, which only a
+        // seal gives, after the last append and after the file was synced, and nothing of this crate opens a sealed
+        // file to write it again. The length is that of this open file, taken just before, so the map covers bytes
+        // that are there.
+        // The seal also makes the file read-only, which lowers the risk and does not remove it: root, or a process
+        // that makes the file writable first, can still write it.
+        // When the assumption breaks: a byte that someone changed fails its checksum in the layout, as a damaged disk
+        // does. A file that someone shortened ends the process with SIGBUS on the first read of the map past its new
+        // end, which is no error that the backing can return. Nothing catches the signal.
         let mapped = unsafe { Mmap::map(file)? };
         Ok(Arc::new(Map { mapped: Some(mapped) }))
     }
