@@ -515,7 +515,7 @@ fn expanded(expanded: &ExpandedIncident) -> stored::ExpandedIncident {
 }
 
 fn change(change: &Change) -> stored::Change {
-    let name = |rule: &RecordedName| rule.as_str().to_owned();
+    let name = |recorded: &RecordedName| recorded.as_str().to_owned();
     match change {
         Change::RuleArmed { rule } => stored::Change::RuleArmed { rule: name(rule) },
         Change::RuleDisarmed { rule } => stored::Change::RuleDisarmed { rule: name(rule) },
@@ -543,6 +543,18 @@ fn change(change: &Change) -> stored::Change {
         },
         Change::DefinitionDeleted { definition: deleted } => stored::Change::DefinitionDeleted {
             definition: definition(deleted),
+        },
+        Change::ScenarioActivated { scenario, step } => stored::Change::ScenarioActivated {
+            scenario: name(scenario),
+            step: step.as_ref().map(name),
+        },
+        Change::ScenarioDeactivated { scenario, step } => stored::Change::ScenarioDeactivated {
+            scenario: name(scenario),
+            step: step.as_ref().map(name),
+        },
+        Change::StepAdvanced { scenario, step } => stored::Change::StepAdvanced {
+            scenario: name(scenario),
+            step: step.as_ref().map(name),
         },
         Change::IncidentApplied { incident } => stored::Change::IncidentApplied {
             incident: expanded(incident),

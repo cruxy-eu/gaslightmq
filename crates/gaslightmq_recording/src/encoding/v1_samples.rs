@@ -638,6 +638,18 @@ fn changes() -> Vec<Change> {
         Change::DefinitionDeleted { .. } => Change::DefinitionDeleted {
             definition: definitions[2].clone(),
         },
+        Change::ScenarioActivated { .. } => Change::ScenarioActivated {
+            scenario: text("leader-election"),
+            step: Some(text("warm-up")),
+        },
+        Change::ScenarioDeactivated { .. } => Change::ScenarioDeactivated {
+            scenario: text("leader-election"),
+            step: None,
+        },
+        Change::StepAdvanced { .. } => Change::StepAdvanced {
+            scenario: String::new(),
+            step: Some(String::new()),
+        },
         Change::IncidentApplied { .. } => Change::IncidentApplied {
             incident: expanded[0].clone(),
         },
