@@ -4,6 +4,7 @@ use gaslightmq_environment::BrokerListenersError;
 use gaslightmq_field::{ConnectionNumber, Endpoint};
 use gaslightmq_recording::RecordingId;
 use gaslightmq_rule::RuleName;
+use gaslightmq_scenario::ScenarioName;
 
 /// Why an endpoint of a proxy has no listener.
 ///
@@ -124,6 +125,53 @@ pub enum RetuneError {
     /// No rule of that name is armed, so no arming keeps its counters. Whoever changes the rule arms it anew.
     #[error("rule {:?} is not armed, so it has nothing to retune", .rule.as_str())]
     NotArmed { rule: RuleName },
+}
+
+/// Why the [`ArmedRules`](crate::ArmedRules) did not activate a scenario.
+///
+/// ```
+/// use gaslightmq_engine::prelude::*;
+///
+/// let error = ActivateError::AlreadyActive { scenario: "leader-election".parse().expect("a scenario name") };
+/// assert_eq!(error.to_string(), "scenario \"leader-election\" is active already");
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum ActivateError {
+    /// A scenario is active, and at most one is active at a time. Whoever wants another deactivates this one first.
+    #[error("scenario {:?} is active already", .scenario.as_str())]
+    AlreadyActive { scenario: ScenarioName },
+}
+
+/// Why the [`ArmedRules`](crate::ArmedRules) did not deactivate the active scenario.
+///
+/// ```
+/// use gaslightmq_engine::prelude::*;
+///
+/// assert_eq!(DeactivateError::NotActive.to_string(), "no scenario is active");
+/// ```
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+pub enum DeactivateError {
+    /// No scenario is active, so none deactivates.
+    #[error("no scenario is active")]
+    NotActive,
+}
+
+/// Why the [`ArmedRules`](crate::ArmedRules) did not advance the active scenario to its next step.
+///
+/// ```
+/// use gaslightmq_engine::prelude::*;
+///
+/// let error = AdvanceError::NoStep { scenario: "steady-jitter".parse().expect("a scenario name") };
+/// assert_eq!(error.to_string(), "scenario \"steady-jitter\" runs no step that could end");
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum AdvanceError {
+    /// No scenario is active.
+    #[error("no scenario is active")]
+    NotActive,
+    /// The scenario runs no step: it is no Sequence, or it ran its last step already.
+    #[error("scenario {:?} runs no step that could end", .scenario.as_str())]
+    NoStep { scenario: ScenarioName },
 }
 
 /// No session is open on the connection that an engine was asked to [close](crate::Engine::close_session):

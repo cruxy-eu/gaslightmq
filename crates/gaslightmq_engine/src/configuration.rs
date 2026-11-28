@@ -47,7 +47,8 @@ pub struct EngineConfiguration {
     pub listeners: Listeners,
     /// Ours. Default: 0.
     ///
-    /// The seed of every die while no scenario is active.
+    /// The seed of every die of a rule that someone arms by hand.
+    /// A rule that the scenario arms rolls from the seed of the scenario.
     /// A rule that the engine [arms](crate::ArmedRules::arm) rolls its die from this seed,
     /// so the same seed makes the same matching calls fire in every run.
     pub seed: Seed,

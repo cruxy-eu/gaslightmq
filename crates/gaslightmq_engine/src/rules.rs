@@ -1,17 +1,22 @@
-//! The armed rules of one proxy, published to every session as a snapshot.
+//! The armed rules of one proxy, published to every session as a snapshot: the live set, and the scenario that runs.
 
+use std::collections::BTreeMap;
 use std::fmt;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
+use gaslightmq_call::Call;
 use gaslightmq_clock::{Clock, Instant};
 use gaslightmq_clock_waitable::WaitableClock;
-use gaslightmq_rule::{ArmedRule, ResolvedRule, RuleName, Snapshot, SnapshotError};
+use gaslightmq_rule::{ArmedRule, ResolvedRule, RuleName, Snapshot};
+use gaslightmq_scenario::{ResolvedScenario, ScenarioPosition, ScenarioRun};
+use gaslightmq_session::CallIds;
 use gaslightmq_trigger::Seed;
 use tokio::sync::watch;
 
-use crate::{ArmError, DisarmError, RetuneError};
+use crate::{ActivateError, AdvanceError, ArmError, DeactivateError, DisarmError, RetuneError};
 
-/// The armed rules of one proxy, in the order in which they win a conflict.
+/// The armed rules of one proxy, in the order in which they win a conflict: the live set, and the scenario that is
+/// active.
 ///
 /// Arming and disarming a rule publishes a new [`Snapshot`] to every session.
 /// A session hands it to its pipeline, so the next call of every connection is evaluated against it.
@@ -22,13 +27,33 @@ use crate::{ArmError, DisarmError, RetuneError};
 ///
 /// # Order
 ///
-/// No scenario runs yet, so the rules are a live set: the rule that was armed last wins a conflict.
+/// The rules are two sets, and the live set comes first:
+///
+/// - **The live set** holds the rules that someone [arms](Self::arm) by hand. The rule that was armed last wins
+///   a conflict, and every live rule wins a conflict with a rule of the scenario.
+/// - **The scenario** that is [active](Self::activate) holds its rules, as its mode orders them: see
+///   [`ScenarioRun::armed_in_order`]. Its rules stay armed for the whole run, and the rules of a step from its start
+///   to its end.
+///
+/// A rule is armed once: a rule that someone armed by hand is not armed again by the scenario, and stays in the
+/// live set. Disarming a rule by hand takes it away from whichever set holds it, so whoever disarms a rule of the
+/// scenario has it disarmed until the scenario arms it again.
+///
+/// # Scenarios
+///
+/// At most one scenario is active at a time. Activating it arms its rules, and the rules of its first step, with the
+/// seed of the scenario. A step ends when its condition holds, on the call that makes it hold or at the instant that
+/// it names, or when someone [advances](Self::advance) the scenario: the rules of the step disarm, and the rules of
+/// the next one arm. [Deactivating](Self::deactivate) it disarms every rule that it armed.
+///
+/// A step that ends by itself is a change that nobody asked for. The handle keeps it until whoever counts the
+/// changes of the environment [takes it](Self::take_steps), with the snapshot after it.
 ///
 /// # What the handle keeps, and what a rule keeps
 ///
 /// The counter, the budget and the die of a rule live in its [arming](ArmedRule::arming), and not in a snapshot.
 /// A new snapshot therefore continues every count of the rules that stay armed.
-/// Arming a rule makes a new arming, with the [seed](crate::EngineConfiguration::seed) of the engine
+/// Arming a rule by hand makes a new arming, with the [seed](crate::EngineConfiguration::seed) of the engine
 /// and the instant of its clock.
 ///
 /// # Lifetimes
@@ -45,54 +70,226 @@ pub struct ArmedRules {
 struct Inner {
     seed: Seed,
     clock: Arc<dyn Clock + Send + Sync>,
+    /// The calls of the environment, which say where a step begins among them.
+    call_ids: CallIds,
+    /// The rules as the handle holds them. Whoever changes them publishes the snapshot before letting go.
+    sets: Mutex<Sets>,
     /// The snapshot that every session received last. Its rules are the armed rules, in priority order.
     published: watch::Sender<Arc<Snapshot>>,
 }
 
+/// The two sets of armed rules, and the steps that nobody took yet.
+#[derive(Default)]
+struct Sets {
+    /// The rules that someone armed by hand, the one armed last first.
+    live: Vec<ArmedRule>,
+    /// The scenario that is active, with the rules it armed.
+    scenario: Option<Active>,
+    /// The steps that advanced by themselves since whoever counts the changes took them last.
+    stepped: Vec<ScenarioChange>,
+}
+
+/// The scenario that is active, and the armings of the rules that it keeps armed.
+struct Active {
+    run: ScenarioRun,
+    /// The armings of the scenario: of its rules for the whole run, and of the rules of the step that runs.
+    armed: BTreeMap<RuleName, ArmedRule>,
+}
+
+/// What a change of the scenario of an environment did: where the scenario stands after it, and the rules that it
+/// disarmed and armed, in that order.
+///
+/// A deactivation says where the scenario stood when it ended.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ScenarioChange {
+    /// The scenario, and the step that runs after the change.
+    pub position: ScenarioPosition,
+    /// The rules that the change disarmed.
+    pub disarmed: Vec<RuleName>,
+    /// The rules that the change armed.
+    pub armed: Vec<RuleName>,
+}
+
+/// The steps that advanced by themselves since the last time someone took them, and the armed rules after them.
+///
+/// [`ArmedRules::take_steps`] makes one, and both parts come from one moment: a rule that the snapshot holds or
+/// misses for another reason than these steps disarmed or armed for another reason, such as a lifetime that ended.
+#[derive(Debug, Clone)]
+pub struct StepsTaken {
+    /// The steps, in the order in which they advanced.
+    pub steps: Vec<ScenarioChange>,
+    /// The armed rules after them.
+    pub snapshot: Arc<Snapshot>,
+}
+
+impl Sets {
+    /// The armed rules in the order in which they win a conflict: the live set, then the scenario.
+    fn snapshot(&self) -> Snapshot {
+        let live = self.live.iter().cloned();
+        let of_the_scenario = self.scenario.iter().flat_map(|active| {
+            let names = active.run.armed_in_order().into_iter().map(ResolvedRule::name);
+            names.filter_map(|name| active.armed.get(name).cloned())
+        });
+        // A rule is in one set alone, so no name comes twice.
+        Snapshot::new(live.chain(of_the_scenario)).unwrap_or_default()
+    }
+
+    /// The armed rule of that name, in whichever set holds it, whose lifetime has not ended at `now`.
+    fn get(&self, name: &RuleName, now: Instant) -> Option<&ArmedRule> {
+        let live = self.live.iter().find(|rule| rule.name() == name);
+        let of_the_scenario = || self.scenario.as_ref()?.armed.get(name);
+        live.or_else(of_the_scenario)
+            .filter(|rule| !rule.arming().has_ended(now))
+    }
+
+    /// Takes away every rule whose lifetime has ended at `now`. Returns whether one went.
+    fn sweep(&mut self, now: Instant) -> bool {
+        let ended = |rule: &ArmedRule| rule.arming().has_ended(now);
+        let before = self.live.len();
+        self.live.retain(|rule| !ended(rule));
+        let mut swept = self.live.len() != before;
+        if let Some(active) = self.scenario.as_mut() {
+            let before = active.armed.len();
+            active.armed.retain(|_, rule| !ended(rule));
+            swept |= active.armed.len() != before;
+        }
+        swept
+    }
+
+    /// Replaces the arming of the rule of that name, in whichever set holds it, with what `change` makes of it.
+    fn replace(&mut self, name: &RuleName, change: impl FnOnce(&ArmedRule) -> ArmedRule) -> Option<ArmedRule> {
+        let held = match self.live.iter_mut().find(|rule| rule.name() == name) {
+            Some(rule) => Some(rule),
+            None => self.scenario.as_mut().and_then(|active| active.armed.get_mut(name)),
+        }?;
+        *held = change(held);
+        Some(held.clone())
+    }
+
+    /// Arms the rules that the scenario keeps armed now and that no set holds, with the seed of the scenario, and
+    /// hands the budget of the step to the rule it ends on. Returns the names of the rules it armed.
+    fn arm_the_scenario(&mut self, now: Instant) -> Vec<RuleName> {
+        let Some(active) = self.scenario.as_mut() else {
+            return Vec::new();
+        };
+        let seed = active.run.scenario().seed();
+        let mut armed = Vec::new();
+        for rule in active.run.armed_in_order() {
+            let by_hand = self.live.iter().any(|live| live.name() == rule.name());
+            if by_hand || active.armed.contains_key(rule.name()) {
+                continue;
+            }
+            active.armed.insert(rule.name().clone(), rule.clone().arm(seed, now));
+            armed.push(rule.name().clone());
+        }
+        if let Some((rule, budget)) = active.run.step_budget() {
+            let (rule, budget) = (rule.clone(), budget.clone());
+            self.replace(&rule, |armed| armed.with_step_budget(Some(budget)));
+        }
+        armed
+    }
+
+    /// Ends the step that runs, disarms its rules, and starts the next one at `now`.
+    fn advance(&mut self, now: Instant, calls_before: u64) -> Result<ScenarioChange, AdvanceError> {
+        let active = self.scenario.as_mut().ok_or(AdvanceError::NotActive)?;
+        let Some(step) = active.run.step() else {
+            let scenario = active.run.scenario().name().clone();
+            return Err(AdvanceError::NoStep { scenario });
+        };
+        let of_the_step: Vec<RuleName> = step.arm().iter().map(|rule| rule.name().clone()).collect();
+        let ending_on = active.run.step_budget().map(|(rule, _)| rule.clone());
+        let mut disarmed = Vec::new();
+        for rule in &of_the_step {
+            if active
+                .armed
+                .remove(rule)
+                .is_some_and(|rule| !rule.arming().has_ended(now))
+            {
+                disarmed.push(rule.clone());
+            }
+        }
+        active.run.advance(now, calls_before);
+        // A rule that stays armed takes from no budget of a step that ended.
+        if let Some(rule) = ending_on {
+            self.replace(&rule, |armed| armed.with_step_budget(None));
+        }
+        let armed = self.arm_the_scenario(now);
+        let position = self.position().ok_or(AdvanceError::NotActive)?;
+        Ok(ScenarioChange {
+            position,
+            disarmed,
+            armed,
+        })
+    }
+
+    /// Advances the scenario for as long as the condition of its step holds at `now`, and keeps every step it took.
+    /// Returns whether it took one.
+    fn advance_while_over(&mut self, now: Instant, calls_before: u64) -> bool {
+        let mut advanced = false;
+        while self
+            .scenario
+            .as_ref()
+            .is_some_and(|active| active.run.step_is_over(now))
+        {
+            match self.advance(now, calls_before) {
+                Ok(change) => self.stepped.push(change),
+                Err(_) => break,
+            }
+            advanced = true;
+        }
+        advanced
+    }
+
+    fn position(&self) -> Option<ScenarioPosition> {
+        Some(self.scenario.as_ref()?.run.position())
+    }
+}
+
 impl ArmedRules {
-    /// No armed rules yet. The handle arms with `seed` at the instants of `clock`.
-    pub(crate) fn new(seed: Seed, clock: Arc<dyn Clock + Send + Sync>) -> Self {
+    /// No armed rules yet. The handle arms with `seed` at the instants of `clock`, and knows the calls of the
+    /// environment by `call_ids`.
+    pub(crate) fn new(seed: Seed, clock: Arc<dyn Clock + Send + Sync>, call_ids: CallIds) -> Self {
         let (published, _) = watch::channel(Arc::new(Snapshot::default()));
         Self {
-            inner: Arc::new(Inner { seed, clock, published }),
+            inner: Arc::new(Inner {
+                seed,
+                clock,
+                call_ids,
+                sets: Mutex::new(Sets::default()),
+                published,
+            }),
         }
     }
 
-    /// Arms `rule`, above every rule that is armed, and publishes the snapshot with it.
+    /// Arms `rule` by hand, above every rule that is armed, and publishes the snapshot with it.
     ///
     /// The arming starts now: its counters are at zero, its budget is whole and its time window opens from here.
     /// The handle it returns is the one in the snapshot, so it shows what the sessions count and spend.
     ///
     /// # Errors
     ///
-    /// [`ArmError::AlreadyArmed`] when a rule of that name is armed.
+    /// [`ArmError::AlreadyArmed`] when a rule of that name is armed, by hand or by the scenario.
     /// Arming it again would reset it, and whoever wants that [disarms](Self::disarm) it first.
     pub fn arm(&self, rule: ResolvedRule) -> Result<ArmedRule, ArmError> {
         let now = self.inner.clock.now();
-        let name = rule.name().clone();
-        let mut armed = None;
-        self.inner.published.send_if_modified(|published| {
-            // A rule whose lifetime ended is as good as disarmed, so it does not stand in the way of a new arming.
-            let staying = published.iter().filter(|other| !other.arming().has_ended(now));
-            let arming = rule.arm(self.inner.seed, now);
-            let rules = std::iter::once(arming.clone()).chain(staying.cloned());
-            match Snapshot::new(rules) {
-                Ok(snapshot) => {
-                    *published = Arc::new(snapshot);
-                    armed = Some(arming);
-                    true
-                }
-                // The rules that stay have one name each, so the name that comes twice is the one of this rule:
-                // a rule of that name is armed.
-                Err(SnapshotError::DuplicateName { .. }) => false,
-            }
-        });
-        armed.ok_or(ArmError::AlreadyArmed { rule: name })
+        let mut sets = self.sets();
+        // A rule whose lifetime ended is as good as disarmed, so it does not stand in the way of a new arming.
+        sets.sweep(now);
+        if sets.get(rule.name(), now).is_some() {
+            return Err(ArmError::AlreadyArmed {
+                rule: rule.name().clone(),
+            });
+        }
+        let arming = rule.arm(self.inner.seed, now);
+        sets.live.insert(0, arming.clone());
+        self.publish(&sets);
+        Ok(arming)
     }
 
     /// Disarms the rule `name`, publishes the snapshot without it, and returns its arming as it ended.
     ///
-    /// A call in flight that the rule fired on still finishes with it.
+    /// A rule of the live set leaves the live set, and a rule of the scenario leaves the scenario until the scenario
+    /// arms it again. A call in flight that the rule fired on still finishes with it.
     ///
     /// # Errors
     ///
@@ -101,13 +298,19 @@ impl ArmedRules {
     /// also in the moment before the handle publishes a snapshot without it.
     pub fn disarm(&self, name: &RuleName) -> Result<ArmedRule, DisarmError> {
         let now = self.inner.clock.now();
-        let has_ended = |rule: &ArmedRule| rule.arming().has_ended(now);
-        let mut disarmed = None;
-        self.inner.published.send_if_modified(|published| {
-            disarmed = published.get(name).filter(|rule| !has_ended(rule)).cloned();
-            // The rule leaves, and so does every rule whose lifetime ended, which is as good as disarmed.
-            Self::keep(published, |rule| rule.name() != name && !has_ended(rule))
-        });
+        let mut sets = self.sets();
+        let disarmed = sets.get(name, now).cloned();
+        // The rule leaves, and so does every rule whose lifetime ended, which is as good as disarmed.
+        let swept = sets.sweep(now);
+        if disarmed.is_some() {
+            sets.live.retain(|rule| rule.name() != name);
+            if let Some(active) = sets.scenario.as_mut() {
+                active.armed.remove(name);
+            }
+        }
+        if swept || disarmed.is_some() {
+            self.publish(&sets);
+        }
         disarmed.ok_or_else(|| DisarmError::NotArmed { rule: name.clone() })
     }
 
@@ -123,34 +326,125 @@ impl ArmedRules {
     pub fn retune(&self, rule: ResolvedRule) -> Result<ArmedRule, RetuneError> {
         let now = self.inner.clock.now();
         let name = rule.name().clone();
-        let mut retuned = None;
-        self.inner.published.send_if_modified(|published| {
-            let Some(armed) = published.get(&name).filter(|armed| !armed.arming().has_ended(now)) else {
-                return false;
-            };
-            let changed = armed.retuned(rule);
-            let rules = published.iter().map(|armed| {
-                if armed.name() == &name {
-                    changed.clone()
-                } else {
-                    armed.clone()
-                }
-            });
-            match Snapshot::new(rules) {
-                Ok(snapshot) => {
-                    *published = Arc::new(snapshot);
-                    retuned = Some(changed);
-                    true
-                }
-                // The rules had one name each, and the retuned rule keeps its own.
-                Err(SnapshotError::DuplicateName { .. }) => false,
-            }
-        });
+        let mut sets = self.sets();
+        if sets.get(&name, now).is_none() {
+            return Err(RetuneError::NotArmed { rule: name });
+        }
+        let retuned = sets.replace(&name, |armed| armed.retuned(rule));
+        self.publish(&sets);
         retuned.ok_or(RetuneError::NotArmed { rule: name })
     }
 
+    /// Activates `scenario`: arms its rules and the rules of its first step, with its seed, and publishes the
+    /// snapshot with them.
+    ///
+    /// A rule that someone armed by hand stays in the live set, and the scenario does not arm it again.
+    /// Returns where the scenario stands, and the rules it armed.
+    ///
+    /// # Errors
+    ///
+    /// [`ActivateError::AlreadyActive`] when a scenario is active: at most one is.
+    pub fn activate(&self, scenario: ResolvedScenario) -> Result<ScenarioChange, ActivateError> {
+        let now = self.inner.clock.now();
+        let mut sets = self.sets();
+        if let Some(active) = &sets.scenario {
+            let scenario = active.run.scenario().name().clone();
+            return Err(ActivateError::AlreadyActive { scenario });
+        }
+        sets.sweep(now);
+        let run = ScenarioRun::start(scenario, now, self.inner.call_ids.assigned());
+        let position = run.position();
+        sets.scenario = Some(Active {
+            run,
+            armed: BTreeMap::new(),
+        });
+        let armed = sets.arm_the_scenario(now);
+        // A step that is over from its start, such as one of no time at all, ends at once.
+        sets.advance_while_over(now, self.inner.call_ids.assigned());
+        self.publish(&sets);
+        Ok(ScenarioChange {
+            position,
+            disarmed: Vec::new(),
+            armed,
+        })
+    }
+
+    /// Deactivates the scenario that is active: disarms every rule that it armed, and publishes the snapshot
+    /// without them. The live set stays as it is.
+    ///
+    /// Returns where the scenario stood, and the rules it disarmed.
+    ///
+    /// # Errors
+    ///
+    /// [`DeactivateError::NotActive`] when no scenario is active.
+    pub fn deactivate(&self) -> Result<ScenarioChange, DeactivateError> {
+        let now = self.inner.clock.now();
+        let mut sets = self.sets();
+        let Some(active) = sets.scenario.take() else {
+            return Err(DeactivateError::NotActive);
+        };
+        let position = active.run.position();
+        let in_order = active.run.armed_in_order();
+        let disarmed = in_order
+            .into_iter()
+            .filter_map(|rule| active.armed.get(rule.name()))
+            .filter(|rule| !rule.arming().has_ended(now))
+            .map(|rule| rule.name().clone())
+            .collect();
+        // A rule of the live set takes from no budget of a step any more.
+        if let Some((rule, _)) = active.run.step_budget() {
+            let rule = rule.clone();
+            sets.replace(&rule, |armed| armed.with_step_budget(None));
+        }
+        sets.sweep(now);
+        self.publish(&sets);
+        Ok(ScenarioChange {
+            position,
+            disarmed,
+            armed: Vec::new(),
+        })
+    }
+
+    /// Ends the step of the active scenario, whatever its condition says, and starts the next one: the rules of the
+    /// step disarm, and those of the next step arm. After the last step no step runs, and the rules of the scenario
+    /// stay armed.
+    ///
+    /// Returns where the scenario stands after it, and the rules it disarmed and armed.
+    ///
+    /// # Errors
+    ///
+    /// - [`AdvanceError::NotActive`] when no scenario is active.
+    /// - [`AdvanceError::NoStep`] when the scenario runs no step: it is no Sequence, or it ran its last step.
+    pub fn advance(&self) -> Result<ScenarioChange, AdvanceError> {
+        let now = self.inner.clock.now();
+        let calls_before = self.inner.call_ids.assigned();
+        let mut sets = self.sets();
+        sets.sweep(now);
+        let advanced = sets.advance(now, calls_before)?;
+        sets.advance_while_over(now, calls_before);
+        self.publish(&sets);
+        Ok(advanced)
+    }
+
+    /// Where the active scenario stands: the scenario, and the step that runs. `None` while no scenario is active.
+    pub fn scenario(&self) -> Option<ScenarioPosition> {
+        self.sets().position()
+    }
+
+    /// The steps that advanced by themselves since the last call, with the armed rules after them.
+    ///
+    /// Whoever counts the changes of the environment takes them, and nobody else: each comes once.
+    pub fn take_steps(&self) -> StepsTaken {
+        let mut sets = self.sets();
+        StepsTaken {
+            steps: std::mem::take(&mut sets.stepped),
+            snapshot: self.snapshot(),
+        }
+    }
+
     /// Every snapshot that the armed rules publish from now on: when a rule is armed, disarmed or retuned,
-    /// and when a lifetime ends. The one that is published now counts as seen.
+    /// when a lifetime ends, and when the scenario changes or advances a step. The one that is published now counts
+    /// as seen.
     pub fn changes(&self) -> RuleChanges {
         RuleChanges {
             published: self.published(),
@@ -172,26 +466,47 @@ impl ArmedRules {
         self.inner.published.subscribe()
     }
 
-    /// Disarms every rule whose lifetime has ended at `now`, and publishes the snapshot without them.
+    /// Takes in the record of a call that ended: counts it for the step of the active scenario, advances the
+    /// scenario when the condition of its step holds, and disarms every rule whose lifetime has ended at `now`.
     ///
-    /// A session calls it after every call it recorded, because that call may have spent the last of a budget.
-    /// It takes no lock while no lifetime ended.
-    pub(crate) fn disarm_ended(&self, now: Instant) {
-        let has_ended = |rule: &ArmedRule| rule.arming().has_ended(now);
-        if !self.inner.published.borrow().iter().any(has_ended) {
-            return;
+    /// A session calls it after every call it recorded, because that call may have ended a step, or spent the last
+    /// of a budget.
+    pub(crate) fn call_recorded(&self, call: &Call, now: Instant) {
+        let mut sets = self.sets();
+        if let Some(active) = sets.scenario.as_mut() {
+            active.run.call_recorded(call.id(), call);
         }
-        self.inner
-            .published
-            .send_if_modified(|published| Self::keep(published, |rule| !has_ended(rule)));
+        let advanced = sets.advance_while_over(now, self.inner.call_ids.assigned());
+        let swept = sets.sweep(now);
+        if advanced || swept {
+            self.publish(&sets);
+        }
     }
 
-    /// Disarms every rule whose lifetime is a duration, when `clock` reaches its end. It never returns.
+    /// Disarms every rule whose lifetime has ended at `now`, and ends the step of the scenario whose time is up.
+    /// Publishes the snapshot after them.
+    pub(crate) fn settle(&self, now: Instant) {
+        let mut sets = self.sets();
+        let advanced = sets.advance_while_over(now, self.inner.call_ids.assigned());
+        let swept = sets.sweep(now);
+        if advanced || swept {
+            self.publish(&sets);
+        }
+    }
+
+    /// Disarms every rule whose lifetime is a duration when `clock` reaches its end, and ends every step that ends
+    /// after a time when `clock` reaches it. It never returns.
     pub(crate) async fn end_lifetimes(self, clock: &impl WaitableClock) {
         let mut published = self.published();
         loop {
-            let ends = |rule: &ArmedRule| rule.arming().ends_at();
-            let next = published.borrow_and_update().iter().filter_map(ends).min();
+            published.borrow_and_update();
+            let next = {
+                let sets = self.sets();
+                let ends = |rule: &ArmedRule| rule.arming().ends_at();
+                let lifetimes = sets.snapshot().iter().filter_map(ends).min();
+                let step = sets.scenario.as_ref().and_then(|active| active.run.ends_at());
+                lifetimes.into_iter().chain(step).min()
+            };
             let reached = async {
                 match next {
                     Some(at) => clock.until(at).await,
@@ -199,20 +514,22 @@ impl ArmedRules {
                 }
             };
             tokio::select! {
-                // The armed rules changed, so another lifetime may end first.
+                // The armed rules changed, so another lifetime or another step may end first.
                 _ = published.changed() => {}
-                () = reached => self.disarm_ended(clock.now()),
+                () = reached => self.settle(clock.now()),
             }
         }
     }
 
-    /// Swaps in a snapshot of the rules that `stays` keeps, in their order. Returns whether a rule left.
-    fn keep(published: &mut Arc<Snapshot>, stays: impl Fn(&ArmedRule) -> bool) -> bool {
-        if published.iter().all(&stays) {
-            return false;
-        }
-        *published = Arc::new(published.keeping(stays));
-        true
+    /// Publishes the snapshot of `sets` to every session.
+    fn publish(&self, sets: &Sets) {
+        self.inner.published.send_replace(Arc::new(sets.snapshot()));
+    }
+
+    /// The sets of rules. A task that panicked while it held them left them whole: each change is made in full
+    /// before it is published.
+    fn sets(&self) -> MutexGuard<'_, Sets> {
+        self.inner.sets.lock().unwrap_or_else(PoisonError::into_inner)
     }
 }
 
@@ -234,7 +551,7 @@ impl RuleChanges {
     }
 }
 
-/// Writes the names of the armed rules, in priority order.
+/// Writes the names of the armed rules, in priority order, and where the scenario stands.
 impl fmt::Debug for ArmedRules {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let snapshot = self.snapshot();
@@ -242,6 +559,7 @@ impl fmt::Debug for ArmedRules {
         f.debug_struct("ArmedRules")
             .field("seed", &self.inner.seed)
             .field("armed", &armed)
+            .field("scenario", &self.scenario())
             .finish()
     }
 }
@@ -250,7 +568,8 @@ impl fmt::Debug for ArmedRules {
 mod tests {
     use gaslightmq_clock::{Duration, TimeSpan};
     use gaslightmq_lie::LieDefinition;
-    use gaslightmq_rule::{PresetSet, Rule};
+    use gaslightmq_rule::{PresetSet, Rule, RuleSet};
+    use gaslightmq_scenario::{Mode, Scenario, ScenarioRule, Step, Until};
     use gaslightmq_selector::{Conditions, SelectorSet};
     use gaslightmq_trigger::{Count, CounterKey, Lifetime, SessionCounters};
 
@@ -258,7 +577,7 @@ mod tests {
     use gaslightmq_clock_waitable::SteppedClock;
 
     fn armed_rules(clock: &SteppedClock) -> ArmedRules {
-        ArmedRules::new(Seed::new(42), Arc::new(clock.clone()))
+        ArmedRules::new(Seed::new(42), Arc::new(clock.clone()), CallIds::new())
     }
 
     /// A silence on every call, under `name`.
@@ -405,7 +724,7 @@ mod tests {
         rules.arm(resolved(&rule("leader-flap"))).unwrap();
 
         // Nothing ended yet, so nothing changes.
-        rules.disarm_ended(clock.now());
+        rules.settle(clock.now());
         assert_eq!(armed(&rules), ["leader-flap", "blackhole"]);
 
         // A session confirms the one firing, and says so after the call.
@@ -416,7 +735,7 @@ mod tests {
             .into_firing()
             .unwrap();
         assert!(firing.confirm().ends_lifetime());
-        rules.disarm_ended(clock.now());
+        rules.settle(clock.now());
 
         assert_eq!(armed(&rules), ["leader-flap"]);
         // Its name is free for a new arming.
@@ -488,6 +807,175 @@ mod tests {
         clock.advance(Duration::from_secs(20));
         session.changed().await.unwrap();
         assert_eq!(armed(&rules), Vec::<String>::new());
+        ending.abort();
+    }
+
+    /// A scenario of these rules of the workspace, resolved against them.
+    fn scenario(called: &str, mode: Mode, rules: &[&str], workspace: &[&str]) -> ResolvedScenario {
+        let listed = rules.iter().map(|rule| ScenarioRule::from(name(rule)));
+        let scenario = Scenario::new(called.parse().unwrap(), mode, Seed::new(7), listed).unwrap();
+        let workspace = RuleSet::new(workspace.iter().map(|named| rule(named))).unwrap();
+        scenario
+            .resolve(&workspace, &SelectorSet::default(), &PresetSet::default())
+            .unwrap()
+    }
+
+    #[test]
+    fn the_live_set_comes_before_the_rules_of_the_scenario_and_a_chain_keeps_its_order() {
+        let rules = armed_rules(&SteppedClock::new());
+        rules.arm(resolved(&rule("leader-flap"))).unwrap();
+        let chain = scenario(
+            "halves",
+            Mode::Chain,
+            &["blackhole-half", "refuse-half"],
+            &["blackhole-half", "refuse-half"],
+        );
+
+        let activated = rules.activate(chain).unwrap();
+
+        assert_eq!(activated.armed, [name("blackhole-half"), name("refuse-half")]);
+        assert_eq!(armed(&rules), ["leader-flap", "blackhole-half", "refuse-half"]);
+        // A rule armed by hand later still wins over the scenario.
+        rules.arm(resolved(&rule("throttle"))).unwrap();
+        assert_eq!(armed(&rules), ["throttle", "leader-flap", "blackhole-half", "refuse-half"]);
+    }
+
+    #[test]
+    fn one_scenario_is_active_at_a_time_and_deactivating_it_leaves_the_live_set() {
+        let rules = armed_rules(&SteppedClock::new());
+        rules.arm(resolved(&rule("leader-flap"))).unwrap();
+        let chain = || scenario("jitter", Mode::Chain, &["background-jitter"], &["background-jitter"]);
+        rules.activate(chain()).unwrap();
+
+        let again = rules.activate(chain());
+        let deactivated = rules.deactivate().unwrap();
+
+        assert_eq!(
+            again.unwrap_err(),
+            ActivateError::AlreadyActive {
+                scenario: "jitter".parse().unwrap()
+            }
+        );
+        assert_eq!(deactivated.disarmed, [name("background-jitter")]);
+        assert_eq!(armed(&rules), ["leader-flap"]);
+        assert_eq!(rules.scenario(), None);
+        assert_eq!(rules.deactivate().unwrap_err(), DeactivateError::NotActive);
+    }
+
+    #[test]
+    fn a_rule_that_someone_armed_by_hand_stays_in_the_live_set_when_the_scenario_names_it() {
+        let rules = armed_rules(&SteppedClock::new());
+        rules.arm(resolved(&rule("background-jitter"))).unwrap();
+        let chain = scenario("jitter", Mode::Chain, &["background-jitter"], &["background-jitter"]);
+
+        let activated = rules.activate(chain).unwrap();
+        let deactivated = rules.deactivate().unwrap();
+
+        assert_eq!(activated.armed, Vec::<RuleName>::new());
+        assert_eq!(deactivated.disarmed, Vec::<RuleName>::new());
+        assert_eq!(armed(&rules), ["background-jitter"]);
+    }
+
+    #[test]
+    fn advancing_disarms_the_rules_of_the_step_and_arms_those_of_the_next() {
+        let rules = armed_rules(&SteppedClock::new());
+        let churn = Step::new("leader-churn".parse().unwrap()).arming([name("refuse-with-not-leader")]);
+        let recovery = Step::new("slow-recovery".parse().unwrap()).arming([name("slow-order-producers")]);
+        let sequence = scenario(
+            "churn",
+            Mode::Sequence(vec![churn, recovery]),
+            &["background-jitter"],
+            &["background-jitter", "refuse-with-not-leader", "slow-order-producers"],
+        );
+        rules.activate(sequence).unwrap();
+        assert_eq!(armed(&rules), ["refuse-with-not-leader", "background-jitter"]);
+
+        let advanced = rules.advance().unwrap();
+
+        assert_eq!(advanced.disarmed, [name("refuse-with-not-leader")]);
+        assert_eq!(advanced.armed, [name("slow-order-producers")]);
+        assert_eq!(advanced.position.step.unwrap(), "slow-recovery");
+        assert_eq!(armed(&rules), ["slow-order-producers", "background-jitter"]);
+        // After the last step, the rules of the scenario stay armed, and no step is left to end.
+        rules.advance().unwrap();
+        assert_eq!(armed(&rules), ["background-jitter"]);
+        assert_eq!(
+            rules.advance().unwrap_err(),
+            AdvanceError::NoStep {
+                scenario: "churn".parse().unwrap()
+            }
+        );
+    }
+
+    #[test]
+    fn a_step_that_ends_on_firings_lets_its_rule_fire_that_often_and_ends_by_itself() {
+        let clock = SteppedClock::new();
+        let rules = armed_rules(&clock);
+        let twice = Count::new(2).unwrap();
+        let churn = Step::new("leader-churn".parse().unwrap())
+            .arming([name("refuse-with-not-leader")])
+            .ending_on(Until::Firings {
+                count: twice,
+                rule: name("refuse-with-not-leader"),
+            });
+        let after = Step::new("back-to-normal".parse().unwrap());
+        let sequence = scenario(
+            "churn",
+            Mode::Sequence(vec![churn, after]),
+            &[],
+            &["refuse-with-not-leader"],
+        );
+        rules.activate(sequence).unwrap();
+        let arming = rules.snapshot().get(&name("refuse-with-not-leader")).unwrap().clone();
+        let mut session = SessionCounters::new(CounterKey::new("10.0.4.27 broker 2 #1").unwrap());
+
+        for _ in 0..twice.value() {
+            let firing = arming.arming().evaluate(clock.now(), &mut session).into_firing().unwrap();
+            firing.confirm();
+        }
+        // The step allows no third firing, also before it ended.
+        let third = arming.arming().evaluate(clock.now(), &mut session);
+        assert!(!third.fired());
+        rules.settle(clock.now());
+
+        let taken = rules.take_steps();
+        assert_eq!(taken.steps.len(), 1);
+        assert_eq!(taken.steps[0].disarmed, [name("refuse-with-not-leader")]);
+        assert_eq!(taken.steps[0].position.step.as_ref().unwrap(), "back-to-normal");
+        assert!(taken.snapshot.is_empty());
+        // Each step is taken once.
+        assert_eq!(rules.take_steps().steps, Vec::<ScenarioChange>::new());
+    }
+
+    #[tokio::test]
+    async fn a_step_that_ends_after_a_time_ends_when_the_clock_reaches_it() {
+        let clock = SteppedClock::new();
+        let rules = armed_rules(&clock);
+        let mut session = rules.published();
+        let ending = tokio::spawn({
+            let (rules, clock) = (rules.clone(), clock.clone());
+            async move { rules.end_lifetimes(&clock).await }
+        });
+        let twenty_seconds = TimeSpan::from_secs(20);
+        let slow = Step::new("slow-recovery".parse().unwrap())
+            .arming([name("slow-order-producers")])
+            .ending_on(Until::After(twenty_seconds));
+        let after = Step::new("back-to-normal".parse().unwrap());
+        let sequence = scenario(
+            "slow",
+            Mode::Sequence(vec![slow, after]),
+            &[],
+            &["slow-order-producers"],
+        );
+        rules.activate(sequence).unwrap();
+        tokio::task::yield_now().await;
+        session.borrow_and_update();
+
+        clock.advance(twenty_seconds.duration());
+        session.changed().await.unwrap();
+
+        assert_eq!(armed(&rules), Vec::<String>::new());
+        assert_eq!(rules.scenario().unwrap().step.unwrap(), "back-to-normal");
         ending.abort();
     }
 }

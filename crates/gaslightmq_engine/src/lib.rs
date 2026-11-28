@@ -8,7 +8,8 @@
 //! |---|---|
 //! | [`Engine`] | The runtime of one proxy, from the moment it starts until someone stops it. |
 //! | [`EngineConfiguration`] | What an engine is configured with: its listeners, its seed, and its waits and limits. |
-//! | [`ArmedRules`] | The armed rules of the proxy. Arming and disarming publishes a snapshot to every session. |
+//! | [`ArmedRules`] | The armed rules of the proxy: the live set and the scenario that runs. Arming and disarming publishes a snapshot to every session. |
+//! | [`ScenarioChange`], [`StepsTaken`] | What activating, deactivating or advancing a scenario did, and the steps that advanced by themselves. |
 //! | [`RuleChanges`] | Every snapshot that the armed rules publish, for whoever follows what is armed. |
 //! | [`OpenSession`], [`SessionEvent`] | A session that is open, and what happens to a session: it opens, says who its client is, and closes. |
 //! | [`EngineEvent`] | What a session hands over: the record of a call, or an incident that a rule fired. Also an entry of the journal. |
@@ -19,6 +20,7 @@
 //! | [`EventBacklog`] | How many events an engine keeps for a live listener that falls behind. |
 //! | [`EngineStartError`], [`EndpointOpenError`] | Why an engine did not start, and why an endpoint has no listener. |
 //! | [`ArmError`], [`DisarmError`], [`RetuneError`], [`LiveEventsError`] | Why a rule was not armed, disarmed or retuned, and why a live listener has no next event. |
+//! | [`ActivateError`], [`DeactivateError`], [`AdvanceError`] | Why a scenario was not activated, deactivated or advanced to its next step. |
 //! | [`NotOpenError`] | No session is open on the connection that someone asked to close. |
 //! | [`StartRecordingError`], [`StopRecordingError`], [`ListRecordingsError`], [`OpenRecordingError`] | Why a recording did not start, did not stop in order, and why the recordings were not listed or one did not open. |
 //!
@@ -223,6 +225,22 @@
 //! It disarms a rule whose lifetime ended: on the clock for a duration,
 //! and after the call that spent the last match or firing of a budget.
 //!
+//! # The scenario runner
+//!
+//! [`ArmedRules`] also runs the scenario of the environment: at most one is active, and its rules come after the
+//! live set, in the order of its mode. The run is the sans-IO [`ScenarioRun`](gaslightmq_scenario::ScenarioRun) of
+//! `gaslightmq_scenario`, and the engine drives it:
+//!
+//! - **A step ends on the call that ends it.** A session hands every record it emits to the armed rules before it
+//!   takes its next frame, so the next call of that connection is evaluated against the next step. A step that ends
+//!   after a number of calls counts the calls that arrived during it, and one that ends after firings hands its
+//!   rule a budget of that many, which every session takes from.
+//! - **A step that ends after a time ends on the clock**, in the task that ends lifetimes.
+//! - **Nobody asked for a step that ends by itself.** The armed rules keep it until whoever counts the changes of
+//!   the environment [takes it](ArmedRules::take_steps), and records it.
+//! - **The scenario arms with its seed.** Every die of a rule that the scenario arms rolls from the seed of the
+//!   scenario, and every die of a rule armed by hand from the [seed](EngineConfiguration::seed) of the engine.
+//!
 //! # Events
 //!
 //! The record of every call and every incident that a rule fired leave the engine in one place.
@@ -293,14 +311,11 @@
 //!
 //! # What is not here yet
 //!
-//! The scenario runner, the traffic window, the index and the workspace arrive with their crates. Until then:
+//! The traffic window, the index and the workspace arrive with their crates. Until then:
 //!
 //! - Nobody applies an incident. The engine hands it over, and whoever listens passes it to the backend.
-//! - The armed rules are a live set alone: the rule that was armed last wins, and every die rolls from the
-//!   [seed](EngineConfiguration::seed) of the configuration.
 //! - The record of a call does not sum up what the real cluster answered next to a truth that an overlay changed.
 //!   A recording keeps the frame of that answer all the same: the session hands it to the pipeline with the truth.
-//! - A recording names no active scenario in its description: no scenario runs yet.
 //! - A proxy that stops ends its sessions without a word to their pipelines, which have no input for it.
 //!   A call that is in flight then gets no record.
 //!
@@ -314,6 +329,9 @@
 //! | Opening an endpoint, when the engine starts and when its backend opens one later | [`EndpointOpenError`] | The address did not take a listener, or the backend rejected the listener. |
 //! | [`ArmedRules::arm`] | [`ArmError`] | The rule is armed already. |
 //! | [`ArmedRules::disarm`] | [`DisarmError`] | The rule is not armed. |
+//! | [`ArmedRules::activate`] | [`ActivateError`] | A scenario is active already. |
+//! | [`ArmedRules::deactivate`] | [`DeactivateError`] | No scenario is active. |
+//! | [`ArmedRules::advance`] | [`AdvanceError`] | No scenario is active, or it runs no step. |
 //! | [`LiveEvents::next`] | [`LiveEventsError`] | The listener missed events, or the engine stopped. |
 //! | [`EventBacklog`] | [`EventBacklogError`] | The number of events is zero, or more than an engine can keep. |
 //!
@@ -352,15 +370,16 @@ mod timers;
 pub use configuration::{EngineConfiguration, EventBacklog, EventBacklogError, RecorderConfiguration};
 pub use engine::Engine;
 pub use error::{
-    ArmError, DisarmError, EndpointOpenError, EngineStartError, ListRecordingsError, LiveEventsError, NotOpenError,
-    OpenRecordingError, RetuneError, StartRecordingError, StopRecordingError,
+    ActivateError, AdvanceError, ArmError, DeactivateError, DisarmError, EndpointOpenError, EngineStartError,
+    ListRecordingsError, LiveEventsError, NotOpenError, OpenRecordingError, RetuneError, StartRecordingError,
+    StopRecordingError,
 };
 pub use events::{EngineEvent, EveryEvent, LiveEvents};
 pub use journal::Journal;
 pub use open_sessions::{OpenSession, SessionEvent};
 pub use recorder::{Recorder, RecordingStart};
 pub use recordings::{Recordings, StoredRecording};
-pub use rules::{ArmedRules, RuleChanges};
+pub use rules::{ArmedRules, RuleChanges, ScenarioChange, StepsTaken};
 
 /// Every item of this crate.
 ///
@@ -378,9 +397,10 @@ pub use rules::{ArmedRules, RuleChanges};
 pub mod prelude {
     #[doc(no_inline)]
     pub use crate::{
-        ArmError, ArmedRules, DisarmError, EndpointOpenError, Engine, EngineConfiguration, EngineEvent,
-        EngineStartError, EventBacklog, EventBacklogError, EveryEvent, Journal, ListRecordingsError, LiveEvents,
-        LiveEventsError, NotOpenError, OpenRecordingError, OpenSession, RecorderConfiguration, RecordingStart,
-        Recordings, RetuneError, RuleChanges, SessionEvent, StartRecordingError, StopRecordingError, StoredRecording,
+        ActivateError, AdvanceError, ArmError, ArmedRules, DeactivateError, DisarmError, EndpointOpenError, Engine,
+        EngineConfiguration, EngineEvent, EngineStartError, EventBacklog, EventBacklogError, EveryEvent, Journal,
+        ListRecordingsError, LiveEvents, LiveEventsError, NotOpenError, OpenRecordingError, OpenSession,
+        RecorderConfiguration, RecordingStart, Recordings, RetuneError, RuleChanges, ScenarioChange, SessionEvent,
+        StartRecordingError, StepsTaken, StopRecordingError, StoredRecording,
     };
 }

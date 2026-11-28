@@ -1634,6 +1634,7 @@ dependencies = [
  "gaslightmq_recording",
  "gaslightmq_recording_conformance",
  "gaslightmq_rule",
+ "gaslightmq_scenario",
  "gaslightmq_selector",
  "gaslightmq_session",
  "gaslightmq_test_kafka",
