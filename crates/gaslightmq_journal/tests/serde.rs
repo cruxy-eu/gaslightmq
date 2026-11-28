@@ -267,8 +267,9 @@ fn a_change_of_a_scenario_names_the_scenario_and_the_step_that_runs() {
 
 #[test]
 fn reading_a_change_rejects_what_it_does_not_know() {
+    // No change renames a rule: a definition keeps its name for good.
     rejects::<Change>(
-        r#"{"change":"step-advanced","scenario":"black-friday"}"#,
+        r#"{"change":"rule-renamed","rule":"slow-order-producers"}"#,
         "unknown variant",
     );
     rejects::<Change>(
