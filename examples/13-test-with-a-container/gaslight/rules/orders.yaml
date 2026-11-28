@@ -1,0 +1,10 @@
+# The rules that the tests of the orders service arm by name. They stay disarmed until a test arms one.
+- name: order-acknowledgements-get-lost
+  title: Order acknowledgements get lost
+  selector:
+    api: Produce
+    topic: orders
+  action:
+    lie: refusal
+    error: REQUEST_TIMED_OUT
+    stage: after                   # the real cluster writes the order, the service is told it failed

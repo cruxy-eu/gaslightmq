@@ -10,6 +10,12 @@ set shell := ["bash", "-eu", "-o", "pipefail", "-c"]
 # The image of `gmq` that `just image` builds, `just container` runs and `just test-image` tests.
 gmq_image := "ghcr.io/cruxy-eu/gaslightmq:latest"
 
+# The examples whose tests run: the projects of a user, which test an application with GaslightMQ.
+# Each is a workspace of its own, so a recipe names its manifest. It builds into the target directory of this
+# workspace, which already holds the crates that the example depends on.
+example_in_process := "examples/12-test-in-process/Cargo.toml"
+example_with_a_container := "examples/13-test-with-a-container/Cargo.toml"
+
 # Show every recipe.
 default:
     @just --list --unsorted
@@ -30,10 +36,14 @@ install-hooks:
 # Formatting, without changing a file.
 fmt-check:
     cargo fmt --all -- --check
+    cargo fmt --all --manifest-path {{example_in_process}} -- --check
+    cargo fmt --all --manifest-path {{example_with_a_container}} -- --check
 
 # Format every file.
 fmt:
     cargo fmt --all
+    cargo fmt --all --manifest-path {{example_in_process}}
+    cargo fmt --all --manifest-path {{example_with_a_container}}
 
 # The rules of crates.md and CLAUDE.md that the compiler cannot see. Name checks to run only those.
 checks *names:
@@ -49,16 +59,22 @@ wasm: (checks "wasm-boundary")
 clippy:
     cargo clippy --workspace --all-targets -- -D warnings
     cargo clippy --workspace --all-targets --all-features -- -D warnings
+    cargo clippy --manifest-path {{example_in_process}} --target-dir target --all-targets -- -D warnings
+    cargo clippy --manifest-path {{example_with_a_container}} --target-dir target --all-targets -- -D warnings
 
 # The tests against real Kafka brokers need Docker, and say so when it is missing.
 # Every test, with every feature, but those of the image, which `just test-image` runs.
+# Then the tests of the example with GaslightMQ in process.
 test *args:
     cargo test --workspace --all-features --exclude gaslightmq_testcontainers {{args}}
+    cargo test --manifest-path {{example_in_process}} --target-dir target {{args}}
 
 # It builds the image first, and the tests run that one. They need Docker.
 # The tests of the image of `gmq`: GaslightMQ in a container next to a test, in front of real Kafka brokers.
+# Then the tests of the example with GaslightMQ in a container.
 test-image *args: image
     GASLIGHTMQ_IMAGE={{gmq_image}} cargo test -p gaslightmq_testcontainers --all-features {{args}}
+    GASLIGHTMQ_IMAGE={{gmq_image}} cargo test --manifest-path {{example_with_a_container}} --target-dir target {{args}}
 
 # Only the tests against real Kafka brokers, which `just test` runs too. They need Docker.
 test-kafka *args:
