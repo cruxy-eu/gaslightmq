@@ -6,7 +6,7 @@ use gaslightmq_clock::TimeSpan;
 use gaslightmq_field::{Field, FieldGroup, FieldValue};
 use gaslightmq_kernel::ErrorCode;
 use gaslightmq_lie::{HangUpLie, LieDefinition, RefusalLie, TimingLie};
-use gaslightmq_rule::{ActionRef, PresetName, Rule, RuleName, RuleTitle};
+use gaslightmq_rule::{ActionRef, PresetName, Rule, RulePhrase, RuleTitle};
 use gaslightmq_selector::{Condition, Conditions, Glob, Scope, SelectorName, SelectorRef, ValueSet};
 use gaslightmq_trigger::{Chance, Lifetime, TriggerParts};
 
@@ -62,21 +62,11 @@ impl FieldSaid {
             (None, names) => ValueSet::new(names.iter().cloned()).ok().map(Condition::IsAnyOf),
         }
     }
-
-    /// The pattern or the names, as the name of a rule writes them: `Produce + Fetch`.
-    fn phrase(&self) -> String {
-        let names = || {
-            let names: Vec<String> = self.names.iter().map(ToString::to_string).collect();
-            names.join(" + ")
-        };
-        self.pattern.as_ref().map_or_else(names, ToString::to_string)
-    }
 }
 
 /// An action with the words the title of its rule starts with.
 struct Told {
     action: ActionRef,
-    phrase: String,
 }
 
 /// What the words of one sentence said so far.
@@ -285,23 +275,14 @@ impl<'a> Draft<'a> {
         let time_span = time_span.map(|said| said.value);
 
         match action {
-            ActionWord::Preset(preset) => Some(Told {
-                phrase: preset.to_string(),
-                action: preset.into(),
-            }),
+            ActionWord::Preset(preset) => Some(Told { action: preset.into() }),
             ActionWord::Lie(LieWord::Delay) => {
                 let lie = TimingLie::new().with_delay(time_span.unwrap_or(configuration.default_delay));
-                Some(Told {
-                    phrase: format!("Delay {}", lie.delay()),
-                    action: lie.into(),
-                })
+                Some(Told { action: lie.into() })
             }
             ActionWord::Lie(LieWord::Throttle) => {
                 let lie = TimingLie::new().with_throttle(time_span.unwrap_or(configuration.default_throttle));
-                Some(Told {
-                    phrase: format!("Throttle {}", lie.throttle()),
-                    action: lie.into(),
-                })
+                Some(Told { action: lie.into() })
             }
             ActionWord::Lie(LieWord::Error) => {
                 let Some(error_code) = error_code else {
@@ -312,16 +293,13 @@ impl<'a> Draft<'a> {
                     return None;
                 };
                 Some(Told {
-                    phrase: format!("Refuse with {}", error_code.value),
                     action: RefusalLie::new(error_code.value).into(),
                 })
             }
             ActionWord::Lie(LieWord::Blackhole) => Some(Told {
-                phrase: "Blackhole".to_owned(),
                 action: LieDefinition::Silence.into(),
             }),
             ActionWord::Lie(LieWord::Disconnect) => Some(Told {
-                phrase: "Disconnect".to_owned(),
                 action: HangUpLie::new().into(),
             }),
         }
@@ -347,66 +325,17 @@ impl<'a> Draft<'a> {
             None => TriggerParts::new(),
         };
 
-        let title = self.title(&told.phrase);
-        let rule = Rule::new(Self::name(&title)?, selector, told.action)
-            .scoped(Scope::new(scope).ok()?)
+        let scope = Scope::new(scope).ok()?;
+        let phrase = RulePhrase::of(&selector, &scope, &told.action);
+        let rule = Rule::new(phrase.name(), selector, told.action)
+            .scoped(scope)
             .with_trigger(trigger)
             .with_lifetime(self.lifetime.unwrap_or_default());
         // A client or a group can have an ID that no title holds, such as one with a character nobody sees.
         // The rule then has no title, and it shows its name.
-        Some(match RuleTitle::new(&title) {
+        Some(match RuleTitle::new(phrase.as_str()) {
             Ok(title) => rule.with_title(title),
             Err(_) => rule,
         })
-    }
-
-    /// What the rule is for, in the words of the sentence: what happens, on which calls, and for whom.
-    ///
-    /// `Delay 750ms on Produce orders.* for order-ingest`.
-    fn title(&self, action: &str) -> String {
-        let phrase = |field| self.fields.get(&field).map(FieldSaid::phrase);
-        let said: Vec<String> = [
-            phrase(Field::Api),
-            phrase(Field::Topic),
-            phrase(Field::Group).map(|groups| format!("group {groups}")),
-        ]
-        .into_iter()
-        .flatten()
-        .collect();
-        let calls = match &self.selector {
-            Some(selector) => selector.to_string(),
-            None if said.is_empty() => "all calls".to_owned(),
-            None => said.join(" "),
-        };
-        let clients = phrase(Field::ClientId).map(|clients| format!(" for {clients}"));
-        let endpoints = phrase(Field::Endpoint).map(|endpoints| format!(" at {endpoints}"));
-
-        format!(
-            "{action} on {calls}{}{}",
-            clients.unwrap_or_default(),
-            endpoints.unwrap_or_default()
-        )
-    }
-
-    /// The name of the rule: its title in the characters a name holds.
-    ///
-    /// `delay-750ms-on-produce-orders-for-order-ingest`.
-    ///
-    /// A letter is in lower case, and whatever stands between letters and digits is one hyphen.
-    /// A name that would be too long is cut.
-    /// A title starts with what happens, which starts with a letter or a digit, so there is always a name.
-    fn name(title: &str) -> Option<RuleName> {
-        let mut name = String::new();
-        for character in title.chars() {
-            if name.len() == RuleName::MAX_LENGTH {
-                break;
-            }
-            if character.is_ascii_alphanumeric() {
-                name.push(character.to_ascii_lowercase());
-            } else if !name.is_empty() && !name.ends_with('-') {
-                name.push('-');
-            }
-        }
-        RuleName::new(name.trim_end_matches('-')).ok()
     }
 }

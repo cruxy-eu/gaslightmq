@@ -788,7 +788,8 @@ Every operation of `control_api` is served, so no answer is `501` today.
 an older process, or one built without a part.
 
 A recording starts, stops, is listed, opens and is queried: `start-recording` and `stop-recording` name an
-environment, `list-recordings` lists every recording of the process, `open-recording` names one by its ID and
+environment, and `start-recording` may name the `mode` of the one recording that it starts, `full` or `metadata-only`,
+in place of the [mode of the environment](storage.md#privacy) for that recording alone; `list-recordings` lists every recording of the process, `open-recording` names one by its ID and
 answers with what it is, how many entries it holds and how it ended, and `query-recording` and
 `get-recording-index` [read it](#querying-a-recording).
 *Test against the current recording*, of the `selectors` row, is `query-recording`: a saved selector by its name,

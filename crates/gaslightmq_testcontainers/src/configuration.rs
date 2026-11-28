@@ -7,7 +7,9 @@ use std::num::NonZeroU16;
 use std::path::PathBuf;
 
 use gaslightmq_control_api::clock::TimeSpan;
-use gaslightmq_control_api::environment::{EnvironmentName, ServerAddress};
+use gaslightmq_control_api::environment::{EnvironmentName, RecordingMode, ServerAddress};
+use gaslightmq_control_api::rule::Rule;
+use gaslightmq_control_client::{DefinitionText, Preparation, RuleToArm, ScenarioText, ScenarioToActivate};
 
 use crate::image::GaslightMqImage;
 
@@ -102,6 +104,8 @@ pub struct GaslightMqContainerConfiguration {
     ///
     /// How many of the last lines that the process wrote an error shows, when it does not get ready.
     pub log_lines_in_errors: usize,
+    /// What the test declared that the instance starts with, which it does once the process is ready.
+    pub(crate) preparation: Preparation,
 }
 
 impl GaslightMqContainerConfiguration {
@@ -117,6 +121,7 @@ impl GaslightMqContainerConfiguration {
             start_timeout: TimeSpan::from_secs(60),
             stop_timeout: TimeSpan::from_secs(10),
             log_lines_in_errors: 40,
+            preparation: Preparation::default(),
         }
     }
 
@@ -138,6 +143,53 @@ impl GaslightMqContainerConfiguration {
     #[must_use]
     pub fn with_workspace(mut self, directory: impl Into<PathBuf>) -> Self {
         self.workspace = Some(directory.into());
+        self
+    }
+
+    /// The same configuration, whose workspace gets `rule`, disarmed, once the process is ready: a
+    /// [`rule!`](gaslightmq_control_client::rule), or its YAML as a file holds it.
+    #[must_use]
+    pub fn with_rule(mut self, rule: impl Into<DefinitionText<Rule>>) -> Self {
+        self.preparation = self.preparation.with_rule(rule);
+        self
+    }
+
+    /// The same configuration, whose workspace gets `scenario` once the process is ready: a
+    /// [`scenario!`](gaslightmq_control_client::scenario), or its YAML as a file holds it.
+    #[must_use]
+    pub fn with_scenario(mut self, scenario: impl Into<ScenarioText>) -> Self {
+        self.preparation = self.preparation.with_scenario(scenario);
+        self
+    }
+
+    /// The same configuration, which arms `rule` once the process is ready: a rule of the workspace by its name, or a
+    /// new live rule. [`GaslightMqContainer::armed`](crate::GaslightMqContainer::armed) holds it then.
+    #[must_use]
+    pub fn arming(mut self, rule: impl Into<RuleToArm>) -> Self {
+        self.preparation = self.preparation.arming(rule);
+        self
+    }
+
+    /// The same configuration, which activates `scenario` once the process is ready, after everything else: a
+    /// scenario of the workspace by its name, or one that the workspace gets first.
+    #[must_use]
+    pub fn activating(mut self, scenario: impl Into<ScenarioToActivate>) -> Self {
+        self.preparation = self.preparation.activating(scenario);
+        self
+    }
+
+    /// The same configuration, whose recordings keep as much of each call as `mode` says: the one from the start, and
+    /// each that the test starts. A proxy in front of a real cluster keeps no records otherwise.
+    #[must_use]
+    pub fn recording(mut self, mode: RecordingMode) -> Self {
+        self.preparation = self.preparation.recording_in(mode);
+        self
+    }
+
+    /// The same configuration, which starts a recording once the process is ready, before it activates a scenario.
+    #[must_use]
+    pub fn recording_from_the_start(mut self) -> Self {
+        self.preparation = self.preparation.recording_from_the_start();
         self
     }
 

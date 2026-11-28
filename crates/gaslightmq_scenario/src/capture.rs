@@ -63,8 +63,8 @@ use crate::{Mode, Scenario, ScenarioName, Step, StepName, StepTitle, Until};
 /// capture.read(&entry, |_| None);
 ///
 /// let captured = capture.stop(Instant::ZERO + stopped_at);
-/// let arms: Vec<&[RuleName]> = captured.steps().iter().map(Step::arm).collect();
-/// assert_eq!(arms, [&[][..], &[slow.name().clone()][..], &[][..]]);
+/// let arms: Vec<&[ScenarioRule]> = captured.steps().iter().map(Step::arm).collect();
+/// assert_eq!(arms, [&[][..], &[ScenarioRule::from(slow.name().clone())][..], &[][..]]);
 /// let ends: Vec<Option<&Until>> = captured.steps().iter().map(Step::until).collect();
 /// assert_eq!(
 ///     ends,

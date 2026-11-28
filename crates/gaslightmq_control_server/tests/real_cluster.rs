@@ -1625,6 +1625,7 @@ async fn a_recording_started_through_the_control_plane_keeps_the_calls_until_it_
     let recording = client
         .send(StartRecording {
             environment: staging.name().clone(),
+            mode: None,
         })
         .await??;
     let started = stream.next_change().await?;
@@ -1769,7 +1770,7 @@ async fn a_capture_through_the_control_plane_answers_with_its_steps_and_saves_th
     let arms: Vec<Vec<String>> = captured
         .steps
         .iter()
-        .map(|step| step.arm().iter().map(ToString::to_string).collect())
+        .map(|step| step.arm().iter().map(|rule| rule.name().to_string()).collect())
         .collect();
     assert_eq!(arms, [vec![], vec![slow.name().to_string()]]);
     assert_eq!(captured.rules, std::slice::from_ref(&slow));

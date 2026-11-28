@@ -31,9 +31,10 @@ lifetime: until disarmed
 `scope` is shorthand for extra conditions over connection fields.
 The rule's effective selector is the selector **and** the scope.
 
-A rule needs a name, a selector and an action.
+A rule needs a selector and an action.
 `selector: {}` has no conditions, so it matches every call.
-`title`, `scope`, `trigger`, `lifetime` and `dice` are optional.
+`name`, `title`, `scope`, `trigger`, `lifetime` and `dice` are optional.
+A rule without a `name` has the [name of what it says](#the-name-of-what-a-rule-says).
 
 A rule holds [what a person writes](../architecture/identity.md#what-a-definition-holds), and nothing that GaslightMQ keeps.
 Its [revision](../architecture/identity.md#revision) and its armed state are live state, beside the rule,
@@ -55,6 +56,39 @@ A rule keeps its name for as long as it exists.
 Nothing renames a rule.
 Whoever wants another name makes a new rule under that name, and deletes the old one.
 The new rule is another rule: its statistics start at zero, and whatever named the old rule does not name the new one.
+
+### The name of what a rule says
+
+A rule that someone writes without a name gets one from what it says, as ⌘K [names the rule of a sentence](control-surfaces.md#quick-inject):
+what happens, on which calls, for which clients and at which broker, in the characters a name holds.
+
+```yaml
+selector: { api: Produce, topic: orders }
+action: { lie: refusal, error: NOT_LEADER_OR_FOLLOWER }
+trigger: { first: 1 }
+```
+
+This rule is `refuse-with-not-leader-or-follower-on-produce-orders`.
+
+| Part | Says | Example |
+|---|---|---|
+| The action | A preset by its name. A refusal with its error code, a delay or a throttle with its time span, a blackhole, a disconnect, an incident by its kind. A lie at another stage than the default of its kind says it. | `Refuse with NOT_LEADER_OR_FOLLOWER after the response` |
+| The calls | A selector by its name, or the APIs, the topics, the groups and every other condition of the inline selector, in that order. Several values of one field are any of them. | `on Produce + Fetch orders.*` |
+| The scope | The clients after `for`, the brokers after `at`, and every other condition of the scope. | `for order-ingest at b2` |
+
+- **The name is what the rule says, and it is its identity.**
+  A rule that says something else has another name, and it is [another rule](#names): its statistics start at zero.
+  Whoever refers to a rule by its name, from a step that ends on its firings or from a pad, names the rule.
+- **The trigger, the lifetime and the dice key are no part of the name.**
+  Two rules that differ in those alone say the same, and need a name of their own each.
+- **A name is cut at 63 characters**, and the letters are in lower case. Whatever stands between letters and digits is one hyphen.
+- **GaslightMQ writes the name it gave.** A rule that GaslightMQ writes back to a file holds its name from then on,
+  so it keeps its identity when someone changes what it says.
+- **A name that is taken is an error**, as for a rule that someone named: two rules of a file or of a scenario that say the same thing need a name each.
+  Whoever creates a live rule without a name, as a test does, adds `-2`, `-3` and so on until the name is free.
+  A scenario that holds one rule twice, the same in both places, holds one rule.
+
+The naming is fixed, as the [derivation of the dice](#derivation) is: a change to it renames every rule that nobody named.
 
 ### Titles
 

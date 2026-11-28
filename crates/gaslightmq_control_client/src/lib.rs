@@ -12,6 +12,12 @@
 //! | [`ControlPlaneAddress`], [`ControlPlaneAddressError`] | Where a control plane listens. |
 //! | [`SendError`] | Why an operation got no answer of its own. |
 //! | [`StreamError`] | Why a live stream did not open, or ended. |
+//! | [`ControlledEnvironment`] | One environment that runs, in the words of whoever works with it: [`Rules`], [`EnvironmentRule`], [`Scenarios`], [`ActiveScenario`], [`Recordings`], [`Recording`], [`FollowedCalls`] and the journal. |
+//! | [`Definitions`] | The definitions of the workspace, to create some. |
+//! | [`Preparation`], [`Prepared`], [`PrepareError`] | What an instance starts with, declared before it starts, what that did, and why it did not. |
+//! | [`RuleToArm`], [`ScenarioToActivate`], [`SelectorToMatch`], [`ScenarioText`] | What a caller hands over: a definition as its text or its value, or a name. |
+//! | [`DefinitionText`], [`ReadDefinitionError`] | The text of a definition, as a file holds it and as [`rule!`], [`scenario!`] and [`selector!`] write it, and why it did not read. |
+//! | [`ArmError`], [`DisarmError`], [`FireError`], [`FiringsError`], [`ActivateError`], [`StepError`], [`DeactivateError`], [`DefineError`], [`RecordingStartError`], [`RecordingStopError`], [`QueryError`], [`JournalError`], [`FollowError`], [`WaitForCallsError`], [`EnvironmentStateError`], [`CurrentRecordingError`] | Why each call of an environment did not do what it asked. |
 //!
 //! # An operation gets its answer or its error
 //!
@@ -44,6 +50,36 @@
 //!     }
 //!     Err(other) => eprintln!("{other}"),
 //! }
+//! # Ok(())
+//! # }
+//! ```
+//!
+//! # One environment, in the words of a test
+//!
+//! [`ControlClient::environment`] gives the words that a test speaks, and any other client that works with one
+//! environment: arm a rule, activate a scenario, start, stop and query a recording, follow calls and wait for them,
+//! and read the journal. Each call has an error of its own, named after it.
+//!
+//! A definition is written as a file of the workspace holds it, with [`rule!`], [`scenario!`] and [`selector!`],
+//! or as the YAML of a file. Nothing needs a name: a rule has the name of what it says, a step the name of its place,
+//! and a scenario that a test activates without a name is `scenario`.
+//!
+//! ```no_run
+//! use gaslightmq_control_client::{ControlClient, rule, selector};
+//!
+//! # async fn refuse_once(client: ControlClient) -> anyhow::Result<()> {
+//! let orders = client.environment("orders-sim".parse()?);
+//! let mut produces = orders.follow(selector! { api: Produce }).await?;
+//! let recording = orders.recordings().start().await?;
+//! let refused = orders
+//!     .rules()
+//!     .arm(rule! { selector: { api: Produce }, action: { lie: refusal, error: NOT_LEADER_OR_FOLLOWER }, trigger: { first: 1 } })
+//!     .await?;
+//! // … the client under test produces, and tries again …
+//! produces.wait_for(2).await?;
+//! recording.stop().await?;
+//! let recorded = recording.query(selector! { api: Produce }).await?;
+//! assert!(recorded.calls[0].explanation().applied(&refused));
 //! # Ok(())
 //! # }
 //! ```
@@ -109,13 +145,35 @@ compile_error!("the client needs a transport: the feature `native` on a native t
 mod address;
 mod client;
 mod configuration;
+mod environment;
 mod error;
 mod exchange;
+mod prepare;
 mod stream;
 mod transport;
+mod written;
 
 pub use address::{ControlPlaneAddress, ControlPlaneAddressError};
 pub use client::ControlClient;
 pub use configuration::ControlClientConfiguration;
-pub use error::{SendError, StreamError};
+pub use environment::{
+    ActiveScenario, ControlledEnvironment, Definitions, EnvironmentRule, FollowedCalls, Recording, Recordings, Rules,
+    ScenarioText, Scenarios,
+};
+pub use error::{
+    ActivateError, ArmError, CurrentRecordingError, DeactivateError, DefineError, DisarmError, EnvironmentStateError,
+    FireError, FiringsError, FollowError, JournalError, PrepareError, QueryError, RecordingStartError,
+    RecordingStopError, SendError, StepError, StreamError, WaitForCallsError,
+};
+pub use gaslightmq_definition_text::{DefinitionText, ReadDefinitionError, definition_text};
+pub use prepare::{Preparation, Prepared};
+pub use written::{RuleToArm, ScenarioToActivate, SelectorToMatch};
+
+/// The kinds of definition that the macros of this crate write, for the macros alone.
+#[doc(hidden)]
+pub mod __kinds {
+    pub use gaslightmq_control_api::rule::Rule;
+    pub use gaslightmq_control_api::scenario::Scenario;
+    pub use gaslightmq_control_api::selector::SelectorRef;
+}
 pub use stream::LiveStream;

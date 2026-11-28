@@ -3,16 +3,25 @@
 use std::net::SocketAddr;
 use std::sync::Arc;
 
+use std::path::Path;
+
 use gaslightmq_control_api::environment::{EnvironmentName, ServerAddress};
 use gaslightmq_control_api::field::Endpoint;
-use gaslightmq_control_api::journal::ChangeSurface;
-use gaslightmq_control_api::{RequestSurface, RunId};
-use gaslightmq_control_client::{ControlClient, ControlClientConfiguration, ControlPlaneAddress};
+use gaslightmq_control_api::journal::{ChangeSurface, JournalEntry};
+use gaslightmq_control_api::rule::RuleName;
+use gaslightmq_control_api::{RequestSurface, RunId, ScenarioStatus};
+use gaslightmq_control_client::{
+    ActiveScenario, ControlClient, ControlClientConfiguration, ControlPlaneAddress, ControlledEnvironment,
+    EnvironmentRule, EnvironmentStateError, FollowError, FollowedCalls, JournalError, Prepared, Recordings, Rules,
+    Scenarios, SelectorToMatch,
+};
 use gaslightmq_control_server::ControlServer;
-use gaslightmq_host::Host;
+use gaslightmq_definition_api::Store;
+use gaslightmq_host::{CreateDefinitionError, Host};
 use gaslightmq_lie_api::Lies;
 use gaslightmq_lie_refusal::Refusal;
-use gaslightmq_workspace::{MemoryContext, WorkspaceContext};
+use gaslightmq_workspace::{MemoryContext, Stores, WorkspaceContext, WorkspaceDefinition};
+use gaslightmq_workspace_fs::{Access, FileStores};
 
 use crate::{GaslightMqConfiguration, GaslightMqStartError};
 
@@ -29,9 +38,10 @@ pub struct GaslightMq<C: WorkspaceContext + 'static = MemoryContext> {
     host: Arc<Host<C>>,
     server: ControlServer,
     control: ControlClient,
-    environment: EnvironmentName,
+    environment: ControlledEnvironment,
     bootstrap: SocketAddr,
     run: RunId,
+    prepared: Prepared,
 }
 
 impl GaslightMq {
@@ -59,10 +69,77 @@ impl<C: WorkspaceContext + 'static> GaslightMq<C> {
 
     /// The name of the environment that the proxy runs in, which every request about it names.
     pub fn environment(&self) -> &EnvironmentName {
+        self.environment.name()
+    }
+
+    /// The environment of the proxy, in the words of a test: its rules, its scenario, its recordings, the calls it
+    /// follows and its journal. The calls below are its words, which the instance speaks for the test.
+    pub fn controlled(&self) -> &ControlledEnvironment {
         &self.environment
     }
 
-    /// A client of the control plane, whose every request says that it comes from a test.
+    /// The rules of the proxy: to [arm](Rules::arm) one, written as a [`rule!`](gaslightmq_control_client::rule),
+    /// as the YAML of a file, or by the name of a rule of the workspace.
+    pub fn rules(&self) -> Rules {
+        self.environment.rules()
+    }
+
+    /// The rule of this name in the environment of the proxy.
+    pub fn rule(&self, name: RuleName) -> EnvironmentRule {
+        self.environment.rule(name)
+    }
+
+    /// The scenarios of the proxy: to [activate](Scenarios::activate) one.
+    pub fn scenarios(&self) -> Scenarios {
+        self.environment.scenarios()
+    }
+
+    /// The recordings of the proxy: to start one, or to take the one that runs. They keep as much of each call as
+    /// the [configuration](GaslightMqConfiguration::recording) says.
+    pub fn recordings(&self) -> Recordings {
+        self.environment.recordings()
+    }
+
+    /// Follows the calls of the proxy that `selector` matches, from now on, so the test [waits](FollowedCalls::wait_for)
+    /// for them, and never on the clock.
+    ///
+    /// # Errors
+    ///
+    /// The [`FollowError`] of [`ControlledEnvironment::follow`].
+    pub async fn follow(&self, selector: impl Into<SelectorToMatch>) -> Result<FollowedCalls, FollowError> {
+        self.environment.follow(selector).await
+    }
+
+    /// Every entry of the journal of the proxy.
+    ///
+    /// # Errors
+    ///
+    /// The errors of [`ControlledEnvironment::journal`].
+    pub async fn journal(&self) -> Result<Vec<JournalEntry>, JournalError> {
+        self.environment.journal().await
+    }
+
+    /// Where the scenario of the proxy stands.
+    ///
+    /// # Errors
+    ///
+    /// The errors of [`ControlledEnvironment::scenario_status`].
+    pub async fn scenario_status(&self) -> Result<ScenarioStatus, EnvironmentStateError> {
+        self.environment.scenario_status().await
+    }
+
+    /// The rules that the configuration [armed](GaslightMqConfiguration::arming), in its order.
+    pub fn armed(&self) -> &[EnvironmentRule] {
+        &self.prepared.armed
+    }
+
+    /// The scenario that the configuration [activated](GaslightMqConfiguration::activating), when it named one.
+    pub fn scenario(&self) -> Option<&ActiveScenario> {
+        self.prepared.scenario.as_ref()
+    }
+
+    /// A client of the control plane, whose every request says that it comes from a test: for whatever the words of
+    /// the [environment](Self::controlled) do not say.
     ///
     /// It names no presence, so a hold that it adds ends by its release or by a disarm alone.
     /// A test that has the process to itself leaves `expects` out: the last change wins.
@@ -112,6 +189,8 @@ impl<C: WorkspaceContext + 'static> GaslightMqConfiguration<C> {
             host,
             control_plane,
             context,
+            workspace,
+            preparation,
         } = self;
         let run = match run {
             Some(run) => run,
@@ -128,6 +207,9 @@ impl<C: WorkspaceContext + 'static> GaslightMqConfiguration<C> {
         host.create(proxy, ChangeSurface::Test)
             .await
             .map_err(|error| GaslightMqStartError::EnvironmentNotCreated { error })?;
+        if let Some(directory) = &workspace {
+            take_the_workspace(&host, directory).await?;
+        }
         // The environment of the test is the one that the process starts with, so the process is healthy while it runs.
         host.start_with([configuration])
             .await
@@ -142,15 +224,72 @@ impl<C: WorkspaceContext + 'static> GaslightMqConfiguration<C> {
         let bootstrap = bootstrap_of(&host, &environment);
         let mut client = ControlClientConfiguration::new(server.address().into());
         client.surface = RequestSurface::Test;
+        let control = ControlClient::new(client);
+        let controlled = match preparation.recording_mode() {
+            Some(mode) => control.environment(environment).recording_in(mode),
+            None => control.environment(environment),
+        };
+        let prepared = match preparation.prepare(&controlled).await {
+            Ok(prepared) => prepared,
+            Err(error) => {
+                server.stop().await;
+                host.stop_all().await;
+                return Err(GaslightMqStartError::NotPrepared { error });
+            }
+        };
         Ok(GaslightMq {
             host,
             server,
-            control: ControlClient::new(client),
-            environment,
+            control,
+            environment: controlled,
             bootstrap,
             run,
+            prepared,
         })
     }
+}
+
+/// The workspace of `host` gets the definitions of the files in `directory`: those that others name first.
+async fn take_the_workspace<C: WorkspaceContext>(host: &Host<C>, directory: &Path) -> Result<(), GaslightMqStartError> {
+    let files = FileStores::open(directory, Access::ReadOnly).await.map_err(|error| {
+        GaslightMqStartError::WorkspaceUnreadable {
+            directory: directory.to_owned(),
+            reason: error.to_string(),
+        }
+    })?;
+    let unreadable = |reason: String| GaslightMqStartError::WorkspaceUnreadable {
+        directory: directory.to_owned(),
+        reason,
+    };
+    let not_taken = |error| GaslightMqStartError::WorkspaceNotTaken { error };
+    let read = |error: gaslightmq_definition_api::StoreReadError| unreadable(error.to_string());
+    take_all(host, files.selectors().list().await.map_err(read)?)
+        .await
+        .map_err(not_taken)?;
+    take_all(host, files.presets().list().await.map_err(read)?)
+        .await
+        .map_err(not_taken)?;
+    take_all(host, files.rules().list().await.map_err(read)?)
+        .await
+        .map_err(not_taken)?;
+    take_all(host, files.scenarios().list().await.map_err(read)?)
+        .await
+        .map_err(not_taken)?;
+    take_all(host, files.layouts().list().await.map_err(read)?)
+        .await
+        .map_err(not_taken)?;
+    Ok(())
+}
+
+/// The workspace of `host` gets each of `definitions`.
+async fn take_all<C: WorkspaceContext, D: WorkspaceDefinition>(
+    host: &Host<C>,
+    definitions: Vec<D>,
+) -> Result<(), CreateDefinitionError> {
+    for definition in definitions {
+        host.create(definition, ChangeSurface::Test).await?;
+    }
+    Ok(())
 }
 
 /// The address of the bootstrap listener of `environment`, which runs.

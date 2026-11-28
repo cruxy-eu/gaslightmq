@@ -1764,6 +1764,7 @@ dependencies = [
  "anyhow",
  "futures",
  "gaslightmq_control_api",
+ "gaslightmq_definition_text",
  "gloo-net 0.8.0",
  "gloo-timers",
  "reqwest 0.13.5",
@@ -1830,6 +1831,17 @@ dependencies = [
  "futures",
  "gaslightmq_definition_api",
  "gaslightmq_definition_conformance",
+]
+
+[[package]]
+name = "gaslightmq_definition_text"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde-saphyr",
+ "serde_json",
+ "serde_path_to_error",
+ "thiserror 2.0.21",
 ]
 
 [[package]]
@@ -2384,6 +2396,7 @@ dependencies = [
  "gaslightmq_control_api",
  "gaslightmq_control_client",
  "gaslightmq_control_server",
+ "gaslightmq_definition_api",
  "gaslightmq_host",
  "gaslightmq_kafka_client_api",
  "gaslightmq_kafka_client_native",
@@ -2392,6 +2405,7 @@ dependencies = [
  "gaslightmq_test_kafka",
  "gaslightmq_wire",
  "gaslightmq_workspace",
+ "gaslightmq_workspace_fs",
  "getrandom 0.4.3",
  "thiserror 2.0.21",
  "tokio",
@@ -2523,6 +2537,7 @@ dependencies = [
  "anyhow",
  "gaslightmq_clock",
  "gaslightmq_definition_api",
+ "gaslightmq_definition_text",
  "gaslightmq_environment",
  "gaslightmq_environment_conformance",
  "gaslightmq_kernel",
@@ -2539,7 +2554,6 @@ dependencies = [
  "gaslightmq_workspace",
  "serde",
  "serde-saphyr",
- "serde_path_to_error",
  "tempfile",
  "thiserror 2.0.21",
  "tokio",

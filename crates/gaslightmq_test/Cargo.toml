@@ -20,6 +20,10 @@ gaslightmq_lie_api.workspace = true
 gaslightmq_lie_refusal.workspace = true
 # The workspace of a test that hands over no context: stores in memory.
 gaslightmq_workspace = { workspace = true, features = ["memory"] }
+# The files of a workspace whose definitions a test starts with.
+gaslightmq_workspace_fs.workspace = true
+# The definitions of the files, which the workspace of the test gets.
+gaslightmq_definition_api.workspace = true
 # The ID of the run of a test that names none.
 getrandom.workspace = true
 thiserror.workspace = true

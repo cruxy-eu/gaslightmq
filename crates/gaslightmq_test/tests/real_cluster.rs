@@ -226,6 +226,7 @@ async fn a_test_asserts_on_the_explanations_of_the_calls_that_a_recording_holds(
     let recording = control
         .send(StartRecording {
             environment: gaslight.environment().clone(),
+            mode: None,
         })
         .await??;
 

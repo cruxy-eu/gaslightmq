@@ -6,44 +6,42 @@
 //! | [`GaslightMq`] | GaslightMQ in the process of a test: a proxy in front of a real cluster, and its control plane. It runs for as long as the value lives. |
 //! | [`GaslightMqConfiguration`] | What it runs, where it listens, and the workspace it holds. |
 //! | [`GaslightMqStartError`] | Why it did not start. |
+//! | [`rule!`], [`scenario!`], [`selector!`] | A definition as a file of a workspace writes it, inside the code of the test. |
+//! | [`RecordingMode`] | How much of each call a recording keeps. |
 //!
 //! A test starts GaslightMQ in front of a cluster, points its client at the [bootstrap address](GaslightMq::bootstrap),
-//! and tells the proxy what to lie about through the [control plane](GaslightMq::control): it arms rules, or it
-//! activates a scenario, which plays a failure out over its steps.
+//! and tells the proxy what to lie about in the words of the files of a workspace: it arms a [`rule!`], activates a
+//! [`scenario!`], which plays a failure out over its steps, records, and follows the calls of a [`selector!`].
+//! Those are the words of [`ControlledEnvironment`](gaslightmq_control_client::ControlledEnvironment), which the crate
+//! `gaslightmq_testcontainers` speaks too.
 //!
 //! ```no_run
-//! use gaslightmq_control_api::kernel::{ApiKey, ErrorCode};
-//! use gaslightmq_control_api::lie::RefusalLie;
-//! use gaslightmq_control_api::prelude::*;
-//! use gaslightmq_control_api::rule::Rule;
-//! use gaslightmq_control_api::selector::{Condition, Conditions};
-//! use gaslightmq_test::{GaslightMq, GaslightMqStartError};
+//! use gaslightmq_test::{GaslightMq, rule, selector};
 //!
 //! # #[tokio::main(flavor = "current_thread")]
-//! # async fn main() -> Result<(), GaslightMqStartError> {
-//! // A proxy in front of the cluster that the test runs against.
-//! let cluster = "127.0.0.1:9092".parse().expect("the bootstrap server of the cluster");
-//! let gaslight = GaslightMq::proxy_in_front_of(cluster).start().await?;
+//! # async fn main() -> anyhow::Result<()> {
+//! // A proxy in front of the cluster that the test runs against, which records from the start.
+//! let cluster = "127.0.0.1:9092".parse()?;
+//! let gaslight = GaslightMq::proxy_in_front_of(cluster).recording_from_the_start().start().await?;
 //!
 //! // The client under test connects here.
 //! let bootstrap_servers = gaslight.bootstrap_servers();
 //! # let _ = bootstrap_servers;
 //!
-//! // From now on, the proxy refuses every Produce: the client may not write to its topic.
-//! let refuse = Rule::new(
-//!     "refuse-order-producers".parse().expect("a rule name"),
-//!     Conditions::from(Condition::is(ApiKey::PRODUCE)),
-//!     RefusalLie::new(ErrorCode::TOPIC_AUTHORIZATION_FAILED),
-//! );
-//! let armed = gaslight
-//!     .control()
-//!     .send(CreateLiveRule {
-//!         environment: gaslight.environment().clone(),
-//!         rule: refuse,
-//!         armed: true,
+//! // The test waits for the Produce calls that it follows, and never on the clock.
+//! let mut produces = gaslight.follow(selector! { api: Produce }).await?;
+//! // From now on, the proxy refuses the first Produce: the client is told that the leader moved.
+//! let leader_moves = gaslight
+//!     .rules()
+//!     .arm(rule! {
+//!         selector: { api: Produce },
+//!         action: { lie: refusal, error: NOT_LEADER_OR_FOLLOWER },
+//!         trigger: { first: 1 },
 //!     })
-//!     .await;
-//! assert!(matches!(armed, Ok(Ok(_))), "{armed:?}");
+//!     .await?;
+//! // … the client produces, and tries again …
+//! let calls = produces.wait_for(2).await?;
+//! assert!(calls[0].explanation().applied(&leader_moves));
 //!
 //! gaslight.stop().await;
 //! # Ok(())
@@ -67,7 +65,7 @@
 //! - **Recordings in memory.**
 //!   The host of the test keeps every recording in the segment layout in memory, for as long as the test runs.
 //! - **Assertions on the recording.**
-//!   A test starts and stops a recording, and [queries](gaslightmq_control_api::QueryRecording) it with a selector:
+//!   A test starts and stops a recording, and [queries](gaslightmq_control_client::Recording::query) it with a selector:
 //!   the answer holds the calls that it matches, each with its verdict and its explanation, and their count over the
 //!   whole recording. A test asserts that a rule applied to exactly the calls it should have, and not merely that
 //!   its client saw an error.
@@ -99,4 +97,6 @@ mod instance;
 
 pub use configuration::GaslightMqConfiguration;
 pub use error::GaslightMqStartError;
+pub use gaslightmq_control_api::environment::RecordingMode;
+pub use gaslightmq_control_client::{rule, scenario, selector};
 pub use instance::GaslightMq;

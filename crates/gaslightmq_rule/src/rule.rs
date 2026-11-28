@@ -1,13 +1,13 @@
 use gaslightmq_selector::{Scope, SelectorRef};
 use gaslightmq_trigger::{DiceKey, Lifetime, Trigger};
 
-use crate::{ActionRef, RuleName, RuleTitle};
+use crate::{ActionRef, RuleName, RulePhrase, RuleTitle};
 
 /// A rule as a file, a scenario or the UI writes it: what happens to which calls, when, and for how long.
 ///
 /// | Part | Meaning | When left out |
 /// |---|---|---|
-/// | Name | The identity of the rule: a slug, unique among rules. Other things reference the rule by it. | |
+/// | Name | The identity of the rule: a slug, unique among rules. Other things reference the rule by it. | The name of what the rule [says](RulePhrase). |
 /// | Title | What the rule is for, in free text. | No title. |
 /// | Selector | Which calls the rule considers: a selector name, or inline conditions. | |
 /// | Scope | Extra conditions over connection fields: who the rule applies to. | All clients. |
@@ -55,24 +55,20 @@ use crate::{ActionRef, RuleName, RuleTitle};
 /// # Ok::<(), RuleNameError>(())
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-#[cfg_attr(
-    feature = "serde",
-    derive(serde::Serialize, serde::Deserialize),
-    serde(deny_unknown_fields)
-)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub struct Rule {
     name: RuleName,
-    #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Option::is_none"))]
+    #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
     title: Option<RuleTitle>,
     selector: SelectorRef,
-    #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Scope::is_all"))]
+    #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Scope::is_all"))]
     scope: Scope,
     action: ActionRef,
-    #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Trigger::is_always"))]
+    #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Trigger::is_always"))]
     trigger: Trigger,
-    #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "until_disarmed"))]
+    #[cfg_attr(feature = "serde", serde(skip_serializing_if = "until_disarmed"))]
     lifetime: Lifetime,
-    #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Option::is_none"))]
+    #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
     dice: Option<DiceKey>,
 }
 
@@ -207,6 +203,25 @@ impl Rule {
     /// The dice key the rule sets, or `None` when its die derives from its name.
     pub fn dice(&self) -> Option<&DiceKey> {
         self.dice.as_ref()
+    }
+
+    /// What the rule says: what happens, on which calls, for which clients and at which broker.
+    pub fn phrase(&self) -> RulePhrase {
+        RulePhrase::of(&self.selector, &self.scope, &self.action)
+    }
+
+    /// Whether the rule has the name of what it [says](Self::phrase), as a rule that nobody named has.
+    pub fn is_named_by_its_phrase(&self) -> bool {
+        self.phrase().name() == self.name
+    }
+
+    /// The same rule under another name: another rule, since the name is the identity of a rule.
+    ///
+    /// Whoever creates a rule that nobody named, and finds its name taken, creates it under a
+    /// [numbered](RuleName::numbered) name.
+    #[must_use]
+    pub fn named(self, name: RuleName) -> Self {
+        Self { name, ..self }
     }
 
     /// What the die of the rule derives from: the dice key it sets, or else its name.

@@ -17,6 +17,7 @@ use crate::address::ControlPlaneAddress;
 ///
 /// let mut configuration = ControlClientConfiguration::new("http://localhost:9080".parse()?);
 /// assert_eq!(configuration.request_timeout, TimeSpan::from_secs(30));
+/// assert_eq!(configuration.follow_timeout, TimeSpan::from_secs(30));
 /// // A program that says nothing about itself is any other client of the control plane.
 /// assert_eq!(configuration.surface, RequestSurface::Api);
 ///
@@ -44,6 +45,11 @@ pub struct ControlClientConfiguration {
     /// and for the control plane to take a new live stream.
     /// A stream that is open waits for its next message as long as it takes.
     pub request_timeout: TimeSpan,
+    /// Ours. Default: 30 seconds.
+    ///
+    /// How long a caller [waits for the calls](crate::FollowedCalls::wait_for) that it follows, at most.
+    /// A test that waits for calls that never come fails after it, and waits on no clock otherwise.
+    pub follow_timeout: TimeSpan,
 }
 
 impl ControlClientConfiguration {
@@ -53,6 +59,7 @@ impl ControlClientConfiguration {
             address,
             surface: RequestSurface::Api,
             request_timeout: TimeSpan::from_secs(30),
+            follow_timeout: TimeSpan::from_secs(30),
         }
     }
 }

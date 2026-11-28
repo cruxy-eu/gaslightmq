@@ -1,5 +1,8 @@
 //! Why GaslightMQ did not start in a test.
 
+use std::path::PathBuf;
+
+use gaslightmq_control_client::PrepareError;
 use gaslightmq_control_server::ControlServerError;
 use gaslightmq_host::{CreateDefinitionError, EnvironmentStartError};
 
@@ -28,4 +31,15 @@ pub enum GaslightMqStartError {
     /// The control plane did not start: it cannot listen where its configuration says.
     #[error("{error}")]
     ControlPlaneNotStarted { error: ControlServerError },
+    /// The files of the [workspace](crate::GaslightMqConfiguration::with_workspace) of the test do not read.
+    /// `reason` names each file that does not, and the key that failed.
+    #[error("the workspace in {} does not read: {reason}", .directory.display())]
+    WorkspaceUnreadable { directory: PathBuf, reason: String },
+    /// The workspace of the test did not take a definition of the files: it does not fit the others.
+    #[error("{error}")]
+    WorkspaceNotTaken { error: CreateDefinitionError },
+    /// The proxy ran, and did not do what the configuration declared: a rule did not arm, a scenario did not activate,
+    /// or the recording from the start did not start.
+    #[error("{error}")]
+    NotPrepared { error: PrepareError },
 }

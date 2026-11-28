@@ -18,6 +18,7 @@ use crate::{Mode, ScenarioName, ScenarioTitle, Step, StepName, Until};
 /// | Mode | How its rules combine: Live, Chain or Sequence, with the steps of a Sequence. | |
 /// | Seed | The root of every die in the run. | |
 /// | Rules | The rules it owns, or names in the workspace, in its order. They stay armed for the whole run. | No rule. |
+/// | Steps | Only in a Sequence: the steps, in the order they run, each with the rules it arms. | |
 ///
 /// ```yaml
 /// name: producer-recovers-from-leader-churn
@@ -42,7 +43,9 @@ use crate::{Mode, ScenarioName, ScenarioTitle, Step, StepName, Until};
 ///
 /// # What always holds
 ///
-/// - No rule stands in the scenario twice, whether it owns the rule or names it.
+/// - No rule stands in the scenario's own rules twice, whether it owns the rule or names it.
+///   A rule of a step's own that stands the same in another step is one rule, and two rules of one name that say
+///   different things are an error.
 /// - A Sequence has at least one step, and no two steps share a name.
 /// - A step arms no rule twice, and none that the scenario keeps armed for the whole run.
 /// - A step that ends on the firings of a rule ends on a rule that is armed during the step:
@@ -136,6 +139,12 @@ impl Scenario {
                 rule: rule.clone(),
             });
         }
+        if let Some(rule) = first_of_two_kinds(mode.steps().iter().flat_map(Step::arm)) {
+            return Err(ScenarioError::DuplicateRule {
+                scenario: name,
+                rule: rule.clone(),
+            });
+        }
         if let Mode::Sequence(steps) = &mode {
             if steps.is_empty() {
                 return Err(ScenarioError::NoStep { scenario: name });
@@ -205,9 +214,14 @@ impl Scenario {
         self.mode.steps()
     }
 
-    /// The rules that the scenario owns, in its order.
+    /// The rules that the scenario owns, each once, in its order: its own rules, and then those of its steps.
+    ///
+    /// A rule that stands the same in two steps is one rule.
     pub fn owned_rules(&self) -> impl Iterator<Item = &Rule> {
-        self.rules.iter().filter_map(ScenarioRule::owned)
+        let mut seen = BTreeSet::new();
+        self.every_rule()
+            .filter_map(ScenarioRule::owned)
+            .filter(move |rule| seen.insert(rule.name()))
     }
 
     /// The rules of the workspace that the scenario names, each once, where it names them first:
@@ -215,9 +229,13 @@ impl Scenario {
     ///
     /// A rule that the scenario owns is no rule of the workspace, and is not among them.
     pub fn rule_references(&self) -> Vec<&RuleName> {
-        let listed = self.rules.iter().filter(|rule| rule.owned().is_none());
-        let armed = self.steps().iter().flat_map(Step::arm);
-        once_each(listed.map(ScenarioRule::name).chain(armed))
+        let named = self.every_rule().filter(|rule| rule.owned().is_none());
+        once_each(named.map(ScenarioRule::name))
+    }
+
+    /// Every rule of the scenario, where it stands: its own rules, and then the rules of each step.
+    fn every_rule(&self) -> impl Iterator<Item = &ScenarioRule> {
+        self.rules.iter().chain(self.steps().iter().flat_map(Step::arm))
     }
 
     /// The selectors of the workspace that the scenario names, each once, where it names them first:
@@ -319,7 +337,8 @@ impl From<Rule> for ScenarioRule {
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum ScenarioError {
-    /// Two rules of the scenario have the same name, so one could not be told from the other.
+    /// Two rules of the scenario have the same name, so one could not be told from the other:
+    /// two of its own rules, or two rules of its steps that are not the same rule.
     #[error("scenario {:?} has two rules named {:?}", .scenario.as_str(), .rule.as_str())]
     DuplicateRule { scenario: ScenarioName, rule: RuleName },
     /// The scenario is a Sequence, and it has no step to run.
@@ -370,14 +389,15 @@ pub enum ScenarioError {
 /// What is wrong with one step of the scenario of that name, with those rules.
 fn check_step(scenario: &ScenarioName, step: &Step, rules: &[ScenarioRule]) -> Result<(), ScenarioError> {
     let of_the_scenario = |rule: &RuleName| rules.iter().any(|listed| listed.name() == rule);
-    if let Some(rule) = first_repeated(step.arm()) {
+    let armed = || step.arm().iter().map(ScenarioRule::name);
+    if let Some(rule) = first_repeated(armed()) {
         return Err(ScenarioError::DuplicateArm {
             scenario: scenario.clone(),
             step: step.name().clone(),
             rule: rule.clone(),
         });
     }
-    if let Some(rule) = step.arm().iter().find(|rule| of_the_scenario(rule)) {
+    if let Some(rule) = armed().find(|rule| of_the_scenario(rule)) {
         return Err(ScenarioError::ArmsScenarioRule {
             scenario: scenario.clone(),
             step: step.name().clone(),
@@ -385,7 +405,7 @@ fn check_step(scenario: &ScenarioName, step: &Step, rules: &[ScenarioRule]) -> R
         });
     }
     if let Some(rule) = step.until().and_then(Until::rule)
-        && !step.arm().contains(rule)
+        && !armed().any(|armed| armed == rule)
         && !of_the_scenario(rule)
     {
         return Err(ScenarioError::EndsOnUnarmedRule {
@@ -395,6 +415,16 @@ fn check_step(scenario: &ScenarioName, step: &Step, rules: &[ScenarioRule]) -> R
         });
     }
     Ok(())
+}
+
+/// The name of the first rule of the steps that stands a second time as another rule: one that says something else, or
+/// a rule of a step's own where another step names a rule of the workspace.
+fn first_of_two_kinds<'a>(rules: impl IntoIterator<Item = &'a ScenarioRule>) -> Option<&'a RuleName> {
+    let mut seen = std::collections::BTreeMap::new();
+    rules
+        .into_iter()
+        .find(|rule| *seen.entry(rule.name()).or_insert(*rule) != *rule)
+        .map(ScenarioRule::name)
 }
 
 /// The first item that comes a second time.

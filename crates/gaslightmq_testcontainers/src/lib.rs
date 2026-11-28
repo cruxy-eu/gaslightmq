@@ -8,27 +8,27 @@
 //! | [`GaslightMqImage`] | The image of GaslightMQ, at the release that this crate belongs to. |
 //! | [`GaslightMqContainerStartError`] | Why it did not start. |
 //! | [`GaslightMqImageError`] | Why a text is no image. |
+//! | [`rule!`], [`scenario!`], [`selector!`] | A definition as a file of a workspace writes it, inside the code of the test. |
+//! | [`RecordingMode`] | How much of each call a recording keeps. |
 //!
 //! A test starts GaslightMQ in front of a cluster, points its client at the
-//! [bootstrap address](GaslightMqContainer::bootstrap), and tells the proxy what to lie about through the
-//! [control plane](GaslightMqContainer::control): it arms rules, or it activates a scenario.
-//! It works as a test of the crate `gaslightmq_test` does, which starts GaslightMQ in its own process instead.
+//! [bootstrap address](GaslightMqContainer::bootstrap), and tells the proxy what to lie about in the words of the files
+//! of a workspace: it arms a [`rule!`], activates a [`scenario!`], records, and follows the calls of a [`selector!`].
+//! It works as a test of the crate `gaslightmq_test` does, which starts GaslightMQ in its own process instead, and
+//! both speak the words of [`ControlledEnvironment`](gaslightmq_control_client::ControlledEnvironment).
 //!
 //! ```no_run
-//! use gaslightmq_control_api::kernel::{ApiKey, ErrorCode};
-//! use gaslightmq_control_api::lie::RefusalLie;
-//! use gaslightmq_control_api::prelude::*;
-//! use gaslightmq_control_api::rule::Rule;
-//! use gaslightmq_control_api::selector::{Condition, Conditions};
-//! use gaslightmq_testcontainers::{GaslightMqContainer, GaslightMqContainerStartError};
+//! use gaslightmq_testcontainers::{GaslightMqContainer, rule};
 //!
 //! # #[tokio::main(flavor = "current_thread")]
-//! # async fn main() -> Result<(), GaslightMqContainerStartError> {
+//! # async fn main() -> anyhow::Result<()> {
 //! // A proxy in a container, in front of the cluster that the test runs against, as the network `orders-test` has it.
-//! let cluster = "kafka:19092".parse().expect("the bootstrap server of the cluster");
+//! let cluster = "kafka:19092".parse()?;
 //! let gaslight = GaslightMqContainer::proxy_in_front_of(cluster)
 //!     .with_network("orders-test")
 //!     .with_workspace("gaslight")
+//!     // A rule of the workspace, armed by its name before the test begins.
+//!     .arming("order-acknowledgements-get-lost")
 //!     .start()
 //!     .await?;
 //!
@@ -37,20 +37,11 @@
 //! # let _ = bootstrap_servers;
 //!
 //! // From now on, the proxy refuses every Produce: the client may not write to its topic.
-//! let refuse = Rule::new(
-//!     "refuse-order-producers".parse().expect("a rule name"),
-//!     Conditions::from(Condition::is(ApiKey::PRODUCE)),
-//!     RefusalLie::new(ErrorCode::TOPIC_AUTHORIZATION_FAILED),
-//! );
-//! let armed = gaslight
-//!     .control()
-//!     .send(CreateLiveRule {
-//!         environment: gaslight.environment().clone(),
-//!         rule: refuse,
-//!         armed: true,
-//!     })
-//!     .await;
-//! assert!(matches!(armed, Ok(Ok(_))), "{armed:?}");
+//! let refused = gaslight
+//!     .rules()
+//!     .arm(rule! { selector: { api: Produce }, action: { lie: refusal, error: TOPIC_AUTHORIZATION_FAILED } })
+//!     .await?;
+//! assert_eq!(refused.name(), "refuse-with-topic-authorization-failed-on-produce");
 //!
 //! gaslight.stop().await;
 //! # Ok(())
@@ -118,5 +109,7 @@ mod instance;
 
 pub use configuration::GaslightMqContainerConfiguration;
 pub use error::GaslightMqContainerStartError;
+pub use gaslightmq_control_api::environment::RecordingMode;
+pub use gaslightmq_control_client::{rule, scenario, selector};
 pub use image::{GaslightMqImage, GaslightMqImageError};
 pub use instance::GaslightMqContainer;

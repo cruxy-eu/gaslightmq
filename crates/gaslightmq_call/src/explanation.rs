@@ -845,8 +845,9 @@ impl Explanation {
     /// Whether the action of the rule with that name took effect on this call.
     ///
     /// This is what counts as a firing for a lifetime, for a step of a sequence, and for a test.
-    pub fn applied(&self, rule: &str) -> bool {
-        self.rule(rule).is_some_and(RuleExplanation::applied)
+    /// `rule` is anything that holds the name of a rule: its text, the name, or a rule that a test armed.
+    pub fn applied(&self, rule: impl AsRef<str>) -> bool {
+        self.rule(rule.as_ref()).is_some_and(RuleExplanation::applied)
     }
 
     /// The incidents the call fired, in the priority order of their rules.

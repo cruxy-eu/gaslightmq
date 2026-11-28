@@ -5,15 +5,15 @@ use gaslightmq_rule::RuleName;
 use gaslightmq_selector::{SelectorName, SelectorRef};
 use gaslightmq_trigger::Count;
 
-use crate::{StepName, StepTitle};
+use crate::{ScenarioRule, StepName, StepTitle};
 
 /// One stage of the story of a Sequence: the rules it arms, and the condition that ends it.
 ///
 /// | Part | Meaning | When left out |
 /// |---|---|---|
-/// | Name | The identity of the step within its scenario. The journal and the UI name the step by it. | |
+/// | Name | The identity of the step within its scenario. The journal and the UI name the step by it. | `step-` and its place among the steps, from 1. |
 /// | Title | What happens in the step, in free text. | No title. |
-/// | Arm | The rules of the workspace that the step arms, by name, in the order that resolves their conflicts. | The step arms no rule. |
+/// | Arm | The rules that the step arms, in the order that resolves their conflicts: rules of the workspace by name, and rules of its own. | The step arms no rule. |
 /// | Until | The condition that ends the step. | The step ends when someone advances or deactivates the scenario. |
 ///
 /// ```yaml
@@ -22,6 +22,19 @@ use crate::{StepName, StepTitle};
 /// arm: [refuse-with-not-leader]
 /// until: { firings: 3, rule: refuse-with-not-leader }
 /// ```
+///
+/// A rule of the step's own is a map, which needs no name: it has the name of what it [says](gaslightmq_rule::RulePhrase).
+/// It belongs to the scenario, and the step arms it while it runs.
+///
+/// ```yaml
+/// arm:
+///   - selector: { api: Produce }
+///     action: { lie: refusal, error: NOT_LEADER_OR_FOLLOWER }
+/// until: { firings: 3 }
+/// ```
+///
+/// A step that ends on `firings` without a `rule` ends on the one rule it arms.
+/// The [`Scenario`](crate::Scenario) names a step without a name, and the rule of `firings`, when it reads them.
 ///
 /// When the step ends, the next one starts, and the rules that this step armed disarm.
 /// A step checks nothing on its own: the [`Scenario`](crate::Scenario) it is part of checks that its name is
@@ -40,7 +53,7 @@ use crate::{StepName, StepTitle};
 ///     .ending_on(Until::Firings { count: three, rule: refuse.clone() });
 ///
 /// assert_eq!(step.name(), "leader-churn");
-/// assert_eq!(step.arm(), [refuse.clone()]);
+/// assert_eq!(step.arm(), [ScenarioRule::from(refuse.clone())]);
 /// assert_eq!(step.until(), Some(&Until::Firings { count: three, rule: refuse }));
 /// # Ok::<(), StepNameError>(())
 /// ```
@@ -55,7 +68,7 @@ pub struct Step {
     #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Option::is_none"))]
     title: Option<StepTitle>,
     #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Vec::is_empty"))]
-    arm: Vec<RuleName>,
+    arm: Vec<ScenarioRule>,
     #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Option::is_none"))]
     until: Option<Until>,
 }
@@ -87,13 +100,14 @@ impl Step {
         Self { title: None, ..self }
     }
 
-    /// The same step, arming these rules of the workspace instead of the ones it armed before.
+    /// The same step, arming these rules instead of the ones it armed before:
+    /// rules of the workspace by their names, and rules of its own.
     ///
     /// Their order resolves their conflicts, as in a Chain: the first rule wins.
     #[must_use]
-    pub fn arming(self, rules: impl IntoIterator<Item = RuleName>) -> Self {
+    pub fn arming<R: Into<ScenarioRule>>(self, rules: impl IntoIterator<Item = R>) -> Self {
         Self {
-            arm: rules.into_iter().collect(),
+            arm: rules.into_iter().map(Into::into).collect(),
             ..self
         }
     }
@@ -123,8 +137,8 @@ impl Step {
         self.title.as_ref()
     }
 
-    /// The rules of the workspace that the step arms, in the order that resolves their conflicts.
-    pub fn arm(&self) -> &[RuleName] {
+    /// The rules that the step arms, in the order that resolves their conflicts.
+    pub fn arm(&self) -> &[ScenarioRule] {
         &self.arm
     }
 

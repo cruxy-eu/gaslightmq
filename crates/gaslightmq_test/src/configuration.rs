@@ -6,12 +6,16 @@
 //! properties whether it is Kafka's.
 
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+use std::path::PathBuf;
 
 use gaslightmq_control_api::RunId;
+use gaslightmq_control_api::environment::RecordingMode;
 use gaslightmq_control_api::environment::{
     BrokerListeners, Environment, EnvironmentName, HostName, Instances, ListenAddress, Listeners, ProxyDefinition,
     ServerAddress, Upstream,
 };
+use gaslightmq_control_api::rule::Rule;
+use gaslightmq_control_client::{DefinitionText, Preparation, RuleToArm, ScenarioText, ScenarioToActivate};
 use gaslightmq_control_server::ControlServerConfiguration;
 use gaslightmq_host::{EnvironmentConfiguration, HostConfiguration};
 use gaslightmq_workspace::{MemoryContext, WorkspaceContext};
@@ -82,6 +86,10 @@ pub struct GaslightMqConfiguration<C: WorkspaceContext = MemoryContext> {
     /// The stores of the workspace. A test that wants definitions from the start hands over a context that holds them,
     /// or one over other stores.
     pub context: C,
+    /// The directory of a workspace whose definitions the workspace of the test gets when it starts.
+    pub(crate) workspace: Option<PathBuf>,
+    /// What the test declared that the instance starts with.
+    pub(crate) preparation: Preparation,
 }
 
 impl GaslightMqConfiguration {
@@ -99,6 +107,8 @@ impl GaslightMqConfiguration {
             host: HostConfiguration::default(),
             control_plane,
             context: MemoryContext::new(),
+            workspace: None,
+            preparation: Preparation::default(),
         }
     }
 }
@@ -138,6 +148,8 @@ impl<C: WorkspaceContext> GaslightMqConfiguration<C> {
             host,
             control_plane,
             context: _,
+            workspace,
+            preparation,
         } = self;
         GaslightMqConfiguration {
             proxy,
@@ -145,7 +157,67 @@ impl<C: WorkspaceContext> GaslightMqConfiguration<C> {
             host,
             control_plane,
             context,
+            workspace,
+            preparation,
         }
+    }
+
+    /// The same configuration, whose workspace gets the definitions of the workspace in `directory` when it starts:
+    /// its selectors, presets, rules, scenarios and pad layouts.
+    ///
+    /// The files are read once, and never written: whatever the test changes stays in the workspace of the test.
+    /// The environments of the files stay out, since the test runs the environment of its own proxy.
+    #[must_use]
+    pub fn with_workspace(mut self, directory: impl Into<PathBuf>) -> Self {
+        self.workspace = Some(directory.into());
+        self
+    }
+
+    /// The same configuration, whose workspace gets `rule`, disarmed: a [`rule!`](gaslightmq_control_client::rule),
+    /// or its YAML as a file holds it.
+    #[must_use]
+    pub fn with_rule(mut self, rule: impl Into<DefinitionText<Rule>>) -> Self {
+        self.preparation = self.preparation.with_rule(rule);
+        self
+    }
+
+    /// The same configuration, whose workspace gets `scenario`: a [`scenario!`](gaslightmq_control_client::scenario),
+    /// or its YAML as a file holds it.
+    #[must_use]
+    pub fn with_scenario(mut self, scenario: impl Into<ScenarioText>) -> Self {
+        self.preparation = self.preparation.with_scenario(scenario);
+        self
+    }
+
+    /// The same configuration, which arms `rule` once the proxy runs: a rule of the workspace by its name, or a new live
+    /// rule. [`GaslightMq::armed`](crate::GaslightMq::armed) holds it then.
+    #[must_use]
+    pub fn arming(mut self, rule: impl Into<RuleToArm>) -> Self {
+        self.preparation = self.preparation.arming(rule);
+        self
+    }
+
+    /// The same configuration, which activates `scenario` once the proxy runs, after everything else: a scenario of
+    /// the workspace by its name, or one that the workspace gets first.
+    #[must_use]
+    pub fn activating(mut self, scenario: impl Into<ScenarioToActivate>) -> Self {
+        self.preparation = self.preparation.activating(scenario);
+        self
+    }
+
+    /// The same configuration, whose recordings keep as much of each call as `mode` says: the one from the start, and
+    /// each that the test starts. A proxy in front of a real cluster keeps no records otherwise.
+    #[must_use]
+    pub fn recording(mut self, mode: RecordingMode) -> Self {
+        self.preparation = self.preparation.recording_in(mode);
+        self
+    }
+
+    /// The same configuration, which starts a recording once the proxy runs, before it activates a scenario.
+    #[must_use]
+    pub fn recording_from_the_start(mut self) -> Self {
+        self.preparation = self.preparation.recording_from_the_start();
+        self
     }
 
     /// The environment that the proxy runs in, as the workspace holds it: its listeners and its cluster.

@@ -146,7 +146,7 @@ fn a_captured_rule_keeps_the_parameters_it_had_when_it_was_armed() {
     capture.read(&entry, |_| None);
     let captured = capture.stop(turned_at);
 
-    assert_eq!(captured.steps()[1].arm(), [flaky.name().clone()]);
+    assert_eq!(captured.steps()[1].arm(), [ScenarioRule::from(flaky.name().clone())]);
     assert_eq!(captured.rules(), [flaky]);
 }
 
@@ -181,8 +181,12 @@ fn a_live_rule_that_arms_again_with_another_definition_is_captured_as_another_ru
 
     let first: RuleName = "slow-produce".parse().unwrap();
     let other: RuleName = "slow-produce-2".parse().unwrap();
-    let arms: Vec<&[RuleName]> = captured.steps().iter().map(Step::arm).collect();
-    let (none, first_rule, other_rule) = (&[][..], &[first.clone()][..], &[other.clone()][..]);
+    let arms: Vec<&[ScenarioRule]> = captured.steps().iter().map(Step::arm).collect();
+    let (none, first_rule, other_rule) = (
+        &[][..],
+        &[ScenarioRule::from(first.clone())][..],
+        &[ScenarioRule::from(other.clone())][..],
+    );
     assert_eq!(arms, [none, first_rule, none, other_rule, none, first_rule, none]);
     let names: Vec<&RuleName> = captured.rules().iter().map(Rule::name).collect();
     assert_eq!(names, [&first, &other]);

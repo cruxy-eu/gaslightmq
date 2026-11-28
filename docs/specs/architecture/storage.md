@@ -242,6 +242,7 @@ A definition holds [what a person writes](identity.md#what-a-definition-holds), 
 ### Names
 
 - Every definition has a name, unique within its kind.
+  A rule and a step may leave it out, and have the [name that identity gives them](identity.md#name).
   A selector and a rule can share a name, because every reference says which kind it means.
 - A name is a slug, and it is the identity of its definition.
   See [names](../domains/rules.md#names).

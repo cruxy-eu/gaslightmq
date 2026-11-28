@@ -7,8 +7,14 @@ use std::path::Path;
 
 use gaslightmq_control_api::clock::TimeSpan;
 use gaslightmq_control_api::environment::{EnvironmentName, ServerAddress};
-use gaslightmq_control_api::{CheckHealth, RequestSurface, RunId};
-use gaslightmq_control_client::{ControlClient, ControlClientConfiguration, ControlPlaneAddress};
+use gaslightmq_control_api::journal::JournalEntry;
+use gaslightmq_control_api::rule::RuleName;
+use gaslightmq_control_api::{CheckHealth, RequestSurface, RunId, ScenarioStatus};
+use gaslightmq_control_client::{
+    ActiveScenario, ControlClient, ControlClientConfiguration, ControlPlaneAddress, ControlledEnvironment,
+    EnvironmentRule, EnvironmentStateError, FollowError, FollowedCalls, JournalError, Prepared, Recordings, Rules,
+    Scenarios, SelectorToMatch,
+};
 use testcontainers::bollard::Docker;
 use testcontainers::bollard::query_parameters::AttachContainerOptions;
 use testcontainers::core::IntoContainerPort;
@@ -44,11 +50,12 @@ const OWNER_OF_THE_WORKSPACE: &str = "0:0";
 pub struct GaslightMqContainer {
     container: ContainerAsync<GenericImage>,
     control: ControlClient,
-    environment: EnvironmentName,
+    environment: ControlledEnvironment,
     bootstrap: SocketAddr,
     control_plane: SocketAddr,
     run: RunId,
     stop_timeout: TimeSpan,
+    prepared: Prepared,
 }
 
 impl GaslightMqContainer {
@@ -75,10 +82,78 @@ impl GaslightMqContainer {
 
     /// The name of the environment that the proxy runs in, which every request about it names.
     pub fn environment(&self) -> &EnvironmentName {
+        self.environment.name()
+    }
+
+    /// The environment of the proxy, in the words of a test: its rules, its scenario, its recordings, the calls it
+    /// follows and its journal. The calls below are its words, which the container speaks for the test.
+    pub fn controlled(&self) -> &ControlledEnvironment {
         &self.environment
     }
 
-    /// A client of the control plane, whose every request says that it comes from a test.
+    /// The rules of the proxy: to [arm](Rules::arm) one, written as a [`rule!`](gaslightmq_control_client::rule),
+    /// as the YAML of a file, or by the name of a rule of the workspace.
+    pub fn rules(&self) -> Rules {
+        self.environment.rules()
+    }
+
+    /// The rule of this name in the environment of the proxy.
+    pub fn rule(&self, name: RuleName) -> EnvironmentRule {
+        self.environment.rule(name)
+    }
+
+    /// The scenarios of the proxy: to [activate](Scenarios::activate) one.
+    pub fn scenarios(&self) -> Scenarios {
+        self.environment.scenarios()
+    }
+
+    /// The recordings of the proxy: to start one, or to take the one that runs. They keep as much of each call as
+    /// the [configuration](GaslightMqContainerConfiguration::recording) says.
+    pub fn recordings(&self) -> Recordings {
+        self.environment.recordings()
+    }
+
+    /// Follows the calls of the proxy that `selector` matches, from now on, so the test [waits](FollowedCalls::wait_for)
+    /// for them, and never on the clock.
+    ///
+    /// # Errors
+    ///
+    /// The [`FollowError`] of [`ControlledEnvironment::follow`].
+    pub async fn follow(&self, selector: impl Into<SelectorToMatch>) -> Result<FollowedCalls, FollowError> {
+        self.environment.follow(selector).await
+    }
+
+    /// Every entry of the journal of the proxy.
+    ///
+    /// # Errors
+    ///
+    /// The errors of [`ControlledEnvironment::journal`].
+    pub async fn journal(&self) -> Result<Vec<JournalEntry>, JournalError> {
+        self.environment.journal().await
+    }
+
+    /// Where the scenario of the proxy stands.
+    ///
+    /// # Errors
+    ///
+    /// The errors of [`ControlledEnvironment::scenario_status`].
+    pub async fn scenario_status(&self) -> Result<ScenarioStatus, EnvironmentStateError> {
+        self.environment.scenario_status().await
+    }
+
+    /// The rules that the configuration [armed](GaslightMqContainerConfiguration::arming), in its order.
+    pub fn armed(&self) -> &[EnvironmentRule] {
+        &self.prepared.armed
+    }
+
+    /// The scenario that the configuration [activated](GaslightMqContainerConfiguration::activating), when it named
+    /// one.
+    pub fn scenario(&self) -> Option<&ActiveScenario> {
+        self.prepared.scenario.as_ref()
+    }
+
+    /// A client of the control plane, whose every request says that it comes from a test: for whatever the words of
+    /// the [environment](Self::controlled) do not say.
     ///
     /// It names no presence, so a hold that it adds ends by its release or by a disarm alone.
     /// A test that has the process to itself leaves `expects` out: the last change wins.
@@ -116,7 +191,7 @@ impl GaslightMqContainer {
 impl fmt::Debug for GaslightMqContainer {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("GaslightMqContainer")
-            .field("environment", &self.environment)
+            .field("environment", self.environment.name())
             .field("bootstrap", &self.bootstrap)
             .field("control_plane", &self.control_plane)
             .field("run", &self.run)
@@ -168,6 +243,7 @@ impl GaslightMqContainerConfiguration {
     /// - [`GaslightMqContainerStartError::ContainerNotStarted`] when no container starts.
     /// - [`GaslightMqContainerStartError::NotReady`] when the process in the container does not get ready within the
     ///   start timeout.
+    /// - [`GaslightMqContainerStartError::NotPrepared`] when the process did not do what the configuration declared.
     pub async fn start(self) -> Result<GaslightMqContainer, GaslightMqContainerStartError> {
         let image = match &self.image {
             Some(image) => image.clone(),
@@ -190,21 +266,34 @@ impl GaslightMqContainerConfiguration {
         }
         let container = request.start().await.map_err(|error| self.not_started(&image, error))?;
 
-        match self.ready(&container).await {
-            Ok(ready) => Ok(GaslightMqContainer {
-                container,
-                control: ready.control,
-                environment: self.environment,
-                bootstrap: ready.bootstrap,
-                control_plane: ready.control_plane,
-                run: ready.run,
-                stop_timeout: self.stop_timeout,
-            }),
+        let ready = match self.ready(&container).await {
+            Ok(ready) => ready,
             Err(error) => {
                 let _ = container.rm().await;
-                Err(error)
+                return Err(error);
             }
-        }
+        };
+        let controlled = match self.preparation.recording_mode() {
+            Some(mode) => ready.control.environment(self.environment.clone()).recording_in(mode),
+            None => ready.control.environment(self.environment.clone()),
+        };
+        let prepared = match self.preparation.prepare(&controlled).await {
+            Ok(prepared) => prepared,
+            Err(error) => {
+                let _ = container.rm().await;
+                return Err(GaslightMqContainerStartError::NotPrepared { error });
+            }
+        };
+        Ok(GaslightMqContainer {
+            container,
+            control: ready.control,
+            environment: controlled,
+            bootstrap: ready.bootstrap,
+            control_plane: ready.control_plane,
+            run: ready.run,
+            stop_timeout: self.stop_timeout,
+            prepared,
+        })
     }
 
     /// Hand the process in `container` the advertised listeners of its brokers, wait until it said that it is ready,

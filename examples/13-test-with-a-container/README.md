@@ -44,15 +44,17 @@ In this repository, `just test-image` builds that image and runs these tests aga
   ports they are published on.
 - `with_workspace("gaslight")` copies the files of the workspace into the container, so its rules are there,
   disarmed until a test arms one by its name. What the process writes stays in the container.
+- A test arms a rule written as a rule file writes it, `gaslight.rules().arm(rule! { … })`, or names one of the
+  workspace before the container starts: `.arming("order-acknowledgements-get-lost")`.
 
 | Test | The rule | The service |
 |---|---|---|
-| `an_order_that_the_cluster_does_not_let_the_service_write_is_not_allowed` | Built in the test: every Produce is refused with `TOPIC_AUTHORIZATION_FAILED`. | Says `NotAllowed`. The cluster holds nothing. |
-| `an_order_whose_acknowledgement_got_lost_is_unconfirmed_though_the_cluster_holds_it` | `order-acknowledgements-get-lost` of `gaslight/rules/orders.yaml`, armed by name. | Says `Unconfirmed`, and is right to: the cluster holds the order. |
+| `an_order_that_the_cluster_does_not_let_the_service_write_is_not_allowed` | Written in the test with `rule!`: every Produce is refused with `TOPIC_AUTHORIZATION_FAILED`. | Says `NotAllowed`. The cluster holds nothing. |
+| `an_order_whose_acknowledgement_got_lost_is_unconfirmed_though_the_cluster_holds_it` | `order-acknowledgements-get-lost` of `gaslight/rules/orders.yaml`, armed by name as the container starts. | Says `Unconfirmed`, and is right to: the cluster holds the order. |
 | `two_services_side_by_side_each_meet_the_lies_of_their_own_container_alone` | One container refuses, the other one lies about nothing. | One service is refused, the other one places its order. |
 
-A test asserts on a recording here as it does in [`12-test-in-process`](../12-test-in-process/README.md):
-the control plane of the container answers the same requests.
+A test asserts on a recording, and plays a scenario, here as it does in
+[`12-test-in-process`](../12-test-in-process/README.md): both crates speak the same words.
 
 ## Tests side by side
 

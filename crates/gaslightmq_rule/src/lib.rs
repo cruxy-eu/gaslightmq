@@ -8,6 +8,7 @@
 //! |---|---|
 //! | [`Rule`] | A rule as a file writes it: a name, a title, a selector, a scope, an action, a trigger, a lifetime and a dice key. |
 //! | [`RuleName`], [`PresetName`] | The names that other things reference a rule and a preset by: slugs, and their identity. |
+//! | [`RulePhrase`] | What a rule says, in words, and the name of a rule that nobody named. |
 //! | [`RuleTitle`], [`PresetTitle`] | The free text that says what a rule is for and what a preset does. |
 //! | [`Action`] | What happens when a rule fires: a lie or an incident. |
 //! | [`ActionRef`] | How a rule says it: a preset name, or an inline action. |
@@ -209,6 +210,7 @@ mod armed;
 mod error;
 mod evaluation;
 mod name;
+mod phrase;
 mod preset;
 mod resolved;
 mod rule;
@@ -225,6 +227,7 @@ pub use armed::{ArmedRule, HandFiring};
 pub use error::RuleError;
 pub use evaluation::{FiredAction, PassEvaluation, RuleEvaluation};
 pub use name::{PresetName, PresetNameError, RuleName, RuleNameError};
+pub use phrase::RulePhrase;
 pub use preset::{Preset, PresetSet, PresetSetError};
 pub use resolved::ResolvedRule;
 pub use rule::Rule;
@@ -253,7 +256,7 @@ pub mod prelude {
     pub use crate::{
         Action, ActionRef, ArmedRule, FiredAction, HandFiring, PassEvaluation, Preset, PresetName, PresetNameError,
         PresetSet, PresetSetError, PresetStore, PresetTitle, PresetTitleError, ResolvedRule, Rule, RuleError,
-        RuleEvaluation, RuleName, RuleNameError, RuleSet, RuleSetError, RuleState, RuleStateError, RuleStore,
-        RuleTitle, RuleTitleError, Snapshot, SnapshotError,
+        RuleEvaluation, RuleName, RuleNameError, RulePhrase, RuleSet, RuleSetError, RuleState, RuleStateError,
+        RuleStore, RuleTitle, RuleTitleError, Snapshot, SnapshotError,
     };
 }
