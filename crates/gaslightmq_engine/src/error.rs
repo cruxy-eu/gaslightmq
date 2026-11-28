@@ -249,6 +249,34 @@ pub enum StopRecordingError {
     CutShort { recording: RecordingId, reason: String },
 }
 
+/// Why the journal of an engine did not [start a capture](crate::Journal::start_capture).
+///
+/// ```
+/// use gaslightmq_engine::prelude::*;
+///
+/// assert_eq!(StartCaptureError::AlreadyCapturing.to_string(), "a capture runs already");
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum StartCaptureError {
+    /// A capture runs already. An environment runs one at a time, so whoever wants another stops this one first.
+    #[error("a capture runs already")]
+    AlreadyCapturing,
+}
+
+/// Why the journal of an engine did not [stop a capture](crate::Journal::stop_capture).
+///
+/// ```
+/// use gaslightmq_engine::prelude::*;
+///
+/// assert_eq!(StopCaptureError::NotCapturing.to_string(), "no capture runs");
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum StopCaptureError {
+    /// No capture runs: nobody started one, or someone stopped it.
+    #[error("no capture runs")]
+    NotCapturing,
+}
+
 /// Why the [recordings](crate::Recordings) were not listed.
 ///
 /// ```
