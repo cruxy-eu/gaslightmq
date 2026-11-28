@@ -99,9 +99,9 @@
 //! A sentence says no stage, no jitter, no trigger other than a chance, and no incident.
 //! A preset says all of those, and the rule can be edited once it exists.
 //!
-//! The rule gets a title that says the same as the sentence: `Delay 750ms on Produce orders.* for order-ingest`.
-//! Its name is the title in the characters a name holds: `delay-750ms-on-produce-orders-for-order-ingest`.
-//! A letter is in lower case, whatever stands between letters and digits is one hyphen, and a name that is too long is cut.
+//! The rule gets the title that says what it does, its [phrase](gaslightmq_rule::RulePhrase):
+//! `Delay 750ms on Produce orders.* for order-ingest`.
+//! Its name is the name of that phrase, as every rule that nobody named has: `delay-750ms-on-produce-orders-for-order-ingest`.
 //! Names are unique among rules, and the sentence does not know the other rules: whoever creates the rule checks that.
 //!
 //! # Completions

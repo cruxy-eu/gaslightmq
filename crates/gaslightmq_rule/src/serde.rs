@@ -6,6 +6,7 @@
 //! These forms therefore need a format that describes itself, such as YAML or JSON.
 //!
 //! [`Rule`](crate::Rule) and [`Preset`](crate::Preset) derive their forms from the ones here.
+//! A rule reads its map here too, because a rule that names nothing has the name of what it says.
 
 use std::fmt;
 use std::marker::PhantomData;
@@ -16,7 +17,10 @@ use serde::de::value::{MapAccessDeserializer, MapDeserializer, SeqDeserializer};
 use serde::de::{self, Deserialize, Deserializer, IntoDeserializer, MapAccess, SeqAccess, Visitor};
 use serde::ser::{Serialize, Serializer};
 
-use crate::{Action, ActionRef, PresetName, RuleState};
+use gaslightmq_selector::{Scope, SelectorRef};
+use gaslightmq_trigger::{DiceKey, Lifetime, Trigger};
+
+use crate::{Action, ActionRef, PresetName, Rule, RuleName, RulePhrase, RuleState, RuleTitle};
 
 const LIE: &str = "lie";
 const INCIDENT: &str = "incident";
@@ -265,6 +269,48 @@ impl<'de, E: de::Error> Deserializer<'de> for KeptDeserializer<E> {
     serde::forward_to_deserialize_any! {
         bool i8 i16 i32 i64 i128 u8 u16 u32 u64 u128 f32 f64 char str string bytes byte_buf unit unit_struct seq tuple
         tuple_struct map struct identifier ignored_any
+    }
+}
+
+/// A rule as a file writes it, with its name when someone wrote one.
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RuleMap {
+    #[serde(default)]
+    name: Option<RuleName>,
+    #[serde(default)]
+    title: Option<RuleTitle>,
+    selector: SelectorRef,
+    #[serde(default = "Scope::all")]
+    scope: Scope,
+    action: ActionRef,
+    #[serde(default = "Trigger::always")]
+    trigger: Trigger,
+    #[serde(default)]
+    lifetime: Lifetime,
+    #[serde(default)]
+    dice: Option<DiceKey>,
+}
+
+/// Reads the map of a rule. A rule without a `name` has the name of what it [says](crate::RulePhrase).
+impl<'de> Deserialize<'de> for Rule {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let map = RuleMap::deserialize(deserializer)?;
+        let name = map
+            .name
+            .unwrap_or_else(|| RulePhrase::of(&map.selector, &map.scope, &map.action).name());
+        let rule = Rule::new(name, map.selector, map.action)
+            .scoped(map.scope)
+            .with_trigger(map.trigger)
+            .with_lifetime(map.lifetime);
+        let rule = match map.title {
+            Some(title) => rule.with_title(title),
+            None => rule,
+        };
+        Ok(match map.dice {
+            Some(dice) => rule.with_dice(dice),
+            None => rule,
+        })
     }
 }
 
@@ -726,5 +772,24 @@ mod tests {
             Shape::Parts(vec!["orders.eu/3".into()])
         );
         assert!(from::<Shape>(json!(3)).is_err());
+    }
+
+    #[test]
+    fn a_rule_without_a_name_has_the_name_of_what_it_says() {
+        let form = json!({
+            "selector": { "api": "Produce", "topic": "orders" },
+            "action": { "lie": "refusal", "error": "NOT_LEADER_OR_FOLLOWER" },
+            "trigger": { "first": 1 },
+        });
+
+        let rule: Rule = read(form);
+
+        assert_eq!(rule.name(), "refuse-with-not-leader-or-follower-on-produce-orders");
+        assert!(rule.is_named_by_its_phrase());
+        // GaslightMQ writes the name it gave, so the rule keeps it when someone changes what it says.
+        assert_eq!(
+            write(&rule)["name"],
+            "refuse-with-not-leader-or-follower-on-produce-orders"
+        );
     }
 }
