@@ -33,13 +33,14 @@ pub enum GaslightMqContainerStartError {
     /// The workspace of the test could not be read, so nothing was copied into a container. `reason` says why.
     #[error("the workspace in {} cannot be read: {reason}", .directory.display())]
     WorkspaceUnreadable { directory: PathBuf, reason: String },
-    /// No container started: the machine runs no containers, or it refused this one. `reason` says why.
+    /// The container never ran: the machine runs no containers, or it refused this one, so whoever runs the test
+    /// sets the machine up. `reason` says why.
     #[error("the container of GaslightMQ did not start: {reason}")]
-    NotStarted { reason: String },
-    /// The container started, and GaslightMQ did not get ready in it within the
-    /// [start timeout](crate::GaslightMqContainerConfiguration::start_timeout): the process ended, it did not say
-    /// where it listens, or its environment does not run.
-    /// `reason` says which, and `log` holds the last lines that the process wrote, when it wrote any.
+    ContainerNotStarted { reason: String },
+    /// The container ran, and GaslightMQ in it never said that it is ready within the
+    /// [start timeout](crate::GaslightMqContainerConfiguration::start_timeout): the process ended, it did not get
+    /// where its brokers are published, or its environment does not run, so the configuration or the cluster stands
+    /// in the way. `reason` says which, and `log` holds the last lines that the process wrote, when it wrote any.
     #[error("GaslightMQ did not get ready in its container: {reason}{}", end_of(.log))]
     NotReady { reason: String, log: String },
 }

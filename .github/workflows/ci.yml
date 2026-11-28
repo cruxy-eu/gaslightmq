@@ -114,7 +114,7 @@ jobs:
       - run: just test
 
   # GaslightMQ in a container next to a test: the job builds the image, as `just image` does, and runs the tests of
-  # the crate that starts it. The containers run on the network of the runner, which Docker on Linux allows.
+  # the crate that starts it, each with a real cluster on a network of containers of its own.
   # It runs beside `test`, so building the image adds no time to the slowest job unless it is slower itself.
   test-image:
     runs-on: ubuntu-latest

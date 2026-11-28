@@ -24,14 +24,15 @@
 //!
 //! # #[tokio::main(flavor = "current_thread")]
 //! # async fn main() -> Result<(), GaslightMqContainerStartError> {
-//! // A proxy in a container, in front of the cluster that the test runs against.
-//! let cluster = "127.0.0.1:9092".parse().expect("the bootstrap server of the cluster");
+//! // A proxy in a container, in front of the cluster that the test runs against, as the network `orders-test` has it.
+//! let cluster = "kafka:19092".parse().expect("the bootstrap server of the cluster");
 //! let gaslight = GaslightMqContainer::proxy_in_front_of(cluster)
+//!     .with_network("orders-test")
 //!     .with_workspace("gaslight")
 //!     .start()
 //!     .await?;
 //!
-//! // The client under test connects here.
+//! // The client under test connects here, where the container publishes the proxy.
 //! let bootstrap_servers = gaslight.bootstrap_servers();
 //! # let _ = bootstrap_servers;
 //!
@@ -62,30 +63,30 @@
 //!   The container runs the image of GaslightMQ, and the binary in it runs a proxy in an environment of its own,
 //!   which the control plane knows by its name.
 //!   It tells the lies of the build of the image.
-//! - **The network of the machine of the test.**
-//!   The process reaches what the test reaches, under the same address: a test hands over the bootstrap server of its
-//!   cluster as it reaches it, and the proxy reaches every broker under the address that the broker advertises.
-//!   A cluster in another container whose brokers advertise addresses of the machine, such as the one of
-//!   `gaslightmq_test_kafka`, works as a cluster on the machine itself does.
-//! - **Free ports.**
-//!   Every listener of the proxy and the control plane takes a port that the system picks, on the loopback of the
-//!   machine unless the test names another address, so tests run side by side.
+//! - **The network that the test names.**
+//!   The container joins the [network of containers](GaslightMqContainerConfiguration::with_network) that the test
+//!   names, and reaches the cluster under the bootstrap server that the test hands over: its alias and port on that
+//!   network, or any address that the network leads to. The test sets its networks up, and the crate picks none.
+//! - **Published listeners.**
+//!   The container publishes the bootstrap listener, a listener for each of as many
+//!   [brokers](GaslightMqContainerConfiguration::brokers) as the test asks for, and the control plane, each on a free
+//!   port of the machine, so tests run side by side. Once the container runs, the crate tells the process where its
+//!   brokers are published, and the proxy names them to its clients there, as Kafka's `advertised.listeners` does.
 //!   The proxy gives each broker that it finds in the cluster a listener of its own, so a test names no broker.
 //! - **The files of a workspace.**
 //!   The files of the [workspace](GaslightMqContainerConfiguration::with_workspace) that a test hands over are copied
 //!   into the container before the process starts. What the process writes, a definition or a recording, stays in
 //!   the container, so the files of the test never change. Without a workspace, every definition lives in memory.
 //! - **Ready means ready.**
-//!   [`start`](GaslightMqContainerConfiguration::start) returns once the process said where it listens and that it is
-//!   ready, and its control plane says that the environment of the proxy runs.
+//!   [`start`](GaslightMqContainerConfiguration::start) returns once the process said that it is ready, and its control
+//!   plane says that the environment of the proxy runs.
 //! - **A run of the process.**
 //!   The process makes its [run](GaslightMqContainer::run) when it starts, and the test reads it.
 //!
 //! # What the machine needs
 //!
-//! A container runtime that runs a container on the network of the machine: Docker on Linux, or Docker Desktop with
-//! its host networking turned on. Without one, [`start`](GaslightMqContainerConfiguration::start) returns an error that
-//! says so.
+//! A container runtime, such as Docker. Without one, [`start`](GaslightMqContainerConfiguration::start) returns an
+//! error that says so.
 //!
 //! # The image
 //!
@@ -98,6 +99,9 @@
 //!
 //! - **Brokers.** GaslightMQ runs no broker yet, so a test starts a proxy in front of a real cluster alone.
 //!   A broker, and a proxy in front of one, arrive with `gmq broker`.
+//! - **Clients in other containers.** The proxy has one set of listeners, which serves the test through the published
+//!   ports. A client in another container of the network needs a listener that the proxy advertises under the alias of
+//!   the container, and that arrives with a proxy of several listeners.
 //! - **The environments of a workspace.** The container runs the proxy that its configuration describes.
 //!   Starting the environments of a workspace by their names arrives with `gmq start`.
 //!

@@ -1,6 +1,6 @@
 //! GaslightMQ that runs in a container next to a test, and how it starts and stops.
 
-use std::collections::VecDeque;
+use std::collections::{BTreeMap, VecDeque};
 use std::fmt;
 use std::net::SocketAddr;
 use std::path::Path;
@@ -9,32 +9,35 @@ use gaslightmq_control_api::clock::TimeSpan;
 use gaslightmq_control_api::environment::{EnvironmentName, ServerAddress};
 use gaslightmq_control_api::{CheckHealth, RequestSurface, RunId};
 use gaslightmq_control_client::{ControlClient, ControlClientConfiguration, ControlPlaneAddress};
+use testcontainers::bollard::Docker;
+use testcontainers::bollard::query_parameters::AttachContainerOptions;
+use testcontainers::core::IntoContainerPort;
 use testcontainers::core::client::ClientError;
 use testcontainers::runners::AsyncRunner;
-use testcontainers::{ContainerAsync, GenericImage, Healthcheck, ImageExt, TestcontainersError};
-use tokio::io::AsyncBufReadExt;
+use testcontainers::{ContainerAsync, GenericImage, ImageExt, TestcontainersError};
+use tokio::io::{AsyncBufReadExt, AsyncWriteExt};
 
-use crate::announcement::{Announced, Announcement};
-use crate::configuration::WORKSPACE_IN_THE_CONTAINER;
+use crate::announcement::Announcement;
+use crate::configuration::{BOOTSTRAP_PORT, CONTROL_PLANE_PORT, WORKSPACE_IN_THE_CONTAINER, advertised_listeners};
 use crate::{GaslightMqContainerConfiguration, GaslightMqContainerStartError, GaslightMqImage};
-
-/// The network of the container: the one of the machine of the test, so the process reaches whatever the test
-/// reaches under the same address, and the test reaches every listener of the process on a free port of its own.
-const NETWORK_OF_THE_MACHINE: &str = "host";
-
-/// The user that the process runs as: the files of the workspace that the crate copies in belong to it, so the
-/// process writes its definitions and its recordings there.
-const OWNER_OF_THE_WORKSPACE: &str = "0:0";
 
 /// The label of every container this crate starts, so the containers of the tests of a machine are found by it.
 const LABEL: &str = "gaslightmq.testcontainers";
 
+/// A host port of 0: the container runtime publishes the port on a free port of the machine.
+const ANY_HOST_PORT: u16 = 0;
+
+/// The user that the process runs as: the files of the workspace that the crate copies in belong to it, so the
+/// process writes its definitions and its recordings there. The image itself runs as nobody.
+const OWNER_OF_THE_WORKSPACE: &str = "0:0";
+
 /// GaslightMQ in a container next to a test: `gmq proxy` in front of a real cluster, with its control plane.
 ///
 /// It runs from [`start`](GaslightMqContainerConfiguration::start) until the test [stops](Self::stop) it.
-/// It runs the [image](GaslightMqContainerConfiguration::image) of GaslightMQ, and starts once the process said
-/// that it is ready and the control plane says that its environment runs.
-/// Every listener takes a free port, so tests run side by side.
+/// It runs the [image](GaslightMqContainerConfiguration::image) of GaslightMQ, and the test holds it once the process
+/// said that it is ready and the control plane says that its environment runs.
+/// The container publishes every listener on a free port of the machine, so tests run side by side, and the proxy
+/// names its brokers to its clients under the ports they are published on.
 ///
 /// The test reaches the proxy through the [control plane](Self::control), as it reaches any other process of
 /// GaslightMQ, and its clients connect to the [bootstrap address](Self::bootstrap) of the proxy.
@@ -49,17 +52,18 @@ pub struct GaslightMqContainer {
 }
 
 impl GaslightMqContainer {
-    /// A proxy in front of the real cluster whose bootstrap server is `cluster`, with every default.
+    /// A proxy in front of the real cluster whose bootstrap server is `cluster`, as the container reaches it, with
+    /// every default.
     ///
     /// [`start`](GaslightMqContainerConfiguration::start) starts it, and the test changes what it wants to first.
     pub fn proxy_in_front_of(cluster: ServerAddress) -> GaslightMqContainerConfiguration {
         GaslightMqContainerConfiguration::proxy_in_front_of(cluster)
     }
 
-    /// The address that a client of the test bootstraps from: the bootstrap listener of the proxy.
+    /// The address that a client of the test bootstraps from: the bootstrap listener of the proxy, where the
+    /// container publishes it.
     ///
-    /// The proxy names its brokers to the client under its
-    /// [advertised host](GaslightMqContainerConfiguration::advertised_host), each on a free port of its own.
+    /// The proxy names its brokers to the client under the ports that they are published on.
     pub fn bootstrap(&self) -> SocketAddr {
         self.bootstrap
     }
@@ -82,8 +86,8 @@ impl GaslightMqContainer {
         &self.control
     }
 
-    /// Where the control plane listens, for another client: the UI in a browser, or one with a configuration of its
-    /// own.
+    /// Where the container publishes the control plane, for another client: the UI in a browser, or one with a
+    /// configuration of its own.
     pub fn control_plane(&self) -> ControlPlaneAddress {
         self.control_plane.into()
     }
@@ -96,7 +100,7 @@ impl GaslightMqContainer {
     /// Asks the process to stop, kills it once the [stop timeout](GaslightMqContainerConfiguration::stop_timeout) is
     /// over, and waits until the container is gone.
     ///
-    /// Every address is free once the call returns.
+    /// Every published port is free once the call returns.
     /// A test that lets go of the value without a stop removes the container at once, and waits for that.
     pub async fn stop(self) {
         let seconds = self.stop_timeout.as_millis().div_ceil(1000);
@@ -120,13 +124,40 @@ impl fmt::Debug for GaslightMqContainer {
     }
 }
 
+/// Where a container publishes its ports, as the test reaches them.
+struct Published {
+    /// The host of the machine that runs the containers, as the test reaches it: `localhost`, for one.
+    host: String,
+    /// The port of the machine for each port of the container.
+    ports: BTreeMap<u16, u16>,
+}
+
+impl Published {
+    /// The address under which the test reaches `port` of the container.
+    async fn address_of(&self, port: u16) -> Result<SocketAddr, String> {
+        let published = self.ports.get(&port).copied().ok_or_else(|| unpublished(port))?;
+        let mut addresses = tokio::net::lookup_host((self.host.as_str(), published))
+            .await
+            .map_err(|error| format!("the host {} of the containers does not resolve: {error}", self.host))?;
+        addresses
+            .next()
+            .ok_or_else(|| format!("the host {} of the containers names no address", self.host))
+    }
+}
+
+/// The text of a port of the container that was not published.
+fn unpublished(port: u16) -> String {
+    format!("the container runtime did not say where port {port} of the container is published")
+}
+
 impl GaslightMqContainerConfiguration {
     /// Starts GaslightMQ in a container next to the test, and returns once it is ready.
     ///
-    /// The container runs the image on the network of the machine of the test, so the process reaches the cluster
-    /// under the address that the test hands over, and every broker of it under the address that it advertises.
+    /// The container joins the [network](Self::network) that the test names, and publishes the bootstrap listener,
+    /// a listener for each of the [brokers](Self::brokers) and the control plane on free ports of the machine.
     /// The files of the workspace are copied into the container before the process starts.
-    /// The process is ready once it said where it listens, and its control plane says that its environment runs.
+    /// Once the container runs, the process learns where its brokers are published, and names them to its clients
+    /// there. It is ready once it said so, and its control plane says that its environment runs.
     /// The image is pulled first when the machine does not hold it.
     ///
     /// # Errors
@@ -134,8 +165,9 @@ impl GaslightMqContainerConfiguration {
     /// - [`GaslightMqContainerStartError::InvalidImage`] when the environment names no image.
     /// - [`GaslightMqContainerStartError::WorkspaceUnreadable`] when the workspace of the test cannot be read.
     /// - [`GaslightMqContainerStartError::ImageMissing`] when the machine does not hold the image, and cannot pull it.
-    /// - [`GaslightMqContainerStartError::NotStarted`] when no container starts.
-    /// - [`GaslightMqContainerStartError::NotReady`] when the process does not get ready within the start timeout.
+    /// - [`GaslightMqContainerStartError::ContainerNotStarted`] when no container starts.
+    /// - [`GaslightMqContainerStartError::NotReady`] when the process in the container does not get ready within the
+    ///   start timeout.
     pub async fn start(self) -> Result<GaslightMqContainer, GaslightMqContainerStartError> {
         let image = match &self.image {
             Some(image) => image.clone(),
@@ -143,11 +175,15 @@ impl GaslightMqContainerConfiguration {
         };
         let mut request = GenericImage::new(image.repository(), image.tag())
             .with_cmd(self.arguments())
-            .with_network(NETWORK_OF_THE_MACHINE)
+            .with_open_stdin(true)
             .with_user(OWNER_OF_THE_WORKSPACE)
-            .with_label(LABEL, "")
-            // The crate asks the control plane itself, wherever it listens.
-            .with_health_check(Healthcheck::none());
+            .with_label(LABEL, "");
+        for port in self.published_ports() {
+            request = request.with_mapped_port(ANY_HOST_PORT, port.tcp());
+        }
+        if let Some(network) = &self.network {
+            request = request.with_network(network);
+        }
         if let Some(directory) = &self.workspace {
             require_directory(directory).await?;
             request = request.with_copy_to(WORKSPACE_IN_THE_CONTAINER, directory.clone());
@@ -155,13 +191,13 @@ impl GaslightMqContainerConfiguration {
         let container = request.start().await.map_err(|error| self.not_started(&image, error))?;
 
         match self.ready(&container).await {
-            Ok((announced, control)) => Ok(GaslightMqContainer {
+            Ok(ready) => Ok(GaslightMqContainer {
                 container,
-                control,
+                control: ready.control,
                 environment: self.environment,
-                bootstrap: announced.bootstrap,
-                control_plane: announced.control_plane,
-                run: announced.run,
+                bootstrap: ready.bootstrap,
+                control_plane: ready.control_plane,
+                run: ready.run,
                 stop_timeout: self.stop_timeout,
             }),
             Err(error) => {
@@ -171,13 +207,30 @@ impl GaslightMqContainerConfiguration {
         }
     }
 
-    /// Wait until the process in `container` said where it listens and that it is ready, and its control plane says
-    /// that its environment runs.
-    async fn ready(
-        &self,
-        container: &ContainerAsync<GenericImage>,
-    ) -> Result<(Announced, ControlClient), GaslightMqContainerStartError> {
+    /// Hand the process in `container` the advertised listeners of its brokers, wait until it said that it is ready,
+    /// and until its control plane says that its environment runs.
+    async fn ready(&self, container: &ContainerAsync<GenericImage>) -> Result<Ready, GaslightMqContainerStartError> {
         let mut printed = Printed::keeping(self.log_lines_in_errors);
+        let not_ready = |reason: String, printed: Printed| async move {
+            GaslightMqContainerStartError::NotReady {
+                reason,
+                log: printed.with_errors_of(container).await,
+            }
+        };
+        let published = match published(container, &self.published_ports()).await {
+            Ok(published) => published,
+            Err(reason) => return Err(not_ready(reason, printed).await),
+        };
+        let advertised = advertised_listeners(self, &published.host, |port| published.ports.get(&port).copied())
+            .map_err(unpublished);
+        let handed = match advertised {
+            Ok(advertised) => hand_over(container.id(), &advertised).await,
+            Err(reason) => Err(reason),
+        };
+        if let Err(reason) = handed {
+            return Err(not_ready(reason, printed).await);
+        }
+
         let mut announcement = Announcement::default();
         let mut lines = container.stdout(true).lines();
         let followed = tokio::time::timeout(self.start_timeout.duration(), async {
@@ -192,33 +245,44 @@ impl GaslightMqContainerConfiguration {
             false
         })
         .await;
-        let not_ready = |reason: String, printed: Printed| async move {
-            GaslightMqContainerStartError::NotReady {
-                reason,
-                log: printed.with_errors_of(container).await,
+        let run = match (followed, announcement.run()) {
+            (Ok(true), Some(run)) => run,
+            (Ok(true), None) => {
+                let reason = "the process said that it is ready, and did not say its run".to_owned();
+                return Err(not_ready(reason, printed).await);
             }
-        };
-        match followed {
-            Ok(true) => {}
-            Ok(false) => return Err(not_ready("the process ended before it was ready".to_owned(), printed).await),
-            Err(_) => {
+            (Ok(false), _) => {
+                return Err(not_ready("the process ended before it was ready".to_owned(), printed).await);
+            }
+            (Err(_), _) => {
                 let reason = format!(
                     "the process did not say that it is ready within {} ms",
                     self.start_timeout.as_millis()
                 );
                 return Err(not_ready(reason, printed).await);
             }
-        }
-        let announced = match announcement.announced() {
-            Ok(announced) => announced,
-            Err(reason) => return Err(not_ready(reason, printed).await),
         };
+        let addresses = match (
+            published.address_of(BOOTSTRAP_PORT).await,
+            published.address_of(CONTROL_PLANE_PORT).await,
+        ) {
+            (Ok(bootstrap), Ok(control_plane)) => (bootstrap, control_plane),
+            (Err(reason), _) | (_, Err(reason)) => return Err(not_ready(reason, printed).await),
+        };
+        let (bootstrap, control_plane) = addresses;
 
-        let mut configuration = ControlClientConfiguration::new(announced.control_plane.into());
+        let mut configuration = ControlClientConfiguration::new(control_plane.into());
         configuration.surface = RequestSurface::Test;
         let control = ControlClient::new(configuration);
         let reason = match control.send(CheckHealth {}).await {
-            Ok(Ok(_)) => return Ok((announced, control)),
+            Ok(Ok(_)) => {
+                return Ok(Ready {
+                    control,
+                    bootstrap,
+                    control_plane,
+                    run,
+                });
+            }
             Ok(Err(unhealthy)) => unhealthy.to_string(),
             Err(unanswered) => unanswered.to_string(),
         };
@@ -238,11 +302,65 @@ impl GaslightMqContainerConfiguration {
                     reason: error.to_string(),
                 }
             }
-            other => GaslightMqContainerStartError::NotStarted {
+            other => GaslightMqContainerStartError::ContainerNotStarted {
                 reason: other.to_string(),
             },
         }
     }
+}
+
+/// What a process that is ready hands the test.
+struct Ready {
+    control: ControlClient,
+    bootstrap: SocketAddr,
+    control_plane: SocketAddr,
+    run: RunId,
+}
+
+/// Where `container` publishes each of `ports`.
+async fn published(container: &ContainerAsync<GenericImage>, ports: &[u16]) -> Result<Published, String> {
+    let host = container
+        .get_host()
+        .await
+        .map_err(|error| format!("the container runtime did not say which host its containers are on: {error}"))?;
+    let mut published = BTreeMap::new();
+    for port in ports {
+        let outside = container
+            .get_host_port_ipv4(port.tcp())
+            .await
+            .map_err(|_| unpublished(*port))?;
+        published.insert(*port, outside);
+    }
+    Ok(Published {
+        host: host.to_string(),
+        ports: published,
+    })
+}
+
+/// Write `advertised` as a line to the input of the container `id`, which the process reads before it starts.
+async fn hand_over(id: &str, advertised: &str) -> Result<(), String> {
+    let undelivered = |reason: String| format!("the process did not get the advertised listeners: {reason}");
+    let docker = Docker::connect_with_defaults().map_err(|error| undelivered(error.to_string()))?;
+    let options = AttachContainerOptions {
+        stdin: true,
+        stream: true,
+        ..AttachContainerOptions::default()
+    };
+    let mut attached = docker
+        .attach_container(id, Some(options))
+        .await
+        .map_err(|error| undelivered(error.to_string()))?;
+    let line = format!("{advertised}\n");
+    attached
+        .input
+        .write_all(line.as_bytes())
+        .await
+        .map_err(|error| undelivered(error.to_string()))?;
+    attached
+        .input
+        .flush()
+        .await
+        .map_err(|error| undelivered(error.to_string()))
 }
 
 /// The last lines that the process printed.

@@ -55,7 +55,7 @@ clippy:
 test *args:
     cargo test --workspace --all-features --exclude gaslightmq_testcontainers {{args}}
 
-# It builds the image first, and the tests run that one. They need Docker, with host networking.
+# It builds the image first, and the tests run that one. They need Docker.
 # The tests of the image of `gmq`: GaslightMQ in a container next to a test, in front of real Kafka brokers.
 test-image *args: image
     GASLIGHTMQ_IMAGE={{gmq_image}} cargo test -p gaslightmq_testcontainers --all-features {{args}}
