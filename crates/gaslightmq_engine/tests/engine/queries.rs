@@ -53,7 +53,7 @@ async fn a_query_answers_with_the_calls_that_a_selector_matches_and_their_count(
 
     assert_eq!(queried.matched, 2);
     assert_eq!(queried.calls, [records[0].clone(), records[2].clone()]);
-    assert_eq!(queried.lost, 0);
+    assert_eq!(queried.unreadable, 0);
     Ok(())
 }
 

@@ -98,7 +98,7 @@ impl Operation for OpenRecording {
 ///
 /// let answer = serde_json::json!({ "matched": 0, "calls": [] });
 /// let answer: <QueryRecording as Operation>::Answer = serde_json::from_value(answer).expect("the answer");
-/// assert_eq!(answer, RecordedCalls { matched: 0, calls: Vec::new(), lost: 0 });
+/// assert_eq!(answer, RecordedCalls { matched: 0, calls: Vec::new(), unreadable: 0 });
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -132,7 +132,7 @@ pub struct RecordedCalls {
     /// How many entries of the recording are damaged, so the engine could not read them. The count and the calls
     /// leave them out. A recording without damage leaves it out.
     #[serde(default, skip_serializing_if = "is_zero")]
-    pub lost: u64,
+    pub unreadable: u64,
 }
 
 /// Get the index of a recording: its calls grouped into facets, each with counts, under a filter.
@@ -193,7 +193,7 @@ pub struct RecordingIndex {
     /// How many entries of the recording are damaged, so the engine could not read them. The facets leave them out.
     /// A recording without damage leaves it out.
     #[serde(default, skip_serializing_if = "is_zero")]
-    pub lost: u64,
+    pub unreadable: u64,
 }
 
 /// One facet of an index: the values of one field, each with the calls that have it, and the patterns they suggest.

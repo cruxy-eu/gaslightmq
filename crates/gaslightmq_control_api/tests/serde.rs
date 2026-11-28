@@ -2122,15 +2122,15 @@ fn a_query_answers_with_the_count_and_the_calls_and_says_what_it_lost() {
     Form(RecordedCalls {
         matched: 1204,
         calls: Vec::new(),
-        lost: 0,
+        unreadable: 0,
     })
     .writes(json!({ "matched": 1204, "calls": [] }));
     Form(RecordedCalls {
         matched: 0,
         calls: Vec::new(),
-        lost: 12,
+        unreadable: 12,
     })
-    .writes(json!({ "matched": 0, "calls": [], "lost": 12 }));
+    .writes(json!({ "matched": 0, "calls": [], "unreadable": 12 }));
 }
 
 #[test]
@@ -2166,7 +2166,7 @@ fn the_index_of_a_recording_is_asked_under_a_filter_and_answers_with_its_facets(
                 calls: 3,
             }],
         }],
-        lost: 0,
+        unreadable: 0,
     })
     .writes(json!({
         "calls": 3,

@@ -1687,14 +1687,17 @@ recordings:
   all_readers_memory: 256MiB  # the unpacked blocks that all readers of the process hold together at most
   read_size: 256KiB         # the bytes that one read of a file that grows asks for at least
   read_ahead: 8MiB          # how far ahead of a stream over a sealed file the system reads from the disk
-  open_recordings: 4        # the recordings that stay open for their readers, each with its manifest and its index
-  query_calls: 100          # the calls that one answer to a query holds at most
+  open_recordings: 4        # the recordings that stay open for their readers, each with its manifest and its index; the one read longest ago closes
+  query_calls: 100          # the calls that one answer to a query holds at most; the count covers the whole recording
 ```
 
 A size is a number of bytes with its unit.
 `queue_entries`, `queue_size`, `commit_interval` and `commit_size` are the recorder's, whatever the layout is.
 `directory`, `read_size` and `read_ahead` are the backing on files'.
 `open_recordings` and `query_calls` are the engine's, which reads recordings for the control plane, whatever the layout is.
+`open_recordings` bounds what the engine holds of the recordings it read: a description of each, such as the manifest, and its index, which takes memory for every call.
+`query_calls` bounds the calls that one answer copies out.
+What the index groups by and when it suggests a pattern are the index's own, and no size: they bound nothing.
 The others are the segment layout's.
 `reader_memory` and `all_readers_memory` are the only two that a reader needs: a recording says its codec and its versions itself, and its objects say their sizes.
 

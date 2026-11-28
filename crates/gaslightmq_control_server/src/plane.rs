@@ -956,7 +956,7 @@ impl<C: WorkspaceContext + 'static> ControlPlane<C> {
         Ok(RecordedCalls {
             matched: queried.matched,
             calls: queried.calls,
-            lost: queried.lost,
+            unreadable: queried.unreadable,
         })
     }
 
@@ -997,7 +997,7 @@ impl<C: WorkspaceContext + 'static> ControlPlane<C> {
         Ok(RecordingIndex {
             calls: indexed.facets.calls(),
             facets,
-            lost: indexed.lost,
+            unreadable: indexed.unreadable,
         })
     }
 
@@ -1235,7 +1235,7 @@ fn query_error(error: RecordingQueryError) -> QueryRecordingError {
         }
         RecordingQueryError::Busy { recording, reason } => QueryRecordingError::Busy { recording, reason },
         RecordingQueryError::StoreFailed { reason } => QueryRecordingError::StoreFailed { reason },
-        RecordingQueryError::Unresolved { error } => QueryRecordingError::DoesNotFit {
+        RecordingQueryError::DoesNotFit { error } => QueryRecordingError::DoesNotFit {
             reason: error.to_string(),
         },
     }

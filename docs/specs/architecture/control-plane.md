@@ -565,8 +565,8 @@ Two operations read a recording, and neither changes anything.
   whose reason names the budget and its property, and the client asks again.
   Nothing waits for memory.
 - **A recording that runs** is read as far as its environment handed calls over until the request.
-- **Damage is counted.** The entries that a storage could not hand out are left out, and `lost` says how many.
-  An answer without damage leaves `lost` out.
+- **Damage is counted.** The entries that a storage could not read, because they are damaged, are left out,
+  and `unreadable` says how many. An answer without damage leaves `unreadable` out.
 
 ```json
 { "from": { "surface": "ui" }, "operation": "query-recording", "recording": "orders-sim.2026-11-21T14-02-11.527Z",
@@ -747,8 +747,8 @@ A recording starts, stops, is listed, opens and is queried: `start-recording` an
 environment, `list-recordings` lists every recording of the process, `open-recording` names one by its ID and
 answers with what it is, how many entries it holds and how it ended, and `query-recording` and
 `get-recording-index` [read it](#querying-a-recording).
-The selectors have no operation of their own to test one against the current recording: a client queries the
-recording with the selector, or with its draft.
+*Test against the current recording*, of the `selectors` row, is `query-recording`: a saved selector by its name,
+or an edit of it as the `draft`, which answers with the calls that the edit matches before anyone saves it.
 
 The scenarios are served: `list-scenarios`, `get-scenario`, `create-scenario`, `update-scenario` and
 `delete-scenario`, as for every kind, and `activate-scenario`, `deactivate-scenario` and `step-scenario`.

@@ -813,10 +813,10 @@ pub enum RecordingQueryError {
     /// The store of the selectors could not be read. `reason` says what it said.
     #[error("the recording was not read: {reason}")]
     StoreFailed { reason: String },
-    /// The selector does not resolve against the selectors of the workspace and the draft: it names one that does not
-    /// exist, or the selectors include each other in a circle. Its error says which.
+    /// The selector does not fit the selectors of the workspace and the draft: it names one that does not exist, or
+    /// the selectors include each other in a circle. Its error says which.
     #[error("{error}")]
-    Unresolved { error: SelectorSetError },
+    DoesNotFit { error: SelectorSetError },
 }
 
 impl RecordingQueryError {

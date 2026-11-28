@@ -51,7 +51,7 @@ use crate::{ListRecordingsError, OpenRecordingError, QueryRecordingError, Readin
 /// - **A reading that finds no room is refused.** When the readers of the process hold as much as their budget
 ///   allows, the storage refuses the stream, and the query is [`Busy`](QueryRecordingError::Busy): whoever asked
 ///   asks again.
-/// - **A damaged stretch is left out.** The storage says which entries it lost, and the reading goes on behind
+/// - **A damaged stretch is left out.** The storage says which entries it could not read, and the reading goes on behind
 ///   them. The answer says how many entries it could not read.
 #[derive(Clone)]
 pub struct Recordings {
@@ -78,8 +78,8 @@ struct Indexed {
     index: CallIndex,
     /// How many entries the index read: the position of the next entry that it reads.
     read: u64,
-    /// How many entries the storage could not hand out.
-    lost: u64,
+    /// How many entries the storage could not hand out, because they are damaged.
+    unreadable: u64,
 }
 
 /// The calls of a recording that a selector matches: how many there are, and a page of them.
@@ -87,7 +87,7 @@ struct Indexed {
 /// ```
 /// use gaslightmq_engine::prelude::*;
 ///
-/// let nothing = QueriedCalls { matched: 0, calls: Vec::new(), lost: 0 };
+/// let nothing = QueriedCalls { matched: 0, calls: Vec::new(), unreadable: 0 };
 /// assert!(nothing.calls.is_empty());
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -99,7 +99,7 @@ pub struct QueriedCalls {
     pub calls: Vec<Call>,
     /// How many entries of the recording the storage could not hand out, because they are damaged.
     /// The count and the calls leave them out.
-    pub lost: u64,
+    pub unreadable: u64,
 }
 
 /// The facets of the calls of a recording under a filter, from its index.
@@ -109,7 +109,7 @@ pub struct RecordingFacets {
     pub facets: Facets,
     /// How many entries of the recording the storage could not hand out, because they are damaged.
     /// The facets leave them out.
-    pub lost: u64,
+    pub unreadable: u64,
 }
 
 /// A recording as its storage holds it: what it is, how far it goes, and how it ended.
@@ -228,14 +228,14 @@ impl Recordings {
         let mut answer = QueriedCalls {
             matched: 0,
             calls: Vec::new(),
-            lost: 0,
+            unreadable: 0,
         };
         loop {
             let batch = match entries.next().await {
                 Ok(Some(batch)) => batch,
                 Ok(None) => break,
                 Err(NextBatchError::Damaged { from, to }) => {
-                    answer.lost += lost_between(from, to);
+                    answer.unreadable += entries_between(from, to);
                     continue;
                 }
                 Err(error) => return Err(unread.not_continued(error)),
@@ -245,12 +245,12 @@ impl Recordings {
                     Ok(EntryView::Call(call)) => call,
                     Ok(EntryView::Session(_) | EntryView::Journal(_)) => continue,
                     Err(_) => {
-                        answer.lost += 1;
+                        answer.unreadable += 1;
                         continue;
                     }
                 };
                 let Ok(fields) = call.fields().to_fields() else {
-                    answer.lost += 1;
+                    answer.unreadable += 1;
                     continue;
                 };
                 if !selector.evaluate(&fields).is_matched() {
@@ -260,7 +260,7 @@ impl Recordings {
                 if in_the_page {
                     // The answer outlives the stream, so it holds the type, and no block of the storage.
                     let Ok(call) = call.to_call() else {
-                        answer.lost += 1;
+                        answer.unreadable += 1;
                         continue;
                     };
                     answer.calls.push(call);
@@ -304,7 +304,7 @@ impl Recordings {
                     Ok(Some(batch)) => batch,
                     Ok(None) => break,
                     Err(NextBatchError::Damaged { from, to }) => {
-                        indexed.lost += lost_between(from, to);
+                        indexed.unreadable += entries_between(from, to);
                         indexed.read = indexed.read.max(to.next().number());
                         continue;
                     }
@@ -318,14 +318,14 @@ impl Recordings {
                     }) {
                         Ok(Some(Ok(fields))) => indexed.index.add_fields(fields),
                         Ok(None) => {}
-                        Ok(Some(Err(_))) | Err(_) => indexed.lost += 1,
+                        Ok(Some(Err(_))) | Err(_) => indexed.unreadable += 1,
                     }
                 }
             }
         }
         Ok(RecordingFacets {
             facets: indexed.index.facets(filter),
-            lost: indexed.lost,
+            unreadable: indexed.unreadable,
         })
     }
 
@@ -360,7 +360,7 @@ impl Recordings {
             index: tokio::sync::Mutex::new(Indexed {
                 index: CallIndex::new(self.inner.configuration.index.clone()),
                 read: 0,
-                lost: 0,
+                unreadable: 0,
             }),
         });
         let mut kept = self.kept();
@@ -524,7 +524,7 @@ impl<'a> Unread<'a> {
 }
 
 /// How many entries lie from `from` to `to`, both of them included.
-fn lost_between(from: Position, to: Position) -> u64 {
+fn entries_between(from: Position, to: Position) -> u64 {
     to.number().saturating_sub(from.number()).saturating_add(1)
 }
 
