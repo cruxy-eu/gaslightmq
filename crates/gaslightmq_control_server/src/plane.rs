@@ -1235,7 +1235,7 @@ fn query_error(error: RecordingQueryError) -> QueryRecordingError {
         }
         RecordingQueryError::Busy { recording, reason } => QueryRecordingError::Busy { recording, reason },
         RecordingQueryError::StoreFailed { reason } => QueryRecordingError::StoreFailed { reason },
-        RecordingQueryError::DoesNotFit { error } => QueryRecordingError::DoesNotFit {
+        RecordingQueryError::Unresolved { error } => QueryRecordingError::DoesNotFit {
             reason: error.to_string(),
         },
     }

@@ -146,7 +146,7 @@ impl<C: WorkspaceContext> Host<C> {
     /// # Errors
     ///
     /// - [`RecordingQueryError::StoreFailed`] when the store of the selectors could not be read.
-    /// - [`RecordingQueryError::DoesNotFit`] when the selector does not resolve against the workspace.
+    /// - [`RecordingQueryError::Unresolved`] when the selector does not resolve.
     /// - [`RecordingQueryError::NotFound`], [`Unreadable`](RecordingQueryError::Unreadable) and
     ///   [`StorageUnavailable`](RecordingQueryError::StorageUnavailable) when the recording is not there, this build
     ///   cannot read it, or the storage did not answer.
@@ -209,6 +209,6 @@ impl<C: WorkspaceContext> Host<C> {
             .chain(draft.cloned());
         SelectorSet::new(selectors)
             .and_then(|selectors| selectors.resolve(selector))
-            .map_err(|error| RecordingQueryError::DoesNotFit { error })
+            .map_err(|error| RecordingQueryError::Unresolved { error })
     }
 }

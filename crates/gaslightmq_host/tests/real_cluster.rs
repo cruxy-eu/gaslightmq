@@ -2595,12 +2595,12 @@ async fn a_recording_answers_a_query_with_a_saved_selector_or_a_draft_and_gives_
             .collect::<Vec<_>>()
     });
     assert_eq!(topics, Some(vec![("orders".to_owned(), 2), ("payments".to_owned(), 1)]));
-    // A selector that the workspace does not have does not fit.
+    // A selector that the workspace does not have resolves to nothing.
     let unknown = SelectorRef::Named("payment-producers".parse()?);
-    let does_not_fit = host.query_recording(&recording, &unknown, None, 0).await;
+    let unresolved = host.query_recording(&recording, &unknown, None, 0).await;
     assert!(
-        matches!(does_not_fit, Err(RecordingQueryError::DoesNotFit { .. })),
-        "{does_not_fit:?}"
+        matches!(unresolved, Err(RecordingQueryError::Unresolved { .. })),
+        "{unresolved:?}"
     );
     host.stop_all().await;
     Ok(())
