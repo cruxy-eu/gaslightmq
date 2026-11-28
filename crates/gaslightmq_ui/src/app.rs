@@ -2,7 +2,7 @@
 
 use dioxus::prelude::*;
 use gaslightmq_control_api::{Expects, Operation, RequestCause, RequestSource, RequestSurface, Revised};
-use gaslightmq_control_client::{ControlClient, ControlClientConfiguration, SendError};
+use gaslightmq_control_client::{ControlClient, ControlClientConfiguration, OperationError, SendError};
 
 use crate::browser;
 use crate::configuration::UiConfiguration;
@@ -140,8 +140,7 @@ impl Ui {
         let from = self.source(surface);
         spawn(async move {
             let failed = match client.send_from(from, operation).await {
-                Ok(Ok(answer)) => return settled(Some(answer)),
-                Ok(Err(error)) => error.to_string(),
+                Ok(answer) => return settled(Some(answer)),
                 Err(error) => error.to_string(),
             };
             ui.notify(failed, true);
@@ -221,17 +220,21 @@ impl Ui {
 ///
 /// A request that got no answer may have applied. A request that the control plane did not take, or whose answer
 /// nobody can read, will not apply when it goes out again.
-fn outcome<E>(sent: Result<Result<Revised, E>, SendError>) -> Outcome
+fn outcome<E>(sent: Result<Revised, OperationError<E>>) -> Outcome
 where
     Outcome: From<E>,
 {
     match sent {
-        Ok(Ok(answer)) => Outcome::Applied {
+        Ok(answer) => Outcome::Applied {
             revision: answer.revision,
         },
-        Ok(Err(refused)) => Outcome::from(refused),
-        Err(SendError::Unreachable { reason }) => Outcome::Unanswered { reason },
-        Err(error @ (SendError::Rejected { .. } | SendError::Unreadable { .. })) => Outcome::Refused {
+        Err(OperationError::Refused { error: refused }) => Outcome::from(refused),
+        Err(OperationError::Unanswered {
+            error: SendError::Unreachable { reason },
+        }) => Outcome::Unanswered { reason },
+        Err(OperationError::Unanswered {
+            error: error @ (SendError::Rejected { .. } | SendError::Unreadable { .. }),
+        }) => Outcome::Refused {
             reason: error.to_string(),
         },
     }

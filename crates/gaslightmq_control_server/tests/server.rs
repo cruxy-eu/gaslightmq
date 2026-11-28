@@ -28,7 +28,7 @@ use gaslightmq_control_api::scenario::{Mode, Scenario, Step};
 use gaslightmq_control_api::selector::{Condition, Conditions, Selector, SelectorRef};
 use gaslightmq_control_api::surface::{Column, Intent, Layer, Pad, Row};
 use gaslightmq_control_api::trigger::Seed;
-use gaslightmq_control_client::{ControlClient, ControlClientConfiguration, StreamError};
+use gaslightmq_control_client::{ControlClient, ControlClientConfiguration, OperationError, StreamError};
 use gaslightmq_control_server::prelude::*;
 use gaslightmq_host::{EnvironmentConfiguration, Host, HostConfiguration};
 use gaslightmq_lie_api::prelude::*;
@@ -94,14 +94,14 @@ async fn a_definition_changes_in_the_workspace_and_every_client_of_the_stream_he
         .send(CreateDefinition {
             definition: order_producers.clone(),
         })
-        .await??;
+        .await?;
     let changed = tokio::time::timeout(PATIENCE, stream.next()).await??;
     let got = client
         .send(GetDefinition::<Selector> {
             name: order_producers.name().clone(),
         })
-        .await?;
-    let listed = client.send(ListDefinitions::<Selector>::new()).await?;
+        .await;
+    let listed = client.send(ListDefinitions::<Selector>::new()).await;
 
     // The create answered with the revision of the selector, and whoever reads the selector gets it beside it.
     assert_eq!(
@@ -126,8 +126,11 @@ async fn a_definition_changes_in_the_workspace_and_every_client_of_the_stream_he
         .send(CreateDefinition {
             definition: slow.clone(),
         })
-        .await?;
-    let Err(CreateDefinitionError::DoesNotFit { name, reason }) = early else {
+        .await;
+    let Err(OperationError::Refused {
+        error: CreateDefinitionError::DoesNotFit { name, reason },
+    }) = early
+    else {
         anyhow::bail!("a rule was created with a preset that does not exist: {early:?}");
     };
     assert_eq!(name, slow.name().clone().into());
@@ -138,20 +141,22 @@ async fn a_definition_changes_in_the_workspace_and_every_client_of_the_stream_he
 
     // Once the preset is there, the rule is too, and the selector stays as long as the rule uses it.
     let preset = Preset::new(delay, TimingLie::new().with_delay("1s".parse()?));
-    client.send(CreateDefinition { definition: preset }).await??;
+    client.send(CreateDefinition { definition: preset }).await?;
     let definition = slow.clone();
-    client.send(CreateDefinition { definition }).await??;
+    client.send(CreateDefinition { definition }).await?;
     let in_use = client
         .send(DeleteDefinition::<Selector> {
             name: order_producers.name().clone(),
             expects: None,
         })
-        .await?;
+        .await;
     assert_eq!(
         in_use,
-        Err(DeleteDefinitionError::InUse {
-            name: order_producers.name().clone().into(),
-            users: vec![slow.name().clone().into()],
+        Err(OperationError::Refused {
+            error: DeleteDefinitionError::InUse {
+                name: order_producers.name().clone().into(),
+                users: vec![slow.name().clone().into()],
+            }
         })
     );
 
@@ -160,7 +165,7 @@ async fn a_definition_changes_in_the_workspace_and_every_client_of_the_stream_he
             name: slow.name().clone(),
             expects: None,
         })
-        .await??;
+        .await?;
     // Every change takes the next number of one counter, whatever it changes.
     assert!(created.revision < deleted.revision, "{created:?} and then {deleted:?}");
     // The stream heard of the preset and the rule, and then of the rule that went.
@@ -198,58 +203,71 @@ async fn a_command_on_an_environment_that_does_not_run_fails_as_its_operation_sa
         .send(StopEnvironment {
             environment: staging.clone(),
         })
-        .await?;
+        .await;
     let armed = client
         .send(ArmRule {
             environment: staging.clone(),
             rule: "slow-order-producers".parse()?,
             expects: None,
         })
-        .await?;
+        .await;
     let rules = client
         .send(ListEnvironmentRules {
             environment: staging.clone(),
         })
-        .await?;
+        .await;
     let parsed = client
         .send(ParseSentence {
             environment: staging.clone(),
             text: "delay produce".to_owned(),
         })
-        .await?;
+        .await;
     // An environment that does not run has no journal either: a journal begins and ends with its environment.
     let journal = client
         .send(QueryJournal {
             environment: staging.clone(),
             after: None,
         })
-        .await?;
+        .await;
 
     assert_eq!(
         stopped,
-        Err(EnvironmentNotRunning {
-            environment: staging.clone()
+        Err(OperationError::Refused {
+            error: EnvironmentNotRunning {
+                environment: staging.clone()
+            }
         })
     );
     assert_eq!(
         armed,
-        Err(RuleCommandError::NotRunning {
-            environment: staging.clone()
+        Err(OperationError::Refused {
+            error: RuleCommandError::NotRunning {
+                environment: staging.clone()
+            }
         })
     );
     assert_eq!(
         rules,
-        Err(EnvironmentReadError::NotRunning {
-            environment: staging.clone()
+        Err(OperationError::Refused {
+            error: EnvironmentReadError::NotRunning {
+                environment: staging.clone()
+            }
         })
     );
     assert_eq!(
         parsed,
-        Err(EnvironmentReadError::NotRunning {
-            environment: staging.clone()
+        Err(OperationError::Refused {
+            error: EnvironmentReadError::NotRunning {
+                environment: staging.clone()
+            }
         })
     );
-    assert_eq!(journal, Err(EnvironmentNotRunning { environment: staging }));
+    assert_eq!(
+        journal,
+        Err(OperationError::Refused {
+            error: EnvironmentNotRunning { environment: staging }
+        })
+    );
     server.stop().await;
     Ok(())
 }
@@ -274,49 +292,55 @@ async fn a_scenario_is_kept_in_the_workspace_and_runs_only_in_an_environment_tha
         .send(CreateDefinition {
             definition: scenario.clone(),
         })
-        .await??;
+        .await?;
     let got = client
         .send(GetDefinition::<Scenario> {
             name: scenario.name().clone(),
         })
-        .await??;
+        .await?;
     let activated = client
         .send(ActivateScenario {
             environment: staging.clone(),
             scenario: scenario.name().clone(),
             expects: None,
         })
-        .await?;
+        .await;
     let stepped = client
         .send(StepScenario {
             environment: staging.clone(),
             expects: None,
         })
-        .await?;
+        .await;
     let deactivated = client
         .send(DeactivateScenario {
             environment: staging.clone(),
             expects: None,
         })
-        .await?;
+        .await;
 
     assert_eq!(got.definition, scenario);
     assert_eq!(got.revision, created.revision);
     assert_eq!(
         activated,
-        Err(ActivateScenarioError::NotRunning {
-            environment: staging.clone()
+        Err(OperationError::Refused {
+            error: ActivateScenarioError::NotRunning {
+                environment: staging.clone()
+            }
         })
     );
     assert_eq!(
         stepped,
-        Err(StepScenarioError::NotRunning {
-            environment: staging.clone()
+        Err(OperationError::Refused {
+            error: StepScenarioError::NotRunning {
+                environment: staging.clone()
+            }
         })
     );
     assert_eq!(
         deactivated,
-        Err(DeactivateScenarioError::NotRunning { environment: staging })
+        Err(OperationError::Refused {
+            error: DeactivateScenarioError::NotRunning { environment: staging }
+        })
     );
     server.stop().await;
     Ok(())
@@ -405,20 +429,27 @@ async fn an_environment_that_the_workspace_does_not_have_or_that_runs_a_broker_d
         .send(StartEnvironment {
             environment: staging.clone(),
         })
-        .await?;
+        .await;
     let with_broker = client
         .send(StartEnvironment {
             environment: orders.name().clone(),
         })
-        .await?;
-    let statuses = client.send(ListEnvironments {}).await?;
+        .await;
+    let statuses = client.send(ListEnvironments {}).await;
 
-    assert_eq!(unknown, Err(StartEnvironmentError::NotFound { environment: staging }));
+    assert_eq!(
+        unknown,
+        Err(OperationError::Refused {
+            error: StartEnvironmentError::NotFound { environment: staging }
+        })
+    );
     assert_eq!(
         with_broker,
-        Err(StartEnvironmentError::Failed {
-            environment: orders.name().clone(),
-            reason: "it runs a broker, and the host cannot run a broker yet".to_owned(),
+        Err(OperationError::Refused {
+            error: StartEnvironmentError::Failed {
+                environment: orders.name().clone(),
+                reason: "it runs a broker, and the host cannot run a broker yet".to_owned(),
+            }
         })
     );
     assert_eq!(
@@ -466,57 +497,70 @@ async fn live_rules_pads_and_sessions_need_an_environment_that_runs() -> anyhow:
             rule: hold.clone(),
             armed: true,
         })
-        .await?;
+        .await;
     let kept = client
         .send(KeepRule {
             environment: staging.clone(),
             rule: hold.name().clone(),
             expects: None,
         })
-        .await?;
+        .await;
     let pressed = client
         .send(SendIntent {
             environment: staging.clone(),
             intent: Intent::Arm { pad },
         })
-        .await?;
+        .await;
     let sessions = client
         .send(ListSessions {
             environment: staging.clone(),
         })
-        .await?;
+        .await;
     let closed = client
         .send(CloseSession {
             environment: staging.clone(),
             connection: ConnectionNumber::new(7),
         })
-        .await?;
+        .await;
 
     assert_eq!(
         created,
-        Err(CreateLiveRuleError::NotRunning {
-            environment: staging.clone()
+        Err(OperationError::Refused {
+            error: CreateLiveRuleError::NotRunning {
+                environment: staging.clone()
+            }
         })
     );
     assert_eq!(
         kept,
-        Err(KeepRuleError::NotRunning {
-            environment: staging.clone()
+        Err(OperationError::Refused {
+            error: KeepRuleError::NotRunning {
+                environment: staging.clone()
+            }
         })
     );
     assert_eq!(
         pressed,
-        Err(IntentError::NotRunning {
-            environment: staging.clone()
+        Err(OperationError::Refused {
+            error: IntentError::NotRunning {
+                environment: staging.clone()
+            }
         })
     );
     assert_eq!(
         sessions,
-        Err(EnvironmentNotRunning {
-            environment: staging.clone()
+        Err(OperationError::Refused {
+            error: EnvironmentNotRunning {
+                environment: staging.clone()
+            }
         })
     );
-    assert_eq!(closed, Err(CloseSessionError::NotRunning { environment: staging }));
+    assert_eq!(
+        closed,
+        Err(OperationError::Refused {
+            error: CloseSessionError::NotRunning { environment: staging }
+        })
+    );
     server.stop().await;
     Ok(())
 }
@@ -646,16 +690,16 @@ async fn a_request_says_where_it_comes_from_or_the_server_does_not_read_it() -> 
     };
 
     // A view of the UI lists the rules, a pad asks the same, and ⌘Z asks it as an undo: each says so, and is answered.
-    let from_a_view = client.send(ListDefinitions::<Rule>::new()).await?;
+    let from_a_view = client.send(ListDefinitions::<Rule>::new()).await;
     let from_a_pad = client
         .send_from(RequestSurface::Pad, ListDefinitions::<Rule>::new())
-        .await?;
+        .await;
     let as_an_undo = client
         .send_from(
             RequestSource::new(RequestSurface::Ui).with_cause(RequestCause::Undo),
             ListDefinitions::<Rule>::new(),
         )
-        .await?;
+        .await;
     // An operation alone says nothing about its sender, and no request is a lifetime that ended.
     let (unsigned_status, unsigned) = post(r#"{ "operation": "list-rules" }"#).await?;
     let (claimed_status, claimed) = post(r#"{ "from": { "surface": "lifetime" }, "operation": "list-rules" }"#).await?;
@@ -695,7 +739,7 @@ async fn a_change_that_expects_another_revision_changes_nothing_and_says_which_r
         .send(CreateDefinition {
             definition: blackhole.clone(),
         })
-        .await??;
+        .await?;
     // Both tabs read the preset: the snapshot names the run, and holds the preset with its revision.
     let mut stream = other_tab.live_stream().await?;
     let StreamMessage::Snapshot(snapshot) = tokio::time::timeout(PATIENCE, stream.next()).await?? else {
@@ -718,42 +762,46 @@ async fn a_change_that_expects_another_revision_changes_nothing_and_says_which_r
             expects: seen,
             definition: titled.clone(),
         })
-        .await??;
+        .await?;
     let late = other_tab
         .send(UpdateDefinition {
             expects: seen,
             definition: blackhole.clone().with_title("Silence".parse()?),
         })
-        .await?;
+        .await;
     let deleted_late = other_tab
         .send(DeleteDefinition::<Preset> {
             name: blackhole.name().clone(),
             expects: seen,
         })
-        .await?;
+        .await;
 
     assert_eq!(read.definition, blackhole);
     assert!(read.revision < first.revision, "{read:?} and then {first:?}");
     // The late changes change nothing, and say which revision the preset has now.
     assert_eq!(
         late,
-        Err(UpdateDefinitionError::Changed {
-            name: blackhole.name().clone().into(),
-            revision: first.revision,
+        Err(OperationError::Refused {
+            error: UpdateDefinitionError::Changed {
+                name: blackhole.name().clone().into(),
+                revision: first.revision,
+            }
         })
     );
     assert_eq!(
         deleted_late,
-        Err(DeleteDefinitionError::Changed {
-            name: blackhole.name().clone().into(),
-            revision: first.revision,
+        Err(OperationError::Refused {
+            error: DeleteDefinitionError::Changed {
+                name: blackhole.name().clone().into(),
+                revision: first.revision,
+            }
         })
     );
     let held = other_tab
         .send(GetDefinition::<Preset> {
             name: blackhole.name().clone(),
         })
-        .await?;
+        .await;
     assert_eq!(
         held,
         Ok(DefinitionStatus {
@@ -772,7 +820,7 @@ async fn a_change_that_expects_another_revision_changes_nothing_and_says_which_r
             expects: seen_now,
             definition: blackhole.clone().with_title("Silence".parse()?),
         })
-        .await??;
+        .await?;
     assert!(first.revision < second.revision, "{first:?} and then {second:?}");
     server.stop().await;
     Ok(())
@@ -796,7 +844,7 @@ async fn a_change_that_expects_a_revision_of_another_run_changes_nothing_and_nam
         .send(CreateDefinition {
             definition: blackhole.clone(),
         })
-        .await??;
+        .await?;
     // A tab read the preset before the process started again. The counter starts again with every run, so the
     // revision alone can fit, and the run does not.
     let before_the_restart = Some(Expects {
@@ -810,13 +858,13 @@ async fn a_change_that_expects_a_revision_of_another_run_changes_nothing_and_nam
             expects: before_the_restart,
             definition: blackhole.clone().with_title("Blackhole".parse()?),
         })
-        .await?;
+        .await;
     let deleted = client
         .send(DeleteDefinition::<Preset> {
             name: blackhole.name().clone(),
             expects: before_the_restart,
         })
-        .await?;
+        .await;
     // An undo of the earlier run arms nothing: it learns of the other run before anything else,
     // also where its environment does not run any more.
     let armed = client
@@ -825,35 +873,53 @@ async fn a_change_that_expects_a_revision_of_another_run_changes_nothing_and_nam
             rule: "slow-order-producers".parse()?,
             expects: before_the_restart,
         })
-        .await?;
+        .await;
     let disarmed = client
         .send(DisarmRule {
             environment: staging.clone(),
             rule: "slow-order-producers".parse()?,
             expects: before_the_restart,
         })
-        .await?;
+        .await;
     let kept = client
         .send(KeepRule {
             environment: staging.clone(),
             rule: "slow-order-producers".parse()?,
             expects: before_the_restart,
         })
-        .await?;
+        .await;
     let removed = client
         .send(DeleteLiveRule {
             environment: staging,
             rule: "slow-order-producers".parse()?,
             expects: before_the_restart,
         })
-        .await?;
+        .await;
 
-    assert_eq!(updated, Err(UpdateDefinitionError::OtherRun { run: other_run }));
-    assert_eq!(deleted, Err(DeleteDefinitionError::OtherRun { run: other_run }));
-    assert_eq!(armed, Err(RuleCommandError::OtherRun { run: other_run }));
-    assert_eq!(disarmed, Err(RuleCommandError::OtherRun { run: other_run }));
-    assert_eq!(kept, Err(KeepRuleError::OtherRun { run: other_run }));
-    assert_eq!(removed, Err(DeleteLiveRuleError::OtherRun { run: other_run }));
+    assert_eq!(
+        updated.err().and_then(OperationError::refusal),
+        Some(UpdateDefinitionError::OtherRun { run: other_run })
+    );
+    assert_eq!(
+        deleted.err().and_then(OperationError::refusal),
+        Some(DeleteDefinitionError::OtherRun { run: other_run })
+    );
+    assert_eq!(
+        armed.err().and_then(OperationError::refusal),
+        Some(RuleCommandError::OtherRun { run: other_run })
+    );
+    assert_eq!(
+        disarmed.err().and_then(OperationError::refusal),
+        Some(RuleCommandError::OtherRun { run: other_run })
+    );
+    assert_eq!(
+        kept.err().and_then(OperationError::refusal),
+        Some(KeepRuleError::OtherRun { run: other_run })
+    );
+    assert_eq!(
+        removed.err().and_then(OperationError::refusal),
+        Some(DeleteLiveRuleError::OtherRun { run: other_run })
+    );
     // The preset is as it was created.
     let held = client
         .send(GetDefinition::<Preset> {
@@ -861,12 +927,8 @@ async fn a_change_that_expects_a_revision_of_another_run_changes_nothing_and_nam
         })
         .await?;
     assert_eq!(
-        held,
-        Ok(DefinitionStatus {
-            definition: blackhole,
-            revision: created.revision,
-            loses_comment: false,
-        })
+        (held.definition, held.revision, held.loses_comment),
+        (blackhole, created.revision, false)
     );
     server.stop().await;
     Ok(())
@@ -900,7 +962,7 @@ async fn a_process_is_healthy_while_every_environment_of_its_start_runs() -> any
     let probe = "GET /health HTTP/1.1\r\nhost: localhost\r\nconnection: close\r\n\r\n";
 
     // A process that started with no environment has nothing that does not run.
-    let healthy = client.send(CheckHealth {}).await?;
+    let healthy = client.send(CheckHealth {}).await;
     let probed_healthy = exchange_with_body(server.address(), probe).await?;
     // The process starts with an environment whose cluster never answers, so it does not run.
     let listen = Listeners::new(
@@ -918,7 +980,7 @@ async fn a_process_is_healthy_while_every_environment_of_its_start_runs() -> any
     let mut starting = EnvironmentConfiguration::new(&staging)?;
     starting.upstream.request_timeout = GIVE_UP;
     let started = host.start_with([starting]).await;
-    let unhealthy = client.send(CheckHealth {}).await?;
+    let unhealthy = client.send(CheckHealth {}).await;
     let probed_unhealthy = exchange_with_body(server.address(), probe).await?;
 
     assert_eq!(healthy, Ok(Health::default()));
@@ -931,7 +993,12 @@ async fn a_process_is_healthy_while_every_environment_of_its_start_runs() -> any
             running: false,
         }],
     };
-    assert_eq!(unhealthy, Err(Unhealthy { health: stopped }));
+    assert_eq!(
+        unhealthy,
+        Err(OperationError::Refused {
+            error: Unhealthy { health: stopped }
+        })
+    );
     assert!(probed_unhealthy.starts_with("HTTP/1.1 503"), "{probed_unhealthy}");
     assert!(
         probed_unhealthy.ends_with(r#"{"environments":[{"environment":"staging-proxy","running":false}]}"#),

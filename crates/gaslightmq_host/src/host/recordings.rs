@@ -6,7 +6,7 @@ use gaslightmq_engine::{
     ListRecordingsError, OpenRecordingError, QueriedCalls, RecordingFacets, RecordingStart, StartRecordingError,
     StopRecordingError, StoredRecording,
 };
-use gaslightmq_environment::EnvironmentName;
+use gaslightmq_environment::{EnvironmentName, RecordingMode};
 use gaslightmq_journal::ChangeSource;
 use gaslightmq_recording::{End, RecordedBackend, RecordingId};
 use gaslightmq_selector::{EffectiveSelector, Selector, SelectorRef, SelectorSet};
@@ -21,8 +21,8 @@ impl<C: WorkspaceContext> Host<C> {
     /// The ID is the environment and the instant of the [`UtcClock`](gaslightmq_clock::UtcClock) of the host, to the millisecond: the wall clock
     /// of the system, unless someone hands it [another](Self::with_utc_clock). A recording that would start at the
     /// millisecond of the one before it in the environment, or before it, starts at the millisecond after it.
-    /// The recording keeps as much of a call as the [configuration](crate::EnvironmentConfiguration::recording) of
-    /// the environment says. It runs until someone [stops](Self::stop_recording) it, its environment stops, or it
+    /// The recording keeps as much of a call as `mode` says, or else the
+    /// [configuration](crate::EnvironmentConfiguration::recording) of the environment. It runs until someone [stops](Self::stop_recording) it, its environment stops, or it
     /// stops by itself: its recorder fell behind, or could not write. The journal of the environment records the
     /// last of these with the surface of `from`, and nothing else of a start or a stop.
     ///
@@ -37,6 +37,7 @@ impl<C: WorkspaceContext> Host<C> {
     pub async fn start_recording(
         &self,
         environment: &EnvironmentName,
+        mode: Option<RecordingMode>,
         from: impl Into<ChangeSource>,
     ) -> Result<RecordingId, RecordingStartError> {
         let not_started = |reason: String| RecordingStartError::StorageFailed {
@@ -64,7 +65,7 @@ impl<C: WorkspaceContext> Host<C> {
             let start = RecordingStart {
                 environment: journaling::environment(environment),
                 started,
-                mode: running.recording,
+                mode: mode.unwrap_or(running.recording),
                 backend: RecordedBackend::Upstream,
                 from: from.into(),
             };

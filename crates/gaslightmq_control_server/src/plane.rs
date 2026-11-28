@@ -3,7 +3,7 @@
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
-use gaslightmq_control_api::environment::{Environment, EnvironmentName, ListenAddress};
+use gaslightmq_control_api::environment::{Environment, EnvironmentName, ListenAddress, RecordingMode};
 use gaslightmq_control_api::field::ConnectionNumber;
 use gaslightmq_control_api::incident::Requirement;
 use gaslightmq_control_api::journal::{ChangeSource, JournalEntry, JournalEntryId, RecordingId};
@@ -208,7 +208,7 @@ impl<C: WorkspaceContext + 'static> ControlPlane<C> {
             }
             AnyOperation::SaveWorkspace(_) => Reply::of::<SaveWorkspace>(self.save().await),
             AnyOperation::StartRecording(start) => {
-                Reply::of::<StartRecording>(self.start_recording(start.environment, from).await)
+                Reply::of::<StartRecording>(self.start_recording(start.environment, start.mode, from).await)
             }
             AnyOperation::StopRecording(stop) => {
                 Reply::of::<StopRecording>(self.stop_recording(stop.environment).await)
@@ -971,11 +971,12 @@ impl<C: WorkspaceContext + 'static> ControlPlane<C> {
     async fn start_recording(
         &self,
         environment: EnvironmentName,
+        mode: Option<RecordingMode>,
         from: ChangeSource,
     ) -> Result<RecordingId, StartRecordingError> {
         use gaslightmq_host::RecordingStartError as Host;
         self.host
-            .start_recording(&environment, from)
+            .start_recording(&environment, mode, from)
             .await
             .map_err(|error| match error {
                 Host::NotRunning { environment } => StartRecordingError::NotRunning { environment },

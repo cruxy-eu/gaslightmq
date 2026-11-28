@@ -80,13 +80,13 @@ async fn a_proxy_of_the_command_line_tells_a_real_client_that_a_record_it_wrote_
             rule: lost.clone(),
             expects: None,
         })
-        .await??;
+        .await?;
     control
         .send(FireRule {
             environment: proxy,
             rule: lost,
         })
-        .await??;
+        .await?;
     // The producer does not try again, so it reports the first answer it gets.
     let mut producer = ProducerConfiguration::new(bootstrap);
     producer.retries = 0;
@@ -193,7 +193,7 @@ async fn a_health_check_of_the_command_line_says_that_the_proxy_runs_until_someo
         .send(StopEnvironment {
             environment: "proxy".parse()?,
         })
-        .await??;
+        .await?;
     let stopped = Command::new(GMQ)
         .args(["health", "--control", &control])
         .output()

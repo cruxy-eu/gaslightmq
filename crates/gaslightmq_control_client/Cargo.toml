@@ -22,6 +22,8 @@ wasm = ["dep:gloo-net", "dep:gloo-timers"]
 
 [dependencies]
 gaslightmq_control_api.workspace = true
+# The text of a definition, as a file holds it and as the macros of this crate write it.
+gaslightmq_definition_text.workspace = true
 futures.workspace = true
 serde.workspace = true
 serde_json.workspace = true

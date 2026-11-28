@@ -2446,7 +2446,7 @@ async fn a_recording_of_an_environment_keeps_its_calls_and_whoever_follows_the_h
         .address_of(staging.name(), Endpoint::Bootstrap)?
         .context("the bootstrap endpoint of the staging proxy is open")?;
 
-    let recording = host.start_recording(staging.name(), ChangeSurface::Test).await?;
+    let recording = host.start_recording(staging.name(), None, ChangeSurface::Test).await?;
     assert_eq!(recording.to_string(), "staging-proxy.2026-11-21T14-02-11.527Z");
     let placed = Record::new("placed").with_key("o-1").with_timestamp(PLACED_AT);
     KafkaProducer::from(through_staging)
@@ -2500,7 +2500,7 @@ async fn a_recording_of_an_environment_keeps_its_calls_and_whoever_follows_the_h
     assert_eq!(told, [began, stopped]);
 
     // A start in the millisecond of the recording before it takes the next millisecond, so the IDs differ.
-    let again = host.start_recording(staging.name(), ChangeSurface::Test).await?;
+    let again = host.start_recording(staging.name(), None, ChangeSurface::Test).await?;
     assert_eq!(again.to_string(), "staging-proxy.2026-11-21T14-02-11.528Z");
     host.stop_all().await;
     Ok(())
@@ -2541,7 +2541,7 @@ async fn a_recording_answers_a_query_with_a_saved_selector_or_a_draft_and_gives_
     let through_staging = host
         .address_of(staging.name(), Endpoint::Bootstrap)?
         .context("the bootstrap endpoint of the staging proxy is open")?;
-    let recording = host.start_recording(staging.name(), ChangeSurface::Test).await?;
+    let recording = host.start_recording(staging.name(), None, ChangeSurface::Test).await?;
     let producer = KafkaProducer::from(through_staging);
     let placed = Record::new("placed").with_key("o-1").with_timestamp(PLACED_AT);
     for topic in [&orders, &orders, &payments] {

@@ -1,7 +1,7 @@
 //! `gmq reload`: a process that runs reads the files of its workspace again.
 
 use gaslightmq_control_api::{ReloadWorkspace, Reloaded, RequestSurface};
-use gaslightmq_control_client::{ControlClient, ControlClientConfiguration};
+use gaslightmq_control_client::{ControlClient, ControlClientConfiguration, OperationError};
 
 use crate::cli::ReloadFlags;
 use crate::error::ReloadError;
@@ -21,6 +21,8 @@ pub(crate) async fn reload(flags: &ReloadFlags) -> Result<Reloaded, ReloadError>
             discard_unsaved: flags.discard_unsaved,
         })
         .await
-        .map_err(|error| ReloadError::Unanswered { error })?
-        .map_err(|error| ReloadError::Refused { error })
+        .map_err(|error| match error {
+            OperationError::Unanswered { error } => ReloadError::Unanswered { error },
+            OperationError::Refused { error } => ReloadError::Refused { error },
+        })
 }

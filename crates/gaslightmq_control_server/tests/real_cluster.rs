@@ -33,7 +33,7 @@ use gaslightmq_control_api::surface::{
     Column, Encoder, EncoderMapping, EncoderTurn, Intent, Layer, Pad, PadLayout, PresenceId, Row, Steps,
 };
 use gaslightmq_control_api::trigger::{Count, Lifetime, Trigger};
-use gaslightmq_control_client::{ControlClient, ControlClientConfiguration, LiveStream};
+use gaslightmq_control_client::{ControlClient, ControlClientConfiguration, LiveStream, OperationError};
 use gaslightmq_control_server::prelude::*;
 use gaslightmq_host::{Host, HostConfiguration};
 use gaslightmq_kafka_client_native::{KafkaProducer, ProducerConfiguration};
@@ -149,7 +149,7 @@ async fn an_environment_started_by_its_name_streams_its_calls_until_it_stops() -
         .send(StartEnvironment {
             environment: staging.name().clone(),
         })
-        .await?;
+        .await;
     let StreamMessage::EnvironmentStarted { environment } = stream.next_change().await? else {
         anyhow::bail!("the start of the environment sent no message");
     };
@@ -157,7 +157,7 @@ async fn an_environment_started_by_its_name_streams_its_calls_until_it_stops() -
         .send(GetBackend {
             environment: staging.name().clone(),
         })
-        .await??;
+        .await?;
 
     assert_eq!(started, Ok(()));
     assert_eq!(&environment.environment, staging.name());
@@ -200,7 +200,7 @@ async fn an_environment_started_by_its_name_streams_its_calls_until_it_stops() -
         .send(StopEnvironment {
             environment: staging.name().clone(),
         })
-        .await?;
+        .await;
     let gone = stream.next_change().await?;
     assert_eq!(stopped, Ok(()));
     assert_eq!(
@@ -249,12 +249,12 @@ async fn a_rule_of_the_workspace_arms_and_fires_in_the_environment_that_runs() -
         .send(CreateDefinition {
             definition: hold.clone(),
         })
-        .await??;
+        .await?;
     client
         .send(StartEnvironment {
             environment: staging.name().clone(),
         })
-        .await??;
+        .await?;
     let mut stream = Watched {
         stream: client.live_stream().await?,
     };
@@ -268,8 +268,8 @@ async fn a_rule_of_the_workspace_arms_and_fires_in_the_environment_that_runs() -
         .send(ListEnvironmentRules {
             environment: staging.name().clone(),
         })
-        .await??;
-    let arming = client.send(on_the_rule(None)).await??;
+        .await?;
+    let arming = client.send(on_the_rule(None)).await?;
     // A change from before the stream opened can still come after its snapshot, as the start of the environment.
     let changed = stream
         .next_where(|message| matches!(message, StreamMessage::RuleChanged { .. }))
@@ -279,8 +279,8 @@ async fn a_rule_of_the_workspace_arms_and_fires_in_the_environment_that_runs() -
             environment: staging.name().clone(),
             rule: hold.name().clone(),
         })
-        .await?;
-    let again = client.send(on_the_rule(None)).await?;
+        .await;
+    let again = client.send(on_the_rule(None)).await;
 
     let [listed] = rules.as_slice() else {
         anyhow::bail!("the environment holds another set of rules than the one of the workspace: {rules:?}");
@@ -306,10 +306,12 @@ async fn a_rule_of_the_workspace_arms_and_fires_in_the_environment_that_runs() -
     assert_eq!(firing, Ok(()));
     assert_eq!(
         again,
-        Err(RuleCommandError::Refused {
-            environment: staging.name().clone(),
-            rule: hold.name().clone(),
-            reason: "it is armed already".to_owned(),
+        Err(OperationError::Refused {
+            error: RuleCommandError::Refused {
+                environment: staging.name().clone(),
+                rule: hold.name().clone(),
+                reason: "it is armed already".to_owned(),
+            }
         })
     );
     server.stop().await;
@@ -350,12 +352,12 @@ async fn a_rule_arms_and_disarms_only_as_its_sender_saw_it() -> anyhow::Result<(
         .send(CreateDefinition {
             definition: hold.clone(),
         })
-        .await??;
+        .await?;
     client
         .send(StartEnvironment {
             environment: staging.name().clone(),
         })
-        .await??;
+        .await?;
     // Two tabs open, and both read the rule in the environment: the snapshot names the run, and the rule comes
     // with its revision there.
     let mut stream = Watched {
@@ -384,18 +386,18 @@ async fn a_rule_arms_and_disarms_only_as_its_sender_saw_it() -> anyhow::Result<(
     };
 
     // One tab arms the rule as it read it. The other one still shows it disarmed, and arms nothing over that.
-    let armed = client.send(arm(seen(read.revision))).await??;
-    let armed_late = client.send(arm(seen(read.revision))).await?;
+    let armed = client.send(arm(seen(read.revision))).await?;
+    let armed_late = client.send(arm(seen(read.revision))).await;
     // Someone gives the rule a title in the workspace, and the first tab disarms what it armed without seeing that.
     let retitled = client
         .send(UpdateDefinition {
             expects: None,
             definition: hold.clone().with_title("Hold order producers".parse()?),
         })
-        .await??;
-    let disarmed_late = client.send(disarm(seen(armed.revision))).await?;
+        .await?;
+    let disarmed_late = client.send(disarm(seen(armed.revision))).await;
     // Whoever saw the title disarms the rule.
-    let disarmed = client.send(disarm(seen(retitled.revision))).await??;
+    let disarmed = client.send(disarm(seen(retitled.revision))).await?;
 
     // The environment started after the workspace got the rule, and its start is the last change of the rule there.
     assert!(created.revision < read.revision, "{created:?} and then {read:?}");
@@ -404,9 +406,19 @@ async fn a_rule_arms_and_disarms_only_as_its_sender_saw_it() -> anyhow::Result<(
         rule: hold.name().clone(),
         revision,
     };
-    assert_eq!(armed_late, Err(changed(armed.revision)));
+    assert_eq!(
+        armed_late,
+        Err(OperationError::Refused {
+            error: changed(armed.revision)
+        })
+    );
     // A rule in an environment has one revision, for its definition and its state together.
-    assert_eq!(disarmed_late, Err(changed(retitled.revision)));
+    assert_eq!(
+        disarmed_late,
+        Err(OperationError::Refused {
+            error: changed(retitled.revision)
+        })
+    );
     assert!(
         retitled.revision < disarmed.revision,
         "{retitled:?} and then {disarmed:?}"
@@ -459,22 +471,22 @@ async fn a_press_of_an_empty_pad_makes_its_live_rule_and_arms_it() -> anyhow::Re
         .send(CreateDefinition {
             definition: order_producers.clone(),
         })
-        .await??;
+        .await?;
     client
         .send(CreateDefinition {
             definition: delay.clone(),
         })
-        .await??;
+        .await?;
     client
         .send(CreateDefinition {
             definition: desk.clone(),
         })
-        .await??;
+        .await?;
     client
         .send(StartEnvironment {
             environment: staging.name().clone(),
         })
-        .await??;
+        .await?;
     let mut stream = Watched {
         stream: client.live_stream().await?,
     };
@@ -500,7 +512,7 @@ async fn a_press_of_an_empty_pad_makes_its_live_rule_and_arms_it() -> anyhow::Re
             environment: staging.name().clone(),
             intent: Intent::Arm { pad },
         })
-        .await??;
+        .await?;
     let told = stream.next_where(|message| armed(message, &made)).await?;
     assert_eq!((pressed.made, pressed.changed, pressed.hold), (true, true, None));
     // The answer holds the rule as the stream tells it, with the revision that the press left.
@@ -558,22 +570,22 @@ async fn a_turn_changes_the_live_rule_of_a_pad_and_it_stays_armed() -> anyhow::R
         .send(CreateDefinition {
             definition: order_producers.clone(),
         })
-        .await??;
+        .await?;
     client
         .send(CreateDefinition {
             definition: delay.clone(),
         })
-        .await??;
+        .await?;
     client
         .send(CreateDefinition {
             definition: desk.clone(),
         })
-        .await??;
+        .await?;
     client
         .send(StartEnvironment {
             environment: staging.name().clone(),
         })
-        .await??;
+        .await?;
     let mut stream = Watched {
         stream: client.live_stream().await?,
     };
@@ -601,7 +613,7 @@ async fn a_turn_changes_the_live_rule_of_a_pad_and_it_stays_armed() -> anyhow::R
             environment: staging.name().clone(),
             intent: Intent::Arm { pad: pad.clone() },
         })
-        .await??;
+        .await?;
     stream.next_where(|message| armed(message, &made)).await?;
     assert_eq!(pressing.found, None);
 
@@ -611,7 +623,7 @@ async fn a_turn_changes_the_live_rule_of_a_pad_and_it_stays_armed() -> anyhow::R
             environment: staging.name().clone(),
             intent: Intent::Turn { pad, turn },
         })
-        .await??;
+        .await?;
     let told = stream.next_where(|message| armed(message, &turned)).await?;
     assert_eq!((turning.made, turning.changed), (false, true));
     // The answer holds the rule as the stream tells it, with the revision that the turn left.
@@ -662,14 +674,14 @@ async fn a_kept_live_rule_leaves_its_environment_for_the_workspace_and_stays_arm
         .send(StartEnvironment {
             environment: staging.name().clone(),
         })
-        .await??;
+        .await?;
     let armed = client
         .send(CreateLiveRule {
             environment: staging.name().clone(),
             rule: made.clone(),
             armed: true,
         })
-        .await??;
+        .await?;
     // The stream opens once the rule is armed, so its snapshot holds it.
     let mut stream = Watched {
         stream: client.live_stream().await?,
@@ -686,7 +698,7 @@ async fn a_kept_live_rule_leaves_its_environment_for_the_workspace_and_stays_arm
         rule: made.name().clone(),
         expects: Some(Expects { run, revision }),
     };
-    let kept = client.send(keep).await??;
+    let kept = client.send(keep).await?;
     // Changes from before the stream opened can still come after its snapshot: the start, the rule made and armed.
     let mut heard = vec![
         stream
@@ -725,7 +737,7 @@ async fn a_kept_live_rule_leaves_its_environment_for_the_workspace_and_stays_arm
         .send(ListEnvironmentRules {
             environment: staging.name().clone(),
         })
-        .await??;
+        .await?;
     assert_eq!(listed.len(), 1, "{listed:?}");
     assert_eq!(
         (&listed[0].rule, listed[0].live, listed[0].revision),
@@ -764,7 +776,7 @@ async fn a_session_is_listed_while_it_is_open_and_closes_when_someone_closes_it(
         .send(StartEnvironment {
             environment: staging.name().clone(),
         })
-        .await??;
+        .await?;
     let mut stream = Watched {
         stream: client.live_stream().await?,
     };
@@ -774,7 +786,7 @@ async fn a_session_is_listed_while_it_is_open_and_closes_when_someone_closes_it(
         .send(GetBackend {
             environment: staging.name().clone(),
         })
-        .await??
+        .await?
         .endpoints
         .get(&Endpoint::Bootstrap)
         .copied()
@@ -793,7 +805,7 @@ async fn a_session_is_listed_while_it_is_open_and_closes_when_someone_closes_it(
         .send(ListSessions {
             environment: staging.name().clone(),
         })
-        .await?;
+        .await;
     assert_eq!(&environment, staging.name());
     assert_eq!(session.endpoint, Endpoint::Bootstrap);
     assert_eq!(session.identity, None);
@@ -804,18 +816,18 @@ async fn a_session_is_listed_while_it_is_open_and_closes_when_someone_closes_it(
         environment: staging.name().clone(),
         connection: session.connection,
     };
-    let closing = client.send(close.clone()).await?;
+    let closing = client.send(close.clone()).await;
     let closed = stream
         .next_where(|message| matches!(message, StreamMessage::SessionClosed { .. }))
         .await?;
     let mut nothing = Vec::new();
     let read = tokio::time::timeout(PATIENCE, connection.read_to_end(&mut nothing)).await??;
-    let again = client.send(close).await?;
+    let again = client.send(close).await;
     let after = client
         .send(ListSessions {
             environment: staging.name().clone(),
         })
-        .await?;
+        .await;
 
     assert_eq!(closing, Ok(()));
     assert_eq!(
@@ -829,9 +841,11 @@ async fn a_session_is_listed_while_it_is_open_and_closes_when_someone_closes_it(
     assert_eq!(read, 0, "the proxy sent nothing before it closed the connection");
     assert_eq!(
         again,
-        Err(CloseSessionError::NotFound {
-            environment: staging.name().clone(),
-            connection: session.connection,
+        Err(OperationError::Refused {
+            error: CloseSessionError::NotFound {
+                environment: staging.name().clone(),
+                connection: session.connection,
+            }
         })
     );
     assert_eq!(after, Ok(vec![]));
@@ -885,7 +899,7 @@ async fn a_rule_that_spends_its_budget_disarms_and_the_statistics_count_its_firi
         .send(StartEnvironment {
             environment: staging.name().clone(),
         })
-        .await??;
+        .await?;
     let mut stream = Watched {
         stream: client.live_stream().await?,
     };
@@ -895,7 +909,7 @@ async fn a_rule_that_spends_its_budget_disarms_and_the_statistics_count_its_firi
             rule: once.clone(),
             armed: true,
         })
-        .await??;
+        .await?;
     stream
         .next_where(|message| *message == live(RuleState::Armed, armed.revision))
         .await?;
@@ -903,7 +917,7 @@ async fn a_rule_that_spends_its_budget_disarms_and_the_statistics_count_its_firi
         .send(GetBackend {
             environment: staging.name().clone(),
         })
-        .await??
+        .await?
         .endpoints
         .get(&Endpoint::Bootstrap)
         .copied()
@@ -977,7 +991,7 @@ async fn a_sentence_knows_the_client_that_wrote_through_the_environment_and_ente
         .send(StartEnvironment {
             environment: staging.name().clone(),
         })
-        .await??;
+        .await?;
     let mut stream = Watched {
         stream: client.live_stream().await?,
     };
@@ -1014,13 +1028,13 @@ async fn a_sentence_knows_the_client_that_wrote_through_the_environment_and_ente
             environment: staging.name().clone(),
             text: "delay produce orders.* 750ms 40% order-".to_owned(),
         })
-        .await??;
+        .await?;
     let whole = client
         .send(ParseSentence {
             environment: staging.name().clone(),
             text: "delay produce orders.* 750ms 40% order-ingest".to_owned(),
         })
-        .await??;
+        .await?;
 
     assert_eq!(written, Ok(Offset::new(0)));
     let completes =
@@ -1037,7 +1051,7 @@ async fn a_sentence_knows_the_client_that_wrote_through_the_environment_and_ente
         rule: rule.clone(),
         armed: true,
     };
-    let entered = client.send_from(RequestSurface::QuickInject, enter).await??;
+    let entered = client.send_from(RequestSurface::QuickInject, enter).await?;
     // Making the rule and arming it was one change, so the stream tells the rule with the revision of that answer.
     let armed_rule = StreamMessage::RuleChanged {
         environment: staging.name().clone(),
@@ -1101,7 +1115,7 @@ async fn a_client_that_stays_away_for_the_grace_period_loses_its_holds() -> anyh
         .send(StartEnvironment {
             environment: staging.name().clone(),
         })
-        .await??;
+        .await?;
     let pad = desk
         .pad(&Layer::all_clients(), Row::from_index(0), Column::from_index(0))
         .context("the desk has a pad at its first row and column")?;
@@ -1111,7 +1125,7 @@ async fn a_client_that_stays_away_for_the_grace_period_loses_its_holds() -> anyh
             .send(ListEnvironmentRules {
                 environment: staging.name().clone(),
             })
-            .await??;
+            .await?;
         let of_the_pad = rules.into_iter().find(|status| status.rule.name() == &rule);
         Ok(of_the_pad.map(|status| status.state))
     };
@@ -1131,7 +1145,7 @@ async fn a_client_that_stays_away_for_the_grace_period_loses_its_holds() -> anyh
                 intent: Intent::Hold { pad },
             },
         )
-        .await??;
+        .await?;
     assert!(held.hold.is_some(), "{held:?}");
     assert_eq!(state_of_the_rule().await?, Some(RuleState::Armed));
 
@@ -1208,7 +1222,7 @@ async fn a_client_that_comes_back_within_the_grace_period_keeps_its_holds_until_
         .send(StartEnvironment {
             environment: staging.name().clone(),
         })
-        .await??;
+        .await?;
     let slow_producers = desk
         .pad(&Layer::all_clients(), Row::from_index(0), Column::from_index(0))
         .context("the desk has a pad at its first row")?;
@@ -1233,8 +1247,8 @@ async fn a_client_that_comes_back_within_the_grace_period_keeps_its_holds_until_
     };
     let ana = anas_tab.presence();
     // Ana holds the pad of the order producers, and Dan the pad of the fetches.
-    hold(ana, slow_producers).await??;
-    hold(dans_tab.presence(), slow_fetches).await??;
+    hold(ana, slow_producers).await?;
+    hold(dans_tab.presence(), slow_fetches).await?;
 
     // The streams of both end while they hold their pads.
     anas_tab.close().await;
@@ -1314,7 +1328,7 @@ async fn a_client_that_goes_silent_loses_its_holds_after_the_grace_period() -> a
         .send(StartEnvironment {
             environment: staging.name().clone(),
         })
-        .await??;
+        .await?;
     let pad = desk
         .pad(&Layer::all_clients(), Row::from_index(0), Column::from_index(0))
         .context("the desk has a pad at its first row and column")?;
@@ -1339,7 +1353,7 @@ async fn a_client_that_goes_silent_loses_its_holds_after_the_grace_period() -> a
                 intent: Intent::Hold { pad },
             },
         )
-        .await??;
+        .await?;
     assert!(held.hold.is_some(), "{held:?}");
 
     // The server asks every client of the stream whether it is still there, and its ping reaches the tab.
@@ -1407,7 +1421,7 @@ async fn the_journal_of_an_environment_says_what_each_request_changed_and_where_
         .send(StartEnvironment {
             environment: staging.name().clone(),
         })
-        .await??;
+        .await?;
     let mut stream = Watched {
         stream: client.live_stream().await?,
     };
@@ -1416,32 +1430,32 @@ async fn the_journal_of_an_environment_says_what_each_request_changed_and_where_
         after,
     };
     // The journal begins with its environment, and a start is no entry of it.
-    assert_eq!(client.send(query(None)).await??, Vec::<JournalEntry>::new());
+    assert_eq!(client.send(query(None)).await?, Vec::<JournalEntry>::new());
 
     // The client creates a rule in the workspace. Someone arms it at a pad, and takes that back with ⌘Z in the UI.
     let created = client
         .send(CreateDefinition {
             definition: hold.clone(),
         })
-        .await??;
+        .await?;
     let pad = RequestSource::new(RequestSurface::Pad);
     let arm = ArmRule {
         environment: staging.name().clone(),
         rule: hold.name().clone(),
         expects: None,
     };
-    let armed = client.send_from(pad, arm).await??;
+    let armed = client.send_from(pad, arm).await?;
     let undo = RequestSource::new(RequestSurface::Ui).with_cause(RequestCause::Undo);
     let disarm = DisarmRule {
         environment: staging.name().clone(),
         rule: hold.name().clone(),
         expects: None,
     };
-    let disarmed = client.send_from(undo, disarm).await??;
+    let disarmed = client.send_from(undo, disarm).await?;
 
     // The journal holds an entry for each, with the revision that the request answered with and the surface and
     // the cause that the request named. The undo took nothing out: it is one more entry.
-    let journal = client.send(query(None)).await??;
+    let journal = client.send(query(None)).await?;
     let rule: RecordedName = hold.name().as_str().parse()?;
     let definition = RecordedDefinition::Rule(rule.clone());
     let api = ChangeSource::new(ChangeSurface::Api);
@@ -1464,7 +1478,7 @@ async fn the_journal_of_an_environment_says_what_each_request_changed_and_where_
     );
     // A client that read up to the arming reads on from there.
     let the_arming = journal[1].id;
-    assert_eq!(client.send(query(Some(the_arming))).await??, &journal[2..]);
+    assert_eq!(client.send(query(Some(the_arming))).await?, &journal[2..]);
 
     // Every entry also came as a message of the live stream, in the order of the entries.
     for entry in &journal {
@@ -1522,7 +1536,7 @@ async fn an_undo_that_arms_a_rule_again_is_an_entry_of_the_journal_with_its_caus
         .send(StartEnvironment {
             environment: staging.name().clone(),
         })
-        .await??;
+        .await?;
     let arm = || ArmRule {
         environment: staging.name().clone(),
         rule: hold.name().clone(),
@@ -1535,10 +1549,10 @@ async fn an_undo_that_arms_a_rule_again_is_an_entry_of_the_journal_with_its_caus
     };
 
     // Someone arms the rule and disarms it. ⌘Z takes the disarm back: its inverse is an arm, sent with its cause.
-    client.send(arm()).await??;
-    client.send(disarm).await??;
+    client.send(arm()).await?;
+    client.send(disarm).await?;
     let undo = RequestSource::new(RequestSurface::Ui).with_cause(RequestCause::Undo);
-    let armed_again = client.send_from(undo, arm()).await??;
+    let armed_again = client.send_from(undo, arm()).await?;
 
     // The undo is the third entry of the journal, next to the two changes before it. It is an arming like the
     // first one, and its entry says that it took an earlier change back.
@@ -1547,7 +1561,7 @@ async fn an_undo_that_arms_a_rule_again_is_an_entry_of_the_journal_with_its_caus
             environment: staging.name().clone(),
             after: None,
         })
-        .await??;
+        .await?;
     let rule: RecordedName = hold.name().as_str().parse()?;
     let ui = ChangeSource::new(ChangeSurface::Ui);
     let said: Vec<(u64, ChangeSource, Change)> = journal
@@ -1608,7 +1622,7 @@ async fn a_recording_started_through_the_control_plane_keeps_the_calls_until_it_
         .send(StartEnvironment {
             environment: staging.name().clone(),
         })
-        .await??;
+        .await?;
     let StreamMessage::EnvironmentStarted { .. } = stream.next_change().await? else {
         anyhow::bail!("the start of the environment sent no message");
     };
@@ -1625,8 +1639,9 @@ async fn a_recording_started_through_the_control_plane_keeps_the_calls_until_it_
     let recording = client
         .send(StartRecording {
             environment: staging.name().clone(),
+            mode: None,
         })
-        .await??;
+        .await?;
     let started = stream.next_change().await?;
     let bootstrap = host
         .address_of(staging.name(), Endpoint::Bootstrap)?
@@ -1642,7 +1657,7 @@ async fn a_recording_started_through_the_control_plane_keeps_the_calls_until_it_
         .send(StopRecording {
             environment: staging.name().clone(),
         })
-        .await??;
+        .await?;
     let stopped = stream.next_change().await?;
 
     assert_eq!(
@@ -1662,12 +1677,12 @@ async fn a_recording_started_through_the_control_plane_keeps_the_calls_until_it_
     );
     assert_eq!(end.ending, RecordingEnding::Stopped);
     assert!(end.calls >= 1, "the recording holds the Produce: {end:?}");
-    assert_eq!(client.send(ListRecordings {}).await??, std::slice::from_ref(&recording));
+    assert_eq!(client.send(ListRecordings {}).await?, std::slice::from_ref(&recording));
     let opened = client
         .send(OpenRecording {
             recording: recording.clone(),
         })
-        .await??;
+        .await?;
     assert_eq!(opened.description.recording, recording);
     assert_eq!(opened.end, Some(end));
     // The recording answers a query with the Produce, and its index groups it under its topic.
@@ -1679,14 +1694,14 @@ async fn a_recording_started_through_the_control_plane_keeps_the_calls_until_it_
             draft: None,
             skip: 0,
         })
-        .await??;
+        .await?;
     assert_eq!(queried.matched, 1);
     let indexed = client
         .send(GetRecordingIndex {
             recording,
             filter: every_produce,
         })
-        .await??;
+        .await?;
     let topics = indexed.facets.iter().find(|facet| facet.field == Field::Topic);
     let counted: Option<Vec<(String, u64)>> = topics.map(|topics| {
         topics

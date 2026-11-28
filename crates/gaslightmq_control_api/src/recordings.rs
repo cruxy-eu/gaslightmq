@@ -13,12 +13,17 @@ use crate::{BackendKind, Operation};
 /// Start a recording of an environment, which runs until someone stops it, its environment stops, or it stops by
 /// itself. It answers with the ID of the recording: its environment, and the instant it started.
 ///
+/// The recording keeps as much of each call as `mode` says, or else the mode of the environment.
 /// A start has no inverse, and leaves no revision: what is recorded has happened.
+/// With `serde`, a start without a mode leaves `mode` out.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct StartRecording {
     /// The environment, which writes one recording at a time.
     pub environment: EnvironmentName,
+    /// How much of each call this recording keeps, or `None` for the mode of the environment.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mode: Option<RecordingMode>,
 }
 
 impl Operation for StartRecording {

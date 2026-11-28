@@ -1983,8 +1983,15 @@ fn recording() -> RecordingId {
 fn a_recording_starts_and_stops_by_its_environment_and_opens_by_its_id() {
     Form(AnyOperation::from(StartRecording {
         environment: "orders-sim".parse().unwrap(),
+        mode: None,
     }))
     .writes(json!({ "operation": "start-recording", "environment": "orders-sim" }));
+    // A start may keep more or less of each call than its environment would.
+    Form(AnyOperation::from(StartRecording {
+        environment: "orders-sim".parse().unwrap(),
+        mode: Some(RecordingMode::Full),
+    }))
+    .writes(json!({ "operation": "start-recording", "environment": "orders-sim", "mode": "full" }));
     Form(AnyOperation::from(StopRecording {
         environment: "orders-sim".parse().unwrap(),
     }))

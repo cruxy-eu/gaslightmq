@@ -12,7 +12,7 @@ use gaslightmq_control_api::clock::Duration;
 use gaslightmq_control_api::prelude::*;
 use gaslightmq_control_api::rule::{PresetName, Rule};
 use gaslightmq_control_api::selector::{Selector, SelectorName};
-use gaslightmq_control_client::{ControlClient, ControlClientConfiguration};
+use gaslightmq_control_client::{ControlClient, ControlClientConfiguration, OperationError};
 use gaslightmq_control_server::prelude::*;
 use gaslightmq_host::{Host, HostConfiguration};
 use gaslightmq_lie_api::prelude::*;
@@ -85,7 +85,7 @@ async fn a_reload_answers_with_what_it_took_in_and_every_client_hears_of_it() ->
     // Someone edits the selectors and takes the presets away while the process runs, and `gmq reload` follows.
     fs::write(directory.path().join("selectors.yaml"), SELECTORS_EDITED)?;
     fs::remove_file(directory.path().join("presets.yaml"))?;
-    let reloaded = client.send(ReloadWorkspace { discard_unsaved: false }).await??;
+    let reloaded = client.send(ReloadWorkspace { discard_unsaved: false }).await?;
 
     assert_eq!(
         reloaded.changes,
@@ -94,9 +94,7 @@ async fn a_reload_answers_with_what_it_took_in_and_every_client_hears_of_it() ->
             DefinitionChange::Deleted(blackhole.clone().into()),
         ]
     );
-    let got = client
-        .send(GetDefinition::<Selector> { name: fetches.clone() })
-        .await??;
+    let got = client.send(GetDefinition::<Selector> { name: fetches.clone() }).await?;
     assert_eq!(got.revision, reloaded.revision);
     // The comment went with the edit, so a write of the selector loses nothing any more.
     assert!(!got.loses_comment);
@@ -145,9 +143,7 @@ async fn a_write_over_a_file_that_someone_edited_since_is_changed_outside_until_
     let fetches: SelectorName = "order-fetches".parse()?;
 
     // The selector holds a comment, and the control plane says so beside it, so the UI asks before it saves.
-    let read = client
-        .send(GetDefinition::<Selector> { name: fetches.clone() })
-        .await??;
+    let read = client.send(GetDefinition::<Selector> { name: fetches.clone() }).await?;
     assert!(read.loses_comment);
 
     // Someone edits `selectors.yaml` by hand, and then the UI saves a title for the selector.
@@ -158,13 +154,15 @@ async fn a_write_over_a_file_that_someone_edited_since_is_changed_outside_until_
             expects: None,
             definition: titled.clone(),
         })
-        .await?;
+        .await;
 
     assert_eq!(
         refused,
-        Err(UpdateDefinitionError::ChangedOutside {
-            name: fetches.clone().into(),
-            reason: "selectors.yaml changed since the store read it".to_owned(),
+        Err(OperationError::Refused {
+            error: UpdateDefinitionError::ChangedOutside {
+                name: fetches.clone().into(),
+                reason: "selectors.yaml changed since the store read it".to_owned(),
+            }
         })
     );
     assert_eq!(
@@ -181,20 +179,18 @@ async fn a_write_over_a_file_that_someone_edited_since_is_changed_outside_until_
         .send(CreateDefinition {
             definition: blackhole_fetches,
         })
-        .await??;
+        .await?;
 
     // A reload takes the edit in, and the title goes on top of it.
-    client.send(ReloadWorkspace { discard_unsaved: false }).await??;
-    let edited = client
-        .send(GetDefinition::<Selector> { name: fetches.clone() })
-        .await??;
+    client.send(ReloadWorkspace { discard_unsaved: false }).await?;
+    let edited = client.send(GetDefinition::<Selector> { name: fetches.clone() }).await?;
     let titled = edited.definition.with_title("Order fetches".parse()?);
     client
         .send(UpdateDefinition {
             expects: None,
             definition: titled,
         })
-        .await??;
+        .await?;
     server.stop().await;
     Ok(())
 }
@@ -226,17 +222,19 @@ async fn a_read_only_workspace_says_so_and_refuses_every_write() -> anyhow::Resu
             name: "order-producers".parse()?,
             expects: None,
         })
-        .await?;
+        .await;
     assert_eq!(
         deleted,
-        Err(DeleteDefinitionError::StoreFailed {
-            name: "order-producers".parse::<SelectorName>()?.into(),
-            reason: "the workspace is read-only".to_owned(),
+        Err(OperationError::Refused {
+            error: DeleteDefinitionError::StoreFailed {
+                name: "order-producers".parse::<SelectorName>()?.into(),
+                reason: "the workspace is read-only".to_owned(),
+            }
         })
     );
     // A reload only reads, so it still works.
     fs::write(directory.path().join("selectors.yaml"), SELECTORS_EDITED)?;
-    let reloaded = client.send(ReloadWorkspace { discard_unsaved: false }).await??;
+    let reloaded = client.send(ReloadWorkspace { discard_unsaved: false }).await?;
     assert_eq!(
         reloaded.changes,
         [DefinitionChange::Updated(
@@ -282,7 +280,7 @@ async fn a_workspace_that_writes_on_save_holds_its_changes_until_someone_saves_t
             name: blackhole.clone(),
             expects: None,
         })
-        .await??;
+        .await?;
     let waiting = loop {
         let message = tokio::time::timeout(PATIENCE, stream.next()).await??;
         if let StreamMessage::WorkspaceChanged { workspace } = message {
@@ -293,16 +291,18 @@ async fn a_workspace_that_writes_on_save_holds_its_changes_until_someone_saves_t
     assert!(directory.path().join("presets.yaml").exists());
 
     // `gmq reload` would let go of the change, so it refuses.
-    let refused = client.send(ReloadWorkspace { discard_unsaved: false }).await?;
+    let refused = client.send(ReloadWorkspace { discard_unsaved: false }).await;
     assert_eq!(
         refused,
-        Err(ReloadWorkspaceError::Unsaved {
-            definitions: vec![blackhole.clone().into()],
+        Err(OperationError::Refused {
+            error: ReloadWorkspaceError::Unsaved {
+                definitions: vec![blackhole.clone().into()],
+            }
         })
     );
 
     // The save writes it, and every client hears that nothing waits any more.
-    let saved = client.send(SaveWorkspace {}).await??;
+    let saved = client.send(SaveWorkspace {}).await?;
 
     assert_eq!(saved.saved, [DefinitionRef::from(blackhole)]);
     assert!(!directory.path().join("presets.yaml").exists());

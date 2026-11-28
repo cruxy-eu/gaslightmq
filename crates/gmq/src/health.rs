@@ -1,7 +1,7 @@
 //! `gmq health`: whether every environment that a process was started with runs.
 
 use gaslightmq_control_api::{CheckHealth, Health, RequestSurface};
-use gaslightmq_control_client::{ControlClient, ControlClientConfiguration};
+use gaslightmq_control_client::{ControlClient, ControlClientConfiguration, OperationError};
 
 use crate::cli::ControlFlags;
 use crate::error::HealthError;
@@ -16,9 +16,8 @@ pub(crate) async fn health(flags: &ControlFlags) -> Result<Health, HealthError> 
     let mut configuration = ControlClientConfiguration::new(flags.address());
     configuration.surface = RequestSurface::Cli;
     let client = ControlClient::new(configuration);
-    client
-        .send(CheckHealth {})
-        .await
-        .map_err(|error| HealthError::Unanswered { error })?
-        .map_err(|error| HealthError::Unhealthy { error })
+    client.send(CheckHealth {}).await.map_err(|error| match error {
+        OperationError::Unanswered { error } => HealthError::Unanswered { error },
+        OperationError::Refused { error } => HealthError::Unhealthy { error },
+    })
 }

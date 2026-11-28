@@ -90,12 +90,12 @@ async fn main() -> anyhow::Result<()> {
         .send(StartEnvironment {
             environment: staging.name().clone(),
         })
-        .await??;
+        .await?;
     let backend = client
         .send(GetBackend {
             environment: staging.name().clone(),
         })
-        .await??;
+        .await?;
     let bootstrap = backend
         .endpoints
         .get(&Endpoint::Bootstrap)
@@ -198,13 +198,13 @@ async fn order_desk(client: &ControlClient) -> anyhow::Result<()> {
     )?
     .with_title("Order desk".parse()?);
     for definition in selectors {
-        client.send(CreateDefinition { definition }).await??;
+        client.send(CreateDefinition { definition }).await?;
     }
     for definition in presets {
-        client.send(CreateDefinition { definition }).await??;
+        client.send(CreateDefinition { definition }).await?;
     }
-    client.send(CreateDefinition { definition: rule }).await??;
-    client.send(CreateDefinition { definition: layout }).await??;
+    client.send(CreateDefinition { definition: rule }).await?;
+    client.send(CreateDefinition { definition: layout }).await?;
     Ok(())
 }
 
