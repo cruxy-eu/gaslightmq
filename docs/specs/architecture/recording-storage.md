@@ -632,6 +632,8 @@ The interval says how much a crash can lose, and it runs on the time of the syst
   The session tells its pipeline before every input whether a recording runs, and a call that arrives while one runs
   keeps its handles until it ends: the request, the truth, and the response that the client received.
   The pipeline holds each of them while the call is in flight anyway, so the handles are the same buffers, shared.
+  The fourth frame of a call, the answer of the real cluster when the overlay changed it into the truth, has its place
+  next to them; the backend hands the pipeline the truth alone today, so that place stays empty.
   A call that arrived before the recording started keeps none, and is no part of it.
 - **The queue takes the events in the order of the engine.**
   The events of the sessions, the calls with their handles and the entries of the journal enter the queue where the

@@ -305,6 +305,11 @@ A run that takes the same requests in the same order gives every call the same I
 
 A recording is identified by its environment and the instant it started, in UTC and to the millisecond.
 An environment writes one recording at a time, so no two recordings share both.
+A start in the millisecond of the recording before it in its environment, or before that millisecond, takes the
+millisecond after it: two quick starts would otherwise share an ID, and a stop and a start a millisecond apart are as
+much two recordings as any others.
+Whoever starts a recording reads the instant from a clock of instants in UTC: the wall clock of the system, or for a
+test an instant that stands still, so the test knows the ID it gets.
 The name of its directory holds both: `orders-sim.2026-11-21T14-02-11.527Z`.
 A name holds no `.`, so the first one ends the name of the environment.
 
