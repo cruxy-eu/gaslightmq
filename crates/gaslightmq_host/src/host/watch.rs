@@ -62,7 +62,7 @@ pub(super) fn watch(
                         recording,
                         why,
                     }),
-                    // Whoever runs a scenario applies an incident, and no scenario runs yet.
+                    // No backend applies an incident yet, so an incident that a rule fired on a call goes nowhere.
                     Some(_) => {}
                     // The proxy stopped, and every event is taken: the followers of its calls get no more.
                     None => {
