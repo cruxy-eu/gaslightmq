@@ -20,7 +20,7 @@ use gaslightmq_control_api::rule::{Rule, RuleName};
 use gaslightmq_control_api::selector::{Condition, Conditions};
 use gaslightmq_kafka_client_api::ClientError;
 use gaslightmq_kafka_client_native::{KafkaProducer, ProducerConfiguration};
-use gaslightmq_test_kafka::{KafkaCluster, NetworkListener, NewTopic, unique_name};
+use gaslightmq_test_kafka::{ContainerNetwork, KafkaCluster, NetworkListener, NewTopic};
 use gaslightmq_testcontainers::{GaslightMqContainer, GaslightMqContainerStartError, GaslightMqImage};
 use gaslightmq_wire::{Offset, Partition, Record, ResponseError};
 
@@ -46,16 +46,16 @@ const PLACED_AT: i64 = 1_700_000_000_000;
 #[tokio::test]
 async fn a_rule_armed_through_the_control_plane_of_the_container_refuses_the_produce_of_a_real_client()
 -> anyhow::Result<()> {
-    let network = unique_name("orders-test");
+    let network = ContainerNetwork::unique("orders-test");
     // The containers of the network reach broker 1 of the cluster under its alias, and the others on the next ports.
-    let kafka = NetworkListener::new(unique_name("kafka"), PORT_ON_THE_NETWORK);
+    let kafka = NetworkListener::unique("kafka", PORT_ON_THE_NETWORK);
     let cluster = KafkaCluster::plaintext()
         .with_network(&network, kafka.clone())
         .start()
         .await?;
     let orders = cluster.topics().create("orders").await?;
     let gaslight = GaslightMqContainer::proxy_in_front_of(kafka.to_string().parse()?)
-        .with_network(&network)
+        .with_network(network.name())
         .start()
         .await?;
     let producer = KafkaProducer::from(gaslight.bootstrap());
@@ -111,9 +111,9 @@ async fn a_rule_armed_through_the_control_plane_of_the_container_refuses_the_pro
 #[tokio::test]
 async fn a_rule_of_the_workspace_that_the_test_hands_over_tells_a_real_client_that_a_record_it_wrote_was_lost()
 -> anyhow::Result<()> {
-    let network = unique_name("orders-test");
+    let network = ContainerNetwork::unique("orders-test");
     // The containers of the network reach broker 1 of the cluster under its alias, and the others on the next ports.
-    let kafka = NetworkListener::new(unique_name("kafka"), PORT_ON_THE_NETWORK);
+    let kafka = NetworkListener::unique("kafka", PORT_ON_THE_NETWORK);
     let cluster = KafkaCluster::plaintext()
         .with_network(&network, kafka.clone())
         .start()
@@ -121,7 +121,7 @@ async fn a_rule_of_the_workspace_that_the_test_hands_over_tells_a_real_client_th
     let orders = cluster.topics().create("orders.eu").await?;
     // The files of example 09 are copied into the container, so whatever the process writes stays there.
     let gaslight = GaslightMqContainer::proxy_in_front_of(kafka.to_string().parse()?)
-        .with_network(&network)
+        .with_network(network.name())
         .with_workspace(EXAMPLE_09)
         .start()
         .await?;
@@ -169,9 +169,9 @@ async fn a_rule_of_the_workspace_that_the_test_hands_over_tells_a_real_client_th
 
 #[tokio::test]
 async fn a_container_in_front_of_several_brokers_runs_its_environment_in_the_run_it_says() -> anyhow::Result<()> {
-    let network = unique_name("orders-test");
+    let network = ContainerNetwork::unique("orders-test");
     // The containers of the network reach broker 1 of the cluster under its alias, and the others on the next ports.
-    let kafka = NetworkListener::new(unique_name("kafka"), PORT_ON_THE_NETWORK);
+    let kafka = NetworkListener::unique("kafka", PORT_ON_THE_NETWORK);
     let cluster = KafkaCluster::plaintext()
         .with_brokers(3)
         .with_network(&network, kafka.clone())
@@ -183,7 +183,7 @@ async fn a_container_in_front_of_several_brokers_runs_its_environment_in_the_run
         .await?;
     // The proxy gives each broker that it finds in the cluster a published port of its own: the test names none.
     let gaslight = GaslightMqContainer::proxy_in_front_of(kafka.to_string().parse()?)
-        .with_network(&network)
+        .with_network(network.name())
         .named("orders-proxy".parse()?)
         .start()
         .await?;

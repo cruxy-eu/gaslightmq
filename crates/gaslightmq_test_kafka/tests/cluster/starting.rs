@@ -3,7 +3,7 @@
 use std::collections::BTreeSet;
 
 use gaslightmq_kernel::BrokerId;
-use gaslightmq_test_kafka::{Broker, KafkaCluster, KafkaClusterError, KafkaImage, NetworkListener, unique_name};
+use gaslightmq_test_kafka::{Broker, ContainerNetwork, KafkaCluster, KafkaClusterError, KafkaImage, NetworkListener};
 
 use crate::kafka;
 
@@ -118,7 +118,10 @@ async fn a_listener_for_a_network_that_takes_a_port_of_the_brokers_is_refused() 
     // Broker 2 of three listens for the clients of the host on 19002 already.
     let error = KafkaCluster::plaintext()
         .with_brokers(3)
-        .with_network("orders-test", NetworkListener::new("kafka", 19_001))
+        .with_network(
+            &ContainerNetwork::named("orders-test"),
+            NetworkListener::new("kafka", 19_001),
+        )
         .start()
         .await
         .unwrap_err();
@@ -132,15 +135,16 @@ async fn a_listener_for_a_network_that_takes_a_port_of_the_brokers_is_refused() 
 
 #[tokio::test]
 async fn a_cluster_on_a_network_names_its_brokers_to_the_clients_there_under_its_alias() -> anyhow::Result<()> {
-    let network = unique_name("orders-test");
-    let alias = unique_name("kafka");
+    let network = ContainerNetwork::unique("orders-test");
+    let kafka = NetworkListener::unique("kafka", 19_092);
 
     let cluster = KafkaCluster::plaintext()
         .with_brokers(2)
-        .with_network(&network, NetworkListener::new(&alias, 19_092))
+        .with_network(&network, kafka.clone())
         .start()
         .await?;
 
+    let alias = &kafka.alias;
     assert_eq!(
         cluster.network_bootstrap_servers(),
         Some(format!("{alias}:19092,{alias}:19093"))

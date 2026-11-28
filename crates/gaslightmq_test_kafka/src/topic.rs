@@ -27,11 +27,9 @@ const BROKER_DEFAULT: i16 = -1;
 /// The names this process handed out, so each one is new.
 static NAMED: AtomicU64 = AtomicU64::new(0);
 
-/// A name that starts with `prefix` and that no other call on the machine got while this process runs:
-/// `orders-4711-1`, then `orders-4711-2`, with the ID of the process in the middle.
+/// A name that starts with `prefix` and that no other call in this process got: `orders-1`, then `orders-2`.
 ///
 /// Tests that share a cluster use it for whatever they must not share: a topic, or a consumer group.
-/// Tests of several processes that share a network of containers use it for the network and the aliases on it.
 ///
 /// ```
 /// use gaslightmq_test_kafka::unique_name;
@@ -40,8 +38,7 @@ static NAMED: AtomicU64 = AtomicU64::new(0);
 /// assert!(unique_name("analytics").starts_with("analytics-"));
 /// ```
 pub fn unique_name(prefix: &str) -> String {
-    let process = std::process::id();
-    format!("{prefix}-{process}-{}", NAMED.fetch_add(1, Ordering::Relaxed) + 1)
+    format!("{prefix}-{}", NAMED.fetch_add(1, Ordering::Relaxed) + 1)
 }
 
 /// A topic to create, named as Kafka's own admin client names it.

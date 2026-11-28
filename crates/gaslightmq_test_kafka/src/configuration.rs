@@ -117,6 +117,34 @@ impl NetworkListener {
     }
 }
 
+/// A network of containers, by its name: the cluster and the containers next to the test that reach it join it.
+///
+/// ```
+/// use gaslightmq_test_kafka::ContainerNetwork;
+///
+/// let network = ContainerNetwork::named("orders-test");
+/// assert_eq!(network.name(), "orders-test");
+///
+/// // A network of its own, for a test that runs beside others.
+/// assert_ne!(ContainerNetwork::unique("orders-test"), ContainerNetwork::unique("orders-test"));
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct ContainerNetwork {
+    name: String,
+}
+
+impl ContainerNetwork {
+    /// The network named `name`.
+    pub fn named(name: impl Into<String>) -> Self {
+        Self { name: name.into() }
+    }
+
+    /// The name of the network, which the container runtime knows it by.
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+}
+
 impl std::fmt::Display for NetworkListener {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}:{}", self.alias, self.port)
@@ -157,8 +185,8 @@ impl KafkaClusterConfiguration {
 
     /// Join the network of containers `network`, and serve its clients on `listener`.
     #[must_use]
-    pub fn with_network(mut self, network: impl Into<String>, listener: NetworkListener) -> Self {
-        self.network = Some(network.into());
+    pub fn with_network(mut self, network: &ContainerNetwork, listener: NetworkListener) -> Self {
+        self.network = Some(network.name().to_owned());
         self.network_listener = Some(listener);
         self
     }
@@ -194,8 +222,10 @@ mod tests {
 
     #[test]
     fn a_cluster_on_a_network_serves_its_clients_on_a_listener_of_its_own() {
-        let configuration =
-            KafkaClusterConfiguration::plaintext().with_network("orders-test", NetworkListener::new("kafka", 19092));
+        let configuration = KafkaClusterConfiguration::plaintext().with_network(
+            &ContainerNetwork::named("orders-test"),
+            NetworkListener::new("kafka", 19092),
+        );
 
         assert_eq!(configuration.network.as_deref(), Some("orders-test"));
         assert_eq!(
