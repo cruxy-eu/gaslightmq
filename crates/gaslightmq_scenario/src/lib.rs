@@ -15,6 +15,7 @@
 //! | [`ScenarioStore`] | What keeps the scenarios: the store contract, and which scenarios name a rule, a selector or a preset. |
 //! | [`ResolvedScenario`], [`ResolvedStep`], [`ResolvedUntil`] | A scenario as an environment runs it: its rules and the rules and conditions of its steps, resolved against the workspace. |
 //! | [`ScenarioRun`], [`ScenarioPosition`], [`StepAdvance`], [`StepBudget`] | A scenario that runs: the step where it stands, what ends that step, and the order in which its rules win a conflict. |
+//! | [`Capture`], [`CapturedRule`], [`Captured`] | A capture that runs: the arms and the disarms of the live set, read from the journal; a rule of the live set as a capture holds it; and the steps of a Sequence that it captured. |
 //!
 //! The [`prelude`] holds all of them, and the error of each.
 //!
@@ -126,13 +127,21 @@
 //! time, and says when a step ends and which rules the scenario keeps armed, in the order in which they win a
 //! conflict. Whoever holds the armed rules of an environment drives it, and arms and disarms what it says.
 //!
+//! # Capture
+//!
+//! A [`Capture`] turns what someone played live into the steps of a Sequence, without IO: it reads the entries of
+//! the journal of an environment, marks every arm and disarm in the live set with its time, and gives one step for
+//! every change when it stops. Whoever runs the environment hands it every entry, and the definition of a live rule
+//! as it arms. See [`Capture`].
+//!
 //! # No IO
 //!
-//! The crate depends on the rules and on the vocabulary of selectors, triggers, calls and incidents, and on
-//! `gaslightmq_clock` for the time that ends a step.
+//! The crate depends on the rules and on the vocabulary of selectors, triggers, calls and incidents, on
+//! `gaslightmq_clock` for the time that ends a step, and on `gaslightmq_journal` for the entries that a capture reads.
 //! It has no IO, no system clock and no global randomness, and it compiles to WebAssembly.
 //! Its only async code is in [`ScenarioStore`]: the trait awaits the store it is handed, and nothing else.
 
+mod capture;
 mod mode;
 mod name;
 mod resolved;
@@ -143,6 +152,7 @@ mod serde;
 mod step;
 mod store;
 
+pub use capture::{Capture, Captured, CapturedRule};
 pub use mode::Mode;
 pub use name::{
     ScenarioName, ScenarioNameError, ScenarioTitle, ScenarioTitleError, StepName, StepNameError, StepTitle,
@@ -170,8 +180,9 @@ pub use store::ScenarioStore;
 pub mod prelude {
     #[doc(no_inline)]
     pub use crate::{
-        Mode, ResolveScenarioError, ResolvedScenario, ResolvedStep, ResolvedUntil, Scenario, ScenarioError,
-        ScenarioName, ScenarioNameError, ScenarioPosition, ScenarioRule, ScenarioRun, ScenarioStore, ScenarioTitle,
-        ScenarioTitleError, Step, StepAdvance, StepBudget, StepName, StepNameError, StepTitle, StepTitleError, Until,
+        Capture, Captured, CapturedRule, Mode, ResolveScenarioError, ResolvedScenario, ResolvedStep, ResolvedUntil,
+        Scenario, ScenarioError, ScenarioName, ScenarioNameError, ScenarioPosition, ScenarioRule, ScenarioRun,
+        ScenarioStore, ScenarioTitle, ScenarioTitleError, Step, StepAdvance, StepBudget, StepName, StepNameError,
+        StepTitle, StepTitleError, Until,
     };
 }

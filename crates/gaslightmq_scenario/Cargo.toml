@@ -27,6 +27,8 @@ gaslightmq_definition_memory = { workspace = true, optional = true }
 gaslightmq_field.workspace = true
 # What the backend of an environment must support: the incidents that the rules of a scenario fire.
 gaslightmq_incident.workspace = true
+# Capture reads the arms and the disarms of the live set from the journal.
+gaslightmq_journal.workspace = true
 gaslightmq_resource.workspace = true
 gaslightmq_rule.workspace = true
 gaslightmq_selector.workspace = true
