@@ -40,12 +40,13 @@ async fn an_order_that_the_cluster_does_not_let_the_service_write_is_not_allowed
         .with_network(&network, kafka.clone())
         .start()
         .await?;
-    let topic = cluster.topics().create("orders").await?;
     let gaslight = GaslightMqContainer::proxy_in_front_of(kafka.to_string().parse()?)
         .with_network(network.name())
         .start()
         .await?;
-    let orders = Orders::new(OrdersConfiguration::new(gaslight.bootstrap()));
+    let configuration = OrdersConfiguration::new(gaslight.bootstrap());
+    let topic = cluster.topics().create(configuration.topic.as_str()).await?;
+    let orders = Orders::new(configuration.clone());
     let order = Order {
         id: "o-1".to_owned(),
         item: "espresso machine".to_owned(),
@@ -70,11 +71,11 @@ async fn an_order_that_the_cluster_does_not_let_the_service_write_is_not_allowed
     assert_eq!(
         placed,
         Err(PlaceOrderError::NotAllowed {
-            topic: "orders".to_owned()
+            topic: configuration.topic.clone()
         })
     );
     // The refusal came before the cluster, so it holds nothing.
-    assert_eq!(topic.partition(0).records().await?, []);
+    assert_eq!(topic.partition(configuration.partition).records().await?, []);
     gaslight.stop().await;
     Ok(())
 }
@@ -88,7 +89,6 @@ async fn an_order_whose_acknowledgement_got_lost_is_unconfirmed_though_the_clust
         .with_network(&network, kafka.clone())
         .start()
         .await?;
-    let topic = cluster.topics().create("orders").await?;
     // The files of the workspace are copied into the container, so the rules of the project are there.
     let gaslight = GaslightMqContainer::proxy_in_front_of(kafka.to_string().parse()?)
         .with_network(network.name())
@@ -97,7 +97,8 @@ async fn an_order_whose_acknowledgement_got_lost_is_unconfirmed_though_the_clust
         .await?;
     let mut configuration = OrdersConfiguration::new(gaslight.bootstrap());
     configuration.producer.retries = NO_RETRIES;
-    let orders = Orders::new(configuration);
+    let topic = cluster.topics().create(configuration.topic.as_str()).await?;
+    let orders = Orders::new(configuration.clone());
     let order = Order {
         id: "o-1".to_owned(),
         item: "espresso machine".to_owned(),
@@ -122,7 +123,7 @@ async fn an_order_whose_acknowledgement_got_lost_is_unconfirmed_though_the_clust
     );
     // The service was right not to call the order lost: the cluster holds it.
     assert_eq!(
-        topic.partition(0).records().await?,
+        topic.partition(configuration.partition).records().await?,
         [order.record().with_offset(Offset::new(0))]
     );
     gaslight.stop().await;
@@ -138,7 +139,6 @@ async fn two_services_side_by_side_each_meet_the_lies_of_their_own_container_alo
         .with_network(&network, kafka.clone())
         .start()
         .await?;
-    let topic = cluster.topics().create("orders").await?;
     // Two containers in front of one cluster. Each publishes its ports on free ports of the machine.
     let refusing = GaslightMqContainer::proxy_in_front_of(kafka.to_string().parse()?)
         .with_network(network.name())
@@ -148,7 +148,10 @@ async fn two_services_side_by_side_each_meet_the_lies_of_their_own_container_alo
         .with_network(network.name())
         .start()
         .await?;
-    let refused_orders = Orders::new(OrdersConfiguration::new(refusing.bootstrap()));
+    let configuration = OrdersConfiguration::new(refusing.bootstrap());
+    let topic = cluster.topics().create(configuration.topic.as_str()).await?;
+    // Both services run with the defaults, so they write to the same topic, each through its own proxy.
+    let refused_orders = Orders::new(configuration.clone());
     let placed_orders = Orders::new(OrdersConfiguration::new(truthful.bootstrap()));
     let refused = Order {
         id: "o-1".to_owned(),
@@ -179,12 +182,12 @@ async fn two_services_side_by_side_each_meet_the_lies_of_their_own_container_alo
     assert_eq!(
         first,
         Err(PlaceOrderError::NotAllowed {
-            topic: "orders".to_owned()
+            topic: configuration.topic.clone()
         })
     );
     assert_eq!(second, Ok(Offset::new(0)));
     assert_eq!(
-        topic.partition(0).records().await?,
+        topic.partition(configuration.partition).records().await?,
         [placed.record().with_offset(Offset::new(0))]
     );
     refusing.stop().await;
