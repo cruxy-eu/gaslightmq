@@ -1,5 +1,6 @@
 //! A test of a Kafka client starts GaslightMQ in its own process, in front of a real cluster, and arms a rule through
 //! the control plane that makes the client's produce fail, or activates a scenario that plays a failure out over time.
+//! It records what happened, and asserts on the verdicts and the explanations of the calls of the recording.
 //!
 //! This is how a user of GaslightMQ writes such a test.
 //! The cluster is the one of `gaslightmq_test_kafka`, so the tests need Docker.
@@ -12,7 +13,7 @@ use gaslightmq_control_api::lie::RefusalLie;
 use gaslightmq_control_api::prelude::*;
 use gaslightmq_control_api::rule::Rule;
 use gaslightmq_control_api::scenario::{Mode, Scenario, ScenarioPosition, Step, Until};
-use gaslightmq_control_api::selector::{Condition, Conditions};
+use gaslightmq_control_api::selector::{Condition, Conditions, SelectorRef};
 use gaslightmq_control_api::trigger::{Count, Seed};
 use gaslightmq_kafka_client_api::ClientError;
 use gaslightmq_kafka_client_native::KafkaProducer;
@@ -197,6 +198,95 @@ async fn a_scenario_refuses_the_first_produce_of_a_real_client_and_then_lets_it_
             step: Some(back_to_normal.name().clone()),
         }))
     );
+    stream.close().await;
+    gaslight.stop().await;
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_test_asserts_on_the_explanations_of_the_calls_that_a_recording_holds() -> anyhow::Result<()> {
+    let cluster = KafkaCluster::plaintext().start().await?;
+    let orders = cluster.topics().create("orders").await?;
+    let gaslight = GaslightMq::proxy_in_front_of(cluster.bootstrap_servers().parse()?)
+        .start()
+        .await?;
+    let control = gaslight.control();
+    let producer = KafkaProducer::from(gaslight.bootstrap());
+    let placed = Record::new("placed").with_key("o-1").with_timestamp(PLACED_AT);
+    let every_produce = SelectorRef::Inline(Conditions::from(Condition::is(ApiKey::PRODUCE)));
+    // The test follows the Produce calls, so it knows when the proxy handed each one to the recording.
+    let mut stream = control.live_stream().await?;
+    stream
+        .follow(Subscription::Calls {
+            environment: gaslight.environment().clone(),
+            selector: every_produce.clone(),
+        })
+        .await;
+    while !matches!(stream.next().await?, StreamMessage::Following { .. }) {}
+    let recording = control
+        .send(StartRecording {
+            environment: gaslight.environment().clone(),
+        })
+        .await??;
+
+    // The proxy refuses the first Produce, and lets the second one through.
+    let refuse = Rule::new(
+        "refuse-order-producers".parse()?,
+        Conditions::from(Condition::is(ApiKey::PRODUCE)),
+        RefusalLie::new(ErrorCode::TOPIC_AUTHORIZATION_FAILED),
+    );
+    control
+        .send(CreateLiveRule {
+            environment: gaslight.environment().clone(),
+            rule: refuse.clone(),
+            armed: true,
+        })
+        .await??;
+    let refused = producer
+        .send(orders.name().as_str(), Partition::new(0), std::slice::from_ref(&placed))
+        .await;
+    control
+        .send(DisarmRule {
+            environment: gaslight.environment().clone(),
+            rule: refuse.name().clone(),
+            expects: None,
+        })
+        .await??;
+    let written = producer
+        .send(orders.name().as_str(), Partition::new(0), std::slice::from_ref(&placed))
+        .await;
+    let mut followed = 0;
+    while followed < 2 {
+        if let StreamMessage::Call { .. } = stream.next().await? {
+            followed += 1;
+        }
+    }
+    control
+        .send(StopRecording {
+            environment: gaslight.environment().clone(),
+        })
+        .await??;
+    let recorded = control
+        .send(QueryRecording {
+            recording,
+            selector: every_produce,
+            draft: None,
+            skip: 0,
+        })
+        .await??;
+
+    assert!(refused.is_err(), "{refused:?}");
+    assert_eq!(written, Ok(Offset::new(0)));
+    // The recording holds both Produce calls, and the rule applied to the first of them alone.
+    assert_eq!(recorded.matched, 2);
+    let applied: Vec<bool> = recorded
+        .calls
+        .iter()
+        .map(|call| call.explanation().applied(refuse.name().as_str()))
+        .collect();
+    assert_eq!(applied, [true, false]);
+    assert!(!recorded.calls[0].verdict().is_pass());
+    assert!(recorded.calls[1].verdict().is_pass());
     stream.close().await;
     gaslight.stop().await;
     Ok(())
