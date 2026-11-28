@@ -8,7 +8,8 @@
 //! | [`GaslightMqStartError`] | Why it did not start. |
 //!
 //! A test starts GaslightMQ in front of a cluster, points its client at the [bootstrap address](GaslightMq::bootstrap),
-//! and tells the proxy what to lie about through the [control plane](GaslightMq::control).
+//! and tells the proxy what to lie about through the [control plane](GaslightMq::control): it arms rules, or it
+//! activates a scenario, which plays a failure out over its steps.
 //!
 //! ```no_run
 //! use gaslightmq_control_api::kernel::{ApiKey, ErrorCode};
@@ -80,9 +81,10 @@
 //!
 //! - **Brokers.** GaslightMQ runs no broker yet, so a test starts a proxy in front of a real cluster alone.
 //!   A broker, and a proxy in front of one, arrive with the crate `broker`.
-//! - **Scenarios, and the calls of a recording.** A test arms its rules one by one. It starts, stops and opens a
-//!   recording through the control plane, which keeps it in memory, and asserting on the calls of a recording
-//!   arrives with the query of a recording. Activating a scenario arrives with the scenario runner.
+//! - **The calls of a recording.** A test arms its rules one by one, or creates a scenario and activates it, through
+//!   the control plane. It starts, stops and opens a recording, which the control plane keeps in memory, and
+//!   asserting on the calls of a recording arrives with the query of a recording. Until then a test asserts on what
+//!   its clients saw, on what the cluster holds, and on where the scenario stands.
 //!
 //! # IO
 //!

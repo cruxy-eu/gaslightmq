@@ -10,8 +10,8 @@ use gaslightmq_surface::PresenceId;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    AnyDefinition, BackendStatus, DefinitionRef, Definitions, Revision, RuleStatus, RunId, SessionCloser,
-    SessionIdentity, SessionStatus, Stats, WorkspaceStatus,
+    AnyDefinition, BackendStatus, DefinitionRef, Definitions, Revision, RuleStatus, RunId, ScenarioStatus,
+    SessionCloser, SessionIdentity, SessionStatus, Stats, WorkspaceStatus,
 };
 
 /// One message of the live stream, from the control plane to a client.
@@ -22,7 +22,8 @@ use crate::{
 /// A message about something live names its environment.
 /// A client that applies every change to the snapshot holds what the process holds.
 ///
-/// Whatever has a [`Revision`] comes with it: a definition, and a rule in an environment.
+/// Whatever has a [`Revision`] comes with it: a definition, a rule in an environment, and the scenario of an
+/// environment.
 /// A message is a state, and the later revision is the newer state: a client that already holds a later revision
 /// of a thing, from the answer to its own change, drops a message that brings an earlier one.
 /// A snapshot that names another [run](ProcessState::run) is another process, and the client drops what it held.
@@ -57,6 +58,12 @@ pub enum StreamMessage {
     RuleRemoved {
         environment: EnvironmentName,
         rule: RuleName,
+    },
+    /// The scenario of the environment changed: someone activated or deactivated it, or it advanced a step, by itself
+    /// or because someone advanced it. It holds the scenario as it is now, with its revision.
+    ScenarioChanged {
+        environment: EnvironmentName,
+        scenario: ScenarioStatus,
     },
     /// Someone created or updated a definition of the workspace, through the control plane or with a
     /// [reload](crate::ReloadWorkspace). `revision` is the one it has from here on, and `loses-comment` says whether
@@ -166,6 +173,8 @@ pub struct RunningEnvironment {
     pub rules: Vec<RuleStatus>,
     /// The sessions that are open.
     pub sessions: Vec<SessionStatus>,
+    /// The scenario of the environment: the active one, and its revision.
+    pub scenario: ScenarioStatus,
     /// The recording that the environment writes, when it writes one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub recording: Option<RecordingId>,

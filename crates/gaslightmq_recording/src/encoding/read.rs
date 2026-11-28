@@ -623,6 +623,18 @@ fn change(change: &stored::ArchivedChange) -> Result<Change, Flaw> {
         Stored::DefinitionDeleted { definition: deleted } => Change::DefinitionDeleted {
             definition: definition(deleted)?,
         },
+        Stored::ScenarioActivated { scenario, step } => Change::ScenarioActivated {
+            scenario: name(scenario)?,
+            step: step.as_ref().map(name).transpose()?,
+        },
+        Stored::ScenarioDeactivated { scenario, step } => Change::ScenarioDeactivated {
+            scenario: name(scenario)?,
+            step: step.as_ref().map(name).transpose()?,
+        },
+        Stored::StepAdvanced { scenario, step } => Change::StepAdvanced {
+            scenario: name(scenario)?,
+            step: step.as_ref().map(name).transpose()?,
+        },
         Stored::IncidentApplied { incident } => Change::IncidentApplied {
             incident: expanded(incident)?,
         },

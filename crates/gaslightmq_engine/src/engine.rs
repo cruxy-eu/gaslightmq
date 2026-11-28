@@ -93,7 +93,7 @@ impl<B: Backend + 'static, C: WaitableClock> Engine<B, C> {
             lies.into(),
         );
         let of_the_rules: Arc<dyn Clock + Send + Sync> = Arc::<C>::clone(&clock);
-        let rules = ArmedRules::new(configuration.seed, of_the_rules);
+        let rules = ArmedRules::new(configuration.seed, of_the_rules, shared.call_ids().clone());
         let events = Arc::new(EventBus::new(configuration.event_backlog));
         let of_the_journal: Arc<dyn Clock + Send + Sync> = Arc::<C>::clone(&clock);
         let journal = Journal::new(configuration.recent_journal, of_the_journal, &events);

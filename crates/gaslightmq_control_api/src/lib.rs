@@ -28,6 +28,7 @@
 //! | [`ListSessions`], [`CloseSession`], [`SessionStatus`], [`SessionIdentity`], [`SessionCloser`] | The sessions of an environment. |
 //! | [`GetBackend`], [`BackendStatus`], [`BackendKind`] | The backend of an environment: its kind, its endpoints and the incidents it can do. |
 //! | [`ParseSentence`], [`ParsedSentence`], [`WordCompletion`], [`WordKind`], [`UnreadWord`] | A ⌘K sentence that is still being typed, and the rule it gives. |
+//! | [`ActivateScenario`], [`DeactivateScenario`], [`StepScenario`], [`ScenarioStatus`] | The scenario of an environment: activating, deactivating and advancing it, and where it stands. |
 //! | [`QueryJournal`] | The journal of an environment: what changed there, and where each change came from. |
 //! | [`StartRecording`], [`StopRecording`], [`ListRecordings`], [`OpenRecording`] | The recordings of the environments: starting and stopping one, listing them, and opening one. |
 //! | [`RecordingStatus`], [`RecordingDescription`], [`RecordedScenario`], [`RecordingEnd`], [`RecordingEnding`] | A recording as the process keeps it: what it is, how far it goes, and how it ended. |
@@ -238,6 +239,7 @@ mod recordings;
 mod request;
 mod revision;
 mod rules;
+mod scenarios;
 mod sentence;
 mod sessions;
 mod stats;
@@ -269,6 +271,10 @@ pub use rules::{
     FireRuleError, KeepRule, KeepRuleError, ListEnvironmentRules, RuleCommandError, RuleHolder, RuleStatus,
     UpdateLiveRule, UpdateLiveRuleError,
 };
+pub use scenarios::{
+    ActivateScenario, ActivateScenarioError, DeactivateScenario, DeactivateScenarioError, ScenarioStatus, StepScenario,
+    StepScenarioError,
+};
 pub use sentence::{ParseSentence, ParsedSentence, UnreadWord, WordCompletion, WordKind};
 pub use sessions::{CloseSession, CloseSessionError, ListSessions, SessionCloser, SessionIdentity, SessionStatus};
 pub use stats::{RuleStats, Stats};
@@ -294,8 +300,9 @@ pub use workspace::{
 pub mod prelude {
     #[doc(no_inline)]
     pub use crate::{
-        AnyDefinition, AnyOperation, ArmRule, BackendKind, BackendStatus, CheckHealth, CloseSession, CloseSessionError,
-        CreateDefinition, CreateDefinitionError, CreateLiveRule, CreateLiveRuleError, DefinitionChange, DefinitionRef,
+        ActivateScenario, ActivateScenarioError, AnyDefinition, AnyOperation, ArmRule, BackendKind, BackendStatus,
+        CheckHealth, CloseSession, CloseSessionError, CreateDefinition, CreateDefinitionError, CreateLiveRule,
+        CreateLiveRuleError, DeactivateScenario, DeactivateScenarioError, DefinitionChange, DefinitionRef,
         DefinitionStatus, Definitions, DeleteDefinition, DeleteDefinitionError, DeleteLiveRule, DeleteLiveRuleError,
         DisarmRule, EditableDefinition, EnvironmentHealth, EnvironmentNotRunning, EnvironmentReadError,
         EnvironmentStatus, Expects, FireRule, FireRuleError, GetBackend, GetDefinition, GetDefinitionError,
@@ -305,10 +312,10 @@ pub mod prelude {
         ProcessState, QueryJournal, RecordedScenario, RecordingDescription, RecordingEnd, RecordingEnding,
         RecordingStatus, ReloadWorkspace, ReloadWorkspaceError, Reloaded, RequestCause, RequestError, RequestSource,
         RequestSurface, Revised, Revision, RuleCommandError, RuleHolder, RuleStats, RuleStatus, RunId, RunIdError,
-        RunningEnvironment, SaveWorkspace, SaveWorkspaceError, Saved, SendIntent, SessionCloser, SessionIdentity,
-        SessionStatus, StartEnvironment, StartEnvironmentError, StartRecording, StartRecordingError, Stats,
-        StopEnvironment, StopRecording, StopRecordingError, StreamMessage, Subscription, Unhealthy, UnreadWord,
-        UpdateDefinition, UpdateDefinitionError, UpdateLiveRule, UpdateLiveRuleError, WordCompletion, WordKind,
-        WorkspaceStatus, WriteBack,
+        RunningEnvironment, SaveWorkspace, SaveWorkspaceError, Saved, ScenarioStatus, SendIntent, SessionCloser,
+        SessionIdentity, SessionStatus, StartEnvironment, StartEnvironmentError, StartRecording, StartRecordingError,
+        Stats, StepScenario, StepScenarioError, StopEnvironment, StopRecording, StopRecordingError, StreamMessage,
+        Subscription, Unhealthy, UnreadWord, UpdateDefinition, UpdateDefinitionError, UpdateLiveRule,
+        UpdateLiveRuleError, WordCompletion, WordKind, WorkspaceStatus, WriteBack,
     };
 }

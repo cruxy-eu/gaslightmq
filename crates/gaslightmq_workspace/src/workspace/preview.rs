@@ -2,14 +2,16 @@
 
 use super::{Unread, Workspace};
 use crate::contents::Contents;
-use crate::{DefinitionName, DeleteError, Revision, UpdateError, WorkspaceContext, WorkspaceDefinition};
+use crate::{CreateError, DefinitionName, DeleteError, Revision, UpdateError, WorkspaceContext, WorkspaceDefinition};
 
 /// What the stores of a workspace would hold after one change that the workspace checked, and nobody asked for yet.
 ///
-/// [`check_update`](Workspace::check_update) and [`check_delete`](Workspace::check_delete) give one, once the change
+/// [`check_create`](Workspace::check_create), [`check_update`](Workspace::check_update) and
+/// [`check_delete`](Workspace::check_delete) give one, once the change
 /// passes every check of the workspace. Whoever holds what the workspace does not know reads it, before it asks for
 /// the change: a host checks that every rule that is armed would still resolve. The preview changes nothing: the
-/// change goes through [`update`](Workspace::update) or [`delete`](Workspace::delete), which check it again.
+/// change goes through [`create`](Workspace::create), [`update`](Workspace::update) or
+/// [`delete`](Workspace::delete), which check it again.
 ///
 /// ```
 /// use futures::executor::block_on;
@@ -43,6 +45,34 @@ impl Preview {
 }
 
 impl<C: WorkspaceContext> Workspace<C> {
+    /// Checks a [create](Self::create) as the create checks it, without asking a store for it, and gives what the
+    /// stores would hold after it.
+    ///
+    /// Whoever holds what the workspace does not know checks that next: a host checks that no rule that a scenario
+    /// owns has the name of a live rule.
+    ///
+    /// # Errors
+    ///
+    /// The [`CreateError`] that the create would fail with before it asks its store: `NameTaken`, `DoesNotFit`, or
+    /// `StoreFailed` when a store could not read.
+    pub async fn check_create<D: WorkspaceDefinition>(&self, definition: D) -> Result<Preview, CreateError> {
+        let name: DefinitionName = definition.name().clone().into();
+        let contents = match self.contents().await {
+            Ok(contents) => contents,
+            Err(Unread { reason }) => return Err(CreateError::StoreFailed { name, reason }),
+        };
+        if contents.get(&name).is_some() {
+            return Err(CreateError::NameTaken { name });
+        }
+        let errors = contents.errors_with(definition.clone().into_any());
+        if !errors.is_empty() {
+            return Err(CreateError::DoesNotFit { name, errors });
+        }
+        Ok(Preview {
+            contents: contents.with(definition.into_any()),
+        })
+    }
+
     /// Checks an [update](Self::update) as the update checks it, without asking a store for it, and gives what the
     /// stores would hold after it.
     ///

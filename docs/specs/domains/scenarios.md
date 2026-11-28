@@ -138,6 +138,7 @@ A scenario in Live or Chain mode has no steps.
 
 A step ends when its `until` condition holds.
 Then the next step starts, and the rules the previous step armed disarm.
+After the last step no step runs: the scenario stays active, and its own `rules` stay armed, until someone deactivates it.
 
 | `until` | The step ends |
 |---|---|
@@ -151,6 +152,7 @@ A counted `until` is a [budget](rules.md#budgets).
 even when several connections match it at the same moment.
 
 A call belongs to the step that was current when the call arrived.
+The step ends on the call that makes its condition hold, so the next call of that connection belongs to the next step.
 
 The scenario's own `rules` stay armed across all steps and keep their counters.
 Within a step, conflicts resolve as in Chain mode:
@@ -160,6 +162,9 @@ then the scenario's rules in their order.
 ## The live set
 
 At most one scenario is active at a time.
+Activating a scenario while another one is active is refused: whoever wants another deactivates the active one first.
+A scenario runs the definition that it had when someone activated it.
+An update or a delete of it in the workspace leaves the run as it is, until someone deactivates it.
 On top of the active scenario sits the **live set**:
 rules that someone arms by hand while the scenario runs.
 
@@ -167,6 +172,9 @@ rules that someone arms by hand while the scenario runs.
 - Among live rules, the one armed most recently wins.
 - Disarming a live rule hands control back to the scenario.
 - The live set never changes the scenario's own rules or steps.
+- A rule is armed once. A rule that someone armed by hand stays in the live set when the scenario names it:
+  the scenario does not arm it again, and deactivating the scenario leaves it armed.
+- Disarming a rule of the scenario by hand takes it away until the scenario arms it again.
 
 This lets someone poke at a running Sequence without breaking it.
 

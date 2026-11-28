@@ -15,6 +15,7 @@ use crate::{RecordedDefinition, RecordedName};
 /// | [`RuleFiredByHand`](Self::RuleFiredByHand) | The rule. |
 /// | [`LiveRuleMade`](Self::LiveRuleMade), [`LiveRuleChanged`](Self::LiveRuleChanged), [`LiveRuleKept`](Self::LiveRuleKept), [`LiveRuleDeleted`](Self::LiveRuleDeleted) | The live rule. |
 /// | [`DefinitionCreated`](Self::DefinitionCreated), [`DefinitionChanged`](Self::DefinitionChanged), [`DefinitionDeleted`](Self::DefinitionDeleted) | The definition of the workspace, and its kind. |
+/// | [`ScenarioActivated`](Self::ScenarioActivated), [`ScenarioDeactivated`](Self::ScenarioDeactivated), [`StepAdvanced`](Self::StepAdvanced) | The scenario, and the step by its name. |
 /// | [`IncidentApplied`](Self::IncidentApplied), [`IncidentEmulated`](Self::IncidentEmulated) | The incident and its consequences. |
 /// | [`RecordingStopped`](Self::RecordingStopped) | Why the recording of the environment stopped by itself. |
 ///
@@ -28,8 +29,8 @@ use crate::{RecordedDefinition, RecordedName};
 /// A live rule that is made armed is made and armed, and an armed live rule that is deleted is disarmed and deleted,
 /// so every arming in a journal ends with a disarm.
 ///
-/// What an environment does not do yet has no entry yet: a scenario that is activated or deactivated,
-/// and a step that advances. Their entries arrive with scenarios.
+/// A scenario that someone activates arms its rules, and a step that advances disarms the rules of the step that
+/// ended and arms those of the next one: the entry of the scenario and the entries of its rules hold one revision.
 ///
 /// ```
 /// use gaslightmq_journal::prelude::*;
@@ -83,6 +84,25 @@ pub enum Change {
     DefinitionChanged { definition: RecordedDefinition },
     /// Someone deleted the definition from the workspace.
     DefinitionDeleted { definition: RecordedDefinition },
+    /// Someone activated the scenario in the environment. `step` is the step it starts at, when it is a Sequence.
+    ScenarioActivated {
+        scenario: RecordedName,
+        #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Option::is_none"))]
+        step: Option<RecordedName>,
+    },
+    /// Someone deactivated the scenario, which stood at `step` then, when a step ran.
+    ScenarioDeactivated {
+        scenario: RecordedName,
+        #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Option::is_none"))]
+        step: Option<RecordedName>,
+    },
+    /// The step of the scenario ended, by its condition or because someone advanced it, and `step` started.
+    /// After the last step, `step` is `None`: no step runs, and the rules of the scenario stay armed.
+    StepAdvanced {
+        scenario: RecordedName,
+        #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Option::is_none"))]
+        step: Option<RecordedName>,
+    },
     /// The backend applied the incident: it really happened, with these consequences.
     /// What happened is no change of what someone set, so the entry holds no revision.
     IncidentApplied { incident: ExpandedIncident },

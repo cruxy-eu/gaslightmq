@@ -586,6 +586,18 @@ pub(crate) enum Change {
     DefinitionDeleted {
         definition: Definition,
     },
+    ScenarioActivated {
+        scenario: String,
+        step: Option<String>,
+    },
+    ScenarioDeactivated {
+        scenario: String,
+        step: Option<String>,
+    },
+    StepAdvanced {
+        scenario: String,
+        step: Option<String>,
+    },
     IncidentApplied {
         incident: ExpandedIncident,
     },

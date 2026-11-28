@@ -105,6 +105,12 @@ mod next_to_std_and_every_domain {
         let _: Option<<ListRecordings as Operation>::Error> = None::<ListRecordingsError>;
         let _: Option<<OpenRecording as Operation>::Answer> = None::<RecordingStatus>;
         let _: Option<<OpenRecording as Operation>::Error> = None::<OpenRecordingError>;
+        let _: Option<<ActivateScenario as Operation>::Answer> = None::<Revised>;
+        let _: Option<<ActivateScenario as Operation>::Error> = None::<ActivateScenarioError>;
+        let _: Option<<DeactivateScenario as Operation>::Answer> = None::<Revised>;
+        let _: Option<<DeactivateScenario as Operation>::Error> = None::<DeactivateScenarioError>;
+        let _: Option<<StepScenario as Operation>::Answer> = None::<Revised>;
+        let _: Option<<StepScenario as Operation>::Error> = None::<StepScenarioError>;
     }
 
     /// Every other type of the prelude, named without a path.
@@ -143,5 +149,6 @@ mod next_to_std_and_every_domain {
         let _: Option<RecordingDescription> = None;
         let _: Option<RecordedScenario> = None;
         let _: Option<RecordingEnding> = None;
+        let _: Option<ScenarioStatus> = None;
     }
 }

@@ -18,6 +18,7 @@ use crate::{
 /// | The shared [`Counter`] | The match numbers of a rule that counts per rule. |
 /// | The [`Budget`] | The matches or firings a lifetime allows. |
 /// | The hand firings | How many matching calls still fire because someone fired the rule by hand. |
+/// | The step budget | The firings that the step of a scenario allows, on top of the lifetime, while the step runs. |
 ///
 /// An arming is a handle.
 /// Cloning it gives a second handle to the same counter, budget and hand firings.
@@ -63,6 +64,8 @@ pub struct Arming {
     counter: Counter,
     budget: Option<Budget>,
     by_hand: HandFirings,
+    /// The firings that the current step of a scenario allows this rule, when the step ends on its firings.
+    step: Option<Budget>,
 }
 
 impl Arming {
@@ -79,7 +82,53 @@ impl Arming {
                 Lifetime::UntilDisarmed | Lifetime::Duration(_) => None,
             },
             by_hand: HandFirings::default(),
+            step: None,
         }
+    }
+
+    /// The same arming, whose firings a step also takes from `budget` while the step runs, or from no step budget.
+    ///
+    /// A step of a scenario that ends after a number of firings of a rule is a budget:
+    /// `firings: 3` lets the rule fire exactly three times in the step, however many connections match it at once.
+    /// The step budget comes on top of the lifetime: a firing needs a unit of both, and a rule that finds the step
+    /// budget empty does not fire. A spent step budget ends the step, and not the lifetime of the rule.
+    ///
+    /// Nothing else changes: the counters, the budget of the lifetime, the hand firings and the moment of arming
+    /// are those of this arming, so the two handles are one arming.
+    /// The old handle keeps the step budget it had, for the calls that are in flight on it.
+    ///
+    /// ```
+    /// use gaslightmq_clock::Instant;
+    /// use gaslightmq_trigger::prelude::*;
+    ///
+    /// let die = Die::new(Seed::new(7), &DiceKey::new("refuse-with-not-leader").expect("a dice key"));
+    /// let arming = Arming::new(Trigger::default(), Lifetime::UntilDisarmed, die, Instant::ZERO);
+    /// let step = Budget::new(Count::new(1)?);
+    /// let in_the_step = arming.with_step_budget(Some(step.clone()));
+    ///
+    /// let mut session = SessionCounters::new(CounterKey::new("10.0.4.27 broker 2 #1").expect("a counter key"));
+    /// let firing = in_the_step.evaluate(Instant::ZERO, &mut session).into_firing().expect("the step allows one firing");
+    /// firing.confirm();
+    /// assert!(step.is_spent());
+    ///
+    /// // The step allows no second firing, and the lifetime goes on.
+    /// let second = in_the_step.evaluate(Instant::ZERO, &mut session);
+    /// assert_eq!(second.rolled().outcome(), TriggerOutcome::BudgetEmpty);
+    /// assert!(!in_the_step.has_ended(Instant::ZERO));
+    /// assert!(in_the_step.is(&arming));
+    /// # Ok::<(), CountError>(())
+    /// ```
+    #[must_use]
+    pub fn with_step_budget(&self, budget: Option<Budget>) -> Arming {
+        Arming {
+            step: budget,
+            ..self.clone()
+        }
+    }
+
+    /// The firings that the current step of a scenario allows the rule, when the step ends on its firings.
+    pub const fn step_budget(&self) -> Option<&Budget> {
+        self.step.as_ref()
     }
 
     /// The same arming with another trigger and lifetime, for a parameter change on an armed rule.
@@ -225,8 +274,13 @@ impl Arming {
             (Lifetime::Firings(_), Some(budget)) => Some(budget.reserve()?),
             _ => None,
         };
+        let step = match &self.step {
+            Some(budget) => Some(budget.reserve()?),
+            None => None,
+        };
         Some(Firing {
             reservation,
+            step,
             by: FiredBy::HandAtOnce,
         })
     }
@@ -276,7 +330,7 @@ impl Arming {
             && rolled.window.is_none_or(|window| window.is_open(since_armed))
     }
 
-    /// Makes the firing of a rule that fires, or returns `None` when its budget has no firing free.
+    /// Makes the firing of a rule that fires, or returns `None` when its budget or its step budget has no firing free.
     fn fire(&self, by: FiredBy, rolled: &mut Rolled) -> Option<Firing> {
         let reservation = match (self.lifetime, &self.budget) {
             (Lifetime::Firings(_), Some(budget)) => {
@@ -288,7 +342,18 @@ impl Arming {
             }
             _ => None,
         };
-        Some(Firing { reservation, by })
+        let step = match &self.step {
+            Some(budget) => {
+                let reservation = budget.reserve();
+                // The lifetime shows its own budget. A rule without one shows what the step allows.
+                if rolled.budget.is_none() || reservation.is_none() {
+                    rolled.budget = Some(budget.reading());
+                }
+                Some(reservation?)
+            }
+            None => None,
+        };
+        Some(Firing { reservation, step, by })
     }
 }
 
@@ -483,7 +548,8 @@ impl Rolled {
 ///
 /// Nothing shadows an incident, so a rule with an incident confirms its firing at once.
 ///
-/// Under a lifetime of firings, the firing holds a [`Reservation`] of the rule's budget.
+/// Under a lifetime of firings, the firing holds a [`Reservation`] of the rule's budget, and while a step of a scenario
+/// ends on its firings, one of the step budget too.
 /// Dropping a firing withdraws it, so a call that ends early gives the firing back.
 ///
 /// # Hand firings
@@ -496,6 +562,8 @@ impl Rolled {
 #[must_use = "a firing that is dropped does not count for the lifetime"]
 pub struct Firing {
     reservation: Option<Reservation>,
+    /// The unit of the step budget, while a step of a scenario ends on the firings of the rule.
+    step: Option<Reservation>,
     by: FiredBy,
 }
 
@@ -522,6 +590,9 @@ impl Firing {
     pub fn confirm(self) -> Confirmed {
         if let FiredBy::HandOnMatch(waited) = self.by {
             waited.confirm();
+        }
+        if let Some(step) = self.step {
+            step.confirm();
         }
         Confirmed {
             ends_lifetime: self

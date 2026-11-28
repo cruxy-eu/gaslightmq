@@ -27,6 +27,9 @@ pub(crate) struct RuleRevisions {
     changed: BTreeMap<RuleName, Revision>,
     /// The rules that were armed at the last change that was counted.
     armed: BTreeSet<RuleName>,
+    /// The number of the last change of the scenario of the environment: the start of the environment, an
+    /// activation, a deactivation or a step.
+    scenario: Revision,
 }
 
 impl RuleRevisions {
@@ -39,7 +42,29 @@ impl RuleRevisions {
             started,
             changed: BTreeMap::new(),
             armed: BTreeSet::new(),
+            scenario: started,
         }
+    }
+
+    /// The revision of the scenario of the environment: the number of its last change.
+    pub(crate) const fn of_the_scenario(&self) -> Revision {
+        self.scenario
+    }
+
+    /// Counts one change of the scenario of the environment, which disarmed and armed these rules: it takes the next
+    /// number, and the scenario and every one of the rules has it.
+    pub(crate) fn count_scenario(&mut self, disarmed: &[RuleName], armed: &[RuleName]) -> Revision {
+        let revision = self.counter.next_revision();
+        self.scenario = revision;
+        for rule in disarmed {
+            self.changed.insert(rule.clone(), revision);
+            self.armed.remove(rule);
+        }
+        for rule in armed {
+            self.changed.insert(rule.clone(), revision);
+            self.armed.insert(rule.clone());
+        }
+        revision
     }
 
     /// The number of the last change of the rule in this environment: of its state, and of its definition when it

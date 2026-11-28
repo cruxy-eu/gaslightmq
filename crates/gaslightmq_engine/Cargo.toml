@@ -26,6 +26,8 @@ gaslightmq_listener.workspace = true
 gaslightmq_pipeline.workspace = true
 gaslightmq_recording.workspace = true
 gaslightmq_rule.workspace = true
+# The run of the scenario of the environment: its steps, and the order in which its rules win a conflict.
+gaslightmq_scenario.workspace = true
 gaslightmq_session.workspace = true
 gaslightmq_trigger.workspace = true
 gaslightmq_wire.workspace = true

@@ -113,7 +113,7 @@ impl<C: WorkspaceContext> Host<C> {
     /// No press adds a hold to the presence from here on: see [`send_intent_from`](Self::send_intent_from).
     /// A presence that is not open has no holds, and ending it changes nothing.
     pub fn end_presence(&self, presence: PresenceId) {
-        let mut changed = Vec::new();
+        let (mut changed, mut stepped) = (Vec::new(), Vec::new());
         {
             // The environments stay taken from the moment the presence is no longer open until its holds went,
             // so no press adds a hold in between that nothing would end.
@@ -139,9 +139,15 @@ impl<C: WorkspaceContext> Host<C> {
                     }
                     disarmed
                 });
-                let rules = disarmed.into_iter().chain(uncounted);
+                if uncounted.scenario {
+                    stepped.push(environment.clone());
+                }
+                let rules = disarmed.into_iter().chain(uncounted.rules);
                 changed.extend(rules.map(|rule| (environment.clone(), rule)));
             }
+        }
+        for environment in stepped {
+            self.publish(HostChange::ScenarioChanged { environment });
         }
         for (environment, rule) in changed {
             self.publish(HostChange::RuleChanged { environment, rule });

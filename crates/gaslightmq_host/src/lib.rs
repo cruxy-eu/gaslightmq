@@ -24,6 +24,8 @@
 //! | [`CreateLiveRuleError`], [`UpdateLiveRuleError`], [`DeleteLiveRuleError`], [`KeepRuleError`] | Why a live rule was not made, changed, removed or kept. |
 //! | [`EnvironmentRulesError`], [`IntentError`], [`CloseSessionError`], [`HostChangesError`], [`FollowCallsError`] | Why the rules of an environment were not read, a pad was not acted on, a session was not closed, a follower has no next change, and the calls of an environment were not followed. |
 //! | [`RecordingStartError`], [`RecordingStopError`] | Why a recording of an environment did not start, and why one did not stop in order. |
+//! | [`EnvironmentScenario`] | The scenario of an environment: where the active one stands, and its revision there. |
+//! | [`ScenarioActivationError`], [`ScenarioDeactivationError`], [`ScenarioStepError`] | Why a scenario was not activated or deactivated in an environment, and why it did not advance a step. |
 //!
 //! The [`prelude`] holds all of them.
 //!
@@ -97,6 +99,25 @@
 //!   revision it left, and a change of a definition in the journal of every environment that runs.
 //!   The host names the surface of a change that nobody asked for.
 //!
+//! # Scenarios
+//!
+//! At most one scenario is active in an environment: [`Host::activate_scenario`] activates one,
+//! [`Host::deactivate_scenario`] ends it, and [`Host::step_scenario`] advances it to its next step.
+//! The proxy of the environment runs it, below the rules that someone armed by hand: see
+//! [`ArmedRules`](gaslightmq_engine::ArmedRules).
+//!
+//! - **The backend says whether the scenario runs there.** An activation asks the backend of the environment whether
+//!   it supports the incidents that the scenario fires, and fails with every one it does not.
+//! - **The scenario of an environment has a revision.** Its start, an activation, a deactivation and a step each take
+//!   a number, which the rules that the change armed or disarmed share. A change of the scenario can say what it
+//!   [`Expects`], so two clients that both advance one step advance it once.
+//! - **A step that ends by itself is a change that nobody asked for.** The host counts it when it next looks at the
+//!   armed rules, as a lifetime that ended, and records it with the surface `step`.
+//! - **A scenario runs the definition it was activated with.** An update or a delete of the scenario in the
+//!   workspace leaves the run as it is, until someone deactivates it.
+//! - **Rule names are unique among all rules.** A scenario that owns a rule with the name of a live rule of an
+//!   environment that runs is neither created nor updated.
+//!
 //! # Recordings
 //!
 //! Each environment records on its own, one recording at a time: [`Host::start_recording`] starts one, and
@@ -140,10 +161,6 @@
 //!   see [`EnvironmentConfigurationError::UnsupportedBroker`]. The broker and its task arrive with the crate `broker`.
 //! - **What a process configures.** No workspace setting reaches an environment by itself:
 //!   whoever starts one sets its seed and its other properties in its [`EnvironmentConfiguration`].
-//! - **The live set and scenarios** arrive with their crates.
-//!   Until then the armed rules of an environment are its live set, and no journal has an entry of a scenario or
-//!   of a step.
-//! - **Steps.** No change has the surface `step` until a scenario runs.
 //! - **The control plane** stands in front of the host, in the crate `gaslightmq_control_server`.
 //!
 //! # Errors
@@ -155,7 +172,7 @@
 //! | [`EnvironmentConfiguration::new`] | [`EnvironmentConfigurationError`] | The environment runs a broker. |
 //! | [`Host::start`], [`Host::start_with`] | [`EnvironmentStartError`] | The environment runs already, its listeners meet those of another, or its backend or its proxy did not start. |
 //! | [`Host::stop`], and every question about an environment that runs | [`NotRunningError`] | No environment of that name runs. |
-//! | [`Host::update`] | [`UpdateDefinitionError`] | The change expects another run, an armed live rule would not resolve with it, or the workspace did not take the update. |
+//! | [`Host::update`] | [`UpdateDefinitionError`] | The change expects another run, a scenario would own a rule with the name of a live rule, an armed live rule would not resolve with it, or the workspace did not take the update. |
 //! | [`Host::delete`] | [`DeleteDefinitionError`] | The change expects another run, an armed live rule uses the definition, or the workspace did not take the delete. |
 //! | [`Host::arm`] | [`ArmRuleError`] | The environment does not run, the workspace could not be read or is not valid, the rule does not resolve, it is armed already, or it changed since. |
 //! | [`Host::disarm`] | [`DisarmRuleError`] | The environment does not run, the rule is not armed, or it changed since. |
@@ -170,6 +187,9 @@
 //! | [`Host::save`] | [`SaveError`](gaslightmq_workspace::SaveError) | Someone changed a file that the save would write, or a store could not write. |
 //! | [`Host::keep`] | [`KeepRuleError`] | The environment does not run, it has no live rule of the name, it changed since, a live rule of another environment has the name, or the workspace did not take it. |
 //! | [`Host::send_intent`], [`Host::send_intent_from`] | [`IntentError`] | The environment does not run, the layout does not exist, a store could not read, or the host cannot act on the intent: a hold of a presence that is not open is one such intent. An intent that finds the state it wants changes nothing, and is no error. |
+//! | [`Host::activate_scenario`] | [`ScenarioActivationError`] | The change expects another run, the environment does not run, the scenario does not exist or does not fit the workspace, a store could not read, the scenario of the environment changed since, a scenario is active already, or the backend does not support an incident of it. |
+//! | [`Host::deactivate_scenario`] | [`ScenarioDeactivationError`] | The change expects another run, the environment does not run, its scenario changed since, or no scenario is active. |
+//! | [`Host::step_scenario`] | [`ScenarioStepError`] | The change expects another run, the environment does not run, its scenario changed since, no scenario is active, or it runs no step. |
 //! | [`Host::close_session`] | [`CloseSessionError`] | The environment does not run, or no session is open on the connection. |
 //! | [`Host::follow_calls`] | [`FollowCallsError`] | The environment does not run, the selectors could not be read, or the selector does not resolve. |
 //! | [`CallBacklog::new`] | [`CallBacklogError`] | The backlog is zero, or larger than the largest. |
@@ -204,6 +224,7 @@ mod reloaded;
 mod revisions;
 mod rules;
 mod run;
+mod scenario;
 
 pub use calls::CallSubscription;
 pub use changes::{HostChange, HostChanges, HostChangesError};
@@ -215,12 +236,14 @@ pub use error::{
     ArmRuleError, CloseSessionError, CreateDefinitionError, CreateLiveRuleError, DeleteDefinitionError,
     DeleteLiveRuleError, DisarmRuleError, EnvironmentRulesError, EnvironmentStartError, FireRuleError,
     FollowCallsError, IntentError, KeepRuleError, NotRunningError, ReadSentenceError, RecordingStartError,
-    RecordingStopError, ReloadWorkspaceError, RuleHolder, UpdateDefinitionError, UpdateLiveRuleError,
+    RecordingStopError, ReloadWorkspaceError, RuleHolder, ScenarioActivationError, ScenarioDeactivationError,
+    ScenarioStepError, UpdateDefinitionError, UpdateLiveRuleError,
 };
 pub use host::Host;
 pub use reloaded::{Reloaded, Unsaved};
 pub use rules::{EnvironmentRule, IntentEffect};
 pub use run::{Expects, RunId, RunIdError};
+pub use scenario::EnvironmentScenario;
 
 /// Every item of this crate.
 ///
@@ -245,6 +268,7 @@ pub mod prelude {
         EnvironmentRulesError, EnvironmentStartError, Expects, FireRuleError, FollowCallsError, Host, HostChange,
         HostChanges, HostChangesError, HostConfiguration, IntentEffect, IntentError, KeepRuleError, NotRunningError,
         ReadSentenceError, RecordingStartError, RecordingStopError, ReloadWorkspaceError, Reloaded, RuleHolder, RunId,
-        RunIdError, Unsaved, UpdateDefinitionError, UpdateLiveRuleError,
+        RunIdError, ScenarioActivationError, ScenarioDeactivationError, ScenarioStepError, Unsaved,
+        UpdateDefinitionError, UpdateLiveRuleError,
     };
 }

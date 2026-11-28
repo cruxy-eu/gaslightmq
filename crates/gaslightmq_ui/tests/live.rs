@@ -27,6 +27,9 @@ use gaslightmq_control_api::selector::{Condition, Conditions, SelectorName, Sele
 use gaslightmq_control_api::surface::PresenceId;
 use gaslightmq_ui::{Link, Live, UiConfiguration};
 
+/// The revision that the start of the environment took: the last change of its scenario while none is active.
+const STARTED: Revision = Revision::new(1);
+
 /// The environments of the tests, as the workspace and the control plane describe them.
 /// The revision that the control plane told beside a rule or a definition. Nothing here reads it yet.
 const TOLD: Revision = Revision::new(7);
@@ -61,6 +64,11 @@ impl Workspace {
             },
             rules: Vec::new(),
             sessions: Vec::new(),
+            // No scenario is active, and the start of the environment was the last change of its scenario.
+            scenario: ScenarioStatus {
+                active: None,
+                revision: STARTED,
+            },
             recording: None,
         }
     }

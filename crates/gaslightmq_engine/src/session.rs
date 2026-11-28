@@ -326,9 +326,11 @@ impl<'a, B: Backend, C: WaitableClock> Session<'a, B, C> {
                     ending.get_or_insert(Ending::Closed);
                 }
                 Output::Emit { record, frames } => {
-                    self.of.events.publish_call(Arc::from(record), frames);
-                    // The call may have spent the last match or the last firing of a rule.
-                    self.of.rules.disarm_ended(self.of.clock.now());
+                    let record: Arc<_> = Arc::from(record);
+                    // The call may have ended the step of the scenario, or spent the last match or the last firing
+                    // of a rule. The next call of this session finds the rules that follow from it.
+                    self.of.rules.call_recorded(&record, self.of.clock.now());
+                    self.of.events.publish_call(record, frames);
                 }
                 Output::Fire(incident) => self.of.events.publish(EngineEvent::IncidentFired(incident)),
             }

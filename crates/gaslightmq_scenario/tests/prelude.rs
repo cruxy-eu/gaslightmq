@@ -31,7 +31,8 @@ mod next_to_the_others {
     use std::sync::*;
     use std::time::*;
 
-    use gaslightmq_clock::TimeSpan;
+    use gaslightmq_call::prelude::*;
+    use gaslightmq_clock::{Instant, TimeSpan};
     use gaslightmq_definition_api::prelude::*;
     use gaslightmq_field::prelude::*;
     use gaslightmq_incident::prelude::*;
@@ -66,6 +67,18 @@ mod next_to_the_others {
         let scenario: Scenario = Scenario::new(scenario_name.clone(), mode.clone(), Seed::new(7), [rule.clone()])
             .unwrap()
             .with_title(scenario_title.clone());
+        let background = Rule::new(rule.name().clone(), Conditions::new(), LieDefinition::Silence);
+        let workspace = RuleSet::new([background]).unwrap();
+        let resolved: ResolvedScenario = scenario
+            .resolve(&workspace, &SelectorSet::default(), &PresetSet::default())
+            .unwrap();
+        let resolved_step: &ResolvedStep = &resolved.steps()[0];
+        let resolved_until: Option<&ResolvedUntil> = resolved_step.until();
+        let mut run: ScenarioRun = ScenarioRun::start(resolved.clone(), Instant::ZERO, 0);
+        let position: ScenarioPosition = run.position();
+        // The step ends after a time, so it hands out no budget of firings.
+        let budget: Option<StepBudget> = run.step_budget();
+        let advanced: StepAdvance = run.advance(Instant::ZERO, 0).unwrap();
 
         vec![
             scenario_name.to_string(),
@@ -77,6 +90,11 @@ mod next_to_the_others {
             step.name().to_string(),
             mode.name().to_owned(),
             scenario.name().to_string(),
+            resolved.name().to_string(),
+            format!("{resolved_until:?}"),
+            format!("{position:?}"),
+            advanced.ended.to_string(),
+            format!("{budget:?}"),
         ]
     }
 
@@ -121,7 +139,12 @@ mod next_to_the_others {
                 step: step.clone(),
                 rule: rule.clone(),
             }),
-            message_of(ScenarioError::EndsOnUnarmedRule { scenario, step, rule }),
+            message_of(ScenarioError::EndsOnUnarmedRule {
+                scenario: scenario.clone(),
+                step,
+                rule: rule.clone(),
+            }),
+            message_of(ResolveScenarioError::MissingRule { scenario, rule }),
         ]
     }
 }
@@ -130,7 +153,7 @@ mod next_to_the_others {
 fn the_prelude_names_every_item_next_to_the_other_preludes() {
     let items = next_to_the_others::every_item();
 
-    assert_eq!(items.len(), 9);
+    assert_eq!(items.len(), 14);
     assert!(items.iter().all(|item| !item.is_empty()));
 }
 
@@ -151,6 +174,7 @@ fn the_prelude_names_the_error_of_every_type() {
              which the scenario keeps armed for the whole run",
             "step \"leader-churn\" of scenario \"churn\" ends on the firings of rule \"refuse-with-not-leader\", \
              which is not armed during the step",
+            "scenario \"churn\" names rule \"refuse-with-not-leader\", which the workspace does not have",
         ]
     );
 }

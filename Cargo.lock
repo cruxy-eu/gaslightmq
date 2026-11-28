@@ -1634,6 +1634,7 @@ dependencies = [
  "gaslightmq_recording",
  "gaslightmq_recording_conformance",
  "gaslightmq_rule",
+ "gaslightmq_scenario",
  "gaslightmq_selector",
  "gaslightmq_session",
  "gaslightmq_test_kafka",
@@ -2045,6 +2046,7 @@ dependencies = [
 name = "gaslightmq_scenario"
 version = "0.1.0"
 dependencies = [
+ "gaslightmq_call",
  "gaslightmq_clock",
  "gaslightmq_definition_api",
  "gaslightmq_definition_memory",

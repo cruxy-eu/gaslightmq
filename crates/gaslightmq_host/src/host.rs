@@ -23,6 +23,7 @@ use gaslightmq_quick_inject::{KnownNames, QuickInject, Sentence};
 use gaslightmq_recording::UtcInstant;
 use gaslightmq_recording_segments::{MemoryBacking, SegmentConfiguration, SegmentStorage};
 use gaslightmq_rule::{HandFiring, Preset, PresetSet, ResolvedRule, Rule, RuleError, RuleName, Snapshot};
+use gaslightmq_scenario::Scenario;
 use gaslightmq_selector::{Selector, SelectorRef, SelectorSet};
 use gaslightmq_surface::{EncoderMapping, PresenceId};
 use gaslightmq_traffic::{Statistics, Traffic, TrafficConfiguration};
@@ -35,12 +36,13 @@ use tokio::task::JoinHandle;
 use self::follow::Unfollowed;
 use crate::calls::{Watched, lock};
 use crate::holds::Holds;
+use crate::journaling::Uncounted;
 use crate::revisions::RuleRevisions;
 use crate::{
     ArmRuleError, CallBacklog, CallSubscription, CloseSessionError, CreateDefinitionError, DeleteDefinitionError,
     DisarmRuleError, EnvironmentConfiguration, EnvironmentStartError, Expects, FireRuleError, FollowCallsError,
-    HostChange, HostChanges, HostConfiguration, NotRunningError, ReadSentenceError, RunId, UpdateDefinitionError,
-    journaling,
+    HostChange, HostChanges, HostConfiguration, NotRunningError, ReadSentenceError, RuleHolder, RunId,
+    UpdateDefinitionError, journaling,
 };
 
 mod follow;
@@ -48,6 +50,7 @@ mod live;
 mod pads;
 mod recordings;
 mod reload;
+mod scenarios;
 mod watch;
 
 /// One process with several environments: it runs the proxy of each, and shares the workspace between them.
@@ -218,6 +221,8 @@ struct Running {
     recording: RecordingMode,
     /// The instant the last recording of the environment started, so that the next one has another ID.
     last_recording: Option<UtcInstant>,
+    /// The scenario that is active, as it was defined when someone activated it.
+    scenario: Option<Scenario>,
 }
 
 impl Running {
@@ -310,7 +315,8 @@ impl<C: WorkspaceContext> Host<C> {
     /// # Errors
     ///
     /// - [`CreateDefinitionError::NameTaken`] when the definition is a rule, and a live rule of an environment that
-    ///   runs or a rule that a scenario owns has its name.
+    ///   runs or a rule that a scenario owns has its name, or when it is a scenario that owns a rule with the name
+    ///   of a live rule of an environment that runs.
     /// - [`CreateDefinitionError::NotCreated`] with the [`CreateError`](gaslightmq_workspace::CreateError) of the workspace.
     pub async fn create<D: WorkspaceDefinition>(
         &self,
@@ -329,6 +335,14 @@ impl<C: WorkspaceContext> Host<C> {
                     rule: rule.clone(),
                     holder,
                 });
+            }
+            if let DefinitionName::Scenario(_) = &name {
+                let after = workspace.check_create(definition.clone()).await;
+                let after = after.map_err(|error| CreateDefinitionError::NotCreated { error })?;
+                if let Some((rule, environment)) = self.owned_rule_of_a_live_name(after.definitions::<Scenario>()) {
+                    let holder = RuleHolder::Environment(environment);
+                    return Err(CreateDefinitionError::NameTaken { rule, holder });
+                }
             }
             let created = workspace.create(definition).await;
             let revision = created.map_err(|error| CreateDefinitionError::NotCreated { error })?;
@@ -359,6 +373,8 @@ impl<C: WorkspaceContext> Host<C> {
     /// - [`UpdateDefinitionError::NotUpdated`] with the [`UpdateError`](gaslightmq_workspace::UpdateError) of the
     ///   workspace, which is [`Changed`](gaslightmq_workspace::UpdateError::Changed) when the definition has
     ///   another revision than the change expects.
+    /// - [`UpdateDefinitionError::NameTaken`] when the definition is a scenario that owns a rule with the name of a
+    ///   live rule of an environment that runs.
     /// - [`UpdateDefinitionError::Unresolved`] when a live rule that is armed would not resolve with the change.
     ///
     /// The errors come in that order: a change that expects what is no more is refused for that, whatever else is
@@ -381,6 +397,10 @@ impl<C: WorkspaceContext> Host<C> {
             // The workspace checks the update first, so a stale one is refused for being stale.
             let checked = workspace.check_update(definition.clone(), expects).await;
             let after = checked.map_err(|error| UpdateDefinitionError::NotUpdated { error })?;
+            if let Some((rule, environment)) = self.owned_rule_of_a_live_name(after.definitions::<Scenario>()) {
+                let holder = RuleHolder::Environment(environment);
+                return Err(UpdateDefinitionError::NameTaken { rule, holder });
+            }
             let followings = self.followings(
                 after.definitions::<Rule>(),
                 &BTreeSet::new(),
@@ -602,6 +622,7 @@ impl<C: WorkspaceContext> Host<C> {
                 watching,
                 recording,
                 last_recording: None,
+                scenario: None,
             },
         );
         self.publish(HostChange::EnvironmentStarted { environment: name });
@@ -1196,13 +1217,23 @@ impl<C: WorkspaceContext> Host<C> {
             };
             caught_up(running, change)
         };
-        for rule in uncounted {
+        self.publish_uncounted(environment, uncounted);
+        changed
+    }
+
+    /// Tells whoever follows the host what a look at the armed rules of an environment counted.
+    fn publish_uncounted(&self, environment: &EnvironmentName, uncounted: Uncounted) {
+        if uncounted.scenario {
+            self.publish(HostChange::ScenarioChanged {
+                environment: environment.clone(),
+            });
+        }
+        for rule in uncounted.rules {
             self.publish(HostChange::RuleChanged {
                 environment: environment.clone(),
                 rule,
             });
         }
-        changed
     }
 
     /// Records a change of a definition of the workspace in the journal of every environment that runs,
@@ -1211,6 +1242,18 @@ impl<C: WorkspaceContext> Host<C> {
         for running in self.environments().values() {
             running.record(change.clone(), from, revision);
         }
+    }
+
+    /// The first rule that one of `scenarios` owns and that has the name of a live rule of an environment that runs,
+    /// with that environment. Rule names are unique among all rules, so no scenario owns such a rule.
+    fn owned_rule_of_a_live_name<'a>(
+        &self,
+        scenarios: impl Iterator<Item = &'a Scenario>,
+    ) -> Option<(RuleName, EnvironmentName)> {
+        scenarios.flat_map(Scenario::owned_rules).find_map(|rule| {
+            let environment = self.live_rule_of_another(rule.name(), None)?;
+            Some((rule.name().clone(), environment))
+        })
     }
 
     /// Tells whoever follows the host. A change that nobody follows is gone.
@@ -1271,17 +1314,14 @@ impl<C: WorkspaceContext> Host<C> {
 
 /// Runs `change` on an environment and the revisions of its rules, which are caught up with the armed rules first.
 ///
-/// Returns what `change` returns, and the rules that the look counted: those that disarmed since the last
-/// look without anyone counting it, because their lifetime ended. The look records each in the journal of the
-/// environment, and whoever calls this tells the followers of the host of them.
-fn caught_up<T>(
-    running: &mut Running,
-    change: impl FnOnce(&mut Running, &mut RuleRevisions) -> T,
-) -> (T, Vec<RuleName>) {
+/// Returns what `change` returns, and what the look counted: the steps that the scenario took by itself since the
+/// last look, and the rules that they armed and disarmed, or that disarmed because their lifetime ended. The look
+/// records each in the journal of the environment, and whoever calls this tells the followers of the host of them.
+fn caught_up<T>(running: &mut Running, change: impl FnOnce(&mut Running, &mut RuleRevisions) -> T) -> (T, Uncounted) {
     let revisions = Arc::clone(&running.revisions);
     let mut revisions = crate::revisions::lock(&revisions);
-    let armed_now = running.engine.rules().snapshot();
-    let uncounted = journaling::catch_up(&mut revisions, &armed_now, running.engine.journal());
+    let taken = running.engine.rules().take_steps();
+    let uncounted = journaling::catch_up(&mut revisions, &taken, running.engine.journal());
     (change(running, &mut revisions), uncounted)
 }
 

@@ -240,9 +240,36 @@ fn a_change_names_itself_in_its_change_key() {
 }
 
 #[test]
+fn a_change_of_a_scenario_names_the_scenario_and_the_step_that_runs() {
+    let scenario: RecordedName = "leader-election".parse().unwrap();
+    let warm_up: RecordedName = "warm-up".parse().unwrap();
+
+    writes(
+        &Change::ScenarioActivated {
+            scenario: scenario.clone(),
+            step: Some(warm_up.clone()),
+        },
+        r#"{"change":"scenario-activated","scenario":"leader-election","step":"warm-up"}"#,
+    );
+    writes(
+        &Change::StepAdvanced {
+            scenario: scenario.clone(),
+            step: Some(warm_up),
+        },
+        r#"{"change":"step-advanced","scenario":"leader-election","step":"warm-up"}"#,
+    );
+    // A Chain runs no step, and neither does a Sequence after its last one.
+    writes(
+        &Change::ScenarioDeactivated { scenario, step: None },
+        r#"{"change":"scenario-deactivated","scenario":"leader-election"}"#,
+    );
+}
+
+#[test]
 fn reading_a_change_rejects_what_it_does_not_know() {
+    // No change renames a rule: a definition keeps its name for good.
     rejects::<Change>(
-        r#"{"change":"step-advanced","scenario":"black-friday"}"#,
+        r#"{"change":"rule-renamed","rule":"slow-order-producers"}"#,
         "unknown variant",
     );
     rejects::<Change>(

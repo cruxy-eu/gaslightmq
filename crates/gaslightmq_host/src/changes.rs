@@ -23,6 +23,7 @@ use tokio::sync::broadcast::error::RecvError;
 /// | [`DefinitionChanged`](Self::DefinitionChanged), [`DefinitionDeleted`](Self::DefinitionDeleted) | Someone changed a definition through the host. |
 /// | [`RuleChanged`](Self::RuleChanged) | A rule of an environment armed or disarmed, by a command, a pad, a firing that spent its budget or a lifetime that ended, or a live rule was made or changed. |
 /// | [`RuleRemoved`](Self::RuleRemoved) | A live rule left its environment: someone deleted or kept it. |
+/// | [`ScenarioChanged`](Self::ScenarioChanged) | Someone activated or deactivated the scenario of an environment, or it advanced a step, by itself or because someone advanced it. |
 /// | [`Session`](Self::Session) | A session of an environment opened, said who its client is, or closed. |
 /// | [`Journaled`](Self::Journaled) | The journal of an environment got an entry: something changed there, or a definition of the workspace changed. |
 /// | [`RecordingStarted`](Self::RecordingStarted), [`RecordingStopped`](Self::RecordingStopped) | A recording of an environment began, or ended, and why it ended when nobody stopped it. |
@@ -48,6 +49,8 @@ pub enum HostChange {
         environment: EnvironmentName,
         rule: RuleName,
     },
+    /// The scenario of the environment changed: someone activated or deactivated it, or it advanced a step.
+    ScenarioChanged { environment: EnvironmentName },
     /// Something happened to a session of the environment.
     Session {
         environment: EnvironmentName,

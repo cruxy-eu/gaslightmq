@@ -13,6 +13,8 @@
 //! | [`StepName`], [`StepTitle`] | The identity of a step within its scenario, and the free text that says what happens in it. |
 //! | [`Until`] | The condition that ends a step: a number of calls, a number of firings, or a time. |
 //! | [`ScenarioStore`] | What keeps the scenarios: the store contract, and which scenarios name a rule, a selector or a preset. |
+//! | [`ResolvedScenario`], [`ResolvedStep`], [`ResolvedUntil`] | A scenario as an environment runs it: its rules and the rules and conditions of its steps, resolved against the workspace. |
+//! | [`ScenarioRun`], [`ScenarioPosition`], [`StepAdvance`], [`StepBudget`] | A scenario that runs: the step where it stands, what ends that step, and the order in which its rules win a conflict. |
 //!
 //! The [`prelude`] holds all of them, and the error of each.
 //!
@@ -54,6 +56,7 @@
 //! | [`ScenarioName`], [`StepName`] | [`ScenarioNameError`], [`StepNameError`] | The text breaks a part of the [rule for names](ScenarioName#the-rule-for-names). |
 //! | [`ScenarioTitle`], [`StepTitle`] | [`ScenarioTitleError`], [`StepTitleError`] | The text breaks a part of the [rule for titles](ScenarioTitle#the-rule-for-titles). |
 //! | [`Scenario`] | [`ScenarioError`] | A rule or a step stands in it twice, a Sequence has no step, or a step arms or ends on a rule it cannot. |
+//! | [`Scenario::resolve`] | [`ResolveScenarioError`] | A rule that the scenario names is not in the workspace, a rule does not resolve, or the selector of a condition does not. |
 //!
 //! A [`Step`], a [`Mode`] and an [`Until`] check nothing on their own: the scenario they are part of checks them.
 //! The message of an error is complete, so no error has a [`source`](std::error::Error::source).
@@ -66,7 +69,7 @@
 //! | A scenario holds each rule and each step once, a Sequence has a step, and a step arms and ends on rules it can. | [`Scenario::new`] |
 //! | The rules, the selectors and the presets that a scenario names exist, and the rules it owns can fire. | Whoever holds the whole workspace. |
 //! | No rule that a scenario owns has the name of another rule, of the workspace or of another scenario. | Whoever holds the whole workspace. |
-//! | The backend of an environment can apply or emulate the incidents of the rules. | That backend, when someone activates the scenario there. |
+//! | The backend of an environment can apply or emulate the incidents of the rules. | That backend, when someone activates the scenario there: [`ResolvedScenario::requirements`] says what it needs. |
 //!
 //! # A store
 //!
@@ -117,15 +120,23 @@
 //! Reading rejects a key it does not know, and steps in a scenario that is no Sequence.
 //! [`Mode`] has no form of its own: the key `mode` writes its word, and the key `steps` the steps of a Sequence.
 //!
+//! # The run
+//!
+//! A [`ScenarioRun`] is the step machine of a scenario, without IO: it takes the calls of the environment and the
+//! time, and says when a step ends and which rules the scenario keeps armed, in the order in which they win a
+//! conflict. Whoever holds the armed rules of an environment drives it, and arms and disarms what it says.
+//!
 //! # No IO
 //!
-//! The crate depends on the rules and on the vocabulary of selectors and triggers, and on `gaslightmq_clock` for
-//! the time that ends a step.
+//! The crate depends on the rules and on the vocabulary of selectors, triggers, calls and incidents, and on
+//! `gaslightmq_clock` for the time that ends a step.
 //! It has no IO, no system clock and no global randomness, and it compiles to WebAssembly.
 //! Its only async code is in [`ScenarioStore`]: the trait awaits the store it is handed, and nothing else.
 
 mod mode;
 mod name;
+mod resolved;
+mod run;
 mod scenario;
 #[cfg(feature = "serde")]
 mod serde;
@@ -137,6 +148,8 @@ pub use name::{
     ScenarioName, ScenarioNameError, ScenarioTitle, ScenarioTitleError, StepName, StepNameError, StepTitle,
     StepTitleError,
 };
+pub use resolved::{ResolveScenarioError, ResolvedScenario, ResolvedStep, ResolvedUntil};
+pub use run::{ScenarioPosition, ScenarioRun, StepAdvance, StepBudget};
 pub use scenario::{Scenario, ScenarioError, ScenarioRule};
 pub use step::{Step, Until};
 pub use store::ScenarioStore;
@@ -157,7 +170,8 @@ pub use store::ScenarioStore;
 pub mod prelude {
     #[doc(no_inline)]
     pub use crate::{
-        Mode, Scenario, ScenarioError, ScenarioName, ScenarioNameError, ScenarioRule, ScenarioStore, ScenarioTitle,
-        ScenarioTitleError, Step, StepName, StepNameError, StepTitle, StepTitleError, Until,
+        Mode, ResolveScenarioError, ResolvedScenario, ResolvedStep, ResolvedUntil, Scenario, ScenarioError,
+        ScenarioName, ScenarioNameError, ScenarioPosition, ScenarioRule, ScenarioRun, ScenarioStore, ScenarioTitle,
+        ScenarioTitleError, Step, StepAdvance, StepBudget, StepName, StepNameError, StepTitle, StepTitleError, Until,
     };
 }

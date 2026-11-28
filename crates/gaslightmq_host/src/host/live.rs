@@ -28,7 +28,8 @@ pub(super) enum LiveRuleChange {
 
 impl<C: WorkspaceContext> Host<C> {
     /// The rules of an environment, each with its state and its revision there: the rules of the workspace in the
-    /// order of their names, and then the live rules of the environment in the order of theirs.
+    /// order of their names, then the live rules of the environment in the order of theirs, and then the rules that
+    /// the active scenario owns, in its order.
     ///
     /// # Errors
     ///
@@ -67,7 +68,18 @@ impl<C: WorkspaceContext> Host<C> {
                 rule: rule.clone(),
                 live: true,
             });
-            Ok(of_the_workspace.chain(live).collect())
+            // A rule that the active scenario owns is a rule of the environment while the scenario runs there.
+            let owned = running.scenario.iter().flat_map(|scenario| {
+                let defined = workspace.revision(scenario.name().clone());
+                scenario.owned_rules().map(move |rule| (rule, defined))
+            });
+            let owned = owned.map(|(rule, defined)| EnvironmentRule {
+                state: state(rule.name()),
+                revision: revisions.of(rule.name()).max(defined),
+                rule: rule.clone(),
+                live: false,
+            });
+            Ok(of_the_workspace.chain(live).chain(owned).collect())
         })
     }
 

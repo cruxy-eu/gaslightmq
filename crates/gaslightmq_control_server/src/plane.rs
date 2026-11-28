@@ -5,9 +5,11 @@ use std::sync::Arc;
 
 use gaslightmq_control_api::environment::{Environment, EnvironmentName, ListenAddress};
 use gaslightmq_control_api::field::ConnectionNumber;
+use gaslightmq_control_api::incident::Requirement;
 use gaslightmq_control_api::journal::{ChangeSource, JournalEntry, JournalEntryId, RecordingId};
 use gaslightmq_control_api::prelude::*;
 use gaslightmq_control_api::rule::{Preset, Rule, RuleName};
+use gaslightmq_control_api::scenario::Scenario;
 use gaslightmq_control_api::selector::Selector;
 use gaslightmq_control_api::surface::{Intent, PadLayout, PresenceId};
 use gaslightmq_definition_api::WriteBack as StoreWriteBack;
@@ -98,6 +100,10 @@ impl<C: WorkspaceContext + 'static> ControlPlane<C> {
     /// The request says where it comes from. Its surface and its cause go to the host with every change,
     /// which records them in the journal of the environment. The presence of its sender goes to the host with an
     /// intent, so a hold ends with the presence.
+    #[expect(
+        clippy::too_many_lines,
+        reason = "one arm for each operation of the control plane, each a line or three"
+    )]
     pub(crate) async fn answer(&self, request: OperationRequest) -> Reply {
         let OperationRequest { from, operation } = request;
         let presence = from.presence;
@@ -132,6 +138,17 @@ impl<C: WorkspaceContext + 'static> ControlPlane<C> {
             }
             AnyOperation::UpdateRule(update) => Reply::of::<UpdateDefinition<Rule>>(self.update(update, from).await),
             AnyOperation::DeleteRule(delete) => Reply::of::<DeleteDefinition<Rule>>(self.delete(delete, from).await),
+            AnyOperation::ListScenarios(_) => Reply::of::<ListDefinitions<Scenario>>(self.list().await),
+            AnyOperation::GetScenario(get) => Reply::of::<GetDefinition<Scenario>>(self.get(get.name).await),
+            AnyOperation::CreateScenario(create) => {
+                Reply::of::<CreateDefinition<Scenario>>(self.create(create.definition, from).await)
+            }
+            AnyOperation::UpdateScenario(update) => {
+                Reply::of::<UpdateDefinition<Scenario>>(self.update(update, from).await)
+            }
+            AnyOperation::DeleteScenario(delete) => {
+                Reply::of::<DeleteDefinition<Scenario>>(self.delete(delete, from).await)
+            }
             AnyOperation::ListLayouts(_) => Reply::of::<ListDefinitions<PadLayout>>(self.list().await),
             AnyOperation::GetLayout(get) => Reply::of::<GetDefinition<PadLayout>>(self.get(get.name).await),
             AnyOperation::CreateLayout(create) => {
@@ -164,6 +181,13 @@ impl<C: WorkspaceContext + 'static> ControlPlane<C> {
             AnyOperation::ArmRule(arm) => Reply::of::<ArmRule>(self.arm(arm, from).await),
             AnyOperation::DisarmRule(disarm) => Reply::of::<DisarmRule>(self.disarm(disarm, from).await),
             AnyOperation::FireRule(fire) => Reply::of::<FireRule>(self.fire(fire.environment, fire.rule, from).await),
+            AnyOperation::ActivateScenario(activate) => {
+                Reply::of::<ActivateScenario>(self.activate_scenario(activate, from).await)
+            }
+            AnyOperation::DeactivateScenario(deactivate) => {
+                Reply::of::<DeactivateScenario>(self.deactivate_scenario(deactivate, from))
+            }
+            AnyOperation::StepScenario(step) => Reply::of::<StepScenario>(self.step_scenario(step, from)),
             AnyOperation::SendIntent(send) => {
                 Reply::of::<SendIntent>(self.intent(presence, send.environment, &send.intent, from).await)
             }
@@ -585,6 +609,110 @@ impl<C: WorkspaceContext + 'static> ControlPlane<C> {
             .then_some(of_the_process)
     }
 
+    // The scenario of an environment
+
+    async fn activate_scenario(
+        &self,
+        activate: ActivateScenario,
+        from: ChangeSource,
+    ) -> Result<Revised, ActivateScenarioError> {
+        use gaslightmq_host::ScenarioActivationError as Host;
+        let ActivateScenario {
+            environment,
+            scenario,
+            expects,
+        } = activate;
+        if let Some(run) = self.other_run(expects) {
+            return Err(ActivateScenarioError::OtherRun { run });
+        }
+        let activated = self
+            .host
+            .activate_scenario(&environment, &scenario, expected(expects), from)
+            .await;
+        activated.map(revised).map_err(|error| match error {
+            Host::OtherRun { run: of_the_host } => ActivateScenarioError::OtherRun { run: run(of_the_host) },
+            Host::NotRunning { environment } => ActivateScenarioError::NotRunning { environment },
+            Host::NotFound { scenario } => ActivateScenarioError::NotFound { scenario },
+            Host::StoreFailed { scenario, reason } => ActivateScenarioError::StoreFailed { scenario, reason },
+            Host::DoesNotFit { scenario, reason } => ActivateScenarioError::DoesNotFit { scenario, reason },
+            Host::Changed {
+                environment,
+                revision: now,
+            } => ActivateScenarioError::Changed {
+                environment,
+                revision: revision(now),
+            },
+            Host::AlreadyActive { environment, scenario } => {
+                ActivateScenarioError::AlreadyActive { environment, scenario }
+            }
+            Host::Unsupported {
+                environment,
+                scenario,
+                error,
+            } => ActivateScenarioError::Unsupported {
+                environment,
+                scenario,
+                incidents: error.incidents().iter().map(Requirement::kind).collect(),
+            },
+        })
+    }
+
+    fn deactivate_scenario(
+        &self,
+        deactivate: DeactivateScenario,
+        from: ChangeSource,
+    ) -> Result<Revised, DeactivateScenarioError> {
+        use gaslightmq_host::ScenarioDeactivationError as Host;
+        let DeactivateScenario { environment, expects } = deactivate;
+        if let Some(run) = self.other_run(expects) {
+            return Err(DeactivateScenarioError::OtherRun { run });
+        }
+        let deactivated = self.host.deactivate_scenario(&environment, expected(expects), from);
+        deactivated.map(revised).map_err(|error| match error {
+            Host::OtherRun { run: of_the_host } => DeactivateScenarioError::OtherRun { run: run(of_the_host) },
+            Host::NotRunning { environment } => DeactivateScenarioError::NotRunning { environment },
+            Host::Changed {
+                environment,
+                revision: now,
+            } => DeactivateScenarioError::Changed {
+                environment,
+                revision: revision(now),
+            },
+            Host::NotActive { environment } => DeactivateScenarioError::NotActive { environment },
+        })
+    }
+
+    fn step_scenario(&self, step: StepScenario, from: ChangeSource) -> Result<Revised, StepScenarioError> {
+        use gaslightmq_host::ScenarioStepError as Host;
+        let StepScenario { environment, expects } = step;
+        if let Some(run) = self.other_run(expects) {
+            return Err(StepScenarioError::OtherRun { run });
+        }
+        let stepped = self.host.step_scenario(&environment, expected(expects), from);
+        stepped.map(revised).map_err(|error| match error {
+            Host::OtherRun { run: of_the_host } => StepScenarioError::OtherRun { run: run(of_the_host) },
+            Host::NotRunning { environment } => StepScenarioError::NotRunning { environment },
+            Host::Changed {
+                environment,
+                revision: now,
+            } => StepScenarioError::Changed {
+                environment,
+                revision: revision(now),
+            },
+            Host::NotActive { environment } => StepScenarioError::NotActive { environment },
+            Host::NoStep { environment, scenario } => StepScenarioError::NoStep { environment, scenario },
+        })
+    }
+
+    /// The scenario of an environment as the live stream tells it, or `None` once the environment stopped.
+    pub(crate) fn scenario_status(&self, environment: &EnvironmentName) -> Option<ScenarioStatus> {
+        let scenario = self.host.scenario_of(environment).ok()?;
+        Some(ScenarioStatus {
+            active: scenario.active,
+            revision: revision(scenario.revision),
+        })
+    }
+
     async fn arm(&self, arm: ArmRule, from: ChangeSource) -> Result<Revised, RuleCommandError> {
         let ArmRule {
             environment,
@@ -856,9 +984,12 @@ impl<C: WorkspaceContext + 'static> ControlPlane<C> {
             Err(EnvironmentRulesError::NotRunning { .. }) => return Ok(None),
             Err(EnvironmentRulesError::StoreFailed { reason, .. }) => return Err(reason),
         };
-        let (Ok(backend), Ok(sessions), Ok(recording)) =
-            (self.backend(name), self.host.sessions(name), self.host.recording(name))
-        else {
+        let (Ok(backend), Ok(sessions), Ok(recording), Some(scenario)) = (
+            self.backend(name),
+            self.host.sessions(name),
+            self.host.recording(name),
+            self.scenario_status(name),
+        ) else {
             return Ok(None);
         };
         Ok(Some(RunningEnvironment {
@@ -866,6 +997,7 @@ impl<C: WorkspaceContext + 'static> ControlPlane<C> {
             backend,
             rules: rules.into_iter().map(status).collect(),
             sessions: sessions.iter().map(session_status).collect(),
+            scenario,
             recording,
         }))
     }

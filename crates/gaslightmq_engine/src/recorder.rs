@@ -12,8 +12,8 @@ use gaslightmq_environment::RecordingMode;
 use gaslightmq_journal::{Change, ChangeSource, JournalEntry, RecordedName, RecordingStopCause};
 use gaslightmq_pipeline as pipeline;
 use gaslightmq_recording::{
-    CallFrames, Closer, Description, End, Ending, Entry, RecordedBackend, RecordedSessionEvent, RecordingId,
-    SessionChange, StartError, UtcInstant,
+    ActiveScenario, CallFrames, Closer, Description, End, Ending, Entry, RecordedBackend, RecordedSessionEvent,
+    RecordingId, SessionChange, StartError, UtcInstant,
 };
 use gaslightmq_session::{CallIds, ClosedBy};
 use tokio::sync::{mpsc, oneshot};
@@ -177,6 +177,10 @@ impl Recorder {
             return Err(StartRecordingError::AlreadyRecording { recording });
         }
         let armed = self.rules.snapshot();
+        let scenario = self.rules.scenario().map(|position| ActiveScenario {
+            scenario: recorded(position.scenario.as_str()),
+            step: position.step.map(|step| recorded(step.as_str())),
+        });
         let RecordingStart {
             environment,
             started,
@@ -193,8 +197,7 @@ impl Recorder {
             backend,
             written_by: env!("CARGO_PKG_VERSION").to_owned(),
             armed: armed.iter().map(|rule| recorded(rule.name().as_str())).collect(),
-            // No scenario runs yet.
-            scenario: None,
+            scenario,
             journal_after,
         };
         let recording = description.id();

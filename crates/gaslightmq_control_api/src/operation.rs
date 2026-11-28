@@ -3,17 +3,18 @@
 use std::fmt::Debug;
 
 use gaslightmq_rule::{Preset, Rule};
+use gaslightmq_scenario::Scenario;
 use gaslightmq_selector::Selector;
 use gaslightmq_surface::PadLayout;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    ArmRule, CheckHealth, CloseSession, CreateDefinition, CreateLiveRule, DeleteDefinition, DeleteLiveRule, DisarmRule,
-    FireRule, GetBackend, GetDefinition, GetEnvironment, KeepRule, ListDefinitions, ListEnvironmentRules,
-    ListEnvironments, ListRecordings, ListSessions, OpenRecording, ParseSentence, QueryJournal, ReloadWorkspace,
-    SaveWorkspace, SendIntent, StartEnvironment, StartRecording, StopEnvironment, StopRecording, UpdateDefinition,
-    UpdateLiveRule,
+    ActivateScenario, ArmRule, CheckHealth, CloseSession, CreateDefinition, CreateLiveRule, DeactivateScenario,
+    DeleteDefinition, DeleteLiveRule, DisarmRule, FireRule, GetBackend, GetDefinition, GetEnvironment, KeepRule,
+    ListDefinitions, ListEnvironmentRules, ListEnvironments, ListRecordings, ListSessions, OpenRecording,
+    ParseSentence, QueryJournal, ReloadWorkspace, SaveWorkspace, SendIntent, StartEnvironment, StartRecording,
+    StepScenario, StopEnvironment, StopRecording, UpdateDefinition, UpdateLiveRule,
 };
 
 /// One thing that a client asks of the control plane, with what it gets back.
@@ -88,6 +89,16 @@ pub enum AnyOperation {
     UpdateRule(UpdateDefinition<Rule>),
     /// [Delete a rule of the workspace](DeleteDefinition).
     DeleteRule(DeleteDefinition<Rule>),
+    /// [List the scenarios](ListDefinitions).
+    ListScenarios(ListDefinitions<Scenario>),
+    /// [Get a scenario](GetDefinition).
+    GetScenario(GetDefinition<Scenario>),
+    /// [Create a scenario](CreateDefinition).
+    CreateScenario(CreateDefinition<Scenario>),
+    /// [Update a scenario](UpdateDefinition).
+    UpdateScenario(UpdateDefinition<Scenario>),
+    /// [Delete a scenario](DeleteDefinition).
+    DeleteScenario(DeleteDefinition<Scenario>),
     /// [List the pad layouts](ListDefinitions).
     ListLayouts(ListDefinitions<PadLayout>),
     /// [Get a pad layout](GetDefinition).
@@ -124,6 +135,12 @@ pub enum AnyOperation {
     DisarmRule(DisarmRule),
     /// [Fire a rule by hand](FireRule).
     FireRule(FireRule),
+    /// [Activate a scenario in an environment](ActivateScenario).
+    ActivateScenario(ActivateScenario),
+    /// [Deactivate the scenario of an environment](DeactivateScenario).
+    DeactivateScenario(DeactivateScenario),
+    /// [Advance the scenario of an environment to its next step](StepScenario).
+    StepScenario(StepScenario),
     /// [Send what someone did at a pad](SendIntent).
     SendIntent(SendIntent),
     /// [List the open sessions](ListSessions).
@@ -176,6 +193,11 @@ impl AnyOperation {
             AnyOperation::CreateRule(_) => "create-rule",
             AnyOperation::UpdateRule(_) => "update-rule",
             AnyOperation::DeleteRule(_) => "delete-rule",
+            AnyOperation::ListScenarios(_) => "list-scenarios",
+            AnyOperation::GetScenario(_) => "get-scenario",
+            AnyOperation::CreateScenario(_) => "create-scenario",
+            AnyOperation::UpdateScenario(_) => "update-scenario",
+            AnyOperation::DeleteScenario(_) => "delete-scenario",
             AnyOperation::ListLayouts(_) => "list-layouts",
             AnyOperation::GetLayout(_) => "get-layout",
             AnyOperation::CreateLayout(_) => "create-layout",
@@ -194,6 +216,9 @@ impl AnyOperation {
             AnyOperation::ArmRule(_) => "arm-rule",
             AnyOperation::DisarmRule(_) => "disarm-rule",
             AnyOperation::FireRule(_) => "fire-rule",
+            AnyOperation::ActivateScenario(_) => "activate-scenario",
+            AnyOperation::DeactivateScenario(_) => "deactivate-scenario",
+            AnyOperation::StepScenario(_) => "step-scenario",
             AnyOperation::SendIntent(_) => "send-intent",
             AnyOperation::ListSessions(_) => "list-sessions",
             AnyOperation::CloseSession(_) => "close-session",
@@ -267,6 +292,11 @@ requests! {
     CreateDefinition<Rule> => CreateRule;
     UpdateDefinition<Rule> => UpdateRule;
     DeleteDefinition<Rule> => DeleteRule;
+    ListDefinitions<Scenario> => ListScenarios;
+    GetDefinition<Scenario> => GetScenario;
+    CreateDefinition<Scenario> => CreateScenario;
+    UpdateDefinition<Scenario> => UpdateScenario;
+    DeleteDefinition<Scenario> => DeleteScenario;
     ListDefinitions<PadLayout> => ListLayouts;
     GetDefinition<PadLayout> => GetLayout;
     CreateDefinition<PadLayout> => CreateLayout;
@@ -285,6 +315,9 @@ requests! {
     ArmRule => ArmRule;
     DisarmRule => DisarmRule;
     FireRule => FireRule;
+    ActivateScenario => ActivateScenario;
+    DeactivateScenario => DeactivateScenario;
+    StepScenario => StepScenario;
     SendIntent => SendIntent;
     ListSessions => ListSessions;
     CloseSession => CloseSession;

@@ -9,6 +9,7 @@ use gaslightmq_selector::{Selector, SelectorSet};
 use gaslightmq_workspace::WorkspaceContext;
 
 use super::{Host, Running, caught_up};
+use crate::HostChange;
 use crate::revisions::RuleRevisions;
 
 /// What a change of the workspace does to one rule that is armed in an environment.
@@ -31,8 +32,8 @@ impl<C: WorkspaceContext> Host<C> {
     /// What a change of the workspace does to every rule that is armed in an environment that runs, by environment.
     ///
     /// `rules`, `selectors` and `presets` are what the workspace holds after the change, and `gone` the rules of the
-    /// workspace that the change takes away. A live rule follows the selectors and the presets, and a rule of the
-    /// workspace its definition too.
+    /// workspace that the change takes away. A live rule and a rule that the active scenario owns follow the selectors
+    /// and the presets, and a rule of the workspace its definition too.
     ///
     /// # Errors
     ///
@@ -59,7 +60,17 @@ impl<C: WorkspaceContext> Host<C> {
             let mut here = Vec::new();
             for armed in armed.iter() {
                 let name = armed.name();
-                let Some(rule) = running.live.get(name).or_else(|| rules.get(name).copied()) else {
+                // A rule that the active scenario owns follows the selectors and the presets, as a live rule does.
+                let owned = || {
+                    let scenario = running.scenario.as_ref()?;
+                    scenario.owned_rules().find(|rule| rule.name() == name)
+                };
+                let Some(rule) = running
+                    .live
+                    .get(name)
+                    .or_else(|| rules.get(name).copied())
+                    .or_else(owned)
+                else {
                     if gone.contains(name) {
                         here.push(Following::Disarm(name.clone()));
                     }
@@ -96,10 +107,16 @@ impl<C: WorkspaceContext> Host<C> {
             let here = followings.get(environment).map_or(&[][..], Vec::as_slice);
             let (disarmed, uncounted) = caught_up(running, |running, revisions| follow(running, revisions, here));
             journal(running, &disarmed);
+            if uncounted.scenario {
+                self.publish(HostChange::ScenarioChanged {
+                    environment: environment.clone(),
+                });
+            }
             let snapshot = running.engine.rules().snapshot();
             let armed = changed.iter().filter(|rule| snapshot.get(rule).is_some()).cloned();
             following.extend(
                 uncounted
+                    .rules
                     .into_iter()
                     .chain(armed)
                     .map(|rule| (environment.clone(), rule)),
