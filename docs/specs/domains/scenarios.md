@@ -202,6 +202,34 @@ ending on the time between changes.
   Capture ignores parameter changes on an armed rule.
 - Saving the scenario also keeps the live rules it uses.
 
+An environment runs one capture at a time.
+It starts with the live set as it stands, and every entry of the journal from then on reaches it, whoever made the change: a request, a lifetime that ended, a reload.
+
+- **One change is one revision.**
+  The entries of one revision are one change, and so one step: a reload that disarms two rules is one step.
+- **The first step is the live set as the capture found it.**
+  It ends on the time until the first change, so the pause before the first press is part of the story.
+  Every later step is the live set after one change.
+  The last one ends on the time until the stop: after it, the scenario arms nothing of what was played.
+- **A step lasts whole milliseconds, counted from the start of the capture**, so the steps together last as long as the capture did.
+- **What the scenario arms and disarms is no change of the live set.**
+  A rule that an activation or a step armed, and a rule that a step, a deactivation or a lifetime of the scenario disarmed, leave the capture as it is.
+  So does every arm that a request did not make: one with the surface `step` or `lifetime`.
+- **A step is named by its place, `step-1` first**, and its title says what changed: *Armed slow-produce, disarmed blackhole*.
+- **A rule of the workspace is captured by its name, a live rule as its definition when it armed.**
+  A live rule that someone disarmed, changed and armed again keeps the definition of its first arming.
+
+Stopping capture gives the steps, and the live rules that they arm as they were armed.
+The process keeps them until a capture of the environment starts again, so someone can save them under a name of their choice, more than once.
+Saving makes a Sequence of the steps, with the [seed](rules.md#dice) that the environment arms a rule by hand with, so every die rolls as it rolled.
+
+| A live rule of the capture | Saving |
+|---|---|
+| A live rule of the environment, defined as it was armed | [Keeps](rules.md#where-rules-live) it. |
+| A rule of the workspace, defined as it was armed: someone kept it since | Leaves it. |
+| No rule has its name: someone deleted it since | Creates it in the workspace. |
+| A live rule that someone changed since it armed | Fails: the workspace would not get what was armed. |
+
 Someone explores with the pads,
 captures the moment the client misbehaves,
 and keeps it as a reproducible test.
