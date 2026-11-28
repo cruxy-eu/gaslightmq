@@ -43,6 +43,7 @@ members = [
     "crates/gaslightmq_surface/conformance",
     "crates/gaslightmq_test",
     "crates/gaslightmq_test_kafka",
+    "crates/gaslightmq_testcontainers",
     "crates/gaslightmq_traffic",
     "crates/gaslightmq_trigger",
     "crates/gaslightmq_ui",
@@ -170,6 +171,9 @@ syn = { version = "3", default-features = false, features = ["full", "parsing", 
 tempfile = "3"
 # Only error types use it: it derives `Error` and the message. No error has a source, see the `wrapped-errors` check.
 thiserror = "2"
+# Only `gaslightmq_testcontainers` names it: it starts the image of GaslightMQ next to a test, and nothing of it is in
+# the API of the crate. No TLS: it reaches the container runtime of the machine on its socket.
+testcontainers = { version = "0.28", default-features = false }
 tokio = "1"
 # Only `gaslightmq_control_client` names it, for the WebSocket from a native target. Plain `ws`: no TLS.
 tokio-tungstenite = "0.30"

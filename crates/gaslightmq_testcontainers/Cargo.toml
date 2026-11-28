@@ -1,0 +1,32 @@
+[package]
+name = "gaslightmq_testcontainers"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lints]
+workspace = true
+
+# The modules that hold values and never wait: `cargo xtask sans-io` holds them to that.
+[package.metadata.gaslightmq]
+sans_io_modules = ["announcement", "configuration", "error", "image"]
+
+[dependencies]
+# The vocabulary that a test names: an environment, a server address, a run and a time span.
+gaslightmq_control_api.workspace = true
+gaslightmq_control_client.workspace = true
+testcontainers.workspace = true
+thiserror.workspace = true
+tokio = { workspace = true, features = ["fs", "io-util", "time"] }
+
+[dev-dependencies]
+anyhow.workspace = true
+# The client under test, which knows the bootstrap address of the proxy and nothing else.
+gaslightmq_kafka_client_api.workspace = true
+gaslightmq_kafka_client_native.workspace = true
+# The real cluster behind the proxy.
+gaslightmq_test_kafka.workspace = true
+gaslightmq_wire.workspace = true
+# The workspace of a test that writes its own files.
+tempfile.workspace = true
+tokio = { workspace = true, features = ["rt", "rt-multi-thread", "macros"] }

@@ -413,7 +413,7 @@ Transactions arrive later as `sim_txn`, next to `sim_log` and `sim_group`.
 | `listener` | Kafka on a socket: accept connections, frame bytes, and run whatever [handles a connection](#the-connection-handler). A proxy's pipeline and a broker alone both sit behind it. This crate does IO. | `wire`, `field`, `clock` |
 | `host` | One process with several [environments](storage.md#several-environments-in-one-process): it starts and stops proxies and brokers, runs the task that drives each broker, and shares the workspace and the control plane between them. It holds the workspace over the context it is handed, whichever stores that names, resolves the rules it arms against that workspace, and reads ⌘K sentences with its names. It holds the live rules of every environment and keeps every rule name unique, among the rules of the workspace, the live rules and the rules that scenarios own, acts on what someone does at a pad, counts the traffic of every environment and hands its calls to whoever follows them, holds the [ID of its run](identity.md#run), keeps the environments that the process started with, for its [health](control-plane.md#health), activates, deactivates and steps the scenario of an environment, after its backend said that it supports the incidents of the scenario, gives every rule of an environment and the scenario of every environment its [revision](identity.md#revision), refuses a change that expects another revision or another run, counts the holds of a rule, ends the holds of a [presence](control-plane.md#presence) that whoever lets clients connect ended, takes [where every change comes from](control-plane.md#where-a-request-comes-from) and records the change in the [journal](../domains/observation.md#journal) of its environment, a change of a definition in the journal of every environment that runs, and tells every change of the process to whoever follows it. It starts and stops the recording of an environment, names it by the instant of the clock in UTC that it is handed, the wall clock unless a test hands another, keeps every recording of the process in the one storage that it is handed, and the segment layout in memory when it is handed none. It queries a recording with a selector of the workspace, inline conditions or a draft that stands in for the selector of its name, and gives its index under a filter, each resolved against the selectors of the workspace. It starts and stops the [capture](../domains/scenarios.md#capture) of an environment with the live set as it stands, keeps what the last capture captured, and saves it as a scenario with the seed of the proxy, keeping the live rules that the scenario uses under one hold of the workspace. See [the host](#the-host). This crate does IO. | `engine`, `broker`, `backend`, `backend_upstream`, `call`, `journal`, `recording`, `recording_segments`, `workspace`, `scenario`, `environment`, `quick_inject`, `surface`, `traffic`, `clock`, `clock_waitable`, `lie`, `lie_api`, `rule`, `trigger`, `selector`, `field`, `incident`, `definition_api`, `resource` |
 | `test` | The test library: it starts a proxy, a broker, or a proxy in front of a broker inside the test's own process, on free ports, with a control plane on a free port of its own, and hands the test the addresses its clients connect to. A proxy gives a free port to each broker that it finds in the cluster, so a test names no broker. It holds the workspace over the context it is handed, as the host does, and over stores in memory when the test hands none. The proxy tells every lie that GaslightMQ has: the lies of every build, and the refusal, so a test arms whatever lie it needs without naming the lies of its build. The test reaches the instance through the control plane, and speaks its words, so the crate takes the vocabulary it names, such as an environment and a broker ID, through the re-exports of `control_api` and depends on no crate of it alone. The test arms rules there, creates and activates scenarios, and starts, stops, opens and queries recordings, which its host keeps in the segment layout in memory, and asserts on the verdicts and the explanations of the calls that a query answers with. This crate does IO. See [instances in a test](#instances-in-a-test). | `control_api`, `control_client`, `control_server`, `host`, `lie_api`, `lie_refusal`, `workspace` |
-| `testcontainers` | A container module: it starts the GaslightMQ image next to a test, with the workspace the test hands over, waits until the instance is ready, and hands the test the addresses its clients connect to. This crate does IO. See [instances in a test](#instances-in-a-test). | `control_client` |
+| `testcontainers` | A container module: it starts the GaslightMQ image next to a test, with the workspace the test hands over, waits until the instance is ready, and hands the test the addresses its clients connect to. The container runs on the network of the machine of the test, so the instance reaches the cluster under the addresses that the test reaches it under. The instance is ready once it printed where it listens, and its control plane says that its environment runs. The test reaches the instance through the control plane, and speaks its words, so the crate takes the vocabulary it names, such as an environment and a server address, through the re-exports of `control_api`. This crate does IO. See [instances in a test](#instances-in-a-test). | `control_client`, `control_api` |
 | `kafka_client_api` | What a Kafka client offers to a test, whichever client it is: the producer, consumer and admin traits, one trait per protocol API, and a raw client that sends one request at a fixed version. Every call of a client returns one error, `ClientError`. A broker that refuses a call is the variant that holds the broker's error code, and a failure of the client holds no error code, so a test never takes one for the other. This crate does IO. | `wire`, `kernel` |
 | `kafka_client_native` | Our own Kafka client behind those traits, as three types: a producer, a consumer and an admin. Every instance has its own connections, its own view of the cluster, its own configuration and its own `client.id`, so a fault or a lie reaches one role alone. The consumer is one member of each group it joins, and everything it says about a group travels on connections of its own, so a Fetch that waits never delays a Heartbeat. Each role follows partition leaders, negotiates API versions on every connection, and reports every failure as the `ClientError` of `kafka_client_api`. What a role decides is sans-IO code inside the crate, and the async part only owns sockets and timers. This crate does IO. | `kafka_client_api`, `wire`, `kernel`, `clock` |
 | `test_kafka` | A real Kafka cluster for the tests of this workspace: brokers of the version the workspace tests against, each with an address for the clients of a test. Its own handles create topics, write records, read them back and open transactions, with one request at a fixed version each. They share the codec with the client a test is about, and no decision of a client. It starts no GaslightMQ. This crate is [test support](#test-support-crates). This crate does IO. See [a real cluster in a test](#a-real-cluster-in-a-test). | `wire`, `kernel`, `clock` |
@@ -1037,11 +1037,11 @@ Two crates start GaslightMQ for a test.
 
 | A test needs | `test` | `testcontainers` |
 |---|---|---|
-| An instance | A proxy, a broker, or a proxy in front of a broker, inside the test's own process. | A container from the GaslightMQ image, at the version the test names. It starts the [environments](storage.md#environments) the test names. |
-| Definitions | A workspace in memory, which the test fills through the control plane or hands over filled. A test that wants other stores hands over their context. | The files of the workspace the test hands over. The crate puts them into the container before the process starts. |
+| An instance | A proxy, a broker, or a proxy in front of a broker, inside the test's own process. | A container from the GaslightMQ image, at the version the test names: `gmq proxy` in front of the cluster the test names. It starts the [environments](storage.md#environments) the test names once `gmq start` exists. |
+| Definitions | A workspace in memory, which the test fills through the control plane or hands over filled. A test that wants other stores hands over their context. | The files of the workspace the test hands over. The crate copies them into the container before the process starts, so what the process writes stays in the container. Without one, a workspace in memory. |
 | A control plane | A control server on a free port, in the test's process. The test reaches the instance through it, as it would reach a container. | The control plane of the container, under the address the crate hands out. |
-| An address | Every listener takes a free port, so tests run side by side. The crate hands out the addresses the test's clients connect to. | The crate hands out the addresses under which the test reaches the Kafka endpoints and the control plane. |
-| A moment to begin | The listeners accept connections from the moment the test holds the instance. | The crate waits until the process has started its environments and their listeners accept connections. |
+| An address | Every listener takes a free port, so tests run side by side. The crate hands out the addresses the test's clients connect to. | The container runs on the network of the machine of the test, and every listener takes a free port of it, so tests run side by side. The crate hands out the addresses under which the test reaches the Kafka endpoints and the control plane. |
+| A moment to begin | The listeners accept connections from the moment the test holds the instance. | The crate waits until the process printed where it listens and `ready`, and its [health](control-plane.md#health) says that its environments run. |
 
 A cluster of several brokers needs no instances of its own.
 One broker simulates a whole cluster, and its [World](../domains/world.md) says how many broker nodes the cluster has.
@@ -1076,6 +1076,42 @@ the answer holds the calls that the selector matches, with their verdicts and ex
   the address that the listeners listen on, the host that clients reach the brokers under,
   the configuration of the host and the one of the control server each have a default, which a test may change.
 
+`testcontainers` starts the image, and `gmq` puts the process together in it:
+
+- **The test holds the container as one value.**
+  The value holds the container and a client of the control plane, and it has the words of the value of `test`:
+  the bootstrap address, the environment, the client, the address of the control plane and the run.
+  The test holds it once the process is ready. A stop asks the process to stop, kills it after a stop timeout,
+  and waits until the container is gone. A test that lets go of the value without a stop removes the container,
+  and waits for that.
+- **It runs `gmq proxy` in front of the cluster.**
+  The test names the bootstrap server of its cluster, and may name the environment.
+  The proxy tells the lies of the build of the image.
+- **The container runs on the network of the machine.**
+  The process reaches what the test reaches, under the same addresses: the cluster under the bootstrap server that
+  the test names, and every broker under the address that it advertises, also when the cluster runs in a container
+  of its own whose brokers advertise ports of the machine, as `test_kafka` does.
+  The test reaches every listener of the process under the address that the process advertises, because nothing
+  maps a port between them. A container on a network of its own would break both: it does not reach the loopback of
+  the machine, and the proxy would advertise ports of the container that the test does not reach.
+  On Docker Desktop, the network of the machine needs its host networking turned on.
+- **Every listener takes a free port, and the process says which.**
+  Every listener listens on a free port of the loopback, unless the test names another address and another host
+  that clients reach the brokers under. The crate reads the lines that `gmq proxy` prints: its run, where its
+  bootstrap listener and its control plane listen, and `ready` last. It then asks the control plane for its health.
+  The health check of the image asks the control plane on its default address, so the crate turns it off.
+- **The files of the workspace are copied in.**
+  The process runs as the owner of the copied files, so it writes its definitions and its recordings below them,
+  in the container. The files of the test never change.
+- **The image is a property.**
+  The image of the release that the crate belongs to is the default. An environment variable names another image for
+  a whole test run, and the configuration names one for a single container: `just test-image` builds the image and
+  names it.
+- **Its client is the surface `test`,** as the client of `test` is.
+- **Everything tunable is a property.**
+  The image, the name of the environment, the address that the listeners listen on, the host that clients reach the
+  brokers under, the start timeout, the stop timeout and the lines of the log that an error shows each have a default.
+
 A test arms its rules one by one through the control plane, or activates a scenario there, and asserts on what its clients
 saw, on what the cluster holds, on where the scenario stands, and on the calls that its recording holds.
 A test that follows the calls of its environment on the live stream knows when the proxy handed a call to the recording,
@@ -1090,7 +1126,7 @@ however many the cluster has.
 
 It stands with the applications, because nothing of the product depends on it.
 A crate that speaks to a real cluster takes it as a dev-dependency:
-`kafka_client_native`, `backend_upstream`, `engine`, `host`, `control_server` and `test` today, and `testcontainers` once it exists.
+`kafka_client_native`, `backend_upstream`, `engine`, `host`, `control_server`, `test` and `testcontainers`.
 It depends on vocabulary alone, so every crate above `wire` can use it without a cycle.
 
 - **One cluster, several brokers.**
@@ -1112,6 +1148,10 @@ It depends on vocabulary alone, so every crate above `wire` can use it without a
 - **The tests need Docker.**
   `cargo test --workspace` runs them, and so do `just test` and CI.
   Without Docker they fail, and the failure says that the cluster did not start and why.
+- **A container next to the test reaches it.**
+  Every broker advertises an address of the machine, the loopback and a port that the container runtime published.
+  A process on the machine reaches it there, and so does a container on the network of the machine, such as the one
+  of `testcontainers`. The cluster therefore needs no second listener and no network of its own for them.
 
 ## Features
 
