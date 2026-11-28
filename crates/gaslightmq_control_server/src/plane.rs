@@ -634,7 +634,7 @@ impl<C: WorkspaceContext + 'static> ControlPlane<C> {
             Host::NotRunning { environment } => ActivateScenarioError::NotRunning { environment },
             Host::NotFound { scenario } => ActivateScenarioError::NotFound { scenario },
             Host::StoreFailed { scenario, reason } => ActivateScenarioError::StoreFailed { scenario, reason },
-            Host::Unresolved { scenario, reason } => ActivateScenarioError::Unresolved { scenario, reason },
+            Host::DoesNotFit { scenario, reason } => ActivateScenarioError::DoesNotFit { scenario, reason },
             Host::Changed {
                 environment,
                 revision: now,

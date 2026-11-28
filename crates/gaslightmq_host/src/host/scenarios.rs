@@ -57,7 +57,7 @@ impl<C: WorkspaceContext> Host<C> {
     /// - [`ScenarioActivationError::NotRunning`] when no environment of that name runs.
     /// - [`ScenarioActivationError::NotFound`] when the workspace has no scenario of that name.
     /// - [`ScenarioActivationError::StoreFailed`] when a store of the workspace could not be read.
-    /// - [`ScenarioActivationError::Unresolved`] when the scenario does not resolve against the rules, the selectors and the presets
+    /// - [`ScenarioActivationError::DoesNotFit`] when the scenario does not resolve against the rules, the selectors and the presets
     ///   of the workspace.
     /// - [`ScenarioActivationError::Changed`] when the scenario of the environment has another revision than the change
     ///   expects.
@@ -299,14 +299,14 @@ async fn resolve<C: WorkspaceContext>(
         .list()
         .await
         .map_err(|error| failed(unread::<Preset>(error)))?;
-    let unresolved = |reason: String| ScenarioActivationError::Unresolved {
+    let does_not_fit = |reason: String| ScenarioActivationError::DoesNotFit {
         scenario: scenario.name().clone(),
         reason,
     };
-    let rules = RuleSet::new(rules).map_err(|error| unresolved(error.to_string()))?;
-    let selectors = SelectorSet::new(selectors).map_err(|error| unresolved(error.to_string()))?;
-    let presets = PresetSet::new(presets).map_err(|error| unresolved(error.to_string()))?;
+    let rules = RuleSet::new(rules).map_err(|error| does_not_fit(error.to_string()))?;
+    let selectors = SelectorSet::new(selectors).map_err(|error| does_not_fit(error.to_string()))?;
+    let presets = PresetSet::new(presets).map_err(|error| does_not_fit(error.to_string()))?;
     scenario
         .resolve(&rules, &selectors, &presets)
-        .map_err(|error| unresolved(error.to_string()))
+        .map_err(|error| does_not_fit(error.to_string()))
 }
