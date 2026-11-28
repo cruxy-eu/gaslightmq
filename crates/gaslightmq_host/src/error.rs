@@ -1011,3 +1011,85 @@ pub enum ScenarioStepError {
         scenario: ScenarioName,
     },
 }
+
+/// Why a host did not [start a capture](crate::Host::start_capture) of an environment.
+///
+/// ```
+/// use gaslightmq_host::prelude::*;
+///
+/// let error = CaptureStartError::AlreadyCapturing { environment: "orders-sim".parse().expect("an environment name") };
+/// assert_eq!(error.to_string(), "environment \"orders-sim\" captures already");
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum CaptureStartError {
+    /// No environment of this name runs.
+    #[error("environment {:?} does not run", .environment.as_str())]
+    NotRunning { environment: EnvironmentName },
+    /// The environment captures already. It runs one capture at a time, so whoever wants another stops this one.
+    #[error("environment {:?} captures already", .environment.as_str())]
+    AlreadyCapturing { environment: EnvironmentName },
+}
+
+/// Why a host did not [stop a capture](crate::Host::stop_capture) of an environment.
+///
+/// ```
+/// use gaslightmq_host::prelude::*;
+///
+/// let error = CaptureStopError::NotCapturing { environment: "orders-sim".parse().expect("an environment name") };
+/// assert_eq!(error.to_string(), "environment \"orders-sim\" captures nothing");
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum CaptureStopError {
+    /// No environment of this name runs.
+    #[error("environment {:?} does not run", .environment.as_str())]
+    NotRunning { environment: EnvironmentName },
+    /// The environment captures nothing: nobody started a capture, or someone stopped it.
+    #[error("environment {:?} captures nothing", .environment.as_str())]
+    NotCapturing { environment: EnvironmentName },
+}
+
+/// Why a host did not [save a capture](crate::Host::save_capture) of an environment as a scenario.
+///
+/// The save checks the name of the scenario before it keeps a rule. A live rule that it kept before it failed in
+/// another way stays a rule of the workspace.
+///
+/// ```
+/// use gaslightmq_host::prelude::*;
+///
+/// let error = CaptureSaveError::RuleChanged {
+///     environment: "orders-sim".parse().expect("an environment name"),
+///     rule: "slow-produce".parse().expect("a rule name"),
+/// };
+/// assert_eq!(
+///     error.to_string(),
+///     "live rule \"slow-produce\" of environment \"orders-sim\" changed since the capture armed it",
+/// );
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum CaptureSaveError {
+    /// No environment of this name runs.
+    #[error("environment {:?} does not run", .environment.as_str())]
+    NotRunning { environment: EnvironmentName },
+    /// No capture of the environment stopped since it started, or since a capture started again.
+    #[error("environment {:?} holds no capture to save", .environment.as_str())]
+    NothingCaptured { environment: EnvironmentName },
+    /// A live rule that the capture armed changed since, or went: the workspace would not get the rule that the
+    /// capture armed. Whoever wants the capture saved turns the rule back, or deletes it, and saves again.
+    #[error(
+        "live rule {:?} of environment {:?} changed since the capture armed it",
+        .rule.as_str(),
+        .environment.as_str()
+    )]
+    RuleChanged {
+        environment: EnvironmentName,
+        rule: RuleName,
+    },
+    /// Another rule has the name of a rule of the capture: a live rule of another environment that runs, or a rule
+    /// that a scenario owns.
+    #[error("rule {:?} was not saved: {}", .rule.as_str(), .holder.holds())]
+    NameTaken { rule: RuleName, holder: RuleHolder },
+    /// The workspace did not take the scenario, or a rule of the capture. Its error says why: the workspace has a
+    /// definition of the name, it does not fit, or a store failed.
+    #[error("the capture was not saved: {error}")]
+    NotCreated { error: CreateError },
+}

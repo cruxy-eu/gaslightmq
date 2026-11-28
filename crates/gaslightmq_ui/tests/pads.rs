@@ -99,6 +99,7 @@ impl OrderDesk {
                 revision: STARTED,
             },
             recording: None,
+            capturing: false,
         }
     }
 }

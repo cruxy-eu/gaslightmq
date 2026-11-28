@@ -107,6 +107,7 @@ Each environment has a journal of its own.
 | Scenario activated or deactivated, step advanced | The scenario, and the step by its name. |
 | Incident applied or emulated | The incident and its consequences. |
 | Recording stopped by itself | Why: the recorder could not keep up, or it could not write. |
+| Capture started or stopped | Nothing more. |
 
 A definition belongs to the workspace and not to one environment.
 A change of a definition therefore enters the journal of every environment that runs, and no journal when none runs.
@@ -153,6 +154,8 @@ The revision orders the entries of every environment of one run, because one cou
   The entry says why: the recorder could not keep up, or it could not write.
   It names the surface of the start of the recording, because nobody asked for the stop.
   No backend applies or emulates an incident yet either, so no journal has such an entry so far.
+- **The start and the stop of a [capture](scenarios.md#capture) are entries, without a revision.**
+  A capture changes nothing that someone set, and its entries tell every client, and every recording, where it ran.
 
 ### Surfaces
 

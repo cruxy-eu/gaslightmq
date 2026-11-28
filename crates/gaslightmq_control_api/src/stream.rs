@@ -178,6 +178,10 @@ pub struct RunningEnvironment {
     /// The recording that the environment writes, when it writes one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub recording: Option<RecordingId>,
+    /// Whether a [capture](crate::StartCapture) of the environment runs. A client learns of its start and its stop
+    /// from the entries `capture-started` and `capture-stopped` of the journal.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub capturing: bool,
 }
 
 /// Which calls a client of the live stream follows, from a client to the control plane.

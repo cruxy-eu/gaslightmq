@@ -22,6 +22,7 @@
 //! | [`EngineStartError`], [`EndpointOpenError`] | Why an engine did not start, and why an endpoint has no listener. |
 //! | [`ArmError`], [`DisarmError`], [`RetuneError`], [`LiveEventsError`] | Why a rule was not armed, disarmed or retuned, and why a live listener has no next event. |
 //! | [`ActivateScenarioError`], [`DeactivateScenarioError`], [`StepScenarioError`] | Why a scenario was not activated, deactivated or advanced to its next step. |
+//! | [`StartCaptureError`], [`StopCaptureError`] | Why the journal did not start a capture, or did not stop one. |
 //! | [`NotOpenError`] | No session is open on the connection that someone asked to close. |
 //! | [`StartRecordingError`], [`StopRecordingError`], [`ListRecordingsError`], [`OpenRecordingError`], [`QueryRecordingError`] | Why a recording did not start, did not stop in order, and why the recordings were not listed, one did not open, or one was not queried. |
 //!
@@ -271,6 +272,9 @@
 //!   [`recent_journal`](EngineConfiguration::recent_journal) says, and lets go of the oldest one after that.
 //! - **Every entry leaves with the events**, as an [`EngineEvent::Journaled`], in the order of the entries.
 //!   A listener of [every event](Engine::every_event) gets the entries between the calls.
+//! - **The journal runs the capture.** While a [capture](Journal::start_capture) runs, every entry reaches it as the
+//!   journal records it, so it marks every arm and disarm of the live set, whoever records it: a request, a step,
+//!   or a lifetime that ended. Stopping it gives the steps of a Sequence.
 //!
 //! # Recordings
 //!
@@ -338,6 +342,8 @@
 //! | [`ArmedRules::activate_scenario`] | [`ActivateScenarioError`] | A scenario is active already. |
 //! | [`ArmedRules::deactivate_scenario`] | [`DeactivateScenarioError`] | No scenario is active. |
 //! | [`ArmedRules::step_scenario`] | [`StepScenarioError`] | No scenario is active, or it runs no step. |
+//! | [`Journal::start_capture`] | [`StartCaptureError`] | A capture runs already. |
+//! | [`Journal::stop_capture`] | [`StopCaptureError`] | No capture runs. |
 //! | [`LiveEvents::next`] | [`LiveEventsError`] | The listener missed events, or the engine stopped. |
 //! | [`EventBacklog`] | [`EventBacklogError`] | The number of events is zero, or more than an engine can keep. |
 //!
@@ -380,7 +386,7 @@ pub use engine::Engine;
 pub use error::{
     ActivateScenarioError, ArmError, DeactivateScenarioError, DisarmError, EndpointOpenError, EngineStartError,
     ListRecordingsError, LiveEventsError, NotOpenError, OpenRecordingError, QueryRecordingError, RetuneError,
-    StartRecordingError, StepScenarioError, StopRecordingError,
+    StartCaptureError, StartRecordingError, StepScenarioError, StopCaptureError, StopRecordingError,
 };
 pub use events::{EngineEvent, EveryEvent, LiveEvents};
 pub use journal::Journal;
@@ -409,7 +415,7 @@ pub mod prelude {
         EngineConfiguration, EngineEvent, EngineStartError, EventBacklog, EventBacklogError, EveryEvent, Journal,
         ListRecordingsError, LiveEvents, LiveEventsError, NotOpenError, OpenRecordingError, OpenSession, QueriedCalls,
         QueryRecordingError, ReadingConfiguration, RecorderConfiguration, RecordingFacets, RecordingStart, Recordings,
-        RetuneError, RuleChanges, ScenarioChange, SessionEvent, StartRecordingError, StepScenarioError, StepsTaken,
-        StopRecordingError, StoredRecording,
+        RetuneError, RuleChanges, ScenarioChange, SessionEvent, StartCaptureError, StartRecordingError,
+        StepScenarioError, StepsTaken, StopCaptureError, StopRecordingError, StoredRecording,
     };
 }

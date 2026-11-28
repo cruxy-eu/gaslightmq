@@ -30,7 +30,7 @@ It is then set up by flags and files alone.
 | `backend` | Get the backend kind, its endpoints and its capabilities. |
 | `environments` | List and get the environments of the workspace. Start and stop one. Say whether every environment that the process was started with runs: [`check-health`](#health). |
 | `journal` | [Query what changed](#the-journal) in an environment: arms, disarms, parameter changes, definitions, steps and incidents. |
-| `capture` | Start, stop and save as a scenario. |
+| `capture` | [Start, stop and save as a scenario](#capture). |
 | `quick-inject` | [Parse a ⌘K sentence](#drafts) into a rule definition, with completions. |
 
 Every operation on a definition names it by its [name](../domains/rules.md#names).
@@ -415,6 +415,49 @@ The server answers from the same state, with `200 OK` when every environment of 
 `gmq health` asks `check-health`, and exits with a failure when an environment does not run or nothing answers.
 The image of GaslightMQ checks its health with it.
 
+## Capture
+
+A [capture](../domains/scenarios.md#capture) turns what someone plays live in an environment into a Sequence scenario.
+Three operations name the environment, which runs one capture at a time.
+
+| Operation | Does | Answers |
+|---|---|---|
+| `start-capture` | Starts the capture with the live set as it stands. | `null` |
+| `stop-capture` | Stops it, and keeps what it captured until a capture of the environment starts again. | The `steps` of the Sequence, and the live `rules` that they arm, as they were armed. |
+| `save-capture` | Saves what the last capture of the environment captured as a scenario of the workspace: `scenario` names it, and `title` gives it one when the request has it. It keeps the live rules that the scenario uses. | The revision of the scenario. |
+
+```json
+{ "from": { "surface": "ui" }, "operation": "save-capture", "environment": "orders-sim", "scenario": "slow-then-refused", "title": "Slow, then refused" }
+```
+
+```json
+{ "steps": [{ "name": "step-1", "until": { "after": "2s" } }, { "name": "step-2", "title": "Armed slow-produce", "arm": ["slow-produce"], "until": { "after": "3s" } }], "rules": [{ "name": "slow-produce", "selector": { "api": "Produce" }, "action": { "lie": "timing", "delay": "1s" } }] }
+```
+
+- **A start and a stop leave no revision and have no inverse.**
+  The journal records each, as `capture-started` and `capture-stopped` with the surface of the request,
+  and every client learns of them from the `journal-entry` of the live stream.
+  The snapshot says of every environment whether it captures, as `"capturing": true`, which it leaves out while none runs,
+  so a client that connects during a capture knows of it.
+- **A save is several changes.**
+  It checks the name of the scenario first, then keeps every live rule of the capture that the environment still holds as it was armed,
+  creates the others, and creates the scenario last, each with a revision and a journal entry of its own.
+  The workspace stays taken from the first check to the last write.
+  A live rule that it kept before a later part failed stays a rule of the workspace.
+- **A save expects nothing.** A live rule that someone changed since the capture armed it fails the save with `rule-changed`,
+  so the workspace never gets a rule that nobody armed.
+
+| Error | When | The other keys |
+|---|---|---|
+| `already-capturing` | `start-capture` in an environment that captures. | `environment` |
+| `not-capturing` | `stop-capture` in an environment that captures nothing. | `environment` |
+| `nothing-captured` | `save-capture` in an environment where no capture stopped since the last one started. | `environment` |
+| `rule-changed` | A live rule of the capture changed since it armed, or went while the save looked at it. | `environment`, `rule` |
+| `name-taken` | A scenario has the name, or a definition has the name of a rule of the capture. | `name`, with its kind, and the `holder` of a rule outside the workspace. |
+| `does-not-fit`, `changed-outside`, `store-failed` | As for a create, of the scenario or of a rule. | `name`, with its kind, and the `reason`. |
+
+Each also fails with `not-running` when the environment does not run.
+
 ## Undo
 
 The control plane has no operation that undoes, and it keeps no history for it.
@@ -498,6 +541,7 @@ The engine keeps its recent entries in memory, and the control plane hands them 
 | `step-advanced` | `scenario`, and `step`: the step that starts, which the key leaves out after the last step. |
 | `incident-applied`, `incident-emulated` | `incident`: the incident, with its `consequences`. |
 | `recording-stopped` | `why`: `fell-behind` or `could-not-write`. The recording of the environment stopped, and nobody stopped it. It has the surface of the start of the recording, and no revision. |
+| `capture-started`, `capture-stopped` | None. Someone started or stopped the [capture](#capture) of the environment. Neither has a revision. |
 
 - **A query answers with the entries that the engine keeps, the oldest first.**
   With `after`, it answers with the entries that came after the entry of that ID.
@@ -591,7 +635,7 @@ The WebSocket streams:
 | Message | Carries |
 |---|---|
 | **Present** | The ID of the [presence](#presence) of this client. It is the first message, and comes once. |
-| **Snapshot** | The full state, sent when a client connects: the [run ID](identity.md#run), every definition of the workspace, the workspace as a whole (when it [writes back](storage.md#saving), whether it is [read-only](storage.md#read-only-workspaces), and what waits for a save), and every environment that runs with its backend, its rules, its sessions, its scenario and the recording that it writes. Whatever has a revision comes with it. It holds no [journal](#the-journal). |
+| **Snapshot** | The full state, sent when a client connects: the [run ID](identity.md#run), every definition of the workspace, the workspace as a whole (when it [writes back](storage.md#saving), whether it is [read-only](storage.md#read-only-workspaces), and what waits for a save), and every environment that runs with its backend, its rules, its sessions, its scenario, the recording that it writes and whether it captures. Whatever has a revision comes with it. It holds no [journal](#the-journal). |
 | **Call** | One call event: request summary, verdict and explanation. |
 | **Stats** | Matches, firings and remaining budget per rule, and calls per API, at a fixed interval. |
 | **Rule changed, removed** | A rule of an environment changed state, or a live rule was made or changed its definition, with its revision. A live rule left its environment: someone deleted or kept it. |
@@ -752,7 +796,8 @@ or an edit of it as the `draft`, which answers with the calls that the edit matc
 
 The scenarios are served: `list-scenarios`, `get-scenario`, `create-scenario`, `update-scenario` and
 `delete-scenario`, as for every kind, and `activate-scenario`, `deactivate-scenario` and `step-scenario`.
-No operation captures a scenario yet: capture comes next.
+A capture starts, stops and is saved as a scenario: `start-capture`, `stop-capture` and `save-capture` name an
+environment. See [capture](#capture).
 
 Of a recording, the journal records the stop that nobody asked for, and neither a start nor a stop by request:
 what was recorded has happened, and the live stream tells both.

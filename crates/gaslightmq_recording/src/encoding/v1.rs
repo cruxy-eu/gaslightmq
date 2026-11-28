@@ -607,6 +607,8 @@ pub(crate) enum Change {
     RecordingStopped {
         why: RecordingStopCause,
     },
+    CaptureStarted,
+    CaptureStopped,
 }
 
 /// One entry of the journal of an environment.

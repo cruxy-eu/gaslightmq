@@ -18,6 +18,7 @@ use crate::{RecordedDefinition, RecordedName};
 /// | [`ScenarioActivated`](Self::ScenarioActivated), [`ScenarioDeactivated`](Self::ScenarioDeactivated), [`StepAdvanced`](Self::StepAdvanced) | The scenario, and the step by its name. |
 /// | [`IncidentApplied`](Self::IncidentApplied), [`IncidentEmulated`](Self::IncidentEmulated) | The incident and its consequences. |
 /// | [`RecordingStopped`](Self::RecordingStopped) | Why the recording of the environment stopped by itself. |
+/// | [`CaptureStarted`](Self::CaptureStarted), [`CaptureStopped`](Self::CaptureStopped) | Nothing more: a capture of the environment started or stopped. |
 ///
 /// An entry names a rule and a definition by the [name it had](RecordedName).
 /// A name can go and come back, so a journal records every creation and every deletion:
@@ -113,6 +114,12 @@ pub enum Change {
     /// When the recorder fell behind, this is the last entry of the recording, so the file says why it ends.
     /// A stop is what happens, and no change of what someone set, so the entry holds no revision.
     RecordingStopped { why: RecordingStopCause },
+    /// Someone started a capture of the environment: from here on, it marks every arm and disarm of the live set.
+    /// A capture changes nothing that someone set, so the entry holds no revision.
+    CaptureStarted,
+    /// Someone stopped the capture of the environment, which turned what it marked into the steps of a Sequence.
+    /// The entry holds no revision.
+    CaptureStopped,
 }
 
 /// Why a recording stopped by itself.

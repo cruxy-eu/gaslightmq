@@ -323,6 +323,55 @@ async fn a_scenario_is_kept_in_the_workspace_and_runs_only_in_an_environment_tha
 }
 
 #[tokio::test]
+async fn a_capture_starts_stops_and_saves_only_in_an_environment_that_runs() -> anyhow::Result<()> {
+    let host = Arc::new(Host::new(
+        HostConfiguration::default(),
+        MemoryContext::new(),
+        Lies::of_every_build(),
+        RUN.parse()?,
+    ));
+    let mut configuration = ControlServerConfiguration::default();
+    configuration.listen = SocketAddr::new(LOCALHOST, ANY_PORT);
+    let server = ControlServer::start(configuration, Arc::clone(&host)).await?;
+    let client = ControlClient::new(ControlClientConfiguration::new(server.address().into()));
+    let staging: EnvironmentName = "staging-proxy".parse()?;
+
+    let started = client
+        .send(StartCapture {
+            environment: staging.clone(),
+        })
+        .await?;
+    let stopped = client
+        .send(StopCapture {
+            environment: staging.clone(),
+        })
+        .await?;
+    let saved = client
+        .send(SaveCapture {
+            environment: staging.clone(),
+            scenario: "slow-then-refused".parse()?,
+            title: None,
+        })
+        .await?;
+
+    assert_eq!(
+        started,
+        Err(StartCaptureError::NotRunning {
+            environment: staging.clone()
+        })
+    );
+    assert_eq!(
+        stopped,
+        Err(StopCaptureError::NotRunning {
+            environment: staging.clone()
+        })
+    );
+    assert_eq!(saved, Err(SaveCaptureError::NotRunning { environment: staging }));
+    server.stop().await;
+    Ok(())
+}
+
+#[tokio::test]
 async fn an_environment_that_the_workspace_does_not_have_or_that_runs_a_broker_does_not_start() -> anyhow::Result<()> {
     let host = Arc::new(Host::new(
         HostConfiguration::default(),

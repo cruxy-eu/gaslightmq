@@ -568,6 +568,8 @@ fn change(change: &Change) -> stored::Change {
                 RecordingStopCause::CouldNotWrite => stored::RecordingStopCause::CouldNotWrite,
             },
         },
+        Change::CaptureStarted => stored::Change::CaptureStarted,
+        Change::CaptureStopped => stored::Change::CaptureStopped,
     }
 }
 

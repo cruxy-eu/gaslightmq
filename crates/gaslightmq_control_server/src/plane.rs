@@ -219,6 +219,11 @@ impl<C: WorkspaceContext + 'static> ControlPlane<C> {
             AnyOperation::GetRecordingIndex(get) => {
                 Reply::of::<GetRecordingIndex>(self.recording_index(&get.recording, &get.filter).await)
             }
+            AnyOperation::StartCapture(start) => {
+                Reply::of::<StartCapture>(self.start_capture(&start.environment, from))
+            }
+            AnyOperation::StopCapture(stop) => Reply::of::<StopCapture>(self.stop_capture(&stop.environment, from)),
+            AnyOperation::SaveCapture(save) => Reply::of::<SaveCapture>(self.save_capture(save, from).await),
         }
     }
 
@@ -898,6 +903,71 @@ impl<C: WorkspaceContext + 'static> ControlPlane<C> {
 
     // Recordings
 
+    // The capture of an environment
+
+    fn start_capture(&self, environment: &EnvironmentName, from: ChangeSource) -> Result<(), StartCaptureError> {
+        use gaslightmq_host::CaptureStartError as Host;
+        self.host.start_capture(environment, from).map_err(|error| match error {
+            Host::NotRunning { environment } => StartCaptureError::NotRunning { environment },
+            Host::AlreadyCapturing { environment } => StartCaptureError::AlreadyCapturing { environment },
+        })
+    }
+
+    fn stop_capture(
+        &self,
+        environment: &EnvironmentName,
+        from: ChangeSource,
+    ) -> Result<CapturedSteps, StopCaptureError> {
+        use gaslightmq_host::CaptureStopError as Host;
+        match self.host.stop_capture(environment, from) {
+            Ok(captured) => Ok(CapturedSteps {
+                steps: captured.steps().to_vec(),
+                rules: captured.rules().to_vec(),
+            }),
+            Err(Host::NotRunning { environment }) => Err(StopCaptureError::NotRunning { environment }),
+            Err(Host::NotCapturing { environment }) => Err(StopCaptureError::NotCapturing { environment }),
+        }
+    }
+
+    async fn save_capture(&self, save: SaveCapture, from: ChangeSource) -> Result<Revised, SaveCaptureError> {
+        use gaslightmq_host::CaptureSaveError as Host;
+        let SaveCapture {
+            environment,
+            scenario,
+            title,
+        } = save;
+        let saved = self.host.save_capture(&environment, scenario, title, from).await;
+        saved.map(revised).map_err(|error| match error {
+            Host::NotRunning { environment } => SaveCaptureError::NotRunning { environment },
+            Host::NothingCaptured { environment } => SaveCaptureError::NothingCaptured { environment },
+            Host::RuleChanged { environment, rule } => SaveCaptureError::RuleChanged { environment, rule },
+            Host::NameTaken { rule, holder } => SaveCaptureError::NameTaken {
+                name: rule.into(),
+                holder: Some(rule_holder(holder)),
+            },
+            Host::NotCreated { error } => match error {
+                CreateError::NameTaken { name } => SaveCaptureError::NameTaken {
+                    name: reference(name),
+                    holder: None,
+                },
+                CreateError::DoesNotFit { name, errors } => SaveCaptureError::DoesNotFit {
+                    name: reference(name),
+                    reason: each(&errors),
+                },
+                CreateError::ChangedOutside { name, reason } => SaveCaptureError::ChangedOutside {
+                    name: reference(name),
+                    reason,
+                },
+                CreateError::StoreFailed { name, reason } => SaveCaptureError::StoreFailed {
+                    name: reference(name),
+                    reason,
+                },
+            },
+        })
+    }
+
+    // The recordings
+
     async fn start_recording(
         &self,
         environment: EnvironmentName,
@@ -1043,11 +1113,12 @@ impl<C: WorkspaceContext + 'static> ControlPlane<C> {
             Err(EnvironmentRulesError::NotRunning { .. }) => return Ok(None),
             Err(EnvironmentRulesError::StoreFailed { reason, .. }) => return Err(reason),
         };
-        let (Ok(backend), Ok(sessions), Ok(recording), Some(scenario)) = (
+        let (Ok(backend), Ok(sessions), Ok(recording), Some(scenario), Ok(capturing)) = (
             self.backend(name),
             self.host.sessions(name),
             self.host.recording(name),
             self.scenario_status(name),
+            self.host.capturing(name),
         ) else {
             return Ok(None);
         };
@@ -1058,6 +1129,7 @@ impl<C: WorkspaceContext + 'static> ControlPlane<C> {
             sessions: sessions.iter().map(session_status).collect(),
             scenario,
             recording,
+            capturing,
         }))
     }
 

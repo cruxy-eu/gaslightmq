@@ -1700,3 +1700,109 @@ async fn a_recording_started_through_the_control_plane_keeps_the_calls_until_it_
     host.stop_all().await;
     Ok(())
 }
+
+#[tokio::test]
+async fn a_capture_through_the_control_plane_answers_with_its_steps_and_saves_them_as_a_scenario() -> anyhow::Result<()>
+{
+    let cluster = KafkaCluster::plaintext().start().await?;
+    let host = Arc::new(Host::new(
+        HostConfiguration::default(),
+        MemoryContext::new(),
+        Lies::of_every_build(),
+        RUN.parse()?,
+    ));
+    let any = ListenAddress::new(LOCALHOST, ANY_PORT);
+    let brokers = BrokerListeners::any_port(LOCALHOST);
+    let staging = Environment::new(
+        "staging-proxy".parse()?,
+        Instances::ProxyInFrontOfCluster {
+            proxy: ProxyDefinition::new(Listeners::new(any, brokers, LOCALHOST.into())?),
+            upstream: Upstream::new(cluster.brokers()[0].address().to_string().parse()?),
+        },
+    );
+    host.create(staging.clone(), ChangeSurface::Test).await?;
+    let mut configuration = ControlServerConfiguration::default();
+    configuration.listen = SocketAddr::new(LOCALHOST, ANY_PORT);
+    configuration.stats_interval = StatsInterval::new(QUIET)?;
+    let server = ControlServer::start(configuration, Arc::clone(&host)).await?;
+    let client = ControlClient::new(ControlClientConfiguration::new(server.address().into()));
+    client
+        .send(StartEnvironment {
+            environment: staging.name().clone(),
+        })
+        .await??;
+    let mut stream = Watched {
+        stream: client.live_stream().await?,
+    };
+    let slow = Rule::new(
+        "slow-produce".parse()?,
+        Conditions::from(Condition::is(ApiKey::PRODUCE)),
+        TimingLie::new().with_delay(TimeSpan::from_millis(20)),
+    );
+
+    // Someone captures while they arm a live rule.
+    client
+        .send(StartCapture {
+            environment: staging.name().clone(),
+        })
+        .await??;
+    client
+        .send(CreateLiveRule {
+            environment: staging.name().clone(),
+            rule: slow.clone(),
+            armed: true,
+        })
+        .await??;
+    let captured = client
+        .send(StopCapture {
+            environment: staging.name().clone(),
+        })
+        .await??;
+    let saved = client
+        .send(SaveCapture {
+            environment: staging.name().clone(),
+            scenario: "slow-produce-captured".parse()?,
+            title: None,
+        })
+        .await??;
+
+    let arms: Vec<Vec<String>> = captured
+        .steps
+        .iter()
+        .map(|step| step.arm().iter().map(ToString::to_string).collect())
+        .collect();
+    assert_eq!(arms, [vec![], vec![slow.name().to_string()]]);
+    assert_eq!(captured.rules, std::slice::from_ref(&slow));
+    // Every client learns of the start and the stop from the journal of the environment.
+    let is_capture_entry = |message: &StreamMessage| {
+        matches!(
+            message,
+            StreamMessage::JournalEntry { entry, .. }
+                if matches!(entry.change, Change::CaptureStarted | Change::CaptureStopped)
+        )
+    };
+    for change in [Change::CaptureStarted, Change::CaptureStopped] {
+        let StreamMessage::JournalEntry { entry, .. } = stream.next_where(is_capture_entry).await? else {
+            anyhow::bail!("the stream passed over the entry of the capture");
+        };
+        assert_eq!(entry.change, change);
+        assert_eq!(entry.from, ChangeSource::new(ChangeSurface::Api));
+    }
+    // The scenario and the live rule that it uses are in the workspace.
+    let scenario = client
+        .send(GetDefinition::<gaslightmq_control_api::scenario::Scenario> {
+            name: "slow-produce-captured".parse()?,
+        })
+        .await??;
+    assert_eq!(scenario.revision, saved.revision);
+    assert_eq!(scenario.definition.steps(), &captured.steps[..]);
+    let kept = client
+        .send(GetDefinition::<Rule> {
+            name: slow.name().clone(),
+        })
+        .await??;
+    assert_eq!(kept.definition, slow);
+    server.stop().await;
+    host.stop_all().await;
+    Ok(())
+}

@@ -180,6 +180,8 @@ mod next_to_the_others {
             reason: "permission denied".to_owned(),
         };
         let not_found: OpenRecordingError = OpenRecordingError::NotFound { recording };
+        let capturing: StartCaptureError = StartCaptureError::AlreadyCapturing;
+        let not_capturing: StopCaptureError = StopCaptureError::NotCapturing;
         // A message says everything, so no error has a source.
         assert!(std::error::Error::source(&backlog).is_none());
         assert!(std::error::Error::source(&not_opened).is_none());
@@ -191,6 +193,8 @@ mod next_to_the_others {
         assert!(std::error::Error::source(&not_recording).is_none());
         assert!(std::error::Error::source(&not_listed).is_none());
         assert!(std::error::Error::source(&not_found).is_none());
+        assert!(std::error::Error::source(&capturing).is_none());
+        assert!(std::error::Error::source(&not_capturing).is_none());
         vec![
             backlog.to_string(),
             not_opened.to_string(),
@@ -202,6 +206,8 @@ mod next_to_the_others {
             not_recording.to_string(),
             not_listed.to_string(),
             not_found.to_string(),
+            capturing.to_string(),
+            not_capturing.to_string(),
         ]
     }
 }
@@ -233,6 +239,8 @@ fn the_prelude_names_the_error_of_every_type() {
             "no recording runs",
             "the recordings were not listed: permission denied",
             "no recording orders-sim.2026-11-21T14-02-11.527Z is there",
+            "a capture runs already",
+            "no capture runs",
         ]
     );
 }

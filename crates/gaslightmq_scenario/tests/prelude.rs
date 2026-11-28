@@ -36,6 +36,7 @@ mod next_to_the_others {
     use gaslightmq_definition_api::prelude::*;
     use gaslightmq_field::prelude::*;
     use gaslightmq_incident::prelude::*;
+    use gaslightmq_journal::prelude::*;
     use gaslightmq_kernel::prelude::*;
     use gaslightmq_lie::prelude::*;
     use gaslightmq_rule::prelude::*;
@@ -79,6 +80,9 @@ mod next_to_the_others {
         // The step ends after a time, so it hands out no budget of firings.
         let budget: Option<StepBudget> = run.step_budget();
         let advanced: StepAdvance = run.advance(Instant::ZERO, 0).unwrap();
+        let found: CapturedRule = CapturedRule::from(rule.name().clone());
+        let capture: Capture = Capture::start(Instant::ZERO, [found.clone()]);
+        let captured: Captured = capture.stop(Instant::ZERO + TimeSpan::from_secs(20));
 
         vec![
             scenario_name.to_string(),
@@ -95,6 +99,8 @@ mod next_to_the_others {
             format!("{position:?}"),
             advanced.ended.to_string(),
             format!("{budget:?}"),
+            found.name().to_string(),
+            format!("{:?}", captured.steps()),
         ]
     }
 
@@ -153,7 +159,7 @@ mod next_to_the_others {
 fn the_prelude_names_every_item_next_to_the_other_preludes() {
     let items = next_to_the_others::every_item();
 
-    assert_eq!(items.len(), 14);
+    assert_eq!(items.len(), 16);
     assert!(items.iter().all(|item| !item.is_empty()));
 }
 

@@ -26,6 +26,7 @@
 //! | [`RecordingStartError`], [`RecordingStopError`], [`RecordingQueryError`] | Why a recording of an environment did not start, why one did not stop in order, and why one was not queried or gave no index. |
 //! | [`EnvironmentScenario`] | The scenario of an environment: where the active one stands, and its revision there. |
 //! | [`ScenarioActivationError`], [`ScenarioDeactivationError`], [`ScenarioStepError`] | Why a scenario was not activated or deactivated in an environment, and why it did not advance a step. |
+//! | [`CaptureStartError`], [`CaptureStopError`], [`CaptureSaveError`] | Why a capture of an environment did not start or stop, and why it was not saved as a scenario. |
 //!
 //! The [`prelude`] holds all of them.
 //!
@@ -137,6 +138,22 @@
 //!   [`Host::recording_index`] with the facets of its calls under a filter. Each resolves its selector against the
 //!   selectors of the workspace, and reads the recording through the storage of the host. Neither changes anything.
 //!
+//! # Capture
+//!
+//! A capture turns what someone plays live in an environment into a Sequence scenario: [`Host::start_capture`]
+//! starts it, [`Host::stop_capture`] stops it and gives what it captured, and [`Host::save_capture`] keeps that in the
+//! workspace as a scenario, with the live rules it uses. The journal of the environment runs it: see
+//! [`Journal`](gaslightmq_engine::Journal).
+//!
+//! - **A capture marks the arms and the disarms of the live set**, with their times, whoever makes them. What the
+//!   active scenario arms and disarms is no part of it. See [`Capture`](gaslightmq_scenario::Capture).
+//! - **A start and a stop have no inverse, and no revision.** The journal records both with the surface of the
+//!   request, so a recording shows where a capture ran.
+//! - **The host keeps what the last capture captured** until a capture starts again, so it can be saved under more
+//!   than one name.
+//! - **Saving keeps the live rules that the scenario uses**, as they were armed, and the scenario takes the seed that
+//!   the proxy arms a rule by hand with, so the dice roll as they rolled.
+//!
 //! # Presences
 //!
 //! A presence is one client of a control surface that is there, such as a tab of the UI.
@@ -194,6 +211,9 @@
 //! | [`Host::activate_scenario`] | [`ScenarioActivationError`] | The change expects another run, the environment does not run, the scenario does not exist or does not fit the workspace, a store could not read, the scenario of the environment changed since, a scenario is active already, or the backend does not support an incident of it. |
 //! | [`Host::deactivate_scenario`] | [`ScenarioDeactivationError`] | The change expects another run, the environment does not run, its scenario changed since, or no scenario is active. |
 //! | [`Host::step_scenario`] | [`ScenarioStepError`] | The change expects another run, the environment does not run, its scenario changed since, no scenario is active, or it runs no step. |
+//! | [`Host::start_capture`] | [`CaptureStartError`] | The environment does not run, or it captures already. |
+//! | [`Host::stop_capture`] | [`CaptureStopError`] | The environment does not run, or it captures nothing. |
+//! | [`Host::save_capture`] | [`CaptureSaveError`] | The environment does not run, it holds no capture, a live rule of the capture changed since it armed, another rule has the name of one, or the workspace did not take the scenario or a rule. |
 //! | [`Host::close_session`] | [`CloseSessionError`] | The environment does not run, or no session is open on the connection. |
 //! | [`Host::follow_calls`] | [`FollowCallsError`] | The environment does not run, the selectors could not be read, or the selector does not resolve. |
 //! | [`CallBacklog::new`] | [`CallBacklogError`] | The backlog is zero, or larger than the largest. |
@@ -237,11 +257,11 @@ pub use configuration::{
     EnvironmentConfigurationError, HostConfiguration,
 };
 pub use error::{
-    ArmRuleError, CloseSessionError, CreateDefinitionError, CreateLiveRuleError, DeleteDefinitionError,
-    DeleteLiveRuleError, DisarmRuleError, EnvironmentRulesError, EnvironmentStartError, FireRuleError,
-    FollowCallsError, IntentError, KeepRuleError, NotRunningError, ReadSentenceError, RecordingQueryError,
-    RecordingStartError, RecordingStopError, ReloadWorkspaceError, RuleHolder, ScenarioActivationError,
-    ScenarioDeactivationError, ScenarioStepError, UpdateDefinitionError, UpdateLiveRuleError,
+    ArmRuleError, CaptureSaveError, CaptureStartError, CaptureStopError, CloseSessionError, CreateDefinitionError,
+    CreateLiveRuleError, DeleteDefinitionError, DeleteLiveRuleError, DisarmRuleError, EnvironmentRulesError,
+    EnvironmentStartError, FireRuleError, FollowCallsError, IntentError, KeepRuleError, NotRunningError,
+    ReadSentenceError, RecordingQueryError, RecordingStartError, RecordingStopError, ReloadWorkspaceError, RuleHolder,
+    ScenarioActivationError, ScenarioDeactivationError, ScenarioStepError, UpdateDefinitionError, UpdateLiveRuleError,
 };
 pub use host::Host;
 pub use reloaded::{Reloaded, Unsaved};
@@ -266,13 +286,14 @@ pub use scenario::EnvironmentScenario;
 pub mod prelude {
     #[doc(no_inline)]
     pub use crate::{
-        ArmRuleError, CallBacklog, CallBacklogError, CallSubscription, ChangeBacklog, ChangeBacklogError,
-        CloseSessionError, CreateDefinitionError, CreateLiveRuleError, DeleteDefinitionError, DeleteLiveRuleError,
-        DisarmRuleError, EnvironmentConfiguration, EnvironmentConfigurationError, EnvironmentRule,
-        EnvironmentRulesError, EnvironmentStartError, Expects, FireRuleError, FollowCallsError, Host, HostChange,
-        HostChanges, HostChangesError, HostConfiguration, IntentEffect, IntentError, KeepRuleError, NotRunningError,
-        ReadSentenceError, RecordingQueryError, RecordingStartError, RecordingStopError, ReloadWorkspaceError,
-        Reloaded, RuleHolder, RunId, RunIdError, ScenarioActivationError, ScenarioDeactivationError, ScenarioStepError,
-        Unsaved, UpdateDefinitionError, UpdateLiveRuleError,
+        ArmRuleError, CallBacklog, CallBacklogError, CallSubscription, CaptureSaveError, CaptureStartError,
+        CaptureStopError, ChangeBacklog, ChangeBacklogError, CloseSessionError, CreateDefinitionError,
+        CreateLiveRuleError, DeleteDefinitionError, DeleteLiveRuleError, DisarmRuleError, EnvironmentConfiguration,
+        EnvironmentConfigurationError, EnvironmentRule, EnvironmentRulesError, EnvironmentStartError, Expects,
+        FireRuleError, FollowCallsError, Host, HostChange, HostChanges, HostChangesError, HostConfiguration,
+        IntentEffect, IntentError, KeepRuleError, NotRunningError, ReadSentenceError, RecordingQueryError,
+        RecordingStartError, RecordingStopError, ReloadWorkspaceError, Reloaded, RuleHolder, RunId, RunIdError,
+        ScenarioActivationError, ScenarioDeactivationError, ScenarioStepError, Unsaved, UpdateDefinitionError,
+        UpdateLiveRuleError,
     };
 }
