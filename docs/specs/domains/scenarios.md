@@ -217,7 +217,8 @@ It starts with the live set as it stands, and every entry of the journal from th
   So does every arm that a request did not make: one with the surface `step` or `lifetime`.
 - **A step is named by its place, `step-1` first**, and its title says what changed: *Armed slow-produce, disarmed blackhole*.
 - **A rule of the workspace is captured by its name, a live rule as its definition when it armed.**
-  A live rule that someone disarmed, changed and armed again keeps the definition of its first arming.
+  A live rule that someone disarmed, changed and armed again is another rule for the capture.
+  It takes the name of the rule with the next free number, `slow-produce-2`, and rolls the die of the rule it was.
 
 Stopping capture gives the steps, and the live rules that they arm as they were armed.
 The process keeps them until a capture of the environment starts again, so someone can save them under a name of their choice, more than once.
@@ -227,7 +228,7 @@ Saving makes a Sequence of the steps, with the [seed](rules.md#dice) that the en
 |---|---|
 | A live rule of the environment, defined as it was armed | [Keeps](rules.md#where-rules-live) it. |
 | A rule of the workspace, defined as it was armed: someone kept it since | Leaves it. |
-| No rule has its name: someone deleted it since | Creates it in the workspace. |
+| No rule has its name: someone deleted it since, or it is a rule that armed again with another definition | Creates it in the workspace. |
 | A live rule that someone changed since it armed | Fails: the workspace would not get what was armed. |
 
 Someone explores with the pads,

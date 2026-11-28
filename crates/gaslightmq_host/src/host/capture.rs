@@ -98,7 +98,7 @@ impl<C: WorkspaceContext> Host<C> {
     /// |---|---|
     /// | A live rule of the environment, defined as it was armed | [Keeps it](Self::keep): it goes on as a rule of the workspace. |
     /// | A rule of the workspace, defined as it was armed | Leaves it: someone kept the live rule since. |
-    /// | No rule has its name | Creates it in the workspace: someone deleted the live rule since. |
+    /// | No rule has its name | Creates it in the workspace: someone deleted the live rule since, or it armed again with another definition. |
     /// | A live rule that someone changed since it armed | Fails with [`CaptureSaveError::RuleChanged`]. |
     ///
     /// Then it creates the scenario. The workspace stays taken from the first check to the last write. Every keep and

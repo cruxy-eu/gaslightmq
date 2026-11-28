@@ -30,8 +30,9 @@ use crate::{Mode, Scenario, ScenarioName, Step, StepName, StepTitle, Until};
 /// - **A captured rule keeps the parameters it had when it was armed.** A live rule is captured as the definition
 ///   it was armed with, and a turn of an encoder on it while it is armed changes nothing of what the capture holds.
 ///   A rule of the workspace is captured by its name.
-/// - **A live rule that arms again keeps the definition of its first arming.** Someone disarmed it, changed it and
-///   armed it again: the steps name the rule, and the capture holds it as it first armed.
+/// - **A live rule that arms again with another definition is another rule.** Someone disarmed it, changed it and
+///   armed it again: the capture names that arming after the rule, with the next free number, as
+///   `slow-order-producers-2`.
 ///
 /// ```
 /// use gaslightmq_clock::{Duration, Instant, TimeSpan};
@@ -81,14 +82,26 @@ pub struct Capture {
     started_at: Instant,
     /// The live set as the capture found it, the rule armed most recently first, by the names that the capture gives.
     found: Vec<RuleName>,
-    /// The live set now, the rule armed most recently first.
-    live: Vec<RuleName>,
-    /// The live rules that the capture saw armed, each as it first armed.
-    rules: Vec<Rule>,
+    /// The live set now: each rule by its name in the environment, and the name that the capture gives its arming.
+    /// The rule armed most recently comes first.
+    live: Vec<Armed>,
+    /// The live rules that the capture saw armed, each by the name that the capture gives it, as it was armed, with
+    /// the name of the rule in its environment.
+    rules: Vec<(RuleName, Rule)>,
     /// Every change of the live set since the start, the earliest first.
     changes: Vec<LiveChange>,
     /// The revision of the last change of the scenario that armed rules: an activation, or a step.
     scenario: Option<Revision>,
+}
+
+/// One rule of the live set, as the capture holds it.
+#[derive(Debug, Clone)]
+struct Armed {
+    /// The name of the rule in its environment.
+    rule: RuleName,
+    /// The name that the capture gives the arming: the name of the rule, or another one when the rule armed before
+    /// with another definition.
+    captured: RuleName,
 }
 
 /// One change of the live set: what it armed and disarmed, and the live set after it.
@@ -98,7 +111,7 @@ struct LiveChange {
     revision: Option<Revision>,
     armed: Vec<RuleName>,
     disarmed: Vec<RuleName>,
-    /// The live set after the change, the rule armed most recently first.
+    /// The live set after the change, by the names that the capture gives, the rule armed most recently first.
     after: Vec<RuleName>,
 }
 
@@ -147,13 +160,19 @@ impl Capture {
             scenario: None,
         };
         for rule in live {
-            let name = match rule {
-                CapturedRule::Workspace(name) => name,
-                CapturedRule::Live(rule) => capture.keep(*rule),
+            let armed = match rule {
+                CapturedRule::Workspace(name) => Armed {
+                    captured: name.clone(),
+                    rule: name,
+                },
+                CapturedRule::Live(rule) => Armed {
+                    rule: rule.name().clone(),
+                    captured: capture.name_of(*rule),
+                },
             };
-            capture.live.push(name);
+            capture.live.push(armed);
         }
-        capture.found = capture.live.clone();
+        capture.found = capture.live_names();
         capture
     }
 
@@ -170,13 +189,20 @@ impl Capture {
                 let Some(rule) = rule_name(rule) else {
                     return;
                 };
-                if of_the_scenario || by_itself || self.live.contains(&rule) {
+                if of_the_scenario || by_itself || self.live.iter().any(|armed| armed.rule == rule) {
                     return;
                 }
-                if let Some(definition) = armed_as(&rule) {
-                    self.keep(definition);
-                }
-                self.live.insert(0, rule.clone());
+                let captured = match armed_as(&rule) {
+                    Some(definition) => self.name_of(definition),
+                    None => rule.clone(),
+                };
+                self.live.insert(
+                    0,
+                    Armed {
+                        rule: rule.clone(),
+                        captured,
+                    },
+                );
                 self.changed(entry).armed.push(rule);
             }
             Change::RuleDisarmed { rule } => {
@@ -184,7 +210,7 @@ impl Capture {
                     return;
                 };
                 let before = self.live.len();
-                self.live.retain(|armed| *armed != rule);
+                self.live.retain(|armed| armed.rule != rule);
                 if self.live.len() != before {
                     self.changed(entry).disarmed.push(rule);
                 }
@@ -209,7 +235,7 @@ impl Capture {
             let ends = offset(ended_at).max(began);
             let name = step_name(index);
             let step = Step::new(name)
-                .arming(std::mem::take(&mut arming))
+                .arming(once_each(std::mem::take(&mut arming)))
                 .ending_on(Until::After(TimeSpan::from_millis(ends - began)));
             steps.push(match title.take() {
                 Some(title) => step.with_title(title),
@@ -223,13 +249,13 @@ impl Capture {
         }
         Captured {
             steps,
-            rules: self.rules,
+            rules: self.rules.into_iter().map(|(_, rule)| rule).collect(),
         }
     }
 
     /// The change of the live set that `entry` makes: the last one, when the entry has its revision, or a new one.
     fn changed(&mut self, entry: &JournalEntry) -> &mut LiveChange {
-        let after = self.live.clone();
+        let after = self.live_names();
         let same = self
             .changes
             .last()
@@ -249,13 +275,33 @@ impl Capture {
         change
     }
 
-    /// Keeps the definition of a live rule as it arms, unless the capture holds the rule already, and returns its
-    /// name.
-    fn keep(&mut self, definition: Rule) -> RuleName {
-        let name = definition.name().clone();
-        if !self.rules.iter().any(|rule| *rule.name() == name) {
-            self.rules.push(definition);
+    /// The live set now, by the names that the capture gives.
+    fn live_names(&self) -> Vec<RuleName> {
+        self.live.iter().map(|armed| armed.captured.clone()).collect()
+    }
+
+    /// The name that the capture gives a live rule that arms with `definition`: the name of the rule, unless the
+    /// capture holds another definition under it already. Then the arming has a name of its own, after the rule with
+    /// the next free number, or the name of an earlier arming with the same definition.
+    fn name_of(&mut self, definition: Rule) -> RuleName {
+        let rule = definition.name().clone();
+        let earlier = self
+            .rules
+            .iter()
+            .find(|(of, captured)| *of == rule && same_but_name(captured, &definition));
+        if let Some((_, captured)) = earlier {
+            return captured.name().clone();
         }
+        let taken = |name: &RuleName| self.rules.iter().any(|(_, captured)| captured.name() == name);
+        let captured = if taken(&rule) {
+            let free = (2..=u32::MAX).find_map(|number| numbered(&rule, number).filter(|name| !taken(name)));
+            let name = free.unwrap_or_else(|| rule.clone());
+            renamed(&definition, name)
+        } else {
+            definition
+        };
+        let name = captured.name().clone();
+        self.rules.push((rule, captured));
         name
     }
 }
@@ -315,6 +361,13 @@ impl LiveChange {
     }
 }
 
+/// The rules, each where it comes first. A rule of the workspace can have the name that the capture gave the
+/// arming of another rule, and the step arms the one armed most recently.
+fn once_each(rules: Vec<RuleName>) -> Vec<RuleName> {
+    let mut seen = std::collections::BTreeSet::new();
+    rules.into_iter().filter(|rule| seen.insert(rule.clone())).collect()
+}
+
 /// The name of the step at `index` among the steps of a capture: `step-1` for the first.
 fn step_name(index: usize) -> StepName {
     match StepName::new(format!("step-{}", index + 1)) {
@@ -326,4 +379,34 @@ fn step_name(index: usize) -> StepName {
 /// The rule that an entry names, by the name it had. A recorded name follows the rule for names, as a rule name does.
 fn rule_name(recorded: &RecordedName) -> Option<RuleName> {
     RuleName::new(recorded.as_str()).ok()
+}
+
+/// `name` with `-` and the number after it, shortened where the name would be too long.
+fn numbered(name: &RuleName, number: u32) -> Option<RuleName> {
+    let suffix = format!("-{number}");
+    let room = RuleName::MAX_LENGTH.checked_sub(suffix.len())?;
+    let base: String = name.as_str().chars().take(room).collect();
+    RuleName::new(format!("{}{suffix}", base.trim_end_matches('-'))).ok()
+}
+
+/// Whether a live rule armed as `armed` is the rule that the capture holds as `captured`, under its name or another.
+fn same_but_name(captured: &Rule, armed: &Rule) -> bool {
+    if captured.name() == armed.name() {
+        captured == armed
+    } else {
+        *captured == renamed(armed, captured.name().clone())
+    }
+}
+
+/// `rule` under another name. Its die still rolls as the die of the rule did, so the arming plays as it was played.
+fn renamed(rule: &Rule, name: RuleName) -> Rule {
+    let renamed = Rule::new(name, rule.selector().clone(), rule.action().clone())
+        .scoped(rule.scope().clone())
+        .with_trigger(rule.trigger())
+        .with_lifetime(rule.lifetime())
+        .with_dice(rule.dice_key());
+    match rule.title() {
+        Some(title) => renamed.with_title(title.clone()),
+        None => renamed,
+    }
 }

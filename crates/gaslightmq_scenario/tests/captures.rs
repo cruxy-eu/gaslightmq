@@ -151,6 +151,46 @@ fn a_captured_rule_keeps_the_parameters_it_had_when_it_was_armed() {
 }
 
 #[test]
+fn a_live_rule_that_arms_again_with_another_definition_is_captured_as_another_rule() {
+    let delayed = |delay: TimeSpan| {
+        Rule::new(
+            "slow-produce".parse().unwrap(),
+            Conditions::from(Condition::is(ApiKey::PRODUCE)),
+            TimingLie::new().with_delay(delay),
+        )
+    };
+    let (slow, slower) = (delayed(TimeSpan::from_secs(1)), delayed(TimeSpan::from_secs(2)));
+    let recorded: RecordedName = "slow-produce".parse().unwrap();
+    let mut journal = RecentJournal::new(RecentJournalSize::default());
+    let mut capture = Capture::start(Instant::ZERO, []);
+    // Each change comes a step later than the one before it, with the next revision.
+    let mut revisions = (SLOW_ARMED.number()..).map(Revision::new);
+    let mut changed_at = Instant::ZERO;
+    let mut play = |change: Change, armed_as: Option<Rule>| {
+        changed_at += SLOW_ARMED_AFTER;
+        let entry = journal.record(changed_at, change, ChangeSurface::Pad, revisions.next());
+        capture.read(&entry, |_| armed_as);
+    };
+
+    // The rule arms, disarms, arms slower, disarms, and arms as it first did.
+    for armed_as in [&slow, &slower, &slow] {
+        play(Change::RuleArmed { rule: recorded.clone() }, Some(armed_as.clone()));
+        play(Change::RuleDisarmed { rule: recorded.clone() }, None);
+    }
+    let captured = capture.stop(changed_at + SLOW_ARMED_AFTER);
+
+    let first: RuleName = "slow-produce".parse().unwrap();
+    let other: RuleName = "slow-produce-2".parse().unwrap();
+    let arms: Vec<&[RuleName]> = captured.steps().iter().map(Step::arm).collect();
+    let (none, first_rule, other_rule) = (&[][..], &[first.clone()][..], &[other.clone()][..]);
+    assert_eq!(arms, [none, first_rule, none, other_rule, none, first_rule, none]);
+    let names: Vec<&RuleName> = captured.rules().iter().map(Rule::name).collect();
+    assert_eq!(names, [&first, &other]);
+    // The other rule rolls the die of the rule it was armed as.
+    assert_eq!(captured.rules()[1].dice_key(), slower.dice_key());
+}
+
+#[test]
 fn the_entries_of_one_revision_are_one_change() {
     let names = ["slow-produce", "flaky-fetch"].map(|name| name.parse::<RecordedName>().unwrap());
     let mut journal = RecentJournal::new(RecentJournalSize::default());
