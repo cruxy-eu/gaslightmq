@@ -7,12 +7,15 @@
 
 set shell := ["bash", "-eu", "-o", "pipefail", "-c"]
 
+# The image of `gmq` that `just image` builds, `just container` runs and `just test-image` tests.
+gmq_image := "ghcr.io/cruxy-eu/gaslightmq:latest"
+
 # Show every recipe.
 default:
     @just --list --unsorted
 
 # Everything CI runs, cheapest first, so a formatting slip fails in seconds.
-ci: fmt-check checks wasm clippy test doc
+ci: fmt-check checks wasm clippy test test-image doc
     @echo "✓ ci passed"
 
 # The fast checks.
@@ -47,9 +50,15 @@ clippy:
     cargo clippy --workspace --all-targets -- -D warnings
     cargo clippy --workspace --all-targets --all-features -- -D warnings
 
-# Every test, with every feature. The tests against real Kafka brokers need Docker, and say so when it is missing.
+# The tests against real Kafka brokers need Docker, and say so when it is missing.
+# Every test, with every feature, but those of the image, which `just test-image` runs.
 test *args:
-    cargo test --workspace --all-features {{args}}
+    cargo test --workspace --all-features --exclude gaslightmq_testcontainers {{args}}
+
+# It builds the image first, and the tests run that one. They need Docker, with host networking.
+# The tests of the image of `gmq`: GaslightMQ in a container next to a test, in front of real Kafka brokers.
+test-image *args: image
+    GASLIGHTMQ_IMAGE={{gmq_image}} cargo test -p gaslightmq_testcontainers --all-features {{args}}
 
 # Only the tests against real Kafka brokers, which `just test` runs too. They need Docker.
 test-kafka *args:
@@ -68,12 +77,12 @@ doc:
 
 # The image of `gmq`, with the UI built in. Needs Docker. The image builds the UI itself, as `just ui` does.
 image:
-    docker build -t ghcr.io/cruxy-eu/gaslightmq:latest .
+    docker build -t {{gmq_image}} .
 
 # Run the image with the arguments of `gmq`: `just container proxy --upstream host.docker.internal:9092`.
 # It publishes the bootstrap listener, the brokers and the control plane with the UI on the ports of `gmq proxy`.
 container *args:
-    docker run --rm -p 9092:9092 -p 19092-19191:19092-19191 -p 7092:7092 ghcr.io/cruxy-eu/gaslightmq:latest {{args}}
+    docker run --rm -p 9092:9092 -p 19092-19191:19092-19191 -p 7092:7092 {{gmq_image}} {{args}}
 
 # The version of dx that builds the UI. It pins the Tailwind that builds the stylesheet: 4.1.5 for dx 0.7.10.
 dx-version:
