@@ -184,7 +184,7 @@ impl Scenario {
         let arm = step
             .arm()
             .iter()
-            .map(|rule| resolve(rule, None))
+            .map(|rule| resolve(rule.name(), rule.owned()))
             .collect::<Result<Vec<_>, _>>()?;
         let until = match step.until() {
             None => None,

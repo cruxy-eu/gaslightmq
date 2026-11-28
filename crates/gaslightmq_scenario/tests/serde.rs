@@ -46,7 +46,7 @@ fn a_sequence_writes_its_steps_after_its_rules() {
                 rule: refuse,
             }),
         Step::new("slow-recovery".parse().unwrap())
-            .arming(["order-fetches-are-slow-for-analytics".parse().unwrap()])
+            .arming(["order-fetches-are-slow-for-analytics".parse::<RuleName>().unwrap()])
             .ending_on(Until::After(TimeSpan::from_secs(20))),
         Step::new("back-to-normal".parse().unwrap()),
     ];
@@ -208,4 +208,101 @@ fn a_count_of_zero_ends_no_step() {
         .to_string();
 
     assert!(error.contains("a count is at least one"), "{error}");
+}
+
+#[test]
+fn a_sequence_without_names_names_its_steps_by_their_place_and_its_rules_by_what_they_say() {
+    // name: orders-survive-leader-churn
+    // mode: sequence
+    // seed: 7
+    // steps:
+    //   - until: { calls: 1, selector: { api: Produce } }
+    //   - arm:
+    //       - selector: { api: Produce }
+    //         action: { lie: refusal, error: NOT_LEADER_OR_FOLLOWER }
+    //     until: { firings: 2 }
+    //   - title: Recovery
+    let form = json!({
+        "name": "orders-survive-leader-churn",
+        "mode": "sequence",
+        "seed": 7,
+        "steps": [
+            { "until": { "calls": 1, "selector": { "api": "Produce" } } },
+            {
+                "arm": [{ "selector": { "api": "Produce" }, "action": { "lie": "refusal", "error": "NOT_LEADER_OR_FOLLOWER" } }],
+                "until": { "firings": 2 },
+            },
+            { "title": "Recovery" },
+        ],
+    });
+
+    let scenario: Scenario = serde_json::from_value(form).unwrap();
+
+    let steps: Vec<&str> = scenario.steps().iter().map(|step| step.name().as_str()).collect();
+    assert_eq!(steps, ["step-1", "step-2", "step-3"]);
+    let refuse: RuleName = "refuse-with-not-leader-or-follower-on-produce".parse().unwrap();
+    assert_eq!(scenario.steps()[1].arm()[0].name(), &refuse);
+    assert_eq!(
+        scenario.steps()[1].until(),
+        Some(&Until::Firings {
+            count: Count::new(2).unwrap(),
+            rule: refuse.clone()
+        })
+    );
+    // The rule of the step belongs to the scenario, and names no rule of the workspace.
+    let owned: Vec<&RuleName> = scenario.owned_rules().map(Rule::name).collect();
+    assert_eq!(owned, [&refuse]);
+    assert!(scenario.rule_references().is_empty());
+}
+
+#[test]
+fn a_step_that_arms_several_rules_names_the_rule_whose_firings_end_it() {
+    let form = json!({
+        "name": "two-at-once",
+        "mode": "sequence",
+        "seed": 7,
+        "steps": [{
+            "arm": ["slow-order-producers", "refuse-with-not-leader"],
+            "until": { "firings": 2 },
+        }],
+    });
+
+    let error = serde_json::from_value::<Scenario>(form).unwrap_err().to_string();
+
+    assert_eq!(
+        error,
+        "a step that ends on `firings` without a `rule` arms one rule, and this one arms 2"
+    );
+}
+
+#[test]
+fn a_rule_that_stands_the_same_in_two_steps_is_one_rule_and_two_that_say_the_same_differently_are_an_error() {
+    let refuse =
+        json!({ "selector": { "api": "Produce" }, "action": { "lie": "refusal", "error": "NOT_LEADER_OR_FOLLOWER" } });
+    let refuse_once = json!({
+        "selector": { "api": "Produce" },
+        "action": { "lie": "refusal", "error": "NOT_LEADER_OR_FOLLOWER" },
+        "trigger": { "first": 1 },
+    });
+    let twice = json!({
+        "name": "churn-twice",
+        "mode": "sequence",
+        "seed": 7,
+        "steps": [{ "arm": [refuse] }, {}, { "arm": [refuse] }],
+    });
+    let differently = json!({
+        "name": "churn-differently",
+        "mode": "sequence",
+        "seed": 7,
+        "steps": [{ "arm": [refuse] }, { "arm": [refuse_once] }],
+    });
+
+    let scenario: Scenario = serde_json::from_value(twice).unwrap();
+    let error = serde_json::from_value::<Scenario>(differently).unwrap_err().to_string();
+
+    assert_eq!(scenario.owned_rules().count(), 1);
+    assert_eq!(
+        error,
+        "scenario \"churn-differently\" has two rules named \"refuse-with-not-leader-or-follower-on-produce\""
+    );
 }
