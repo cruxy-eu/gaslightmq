@@ -199,6 +199,7 @@ it shows which rules were armed when a call arrived.
 
 The index is built automatically from a recording.
 It groups calls into facets, each with counts.
+The engine builds it when someone first asks for the index of a recording, and reads on with every later ask, so the index of a recording that runs grows with it.
 
 | Facet | Values |
 |---|---|

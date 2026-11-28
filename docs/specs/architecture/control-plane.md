@@ -538,6 +538,48 @@ They change nothing: no file, no rule and no live state.
 The engine answers from the whole recording and the whole workspace.
 A browser only holds a window of both, so it cannot give these answers itself.
 
+### Querying a recording
+
+Two operations read a recording, and neither changes anything.
+
+| Operation | Takes | Returns |
+|---|---|---|
+| `query-recording` | A recording, a `selector`, and a `draft` and a `skip` when the client has them. | `matched`, the count of the calls of the whole recording that the selector matches, and `calls`, the matched calls in the order of the recording behind the first `skip` of them, each with its verdict and its explanation. |
+| `get-recording-index` | A recording, and a `filter` when the client has one. | The [index](../domains/observation.md#index) under the filter: how many calls the filter leaves, and a facet for every field that the process groups by, each with its values, their calls and the patterns they suggest. |
+
+- **A selector is saved or a draft.**
+  `selector` names a selector of the workspace, or holds inline conditions: a filter that someone built on the index.
+  `draft` is a selector definition that nobody saved yet.
+  It stands in the workspace for the selector of its name while the query resolves `selector`,
+  so a query that names the draft tests it, and one that names a selector that includes it tests what the edit does there.
+  A selector that does not resolve fails with `does-not-fit`.
+- **An answer holds a page.**
+  The count covers the whole recording, and `calls` holds as many as `recordings.query_calls` says, `100` until someone sets it.
+  A client that wants the calls behind them asks again with `skip` at the number it has.
+  The recording only grows, so the pages of a recording that ended never move.
+- **A query reads a little.**
+  The engine streams only the stretches whose [summaries](recording-storage.md#summary) can hold a call that the selector matches, reads no frame,
+  and decides every call there as a rule would.
+- **The engine is busy reading, or it answers.**
+  When the readers of the process hold as much memory as their budget allows, the reading is refused at once with `busy`,
+  whose reason names the budget and its property, and the client asks again.
+  Nothing waits for memory.
+- **A recording that runs** is read as far as its environment handed calls over until the request.
+- **Damage is counted.** The entries that a storage could not hand out are left out, and `lost` says how many.
+  An answer without damage leaves `lost` out.
+
+```json
+{ "from": { "surface": "ui" }, "operation": "query-recording", "recording": "orders-sim.2026-11-21T14-02-11.527Z",
+  "selector": "order-producers", "draft": { "name": "order-producers", "match": { "api": "Produce", "topic": "orders.*" } } }
+```
+
+```json
+{ "matched": 1204, "calls": [ … ] }
+```
+
+The control plane holds its own view of the index, so the UI renders it without the crate that builds it:
+`{ "calls": 3, "facets": [{ "field": "topic", "values": [{ "value": { "topic": "orders.eu" }, "calls": 2 }], "patterns": [{ "pattern": "orders.*", "values": 2, "calls": 3 }] }] }`.
+
 A parsed sentence is only a rule definition.
 The surface creates the live rule with the `rules` resource.
 The CLI and tests use the same three operations.
@@ -701,10 +743,12 @@ Every operation of `control_api` is served, so no answer is `501` today.
 `RequestError::NotServed` stays for a process that knows fewer operations than its client:
 an older process, or one built without a part.
 
-No operation queries the calls of a recording with a selector, saved or draft, or gets its index yet: those arrive
-with the index. A recording starts, stops, is listed and opens: `start-recording` and `stop-recording` name an
-environment, `list-recordings` lists every recording of the process, and `open-recording` names one by its ID and
-answers with what it is, how many entries it holds and how it ended.
+A recording starts, stops, is listed, opens and is queried: `start-recording` and `stop-recording` name an
+environment, `list-recordings` lists every recording of the process, `open-recording` names one by its ID and
+answers with what it is, how many entries it holds and how it ended, and `query-recording` and
+`get-recording-index` [read it](#querying-a-recording).
+The selectors have no operation of their own to test one against the current recording: a client queries the
+recording with the selector, or with its draft.
 
 The scenarios are served: `list-scenarios`, `get-scenario`, `create-scenario`, `update-scenario` and
 `delete-scenario`, as for every kind, and `activate-scenario`, `deactivate-scenario` and `step-scenario`.
