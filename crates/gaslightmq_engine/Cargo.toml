@@ -19,6 +19,7 @@ gaslightmq_clock_waitable.workspace = true
 gaslightmq_environment.workspace = true
 gaslightmq_field.workspace = true
 gaslightmq_incident.workspace = true
+gaslightmq_index.workspace = true
 gaslightmq_journal.workspace = true
 gaslightmq_kernel.workspace = true
 gaslightmq_lie_api.workspace = true
@@ -28,6 +29,7 @@ gaslightmq_recording.workspace = true
 gaslightmq_rule.workspace = true
 # The run of the scenario of the environment: its steps, and the order in which its rules win a conflict.
 gaslightmq_scenario.workspace = true
+gaslightmq_selector.workspace = true
 gaslightmq_session.workspace = true
 gaslightmq_trigger.workspace = true
 gaslightmq_wire.workspace = true
@@ -47,6 +49,8 @@ gaslightmq_test_kafka.workspace = true
 gaslightmq_kafka_client_api.workspace = true
 # The storage in memory that the recordings of the tests go to.
 gaslightmq_recording_conformance.workspace = true
+# The segment layout in memory, whose readers have a budget, for the query that finds no room.
+gaslightmq_recording_segments = { workspace = true, features = ["memory"] }
 # What a test arms: selectors, the definitions of lies, and the refusal that the build of a test registers.
 gaslightmq_lie.workspace = true
 gaslightmq_lie_refusal.workspace = true

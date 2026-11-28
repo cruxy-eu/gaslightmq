@@ -15,6 +15,7 @@
 //! | [`EngineEvent`] | What a session hands over: the record of a call, or an incident that a rule fired. Also an entry of the journal. |
 //! | [`Journal`] | The journal of the proxy: what changed in its environment, with the recent entries in memory. |
 //! | [`Recordings`], [`StoredRecording`] | The storage of recordings that the engine holds, whichever layout it has, and a recording as it holds it. |
+//! | [`ReadingConfiguration`], [`QueriedCalls`], [`RecordingFacets`] | What reading the recordings is configured with, the calls of a recording that a selector matches, and the facets of its index. |
 //! | [`Recorder`], [`RecordingStart`], [`RecorderConfiguration`] | The recorder of the proxy, what whoever starts a recording says about it, and what the recorder is configured with. |
 //! | [`LiveEvents`], [`EveryEvent`] | The events as a listener receives them: one that watches and may miss the oldest, and one that keeps every event. |
 //! | [`EventBacklog`] | How many events an engine keeps for a live listener that falls behind. |
@@ -22,7 +23,7 @@
 //! | [`ArmError`], [`DisarmError`], [`RetuneError`], [`LiveEventsError`] | Why a rule was not armed, disarmed or retuned, and why a live listener has no next event. |
 //! | [`ActivateScenarioError`], [`DeactivateScenarioError`], [`StepScenarioError`] | Why a scenario was not activated, deactivated or advanced to its next step. |
 //! | [`NotOpenError`] | No session is open on the connection that someone asked to close. |
-//! | [`StartRecordingError`], [`StopRecordingError`], [`ListRecordingsError`], [`OpenRecordingError`] | Why a recording did not start, did not stop in order, and why the recordings were not listed or one did not open. |
+//! | [`StartRecordingError`], [`StopRecordingError`], [`ListRecordingsError`], [`OpenRecordingError`], [`QueryRecordingError`] | Why a recording did not start, did not stop in order, and why the recordings were not listed, one did not open, or one was not queried. |
 //!
 //! The [`prelude`] holds all of them.
 //!
@@ -295,6 +296,11 @@
 //!   the last one that its description names, without a gap.
 //! - **A recorder that cannot write** stops the recording, which holds what its last commit covers.
 //!   The journal of the environment says so, and the recording does not.
+//! - **A recording is read as a stream**: [`Recordings::query`] finds the calls that a selector matches, and
+//!   counts them over the whole recording, and [`Recordings::index`] groups its calls into facets under a filter.
+//!   A query streams only the stretches whose summaries can hold a call that its selector matches, and neither
+//!   reads a frame. A reading that finds no room in the budget of the readers is refused, and waits for nothing.
+//!   See [reading a recording](Recordings#reading-a-recording).
 //!
 //! # Time
 //!
@@ -367,18 +373,20 @@ mod rules;
 mod session;
 mod timers;
 
-pub use configuration::{EngineConfiguration, EventBacklog, EventBacklogError, RecorderConfiguration};
+pub use configuration::{
+    EngineConfiguration, EventBacklog, EventBacklogError, ReadingConfiguration, RecorderConfiguration,
+};
 pub use engine::Engine;
 pub use error::{
     ActivateScenarioError, ArmError, DeactivateScenarioError, DisarmError, EndpointOpenError, EngineStartError,
-    ListRecordingsError, LiveEventsError, NotOpenError, OpenRecordingError, RetuneError, StartRecordingError,
-    StepScenarioError, StopRecordingError,
+    ListRecordingsError, LiveEventsError, NotOpenError, OpenRecordingError, QueryRecordingError, RetuneError,
+    StartRecordingError, StepScenarioError, StopRecordingError,
 };
 pub use events::{EngineEvent, EveryEvent, LiveEvents};
 pub use journal::Journal;
 pub use open_sessions::{OpenSession, SessionEvent};
 pub use recorder::{Recorder, RecordingStart};
-pub use recordings::{Recordings, StoredRecording};
+pub use recordings::{QueriedCalls, RecordingFacets, Recordings, StoredRecording};
 pub use rules::{ArmedRules, RuleChanges, ScenarioChange, StepsTaken};
 
 /// Every item of this crate.
@@ -399,8 +407,9 @@ pub mod prelude {
     pub use crate::{
         ActivateScenarioError, ArmError, ArmedRules, DeactivateScenarioError, DisarmError, EndpointOpenError, Engine,
         EngineConfiguration, EngineEvent, EngineStartError, EventBacklog, EventBacklogError, EveryEvent, Journal,
-        ListRecordingsError, LiveEvents, LiveEventsError, NotOpenError, OpenRecordingError, OpenSession,
-        RecorderConfiguration, RecordingStart, Recordings, RetuneError, RuleChanges, ScenarioChange, SessionEvent,
-        StartRecordingError, StepScenarioError, StepsTaken, StopRecordingError, StoredRecording,
+        ListRecordingsError, LiveEvents, LiveEventsError, NotOpenError, OpenRecordingError, OpenSession, QueriedCalls,
+        QueryRecordingError, ReadingConfiguration, RecorderConfiguration, RecordingFacets, RecordingStart, Recordings,
+        RetuneError, RuleChanges, ScenarioChange, SessionEvent, StartRecordingError, StepScenarioError, StepsTaken,
+        StopRecordingError, StoredRecording,
     };
 }

@@ -286,6 +286,42 @@ pub enum OpenRecordingError {
     StorageUnavailable { recording: RecordingId, reason: String },
 }
 
+/// Why a recording was not [queried](crate::Recordings::query), or did not give its [index](crate::Recordings::index).
+///
+/// ```
+/// use gaslightmq_engine::prelude::*;
+///
+/// let error = QueryRecordingError::Busy {
+///     recording: "orders-sim.2026-11-21T14-02-11.527Z".parse().expect("an ID"),
+///     reason: "the readers of this process hold 268435456 bytes of recordings, and \
+///              `recordings.all_readers_memory` allows 268435456"
+///         .to_owned(),
+/// };
+/// assert_eq!(
+///     error.to_string(),
+///     "recording orders-sim.2026-11-21T14-02-11.527Z was not read, because the engine is busy reading: \
+///      the readers of this process hold 268435456 bytes of recordings, and `recordings.all_readers_memory` allows \
+///      268435456"
+/// );
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum QueryRecordingError {
+    /// The storage has no recording with that ID.
+    #[error("no recording {recording} is there")]
+    NotFound { recording: RecordingId },
+    /// What is there is no recording that this build reads: a later version wrote it, or it is no recording.
+    /// It will not open, however often someone asks.
+    #[error("recording {recording} does not open: {reason}")]
+    Unreadable { recording: RecordingId, reason: String },
+    /// The storage did not answer, and the recording can be read again.
+    #[error("recording {recording} was not read: {reason}")]
+    StorageUnavailable { recording: RecordingId, reason: String },
+    /// The readers of the process hold as much memory as a budget allows, so the reading was refused, and nothing
+    /// waited. Whoever asked asks again a moment later. `reason` names the budget, and the property that sets it.
+    #[error("recording {recording} was not read, because the engine is busy reading: {reason}")]
+    Busy { recording: RecordingId, reason: String },
+}
+
 #[cfg(test)]
 mod tests {
     use std::error::Error;

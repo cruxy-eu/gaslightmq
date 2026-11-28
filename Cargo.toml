@@ -81,6 +81,7 @@ gaslightmq_environment_conformance = { path = "crates/gaslightmq_environment/con
 gaslightmq_field = { path = "crates/gaslightmq_field" }
 gaslightmq_host = { path = "crates/gaslightmq_host" }
 gaslightmq_incident = { path = "crates/gaslightmq_incident" }
+gaslightmq_index = { path = "crates/gaslightmq_index" }
 gaslightmq_journal = { path = "crates/gaslightmq_journal" }
 gaslightmq_kafka_client_api = { path = "crates/gaslightmq_kafka_client/api" }
 gaslightmq_kafka_client_native = { path = "crates/gaslightmq_kafka_client/native" }
