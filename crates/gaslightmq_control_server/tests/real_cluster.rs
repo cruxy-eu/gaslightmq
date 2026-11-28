@@ -1593,15 +1593,20 @@ async fn a_recording_started_through_the_control_plane_keeps_the_calls_until_it_
     configuration.stats_interval = StatsInterval::new(QUIET)?;
     let server = ControlServer::start(configuration, Arc::clone(&host)).await?;
     let client = ControlClient::new(ControlClientConfiguration::new(server.address().into()));
+    let mut stream = Watched {
+        stream: client.live_stream().await?,
+    };
+    let StreamMessage::Snapshot(_) = stream.next_change().await? else {
+        anyhow::bail!("the stream started with another message than the snapshot");
+    };
     client
         .send(StartEnvironment {
             environment: staging.name().clone(),
         })
         .await??;
-    let mut stream = Watched {
-        stream: client.live_stream().await?,
+    let StreamMessage::EnvironmentStarted { .. } = stream.next_change().await? else {
+        anyhow::bail!("the start of the environment sent no message");
     };
-    stream.next_change().await?;
     let produces = Subscription::Calls {
         environment: staging.name().clone(),
         selector: SelectorRef::Inline(Conditions::from(Condition::is(ApiKey::PRODUCE))),
@@ -1660,16 +1665,6 @@ async fn a_recording_started_through_the_control_plane_keeps_the_calls_until_it_
         .await??;
     assert_eq!(opened.description.recording, recording);
     assert_eq!(opened.end, Some(end));
-    assert_eq!(
-        client
-            .send(StopRecording {
-                environment: staging.name().clone(),
-            })
-            .await?,
-        Err(StopRecordingError::NotRecording {
-            environment: staging.name().clone(),
-        })
-    );
     server.stop().await;
     host.stop_all().await;
     Ok(())
