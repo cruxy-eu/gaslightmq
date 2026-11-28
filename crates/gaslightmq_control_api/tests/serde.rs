@@ -12,7 +12,7 @@ use std::collections::BTreeMap;
 use std::fmt::Debug;
 
 use gaslightmq_control_api::call::{Call, CallId, CallTiming, Delivered, Explanation, RuleExplanation};
-use gaslightmq_control_api::clock::{Duration, Instant};
+use gaslightmq_control_api::clock::{Duration, Instant, TimeSpan};
 use gaslightmq_control_api::environment::RecordingMode;
 use gaslightmq_control_api::environment::{
     BrokerDefinition, BrokerListeners, Environment, EnvironmentName, Instances, Listeners, ProxyDefinition, Upstream,
@@ -24,9 +24,10 @@ use gaslightmq_control_api::journal::{
     RecordingStopCause,
 };
 use gaslightmq_control_api::kernel::{ApiKey, BrokerId, ClientId};
+use gaslightmq_control_api::lie::LieDefinition;
 use gaslightmq_control_api::prelude::*;
 use gaslightmq_control_api::rule::{PresetName, Rule, RuleName, RuleState};
-use gaslightmq_control_api::scenario::{Mode, Scenario, ScenarioName, ScenarioPosition};
+use gaslightmq_control_api::scenario::{Mode, Scenario, ScenarioName, ScenarioPosition, Step, Until};
 use gaslightmq_control_api::selector::{Condition, Conditions, Selector, SelectorName, SelectorRef};
 use gaslightmq_control_api::surface::{Column, Hold, Intent, LayoutName, Pad, PadLayout, PresenceId, Row};
 use gaslightmq_control_api::trigger::Seed;
@@ -2193,4 +2194,78 @@ fn an_error_of_a_query_names_its_variant() {
         reason: "no selector is named \"order-producers\"".to_owned(),
     })
     .writes(json!({ "error": "does-not-fit", "reason": "no selector is named \"order-producers\"" }));
+}
+
+// Capture
+
+#[test]
+fn a_capture_starts_stops_and_is_saved_as_a_scenario_by_its_environment() {
+    Form(AnyOperation::from(StartCapture {
+        environment: "orders-sim".parse().unwrap(),
+    }))
+    .writes(json!({ "operation": "start-capture", "environment": "orders-sim" }));
+    Form(AnyOperation::from(StopCapture {
+        environment: "orders-sim".parse().unwrap(),
+    }))
+    .writes(json!({ "operation": "stop-capture", "environment": "orders-sim" }));
+    Form(AnyOperation::from(SaveCapture {
+        environment: "orders-sim".parse().unwrap(),
+        scenario: "slow-then-refused".parse().unwrap(),
+        title: Some("Slow, then refused".parse().unwrap()),
+    }))
+    .writes(json!({
+        "operation": "save-capture",
+        "environment": "orders-sim",
+        "scenario": "slow-then-refused",
+        "title": "Slow, then refused",
+    }));
+}
+
+#[test]
+fn a_stopped_capture_answers_with_its_steps_and_the_live_rules_as_they_were_armed() {
+    let blackhole = Rule::new("blackhole".parse().unwrap(), Conditions::new(), LieDefinition::Silence);
+    let found = Step::new("step-1".parse().unwrap()).ending_on(Until::After(TimeSpan::from_secs(2)));
+    let armed = Step::new("step-2".parse().unwrap())
+        .with_title("Armed blackhole".parse().unwrap())
+        .arming([blackhole.name().clone()])
+        .ending_on(Until::After(TimeSpan::from_millis(1500)));
+    Form(CapturedSteps {
+        steps: vec![found.clone(), armed],
+        rules: vec![blackhole],
+    })
+    .writes(json!({
+        "steps": [
+            { "name": "step-1", "until": { "after": "2s" } },
+            { "name": "step-2", "title": "Armed blackhole", "arm": ["blackhole"], "until": { "after": "1500ms" } },
+        ],
+        "rules": [{ "name": "blackhole", "selector": {}, "action": { "lie": "silence" } }],
+    }));
+    // A capture whose steps arm no live rule leaves `rules` out.
+    Form(CapturedSteps {
+        steps: vec![found],
+        rules: Vec::new(),
+    })
+    .writes(json!({ "steps": [{ "name": "step-1", "until": { "after": "2s" } }] }));
+}
+
+#[test]
+fn an_error_of_a_capture_names_its_variant() {
+    Form(StartCaptureError::AlreadyCapturing {
+        environment: "orders-sim".parse().unwrap(),
+    })
+    .writes(json!({ "error": "already-capturing", "environment": "orders-sim" }));
+    Form(StopCaptureError::NotCapturing {
+        environment: "orders-sim".parse().unwrap(),
+    })
+    .writes(json!({ "error": "not-capturing", "environment": "orders-sim" }));
+    Form(SaveCaptureError::RuleChanged {
+        environment: "orders-sim".parse().unwrap(),
+        rule: "slow-produce".parse().unwrap(),
+    })
+    .writes(json!({ "error": "rule-changed", "environment": "orders-sim", "rule": "slow-produce" }));
+    Form(SaveCaptureError::NameTaken {
+        name: DefinitionRef::Scenario("slow-then-refused".parse().unwrap()),
+        holder: None,
+    })
+    .writes(json!({ "error": "name-taken", "name": { "scenario": "slow-then-refused" } }));
 }

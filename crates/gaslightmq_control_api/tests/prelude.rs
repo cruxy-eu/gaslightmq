@@ -111,6 +111,12 @@ mod next_to_std_and_every_domain {
         let _: Option<<DeactivateScenario as Operation>::Error> = None::<DeactivateScenarioError>;
         let _: Option<<StepScenario as Operation>::Answer> = None::<Revised>;
         let _: Option<<StepScenario as Operation>::Error> = None::<StepScenarioError>;
+        let _: Option<<StartCapture as Operation>::Answer> = None::<()>;
+        let _: Option<<StartCapture as Operation>::Error> = None::<StartCaptureError>;
+        let _: Option<<StopCapture as Operation>::Answer> = None::<CapturedSteps>;
+        let _: Option<<StopCapture as Operation>::Error> = None::<StopCaptureError>;
+        let _: Option<<SaveCapture as Operation>::Answer> = None::<Revised>;
+        let _: Option<<SaveCapture as Operation>::Error> = None::<SaveCaptureError>;
     }
 
     /// Every other type of the prelude, named without a path.

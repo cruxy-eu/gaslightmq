@@ -29,6 +29,7 @@
 //! | [`GetBackend`], [`BackendStatus`], [`BackendKind`] | The backend of an environment: its kind, its endpoints and the incidents it can do. |
 //! | [`ParseSentence`], [`ParsedSentence`], [`WordCompletion`], [`WordKind`], [`UnreadWord`] | A ⌘K sentence that is still being typed, and the rule it gives. |
 //! | [`ActivateScenario`], [`DeactivateScenario`], [`StepScenario`], [`ScenarioStatus`] | The scenario of an environment: activating, deactivating and advancing it, and where it stands. |
+//! | [`StartCapture`], [`StopCapture`], [`SaveCapture`], [`CapturedSteps`] | The capture of an environment: starting and stopping it, what it captured, and saving that as a scenario. |
 //! | [`QueryJournal`] | The journal of an environment: what changed there, and where each change came from. |
 //! | [`StartRecording`], [`StopRecording`], [`ListRecordings`], [`OpenRecording`] | The recordings of the environments: starting and stopping one, listing them, and opening one. |
 //! | [`RecordingStatus`], [`RecordingDescription`], [`RecordedScenario`], [`RecordingEnd`], [`RecordingEnding`] | A recording as the process keeps it: what it is, how far it goes, and how it ended. |
@@ -159,6 +160,9 @@
 //! | [`ReloadWorkspace`] | [`ReloadWorkspaceError`] | A rule of the files has the name of a live rule, an armed live rule would not fit the files, the workspace holds changes that nobody saved, the files do not fit each other, or a file does not read. |
 //! | [`SaveWorkspace`] | [`SaveWorkspaceError`] | Someone edited a file that the save would write, or a file could not be written. |
 //! | [`CheckHealth`] | [`Unhealthy`] | An environment that the process was started with does not run. |
+//! | [`StartCapture`] | [`StartCaptureError`] | The environment does not run, or it captures already. |
+//! | [`StopCapture`] | [`StopCaptureError`] | The environment does not run, or it captures nothing. |
+//! | [`SaveCapture`] | [`SaveCaptureError`] | The environment does not run, it holds no capture, a live rule of the capture changed since it armed, a name is taken, the scenario does not fit, a file changed outside, or a store failed. |
 //! | [`StartRecording`] | [`StartRecordingError`] | The environment does not run, it records already, or the recording did not start. |
 //! | [`StopRecording`] | [`StopRecordingError`] | The environment does not run, it records nothing, or the recording stopped without its end. |
 //! | [`ListRecordings`] | [`ListRecordingsError`] | The storage of the recordings did not answer. |
@@ -232,6 +236,7 @@ pub use gaslightmq_surface as surface;
 pub use gaslightmq_trigger as trigger;
 
 mod backend;
+mod capture;
 mod definitions;
 mod environments;
 mod journal_query;
@@ -249,6 +254,9 @@ mod stream;
 mod workspace;
 
 pub use backend::{BackendKind, BackendStatus, GetBackend};
+pub use capture::{
+    CapturedSteps, SaveCapture, SaveCaptureError, StartCapture, StartCaptureError, StopCapture, StopCaptureError,
+};
 pub use definitions::{
     AnyDefinition, CreateDefinition, CreateDefinitionError, DefinitionRef, DefinitionStatus, Definitions,
     DeleteDefinition, DeleteDefinitionError, EditableDefinition, GetDefinition, GetDefinitionError, ListDefinitions,
@@ -304,21 +312,22 @@ pub mod prelude {
     #[doc(no_inline)]
     pub use crate::{
         ActivateScenario, ActivateScenarioError, AnyDefinition, AnyOperation, ArmRule, BackendKind, BackendStatus,
-        CheckHealth, CloseSession, CloseSessionError, CreateDefinition, CreateDefinitionError, CreateLiveRule,
-        CreateLiveRuleError, DeactivateScenario, DeactivateScenarioError, DefinitionChange, DefinitionRef,
-        DefinitionStatus, Definitions, DeleteDefinition, DeleteDefinitionError, DeleteLiveRule, DeleteLiveRuleError,
-        DisarmRule, EditableDefinition, EnvironmentHealth, EnvironmentNotRunning, EnvironmentReadError,
-        EnvironmentStatus, Expects, FireRule, FireRuleError, GetBackend, GetDefinition, GetDefinitionError,
-        GetEnvironment, GetRecordingIndex, Health, IndexFacet, IndexPattern, IndexValue, IntentEffect, IntentError,
-        KeepRule, KeepRuleError, ListDefinitions, ListDefinitionsError, ListEnvironmentRules, ListEnvironments,
-        ListRecordings, ListRecordingsError, ListSessions, OpenRecording, OpenRecordingError, Operation,
-        OperationRequest, ParseSentence, ParsedSentence, ProcessState, QueryJournal, QueryRecording,
-        QueryRecordingError, RecordedCalls, RecordedScenario, RecordingDescription, RecordingEnd, RecordingEnding,
-        RecordingIndex, RecordingStatus, ReloadWorkspace, ReloadWorkspaceError, Reloaded, RequestCause, RequestError,
-        RequestSource, RequestSurface, Revised, Revision, RuleCommandError, RuleHolder, RuleStats, RuleStatus, RunId,
-        RunIdError, RunningEnvironment, SaveWorkspace, SaveWorkspaceError, Saved, ScenarioStatus, SendIntent,
-        SessionCloser, SessionIdentity, SessionStatus, StartEnvironment, StartEnvironmentError, StartRecording,
-        StartRecordingError, Stats, StepScenario, StepScenarioError, StopEnvironment, StopRecording,
+        CapturedSteps, CheckHealth, CloseSession, CloseSessionError, CreateDefinition, CreateDefinitionError,
+        CreateLiveRule, CreateLiveRuleError, DeactivateScenario, DeactivateScenarioError, DefinitionChange,
+        DefinitionRef, DefinitionStatus, Definitions, DeleteDefinition, DeleteDefinitionError, DeleteLiveRule,
+        DeleteLiveRuleError, DisarmRule, EditableDefinition, EnvironmentHealth, EnvironmentNotRunning,
+        EnvironmentReadError, EnvironmentStatus, Expects, FireRule, FireRuleError, GetBackend, GetDefinition,
+        GetDefinitionError, GetEnvironment, GetRecordingIndex, Health, IndexFacet, IndexPattern, IndexValue,
+        IntentEffect, IntentError, KeepRule, KeepRuleError, ListDefinitions, ListDefinitionsError,
+        ListEnvironmentRules, ListEnvironments, ListRecordings, ListRecordingsError, ListSessions, OpenRecording,
+        OpenRecordingError, Operation, OperationRequest, ParseSentence, ParsedSentence, ProcessState, QueryJournal,
+        QueryRecording, QueryRecordingError, RecordedCalls, RecordedScenario, RecordingDescription, RecordingEnd,
+        RecordingEnding, RecordingIndex, RecordingStatus, ReloadWorkspace, ReloadWorkspaceError, Reloaded,
+        RequestCause, RequestError, RequestSource, RequestSurface, Revised, Revision, RuleCommandError, RuleHolder,
+        RuleStats, RuleStatus, RunId, RunIdError, RunningEnvironment, SaveCapture, SaveCaptureError, SaveWorkspace,
+        SaveWorkspaceError, Saved, ScenarioStatus, SendIntent, SessionCloser, SessionIdentity, SessionStatus,
+        StartCapture, StartCaptureError, StartEnvironment, StartEnvironmentError, StartRecording, StartRecordingError,
+        Stats, StepScenario, StepScenarioError, StopCapture, StopCaptureError, StopEnvironment, StopRecording,
         StopRecordingError, StreamMessage, Subscription, Unhealthy, UnreadWord, UpdateDefinition,
         UpdateDefinitionError, UpdateLiveRule, UpdateLiveRuleError, WordCompletion, WordKind, WorkspaceStatus,
         WriteBack,

@@ -13,8 +13,9 @@ use crate::{
     ActivateScenario, ArmRule, CheckHealth, CloseSession, CreateDefinition, CreateLiveRule, DeactivateScenario,
     DeleteDefinition, DeleteLiveRule, DisarmRule, FireRule, GetBackend, GetDefinition, GetEnvironment,
     GetRecordingIndex, KeepRule, ListDefinitions, ListEnvironmentRules, ListEnvironments, ListRecordings, ListSessions,
-    OpenRecording, ParseSentence, QueryJournal, QueryRecording, ReloadWorkspace, SaveWorkspace, SendIntent,
-    StartEnvironment, StartRecording, StepScenario, StopEnvironment, StopRecording, UpdateDefinition, UpdateLiveRule,
+    OpenRecording, ParseSentence, QueryJournal, QueryRecording, ReloadWorkspace, SaveCapture, SaveWorkspace,
+    SendIntent, StartCapture, StartEnvironment, StartRecording, StepScenario, StopCapture, StopEnvironment,
+    StopRecording, UpdateDefinition, UpdateLiveRule,
 };
 
 /// One thing that a client asks of the control plane, with what it gets back.
@@ -169,6 +170,12 @@ pub enum AnyOperation {
     QueryRecording(QueryRecording),
     /// [Get the index of a recording](GetRecordingIndex).
     GetRecordingIndex(GetRecordingIndex),
+    /// [Start a capture of an environment](StartCapture).
+    StartCapture(StartCapture),
+    /// [Stop the capture of an environment](StopCapture).
+    StopCapture(StopCapture),
+    /// [Save the last capture of an environment as a scenario](SaveCapture).
+    SaveCapture(SaveCapture),
 }
 
 impl AnyOperation {
@@ -237,6 +244,9 @@ impl AnyOperation {
             AnyOperation::OpenRecording(_) => "open-recording",
             AnyOperation::QueryRecording(_) => "query-recording",
             AnyOperation::GetRecordingIndex(_) => "get-recording-index",
+            AnyOperation::StartCapture(_) => "start-capture",
+            AnyOperation::StopCapture(_) => "stop-capture",
+            AnyOperation::SaveCapture(_) => "save-capture",
         }
     }
 }
@@ -338,4 +348,7 @@ requests! {
     OpenRecording => OpenRecording;
     QueryRecording => QueryRecording;
     GetRecordingIndex => GetRecordingIndex;
+    StartCapture => StartCapture;
+    StopCapture => StopCapture;
+    SaveCapture => SaveCapture;
 }
