@@ -53,6 +53,7 @@ stored! {
 impl Editable for Selector {}
 impl Editable for Preset {}
 impl Editable for Rule {}
+impl Editable for Scenario {}
 impl Editable for PadLayout {}
 
 /// Every definition of the kind `D`.
@@ -255,6 +256,12 @@ impl DefinitionOperations {
             Ok(updated) => return Ok(revised(updated)),
             Err(Host::OtherRun { run: of_the_host }) => {
                 return Err(UpdateDefinitionError::OtherRun { run: run(of_the_host) });
+            }
+            Err(Host::NameTaken { rule, holder }) => {
+                return Err(UpdateDefinitionError::NameTaken {
+                    name: rule.into(),
+                    holder: rule_holder(holder),
+                });
             }
             Err(Host::Unresolved {
                 name,

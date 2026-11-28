@@ -18,10 +18,11 @@ use crate::{HostChange, journaling};
 /// | What happened to a session | Tells it as a [`HostChange::Session`]. |
 /// | An entry of the journal | Tells it as a [`HostChange::Journaled`]. |
 /// | The start or the end of a recording | Tells it as a [`HostChange::RecordingStarted`] or a [`HostChange::RecordingStopped`]. |
-/// | A change of the armed rules | Counts every rule that disarmed without anyone counting it, so it takes its number in `revisions`, records it in `journal` with the surface `lifetime`, and tells a [`HostChange::RuleChanged`] for it. |
+/// | A change of the armed rules | Counts every step that the scenario took by itself, so it takes its number in `revisions`, records it in `journal` with the surface `step`, and tells a [`HostChange::ScenarioChanged`]. Counts every rule that disarmed without anyone counting it, so it takes its number, records it with the surface `lifetime`, and tells a [`HostChange::RuleChanged`] for it. |
 ///
 /// The host counts, records and tells what someone arms or disarms through it.
-/// What is left for the task is what nobody asked the host for: a rule whose lifetime ended or whose budget is spent.
+/// What is left for the task is what nobody asked the host for: a step whose condition held, and a rule whose
+/// lifetime ended or whose budget is spent.
 ///
 /// The task follows the armed rules `armed` from the moment of this call, before the environment takes its first
 /// change, so it misses none of them.
@@ -75,9 +76,12 @@ pub(super) fn watch(
                         // counted once, by the host.
                         let uncounted = {
                             let mut revisions = revisions::lock(&revisions);
-                            journaling::catch_up(&mut revisions, &armed.snapshot(), &journal)
+                            journaling::catch_up(&mut revisions, &armed.take_steps(), &journal)
                         };
-                        for rule in uncounted {
+                        if uncounted.scenario {
+                            tell(HostChange::ScenarioChanged { environment: environment.clone() });
+                        }
+                        for rule in uncounted.rules {
                             tell(HostChange::RuleChanged {
                                 environment: environment.clone(),
                                 rule,

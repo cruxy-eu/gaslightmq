@@ -5,6 +5,7 @@ use gaslightmq_backend_upstream::UpstreamBackendError;
 use gaslightmq_engine::EngineStartError;
 use gaslightmq_environment::{EnvironmentName, ListenAddress};
 use gaslightmq_field::ConnectionNumber;
+use gaslightmq_incident::UnsupportedIncidents;
 use gaslightmq_recording::RecordingId;
 use gaslightmq_rule::{RuleError, RuleName};
 use gaslightmq_scenario::ScenarioName;
@@ -113,6 +114,10 @@ pub enum UpdateDefinitionError {
     /// The change expects a revision of another run than the run of the host, which is `run`.
     #[error("the change expects a revision of another run than {run}, which is the run of the process")]
     OtherRun { run: RunId },
+    /// The definition is a scenario that owns a rule with the name of a live rule of an environment that runs.
+    /// Rule names are unique among all rules, so the scenario cannot own it.
+    #[error("rule {:?} of the scenario was not updated: {}", .rule.as_str(), .holder.holds())]
+    NameTaken { rule: RuleName, holder: RuleHolder },
     /// A live rule that is armed in the environment would not resolve with the change, so it could not follow it:
     /// the change makes its selector or its preset one that the rule cannot fire with. `reason` says what is wrong.
     #[error(
@@ -800,4 +805,160 @@ pub enum FollowCallsError {
     /// or the selectors include each other in a circle. Its error says which.
     #[error("{error}")]
     Unresolved { error: SelectorSetError },
+}
+
+/// Why a host did not [activate](crate::Host::activate_scenario) a scenario in an environment.
+///
+/// | Variant | What is wrong |
+/// |---|---|
+/// | [`OtherRun`](Self::OtherRun) | The change expects a revision of another run. |
+/// | [`NotRunning`](Self::NotRunning) | No environment of that name runs. |
+/// | [`NotFound`](Self::NotFound) | The workspace has no scenario of that name. |
+/// | [`StoreFailed`](Self::StoreFailed) | A store of the workspace could not be read. |
+/// | [`DoesNotFit`](Self::DoesNotFit) | The scenario does not resolve against the workspace. |
+/// | [`Changed`](Self::Changed) | The scenario of the environment has another revision than the change expects. |
+/// | [`AlreadyActive`](Self::AlreadyActive) | A scenario is active in the environment. |
+/// | [`Unsupported`](Self::Unsupported) | The backend of the environment can neither apply nor emulate an incident that the scenario fires. |
+///
+/// An activation that fails changed nothing.
+///
+/// ```
+/// use gaslightmq_host::prelude::*;
+///
+/// let error = ActivateScenarioError::AlreadyActive {
+///     environment: "staging-proxy".parse().expect("an environment name"),
+///     scenario: "leader-election".parse().expect("a scenario name"),
+/// };
+/// assert_eq!(
+///     error.to_string(),
+///     "environment \"staging-proxy\" runs scenario \"leader-election\" already"
+/// );
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum ActivateScenarioError {
+    /// The change expects a revision of another run than the run of the host, which is `run`.
+    #[error("the change expects a revision of another run than {run}, which is the run of the process")]
+    OtherRun { run: RunId },
+    /// No environment of this name runs.
+    #[error("environment {:?} does not run", .environment.as_str())]
+    NotRunning { environment: EnvironmentName },
+    /// The workspace has no scenario of this name.
+    #[error("scenario {:?} does not exist", .scenario.as_str())]
+    NotFound { scenario: ScenarioName },
+    /// A store of the workspace could not be read. `reason` says which store, and what it said.
+    #[error("scenario {:?} is not activated: {reason}", .scenario.as_str())]
+    StoreFailed { scenario: ScenarioName, reason: String },
+    /// The scenario does not resolve against the workspace: a rule it names is not there, a rule does not resolve,
+    /// or the selectors and the presets of the workspace do not hold together. `reason` says what is wrong.
+    #[error("scenario {:?} does not fit the workspace: {reason}", .scenario.as_str())]
+    DoesNotFit { scenario: ScenarioName, reason: String },
+    /// The scenario of the environment has another revision than the change expects: someone activated,
+    /// deactivated or advanced it since. `revision` is the one it has now.
+    #[error(
+        "the scenario of environment {:?} changed since: it has revision {revision} now",
+        .environment.as_str()
+    )]
+    Changed {
+        environment: EnvironmentName,
+        revision: Revision,
+    },
+    /// A scenario is active in the environment, and at most one is. Whoever wants another deactivates it first.
+    #[error(
+        "environment {:?} runs scenario {:?} already",
+        .environment.as_str(),
+        .scenario.as_str()
+    )]
+    AlreadyActive {
+        environment: EnvironmentName,
+        scenario: ScenarioName,
+    },
+    /// The backend of the environment can neither apply nor emulate an incident that the rules of the scenario fire.
+    /// Its error lists every such incident.
+    #[error(
+        "scenario {:?} does not run in environment {:?}: {error}",
+        .scenario.as_str(),
+        .environment.as_str()
+    )]
+    Unsupported {
+        environment: EnvironmentName,
+        scenario: ScenarioName,
+        error: UnsupportedIncidents,
+    },
+}
+
+/// Why a host did not [deactivate](crate::Host::deactivate_scenario) the scenario of an environment.
+///
+/// ```
+/// use gaslightmq_host::prelude::*;
+///
+/// let error = DeactivateScenarioError::NotActive { environment: "staging-proxy".parse().expect("an environment name") };
+/// assert_eq!(error.to_string(), "environment \"staging-proxy\" runs no scenario");
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum DeactivateScenarioError {
+    /// The change expects a revision of another run than the run of the host, which is `run`.
+    #[error("the change expects a revision of another run than {run}, which is the run of the process")]
+    OtherRun { run: RunId },
+    /// No environment of this name runs.
+    #[error("environment {:?} does not run", .environment.as_str())]
+    NotRunning { environment: EnvironmentName },
+    /// The scenario of the environment has another revision than the change expects. `revision` is the one it has now.
+    #[error(
+        "the scenario of environment {:?} changed since: it has revision {revision} now",
+        .environment.as_str()
+    )]
+    Changed {
+        environment: EnvironmentName,
+        revision: Revision,
+    },
+    /// No scenario is active in the environment.
+    #[error("environment {:?} runs no scenario", .environment.as_str())]
+    NotActive { environment: EnvironmentName },
+}
+
+/// Why a host did not [advance](crate::Host::step_scenario) the scenario of an environment to its next step.
+///
+/// ```
+/// use gaslightmq_host::prelude::*;
+///
+/// let error = StepScenarioError::NoStep {
+///     environment: "staging-proxy".parse().expect("an environment name"),
+///     scenario: "steady-jitter".parse().expect("a scenario name"),
+/// };
+/// assert_eq!(
+///     error.to_string(),
+///     "scenario \"steady-jitter\" runs no step in environment \"staging-proxy\" that could end"
+/// );
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum StepScenarioError {
+    /// The change expects a revision of another run than the run of the host, which is `run`.
+    #[error("the change expects a revision of another run than {run}, which is the run of the process")]
+    OtherRun { run: RunId },
+    /// No environment of this name runs.
+    #[error("environment {:?} does not run", .environment.as_str())]
+    NotRunning { environment: EnvironmentName },
+    /// The scenario of the environment has another revision than the change expects: someone, or the condition of
+    /// the step, advanced it since. `revision` is the one it has now.
+    #[error(
+        "the scenario of environment {:?} changed since: it has revision {revision} now",
+        .environment.as_str()
+    )]
+    Changed {
+        environment: EnvironmentName,
+        revision: Revision,
+    },
+    /// No scenario is active in the environment.
+    #[error("environment {:?} runs no scenario", .environment.as_str())]
+    NotActive { environment: EnvironmentName },
+    /// The scenario runs no step: it is no Sequence, or it ran its last step already.
+    #[error(
+        "scenario {:?} runs no step in environment {:?} that could end",
+        .scenario.as_str(),
+        .environment.as_str()
+    )]
+    NoStep {
+        environment: EnvironmentName,
+        scenario: ScenarioName,
+    },
 }

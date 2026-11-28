@@ -18,6 +18,9 @@ use gaslightmq_control_api::trigger::{Chance, Trigger, TriggerParts};
 use gaslightmq_ui::history::{Change, History, Outcome, Report, Step, Subject};
 use gaslightmq_ui::{Live, UiConfiguration, rule_status};
 
+/// The revision that the start of the environment took: the last change of its scenario while none is active.
+const STARTED: Revision = Revision::new(1);
+
 /// The environment that the tabs show.
 const ENVIRONMENT: &str = "orders-sim";
 
@@ -70,6 +73,11 @@ fn an_undo_after_another_tab_changed_the_rule_is_refused_and_changes_nothing() {
             },
             rules: vec![disarmed.clone()],
             sessions: Vec::new(),
+            // No scenario is active, and the start of the environment was the last change of its scenario.
+            scenario: ScenarioStatus {
+                active: None,
+                revision: STARTED,
+            },
             recording: None,
         }],
         workspace: WorkspaceStatus::default(),

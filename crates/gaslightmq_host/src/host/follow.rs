@@ -9,6 +9,7 @@ use gaslightmq_selector::{Selector, SelectorSet};
 use gaslightmq_workspace::WorkspaceContext;
 
 use super::{Host, Running, caught_up};
+use crate::HostChange;
 use crate::revisions::RuleRevisions;
 
 /// What a change of the workspace does to one rule that is armed in an environment.
@@ -96,10 +97,16 @@ impl<C: WorkspaceContext> Host<C> {
             let here = followings.get(environment).map_or(&[][..], Vec::as_slice);
             let (disarmed, uncounted) = caught_up(running, |running, revisions| follow(running, revisions, here));
             journal(running, &disarmed);
+            if uncounted.scenario {
+                self.publish(HostChange::ScenarioChanged {
+                    environment: environment.clone(),
+                });
+            }
             let snapshot = running.engine.rules().snapshot();
             let armed = changed.iter().filter(|rule| snapshot.get(rule).is_some()).cloned();
             following.extend(
                 uncounted
+                    .rules
                     .into_iter()
                     .chain(armed)
                     .map(|rule| (environment.clone(), rule)),

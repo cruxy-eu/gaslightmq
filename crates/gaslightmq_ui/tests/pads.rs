@@ -20,6 +20,9 @@ use gaslightmq_control_api::surface::{
 };
 use gaslightmq_ui::pads::{Desk, Move};
 
+/// The revision that the start of the environment took: the last change of its scenario while none is active.
+const STARTED: Revision = Revision::new(1);
+
 /// The revision that the control plane told beside a rule or a definition. Nothing here reads it yet.
 const TOLD: Revision = Revision::new(7);
 
@@ -90,6 +93,11 @@ impl OrderDesk {
             },
             rules,
             sessions: Vec::new(),
+            // No scenario is active, and the start of the environment was the last change of its scenario.
+            scenario: ScenarioStatus {
+                active: None,
+                revision: STARTED,
+            },
             recording: None,
         }
     }

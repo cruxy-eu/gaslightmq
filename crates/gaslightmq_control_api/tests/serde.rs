@@ -26,7 +26,7 @@ use gaslightmq_control_api::journal::{
 use gaslightmq_control_api::kernel::{ApiKey, BrokerId, ClientId};
 use gaslightmq_control_api::prelude::*;
 use gaslightmq_control_api::rule::{PresetName, Rule, RuleName, RuleState};
-use gaslightmq_control_api::scenario::{Mode, Scenario, ScenarioName};
+use gaslightmq_control_api::scenario::{Mode, Scenario, ScenarioName, ScenarioPosition};
 use gaslightmq_control_api::selector::{Condition, Conditions, Selector, SelectorName, SelectorRef};
 use gaslightmq_control_api::surface::{Column, Hold, Intent, LayoutName, Pad, PadLayout, PresenceId, Row};
 use gaslightmq_control_api::trigger::Seed;
@@ -1435,6 +1435,14 @@ fn a_client_that_connects_gets_the_state_of_the_process() {
             },
             rules: Vec::new(),
             sessions: Vec::new(),
+            // A scenario runs, at its first step.
+            scenario: ScenarioStatus {
+                active: Some(ScenarioPosition {
+                    scenario: "leader-election".parse().unwrap(),
+                    step: Some("warm-up".parse().unwrap()),
+                }),
+                revision: SEEN,
+            },
             recording: None,
         }],
         workspace: WorkspaceStatus::default(),
@@ -1462,6 +1470,10 @@ fn a_client_that_connects_gets_the_state_of_the_process() {
             },
             "rules": [],
             "sessions": [],
+            "scenario": {
+                "active": { "scenario": "leader-election", "step": "warm-up" },
+                "revision": SEEN.number(),
+            },
         }],
     }));
 }
@@ -1498,6 +1510,11 @@ fn an_environment_with_brokers_travels_inside_a_message() {
         },
         rules: Vec::new(),
         sessions: Vec::new(),
+        // No scenario is active, and the start of the environment is the last change of its scenario.
+        scenario: ScenarioStatus {
+            active: None,
+            revision: NOW,
+        },
         // The environment records, so a client that connects knows it.
         recording: Some("staging-proxy.2026-11-21T14-02-11.527Z".parse().unwrap()),
     };
@@ -1521,6 +1538,7 @@ fn an_environment_with_brokers_travels_inside_a_message() {
         },
         "rules": [],
         "sessions": [],
+        "scenario": { "revision": NOW.number() },
         "recording": "staging-proxy.2026-11-21T14-02-11.527Z",
     });
 
@@ -1859,6 +1877,94 @@ fn the_journal_records_the_surface_and_the_cause_of_a_request_and_not_its_presen
         assert_eq!(ChangeSurface::from(of_a_request), of_the_journal);
         assert_eq!(Form(of_a_request).json(), Form(of_the_journal).json());
     }
+}
+
+// Scenarios
+
+#[test]
+fn a_scenario_is_a_definition_and_its_operations_name_its_kind() {
+    let scenario: ScenarioName = "leader-election".parse().unwrap();
+    Form(AnyOperation::from(GetDefinition::<Scenario> { name: scenario.clone() }))
+        .writes(json!({ "operation": "get-scenario", "name": "leader-election" }));
+    Form(AnyOperation::from(ListDefinitions::<Scenario>::new())).writes(json!({ "operation": "list-scenarios" }));
+    Form(AnyOperation::from(DeleteDefinition::<Scenario> {
+        name: scenario,
+        expects: None,
+    }))
+    .writes(json!({ "operation": "delete-scenario", "name": "leader-election" }));
+}
+
+#[test]
+fn a_scenario_activates_deactivates_and_steps_in_an_environment_as_its_sender_saw_it() {
+    let expects = Some(Expects {
+        run: RUN.parse().unwrap(),
+        revision: SEEN,
+    });
+    let seen = json!({ "run": RUN, "revision": SEEN.number() });
+    Form(AnyOperation::from(ActivateScenario {
+        environment: "orders-sim".parse().unwrap(),
+        scenario: "leader-election".parse().unwrap(),
+        expects,
+    }))
+    .writes(json!({
+        "operation": "activate-scenario",
+        "environment": "orders-sim",
+        "scenario": "leader-election",
+        "expects": seen,
+    }));
+    Form(AnyOperation::from(DeactivateScenario {
+        environment: "orders-sim".parse().unwrap(),
+        expects: None,
+    }))
+    .writes(json!({ "operation": "deactivate-scenario", "environment": "orders-sim" }));
+    Form(AnyOperation::from(StepScenario {
+        environment: "orders-sim".parse().unwrap(),
+        expects,
+    }))
+    .writes(json!({ "operation": "step-scenario", "environment": "orders-sim", "expects": seen }));
+    // Two clients stepped from one step, and the second one learns that the first one advanced it.
+    Form(StepScenarioError::Changed {
+        environment: "orders-sim".parse().unwrap(),
+        revision: NOW,
+    })
+    .writes(json!({ "error": "changed", "environment": "orders-sim", "revision": NOW.number() }));
+}
+
+#[test]
+fn an_activation_that_the_backend_cannot_run_lists_the_incidents_it_cannot_do() {
+    Form(ActivateScenarioError::Unsupported {
+        environment: "staging-proxy".parse().unwrap(),
+        scenario: "leader-election".parse().unwrap(),
+        incidents: vec![IncidentKind::LeaderMoves],
+    })
+    .writes(json!({
+        "error": "unsupported",
+        "environment": "staging-proxy",
+        "scenario": "leader-election",
+        "incidents": ["leader-moves"],
+    }));
+}
+
+#[test]
+fn the_live_stream_says_where_the_scenario_of_an_environment_stands_with_its_revision() {
+    Form(StreamMessage::ScenarioChanged {
+        environment: "orders-sim".parse().unwrap(),
+        scenario: ScenarioStatus {
+            active: Some(ScenarioPosition {
+                scenario: "leader-election".parse().unwrap(),
+                step: Some("leader-churn".parse().unwrap()),
+            }),
+            revision: NOW,
+        },
+    })
+    .writes(json!({
+        "message": "scenario-changed",
+        "environment": "orders-sim",
+        "scenario": {
+            "active": { "scenario": "leader-election", "step": "leader-churn" },
+            "revision": NOW.number(),
+        },
+    }));
 }
 
 // Recordings

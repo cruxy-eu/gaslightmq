@@ -108,6 +108,10 @@ impl<C: WorkspaceContext + 'static> Feed<C> {
                 })
             }
             HostChange::RuleRemoved { environment, rule } => Some(StreamMessage::RuleRemoved { environment, rule }),
+            HostChange::ScenarioChanged { environment } => {
+                let scenario = self.plane.scenario_status(&environment)?;
+                Some(StreamMessage::ScenarioChanged { environment, scenario })
+            }
             HostChange::Session { environment, event } => Some(session_message(environment, event)),
             HostChange::Journaled { environment, entry } => Some(StreamMessage::JournalEntry { environment, entry }),
             HostChange::RecordingStarted { environment, recording } => {

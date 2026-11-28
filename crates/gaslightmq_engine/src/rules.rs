@@ -837,7 +837,10 @@ mod tests {
         assert_eq!(armed(&rules), ["leader-flap", "blackhole-half", "refuse-half"]);
         // A rule armed by hand later still wins over the scenario.
         rules.arm(resolved(&rule("throttle"))).unwrap();
-        assert_eq!(armed(&rules), ["throttle", "leader-flap", "blackhole-half", "refuse-half"]);
+        assert_eq!(
+            armed(&rules),
+            ["throttle", "leader-flap", "blackhole-half", "refuse-half"]
+        );
     }
 
     #[test]
@@ -930,7 +933,11 @@ mod tests {
         let mut session = SessionCounters::new(CounterKey::new("10.0.4.27 broker 2 #1").unwrap());
 
         for _ in 0..twice.value() {
-            let firing = arming.arming().evaluate(clock.now(), &mut session).into_firing().unwrap();
+            let firing = arming
+                .arming()
+                .evaluate(clock.now(), &mut session)
+                .into_firing()
+                .unwrap();
             firing.confirm();
         }
         // The step allows no third firing, also before it ended.

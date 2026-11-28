@@ -1,6 +1,7 @@
 //! A host runs several environments in front of real Kafka brokers, each with a proxy of its own,
 //! makes a live rule armed in one step, reads a ⌘K sentence with the names that the traffic of one of them has
-//! seen, acts on the presses and the holds of a pad, ends the holds of a presence that ended, and keeps a live rule
+//! seen, acts on the presses and the holds of a pad, ends the holds of a presence that ended, runs a scenario and its
+//! steps where the backend supports it, and keeps a live rule
 //! only under a name that no other one has.
 //! Whatever someone changes has a revision, and a change says what it expects.
 //! The journal of each environment records every change, with the surface it came from.
@@ -2495,6 +2496,224 @@ async fn a_recording_of_an_environment_keeps_its_calls_and_whoever_follows_the_h
     // A start in the millisecond of the recording before it takes the next millisecond, so the IDs differ.
     let again = host.start_recording(staging.name(), ChangeSurface::Test).await?;
     assert_eq!(again.to_string(), "staging-proxy.2026-11-21T14-02-11.528Z");
+    host.stop_all().await;
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_sequence_advances_by_itself_when_its_rule_spent_the_firings_of_the_step() -> anyhow::Result<()> {
+    let cluster = KafkaCluster::plaintext().with_brokers(3).start().await?;
+    let orders = cluster.topics().create("orders").await?;
+    let host = Host::new(
+        HostConfiguration::default(),
+        MemoryContext::new(),
+        Lies::of_every_build(),
+        RUN,
+    );
+    let any = ListenAddress::new(LOCALHOST, 0);
+    let brokers = BrokerListeners::any_port(LOCALHOST);
+    let staging = Environment::new(
+        "staging-proxy".parse()?,
+        Instances::ProxyInFrontOfCluster {
+            proxy: ProxyDefinition::new(Listeners::new(any, brokers, LOCALHOST.into())?),
+            upstream: Upstream::new(cluster.brokers()[0].address().to_string().parse()?),
+        },
+    );
+    host.start(EnvironmentConfiguration::new(&staging)?).await?;
+    // "Hold every Produce 20 ms", for one Produce of the step "slow-produce", and then nothing.
+    let slow = Rule::new(
+        "slow-produce".parse()?,
+        Conditions::from(Condition::is(ApiKey::PRODUCE)),
+        TimingLie::new().with_delay(TimeSpan::from_millis(20)),
+    );
+    let slow_once = Step::new("slow-produce".parse()?)
+        .arming([slow.name().clone()])
+        .ending_on(Until::Firings {
+            count: Count::ONE,
+            rule: slow.name().clone(),
+        });
+    let back_to_normal = Step::new("back-to-normal".parse()?);
+    let scenario = Scenario::new(
+        "one-slow-produce".parse()?,
+        Mode::Sequence(vec![slow_once, back_to_normal]),
+        Seed::new(7),
+        [],
+    )?;
+    host.create(slow.clone(), ChangeSurface::Test).await?;
+    host.create(scenario.clone(), ChangeSurface::Test).await?;
+    let started = host.scenario_of(staging.name())?;
+    let seen = Expects {
+        run: host.run(),
+        revision: started.revision,
+    };
+    let activated = host
+        .activate_scenario(staging.name(), scenario.name(), Some(seen), ChangeSurface::Test)
+        .await?;
+    assert_eq!(host.armed_rules(staging.name())?.get(slow.name()).map(|_| ()), Some(()));
+    let mut changes = host.changes();
+    let bootstrap = host
+        .address_of(staging.name(), Endpoint::Bootstrap)?
+        .context("the bootstrap endpoint of the staging proxy is open")?;
+
+    let written = KafkaProducer::from(bootstrap)
+        .send(
+            orders.name().as_str(),
+            Partition::new(0),
+            &[Record::new("placed").with_key("o-1").with_timestamp(PLACED_AT)],
+        )
+        .await;
+    // The Produce spent the one firing of the step, so the scenario advanced, and whoever follows the host learns of it.
+    let stepped = HostChange::ScenarioChanged {
+        environment: staging.name().clone(),
+    };
+    while tokio::time::timeout(PATIENCE, changes.next()).await?? != stepped {}
+
+    assert_eq!(written, Ok(Offset::new(0)));
+    let now = host.scenario_of(staging.name())?;
+    assert_eq!(
+        now.active,
+        Some(ScenarioPosition {
+            scenario: scenario.name().clone(),
+            step: Some("back-to-normal".parse()?),
+        })
+    );
+    assert!(activated < now.revision, "{activated} and then {}", now.revision);
+    assert_eq!(host.armed_rules(staging.name())?.get(slow.name()).map(|_| ()), None);
+    // Nobody asked for the step: the journal records it with the surface `step`, and the rule it disarmed with it.
+    let journal = host.journal(staging.name(), None)?;
+    let left = Some(gaslightmq_journal::Revision::new(now.revision.number()));
+    let of_the_step: Vec<&JournalEntry> = journal.iter().filter(|entry| entry.revision == left).collect();
+    let changes_of_the_step: Vec<&Change> = of_the_step.iter().map(|entry| &entry.change).collect();
+    assert_eq!(
+        changes_of_the_step,
+        [
+            &Change::RuleDisarmed {
+                rule: slow.name().as_str().parse()?
+            },
+            &Change::StepAdvanced {
+                scenario: scenario.name().as_str().parse()?,
+                step: Some("back-to-normal".parse()?),
+            },
+        ]
+    );
+    assert!(
+        of_the_step
+            .iter()
+            .all(|entry| entry.from == ChangeSource::new(ChangeSurface::Step))
+    );
+    host.stop_all().await;
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_scenario_activates_only_where_the_backend_supports_its_incidents() -> anyhow::Result<()> {
+    let cluster = KafkaCluster::plaintext().with_brokers(1).start().await?;
+    let host = Host::new(
+        HostConfiguration::default(),
+        MemoryContext::new(),
+        Lies::of_every_build(),
+        RUN,
+    );
+    let any = ListenAddress::new(LOCALHOST, 0);
+    let brokers = BrokerListeners::any_port(LOCALHOST);
+    let staging = Environment::new(
+        "staging-proxy".parse()?,
+        Instances::ProxyInFrontOfCluster {
+            proxy: ProxyDefinition::new(Listeners::new(any, brokers, LOCALHOST.into())?),
+            upstream: Upstream::new(cluster.brokers()[0].address().to_string().parse()?),
+        },
+    );
+    host.start(EnvironmentConfiguration::new(&staging)?).await?;
+    // A scenario that owns a rule which deletes a topic: a proxy in front of a real cluster cannot do that.
+    let delete_orders = Rule::new(
+        "delete-orders".parse()?,
+        Conditions::new(),
+        IncidentDefinition::TopicDeleted {
+            topic: Some("orders".parse()?),
+        },
+    );
+    let scenario = Scenario::new(
+        "orders-go".parse()?,
+        Mode::Chain,
+        Seed::new(42),
+        [ScenarioRule::from(delete_orders)],
+    )?;
+    host.create(scenario.clone(), ChangeSurface::Test).await?;
+    let before = host.scenario_of(staging.name())?;
+
+    let refused = host
+        .activate_scenario(staging.name(), scenario.name(), None, ChangeSurface::Test)
+        .await;
+
+    let Err(ActivateScenarioError::Unsupported { error, .. }) = refused else {
+        anyhow::bail!("the activation is refused for its incident, and not {refused:?}");
+    };
+    let kinds: Vec<IncidentKind> = error.incidents().iter().map(Requirement::kind).collect();
+    assert_eq!(kinds, [IncidentKind::TopicDeleted]);
+    // A refused activation changed nothing.
+    assert_eq!(host.scenario_of(staging.name())?, before);
+    assert_eq!(host.armed_rules(staging.name())?.len(), 0);
+    host.stop_all().await;
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_step_by_hand_expects_the_scenario_as_its_sender_saw_it() -> anyhow::Result<()> {
+    let cluster = KafkaCluster::plaintext().with_brokers(1).start().await?;
+    let host = Host::new(
+        HostConfiguration::default(),
+        MemoryContext::new(),
+        Lies::of_every_build(),
+        RUN,
+    );
+    let any = ListenAddress::new(LOCALHOST, 0);
+    let brokers = BrokerListeners::any_port(LOCALHOST);
+    let staging = Environment::new(
+        "staging-proxy".parse()?,
+        Instances::ProxyInFrontOfCluster {
+            proxy: ProxyDefinition::new(Listeners::new(any, brokers, LOCALHOST.into())?),
+            upstream: Upstream::new(cluster.brokers()[0].address().to_string().parse()?),
+        },
+    );
+    host.start(EnvironmentConfiguration::new(&staging)?).await?;
+    // Two steps that end when someone advances the scenario.
+    let steps = vec![Step::new("warm-up".parse()?), Step::new("back-to-normal".parse()?)];
+    let scenario = Scenario::new("by-hand".parse()?, Mode::Sequence(steps), Seed::new(7), [])?;
+    host.create(scenario.clone(), ChangeSurface::Test).await?;
+    let activated = host
+        .activate_scenario(staging.name(), scenario.name(), None, ChangeSurface::Test)
+        .await?;
+    let seen = Expects {
+        run: host.run(),
+        revision: activated,
+    };
+
+    // Two clients advance from the same step: the scenario advances once.
+    let first = host.step_scenario(staging.name(), Some(seen), ChangeSurface::Test)?;
+    let second = host.step_scenario(staging.name(), Some(seen), ChangeSurface::Test);
+
+    assert_eq!(
+        second,
+        Err(StepScenarioError::Changed {
+            environment: staging.name().clone(),
+            revision: first,
+        })
+    );
+    // The step by hand has the surface of its request.
+    let journal = host.journal(staging.name(), None)?;
+    let advanced = journal.last().context("the journal recorded the step")?;
+    assert_eq!(advanced.from, ChangeSource::new(ChangeSurface::Test));
+    // After the last step, no step is left to end.
+    host.step_scenario(staging.name(), None, ChangeSurface::Test)?;
+    assert_eq!(
+        host.step_scenario(staging.name(), None, ChangeSurface::Test),
+        Err(StepScenarioError::NoStep {
+            environment: staging.name().clone(),
+            scenario: scenario.name().clone(),
+        })
+    );
+    host.deactivate_scenario(staging.name(), None, ChangeSurface::Test)?;
+    assert_eq!(host.scenario_of(staging.name())?.active, None);
     host.stop_all().await;
     Ok(())
 }

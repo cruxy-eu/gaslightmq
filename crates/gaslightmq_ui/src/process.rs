@@ -199,6 +199,14 @@ impl Process {
                     running.rules.retain(|status| status.rule.name() != rule);
                 }
             }
+            StreamMessage::ScenarioChanged { environment, scenario } => {
+                // The later revision is the newer state.
+                if let Some(running) = self.running(environment)
+                    && running.scenario.revision <= scenario.revision
+                {
+                    running.scenario = scenario.clone();
+                }
+            }
             StreamMessage::DefinitionChanged {
                 definition,
                 revision,

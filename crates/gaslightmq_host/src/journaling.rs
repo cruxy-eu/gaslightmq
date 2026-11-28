@@ -1,10 +1,10 @@
 //! What the host writes into the journal of an environment: the words of an entry for what the host changed.
 
-use gaslightmq_engine::Journal;
+use gaslightmq_engine::{Journal, ScenarioChange, StepsTaken};
 use gaslightmq_environment::EnvironmentName;
-use gaslightmq_journal::{Change, ChangeSurface, Parameter, RecordedDefinition, RecordedName};
+use gaslightmq_journal::{Change, ChangeSource, ChangeSurface, Parameter, RecordedDefinition, RecordedName};
 use gaslightmq_lie::LieDefinition;
-use gaslightmq_rule::{PresetSet, Rule, RuleName, Snapshot};
+use gaslightmq_rule::{PresetSet, Rule, RuleName};
 use gaslightmq_surface::Encoder;
 use gaslightmq_trigger::{Chance, Count};
 use gaslightmq_workspace::{DefinitionName, Revision};
@@ -33,8 +33,8 @@ pub(crate) fn definition(name: &DefinitionName) -> RecordedDefinition {
     }
 }
 
-/// The name of a definition, as an entry records it.
-fn recorded(name: &str) -> RecordedName {
+/// The name of a definition, of a scenario or of a step, as an entry records it.
+pub(crate) fn recorded(name: &str) -> RecordedName {
     match RecordedName::new(name) {
         Ok(name) => name,
         // The name of every definition follows the one rule for names, and so does a recorded name.
@@ -47,12 +47,35 @@ pub(crate) const fn left(revision: Revision) -> gaslightmq_journal::Revision {
     gaslightmq_journal::Revision::new(revision.number())
 }
 
-/// Counts every rule that changed its state inside its proxy since the last look, and records each in `journal`.
+/// What changed inside a proxy since the last look, without anyone asking: the rules that changed their state, and
+/// whether the scenario advanced a step.
+#[derive(Debug, Default)]
+pub(crate) struct Uncounted {
+    /// The rules that armed or disarmed.
+    pub(crate) rules: Vec<RuleName>,
+    /// Whether the scenario advanced a step by itself.
+    pub(crate) scenario: bool,
+}
+
+/// Counts every step that the scenario of the environment took by itself, and every rule that changed its state
+/// inside its proxy since the last look, and records each in `journal`.
 ///
-/// Nobody asked for such a change: a lifetime ended, or a firing spent a budget.
-/// Each rule takes the next number, and its entry has the surface `lifetime`.
-/// Returns the names of the rules, for whoever tells the followers of the host.
-pub(crate) fn catch_up(revisions: &mut RuleRevisions, armed_now: &Snapshot, journal: &Journal) -> Vec<RuleName> {
+/// Nobody asked for such a change: the condition of a step held, a lifetime ended, or a firing spent a budget.
+/// Each step takes the next number, which the rules it disarmed and armed share, and its entries have the surface
+/// `step`. Each rule that changed for another reason takes a number of its own, and its entry has the surface
+/// `lifetime`. Returns what changed, for whoever tells the followers of the host.
+pub(crate) fn catch_up(revisions: &mut RuleRevisions, taken: &StepsTaken, journal: &Journal) -> Uncounted {
+    let mut stepped = Vec::new();
+    for step in &taken.steps {
+        let revision = revisions.count_scenario(&step.disarmed, &step.armed);
+        let advanced = Change::StepAdvanced {
+            scenario: recorded(step.position.scenario.as_str()),
+            step: step.position.step.as_ref().map(|step| recorded(step.as_str())),
+        };
+        record_scenario_change(journal, step, advanced, ChangeSurface::Step.into(), revision);
+        stepped.extend(step.disarmed.iter().chain(&step.armed).cloned());
+    }
+    let armed_now = &taken.snapshot;
     let uncounted = revisions.catch_up(armed_now);
     for (name, revision) in &uncounted {
         let rule = rule(name);
@@ -63,7 +86,34 @@ pub(crate) fn catch_up(revisions: &mut RuleRevisions, armed_now: &Snapshot, jour
         };
         journal.record(change, ChangeSurface::Lifetime, Some(left(*revision)));
     }
-    uncounted.into_iter().map(|(name, _)| name).collect()
+    let scenario = !taken.steps.is_empty();
+    stepped.extend(uncounted.into_iter().map(|(name, _)| name));
+    Uncounted {
+        rules: stepped,
+        scenario,
+    }
+}
+
+/// Records a change of the scenario of an environment in `journal`, with one revision for all of its entries: the
+/// rules that it disarmed, the entry of the scenario, and the rules that it armed.
+pub(crate) fn record_scenario_change(
+    journal: &Journal,
+    change: &ScenarioChange,
+    entry: Change,
+    from: ChangeSource,
+    revision: Revision,
+) {
+    for disarmed in &change.disarmed {
+        journal.record(
+            Change::RuleDisarmed { rule: rule(disarmed) },
+            from,
+            Some(left(revision)),
+        );
+    }
+    journal.record(entry, from, Some(left(revision)));
+    for armed in &change.armed {
+        journal.record(Change::RuleArmed { rule: rule(armed) }, from, Some(left(revision)));
+    }
 }
 
 /// The parameter of a rule that an encoder changes.

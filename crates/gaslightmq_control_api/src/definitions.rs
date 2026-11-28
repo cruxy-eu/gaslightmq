@@ -14,7 +14,7 @@ use serde::{Deserialize, Serialize};
 use crate::{AnyOperation, Expects, Operation, Revised, Revision, RuleHolder, RunId};
 
 /// A kind of definition that the control plane lists, gets, creates, updates and deletes:
-/// a [`Selector`], a [`Preset`], a [`Rule`] or a [`PadLayout`].
+/// a [`Selector`], a [`Preset`], a [`Rule`], a [`Scenario`] or a [`PadLayout`].
 ///
 /// The operations on definitions are generic over the kind, so each one answers with the type of its kind:
 /// [`GetDefinition<Rule>`] answers with a [`Rule`].
@@ -67,6 +67,7 @@ editable! {
     Selector, SelectorName => Selector;
     Preset, PresetName => Preset;
     Rule, RuleName => Rule;
+    Scenario, ScenarioName => Scenario;
     PadLayout, LayoutName => Layout;
 }
 
@@ -522,6 +523,10 @@ pub enum UpdateDefinitionError {
     /// the definition itself, or the definitions that use it. `reason` says everything that would be wrong.
     #[error("{name} does not fit the workspace: {reason}")]
     DoesNotFit { name: DefinitionRef, reason: String },
+    /// The definition is a scenario that would own a rule of the name `name`, which a live rule of an environment
+    /// has. Rule names are unique among all rules.
+    #[error("{name} {}", exists(Some(.holder)))]
+    NameTaken { name: DefinitionRef, holder: RuleHolder },
     /// A live rule that is armed in the environment would not fit the workspace with the change, so it could not
     /// follow it: the rule could not fire with the selector or the preset as the change leaves it.
     /// Disarm or delete the live rule first. `reason` says what is wrong with it.
