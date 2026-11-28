@@ -2871,12 +2871,13 @@ async fn a_capture_saves_what_someone_played_live_as_a_sequence_with_the_live_ru
         .await?;
     let captured = host.stop_capture(staging.name(), ChangeSurface::Test)?;
 
-    let arms: Vec<&[RuleName]> = captured.steps().iter().map(Step::arm).collect();
-    let both = [slow.name().clone(), refuse.name().clone()];
-    assert_eq!(
-        arms,
-        [&[refuse.name().clone()][..], &both[..], &[slow.name().clone()][..]]
+    let arms: Vec<&[ScenarioRule]> = captured.steps().iter().map(Step::arm).collect();
+    let (slow_rule, refuse_rule) = (
+        ScenarioRule::from(slow.name().clone()),
+        ScenarioRule::from(refuse.name().clone()),
     );
+    let both = [slow_rule.clone(), refuse_rule.clone()];
+    assert_eq!(arms, [&[refuse_rule][..], &both[..], &[slow_rule][..]]);
     // The live rule is captured as it was armed, and the turn after that is no part of it.
     assert_eq!(captured.rules(), std::slice::from_ref(&slow));
     // The journal says where the capture ran.

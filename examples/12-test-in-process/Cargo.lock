@@ -941,6 +941,7 @@ dependencies = [
  "gaslightmq_definition_memory",
  "gaslightmq_field",
  "gaslightmq_incident",
+ "gaslightmq_journal",
  "gaslightmq_resource",
  "gaslightmq_rule",
  "gaslightmq_selector",

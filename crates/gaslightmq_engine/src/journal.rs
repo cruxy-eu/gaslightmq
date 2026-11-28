@@ -225,6 +225,7 @@ mod tests {
     use gaslightmq_clock_waitable::SteppedClock;
     use gaslightmq_journal::ChangeSurface;
     use gaslightmq_lie::LieDefinition;
+    use gaslightmq_scenario::ScenarioRule;
     use gaslightmq_selector::Conditions;
 
     use super::*;
@@ -326,7 +327,7 @@ mod tests {
 
         assert_eq!(started.change, Change::CaptureStarted);
         assert_eq!(again.unwrap_err(), StartCaptureError::AlreadyCapturing);
-        assert_eq!(captured.steps()[1].arm(), [slow.name().clone()]);
+        assert_eq!(captured.steps()[1].arm(), [ScenarioRule::from(slow.name().clone())]);
         assert!(
             captured.steps()[2].arm().is_empty(),
             "the lifetime ended, and the rule left the live set"

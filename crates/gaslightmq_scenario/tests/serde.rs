@@ -252,7 +252,7 @@ fn a_sequence_without_names_names_its_steps_by_their_place_and_its_rules_by_what
     // The rule of the step belongs to the scenario, and names no rule of the workspace.
     let owned: Vec<&RuleName> = scenario.owned_rules().map(Rule::name).collect();
     assert_eq!(owned, [&refuse]);
-    assert!(scenario.rule_references().is_empty());
+    assert_eq!(scenario.rule_references(), Vec::<&RuleName>::new());
 }
 
 #[test]

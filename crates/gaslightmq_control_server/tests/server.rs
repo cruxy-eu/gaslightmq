@@ -364,33 +364,42 @@ async fn a_capture_starts_stops_and_saves_only_in_an_environment_that_runs() -> 
         .send(StartCapture {
             environment: staging.clone(),
         })
-        .await?;
+        .await;
     let stopped = client
         .send(StopCapture {
             environment: staging.clone(),
         })
-        .await?;
+        .await;
     let saved = client
         .send(SaveCapture {
             environment: staging.clone(),
             scenario: "slow-then-refused".parse()?,
             title: None,
         })
-        .await?;
+        .await;
 
     assert_eq!(
         started,
-        Err(StartCaptureError::NotRunning {
-            environment: staging.clone()
+        Err(OperationError::Refused {
+            error: StartCaptureError::NotRunning {
+                environment: staging.clone()
+            }
         })
     );
     assert_eq!(
         stopped,
-        Err(StopCaptureError::NotRunning {
-            environment: staging.clone()
+        Err(OperationError::Refused {
+            error: StopCaptureError::NotRunning {
+                environment: staging.clone()
+            }
         })
     );
-    assert_eq!(saved, Err(SaveCaptureError::NotRunning { environment: staging }));
+    assert_eq!(
+        saved,
+        Err(OperationError::Refused {
+            error: SaveCaptureError::NotRunning { environment: staging }
+        })
+    );
     server.stop().await;
     Ok(())
 }

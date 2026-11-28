@@ -1745,7 +1745,7 @@ async fn a_capture_through_the_control_plane_answers_with_its_steps_and_saves_th
         .send(StartEnvironment {
             environment: staging.name().clone(),
         })
-        .await??;
+        .await?;
     let mut stream = Watched {
         stream: client.live_stream().await?,
     };
@@ -1760,31 +1760,31 @@ async fn a_capture_through_the_control_plane_answers_with_its_steps_and_saves_th
         .send(StartCapture {
             environment: staging.name().clone(),
         })
-        .await??;
+        .await?;
     client
         .send(CreateLiveRule {
             environment: staging.name().clone(),
             rule: slow.clone(),
             armed: true,
         })
-        .await??;
+        .await?;
     let captured = client
         .send(StopCapture {
             environment: staging.name().clone(),
         })
-        .await??;
+        .await?;
     let saved = client
         .send(SaveCapture {
             environment: staging.name().clone(),
             scenario: "slow-produce-captured".parse()?,
             title: None,
         })
-        .await??;
+        .await?;
 
     let arms: Vec<Vec<String>> = captured
         .steps
         .iter()
-        .map(|step| step.arm().iter().map(ToString::to_string).collect())
+        .map(|step| step.arm().iter().map(|rule| rule.name().to_string()).collect())
         .collect();
     assert_eq!(arms, [vec![], vec![slow.name().to_string()]]);
     assert_eq!(captured.rules, std::slice::from_ref(&slow));
@@ -1808,14 +1808,14 @@ async fn a_capture_through_the_control_plane_answers_with_its_steps_and_saves_th
         .send(GetDefinition::<gaslightmq_control_api::scenario::Scenario> {
             name: "slow-produce-captured".parse()?,
         })
-        .await??;
+        .await?;
     assert_eq!(scenario.revision, saved.revision);
     assert_eq!(scenario.definition.steps(), &captured.steps[..]);
     let kept = client
         .send(GetDefinition::<Rule> {
             name: slow.name().clone(),
         })
-        .await??;
+        .await?;
     assert_eq!(kept.definition, slow);
     server.stop().await;
     host.stop_all().await;
