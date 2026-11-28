@@ -23,10 +23,11 @@ use gaslightmq_quick_inject::{KnownNames, QuickInject, Sentence};
 use gaslightmq_recording::UtcInstant;
 use gaslightmq_recording_segments::{MemoryBacking, SegmentConfiguration, SegmentStorage};
 use gaslightmq_rule::{HandFiring, Preset, PresetSet, ResolvedRule, Rule, RuleError, RuleName, Snapshot};
-use gaslightmq_scenario::Scenario;
+use gaslightmq_scenario::{Captured, Scenario};
 use gaslightmq_selector::{Selector, SelectorRef, SelectorSet};
 use gaslightmq_surface::{EncoderMapping, PresenceId};
 use gaslightmq_traffic::{Statistics, Traffic, TrafficConfiguration};
+use gaslightmq_trigger::Seed;
 use gaslightmq_workspace::{
     DefinitionName, Revision, RevisionCounter, SaveError, Stores, Workspace, WorkspaceContext, WorkspaceDefinition,
 };
@@ -45,6 +46,7 @@ use crate::{
     UpdateDefinitionError, journaling,
 };
 
+mod capture;
 mod follow;
 mod live;
 mod pads;
@@ -223,6 +225,10 @@ struct Running {
     last_recording: Option<UtcInstant>,
     /// The scenario that is active, as it was defined when someone activated it.
     scenario: Option<Scenario>,
+    /// The seed that the proxy arms a rule by hand with, which a captured scenario takes.
+    seed: Seed,
+    /// What the last capture that stopped captured, until a capture starts again.
+    captured: Option<Captured>,
 }
 
 impl Running {
@@ -230,6 +236,19 @@ impl Running {
     fn record(&self, change: Change, from: impl Into<ChangeSource>, revision: Revision) {
         let journal = self.engine.journal();
         journal.record(change, from, Some(journaling::left(revision)));
+    }
+
+    /// Records that someone armed the rule of that name by hand, with where it comes from and the revision that it
+    /// left. A capture that runs takes the definition of a live rule as it arms.
+    fn record_arming(&self, rule: &RuleName, from: impl Into<ChangeSource>, revision: Revision) {
+        let journal = self.engine.journal();
+        let definition = self.live.get(rule);
+        journal.record_arming(
+            journaling::rule(rule),
+            definition,
+            from,
+            Some(journaling::left(revision)),
+        );
     }
 }
 
@@ -323,35 +342,46 @@ impl<C: WorkspaceContext> Host<C> {
         definition: D,
         from: impl Into<ChangeSource>,
     ) -> Result<Revision, CreateDefinitionError> {
-        let from = from.into();
         let name: DefinitionName = definition.name().clone().into();
         let revision = {
             // The workspace stays taken from the check to the write, as it does while a live rule goes in.
             let mut workspace = self.workspace.lock().await;
-            if let DefinitionName::Rule(rule) = &name
-                && let Some(holder) = self.holder_of(&workspace, rule, None).await
-            {
-                return Err(CreateDefinitionError::NameTaken {
-                    rule: rule.clone(),
-                    holder,
-                });
-            }
-            if let DefinitionName::Scenario(_) = &name {
-                let after = workspace.check_create(definition.clone()).await;
-                let after = after.map_err(|error| CreateDefinitionError::NotCreated { error })?;
-                if let Some((rule, environment)) = self.owned_rule_of_a_live_name(after.definitions::<Scenario>()) {
-                    let holder = RuleHolder::Environment(environment);
-                    return Err(CreateDefinitionError::NameTaken { rule, holder });
-                }
-            }
-            let created = workspace.create(definition).await;
-            let revision = created.map_err(|error| CreateDefinitionError::NotCreated { error })?;
-            let definition = journaling::definition(&name);
-            self.record_everywhere(&Change::DefinitionCreated { definition }, from, revision);
-            revision
+            self.create_in(&mut workspace, definition, from.into()).await?
         };
         self.publish(HostChange::DefinitionChanged { name });
         self.publish_unsaved().await;
+        Ok(revision)
+    }
+
+    /// Adds a definition to `workspace`, which the caller holds, as [`create`](Self::create) does, and tells nobody:
+    /// the caller tells the followers once it let go of the workspace.
+    async fn create_in<D: WorkspaceDefinition>(
+        &self,
+        workspace: &mut Workspace<C>,
+        definition: D,
+        from: ChangeSource,
+    ) -> Result<Revision, CreateDefinitionError> {
+        let name: DefinitionName = definition.name().clone().into();
+        if let DefinitionName::Rule(rule) = &name
+            && let Some(holder) = self.holder_of(workspace, rule, None).await
+        {
+            return Err(CreateDefinitionError::NameTaken {
+                rule: rule.clone(),
+                holder,
+            });
+        }
+        if let DefinitionName::Scenario(_) = &name {
+            let after = workspace.check_create(definition.clone()).await;
+            let after = after.map_err(|error| CreateDefinitionError::NotCreated { error })?;
+            if let Some((rule, environment)) = self.owned_rule_of_a_live_name(after.definitions::<Scenario>()) {
+                let holder = RuleHolder::Environment(environment);
+                return Err(CreateDefinitionError::NameTaken { rule, holder });
+            }
+        }
+        let created = workspace.create(definition).await;
+        let revision = created.map_err(|error| CreateDefinitionError::NotCreated { error })?;
+        let definition = journaling::definition(&name);
+        self.record_everywhere(&Change::DefinitionCreated { definition }, from, revision);
         Ok(revision)
     }
 
@@ -585,6 +615,7 @@ impl<C: WorkspaceContext> Host<C> {
             Err(error) => return Err(EnvironmentStartError::BackendNotStarted { name, error }),
         };
         let listeners = engine.listeners.clone();
+        let seed = engine.seed;
         let lies = Arc::clone(&self.lies);
         let started = Engine::start(
             engine,
@@ -623,6 +654,8 @@ impl<C: WorkspaceContext> Host<C> {
                 recording,
                 last_recording: None,
                 scenario: None,
+                seed,
+                captured: None,
             },
         );
         self.publish(HostChange::EnvironmentStarted { environment: name });
@@ -871,10 +904,7 @@ impl<C: WorkspaceContext> Host<C> {
                     rule,
                 })?;
             let revision = revisions.count(name, &armed.snapshot());
-            let armed = Change::RuleArmed {
-                rule: journaling::rule(name),
-            };
-            running.record(armed, from, revision);
+            running.record_arming(name, from, revision);
             Ok(revision)
         })?;
         drop(workspace);

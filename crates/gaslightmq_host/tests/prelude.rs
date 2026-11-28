@@ -199,6 +199,22 @@ mod next_to_the_others {
         vec![not_started.to_string(), not_recording.to_string()]
     }
 
+    /// One error of every type of the prelude about a capture, each named without a path.
+    pub fn every_error_of_a_capture() -> Vec<String> {
+        let staging: EnvironmentName = "staging-proxy".parse().unwrap();
+        let capturing: CaptureStartError = CaptureStartError::AlreadyCapturing {
+            environment: staging.clone(),
+        };
+        let not_capturing: CaptureStopError = CaptureStopError::NotCapturing {
+            environment: staging.clone(),
+        };
+        let nothing: CaptureSaveError = CaptureSaveError::NothingCaptured { environment: staging };
+        assert!(std::error::Error::source(&capturing).is_none());
+        assert!(std::error::Error::source(&not_capturing).is_none());
+        assert!(std::error::Error::source(&nothing).is_none());
+        vec![capturing.to_string(), not_capturing.to_string(), nothing.to_string()]
+    }
+
     /// One error of every type of the prelude that a run or a revision brought, each named without a path.
     pub fn every_error_of_a_run_or_a_revision() -> Vec<String> {
         let run: RunId = "4be0643f1d98573b97cdca98a65347dd".parse().unwrap();
@@ -275,6 +291,18 @@ fn the_prelude_names_the_error_of_every_recording_type() {
         [
             "environment \"staging-proxy\" did not start a recording: disk full",
             "environment \"staging-proxy\" records nothing",
+        ]
+    );
+}
+
+#[test]
+fn the_prelude_names_the_error_of_every_capture_type() {
+    assert_eq!(
+        next_to_the_others::every_error_of_a_capture(),
+        [
+            "environment \"staging-proxy\" captures already",
+            "environment \"staging-proxy\" captures nothing",
+            "environment \"staging-proxy\" holds no capture to save",
         ]
     );
 }

@@ -2823,3 +2823,103 @@ async fn a_step_by_hand_expects_the_scenario_as_its_sender_saw_it() -> anyhow::R
     host.stop_all().await;
     Ok(())
 }
+
+#[tokio::test]
+async fn a_capture_saves_what_someone_played_live_as_a_sequence_with_the_live_rules_as_they_were_armed()
+-> anyhow::Result<()> {
+    let cluster = KafkaCluster::plaintext().with_brokers(1).start().await?;
+    let host = Host::new(
+        HostConfiguration::default(),
+        MemoryContext::new(),
+        Lies::of_every_build(),
+        RUN,
+    );
+    let any = ListenAddress::new(LOCALHOST, 0);
+    let brokers = BrokerListeners::any_port(LOCALHOST);
+    let staging = Environment::new(
+        "staging-proxy".parse()?,
+        Instances::ProxyInFrontOfCluster {
+            proxy: ProxyDefinition::new(Listeners::new(any, brokers, LOCALHOST.into())?),
+            upstream: Upstream::new(cluster.brokers()[0].address().to_string().parse()?),
+        },
+    );
+    host.start(EnvironmentConfiguration::new(&staging)?).await?;
+    // A rule of the workspace is armed by hand before the capture starts.
+    let refuse = Rule::new(
+        "refuse-with-not-leader".parse()?,
+        Conditions::from(Condition::is(ApiKey::PRODUCE)),
+        RefusalLie::new(ErrorCode::NOT_LEADER_OR_FOLLOWER),
+    );
+    host.create(refuse.clone(), ChangeSurface::Test).await?;
+    host.arm(staging.name(), &refuse, None, ChangeSurface::Test).await?;
+    let slow = Rule::new(
+        "slow-produce".parse()?,
+        Conditions::from(Condition::is(ApiKey::PRODUCE)),
+        TimingLie::new().with_delay(SLOW_PRODUCE),
+    );
+    let slower = slow
+        .clone()
+        .with_action(TimingLie::new().with_delay(TimeSpan::from_millis(SLOW_PRODUCE.as_millis() * 2)));
+
+    // Someone arms a live rule, turns it slower while it is armed, and disarms the rule of the workspace.
+    host.start_capture(staging.name(), ChangeSurface::Test)?;
+    host.create_live_rule_armed(staging.name(), slow.clone(), ChangeSurface::Test)
+        .await?;
+    host.update_live_rule(staging.name(), slower.clone(), None, ChangeSurface::Test)
+        .await?;
+    host.disarm(staging.name(), refuse.name(), None, ChangeSurface::Test)
+        .await?;
+    let captured = host.stop_capture(staging.name(), ChangeSurface::Test)?;
+
+    let arms: Vec<&[RuleName]> = captured.steps().iter().map(Step::arm).collect();
+    let both = [slow.name().clone(), refuse.name().clone()];
+    assert_eq!(
+        arms,
+        [&[refuse.name().clone()][..], &both[..], &[slow.name().clone()][..]]
+    );
+    // The live rule is captured as it was armed, and the turn after that is no part of it.
+    assert_eq!(captured.rules(), std::slice::from_ref(&slow));
+    // The journal says where the capture ran.
+    let journal = host.journal(staging.name(), None)?;
+    let of_the_capture: Vec<&Change> = journal
+        .iter()
+        .map(|entry| &entry.change)
+        .filter(|change| matches!(change, Change::CaptureStarted | Change::CaptureStopped))
+        .collect();
+    assert_eq!(of_the_capture, [&Change::CaptureStarted, &Change::CaptureStopped]);
+
+    // The live rule changed since it armed, so the workspace would not get what the capture armed.
+    let named: ScenarioName = "slow-then-refused".parse()?;
+    let changed = host
+        .save_capture(staging.name(), named.clone(), None, ChangeSurface::Test)
+        .await;
+    assert_eq!(
+        changed,
+        Err(CaptureSaveError::RuleChanged {
+            environment: staging.name().clone(),
+            rule: slow.name().clone(),
+        })
+    );
+    // Turned back, the live rule is kept with the scenario, which takes the seed of the proxy.
+    host.update_live_rule(staging.name(), slow.clone(), None, ChangeSurface::Test)
+        .await?;
+    let title: ScenarioTitle = "Slow, then refused".parse()?;
+    host.save_capture(staging.name(), named.clone(), Some(title.clone()), ChangeSurface::Test)
+        .await?;
+
+    let workspace = host.workspace().await;
+    let saved = workspace.stores().scenarios().get(&named).await?;
+    let seed = EnvironmentConfiguration::new(&staging)?.engine.seed;
+    let expected = captured.scenario(named.clone(), seed).with_title(title);
+    assert_eq!(saved, Some(expected));
+    assert_eq!(workspace.stores().rules().get(slow.name()).await?, Some(slow.clone()));
+    drop(workspace);
+    // The live rule goes on as a rule of the workspace, armed as it was.
+    let rules = host.rules_of(staging.name()).await?;
+    let kept = rules.iter().find(|rule| rule.rule.name() == slow.name());
+    let kept = kept.context("the environment holds the rule that the save kept")?;
+    assert!(!kept.live);
+    assert_eq!(kept.state, RuleState::Armed);
+    host.stop_all().await;
+    Ok(())
+}

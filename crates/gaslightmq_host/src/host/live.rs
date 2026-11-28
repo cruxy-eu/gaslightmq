@@ -6,7 +6,7 @@ use gaslightmq_environment::EnvironmentName;
 use gaslightmq_journal::{Change, ChangeSource, Parameter, RecordedDefinition};
 use gaslightmq_rule::{Rule, RuleName, RuleState};
 use gaslightmq_scenario::{Scenario, ScenarioName};
-use gaslightmq_workspace::{Revision, Stores, Workspace, WorkspaceContext};
+use gaslightmq_workspace::{CreateError, Revision, Stores, Workspace, WorkspaceContext};
 
 use super::{Host, Unresolvable, resolve, unread};
 use crate::{
@@ -216,10 +216,15 @@ impl<C: WorkspaceContext> Host<C> {
             running.live.insert(name.clone(), rule);
             // Making the rule and arming it are one change, and take one number.
             let revision = revisions.count(&name, &rules.snapshot());
-            let rule = journaling::rule(&name);
-            running.record(Change::LiveRuleMade { rule: rule.clone() }, from, revision);
+            running.record(
+                Change::LiveRuleMade {
+                    rule: journaling::rule(&name),
+                },
+                from,
+                revision,
+            );
             if armed {
-                running.record(Change::RuleArmed { rule }, from, revision);
+                running.record_arming(&name, from, revision);
             }
             Ok(revision)
         })?;
@@ -439,35 +444,77 @@ impl<C: WorkspaceContext> Host<C> {
         // until the workspace holds it. The workspace also stays taken from the check of the name to the write,
         // as it does while a live rule goes in.
         let mut workspace = self.workspace.lock().await;
-        let not_running = |environment| KeepRuleError::NotRunning { environment };
-        let rule = self.change_rules(environment, not_running, |running, revisions| {
-            let Some(rule) = running.live.get(name) else {
-                return Err(KeepRuleError::NotFound {
-                    environment: environment.clone(),
-                    rule: name.clone(),
-                });
-            };
-            let revision = revisions.of(name);
-            if expects.is_some_and(|expected| expected != revision) {
-                return Err(KeepRuleError::Changed {
-                    environment: environment.clone(),
-                    rule: name.clone(),
-                    revision,
-                });
-            }
-            Ok(rule.clone())
-        })?;
-        if let Some(holder) = self.holder_of(&workspace, name, Some(environment)).await {
-            return Err(KeepRuleError::NameTaken {
+        let kept = self
+            .keep_in(&mut workspace, environment, name, Kept::Revision(expects), from)
+            .await;
+        drop(workspace);
+        let revision = kept.map_err(|unkept| match unkept {
+            Unkept::NotRunning => KeepRuleError::NotRunning {
+                environment: environment.clone(),
+            },
+            Unkept::NotFound => KeepRuleError::NotFound {
+                environment: environment.clone(),
+                rule: name.clone(),
+            },
+            Unkept::Changed { revision } => KeepRuleError::Changed {
+                environment: environment.clone(),
+                rule: name.clone(),
+                revision,
+            },
+            Unkept::NameTaken { holder } => KeepRuleError::NameTaken {
                 rule: name.clone(),
                 holder,
-            });
+            },
+            Unkept::NotKept { error } => KeepRuleError::NotKept {
+                rule: name.clone(),
+                error,
+            },
+        })?;
+        self.publish_kept(environment, name);
+        self.publish_unsaved().await;
+        Ok(revision)
+    }
+
+    /// Keeps a live rule of an environment in `workspace`, which the caller holds, as [`keep`](Self::keep) does,
+    /// and tells nobody: the caller tells the followers once it let go of the workspace, with
+    /// [`publish_kept`](Self::publish_kept).
+    ///
+    /// `kept` says which live rule the caller wants kept: the one of a revision, or the one of a definition. A live
+    /// rule that is another is not kept, and the error is [`Unkept::Changed`].
+    pub(super) async fn keep_in(
+        &self,
+        workspace: &mut Workspace<C>,
+        environment: &EnvironmentName,
+        name: &RuleName,
+        kept: Kept<'_>,
+        from: ChangeSource,
+    ) -> Result<Revision, Unkept> {
+        let rule = self.change_rules(
+            environment,
+            |_| Unkept::NotRunning,
+            |running, revisions| {
+                let Some(rule) = running.live.get(name) else {
+                    return Err(Unkept::NotFound);
+                };
+                let revision = revisions.of(name);
+                let other = match kept {
+                    Kept::Revision(expects) => expects.is_some_and(|expected| expected != revision),
+                    Kept::Definition(definition) => definition != rule,
+                };
+                if other {
+                    return Err(Unkept::Changed { revision });
+                }
+                Ok(rule.clone())
+            },
+        )?;
+        if let Some(holder) = self.holder_of(workspace, name, Some(environment)).await {
+            return Err(Unkept::NameTaken { holder });
         }
         // The keep is one change: the rule has its number in the workspace, and in the environment that held it.
-        let revision = workspace.create(rule).await.map_err(|error| KeepRuleError::NotKept {
-            rule: name.clone(),
-            error,
-        })?;
+        let revision = workspace
+            .create(rule)
+            .await
+            .map_err(|error| Unkept::NotKept { error })?;
         for (holder, running) in self.environments().iter_mut() {
             let rule = journaling::rule(name);
             // The rule goes on in the environment that held it, and it is a new definition for every other one.
@@ -480,7 +527,12 @@ impl<C: WorkspaceContext> Host<C> {
             };
             running.record(change, from, revision);
         }
-        drop(workspace);
+        Ok(revision)
+    }
+
+    /// Tells whoever follows the host that a live rule of an environment left it for the workspace: the live rule
+    /// went, the workspace has the rule, and the rule has its state in the environment, in that order.
+    pub(super) fn publish_kept(&self, environment: &EnvironmentName, name: &RuleName) {
         self.publish(HostChange::RuleRemoved {
             environment: environment.clone(),
             rule: name.clone(),
@@ -492,8 +544,6 @@ impl<C: WorkspaceContext> Host<C> {
             environment: environment.clone(),
             rule: name.clone(),
         });
-        self.publish_unsaved().await;
-        Ok(revision)
     }
 
     /// The environment that runs and holds a live rule of that name, other than `except`.
@@ -553,4 +603,28 @@ async fn scenario_owning<C: WorkspaceContext>(
         .into_iter()
         .find(|scenario| scenario.owned_rules().any(|rule| rule.name() == name))
         .map(|scenario| scenario.name().clone()))
+}
+
+/// Which live rule a keep wants in the workspace.
+#[derive(Clone, Copy)]
+pub(super) enum Kept<'a> {
+    /// The live rule as its sender saw it, at this revision, or the one there is when the sender expects none.
+    Revision(Option<Revision>),
+    /// The live rule as it is defined here: a captured rule, as it was armed.
+    Definition(&'a Rule),
+}
+
+/// Why the keep of a live rule in a workspace that the caller holds kept nothing. The caller knows the environment
+/// and the rule, and names them in its own error.
+pub(super) enum Unkept {
+    /// The environment does not run.
+    NotRunning,
+    /// The environment has no live rule of the name.
+    NotFound,
+    /// The live rule is another than the caller wants kept. `revision` is the one it has now.
+    Changed { revision: Revision },
+    /// A live rule of another environment, or a rule that a scenario owns, has the name.
+    NameTaken { holder: RuleHolder },
+    /// The workspace did not take the rule.
+    NotKept { error: CreateError },
 }
