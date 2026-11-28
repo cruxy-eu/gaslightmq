@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use gaslightmq_clock::Instant;
 use gaslightmq_incident::{Incident, Subjects};
-use gaslightmq_trigger::{Arming, Firing};
+use gaslightmq_trigger::{Arming, Budget, Firing};
 
 use crate::{Action, ResolvedRule, RuleError, RuleName};
 
@@ -91,6 +91,15 @@ impl ArmedRule {
     pub fn retuned(&self, rule: ResolvedRule) -> ArmedRule {
         let arming = self.0.arming.retuned(rule.trigger(), rule.lifetime());
         ArmedRule::new(rule, arming)
+    }
+
+    /// The same arming, whose firings the step of a scenario also takes from `budget` while the step runs,
+    /// or from no step budget once the step ended. See [`Arming::with_step_budget`].
+    ///
+    /// The rule, its counters and its budget stay: the two handles are one arming.
+    #[must_use]
+    pub fn with_step_budget(&self, budget: Option<Budget>) -> ArmedRule {
+        ArmedRule::new(self.0.rule.clone(), self.0.arming.with_step_budget(budget))
     }
 
     /// Fires the rule by hand, which skips its trigger once.
