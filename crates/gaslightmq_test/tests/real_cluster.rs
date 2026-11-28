@@ -51,7 +51,7 @@ async fn a_rule_armed_through_the_control_plane_refuses_the_produce_of_a_real_cl
             rule: refuse.clone(),
             armed: true,
         })
-        .await??;
+        .await?;
     let refused = producer
         .send(orders.name().as_str(), Partition::new(0), std::slice::from_ref(&placed))
         .await;
@@ -64,7 +64,7 @@ async fn a_rule_armed_through_the_control_plane_refuses_the_produce_of_a_real_cl
             rule: refuse.name().clone(),
             expects: None,
         })
-        .await??;
+        .await?;
     let written = producer
         .send(orders.name().as_str(), Partition::new(0), std::slice::from_ref(&placed))
         .await;
@@ -154,19 +154,19 @@ async fn a_scenario_refuses_the_first_produce_of_a_real_client_and_then_lets_it_
         [],
     )?;
     let control = gaslight.control();
-    control.send(CreateDefinition { definition: refuse }).await??;
+    control.send(CreateDefinition { definition: refuse }).await?;
     control
         .send(CreateDefinition {
             definition: scenario.clone(),
         })
-        .await??;
+        .await?;
     control
         .send(ActivateScenario {
             environment: gaslight.environment().clone(),
             scenario: scenario.name().clone(),
             expects: None,
         })
-        .await??;
+        .await?;
 
     let refused = producer
         .send(orders.name().as_str(), Partition::new(0), std::slice::from_ref(&placed))
@@ -226,8 +226,9 @@ async fn a_test_asserts_on_the_explanations_of_the_calls_that_a_recording_holds(
     let recording = control
         .send(StartRecording {
             environment: gaslight.environment().clone(),
+            mode: None,
         })
-        .await??;
+        .await?;
 
     // The proxy refuses the first Produce, and lets the second one through.
     let refuse = Rule::new(
@@ -241,7 +242,7 @@ async fn a_test_asserts_on_the_explanations_of_the_calls_that_a_recording_holds(
             rule: refuse.clone(),
             armed: true,
         })
-        .await??;
+        .await?;
     let refused = producer
         .send(orders.name().as_str(), Partition::new(0), std::slice::from_ref(&placed))
         .await;
@@ -251,7 +252,7 @@ async fn a_test_asserts_on_the_explanations_of_the_calls_that_a_recording_holds(
             rule: refuse.name().clone(),
             expects: None,
         })
-        .await??;
+        .await?;
     let written = producer
         .send(orders.name().as_str(), Partition::new(0), std::slice::from_ref(&placed))
         .await;
@@ -265,7 +266,7 @@ async fn a_test_asserts_on_the_explanations_of_the_calls_that_a_recording_holds(
         .send(StopRecording {
             environment: gaslight.environment().clone(),
         })
-        .await??;
+        .await?;
     let recorded = control
         .send(QueryRecording {
             recording,
@@ -273,7 +274,7 @@ async fn a_test_asserts_on_the_explanations_of_the_calls_that_a_recording_holds(
             draft: None,
             skip: 0,
         })
-        .await??;
+        .await?;
 
     assert!(refused.is_err(), "{refused:?}");
     assert_eq!(written, Ok(Offset::new(0)));

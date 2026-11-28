@@ -2,6 +2,8 @@
 
 use std::path::PathBuf;
 
+use gaslightmq_control_client::PrepareError;
+
 use crate::image::{GaslightMqImage, GaslightMqImageError};
 
 /// Why GaslightMQ did not start in a container next to a test: see
@@ -43,6 +45,10 @@ pub enum GaslightMqContainerStartError {
     /// in the way. `reason` says which, and `log` holds the last lines that the process wrote, when it wrote any.
     #[error("GaslightMQ did not get ready in its container: {reason}{}", end_of(.log))]
     NotReady { reason: String, log: String },
+    /// The process got ready, and did not do what the configuration declared: a rule did not arm, a scenario did not
+    /// activate, or the recording from the start did not start. The container is gone again.
+    #[error("{error}")]
+    NotPrepared { error: PrepareError },
 }
 
 /// What the message of a process that did not get ready adds for `log`: nothing when the process wrote nothing.

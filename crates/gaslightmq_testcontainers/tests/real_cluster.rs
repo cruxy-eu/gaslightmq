@@ -74,7 +74,7 @@ async fn a_rule_armed_through_the_control_plane_of_the_container_refuses_the_pro
             rule: refuse.clone(),
             armed: true,
         })
-        .await??;
+        .await?;
     let refused = producer
         .send(orders.name().as_str(), Partition::new(0), std::slice::from_ref(&placed))
         .await;
@@ -87,7 +87,7 @@ async fn a_rule_armed_through_the_control_plane_of_the_container_refuses_the_pro
             rule: refuse.name().clone(),
             expects: None,
         })
-        .await??;
+        .await?;
     let written = producer
         .send(orders.name().as_str(), Partition::new(0), std::slice::from_ref(&placed))
         .await;
@@ -135,14 +135,14 @@ async fn a_rule_of_the_workspace_that_the_test_hands_over_tells_a_real_client_th
             rule: lost.clone(),
             expects: None,
         })
-        .await??;
+        .await?;
     gaslight
         .control()
         .send(FireRule {
             environment: gaslight.environment().clone(),
             rule: lost,
         })
-        .await??;
+        .await?;
     // The producer does not try again, so it reports the first answer it gets.
     let mut producer = ProducerConfiguration::new(gaslight.bootstrap());
     producer.retries = 0;
