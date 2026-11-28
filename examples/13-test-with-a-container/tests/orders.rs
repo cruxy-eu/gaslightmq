@@ -2,17 +2,12 @@
 //!
 //! Each test puts a real cluster and the image of GaslightMQ on a network of containers of its own: the container
 //! reaches the brokers under the alias of the cluster there, and the service reaches the proxy where the container
-//! publishes it. The test arms a rule through the control plane of the container, and asserts what the service did
-//! and what the cluster holds. The tests run side by side: each container publishes its ports on free ports of the
-//! machine, and each network has a name of its own.
+//! publishes it. The test arms a rule, written as a rule file writes it or named in the files of the workspace, and
+//! asserts what the service did and what the cluster holds. The tests run side by side: each container publishes its
+//! ports on free ports of the machine, and each network has a name of its own.
 
-use gaslightmq_control_api::kernel::{ApiKey, ErrorCode};
-use gaslightmq_control_api::lie::RefusalLie;
-use gaslightmq_control_api::prelude::*;
-use gaslightmq_control_api::rule::{Rule, RuleName};
-use gaslightmq_control_api::selector::{Condition, Conditions};
 use gaslightmq_test_kafka::{ContainerNetwork, KafkaCluster, NetworkListener};
-use gaslightmq_testcontainers::GaslightMqContainer;
+use gaslightmq_testcontainers::{GaslightMqContainer, rule};
 use gaslightmq_wire::Offset;
 use orders::{Order, Orders, OrdersConfiguration, PlaceOrderError};
 
@@ -55,17 +50,12 @@ async fn an_order_that_the_cluster_does_not_let_the_service_write_is_not_allowed
 
     // The proxy refuses every Produce, as a cluster does that the service may not write to.
     gaslight
-        .control()
-        .send(CreateLiveRule {
-            environment: gaslight.environment().clone(),
-            rule: Rule::new(
-                "orders-are-not-allowed".parse()?,
-                Conditions::from(Condition::is(ApiKey::PRODUCE)),
-                RefusalLie::new(ErrorCode::TOPIC_AUTHORIZATION_FAILED),
-            ),
-            armed: true,
+        .rules()
+        .arm(rule! {
+            selector: { api: Produce },
+            action: { lie: refusal, error: TOPIC_AUTHORIZATION_FAILED },
         })
-        .await??;
+        .await?;
     let placed = orders.place(&order).await;
 
     assert_eq!(
@@ -90,9 +80,11 @@ async fn an_order_whose_acknowledgement_got_lost_is_unconfirmed_though_the_clust
         .start()
         .await?;
     // The files of the workspace are copied into the container, so the rules of the project are there.
+    // The cluster writes every order, and the proxy tells the service that the Produce timed out.
     let gaslight = GaslightMqContainer::proxy_in_front_of(kafka.to_string().parse()?)
         .with_network(network.name())
         .with_workspace(WORKSPACE)
+        .arming(LOST_ACKNOWLEDGEMENTS)
         .start()
         .await?;
     let mut configuration = OrdersConfiguration::new(gaslight.bootstrap());
@@ -105,16 +97,6 @@ async fn an_order_whose_acknowledgement_got_lost_is_unconfirmed_though_the_clust
         placed_at: PLACED_AT,
     };
 
-    // The cluster writes the order, and the proxy tells the service that the Produce timed out.
-    let lost: RuleName = LOST_ACKNOWLEDGEMENTS.parse()?;
-    gaslight
-        .control()
-        .send(ArmRule {
-            environment: gaslight.environment().clone(),
-            rule: lost,
-            expects: None,
-        })
-        .await??;
     let placed = orders.place(&order).await;
 
     assert!(
@@ -166,17 +148,12 @@ async fn two_services_side_by_side_each_meet_the_lies_of_their_own_container_alo
 
     // The rule is armed in one container, and the other one knows nothing of it.
     refusing
-        .control()
-        .send(CreateLiveRule {
-            environment: refusing.environment().clone(),
-            rule: Rule::new(
-                "orders-are-not-allowed".parse()?,
-                Conditions::from(Condition::is(ApiKey::PRODUCE)),
-                RefusalLie::new(ErrorCode::TOPIC_AUTHORIZATION_FAILED),
-            ),
-            armed: true,
+        .rules()
+        .arm(rule! {
+            selector: { api: Produce },
+            action: { lie: refusal, error: TOPIC_AUTHORIZATION_FAILED },
         })
-        .await??;
+        .await?;
     let (first, second) = tokio::join!(refused_orders.place(&refused), placed_orders.place(&placed));
 
     assert_eq!(

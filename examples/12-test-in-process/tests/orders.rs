@@ -1,16 +1,10 @@
 //! The tests of the orders service, with GaslightMQ in the process of each test.
 //!
 //! Each test starts a real cluster and GaslightMQ in front of it, hands the service the bootstrap address of the
-//! proxy, arms a rule through the control plane, and asserts what the service did and what the cluster holds.
+//! proxy, arms a rule written as a rule file writes it, and asserts what the service did and what the cluster holds.
 //! The tests run side by side: each proxy and each control plane listens on free ports of its own.
 
-use gaslightmq_control_api::kernel::{ApiKey, ErrorCode};
-use gaslightmq_control_api::lie::{RefusalLie, Stage};
-use gaslightmq_control_api::prelude::*;
-use gaslightmq_control_api::rule::Rule;
-use gaslightmq_control_api::selector::{Condition, Conditions, SelectorRef};
-use gaslightmq_control_api::trigger::{Count, TriggerParts};
-use gaslightmq_test::GaslightMq;
+use gaslightmq_test::{GaslightMq, RecordingMode, rule, scenario, selector};
 use gaslightmq_test_kafka::KafkaCluster;
 use gaslightmq_wire::Offset;
 use orders::{Order, Orders, OrdersConfiguration, PlaceOrderError};
@@ -23,6 +17,15 @@ const NO_RETRIES: u32 = 0;
 
 /// The Produce calls of an order whose first try is refused: that try, and the one after it.
 const TRIES_OF_THE_ORDER: u64 = 2;
+
+/// The tries of the order that the leader churns under, which the scenario refuses before its leader stays.
+const TRIES_REFUSED: u64 = 2;
+
+/// The Produce calls of the three orders of the churn: one each, and the two tries that the churn refused.
+const PRODUCES_THROUGH_THE_CHURN: u64 = 5;
+
+/// The seed of the dice of the scenario of the churn, whose rule rolls none.
+const SEED: u64 = 7;
 
 #[tokio::test]
 async fn an_order_that_the_cluster_does_not_let_the_service_write_is_not_allowed() -> anyhow::Result<()> {
@@ -41,17 +44,12 @@ async fn an_order_that_the_cluster_does_not_let_the_service_write_is_not_allowed
 
     // The proxy refuses every Produce, as a cluster does that the service may not write to.
     gaslight
-        .control()
-        .send(CreateLiveRule {
-            environment: gaslight.environment().clone(),
-            rule: Rule::new(
-                "orders-are-not-allowed".parse()?,
-                Conditions::from(Condition::is(ApiKey::PRODUCE)),
-                RefusalLie::new(ErrorCode::TOPIC_AUTHORIZATION_FAILED),
-            ),
-            armed: true,
+        .rules()
+        .arm(rule! {
+            selector: { api: Produce },
+            action: { lie: refusal, error: TOPIC_AUTHORIZATION_FAILED },
         })
-        .await??;
+        .await?;
     let placed = orders.place(&order).await;
 
     assert_eq!(
@@ -84,17 +82,12 @@ async fn an_order_whose_acknowledgement_got_lost_is_unconfirmed_though_the_clust
 
     // The cluster writes the order, and the proxy tells the service that the Produce timed out.
     gaslight
-        .control()
-        .send(CreateLiveRule {
-            environment: gaslight.environment().clone(),
-            rule: Rule::new(
-                "order-acknowledgements-get-lost".parse()?,
-                Conditions::from(Condition::is(ApiKey::PRODUCE)),
-                RefusalLie::new(ErrorCode::REQUEST_TIMED_OUT).at(Stage::AfterResponse),
-            ),
-            armed: true,
+        .rules()
+        .arm(rule! {
+            selector: { api: Produce },
+            action: { lie: refusal, error: REQUEST_TIMED_OUT, stage: after },
         })
-        .await??;
+        .await?;
     let placed = orders.place(&order).await;
 
     assert!(
@@ -114,9 +107,9 @@ async fn an_order_whose_acknowledgement_got_lost_is_unconfirmed_though_the_clust
 async fn an_order_placed_while_the_leader_moves_is_placed_on_its_second_try() -> anyhow::Result<()> {
     let cluster = KafkaCluster::plaintext().start().await?;
     let gaslight = GaslightMq::proxy_in_front_of(cluster.bootstrap_servers().parse()?)
+        .recording_from_the_start()
         .start()
         .await?;
-    let control = gaslight.control();
     let configuration = OrdersConfiguration::new(gaslight.bootstrap());
     let topic = cluster.topics().create(configuration.topic.as_str()).await?;
     let orders = Orders::new(configuration.clone());
@@ -125,56 +118,23 @@ async fn an_order_placed_while_the_leader_moves_is_placed_on_its_second_try() ->
         item: "espresso machine".to_owned(),
         placed_at: PLACED_AT,
     };
-    let every_produce = SelectorRef::Inline(Conditions::from(Condition::is(ApiKey::PRODUCE)));
     // The test follows the Produce calls, so it knows when the proxy handed each one to the recording.
-    let mut stream = control.live_stream().await?;
-    stream
-        .follow(Subscription::Calls {
-            environment: gaslight.environment().clone(),
-            selector: every_produce.clone(),
-        })
-        .await;
-    while !matches!(stream.next().await?, StreamMessage::Following { .. }) {}
-    let recording = control
-        .send(StartRecording {
-            environment: gaslight.environment().clone(),
-        })
-        .await??;
+    let mut produces = gaslight.follow(selector! { api: Produce }).await?;
 
     // The first Produce is told that its broker no longer leads the partition, as while a leader moves.
-    let leader_moves = Rule::new(
-        "the-leader-moves".parse()?,
-        Conditions::from(Condition::is(ApiKey::PRODUCE)),
-        RefusalLie::new(ErrorCode::NOT_LEADER_OR_FOLLOWER),
-    )
-    .with_trigger(TriggerParts::new().with_first(Count::ONE));
-    control
-        .send(CreateLiveRule {
-            environment: gaslight.environment().clone(),
-            rule: leader_moves.clone(),
-            armed: true,
+    let leader_moves = gaslight
+        .rules()
+        .arm(rule! {
+            selector: { api: Produce },
+            action: { lie: refusal, error: NOT_LEADER_OR_FOLLOWER },
+            trigger: { first: 1 },
         })
-        .await??;
+        .await?;
     let placed = orders.place(&order).await;
-    let mut followed = 0;
-    while followed < TRIES_OF_THE_ORDER {
-        if let StreamMessage::Call { .. } = stream.next().await? {
-            followed += 1;
-        }
-    }
-    control
-        .send(StopRecording {
-            environment: gaslight.environment().clone(),
-        })
-        .await??;
-    let recorded = control
-        .send(QueryRecording {
-            recording,
-            selector: every_produce,
-            draft: None,
-            skip: 0,
-        })
-        .await??;
+    produces.wait_for(TRIES_OF_THE_ORDER).await?;
+    let recording = gaslight.recordings().current().await?;
+    recording.stop().await?;
+    let recorded = recording.query(selector! { api: Produce }).await?;
 
     // The service saw no failure: its producer tried again.
     assert_eq!(placed, Ok(Offset::new(0)));
@@ -187,11 +147,78 @@ async fn an_order_placed_while_the_leader_moves_is_placed_on_its_second_try() ->
     let applied: Vec<bool> = recorded
         .calls
         .iter()
-        .map(|call| call.explanation().applied(leader_moves.name().as_str()))
+        .map(|call| call.explanation().applied(&leader_moves))
         .collect();
     assert_eq!(applied, [true, false]);
     assert!(recorded.calls[1].verdict().is_pass());
-    stream.close().await;
+    gaslight.stop().await;
+    Ok(())
+}
+
+#[tokio::test]
+async fn orders_placed_while_the_leader_churns_are_each_written_once() -> anyhow::Result<()> {
+    let cluster = KafkaCluster::plaintext().start().await?;
+    // The first order goes through, the next tries are told that the leader moved, and then the leader stays.
+    // The recording keeps the records of the orders too, which it leaves out in front of a real cluster otherwise.
+    let gaslight = GaslightMq::proxy_in_front_of(cluster.bootstrap_servers().parse()?)
+        .recording(RecordingMode::Full)
+        .recording_from_the_start()
+        .activating(scenario! {
+            mode: sequence,
+            seed: (SEED),
+            steps: [
+                { until: { calls: 1, selector: { api: Produce } } },
+                {
+                    title: "The leader churns",
+                    arm: [{ selector: { api: Produce }, action: { lie: refusal, error: NOT_LEADER_OR_FOLLOWER } }],
+                    until: { firings: (TRIES_REFUSED) },
+                },
+                { title: Recovery },
+            ],
+        })
+        .start()
+        .await?;
+    let configuration = OrdersConfiguration::new(gaslight.bootstrap());
+    let topic = cluster.topics().create(configuration.topic.as_str()).await?;
+    let orders = Orders::new(configuration.clone());
+    let to_place = ["o-1", "o-2", "o-3"].map(|id| Order {
+        id: id.to_owned(),
+        item: "espresso machine".to_owned(),
+        placed_at: PLACED_AT,
+    });
+    let mut produces = gaslight.follow(selector! { api: Produce }).await?;
+
+    let mut placed = Vec::new();
+    for order in &to_place {
+        placed.push(orders.place(order).await);
+    }
+    produces.wait_for(PRODUCES_THROUGH_THE_CHURN).await?;
+    let recording = gaslight.recordings().current().await?;
+    recording.stop().await?;
+    let recorded = recording.query(selector! { api: Produce }).await?;
+
+    // The service saw no failure, and the cluster holds every order once, in the order they were placed.
+    assert_eq!(placed, [Ok(Offset::new(0)), Ok(Offset::new(1)), Ok(Offset::new(2))]);
+    assert_eq!(
+        topic.partition(configuration.partition).records().await?,
+        [
+            to_place[0].record().with_offset(Offset::new(0)),
+            to_place[1].record().with_offset(Offset::new(1)),
+            to_place[2].record().with_offset(Offset::new(2)),
+        ]
+    );
+    // The churn ended by itself once its rule had refused twice, and the scenario stands in its last step.
+    let status = gaslight.scenario_status().await?;
+    assert!(
+        status
+            .active
+            .and_then(|at| at.step)
+            .is_some_and(|step| step == "step-3"),
+        "the scenario stands in its last step"
+    );
+    // The recording shows which tries the churn refused: the two first tries of the second order, and no other.
+    let passed: Vec<bool> = recorded.calls.iter().map(|call| call.verdict().is_pass()).collect();
+    assert_eq!(passed, [true, false, false, true, true]);
     gaslight.stop().await;
     Ok(())
 }
@@ -224,17 +251,12 @@ async fn two_services_side_by_side_each_meet_the_lies_of_their_own_proxy_alone()
 
     // The rule is armed on one proxy, and the other one knows nothing of it.
     refusing
-        .control()
-        .send(CreateLiveRule {
-            environment: refusing.environment().clone(),
-            rule: Rule::new(
-                "orders-are-not-allowed".parse()?,
-                Conditions::from(Condition::is(ApiKey::PRODUCE)),
-                RefusalLie::new(ErrorCode::TOPIC_AUTHORIZATION_FAILED),
-            ),
-            armed: true,
+        .rules()
+        .arm(rule! {
+            selector: { api: Produce },
+            action: { lie: refusal, error: TOPIC_AUTHORIZATION_FAILED },
         })
-        .await??;
+        .await?;
     let (first, second) = tokio::join!(refused_orders.place(&refused), placed_orders.place(&placed));
 
     assert_eq!(

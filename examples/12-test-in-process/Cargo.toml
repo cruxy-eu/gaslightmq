@@ -4,7 +4,6 @@
 # The crates of this repository, by their paths, so the example always tests what they are now.
 # Your project names a release of them instead, once one is published: `gaslightmq_test = "0.1"`.
 [workspace.dependencies]
-gaslightmq_control_api = { path = "../../crates/gaslightmq_control_api" }
 gaslightmq_kafka_client_api = { path = "../../crates/gaslightmq_kafka_client/api" }
 gaslightmq_kafka_client_native = { path = "../../crates/gaslightmq_kafka_client/native" }
 gaslightmq_test = { path = "../../crates/gaslightmq_test" }
@@ -29,8 +28,6 @@ thiserror.workspace = true
 
 [dev-dependencies]
 anyhow.workspace = true
-# The rules that a test arms, and the recording it queries.
-gaslightmq_control_api.workspace = true
 # GaslightMQ in the process of the test: a proxy in front of the cluster, and its control plane.
 gaslightmq_test.workspace = true
 # The real cluster behind the proxy. In your project, the Kafka that your tests already start.
