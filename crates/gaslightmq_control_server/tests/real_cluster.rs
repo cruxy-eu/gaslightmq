@@ -1569,7 +1569,12 @@ async fn an_undo_that_arms_a_rule_again_is_an_entry_of_the_journal_with_its_caus
 }
 
 #[tokio::test]
-async fn a_recording_started_through_the_control_plane_keeps_the_calls_until_it_stops() -> anyhow::Result<()> {
+#[expect(
+    clippy::too_many_lines,
+    reason = "the test follows one recording from its start to the query of what it holds"
+)]
+async fn a_recording_started_through_the_control_plane_keeps_the_calls_until_it_stops_and_answers_a_query()
+-> anyhow::Result<()> {
     let cluster = KafkaCluster::plaintext().start().await?;
     let orders = cluster.topics().create("orders").await?;
     let host = Arc::new(Host::new(
@@ -1665,6 +1670,32 @@ async fn a_recording_started_through_the_control_plane_keeps_the_calls_until_it_
         .await??;
     assert_eq!(opened.description.recording, recording);
     assert_eq!(opened.end, Some(end));
+    // The recording answers a query with the Produce, and its index groups it under its topic.
+    let every_produce = SelectorRef::Inline(Conditions::from(Condition::is(ApiKey::PRODUCE)));
+    let queried = client
+        .send(QueryRecording {
+            recording: recording.clone(),
+            selector: every_produce.clone(),
+            draft: None,
+            skip: 0,
+        })
+        .await??;
+    assert_eq!(queried.matched, 1);
+    let indexed = client
+        .send(GetRecordingIndex {
+            recording,
+            filter: every_produce,
+        })
+        .await??;
+    let topics = indexed.facets.iter().find(|facet| facet.field == Field::Topic);
+    let counted: Option<Vec<(String, u64)>> = topics.map(|topics| {
+        topics
+            .values
+            .iter()
+            .map(|counted| (counted.value.to_string(), counted.calls))
+            .collect()
+    });
+    assert_eq!(counted, Some(vec![(orders.name().to_string(), 1)]));
     server.stop().await;
     host.stop_all().await;
     Ok(())
