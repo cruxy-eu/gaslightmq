@@ -429,6 +429,15 @@ impl ArmedRules {
         self.sets().position()
     }
 
+    /// The rules that someone armed by hand and whose lifetime has not ended, the one armed most recently first:
+    /// the live set, in the order in which its rules win a conflict.
+    pub fn live_set(&self) -> Vec<RuleName> {
+        let now = self.inner.clock.now();
+        let sets = self.sets();
+        let armed = sets.live.iter().filter(|rule| !rule.arming().has_ended(now));
+        armed.map(|rule| rule.name().clone()).collect()
+    }
+
     /// The steps that advanced by themselves since the last call, with the armed rules after them.
     ///
     /// Whoever counts the changes of the environment takes them, and nobody else: each comes once.
@@ -839,6 +848,8 @@ mod tests {
             armed(&rules),
             ["throttle", "leader-flap", "blackhole-half", "refuse-half"]
         );
+        // The live set holds the rules armed by hand alone, the one armed most recently first.
+        assert_eq!(rules.live_set(), [name("throttle"), name("leader-flap")]);
     }
 
     #[test]
