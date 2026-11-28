@@ -609,16 +609,18 @@ mod tests {
     }
 
     #[test]
-    fn a_rule_needs_a_name_a_selector_and_an_action() {
+    fn a_rule_needs_a_selector_and_an_action_and_no_name() {
         let without = |key: &str| {
             let mut form = slow_down_form();
             form.as_object_mut().unwrap().remove(key);
-            error::<Rule>(form)
+            form
         };
 
-        assert_eq!(without("name"), "missing field `name`");
-        assert_eq!(without("selector"), "missing field `selector`");
-        assert_eq!(without("action"), "missing field `action`");
+        assert_eq!(error::<Rule>(without("selector")), "missing field `selector`");
+        assert_eq!(error::<Rule>(without("action")), "missing field `action`");
+        // A rule without a name has the name of what it says.
+        let unnamed: Rule = read(without("name"));
+        assert_eq!(unnamed.name(), "delay-1s-on-order-producers-for-order-ingest");
     }
 
     #[test]
