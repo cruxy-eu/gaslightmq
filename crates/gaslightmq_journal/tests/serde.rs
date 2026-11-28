@@ -55,6 +55,16 @@ fn an_entry_id_and_a_revision_are_numbers() {
 }
 
 #[test]
+fn a_recording_id_is_its_text() {
+    writes(
+        &"orders-sim.2026-11-21T14-02-11.527Z".parse::<RecordingId>().unwrap(),
+        r#""orders-sim.2026-11-21T14-02-11.527Z""#,
+    );
+    rejects::<RecordingId>(r#""orders-sim""#, "is no recording ID");
+    rejects::<RecordingId>(r#""orders-sim.1969-12-31T23-59-59.999Z""#, "is before 1970");
+}
+
+#[test]
 fn a_recorded_name_is_its_text_and_a_definition_is_its_kind_and_its_name() {
     writes(
         &"slow-order-producers".parse::<RecordedName>().unwrap(),

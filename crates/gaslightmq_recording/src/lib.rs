@@ -11,7 +11,7 @@
 //!
 //! | Type | Is |
 //! |---|---|
-//! | [`RecordingId`], [`UtcInstant`] | Which recording this is: its environment and the instant it started, which is the name of its directory too. |
+//! | [`RecordingId`], [`UtcInstant`] | Which recording this is: its environment and the instant it started, which is the name of its directory too. `journal` and `clock` hold them, so the control plane carries them without the Kafka codec, and this crate names them as its own. |
 //! | [`Description`], [`RecordedBackend`], [`ActiveScenario`] | What the recording is, written once when it starts. |
 //! | [`Entry`] | One thing that a recording keeps, encoded where it is made: a session event, a call or a journal entry. |
 //! | [`SessionEvent`], [`SessionChange`], [`Closer`] | An event of a session: it opened, it was identified, its software was named, or it closed. |
@@ -94,7 +94,6 @@ mod description;
 mod encoding;
 mod entry;
 mod error;
-mod id;
 mod position;
 mod redact;
 mod storage;
@@ -109,7 +108,8 @@ pub use error::{
     CallEntryError, EntryError, ExtentError, ListError, MessageError, NextBatchError, OpenError, ReadError, StartError,
     WriteError,
 };
-pub use id::{RecordingId, RecordingIdError, UtcInstant, UtcInstantError};
+pub use gaslightmq_clock::{UtcInstant, UtcInstantError};
+pub use gaslightmq_journal::{RecordingId, RecordingIdError};
 pub use position::{Direction, End, Ending, Extent, Frames, Place, Position};
 pub use storage::{RecordedEntries, RecordingReader, RecordingStorage, RecordingWriter};
 pub use summary::{Everything, Summary, SummaryValues, Wanted};

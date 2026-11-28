@@ -8,6 +8,9 @@
 //! | [`TimeSpan`] | A length of time as a definition writes it, such as `10s`. |
 //! | [`VirtualClock`] | A clock that moves only when its owner moves it. |
 //! | [`Speed`] | How fast a virtual clock runs against real time. |
+//! | [`UtcInstant`], [`UtcClock`] | An instant in UTC to the millisecond, such as when a recording started, and a source of the current one. |
+//!
+//! [`UtcInstant`] checks its value, and its error is [`UtcInstantError`].
 //!
 //! The crate is sans-IO.
 //! It never reads the system's time.
@@ -49,18 +52,21 @@
 //! with the clocks that a task waits on.
 //!
 //! The `serde` feature maps a [`TimeSpan`] to its text, such as `10s`,
-//! and an [`Instant`] and a [`Speed`] to plain numbers.
+//! an [`Instant`] and a [`Speed`] to plain numbers, and a [`UtcInstant`] to its text, such as
+//! `2026-11-21T14:02:11.527Z`.
 
 mod clock;
 mod instant;
 mod speed;
 mod time_span;
+mod utc_instant;
 mod virtual_clock;
 
 pub use clock::Clock;
 pub use instant::Instant;
 pub use speed::Speed;
 pub use time_span::{TimeSpan, TimeSpanError};
+pub use utc_instant::{InAName, UtcClock, UtcInstant, UtcInstantError};
 pub use virtual_clock::VirtualClock;
 
 pub use core::time::Duration;

@@ -46,6 +46,8 @@ mod next_to_std_and_every_neighbour {
         let mut journal = RecentJournal::new(RecentJournalSize::default());
         let entry: JournalEntry = journal.record(gaslightmq_clock::Instant::ZERO, change, from, Some(Revision::new(7)));
         let id: JournalEntryId = entry.id;
+        let started = gaslightmq_clock::UtcInstant::new(1_795_269_731_527).expect("an instant in 2026");
+        let recording = RecordingId::new("orders-sim".parse().expect("a name"), started);
 
         vec![
             id.to_string(),
@@ -53,6 +55,7 @@ mod next_to_std_and_every_neighbour {
             RecentJournalSize::default().to_string(),
             format!("{entry:?}"),
             RecordingStopCause::FellBehind.to_string(),
+            recording.to_string(),
         ]
     }
 
@@ -62,6 +65,10 @@ mod next_to_std_and_every_neighbour {
             JournalEntryIdError::Zero.to_string(),
             RecordedNameError::Empty.to_string(),
             RecentJournalSizeError::Zero.to_string(),
+            RecordingIdError::NoStart {
+                input: "orders-sim".to_owned(),
+            }
+            .to_string(),
         ]
     }
 }
@@ -74,6 +81,7 @@ fn the_prelude_names_every_type_next_to_std_and_its_neighbours() {
     assert_eq!(items[1], "rule \"slow-order-producers\"");
     assert_eq!(items[2], "1000 entries");
     assert_eq!(items[4], "the recorder could not keep up");
+    assert_eq!(items[5], "orders-sim.2026-11-21T14-02-11.527Z");
 }
 
 #[test]
@@ -84,6 +92,7 @@ fn the_prelude_holds_every_error() {
             "a journal entry ID is at least one",
             "recorded name \"\" is empty",
             "a recent journal keeps at least one entry",
+            "\"orders-sim\" is no recording ID: the name of an environment, a `.` and the instant the recording started",
         ]
     );
 }
