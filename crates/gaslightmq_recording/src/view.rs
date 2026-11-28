@@ -20,7 +20,7 @@ use gaslightmq_lie::Priority;
 use rkyv::string::ArchivedString;
 
 use crate::encoding::{read, v1};
-use crate::{EntryError, FrameSlot, FrameState, RecordedFrame, SessionEvent};
+use crate::{EntryError, FrameSlot, FrameState, RecordedFrame, RecordedSessionEvent};
 
 fn damaged(reason: String) -> EntryError {
     EntryError::Damaged { reason }
@@ -74,7 +74,7 @@ impl<'a> SessionEventView<'a> {
     /// # Errors
     ///
     /// [`EntryError::Damaged`] when the entry holds a value that its type does not take.
-    pub fn to_session_event(&self) -> Result<SessionEvent, EntryError> {
+    pub fn to_session_event(&self) -> Result<RecordedSessionEvent, EntryError> {
         read::session_event(self.event).map_err(damaged)
     }
 }

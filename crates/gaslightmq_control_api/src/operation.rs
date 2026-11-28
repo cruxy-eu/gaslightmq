@@ -11,8 +11,9 @@ use serde::{Deserialize, Serialize};
 use crate::{
     ArmRule, CheckHealth, CloseSession, CreateDefinition, CreateLiveRule, DeleteDefinition, DeleteLiveRule, DisarmRule,
     FireRule, GetBackend, GetDefinition, GetEnvironment, KeepRule, ListDefinitions, ListEnvironmentRules,
-    ListEnvironments, ListSessions, ParseSentence, QueryJournal, ReloadWorkspace, SaveWorkspace, SendIntent,
-    StartEnvironment, StopEnvironment, UpdateDefinition, UpdateLiveRule,
+    ListEnvironments, ListRecordings, ListSessions, OpenRecording, ParseSentence, QueryJournal, ReloadWorkspace,
+    SaveWorkspace, SendIntent, StartEnvironment, StartRecording, StopEnvironment, StopRecording, UpdateDefinition,
+    UpdateLiveRule,
 };
 
 /// One thing that a client asks of the control plane, with what it gets back.
@@ -139,6 +140,14 @@ pub enum AnyOperation {
     ReloadWorkspace(ReloadWorkspace),
     /// [Write every change that nobody saved yet](SaveWorkspace).
     SaveWorkspace(SaveWorkspace),
+    /// [Start a recording of an environment](StartRecording).
+    StartRecording(StartRecording),
+    /// [Stop the recording of an environment](StopRecording).
+    StopRecording(StopRecording),
+    /// [List the recordings](ListRecordings).
+    ListRecordings(ListRecordings),
+    /// [Open a recording](OpenRecording).
+    OpenRecording(OpenRecording),
 }
 
 impl AnyOperation {
@@ -193,6 +202,10 @@ impl AnyOperation {
             AnyOperation::QueryJournal(_) => "query-journal",
             AnyOperation::ReloadWorkspace(_) => "reload-workspace",
             AnyOperation::SaveWorkspace(_) => "save-workspace",
+            AnyOperation::StartRecording(_) => "start-recording",
+            AnyOperation::StopRecording(_) => "stop-recording",
+            AnyOperation::ListRecordings(_) => "list-recordings",
+            AnyOperation::OpenRecording(_) => "open-recording",
         }
     }
 }
@@ -280,4 +293,8 @@ requests! {
     QueryJournal => QueryJournal;
     ReloadWorkspace => ReloadWorkspace;
     SaveWorkspace => SaveWorkspace;
+    StartRecording => StartRecording;
+    StopRecording => StopRecording;
+    ListRecordings => ListRecordings;
+    OpenRecording => OpenRecording;
 }

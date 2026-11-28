@@ -9,7 +9,7 @@
 //! |---|---|
 //! | [`assert_recording_storage`] | The check: every behaviour of the contract, each on a storage of its own. |
 //! | [`BATCH_SIZE`], [`READER_MEMORY`] | The sizes that the storage of the check is made with, so that a small recording is many batches, and more than a reader may hold. |
-//! | [`MemoryStorage`] | A storage in memory: the smallest storage that keeps the contract. |
+//! | [`MemoryStorage`], [`StoredEntry`] | A storage in memory: the smallest storage that keeps the contract, and an entry of it as its type, which a test compares. |
 //!
 //! ```
 //! use futures::executor::block_on;
@@ -43,4 +43,4 @@ mod memory;
 mod samples;
 
 pub use contract::{BATCH_SIZE, READER_MEMORY, assert_recording_storage};
-pub use memory::{MemoryEntries, MemoryReader, MemoryStorage, MemoryWriter};
+pub use memory::{MemoryEntries, MemoryReader, MemoryStorage, MemoryWriter, StoredEntry};

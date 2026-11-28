@@ -5,6 +5,7 @@ use std::num::NonZeroUsize;
 
 use gaslightmq_control_api::environment::{Environment, EnvironmentName};
 use gaslightmq_control_api::field::{ClientSoftware, ConnectionNumber};
+use gaslightmq_control_api::journal::RecordingId;
 use gaslightmq_control_api::prelude::*;
 use gaslightmq_control_api::rule::{Preset, Rule, RuleName, RuleState};
 use gaslightmq_control_api::scenario::Scenario;
@@ -258,6 +259,12 @@ impl Process {
                 self.environments.retain(|running| &running.environment != environment);
                 self.stats.remove(environment);
             }
+            StreamMessage::RecordingStarted { environment, recording } => {
+                self.recording_started(environment, recording);
+            }
+            StreamMessage::RecordingStopped {
+                environment, recording, ..
+            } => self.recording_stopped(environment, recording),
             StreamMessage::WorkspaceChanged { workspace } => self.workspace = workspace.clone(),
             StreamMessage::WorkspaceInvalid { reason } => self.workspace_invalid = Some(reason.clone()),
             // No view shows the journal yet, so the state keeps no entry of it.
@@ -267,6 +274,22 @@ impl Process {
             | StreamMessage::Call { .. }
             | StreamMessage::Following { .. }
             | StreamMessage::SubscriptionRefused { .. } => {}
+        }
+    }
+
+    /// The environment writes `recording` from now on.
+    fn recording_started(&mut self, environment: &EnvironmentName, recording: &RecordingId) {
+        if let Some(running) = self.running(environment) {
+            running.recording = Some(recording.clone());
+        }
+    }
+
+    /// The environment stopped writing `recording`. A message that comes late leaves a later recording alone.
+    fn recording_stopped(&mut self, environment: &EnvironmentName, recording: &RecordingId) {
+        if let Some(running) = self.running(environment)
+            && running.recording.as_ref() == Some(recording)
+        {
+            running.recording = None;
         }
     }
 

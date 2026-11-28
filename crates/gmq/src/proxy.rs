@@ -4,9 +4,12 @@ use std::sync::Arc;
 
 use gaslightmq_control_server::{ControlServer, ControlServerConfiguration};
 use gaslightmq_definition_api::Store;
+use gaslightmq_engine::Recordings;
 use gaslightmq_environment::Environment;
 use gaslightmq_host::{EnvironmentConfiguration, Host, HostConfiguration, RunId};
 use gaslightmq_lie_api::Lies;
+use gaslightmq_recording_segments::{SegmentConfiguration, SegmentStorage};
+use gaslightmq_recording_segments_fs::{FileBacking, FileConfiguration};
 use gaslightmq_workspace::{MemoryContext, Stores, WorkspaceContext};
 use gaslightmq_workspace_fs::{FileContext, FileStores};
 
@@ -18,6 +21,8 @@ use crate::stop::StopSignals;
 /// Runs the proxy that the flags describe, until a signal stops it.
 ///
 /// It opens the files of the workspace when the flags name one, and keeps every definition in memory otherwise.
+/// A workspace keeps the recordings too, in the segment layout on files under `recordings.directory`, and a process
+/// without one keeps them in memory: a proxy that someone starts in any directory writes nothing there.
 /// The proxy starts first, and the control plane in front of it once it accepts connections.
 /// It prints where everything listens, and `ready` last.
 ///
@@ -39,17 +44,29 @@ pub(crate) async fn proxy(flags: ProxyFlags) -> Result<(), ProxyError> {
                         directory: directory.clone(),
                         error,
                     })?;
-            let holding = Holding::Files { directory, access };
-            serve(FileContext::new(stores), holding, &environment, control).await
+            // `recordings.directory`, which is `recordings` until `gaslight.yaml` is read and says otherwise.
+            let recordings = directory.join(RECORDINGS_DIRECTORY);
+            let backing = FileBacking::new(recordings.clone(), FileConfiguration::new());
+            let storage = Recordings::new(SegmentStorage::new(backing, SegmentConfiguration::new()));
+            let holding = Holding::Files {
+                directory,
+                access,
+                recordings,
+            };
+            serve(FileContext::new(stores), Some(storage), holding, &environment, control).await
         }
-        None => serve(MemoryContext::new(), Holding::Memory, &environment, control).await,
+        None => serve(MemoryContext::new(), None, Holding::Memory, &environment, control).await,
     }
 }
 
-/// Starts the environment over the stores of `context`, and the control plane in front of it, and stops both once a
-/// signal comes.
+/// `recordings.directory`: where the recordings of a workspace are, below its directory.
+const RECORDINGS_DIRECTORY: &str = "recordings";
+
+/// Starts the environment over the stores of `context`, with its recordings in `recordings` or in memory, and the
+/// control plane in front of it, and stops both once a signal comes.
 async fn serve<C: WorkspaceContext + 'static>(
     context: C,
+    recordings: Option<Recordings>,
     holding: Holding,
     environment: &Environment,
     control: Option<ControlServerConfiguration>,
@@ -71,7 +88,12 @@ async fn serve<C: WorkspaceContext + 'static>(
     }
     let run = random_run()?;
     let signals = StopSignals::listen()?;
-    let host = Arc::new(Host::new(HostConfiguration::default(), context, lies(), run));
+    let host = Host::new(HostConfiguration::default(), context, lies(), run);
+    // Without a workspace, the host keeps its recordings in memory.
+    let host = Arc::new(match recordings {
+        Some(recordings) => host.with_recordings(recordings),
+        None => host,
+    });
     let configuration =
         EnvironmentConfiguration::new(environment).expect("a host configures a proxy in front of a real cluster");
     // The environment of the flags is the one that the process starts with: it is healthy while it runs.

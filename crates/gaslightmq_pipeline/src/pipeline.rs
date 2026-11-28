@@ -11,7 +11,7 @@ use gaslightmq_wire::{DecodeError, FrameDecoder, FrameError, Request, Response};
 
 use crate::in_flight::{AtRequestGate, CallInFlight, Leaving, Settled};
 use crate::untold::StageFailure;
-use crate::{Input, Output, Outputs, SharedBySessions, TimerId};
+use crate::{Input, Output, Outputs, Recording, SharedBySessions, TimerId};
 
 /// The request pipeline of one connection: a state machine that decides what happens to each call.
 ///
@@ -77,6 +77,8 @@ pub struct Pipeline {
     shared: SharedBySessions,
     /// The bytes of the client that are no whole request yet.
     frames: FrameDecoder,
+    /// Whether a recording runs, so that every call that arrives hands its frames out with its record.
+    recording: Recording,
 }
 
 impl Pipeline {
@@ -103,7 +105,18 @@ impl Pipeline {
             snapshot,
             shared,
             frames: FrameDecoder::new(),
+            recording: Recording::Idle,
         }
+    }
+
+    /// Whether a recording runs from now on.
+    ///
+    /// While one runs, every call that arrives keeps hold of its frames until it ends, and hands them out with its
+    /// record in [`Output::Emit`]: the request as the client sent it, the truth, and the response that the client
+    /// received. A call that arrived before keeps none, and neither does one that arrives while nothing records.
+    /// The engine says it before every input, and a pipeline opens while nothing records.
+    pub fn set_recording(&mut self, recording: Recording) {
+        self.recording = recording;
     }
 
     /// Takes one thing that happened at `now`, and returns what should happen, in order.
@@ -114,7 +127,11 @@ impl Pipeline {
         }
         match input {
             Input::ClientBytes(bytes) => self.receive(bytes, now, &mut outputs),
-            Input::BackendAnswered { call, response } => self.backend_answered(call, response, now, &mut outputs),
+            Input::BackendAnswered {
+                call,
+                response,
+                upstream,
+            } => self.backend_answered(call, response, upstream, now, &mut outputs),
             Input::BackendAnswerUnreadable { call, reason } => {
                 self.backend_answered_unreadably(call, reason, now, &mut outputs);
             }
@@ -200,13 +217,19 @@ impl Pipeline {
             // A silence stopped the connection. The request never reaches the backend and never gets an answer,
             // so nothing happens to it: no rule is evaluated, the session takes no identity from it,
             // and the client context learns nothing from it.
-            let call = CallInFlight::parked(request, &self.session, snapshot, &self.shared, now);
+            let mut call = CallInFlight::parked(request, &self.session, snapshot, &self.shared, now);
+            if self.recording == Recording::Running {
+                call.keep_frames();
+            }
             let id = self.session.calls_mut().arrive(call, now);
             self.emit(id, Delivered::Nothing, outputs);
             return;
         }
 
         let mut call = CallInFlight::arrived(request, &mut self.session, snapshot, &self.shared, now);
+        if self.recording == Recording::Running {
+            call.keep_frames();
+        }
         let arrival = call.evaluate(self.session.counters_mut(), &self.shared, now);
         outputs.extend(arrival.incidents.into_iter().map(Output::Fire));
         let id = self.session.calls_mut().arrive(call, now);
@@ -229,11 +252,21 @@ impl Pipeline {
     }
 
     /// Stage 9 begins for the call that the backend answered.
-    fn backend_answered(&mut self, call: CallId, response: Response, now: Instant, outputs: &mut Outputs) {
+    fn backend_answered(
+        &mut self,
+        call: CallId,
+        response: Response,
+        upstream: Option<Response>,
+        now: Instant,
+        outputs: &mut Outputs,
+    ) {
         let (calls, counters) = self.session.calls_and_counters_mut();
         let Some(in_flight) = calls.get_mut(call) else {
             return;
         };
+        if let Some(upstream) = upstream {
+            in_flight.content_mut().answered_upstream(upstream);
+        }
         let Some(settled) = in_flight.content_mut().answered(response, now, counters, &self.shared) else {
             return;
         };
@@ -300,7 +333,7 @@ impl Pipeline {
                 if let Leaving::Send(bytes) = &leaving {
                     outputs.push(Output::Send(bytes.clone()));
                 }
-                outputs.extend(call.record(id, delivered).map(Box::new).map(Output::Emit));
+                outputs.extend(call.emitted(id, delivered));
                 if let Leaving::Close(by) = leaving {
                     self.close(by, None, None, now, outputs);
                     return;
@@ -356,8 +389,7 @@ impl Pipeline {
     /// Stage 11 for a call that stays in flight: a silenced call never leaves.
     fn emit(&mut self, id: CallId, delivered: Delivered, outputs: &mut Outputs) {
         let call = self.session.calls_mut().get_mut(id);
-        let record = call.and_then(|call| call.content_mut().record(id, delivered));
-        outputs.extend(record.map(Box::new).map(Output::Emit));
+        outputs.extend(call.and_then(|call| call.content_mut().emitted(id, delivered)));
     }
 
     /// The session ends at `now`. No call in flight gets an answer, and each of them is recorded.
@@ -384,7 +416,7 @@ impl Pipeline {
             if let Some(reason) = reason {
                 call.failed(reason.clone());
             }
-            outputs.extend(call.record(id, delivered).map(Box::new).map(Output::Emit));
+            outputs.extend(call.emitted(id, delivered));
         }
         if by != ClosedBy::Client {
             outputs.push(Output::Close);

@@ -24,12 +24,14 @@ gaslightmq_kernel.workspace = true
 gaslightmq_lie_api.workspace = true
 gaslightmq_listener.workspace = true
 gaslightmq_pipeline.workspace = true
+gaslightmq_recording.workspace = true
 gaslightmq_rule.workspace = true
 gaslightmq_session.workspace = true
 gaslightmq_trigger.workspace = true
 gaslightmq_wire.workspace = true
 futures.workspace = true
 thiserror.workspace = true
+# The recorder runs a runtime of its own, on its own thread, and its commit interval is time of the system.
 tokio = { workspace = true, features = ["rt", "sync", "macros", "time"] }
 tracing.workspace = true
 
@@ -41,6 +43,8 @@ gaslightmq_kafka_client_native.workspace = true
 gaslightmq_test_kafka.workspace = true
 # The client of `tests/engine`: it sends one request at a fixed version, and returns its response.
 gaslightmq_kafka_client_api.workspace = true
+# The storage in memory that the recordings of the tests go to.
+gaslightmq_recording_conformance.workspace = true
 # What a test arms: selectors, the definitions of lies, and the refusal that the build of a test registers.
 gaslightmq_lie.workspace = true
 gaslightmq_lie_refusal.workspace = true

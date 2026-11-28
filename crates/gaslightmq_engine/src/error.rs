@@ -2,6 +2,7 @@
 
 use gaslightmq_environment::BrokerListenersError;
 use gaslightmq_field::{ConnectionNumber, Endpoint};
+use gaslightmq_recording::RecordingId;
 use gaslightmq_rule::RuleName;
 
 /// Why an endpoint of a proxy has no listener.
@@ -161,6 +162,80 @@ pub enum LiveEventsError {
     /// The engine stopped, and the listener received every event that the engine kept for it.
     #[error("the engine stopped")]
     EngineStopped,
+}
+
+/// Why the recorder of an engine did not [start a recording](crate::Recorder::start).
+///
+/// ```
+/// use gaslightmq_engine::prelude::*;
+///
+/// let error = StartRecordingError::AlreadyRecording { recording: "orders-sim.2026-11-21T14-02-11.527Z".parse().expect("an ID") };
+/// assert_eq!(error.to_string(), "recording orders-sim.2026-11-21T14-02-11.527Z runs already");
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum StartRecordingError {
+    /// A recording runs already. An environment writes one recording at a time, so whoever wants another stops it.
+    #[error("recording {recording} runs already")]
+    AlreadyRecording { recording: RecordingId },
+    /// The storage did not keep the recording: it has one with the ID already, or it could not write.
+    /// `reason` says which, or what else stood in the way of the recorder.
+    #[error("recording {recording} did not start: {reason}")]
+    StorageFailed { recording: RecordingId, reason: String },
+}
+
+/// Why the recorder of an engine did not [stop a recording](crate::Recorder::stop) in order.
+///
+/// ```
+/// use gaslightmq_engine::prelude::*;
+///
+/// assert_eq!(StopRecordingError::NotRecording.to_string(), "no recording runs");
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum StopRecordingError {
+    /// No recording runs: nobody started one, someone stopped it, or it stopped by itself.
+    #[error("no recording runs")]
+    NotRecording,
+    /// The recording stopped, and its recorder could not write what waited, or its end.
+    /// It holds what its last commit covers, and opens as a recording that was cut short.
+    #[error("recording {recording} stopped without its end: {reason}")]
+    CutShort { recording: RecordingId, reason: String },
+}
+
+/// Why the [recordings](crate::Recordings) were not listed.
+///
+/// ```
+/// use gaslightmq_engine::prelude::*;
+///
+/// let error = ListRecordingsError::StorageUnavailable { reason: "permission denied".to_owned() };
+/// assert_eq!(error.to_string(), "the recordings were not listed: permission denied");
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum ListRecordingsError {
+    /// The storage did not answer. The recordings can be listed again.
+    #[error("the recordings were not listed: {reason}")]
+    StorageUnavailable { reason: String },
+}
+
+/// Why a recording did not [open](crate::Recordings::open).
+///
+/// ```
+/// use gaslightmq_engine::prelude::*;
+///
+/// let error = OpenRecordingError::NotFound { recording: "orders-sim.2026-11-21T14-02-11.527Z".parse().expect("an ID") };
+/// assert_eq!(error.to_string(), "no recording orders-sim.2026-11-21T14-02-11.527Z is there");
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum OpenRecordingError {
+    /// The storage has no recording with that ID.
+    #[error("no recording {recording} is there")]
+    NotFound { recording: RecordingId },
+    /// What is there is no recording that this build reads: a later version wrote it, or it is no recording.
+    /// It will not open, however often someone asks.
+    #[error("recording {recording} does not open: {reason}")]
+    Unreadable { recording: RecordingId, reason: String },
+    /// The storage did not answer, and the recording can be opened again.
+    #[error("recording {recording} was not read: {reason}")]
+    StorageUnavailable { recording: RecordingId, reason: String },
 }
 
 #[cfg(test)]

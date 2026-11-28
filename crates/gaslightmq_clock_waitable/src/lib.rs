@@ -3,7 +3,7 @@
 //! | Type | Is |
 //! |---|---|
 //! | [`WaitableClock`] | A clock that a task waits on: it tells the time, and it says when it reaches an instant. |
-//! | [`WallClock`] | Real time. The clock of a proxy in front of a real cluster. |
+//! | [`WallClock`] | Real time. The clock of a proxy in front of a real cluster, and the [`UtcClock`] of a process: the instant in UTC that names a recording. |
 //! | [`SteppedClock`] | A clock that moves when its owner moves it. The clock of a test, and of a proxy in front of a broker. |
 //!
 //! `gaslightmq_clock` is sans-IO, so its [`Clock`] tells the time and nothing waits on it:
@@ -23,8 +23,9 @@
 
 use std::future::Future;
 use std::sync::Arc;
+use std::time::{SystemTime, UNIX_EPOCH};
 
-use gaslightmq_clock::{Clock, Duration, Instant, VirtualClock};
+use gaslightmq_clock::{Clock, Duration, Instant, UtcClock, UtcInstant, VirtualClock};
 use tokio::sync::watch;
 
 /// A clock that a task waits on: it tells the time, and it says when it reaches an instant.
@@ -101,6 +102,17 @@ impl Clock for WallClock {
         let nanos = self.started.elapsed().as_nanos();
         // A clock that ran for more than five centuries stays at its last instant.
         Instant::from_nanos(u64::try_from(nanos).unwrap_or(u64::MAX))
+    }
+}
+
+/// The wall clock tells the instant in UTC too: the time of the system, to the millisecond.
+///
+/// A system whose time is before 1970 tells 1970, and one after the year 9999 tells the last instant of it.
+impl UtcClock for WallClock {
+    fn utc_now(&self) -> UtcInstant {
+        let since_1970 = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default();
+        let millis = u64::try_from(since_1970.as_millis()).unwrap_or(u64::MAX);
+        UtcInstant::new(millis).unwrap_or(UtcInstant::LAST)
     }
 }
 

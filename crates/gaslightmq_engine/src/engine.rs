@@ -16,9 +16,12 @@ use tokio::task::JoinHandle;
 
 use crate::endpoints::{Listening, OpenEndpoints};
 use crate::events::EventBus;
+use crate::open_sessions::OpenSessions;
+use crate::recorder::EngineParts;
 use crate::session::Sessions;
 use crate::{
     ArmedRules, EngineConfiguration, EngineStartError, EveryEvent, Journal, LiveEvents, NotOpenError, OpenSession,
+    Recorder, Recordings,
 };
 
 /// The runtime of one proxy: its sessions, its armed rules, its clock and its endpoints.
@@ -33,6 +36,7 @@ use crate::{
 /// | The [armed rules](Self::rules) | Arm and disarm rules, and publish a new snapshot to every session. |
 /// | The events | Hand over the record of every call, and every incident that a rule fired: to whoever [watches](Self::live_events), and to whoever [keeps every one](Self::every_event). |
 /// | The [journal](Self::journal) | Numbers what changed in the environment of the proxy, keeps the recent entries in memory, and hands each one over with the events. |
+/// | The [recorder](Self::recorder) | Writes the recording that runs, on a thread of its own, into the [storage](Recordings) that the engine holds. |
 /// | The [clock](WaitableClock) | Tells every session the time, and ends every wait: a delay, a lifetime, the time a client context stays. |
 /// | The endpoints | Follow the backend: an endpoint that closes ends its sessions, and one that opens gets a listener, whose address the backend hears. |
 ///
@@ -55,7 +59,7 @@ impl<B: Backend + 'static, C: WaitableClock> Engine<B, C> {
     /// and tells it where each one listens.
     ///
     /// The sessions tell the time on `clock`, and tell the `lies` of this build.
-    /// Several engines of one process can share one set of lies.
+    /// Several engines of one process can share one set of lies, and one storage of `recordings`.
     /// The engine runs its tasks on the runtime that the caller runs on.
     ///
     /// The call waits until the backend knows its endpoints, for as long as that takes.
@@ -79,6 +83,7 @@ impl<B: Backend + 'static, C: WaitableClock> Engine<B, C> {
         backend: B,
         clock: C,
         lies: impl Into<Arc<Lies>>,
+        recordings: Recordings,
     ) -> Result<Self, EngineStartError> {
         let clock = Arc::new(clock);
         let shared = SharedBySessions::new(
@@ -92,7 +97,17 @@ impl<B: Backend + 'static, C: WaitableClock> Engine<B, C> {
         let events = Arc::new(EventBus::new(configuration.event_backlog));
         let of_the_journal: Arc<dyn Clock + Send + Sync> = Arc::<C>::clone(&clock);
         let journal = Journal::new(configuration.recent_journal, of_the_journal, &events);
-        let (sessions, lingered) = Sessions::new(backend, clock, shared, rules, events, journal);
+        let of_the_recorder: Arc<dyn Clock + Send + Sync> = Arc::<C>::clone(&clock);
+        let parts = EngineParts {
+            events: Arc::downgrade(&events),
+            journal: journal.clone(),
+            clock: of_the_recorder,
+            call_ids: shared.call_ids().clone(),
+            rules: rules.clone(),
+            open: Arc::new(OpenSessions::default()),
+        };
+        let recorder = Recorder::new(recordings, configuration.recorder, parts);
+        let (sessions, lingered) = Sessions::new(backend, clock, shared, rules, events, journal, recorder);
         let sessions = Arc::new(sessions);
 
         let (mut endpoints, listening) = OpenEndpoints::none(Arc::clone(&sessions), configuration);
@@ -183,6 +198,11 @@ impl<B: Backend + 'static, C: WaitableClock> Engine<B, C> {
         self.sessions.events.listen_to_every_event()
     }
 
+    /// The recorder of the proxy: the handle starts and stops the recordings of its environment.
+    pub fn recorder(&self) -> &Recorder {
+        &self.sessions.recorder
+    }
+
     /// The sessions that are open, in the order of their connection numbers.
     pub fn sessions(&self) -> Vec<OpenSession> {
         self.sessions.open.list()
@@ -225,6 +245,8 @@ impl<B: Backend + 'static, C: WaitableClock> Engine<B, C> {
     /// Every endpoint closes, so the addresses refuse connections and are free for a new engine once the call returns.
     /// Every session closes its connection, and its client reads what was sent before.
     /// The pipeline has no word for a proxy that stops, so a call that is in flight then gets no record.
+    /// A recording that runs ends once every session has ended: it holds every call that got its record, and its end
+    /// says that its environment stopped.
     ///
     /// Listeners that follow a change of the backend when the call comes finish that first,
     /// so no listener is let go of halfway, and no address stays taken behind the call.
@@ -236,12 +258,19 @@ impl<B: Backend + 'static, C: WaitableClock> Engine<B, C> {
     /// After the stop timeout the engine lets go of what is left, and the call returns.
     /// An endpoint that was still open then closes a moment later, and nobody waits for the sessions on it.
     pub async fn stop(self) {
-        let Self { running, tasks, .. } = self;
+        let Self {
+            running,
+            tasks,
+            sessions,
+            ..
+        } = self;
         drop(running);
         for task in tasks {
             // A task ends by itself once the engine stops. It has no result to hand over.
             let _ = task.await;
         }
+        // Whoever stops an environment stops what it records.
+        sessions.recorder.environment_stopped().await;
     }
 }
 

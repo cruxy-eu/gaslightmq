@@ -692,7 +692,7 @@ mod tests {
             journal_after: None,
         };
         let closed = |connection| {
-            Entry::session(&SessionEvent {
+            Entry::session(&RecordedSessionEvent {
                 connection: ConnectionNumber::new(connection),
                 at: Instant::ZERO,
                 change: SessionChange::Closed { by: Closer::Client },
@@ -774,7 +774,7 @@ mod tests {
             scenario: None,
             journal_after: None,
         };
-        let event = SessionEvent {
+        let event = RecordedSessionEvent {
             connection: ConnectionNumber::new(7),
             at: Instant::ZERO,
             change: SessionChange::Closed { by: Closer::Client },
@@ -833,7 +833,7 @@ mod tests {
             scenario: None,
             journal_after: None,
         };
-        let event = SessionEvent {
+        let event = RecordedSessionEvent {
             connection: ConnectionNumber::new(7),
             at: Instant::ZERO,
             change: SessionChange::Closed { by: Closer::Client },

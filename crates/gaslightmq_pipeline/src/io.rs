@@ -7,7 +7,7 @@ use gaslightmq_call::{Call, CallId};
 use gaslightmq_clock::Instant;
 use gaslightmq_incident::Incident;
 use gaslightmq_rule::Snapshot;
-use gaslightmq_wire::{Request, Response};
+use gaslightmq_wire::{Frame, Request, Response};
 
 use crate::TimerId;
 
@@ -33,7 +33,14 @@ pub enum Input<'a> {
     ///
     /// The response answers the request as it was forwarded.
     /// The pipeline gives it the API and the correlation ID of the client's request before anything reads it.
-    BackendAnswered { call: CallId, response: Response },
+    ///
+    /// `upstream` is what the real cluster answered, when the overlay of the backend changed that answer into
+    /// `response`. The pipeline keeps it for a recording alone.
+    BackendAnswered {
+        call: CallId,
+        response: Response,
+        upstream: Option<Response>,
+    },
     /// The backend answered the request under `call` with something that it cannot hand over as a response.
     /// `reason` says why, in one line.
     ///
@@ -73,7 +80,7 @@ pub enum Input<'a> {
 /// | [`Send`](Self::Send) | Writes the bytes to the transport. |
 /// | [`SetTimer`](Self::SetTimer) | Waits on its clock until the instant, and reports the timer. |
 /// | [`Close`](Self::Close) | Closes the transport, which ends the session. |
-/// | [`Emit`](Self::Emit) | Publishes the call record on the event bus. |
+/// | [`Emit`](Self::Emit) | Publishes the call record on the event bus, and hands its frames to the recorder when they come with it. |
 /// | [`Fire`](Self::Fire) | Passes the incident to the scenario runner. |
 #[derive(Debug, Clone)]
 pub enum Output {
@@ -90,9 +97,47 @@ pub enum Output {
     /// Close the connection to the client. The session has ended, and the pipeline takes no further input.
     Close,
     /// Publish the record of a call that ended.
-    Emit(Box<Call>),
+    ///
+    /// `frames` holds the frames of the call when a recording ran as its request arrived:
+    /// see [`Pipeline::set_recording`](crate::Pipeline::set_recording). It is `None` otherwise.
+    Emit {
+        /// The record of the call.
+        record: Box<Call>,
+        /// The frames of the call as they were on the wire, while a recording runs.
+        frames: Option<KeptFrames>,
+    },
     /// Pass an incident that a rule fired to the scenario runner. It takes effect after the call that fired it.
     Fire(Incident),
+}
+
+/// The frames that one call kept for a recording, as they were on the wire: the four frames that a recording keeps
+/// of a call. The pipeline hands them out with the record of the call while a recording runs.
+///
+/// A frame is the buffer that the session read from its socket, or the buffer of the response that it wrote to it.
+/// The pipeline holds each of them while the call is in flight anyway, and handing them out shares the buffers:
+/// it copies nothing and encodes nothing.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct KeptFrames {
+    /// The request as the client sent it.
+    pub request: Frame,
+    /// The response of the real cluster, when the overlay of the backend changed it into the truth.
+    pub upstream: Option<Frame>,
+    /// The truth: the response of the backend with the correlation ID of the client, when the request reached the
+    /// backend and it answered with a response to it.
+    pub truth: Option<Frame>,
+    /// The response that the client received, when it received one.
+    pub delivered: Option<Frame>,
+}
+
+/// Whether a recording runs, as the engine tells a pipeline before every input:
+/// see [`Pipeline::set_recording`](crate::Pipeline::set_recording).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+pub enum Recording {
+    /// No recording runs, so a call that arrives keeps none of its frames beyond what it needs itself.
+    #[default]
+    Idle,
+    /// A recording runs, so a call that arrives keeps its frames until it ends, and hands them out with its record.
+    Running,
 }
 
 /// What one [`handle`](crate::Pipeline::handle) asks for, in the order the engine performs it.

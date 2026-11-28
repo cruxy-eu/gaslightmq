@@ -102,7 +102,11 @@ impl Driver {
     }
 
     pub fn answer_with(&mut self, call: CallId, response: Response) -> Seen {
-        self.handle(Input::BackendAnswered { call, response })
+        self.handle(Input::BackendAnswered {
+            call,
+            response,
+            upstream: None,
+        })
     }
 
     /// The clock reaches `at`, and the timer runs out.
@@ -143,7 +147,7 @@ impl Seen {
             Output::Send(_) => "send",
             Output::SetTimer { .. } => "set timer",
             Output::Close => "close",
-            Output::Emit(_) => "emit",
+            Output::Emit { .. } => "emit",
             Output::Fire(_) => "fire",
         };
         self.0.iter().map(kind).collect()
@@ -197,10 +201,25 @@ impl Seen {
 
     pub fn calls(&self) -> Vec<Call> {
         let call = |output: &Output| match output {
-            Output::Emit(call) => Some(Call::clone(call)),
+            Output::Emit { record, .. } => Some(Call::clone(record)),
             _ => None,
         };
         self.0.iter().filter_map(call).collect()
+    }
+
+    /// The frames that came with each call record, in order.
+    pub fn frames(&self) -> Vec<Option<KeptFrames>> {
+        let frames = |output: &Output| match output {
+            Output::Emit { frames, .. } => Some(frames.clone()),
+            _ => None,
+        };
+        self.0.iter().filter_map(frames).collect()
+    }
+
+    /// The frames that came with the one call record that the pipeline emitted.
+    pub fn emitted_frames(&self) -> KeptFrames {
+        let [frames] = self.frames().try_into().unwrap();
+        frames.expect("the call arrived while a recording ran")
     }
 
     /// The one call record that the pipeline emitted.

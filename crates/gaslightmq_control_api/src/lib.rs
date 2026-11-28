@@ -29,6 +29,8 @@
 //! | [`GetBackend`], [`BackendStatus`], [`BackendKind`] | The backend of an environment: its kind, its endpoints and the incidents it can do. |
 //! | [`ParseSentence`], [`ParsedSentence`], [`WordCompletion`], [`WordKind`], [`UnreadWord`] | A ⌘K sentence that is still being typed, and the rule it gives. |
 //! | [`QueryJournal`] | The journal of an environment: what changed there, and where each change came from. |
+//! | [`StartRecording`], [`StopRecording`], [`ListRecordings`], [`OpenRecording`] | The recordings of the environments: starting and stopping one, listing them, and opening one. |
+//! | [`RecordingStatus`], [`RecordingDescription`], [`RecordedScenario`], [`RecordingEnd`], [`RecordingEnding`] | A recording as the process keeps it: what it is, how far it goes, and how it ended. |
 //! | [`ReloadWorkspace`], [`Reloaded`], [`DefinitionChange`] | Reading the files of the workspace again, what the reload took in, and what it changed in one definition. |
 //! | [`WorkspaceStatus`], [`WriteBack`], [`SaveWorkspace`], [`Saved`] | The workspace as a whole: when it writes its changes, whether it is read-only, what nobody saved yet, and saving it. |
 //! | [`StreamMessage`], [`ProcessState`], [`RunningEnvironment`] | The live stream, and the state it starts from. |
@@ -154,6 +156,10 @@
 //! | [`ReloadWorkspace`] | [`ReloadWorkspaceError`] | A rule of the files has the name of a live rule, an armed live rule would not fit the files, the workspace holds changes that nobody saved, the files do not fit each other, or a file does not read. |
 //! | [`SaveWorkspace`] | [`SaveWorkspaceError`] | Someone edited a file that the save would write, or a file could not be written. |
 //! | [`CheckHealth`] | [`Unhealthy`] | An environment that the process was started with does not run. |
+//! | [`StartRecording`] | [`StartRecordingError`] | The environment does not run, it records already, or the recording did not start. |
+//! | [`StopRecording`] | [`StopRecordingError`] | The environment does not run, it records nothing, or the recording stopped without its end. |
+//! | [`ListRecordings`] | [`ListRecordingsError`] | The storage of the recordings did not answer. |
+//! | [`OpenRecording`] | [`OpenRecordingError`] | No recording has the ID, this build does not read it, or the storage did not answer. |
 //!
 //! A change that says what it [`Expects`] fails with the variant `Changed` when the thing has another revision,
 //! and with `OtherRun` when the revision is of another run. Either way it changed nothing.
@@ -191,16 +197,17 @@
 //! | [`DefinitionChange`] | A map with one entry: `created`, `updated` or `deleted`, and the [`DefinitionRef`]. |
 //! | [`StreamMessage`] | The map of its fields, with a `message` key that names it: `rule-changed`. |
 //! | [`Subscription`] | The map of its fields, with a `follow` key: `calls` or `nothing`. |
-//! | [`BackendKind`], [`SessionCloser`], [`WordKind`], [`RequestSurface`], [`RequestCause`], [`WriteBack`] | The name in kebab case. |
+//! | [`BackendKind`], [`SessionCloser`], [`WordKind`], [`RequestSurface`], [`RequestCause`], [`WriteBack`], [`RecordingEnding`] | The name in kebab case. |
+//! | A [`RecordingId`](journal::RecordingId) | Its text, which names the environment and the instant: `orders-sim.2026-11-21T14-02-11.527Z`. |
 //! | Every other type | A map of its fields. A field that is `None` or empty is left out. |
 //!
 //! # What the control plane does not hold yet
 //!
 //! Scenarios travel as definitions: the state of a process holds them, and a change of one is a message of the
 //! live stream. No operation creates, changes, activates or steps a scenario yet.
-//! Recordings and capture arrive with the crates of their domains,
-//! and the World with the broker. Their operations and messages arrive with them,
-//! and so do the entries of the journal for steps and recordings.
+//! A recording starts, stops, is listed and opens; no operation queries its calls with a selector or gets its index
+//! yet. Capture arrives with the crate of its domain, and the World with the broker.
+//! Their operations and messages arrive with them, and so do the entries of the journal for steps.
 //!
 //! # No IO
 //!
@@ -227,6 +234,7 @@ mod environments;
 mod journal_query;
 mod operation;
 mod pads;
+mod recordings;
 mod request;
 mod revision;
 mod rules;
@@ -249,6 +257,11 @@ pub use environments::{
 pub use journal_query::QueryJournal;
 pub use operation::{AnyOperation, Operation, RequestError};
 pub use pads::{IntentEffect, IntentError, SendIntent};
+pub use recordings::{
+    ListRecordings, ListRecordingsError, OpenRecording, OpenRecordingError, RecordedScenario, RecordingDescription,
+    RecordingEnd, RecordingEnding, RecordingStatus, StartRecording, StartRecordingError, StopRecording,
+    StopRecordingError,
+};
 pub use request::{OperationRequest, RequestCause, RequestSource, RequestSurface};
 pub use revision::{Expects, Revised, Revision, RunId, RunIdError};
 pub use rules::{
@@ -287,12 +300,15 @@ pub mod prelude {
         DisarmRule, EditableDefinition, EnvironmentHealth, EnvironmentNotRunning, EnvironmentReadError,
         EnvironmentStatus, Expects, FireRule, FireRuleError, GetBackend, GetDefinition, GetDefinitionError,
         GetEnvironment, Health, IntentEffect, IntentError, KeepRule, KeepRuleError, ListDefinitions,
-        ListDefinitionsError, ListEnvironmentRules, ListEnvironments, ListSessions, Operation, OperationRequest,
-        ParseSentence, ParsedSentence, ProcessState, QueryJournal, ReloadWorkspace, ReloadWorkspaceError, Reloaded,
-        RequestCause, RequestError, RequestSource, RequestSurface, Revised, Revision, RuleCommandError, RuleHolder,
-        RuleStats, RuleStatus, RunId, RunIdError, RunningEnvironment, SaveWorkspace, SaveWorkspaceError, Saved,
-        SendIntent, SessionCloser, SessionIdentity, SessionStatus, StartEnvironment, StartEnvironmentError, Stats,
-        StopEnvironment, StreamMessage, Subscription, Unhealthy, UnreadWord, UpdateDefinition, UpdateDefinitionError,
-        UpdateLiveRule, UpdateLiveRuleError, WordCompletion, WordKind, WorkspaceStatus, WriteBack,
+        ListDefinitionsError, ListEnvironmentRules, ListEnvironments, ListRecordings, ListRecordingsError,
+        ListSessions, OpenRecording, OpenRecordingError, Operation, OperationRequest, ParseSentence, ParsedSentence,
+        ProcessState, QueryJournal, RecordedScenario, RecordingDescription, RecordingEnd, RecordingEnding,
+        RecordingStatus, ReloadWorkspace, ReloadWorkspaceError, Reloaded, RequestCause, RequestError, RequestSource,
+        RequestSurface, Revised, Revision, RuleCommandError, RuleHolder, RuleStats, RuleStatus, RunId, RunIdError,
+        RunningEnvironment, SaveWorkspace, SaveWorkspaceError, Saved, SendIntent, SessionCloser, SessionIdentity,
+        SessionStatus, StartEnvironment, StartEnvironmentError, StartRecording, StartRecordingError, Stats,
+        StopEnvironment, StopRecording, StopRecordingError, StreamMessage, Subscription, Unhealthy, UnreadWord,
+        UpdateDefinition, UpdateDefinitionError, UpdateLiveRule, UpdateLiveRuleError, WordCompletion, WordKind,
+        WorkspaceStatus, WriteBack,
     };
 }

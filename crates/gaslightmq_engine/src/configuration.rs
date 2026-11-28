@@ -105,6 +105,68 @@ pub struct EngineConfiguration {
     /// an endpoint that is still open closes a moment later, and nobody waits for a session that has not ended.
     /// The time is real time, whatever clock the engine runs on.
     pub stop_timeout: TimeSpan,
+    /// Ours. The properties `recordings.*` of the recorder, whichever layout the storage has.
+    pub recorder: RecorderConfiguration,
+}
+
+/// What the recorder of an engine is configured with: how much may wait for it, and how often it commits.
+///
+/// The properties are those of the recorder, whatever layout the storage of the recordings has.
+///
+/// ```
+/// use gaslightmq_engine::prelude::*;
+///
+/// let mut recorder = RecorderConfiguration::new();
+/// assert_eq!(recorder.queue_entries, 10_000);
+/// assert_eq!(recorder.queue_size, 256 * 1024 * 1024);
+///
+/// // A test whose recording falls behind at its third entry.
+/// recorder.queue_entries = 2;
+/// ```
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct RecorderConfiguration {
+    /// `recordings.queue_entries`. Default: 10 000 entries.
+    ///
+    /// How many entries may wait for the recorder: calls, events of sessions and entries of the journal.
+    /// A session never waits for the disk, so a recording whose queue is full stops, and says why.
+    pub queue_entries: u64,
+    /// `recordings.queue_size`. Default: 256 MiB.
+    ///
+    /// How many bytes the frames of the calls that wait for the recorder may hold.
+    /// A frame can be many megabytes, so a count of entries alone would not bound the memory of the queue.
+    pub queue_size: u64,
+    /// `recordings.commit_interval`. Default: 1 second.
+    ///
+    /// How long an entry waits at most before it is in the recording for good: what a crash can lose.
+    /// It runs on the time of the system, whatever clock the engine runs on: a virtual clock can stand still, and a
+    /// crash does not.
+    pub commit_interval: TimeSpan,
+    /// `recordings.commit_size`. Default: 16 MiB.
+    ///
+    /// The bytes of the entries and frames that wait for a commit at most, before it comes early.
+    pub commit_size: u64,
+}
+
+impl RecorderConfiguration {
+    const MIB: u64 = 1024 * 1024;
+
+    /// The defaults.
+    pub const fn new() -> Self {
+        Self {
+            queue_entries: 10_000,
+            queue_size: 256 * Self::MIB,
+            commit_interval: TimeSpan::from_secs(1),
+            commit_size: 16 * Self::MIB,
+        }
+    }
+}
+
+/// The defaults.
+impl Default for RecorderConfiguration {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl EngineConfiguration {
@@ -124,6 +186,7 @@ impl EngineConfiguration {
             close_timeout: of_a_listener.close_timeout,
             endpoint_retry_backoff: TimeSpan::from_secs(1),
             stop_timeout: TimeSpan::from_secs(5),
+            recorder: RecorderConfiguration::new(),
         }
     }
 
@@ -252,6 +315,10 @@ mod tests {
         assert_eq!(configuration.close_timeout, TimeSpan::from_secs(1));
         assert_eq!(configuration.endpoint_retry_backoff, TimeSpan::from_secs(1));
         assert_eq!(configuration.stop_timeout, TimeSpan::from_secs(5));
+        assert_eq!(configuration.recorder.queue_entries, 10_000);
+        assert_eq!(configuration.recorder.queue_size, 256 * 1024 * 1024);
+        assert_eq!(configuration.recorder.commit_interval, TimeSpan::from_secs(1));
+        assert_eq!(configuration.recorder.commit_size, 16 * 1024 * 1024);
     }
 
     #[test]

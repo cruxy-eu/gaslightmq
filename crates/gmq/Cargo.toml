@@ -24,10 +24,14 @@ gaslightmq_control_client.workspace = true
 gaslightmq_control_server.workspace = true
 # The store contract, to ask the workspace whether it holds an environment of the name of the proxy.
 gaslightmq_definition_api.workspace = true
+# The storage of the recordings that the host is handed: the segment layout on the files of the workspace.
+gaslightmq_engine.workspace = true
 gaslightmq_environment.workspace = true
 gaslightmq_host.workspace = true
 gaslightmq_lie_api.workspace = true
 gaslightmq_lie_refusal = { workspace = true, optional = true }
+gaslightmq_recording_segments.workspace = true
+gaslightmq_recording_segments_fs.workspace = true
 # The workspace of a process without files: stores in memory.
 gaslightmq_workspace = { workspace = true, features = ["memory"] }
 gaslightmq_workspace_fs.workspace = true

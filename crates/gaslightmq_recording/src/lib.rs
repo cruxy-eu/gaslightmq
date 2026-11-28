@@ -11,10 +11,10 @@
 //!
 //! | Type | Is |
 //! |---|---|
-//! | [`RecordingId`], [`UtcInstant`] | Which recording this is: its environment and the instant it started, which is the name of its directory too. |
+//! | [`RecordingId`], [`UtcInstant`] | Which recording this is: its environment and the instant it started, which is the name of its directory too. `journal` and `clock` hold them, so the control plane carries them without the Kafka codec, and this crate names them as its own. |
 //! | [`Description`], [`RecordedBackend`], [`ActiveScenario`] | What the recording is, written once when it starts. |
 //! | [`Entry`] | One thing that a recording keeps, encoded where it is made: a session event, a call or a journal entry. |
-//! | [`SessionEvent`], [`SessionChange`], [`Closer`] | An event of a session: it opened, it was identified, its software was named, or it closed. |
+//! | [`RecordedSessionEvent`], [`SessionChange`], [`Closer`] | An event of a session: it opened, it was identified, its software was named, or it closed. |
 //! | [`CallFrames`], [`FrameSlot`], [`FrameState`], [`RecordedFrame`] | The four frames of a call: as the engine hands them over, and as a recording holds them. |
 //! | [`Position`], [`Place`], [`Direction`], [`Frames`] | Which entry this is, and where and how a stream reads. |
 //! | [`Summary`], [`SummaryValues`], [`Wanted`], [`Everything`] | What a stretch of a recording holds, and what a reader looks for as far as a summary can tell. |
@@ -94,7 +94,6 @@ mod description;
 mod encoding;
 mod entry;
 mod error;
-mod id;
 mod position;
 mod redact;
 mod storage;
@@ -104,12 +103,13 @@ mod view;
 pub use batch::{Batch, BatchBuffer, BatchEncoder, EncodedEntry};
 pub use description::{ActiveScenario, Description, RecordedBackend};
 pub use encoding::{EncodingVersion, EncodingVersionError};
-pub use entry::{CallFrames, Closer, Entry, FrameSlot, FrameState, RecordedFrame, SessionChange, SessionEvent};
+pub use entry::{CallFrames, Closer, Entry, FrameSlot, FrameState, RecordedFrame, RecordedSessionEvent, SessionChange};
 pub use error::{
     CallEntryError, EntryError, ExtentError, ListError, MessageError, NextBatchError, OpenError, ReadError, StartError,
     WriteError,
 };
-pub use id::{RecordingId, RecordingIdError, UtcInstant, UtcInstantError};
+pub use gaslightmq_clock::{UtcInstant, UtcInstantError};
+pub use gaslightmq_journal::{RecordingId, RecordingIdError};
 pub use position::{Direction, End, Ending, Extent, Frames, Place, Position};
 pub use storage::{RecordedEntries, RecordingReader, RecordingStorage, RecordingWriter};
 pub use summary::{Everything, Summary, SummaryValues, Wanted};
@@ -138,8 +138,8 @@ pub mod prelude {
         Direction, EncodedEntry, EncodingVersion, EncodingVersionError, End, Ending, Entry, EntryError, EntryView,
         Everything, ExplanationView, Extent, ExtentError, FieldValueView, FieldsView, FrameSlot, FrameState, Frames,
         JournalEntryView, ListError, MessageError, NextBatchError, OpenError, PartView, Place, Position, ReadError,
-        RecordedBackend, RecordedEntries, RecordedFrame, RecordingId, RecordingIdError, RecordingReader,
-        RecordingStorage, RecordingWriter, RuleExplanationView, SessionChange, SessionEvent, SessionEventView,
+        RecordedBackend, RecordedEntries, RecordedFrame, RecordedSessionEvent, RecordingId, RecordingIdError,
+        RecordingReader, RecordingStorage, RecordingWriter, RuleExplanationView, SessionChange, SessionEventView,
         StartError, Summary, SummaryValues, UtcInstant, UtcInstantError, Wanted, WriteError,
     };
 }

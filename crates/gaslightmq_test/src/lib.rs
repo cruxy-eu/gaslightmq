@@ -63,6 +63,8 @@
 //!   so tests run side by side in one binary. The listeners accept connections once the test holds the value.
 //!   The proxy gives each broker that it finds in the cluster a listener of its own, so a test names no broker,
 //!   however many the cluster has.
+//! - **Recordings in memory.**
+//!   The host of the test keeps every recording in the segment layout in memory, for as long as the test runs.
 //! - **A workspace in memory.**
 //!   It holds nothing but the environment of the proxy, until the test creates definitions through the control
 //!   plane. A test that wants other stores, or stores that hold definitions already, hands over their
@@ -78,8 +80,9 @@
 //!
 //! - **Brokers.** GaslightMQ runs no broker yet, so a test starts a proxy in front of a real cluster alone.
 //!   A broker, and a proxy in front of one, arrive with the crate `broker`.
-//! - **Scenarios and recordings.** A test arms its rules one by one. Activating a scenario and asserting on the
-//!   recording arrive with the crates `scenario` and `recording`.
+//! - **Scenarios, and the calls of a recording.** A test arms its rules one by one. It starts, stops and opens a
+//!   recording through the control plane, which keeps it in memory, and asserting on the calls of a recording
+//!   arrives with the query of a recording. Activating a scenario arrives with the scenario runner.
 //!
 //! # IO
 //!

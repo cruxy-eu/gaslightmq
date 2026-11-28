@@ -8,6 +8,7 @@ use gaslightmq_field::prelude::*;
 use gaslightmq_kafka_client_api::{ProtocolConsumer, RawKafkaClient};
 use gaslightmq_kernel::prelude::*;
 use gaslightmq_lie_api::prelude::*;
+use gaslightmq_recording_conformance::MemoryStorage;
 use tokio::net::TcpStream;
 
 use crate::support::{EngineUnderTest, ScriptedBackend};
@@ -341,7 +342,14 @@ async fn an_engine_does_not_start_with_a_listener_that_its_backend_rejects() -> 
     backend.reject_listeners_of(broker_2);
     let configuration = EngineUnderTest::configuration()?;
 
-    let started = Engine::start(configuration, backend, SteppedClock::new(), Lies::of_every_build()).await;
+    let started = Engine::start(
+        configuration,
+        backend,
+        SteppedClock::new(),
+        Lies::of_every_build(),
+        Recordings::new(MemoryStorage::new()),
+    )
+    .await;
 
     let Err(EngineStartError::EndpointNotOpened {
         error: EndpointOpenError::ListenerRejected { endpoint, reason },

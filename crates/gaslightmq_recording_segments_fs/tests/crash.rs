@@ -31,7 +31,7 @@ async fn a_segment_file_torn_inside_its_last_append_opens_up_to_the_commit_befor
         .join("orders-sim.2026-11-21T14-02-11.527Z")
         .join("00000000000000000000.segment.open");
     let closed = |connection| {
-        Entry::session(&SessionEvent {
+        Entry::session(&RecordedSessionEvent {
             connection: ConnectionNumber::new(connection),
             at: Instant::ZERO,
             change: SessionChange::Closed { by: Closer::Client },

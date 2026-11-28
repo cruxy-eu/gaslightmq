@@ -18,12 +18,12 @@ use gaslightmq_trigger::SessionCounters;
 use gaslightmq_wire::{DecodeError, Frame, Request, Response};
 use gaslightmq_wire_edit::{EditableRequest, TopicNames};
 
-use crate::SharedBySessions;
 use crate::body_fields::{BodyFields, Learned, acks_at_the_start_of, learned_from};
 use crate::call_fields::{Answers, CallFields};
 use crate::explain::UnexplainedRule;
 use crate::rules::{RuleLines, Slot};
 use crate::untold::{StageFailure, UntoldLie};
+use crate::{KeptFrames, Output, SharedBySessions};
 
 /// A lie that asked to forward what it left of the request, with the target it holds.
 /// The pipeline asks it again after the response, so it makes the response fit the request of the client.
@@ -155,6 +155,15 @@ pub(crate) struct CallInFlight {
     timing: CallTiming,
     failures: Vec<StageFailure>,
     recorded: bool,
+    /// What the call keeps of its frames, when a recording ran as its request arrived.
+    kept: Option<Kept>,
+}
+
+/// What a call keeps for a recording, beyond what it holds anyway: the response that the client received.
+#[derive(Debug, Default)]
+struct Kept {
+    upstream: Option<Frame>,
+    delivered: Option<Frame>,
 }
 
 impl CallInFlight {
@@ -264,6 +273,7 @@ impl CallInFlight {
             timing: CallTiming::arrived(now),
             failures,
             recorded: false,
+            kept: None,
         };
         (call, body)
     }
@@ -494,6 +504,9 @@ impl CallInFlight {
                 // What the lies after the response asked for happens now.
                 self.rules.took_effect();
                 self.at(self.timing.delivered(now));
+                if let Some(kept) = &mut self.kept {
+                    kept.delivered = Some(response.frame().clone());
+                }
                 let delivered = match self.answers_of(&response) {
                     Some(answers) => Delivered::Response(answers.summary()),
                     None => Delivered::UnreadResponse,
@@ -511,10 +524,40 @@ impl CallInFlight {
         }
     }
 
+    /// The real cluster answered `upstream`, and the overlay of the backend changed it into the truth.
+    /// A call that keeps its frames keeps that one too.
+    pub(crate) fn answered_upstream(&mut self, upstream: Response) {
+        if let Some(kept) = &mut self.kept {
+            kept.upstream = Some(upstream.into_frame());
+        }
+    }
+
+    /// A recording ran as the request arrived: the call keeps hold of its frames, and hands them out with its record.
+    pub(crate) fn keep_frames(&mut self) {
+        self.kept = Some(Kept::default());
+    }
+
+    /// Stage 11 as the engine gets it: the record of the call, once, with its frames when it keeps them.
+    ///
+    /// `None` when the call was recorded before.
+    pub(crate) fn emitted(&mut self, id: CallId, delivered: Delivered) -> Option<Output> {
+        let record = self.record(id, delivered)?;
+        let frames = self.kept.take().map(|kept| KeptFrames {
+            request: self.request.frame().clone(),
+            upstream: kept.upstream,
+            truth: self.truth.as_ref().map(|(truth, _)| truth.frame().clone()),
+            delivered: kept.delivered,
+        });
+        Some(Output::Emit {
+            record: Box::new(record),
+            frames,
+        })
+    }
+
     /// Stage 11: the record of the call, once. It settles every firing of the call.
     ///
     /// `None` when the call was recorded before. A call that was not is never left without a record.
-    pub(crate) fn record(&mut self, id: CallId, delivered: Delivered) -> Option<Call> {
+    fn record(&mut self, id: CallId, delivered: Delivered) -> Option<Call> {
         if std::mem::replace(&mut self.recorded, true) {
             return None;
         }

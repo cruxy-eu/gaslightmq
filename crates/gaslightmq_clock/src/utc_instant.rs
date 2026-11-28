@@ -1,23 +1,22 @@
-//! The ID of a recording: its environment and the instant it started, which is the name of its directory too.
+//! An instant in UTC, to the millisecond: when something was on the calendar, such as the start of a recording.
 
 use std::fmt;
 use std::str::FromStr;
 
-use gaslightmq_journal::{RecordedName, RecordedNameError};
-
 /// An instant in UTC, to the millisecond: when a recording started, on the wall clock.
 ///
-/// The calls of a recording tell their time on the clock of their environment, which starts at zero.
-/// The [description](crate::Description) of a recording ties the two together:
-/// it holds the instant on the clock of the environment at which the recording started.
+/// A clock of an environment starts at zero, and an [`Instant`](crate::Instant) tells how far it has run.
+/// An instant in UTC says when something was on the calendar: the description of a recording holds both, the instant
+/// on the clock of its environment and the instant in UTC at which it started, so they tie together.
 ///
 /// The crate never reads the wall clock.
-/// Whoever starts a recording reads it, and hands in the milliseconds since the Unix epoch.
+/// Whoever reads it hands in the milliseconds since the Unix epoch, or asks a [`UtcClock`](crate::UtcClock).
 ///
-/// The text form is ISO 8601 with the milliseconds and a `Z`, from the year 1970 up to the year 9999:
+/// The text form is ISO 8601 with the milliseconds and a `Z`, from the year 1970 up to the year 9999.
+/// With the `serde` feature, an instant is that text.
 ///
 /// ```
-/// use gaslightmq_recording::prelude::*;
+/// use gaslightmq_clock::{UtcInstant, UtcInstantError};
 ///
 /// let started = UtcInstant::new(1_795_269_731_527)?;
 /// assert_eq!(started.to_string(), "2026-11-21T14:02:11.527Z");
@@ -52,6 +51,9 @@ const DAYS_PER_ERA: u64 = 146_097;
 const END_OF_YEAR_9999: u64 = 253_402_300_800_000;
 
 impl UtcInstant {
+    /// The last instant that the text of an instant writes: `9999-12-31T23:59:59.999Z`.
+    pub const LAST: UtcInstant = UtcInstant(END_OF_YEAR_9999 - 1);
+
     /// The instant `unix_millis` milliseconds after 1970-01-01T00:00:00.000Z.
     ///
     /// # Errors
@@ -67,6 +69,21 @@ impl UtcInstant {
     /// The milliseconds since 1970-01-01T00:00:00.000Z.
     pub const fn unix_millis(self) -> u64 {
         self.0
+    }
+
+    /// The instant as the name of a directory writes it: the colons of the time as hyphens,
+    /// `2026-11-21T14-02-11.527Z`, which every system takes in a name.
+    pub const fn in_a_name(self) -> InAName {
+        InAName(self)
+    }
+
+    /// Reads an instant as the name of a directory writes it: `2026-11-21T14-02-11.527Z`.
+    ///
+    /// # Errors
+    ///
+    /// The [`UtcInstantError`] of the text, as [`from_str`](std::str::FromStr::from_str) has it.
+    pub fn from_a_name(text: &str) -> Result<UtcInstant, UtcInstantError> {
+        UtcInstant::parse(text, TimeSeparator::Hyphen)
     }
 
     /// Writes the instant, with `separator` between the hours, the minutes and the seconds.
@@ -164,13 +181,49 @@ impl FromStr for UtcInstant {
     }
 }
 
+/// A source of the current instant in UTC: the wall clock of the system, or an instant that stands still.
+///
+/// Whoever starts a recording asks one for the instant that names it. The wall clock is no part of this crate, which
+/// never reads the system: it is at the IO edge, in `gaslightmq_clock_waitable`. An instant is a clock that stands
+/// still at it, so a test names the instant that it wants.
+///
+/// ```
+/// use gaslightmq_clock::{UtcClock, UtcInstant, UtcInstantError};
+///
+/// let started: UtcInstant = "2026-11-21T14:02:11.527Z".parse()?;
+/// assert_eq!(started.utc_now(), started);
+/// # Ok::<(), UtcInstantError>(())
+/// ```
+pub trait UtcClock {
+    /// The instant in UTC at this moment, to the millisecond.
+    fn utc_now(&self) -> UtcInstant;
+}
+
+/// An instant is a clock that stands still at it.
+impl UtcClock for UtcInstant {
+    fn utc_now(&self) -> UtcInstant {
+        *self
+    }
+}
+
+/// An instant as the name of a directory writes it: see [`UtcInstant::in_a_name`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct InAName(UtcInstant);
+
+/// Writes the instant with the colons of its time as hyphens: `2026-11-21T14-02-11.527Z`.
+impl fmt::Display for InAName {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.0.write(f, TimeSeparator::Hyphen)
+    }
+}
+
 /// Why a number or a text is no [`UtcInstant`].
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum UtcInstantError {
     /// The text is not an instant written as `2026-11-21T14:02:11.527Z`, or it names a day or a time that does not exist.
     #[error("{input:?} is no instant in UTC to the millisecond")]
     NotAnInstant { input: String },
-    /// The text names an instant before 1970, which no recording started at.
+    /// The text names an instant before 1970.
     #[error("{input:?} is before 1970")]
     BeforeTheEpoch { input: String },
     /// The number is an instant after the year 9999, which the text of an instant cannot write.
@@ -178,90 +231,21 @@ pub enum UtcInstantError {
     AfterYear9999 { unix_millis: u64 },
 }
 
-/// Which recording this is: its environment, and the instant it started in UTC, to the millisecond.
-///
-/// An environment writes one recording at a time, so no two recordings share both.
-/// The text form writes both, with a `.` between them, and the colons of the time as hyphens,
-/// so that the text is the name of a directory on every system: `orders-sim.2026-11-21T14-02-11.527Z`.
-/// A name holds no `.`, so the first one ends the name of the environment.
-///
-/// A recording outlives its environment: someone can delete the environment after the recording,
-/// and make another one under its name. The ID therefore holds the name that the environment had,
-/// and nobody looks it up.
-///
-/// ```
-/// use gaslightmq_journal::RecordedName;
-/// use gaslightmq_recording::prelude::*;
-///
-/// let environment: RecordedName = "orders-sim".parse().expect("a name");
-/// let id = RecordingId::new(environment, UtcInstant::new(1_795_269_731_527).expect("an instant in 2026"));
-/// assert_eq!(id.to_string(), "orders-sim.2026-11-21T14-02-11.527Z");
-///
-/// let found: RecordingId = "orders-sim.2026-11-21T14-02-11.527Z".parse()?;
-/// assert_eq!(found, id);
-/// assert_eq!(found.environment(), "orders-sim");
-/// assert_eq!(found.started().to_string(), "2026-11-21T14:02:11.527Z");
-/// # Ok::<(), RecordingIdError>(())
-/// ```
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct RecordingId {
-    environment: RecordedName,
-    started: UtcInstant,
-}
-
-impl RecordingId {
-    /// The recording of `environment` that started at `started`.
-    pub const fn new(environment: RecordedName, started: UtcInstant) -> RecordingId {
-        RecordingId { environment, started }
-    }
-
-    /// The name that the environment of the recording had.
-    pub const fn environment(&self) -> &RecordedName {
-        &self.environment
-    }
-
-    /// When the recording started, in UTC.
-    pub const fn started(&self) -> UtcInstant {
-        self.started
+/// Writes the text of the instant.
+#[cfg(feature = "serde")]
+impl serde::Serialize for UtcInstant {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.collect_str(self)
     }
 }
 
-/// Writes the environment and the instant, with the colons of the time as hyphens.
-impl fmt::Display for RecordingId {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}.", self.environment)?;
-        self.started.write(f, TimeSeparator::Hyphen)
+/// Reads the text of an instant, through its checks.
+#[cfg(feature = "serde")]
+impl<'de> serde::Deserialize<'de> for UtcInstant {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let text = <std::borrow::Cow<'de, str> as serde::Deserialize>::deserialize(deserializer)?;
+        text.parse().map_err(serde::de::Error::custom)
     }
-}
-
-impl FromStr for RecordingId {
-    type Err = RecordingIdError;
-
-    fn from_str(text: &str) -> Result<RecordingId, RecordingIdError> {
-        let Some((environment, started)) = text.split_once('.') else {
-            return Err(RecordingIdError::NoStart { input: text.to_owned() });
-        };
-        let environment = environment
-            .parse()
-            .map_err(|error| RecordingIdError::InvalidEnvironment { error })?;
-        let started = UtcInstant::parse(started, TimeSeparator::Hyphen)
-            .map_err(|error| RecordingIdError::InvalidStart { error })?;
-        Ok(RecordingId { environment, started })
-    }
-}
-
-/// Why a text is no [`RecordingId`].
-#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-pub enum RecordingIdError {
-    /// The text has no `.`, so nothing says when the recording started.
-    #[error("{input:?} is no recording ID: the name of an environment, a `.` and the instant the recording started")]
-    NoStart { input: String },
-    /// What comes before the first `.` is no name of an environment.
-    #[error("the environment of a recording ID: {error}")]
-    InvalidEnvironment { error: RecordedNameError },
-    /// What comes after the first `.` is no instant.
-    #[error("the start of a recording ID: {error}")]
-    InvalidStart { error: UtcInstantError },
 }
 
 #[cfg(test)]
@@ -338,25 +322,11 @@ mod tests {
     }
 
     #[test]
-    fn a_text_that_is_no_recording_id_says_which_part_is_wrong() {
-        assert_eq!(
-            "orders-sim".parse::<RecordingId>().unwrap_err().to_string(),
-            "\"orders-sim\" is no recording ID: the name of an environment, a `.` and the instant the recording started"
-        );
-        assert_eq!(
-            "Orders.2026-11-21T14-02-11.527Z"
-                .parse::<RecordingId>()
-                .unwrap_err()
-                .to_string(),
-            "the environment of a recording ID: recorded name \"Orders\" holds 'O' at position 0, \
-             which is no lowercase letter, digit or hyphen"
-        );
-        assert_eq!(
-            "orders-sim.2026-11-21T14:02:11.527Z"
-                .parse::<RecordingId>()
-                .unwrap_err()
-                .to_string(),
-            "the start of a recording ID: \"2026-11-21T14:02:11.527Z\" is no instant in UTC to the millisecond"
-        );
+    fn the_name_of_a_directory_writes_the_time_with_hyphens() {
+        let instant: UtcInstant = "2026-11-21T14:02:11.527Z".parse().unwrap();
+
+        assert_eq!(instant.in_a_name().to_string(), "2026-11-21T14-02-11.527Z");
+        assert_eq!(UtcInstant::from_a_name("2026-11-21T14-02-11.527Z"), Ok(instant));
+        assert!(UtcInstant::from_a_name("2026-11-21T14:02:11.527Z").is_err());
     }
 }

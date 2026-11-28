@@ -17,6 +17,7 @@ use crate::{HostChange, journaling};
 /// | The record of a call | Counts it in `traffic`, which hands it to the followers of the calls its selectors match. |
 /// | What happened to a session | Tells it as a [`HostChange::Session`]. |
 /// | An entry of the journal | Tells it as a [`HostChange::Journaled`]. |
+/// | The start or the end of a recording | Tells it as a [`HostChange::RecordingStarted`] or a [`HostChange::RecordingStopped`]. |
 /// | A change of the armed rules | Counts every rule that disarmed without anyone counting it, so it takes its number in `revisions`, records it in `journal` with the surface `lifetime`, and tells a [`HostChange::RuleChanged`] for it. |
 ///
 /// The host counts, records and tells what someone arms or disarms through it.
@@ -50,6 +51,15 @@ pub(super) fn watch(
                     Some(EngineEvent::Journaled(entry)) => tell(HostChange::Journaled {
                         environment: environment.clone(),
                         entry,
+                    }),
+                    Some(EngineEvent::RecordingStarted(recording)) => tell(HostChange::RecordingStarted {
+                        environment: environment.clone(),
+                        recording,
+                    }),
+                    Some(EngineEvent::RecordingStopped { recording, why }) => tell(HostChange::RecordingStopped {
+                        environment: environment.clone(),
+                        recording,
+                        why,
                     }),
                     // Whoever runs a scenario applies an incident, and no scenario runs yet.
                     Some(_) => {}

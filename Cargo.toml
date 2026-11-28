@@ -97,6 +97,7 @@ gaslightmq_recording_compression = { path = "crates/gaslightmq_recording_compres
 gaslightmq_recording_conformance = { path = "crates/gaslightmq_recording/conformance" }
 gaslightmq_recording_segments = { path = "crates/gaslightmq_recording_segments" }
 gaslightmq_recording_segments_conformance = { path = "crates/gaslightmq_recording_segments/conformance" }
+gaslightmq_recording_segments_fs = { path = "crates/gaslightmq_recording_segments_fs" }
 gaslightmq_resource = { path = "crates/gaslightmq_resource" }
 gaslightmq_rule = { path = "crates/gaslightmq_rule" }
 gaslightmq_rule_conformance = { path = "crates/gaslightmq_rule/conformance" }

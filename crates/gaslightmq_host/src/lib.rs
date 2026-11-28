@@ -23,6 +23,7 @@
 //! | [`Reloaded`], [`ReloadWorkspaceError`], [`Unsaved`] | What a reload of the workspace took in from its files, why a reload changed nothing, and what it does with changes that nobody saved. |
 //! | [`CreateLiveRuleError`], [`UpdateLiveRuleError`], [`DeleteLiveRuleError`], [`KeepRuleError`] | Why a live rule was not made, changed, removed or kept. |
 //! | [`EnvironmentRulesError`], [`IntentError`], [`CloseSessionError`], [`HostChangesError`], [`FollowCallsError`] | Why the rules of an environment were not read, a pad was not acted on, a session was not closed, a follower has no next change, and the calls of an environment were not followed. |
+//! | [`RecordingStartError`], [`RecordingStopError`] | Why a recording of an environment did not start, and why one did not stop in order. |
 //!
 //! The [`prelude`] holds all of them.
 //!
@@ -96,6 +97,21 @@
 //!   revision it left, and a change of a definition in the journal of every environment that runs.
 //!   The host names the surface of a change that nobody asked for.
 //!
+//! # Recordings
+//!
+//! Each environment records on its own, one recording at a time: [`Host::start_recording`] starts one, and
+//! [`Host::stop_recording`] or the stop of the environment ends it. Every environment keeps its recordings in the
+//! one storage of the host, which whoever puts the process together picks: see [`Host::with_recordings`].
+//!
+//! - **A recording is named by its environment and the instant it started**, on the wall clock of the system, to the
+//!   millisecond. The host reads that clock, and gives a recording that would start at the same millisecond as the
+//!   one before it in its environment the next millisecond.
+//! - **It keeps as much of a call as the environment says**: see [`EnvironmentConfiguration::recording`].
+//! - **A start and a stop have no inverse**, and no revision: what was recorded has happened.
+//! - **A recording that stops by itself** records why in the journal of its environment, with the surface of its
+//!   start. Whoever follows the host learns of every start and every end.
+//! - **Whoever opens a recording that runs** sees every entry that its environment handed over until then.
+//!
 //! # Presences
 //!
 //! A presence is one client of a control surface that is there, such as a tab of the UI.
@@ -124,9 +140,9 @@
 //!   see [`EnvironmentConfigurationError::UnsupportedBroker`]. The broker and its task arrive with the crate `broker`.
 //! - **What a process configures.** No workspace setting reaches an environment by itself:
 //!   whoever starts one sets its seed and its other properties in its [`EnvironmentConfiguration`].
-//! - **The live set, scenarios and recordings** arrive with their crates.
-//!   Until then the armed rules of an environment are its live set, and no journal has an entry of a scenario,
-//!   of a step or of a recording.
+//! - **The live set and scenarios** arrive with their crates.
+//!   Until then the armed rules of an environment are its live set, and no journal has an entry of a scenario or
+//!   of a step.
 //! - **Steps.** No change has the surface `step` until a scenario runs.
 //! - **The control plane** stands in front of the host, in the crate `gaslightmq_control_server`.
 //!
@@ -198,8 +214,8 @@ pub use configuration::{
 pub use error::{
     ArmRuleError, CloseSessionError, CreateDefinitionError, CreateLiveRuleError, DeleteDefinitionError,
     DeleteLiveRuleError, DisarmRuleError, EnvironmentRulesError, EnvironmentStartError, FireRuleError,
-    FollowCallsError, IntentError, KeepRuleError, NotRunningError, ReadSentenceError, ReloadWorkspaceError, RuleHolder,
-    UpdateDefinitionError, UpdateLiveRuleError,
+    FollowCallsError, IntentError, KeepRuleError, NotRunningError, ReadSentenceError, RecordingStartError,
+    RecordingStopError, ReloadWorkspaceError, RuleHolder, UpdateDefinitionError, UpdateLiveRuleError,
 };
 pub use host::Host;
 pub use reloaded::{Reloaded, Unsaved};
@@ -228,7 +244,7 @@ pub mod prelude {
         DisarmRuleError, EnvironmentConfiguration, EnvironmentConfigurationError, EnvironmentRule,
         EnvironmentRulesError, EnvironmentStartError, Expects, FireRuleError, FollowCallsError, Host, HostChange,
         HostChanges, HostChangesError, HostConfiguration, IntentEffect, IntentError, KeepRuleError, NotRunningError,
-        ReadSentenceError, ReloadWorkspaceError, Reloaded, RuleHolder, RunId, RunIdError, Unsaved,
-        UpdateDefinitionError, UpdateLiveRuleError,
+        ReadSentenceError, RecordingStartError, RecordingStopError, ReloadWorkspaceError, Reloaded, RuleHolder, RunId,
+        RunIdError, Unsaved, UpdateDefinitionError, UpdateLiveRuleError,
     };
 }

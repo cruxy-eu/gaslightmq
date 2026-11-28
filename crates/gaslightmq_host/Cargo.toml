@@ -26,6 +26,9 @@ gaslightmq_journal.workspace = true
 gaslightmq_lie.workspace = true
 gaslightmq_lie_api.workspace = true
 gaslightmq_quick_inject.workspace = true
+gaslightmq_recording.workspace = true
+# The storage of recordings that a host keeps until someone hands it another: the segment layout in memory.
+gaslightmq_recording_segments = { workspace = true, features = ["memory"] }
 gaslightmq_resource.workspace = true
 gaslightmq_rule.workspace = true
 gaslightmq_scenario.workspace = true

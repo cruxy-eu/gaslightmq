@@ -3,7 +3,7 @@
 use gaslightmq_call::Call;
 use gaslightmq_environment::EnvironmentName;
 use gaslightmq_field::{ClientSoftware, ConnectionNumber};
-use gaslightmq_journal::JournalEntry;
+use gaslightmq_journal::{JournalEntry, RecordingId, RecordingStopCause};
 use gaslightmq_rule::RuleName;
 use gaslightmq_selector::SelectorRef;
 use gaslightmq_surface::PresenceId;
@@ -103,6 +103,19 @@ pub enum StreamMessage {
         environment: EnvironmentName,
         entry: JournalEntry,
     },
+    /// A recording of the environment began.
+    RecordingStarted {
+        environment: EnvironmentName,
+        recording: RecordingId,
+    },
+    /// A recording of the environment ended. `why` says why it stopped by itself: the recorder fell behind, or it
+    /// could not write. A message that leaves it out says that someone stopped the recording, or its environment.
+    RecordingStopped {
+        environment: EnvironmentName,
+        recording: RecordingId,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        why: Option<RecordingStopCause>,
+    },
     /// An environment came up, with what is live in it.
     EnvironmentStarted { environment: RunningEnvironment },
     /// An environment went down, and everything live in it with it.
@@ -153,6 +166,9 @@ pub struct RunningEnvironment {
     pub rules: Vec<RuleStatus>,
     /// The sessions that are open.
     pub sessions: Vec<SessionStatus>,
+    /// The recording that the environment writes, when it writes one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub recording: Option<RecordingId>,
 }
 
 /// Which calls a client of the live stream follows, from a client to the control plane.

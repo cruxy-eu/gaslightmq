@@ -12,10 +12,12 @@ use crate::error::{PingIntervalError, RequestSizeLimitError, StatsIntervalError,
 /// What a [`ControlServer`](crate::ControlServer) is configured with.
 ///
 /// ```
+/// use std::net::SocketAddr;
+///
 /// use gaslightmq_control_server::prelude::*;
 ///
 /// let mut configuration = ControlServerConfiguration::default();
-/// assert_eq!(configuration.listen, "127.0.0.1:7092".parse().expect("a socket address"));
+/// assert_eq!(configuration.listen, "127.0.0.1:7092".parse::<SocketAddr>().expect("a socket address"));
 ///
 /// // A test takes any free port, and asks the server which one it got.
 /// configuration.listen = "127.0.0.1:0".parse().expect("a socket address");

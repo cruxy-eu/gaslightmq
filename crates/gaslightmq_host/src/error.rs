@@ -5,6 +5,7 @@ use gaslightmq_backend_upstream::UpstreamBackendError;
 use gaslightmq_engine::EngineStartError;
 use gaslightmq_environment::{EnvironmentName, ListenAddress};
 use gaslightmq_field::ConnectionNumber;
+use gaslightmq_recording::RecordingId;
 use gaslightmq_rule::{RuleError, RuleName};
 use gaslightmq_scenario::ScenarioName;
 use gaslightmq_selector::SelectorSetError;
@@ -722,6 +723,61 @@ pub enum CloseSessionError {
         environment: EnvironmentName,
         connection: ConnectionNumber,
     },
+}
+
+/// Why a host did not [start a recording](crate::Host::start_recording) of an environment.
+///
+/// ```
+/// use gaslightmq_host::prelude::*;
+///
+/// let error = RecordingStartError::AlreadyRecording {
+///     environment: "staging-proxy".parse().expect("an environment name"),
+///     recording: "staging-proxy.2026-11-21T14-02-11.527Z".parse().expect("a recording ID"),
+/// };
+/// assert_eq!(
+///     error.to_string(),
+///     "environment \"staging-proxy\" records already, into staging-proxy.2026-11-21T14-02-11.527Z"
+/// );
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum RecordingStartError {
+    /// No environment of this name runs.
+    #[error("environment {:?} does not run", .environment.as_str())]
+    NotRunning { environment: EnvironmentName },
+    /// The environment records already. It writes one recording at a time, so whoever wants another stops it.
+    #[error("environment {:?} records already, into {recording}", .environment.as_str())]
+    AlreadyRecording {
+        environment: EnvironmentName,
+        recording: RecordingId,
+    },
+    /// The storage did not keep the recording, or its recorder did not start. `reason` says what stood in the way.
+    #[error("environment {:?} did not start a recording: {reason}", .environment.as_str())]
+    StorageFailed {
+        environment: EnvironmentName,
+        reason: String,
+    },
+}
+
+/// Why a host did not [stop a recording](crate::Host::stop_recording) of an environment in order.
+///
+/// ```
+/// use gaslightmq_host::prelude::*;
+///
+/// let error = RecordingStopError::NotRecording { environment: "staging-proxy".parse().expect("an environment name") };
+/// assert_eq!(error.to_string(), "environment \"staging-proxy\" records nothing");
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum RecordingStopError {
+    /// No environment of this name runs.
+    #[error("environment {:?} does not run", .environment.as_str())]
+    NotRunning { environment: EnvironmentName },
+    /// The environment records nothing: nobody started a recording, someone stopped it, or it stopped by itself.
+    #[error("environment {:?} records nothing", .environment.as_str())]
+    NotRecording { environment: EnvironmentName },
+    /// The recording stopped, and its recorder could not write what waited, or its end.
+    /// It holds what its last commit covers, and opens as a recording that was cut short.
+    #[error("recording {recording} stopped without its end: {reason}")]
+    CutShort { recording: RecordingId, reason: String },
 }
 
 /// Why a host did not [follow the calls](crate::Host::follow_calls) of an environment.

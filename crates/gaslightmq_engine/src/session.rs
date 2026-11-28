@@ -21,7 +21,7 @@ use tokio::sync::{Notify, mpsc, watch};
 use crate::events::EventBus;
 use crate::open_sessions::OpenSessions;
 use crate::timers::Timers;
-use crate::{ArmedRules, EngineEvent, Journal, SessionEvent};
+use crate::{ArmedRules, EngineEvent, Journal, Recorder, SessionEvent};
 
 /// The bytes of a frame that holds nothing, which are no request.
 ///
@@ -38,8 +38,10 @@ pub(crate) struct Sessions<B, C> {
     pub rules: ArmedRules,
     pub events: Arc<EventBus>,
     pub journal: Journal,
+    /// Whether a recording runs, and the way to it.
+    pub recorder: Recorder,
     /// The sessions that are open, each with the way to ask it to close.
-    pub open: OpenSessions,
+    pub open: Arc<OpenSessions>,
     /// Which connection from its host to its endpoint each connection is.
     ordinals: Mutex<ConnectionOrdinals>,
     /// The instants at which a client context may end, because a session closed a while before.
@@ -56,7 +58,10 @@ impl<B: Backend, C: WaitableClock> Sessions<B, C> {
         rules: ArmedRules,
         events: Arc<EventBus>,
         journal: Journal,
+        recorder: Recorder,
     ) -> (Self, mpsc::UnboundedReceiver<Instant>) {
+        // The recorder reads the sessions that are open when a recording starts.
+        let open = Arc::clone(recorder.open_sessions());
         let (lingering, lingered) = mpsc::unbounded_channel();
         let sessions = Self {
             backend,
@@ -65,7 +70,8 @@ impl<B: Backend, C: WaitableClock> Sessions<B, C> {
             rules,
             events,
             journal,
-            open: OpenSessions::default(),
+            recorder,
+            open,
             ordinals: Mutex::default(),
             lingering,
         };
@@ -319,8 +325,8 @@ impl<'a, B: Backend, C: WaitableClock> Session<'a, B, C> {
                 Output::Close => {
                     ending.get_or_insert(Ending::Closed);
                 }
-                Output::Emit(call) => {
-                    self.of.events.publish(EngineEvent::CallRecorded(Arc::from(call)));
+                Output::Emit { record, frames } => {
+                    self.of.events.publish_call(Arc::from(record), frames);
                     // The call may have spent the last match or the last firing of a rule.
                     self.of.rules.disarm_ended(self.of.clock.now());
                 }
@@ -332,6 +338,8 @@ impl<'a, B: Backend, C: WaitableClock> Session<'a, B, C> {
 
     /// Hands one input to the pipeline, with the instant of the clock, and tells what the input said about the client.
     fn handle(&mut self, input: Input<'_>) -> Outputs {
+        // While a recording runs, every call that arrives keeps hold of its frames until it ends.
+        self.pipeline.set_recording(self.of.recorder.runs());
         let outputs = self.pipeline.handle(input, self.of.clock.now());
         self.tell_identity();
         outputs
@@ -437,6 +445,7 @@ fn answered(call: CallId, answer: BackendAnswer) -> Option<Input<'static>> {
     match answer {
         BackendAnswer::Truth(truth) => Some(Input::BackendAnswered {
             call,
+            upstream: truth.upstream().cloned(),
             response: truth.into_response(),
         }),
         // The request has no response, and the pipeline expects none.

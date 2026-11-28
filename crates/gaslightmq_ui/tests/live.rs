@@ -19,6 +19,7 @@ use gaslightmq_control_api::environment::{
 };
 use gaslightmq_control_api::field::{ClientSoftware, ConnectionNumber, Endpoint, FieldValue, Fields};
 use gaslightmq_control_api::incident::IncidentSupport;
+use gaslightmq_control_api::journal::{RecordingId, RecordingStopCause};
 use gaslightmq_control_api::kernel::{ApiKey, ClientId};
 use gaslightmq_control_api::prelude::*;
 use gaslightmq_control_api::rule::{PresetName, Rule, RuleState};
@@ -60,6 +61,7 @@ impl Workspace {
             },
             rules: Vec::new(),
             sessions: Vec::new(),
+            recording: None,
         }
     }
 
@@ -440,6 +442,28 @@ mod process {
 
         assert_eq!(live, once);
         assert_eq!(live.process().unwrap().environments().len(), 1);
+    }
+
+    #[test]
+    fn an_environment_records_from_its_start_to_its_stop() {
+        let mut live = Live::new(&UiConfiguration::default());
+        live.opened();
+        live.apply(Workspace::snapshot(&["staging-proxy"]));
+        let recording: RecordingId = "staging-proxy.2026-11-21T14-02-11.527Z".parse().unwrap();
+        let recording_of = |live: &Live| live.process().unwrap().environments()[0].recording.clone();
+
+        live.apply(StreamMessage::RecordingStarted {
+            environment: "staging-proxy".parse().unwrap(),
+            recording: recording.clone(),
+        });
+        assert_eq!(recording_of(&live), Some(recording.clone()));
+
+        live.apply(StreamMessage::RecordingStopped {
+            environment: "staging-proxy".parse().unwrap(),
+            recording,
+            why: Some(RecordingStopCause::FellBehind),
+        });
+        assert_eq!(recording_of(&live), None);
     }
 }
 

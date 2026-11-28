@@ -82,7 +82,7 @@ pub async fn assert_recording_storage<S: RecordingStorage>(empty: impl Fn() -> S
 /// What a consumer that keeps nothing takes out of a stream: every entry as its type, copied out of its batch.
 #[derive(Debug, Clone, PartialEq)]
 enum Read {
-    Session(SessionEvent),
+    Session(RecordedSessionEvent),
     Call {
         call: Box<Call>,
         /// What the recording holds of each of the four frames: its state, its length on the wire, and its bytes.

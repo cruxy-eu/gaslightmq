@@ -186,6 +186,19 @@ mod next_to_the_others {
         ]
     }
 
+    /// One error of every type of the prelude about recordings, each named without a path.
+    pub fn every_error_of_a_recording() -> Vec<String> {
+        let staging: EnvironmentName = "staging-proxy".parse().unwrap();
+        let not_started: RecordingStartError = RecordingStartError::StorageFailed {
+            environment: staging.clone(),
+            reason: "disk full".to_owned(),
+        };
+        let not_recording: RecordingStopError = RecordingStopError::NotRecording { environment: staging };
+        assert!(std::error::Error::source(&not_started).is_none());
+        assert!(std::error::Error::source(&not_recording).is_none());
+        vec![not_started.to_string(), not_recording.to_string()]
+    }
+
     /// One error of every type of the prelude that a run or a revision brought, each named without a path.
     pub fn every_error_of_a_run_or_a_revision() -> Vec<String> {
         let run: RunId = "4be0643f1d98573b97cdca98a65347dd".parse().unwrap();
@@ -251,6 +264,17 @@ fn the_prelude_names_the_error_of_every_type() {
             "rule \"blackhole\" was not created: environment \"staging-proxy\" has a live rule of that name",
             "the workspace was not reloaded: the files hold a rule \"blackhole\", \
              and environment \"staging-proxy\" has a live rule of that name",
+        ]
+    );
+}
+
+#[test]
+fn the_prelude_names_the_error_of_every_recording_type() {
+    assert_eq!(
+        next_to_the_others::every_error_of_a_recording(),
+        [
+            "environment \"staging-proxy\" did not start a recording: disk full",
+            "environment \"staging-proxy\" records nothing",
         ]
     );
 }

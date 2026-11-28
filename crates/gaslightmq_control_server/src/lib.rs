@@ -14,6 +14,7 @@
 //! The [`prelude`] holds all of them, with the errors of the values.
 //!
 //! ```no_run
+//! use std::net::SocketAddr;
 //! use std::sync::Arc;
 //!
 //! use gaslightmq_control_server::prelude::*;
@@ -28,7 +29,7 @@
 //! let run = RunId::from_random_bits(0x4be0_643f_1d98_573b_97cd_ca98_a653_47dd);
 //! let host = Arc::new(Host::new(HostConfiguration::default(), MemoryContext::new(), Lies::of_every_build(), run));
 //! let server = ControlServer::start(ControlServerConfiguration::default(), Arc::clone(&host)).await?;
-//! assert_eq!(server.address(), "127.0.0.1:7092".parse().expect("a socket address"));
+//! assert_eq!(server.address(), "127.0.0.1:7092".parse::<SocketAddr>().expect("a socket address"));
 //!
 //! // On the way out, the control plane stops first, so nobody starts an environment that is about to stop.
 //! server.stop().await;

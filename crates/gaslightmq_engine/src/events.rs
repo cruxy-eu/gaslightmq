@@ -2,13 +2,17 @@
 
 use std::sync::{Arc, Mutex, PoisonError};
 
-use gaslightmq_call::Call;
+use gaslightmq_call::{Call, CallId};
+use gaslightmq_clock::Clock;
 use gaslightmq_incident::Incident;
-use gaslightmq_journal::JournalEntry;
+use gaslightmq_journal::{JournalEntry, RecordingStopCause};
+use gaslightmq_pipeline as pipeline;
+use gaslightmq_recording::RecordingId;
 use tokio::sync::broadcast;
 use tokio::sync::broadcast::error::RecvError;
 use tokio::sync::mpsc;
 
+use crate::recorder::{Queue, Waiting, recorded_events};
 use crate::{EventBacklog, LiveEventsError, SessionEvent};
 
 /// Something that a session of an engine handed over.
@@ -34,6 +38,16 @@ pub enum EngineEvent {
     Session(SessionEvent),
     /// Something changed in the environment of the proxy, and this is its entry in the [journal](crate::Journal).
     Journaled(JournalEntry),
+    /// A recording of the environment started. See [`Recorder::start`](crate::Recorder::start).
+    RecordingStarted(RecordingId),
+    /// A recording of the environment ended, and its end is written, unless the recorder could not write.
+    ///
+    /// `why` says why it stopped by itself: the recorder fell behind, or it could not write.
+    /// It is `None` when someone stopped it, or its environment stopped.
+    RecordingStopped {
+        recording: RecordingId,
+        why: Option<RecordingStopCause>,
+    },
 }
 
 /// The events of an engine as they happen, for a listener that watches: a traffic view, a UI.
@@ -98,12 +112,31 @@ impl EveryEvent {
 /// Where the sessions of an engine hand their events over, and where the listeners get them.
 #[derive(Debug)]
 pub(crate) struct EventBus {
-    /// The listeners that miss nothing, each with the events it did not take yet.
+    /// The listeners that miss nothing, and the recorder.
     ///
     /// A session holds the lock while it hands one event to every listener, so all of them see one order.
     /// Handing over never waits for a listener: the lock is free again after a few moves in memory.
-    every_event: Mutex<Vec<mpsc::UnboundedSender<EngineEvent>>>,
+    keeping: Mutex<Keeping>,
     live: broadcast::Sender<EngineEvent>,
+}
+
+/// Whoever keeps what happened: the listeners that miss nothing, and the recording that runs.
+#[derive(Default)]
+struct Keeping {
+    /// The listeners that miss nothing, each with the events it did not take yet.
+    every_event: Vec<mpsc::UnboundedSender<EngineEvent>>,
+    /// The queue of the recording that runs, and the clock that tells when an event of a session happened.
+    recording: Option<(Arc<Queue>, Arc<dyn Clock + Send + Sync>)>,
+}
+
+/// Writes how many listeners keep every event, and whether a recording runs.
+impl std::fmt::Debug for Keeping {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Keeping")
+            .field("every_event", &self.every_event.len())
+            .field("recording", &self.recording.is_some())
+            .finish()
+    }
 }
 
 impl EventBus {
@@ -111,19 +144,77 @@ impl EventBus {
     pub fn new(backlog: EventBacklog) -> Self {
         let (live, _) = broadcast::channel(backlog.events());
         Self {
-            every_event: Mutex::default(),
+            keeping: Mutex::default(),
             live,
         }
     }
 
     /// Hands `event` to every listener. It never waits for one.
     pub fn publish(&self, event: EngineEvent) {
-        // The list is whole whenever the lock is free, also after a panic of the task that held it.
-        let mut every_event = self.every_event.lock().unwrap_or_else(PoisonError::into_inner);
+        self.hand_over(event, None);
+    }
+
+    /// Hands the record of a call to every listener, and to the recording that runs with its frames, when it has them.
+    /// It never waits for one.
+    pub fn publish_call(&self, call: Arc<Call>, frames: Option<pipeline::KeptFrames>) {
+        self.hand_over(EngineEvent::CallRecorded(call), frames);
+    }
+
+    fn hand_over(&self, event: EngineEvent, frames: Option<pipeline::KeptFrames>) {
+        let mut keeping = self.keeping();
+        if let Some((queue, clock)) = &keeping.recording {
+            match (&event, frames) {
+                (EngineEvent::CallRecorded(call), Some(frames)) => {
+                    queue.offer(Waiting::Call(Arc::clone(call), frames));
+                }
+                (EngineEvent::Session(session), _) => {
+                    for event in recorded_events(session, clock.now()) {
+                        queue.offer(Waiting::Session(event));
+                    }
+                }
+                (EngineEvent::Journaled(entry), _) => queue.offer(Waiting::Journal(entry.clone())),
+                // A call that arrived before the recording started has no frames, and is no part of it.
+                _ => {}
+            }
+        }
         // A listener that someone let go of takes no event, and leaves the list.
-        every_event.retain(|listener| listener.send(event.clone()).is_ok());
+        keeping
+            .every_event
+            .retain(|listener| listener.send(event.clone()).is_ok());
         // An event that no live listener waits for is gone, which is what live means.
         let _ = self.live.send(event);
+    }
+
+    /// The recording behind `queue` takes what the sessions hand over from now on, and every event of a session at
+    /// the instant of `clock`. `begin` runs while nothing is handed over, and returns the first call that the
+    /// recording holds.
+    pub fn attach(
+        &self,
+        queue: Arc<Queue>,
+        clock: Arc<dyn Clock + Send + Sync>,
+        begin: impl FnOnce() -> CallId,
+    ) -> CallId {
+        let mut keeping = self.keeping();
+        keeping.recording = Some((queue, clock));
+        begin()
+    }
+
+    /// The recording behind `queue` takes nothing more, if it is the one that the bus hands over to.
+    pub fn detach(&self, queue: &Arc<Queue>) {
+        let mut keeping = self.keeping();
+        if keeping
+            .recording
+            .as_ref()
+            .is_some_and(|(attached, _)| Arc::ptr_eq(attached, queue))
+        {
+            keeping.recording = None;
+        }
+    }
+
+    /// Who keeps what happened. The list is whole whenever the lock is free, also after a panic of the task that held
+    /// it.
+    fn keeping(&self) -> std::sync::MutexGuard<'_, Keeping> {
+        self.keeping.lock().unwrap_or_else(PoisonError::into_inner)
     }
 
     /// A listener of what happens now: it receives the events from now on, and misses the oldest when it falls
@@ -137,8 +228,7 @@ impl EventBus {
     /// A listener that misses nothing: it receives every event from now on, however far it falls behind.
     pub fn listen_to_every_event(&self) -> EveryEvent {
         let (listener, events) = mpsc::unbounded_channel();
-        let mut every_event = self.every_event.lock().unwrap_or_else(PoisonError::into_inner);
-        every_event.push(listener);
+        self.keeping().every_event.push(listener);
         EveryEvent { events }
     }
 }
@@ -222,7 +312,7 @@ mod tests {
 
         bus.publish(rebalance("payments"));
 
-        assert_eq!(bus.every_event.lock().unwrap().len(), 1);
+        assert_eq!(bus.keeping().every_event.len(), 1);
         assert_eq!(group_of(&staying.next().await.unwrap()), "payments");
     }
 

@@ -69,6 +69,33 @@ impl Journal {
         entry
     }
 
+    /// Records one change that leaves no revision, as [`record`](Self::record) does, and does `then` before any other
+    /// change is recorded.
+    pub(crate) fn record_then(
+        &self,
+        change: Change,
+        from: impl Into<ChangeSource>,
+        then: impl FnOnce(),
+    ) -> JournalEntry {
+        let mut recent = self.recent();
+        let entry = recent.record(self.inner.clock.now(), change, from, None);
+        if let Some(events) = self.inner.events.upgrade() {
+            events.publish(EngineEvent::Journaled(entry.clone()));
+        }
+        then();
+        entry
+    }
+
+    /// Does `what` with the entries, and no change is recorded meanwhile.
+    pub(crate) fn holding<R>(&self, what: impl FnOnce(&RecentJournal) -> R) -> R {
+        what(&self.recent())
+    }
+
+    /// The ID of the last entry, or `None` while the journal has none.
+    pub(crate) fn last(&self) -> Option<JournalEntryId> {
+        self.recent().entries().next_back().map(|entry| entry.id)
+    }
+
     /// The entries that the journal keeps in memory, the oldest first.
     pub fn entries(&self) -> Vec<JournalEntry> {
         self.recent().entries().cloned().collect()

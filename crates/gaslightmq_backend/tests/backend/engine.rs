@@ -80,6 +80,7 @@ impl<'a, B: Backend> Session<'a, B> {
                     let input = match self.backend.call(request).await {
                         BackendAnswer::Truth(truth) => Input::BackendAnswered {
                             call,
+                            upstream: truth.upstream().cloned(),
                             response: truth.into_response(),
                         },
                         BackendAnswer::NoResponse => continue,
@@ -92,7 +93,7 @@ impl<'a, B: Backend> Session<'a, B> {
                     outputs.extend(self.pipeline.handle(input, NOW));
                 }
                 Output::Send(bytes) => self.sent.push(bytes.to_vec()),
-                Output::Emit(call) => self.records.push(*call),
+                Output::Emit { record, .. } => self.records.push(*record),
                 // The engine closes the transport, and the backend lets go of the connection.
                 Output::Close => self.backend.close(self.pipeline.connection().number()).await,
                 Output::SetTimer { .. } | Output::Fire(_) => {}

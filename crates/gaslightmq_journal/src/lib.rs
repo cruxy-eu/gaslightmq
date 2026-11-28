@@ -12,6 +12,7 @@
 //! | [`JournalEntryId`] | Which entry of its journal this is: one number. |
 //! | [`Change`] | What changed: a rule armed, a parameter changed, a definition was created, an incident was applied, a recording stopped. |
 //! | [`RecordingStopCause`] | Why a recording stopped by itself: the recorder fell behind, or it could not write. |
+//! | [`RecordingId`] | Which recording this is: its environment and the instant it started, in UTC, to the millisecond. |
 //! | [`Parameter`] | One parameter of a rule, which a turn of an encoder changes. |
 //! | [`RecordedName`], [`RecordedDefinition`] | The name a rule or a definition had when the entry was written, and a definition of the workspace with its kind. |
 //! | [`ChangeSource`], [`ChangeSurface`], [`ChangeCause`] | Where a change came from: its surface, and `undo` or `redo` when it takes back or repeats an earlier change. |
@@ -84,6 +85,7 @@
 //! | [`JournalEntryId`] | [`JournalEntryIdError`] | The number is zero, or the text is no whole number. |
 //! | [`RecordedName`] | [`RecordedNameError`] | The text breaks a part of the [rule for names](RecordedName#the-rule-for-names). |
 //! | [`RecentJournalSize`] | [`RecentJournalSizeError`] | The size is zero. |
+//! | [`RecordingId`] | [`RecordingIdError`] | The text has no `.`, or its environment or its instant is wrong. |
 //!
 //! The message of every error is complete, so no error has a [`source`](std::error::Error::source).
 //!
@@ -94,6 +96,7 @@
 //! | Type | Form |
 //! |---|---|
 //! | [`JournalEntryId`], [`Revision`] | A number. |
+//! | [`RecordingId`] | The text: `orders-sim.2026-11-21T14-02-11.527Z`. |
 //! | [`RecordedName`] | The text. |
 //! | [`RecordedDefinition`] | A map with one entry: the kind, and the name. `{ "rule": "slow-order-producers" }` |
 //! | [`ChangeSurface`], [`ChangeCause`], [`Parameter`], [`RecordingStopCause`] | The name in kebab case: `quick-inject`. |
@@ -114,6 +117,7 @@ mod entry;
 mod id;
 mod name;
 mod recent;
+mod recording_id;
 mod revision;
 mod source;
 
@@ -122,6 +126,7 @@ pub use entry::JournalEntry;
 pub use id::{JournalEntryId, JournalEntryIdError};
 pub use name::{RecordedDefinition, RecordedName, RecordedNameError};
 pub use recent::{RecentJournal, RecentJournalSize, RecentJournalSizeError};
+pub use recording_id::{RecordingId, RecordingIdError};
 pub use revision::Revision;
 pub use source::{ChangeCause, ChangeSource, ChangeSurface};
 
@@ -142,6 +147,6 @@ pub mod prelude {
     pub use crate::{
         Change, ChangeCause, ChangeSource, ChangeSurface, JournalEntry, JournalEntryId, JournalEntryIdError, Parameter,
         RecentJournal, RecentJournalSize, RecentJournalSizeError, RecordedDefinition, RecordedName, RecordedNameError,
-        RecordingStopCause, Revision,
+        RecordingId, RecordingIdError, RecordingStopCause, Revision,
     };
 }

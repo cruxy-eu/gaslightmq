@@ -426,6 +426,7 @@ fn a_moment_that_does_not_follow_the_one_before_it_is_missing_and_the_record_say
     let input = gaslightmq_pipeline::Input::BackendAnswered {
         call,
         response: truth(&forwarded),
+        upstream: None,
     };
     let outputs: Vec<_> = driver.pipeline.handle(input, earlier).into_iter().collect();
     let answered = Seen(outputs);

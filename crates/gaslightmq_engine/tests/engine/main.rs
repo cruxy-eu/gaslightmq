@@ -12,5 +12,6 @@ mod endpoints;
 mod events;
 mod journal;
 mod lies;
+mod recording;
 mod rules;
 mod running;

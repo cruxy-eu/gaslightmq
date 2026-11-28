@@ -17,6 +17,7 @@ mod failing;
 mod learning;
 mod ordering;
 mod passing;
+mod recording;
 mod refusing;
 mod timing;
 mod two_passes;
