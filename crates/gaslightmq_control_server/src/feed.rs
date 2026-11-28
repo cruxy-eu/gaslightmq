@@ -110,6 +110,18 @@ impl<C: WorkspaceContext + 'static> Feed<C> {
             HostChange::RuleRemoved { environment, rule } => Some(StreamMessage::RuleRemoved { environment, rule }),
             HostChange::Session { environment, event } => Some(session_message(environment, event)),
             HostChange::Journaled { environment, entry } => Some(StreamMessage::JournalEntry { environment, entry }),
+            HostChange::RecordingStarted { environment, recording } => {
+                Some(StreamMessage::RecordingStarted { environment, recording })
+            }
+            HostChange::RecordingStopped {
+                environment,
+                recording,
+                why,
+            } => Some(StreamMessage::RecordingStopped {
+                environment,
+                recording,
+                why,
+            }),
         }
     }
 

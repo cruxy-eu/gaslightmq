@@ -19,6 +19,7 @@ use gaslightmq_kernel::prelude::*;
 use gaslightmq_lie::prelude::*;
 use gaslightmq_lie_api::prelude::*;
 use gaslightmq_lie_refusal::prelude::*;
+use gaslightmq_recording_conformance::MemoryStorage;
 use gaslightmq_rule::prelude::*;
 use gaslightmq_selector::prelude::*;
 use gaslightmq_test_kafka::KafkaCluster;
@@ -42,7 +43,14 @@ async fn a_client_produces_and_consumes_through_the_proxy() -> anyhow::Result<()
     let any: ListenAddress = "127.0.0.1:0".parse()?;
     let brokers: BrokerListeners = "127.0.0.1:0".parse()?;
     let configuration = EngineConfiguration::new(Listeners::new(any, brokers, "127.0.0.1".parse()?)?);
-    let engine = Engine::start(configuration, backend, WallClock::new(), Lies::of_every_build()).await?;
+    let engine = Engine::start(
+        configuration,
+        backend,
+        WallClock::new(),
+        Lies::of_every_build(),
+        Recordings::new(MemoryStorage::new()),
+    )
+    .await?;
     let bootstrap = engine
         .address_of(Endpoint::Bootstrap)
         .context("the bootstrap endpoint is open")?;
@@ -98,7 +106,14 @@ async fn a_client_retries_a_refused_produce_and_then_succeeds() -> anyhow::Resul
     let brokers: BrokerListeners = "127.0.0.1:0".parse()?;
     let configuration = EngineConfiguration::new(Listeners::new(any, brokers, "127.0.0.1".parse()?)?);
     let lies = Lies::of_every_build().with(Refusal)?;
-    let engine = Engine::start(configuration, backend, WallClock::new(), lies).await?;
+    let engine = Engine::start(
+        configuration,
+        backend,
+        WallClock::new(),
+        lies,
+        Recordings::new(MemoryStorage::new()),
+    )
+    .await?;
     let bootstrap = engine
         .address_of(Endpoint::Bootstrap)
         .context("the bootstrap endpoint is open")?;
@@ -153,7 +168,14 @@ async fn a_client_reconnects_after_a_hang_up_and_then_succeeds() -> anyhow::Resu
     let any: ListenAddress = "127.0.0.1:0".parse()?;
     let brokers: BrokerListeners = "127.0.0.1:0".parse()?;
     let configuration = EngineConfiguration::new(Listeners::new(any, brokers, "127.0.0.1".parse()?)?);
-    let engine = Engine::start(configuration, backend, WallClock::new(), Lies::of_every_build()).await?;
+    let engine = Engine::start(
+        configuration,
+        backend,
+        WallClock::new(),
+        Lies::of_every_build(),
+        Recordings::new(MemoryStorage::new()),
+    )
+    .await?;
     let bootstrap = engine
         .address_of(Endpoint::Bootstrap)
         .context("the bootstrap endpoint is open")?;

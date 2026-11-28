@@ -97,6 +97,14 @@ mod next_to_std_and_every_domain {
         let _: Option<<SaveWorkspace as Operation>::Error> = None::<SaveWorkspaceError>;
         let _: Option<<CheckHealth as Operation>::Answer> = None::<Health>;
         let _: Option<<CheckHealth as Operation>::Error> = None::<Unhealthy>;
+        let _: Option<<StartRecording as Operation>::Answer> = None::<RecordingId>;
+        let _: Option<<StartRecording as Operation>::Error> = None::<StartRecordingError>;
+        let _: Option<<StopRecording as Operation>::Answer> = None::<RecordingEnd>;
+        let _: Option<<StopRecording as Operation>::Error> = None::<StopRecordingError>;
+        let _: Option<<ListRecordings as Operation>::Answer> = None::<Vec<RecordingId>>;
+        let _: Option<<ListRecordings as Operation>::Error> = None::<ListRecordingsError>;
+        let _: Option<<OpenRecording as Operation>::Answer> = None::<RecordingStatus>;
+        let _: Option<<OpenRecording as Operation>::Error> = None::<OpenRecordingError>;
     }
 
     /// Every other type of the prelude, named without a path.
@@ -132,5 +140,8 @@ mod next_to_std_and_every_domain {
         let _: Option<Stats> = None;
         let _: Option<RuleStats> = None;
         let _: Option<Subscription> = None;
+        let _: Option<RecordingDescription> = None;
+        let _: Option<RecordedScenario> = None;
+        let _: Option<RecordingEnding> = None;
     }
 }

@@ -2405,3 +2405,88 @@ async fn an_armed_rule_whose_definition_someone_deletes_disarms_and_an_armed_liv
     host.stop_all().await;
     Ok(())
 }
+
+#[tokio::test]
+async fn a_recording_of_an_environment_keeps_its_calls_and_whoever_follows_the_host_learns_of_it() -> anyhow::Result<()>
+{
+    let cluster = KafkaCluster::plaintext().start().await?;
+    let orders = cluster.topics().create("orders").await?;
+    let host = Host::new(
+        HostConfiguration::default(),
+        MemoryContext::new(),
+        Lies::of_every_build(),
+        RUN,
+    );
+    let listen = Listeners::new(
+        ListenAddress::new(LOCALHOST, 0),
+        BrokerListeners::any_port(LOCALHOST),
+        LOCALHOST.into(),
+    )?;
+    let staging = Environment::new(
+        "staging-proxy".parse()?,
+        Instances::ProxyInFrontOfCluster {
+            proxy: ProxyDefinition::new(listen),
+            upstream: Upstream::new(cluster.brokers()[0].address().to_string().parse()?),
+        },
+    );
+    host.start(EnvironmentConfiguration::new(&staging)?).await?;
+    let mut changes = host.changes();
+    let mut events = host.live_events(staging.name())?;
+    let through_staging = host
+        .address_of(staging.name(), Endpoint::Bootstrap)?
+        .context("the bootstrap endpoint of the staging proxy is open")?;
+
+    let recording = host.start_recording(staging.name(), ChangeSurface::Test).await?;
+    let placed = Record::new("placed").with_key("o-1").with_timestamp(PLACED_AT);
+    KafkaProducer::from(through_staging)
+        .send(orders.name().as_str(), Partition::new(0), std::slice::from_ref(&placed))
+        .await?;
+    // The record of the Produce leaves the proxy a moment after the producer got its answer.
+    loop {
+        let event = tokio::time::timeout(PATIENCE, events.next()).await??;
+        if let EngineEvent::CallRecorded(record) = event
+            && record
+                .fields()
+                .read(Field::Api)
+                .present()
+                .is_some_and(|apis| apis.iter().any(|api| api.to_string() == "Produce"))
+        {
+            break;
+        }
+    }
+    let end = host.stop_recording(staging.name()).await?;
+
+    assert_eq!(end.ending, gaslightmq_recording::Ending::Stopped);
+    assert!(end.calls >= 1, "the recording holds the Produce: {end:?}");
+    assert_eq!(host.recording(staging.name())?, None);
+    assert_eq!(host.recordings().await?, std::slice::from_ref(&recording));
+    let stored = host.open_recording(&recording).await?;
+    assert_eq!(
+        stored.description.mode,
+        RecordingMode::MetadataOnly,
+        "a recording in front of a real cluster drops what the records hold, until someone says otherwise"
+    );
+    assert_eq!(stored.extent.end, Some(end));
+    let started = HostChange::RecordingStarted {
+        environment: staging.name().clone(),
+        recording: recording.clone(),
+    };
+    let stopped = HostChange::RecordingStopped {
+        environment: staging.name().clone(),
+        recording,
+        why: None,
+    };
+    let mut told = Vec::new();
+    while !told.contains(&stopped) {
+        let change = tokio::time::timeout(PATIENCE, changes.next()).await??;
+        if matches!(
+            change,
+            HostChange::RecordingStarted { .. } | HostChange::RecordingStopped { .. }
+        ) {
+            told.push(change);
+        }
+    }
+    assert_eq!(told, [started, stopped]);
+    host.stop_all().await;
+    Ok(())
+}

@@ -1,6 +1,7 @@
 //! What the host writes into the journal of an environment: the words of an entry for what the host changed.
 
 use gaslightmq_engine::Journal;
+use gaslightmq_environment::EnvironmentName;
 use gaslightmq_journal::{Change, ChangeSurface, Parameter, RecordedDefinition, RecordedName};
 use gaslightmq_lie::LieDefinition;
 use gaslightmq_rule::{PresetSet, Rule, RuleName, Snapshot};
@@ -12,6 +13,11 @@ use crate::revisions::RuleRevisions;
 
 /// The name of a rule, as an entry records it.
 pub(crate) fn rule(name: &RuleName) -> RecordedName {
+    recorded(name.as_str())
+}
+
+/// The name of an environment, as an entry and a recording record it.
+pub(crate) fn environment(name: &EnvironmentName) -> RecordedName {
     recorded(name.as_str())
 }
 

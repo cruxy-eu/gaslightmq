@@ -13,13 +13,15 @@ use std::fmt::Debug;
 
 use gaslightmq_control_api::call::{Call, CallId, CallTiming, Delivered, Explanation, RuleExplanation};
 use gaslightmq_control_api::clock::{Duration, Instant};
+use gaslightmq_control_api::environment::RecordingMode;
 use gaslightmq_control_api::environment::{
     BrokerDefinition, BrokerListeners, Environment, EnvironmentName, Instances, Listeners, ProxyDefinition, Upstream,
 };
 use gaslightmq_control_api::field::{ClientSoftware, ConnectionNumber, Endpoint, Field, Fields};
 use gaslightmq_control_api::incident::{IncidentKind, IncidentSupport};
 use gaslightmq_control_api::journal::{
-    Change, ChangeCause, ChangeSource, ChangeSurface, JournalEntry, JournalEntryId, Parameter,
+    Change, ChangeCause, ChangeSource, ChangeSurface, JournalEntry, JournalEntryId, Parameter, RecordingId,
+    RecordingStopCause,
 };
 use gaslightmq_control_api::kernel::{ApiKey, BrokerId, ClientId};
 use gaslightmq_control_api::prelude::*;
@@ -1433,6 +1435,7 @@ fn a_client_that_connects_gets_the_state_of_the_process() {
             },
             rules: Vec::new(),
             sessions: Vec::new(),
+            recording: None,
         }],
         workspace: WorkspaceStatus::default(),
     };
@@ -1495,6 +1498,8 @@ fn an_environment_with_brokers_travels_inside_a_message() {
         },
         rules: Vec::new(),
         sessions: Vec::new(),
+        // The environment records, so a client that connects knows it.
+        recording: Some("staging-proxy.2026-11-21T14-02-11.527Z".parse().unwrap()),
     };
     let staging_json = json!({
         "name": "staging-proxy",
@@ -1516,6 +1521,7 @@ fn an_environment_with_brokers_travels_inside_a_message() {
         },
         "rules": [],
         "sessions": [],
+        "recording": "staging-proxy.2026-11-21T14-02-11.527Z",
     });
 
     assert_eq!(Form(&staging).json(), staging_json);
@@ -1853,4 +1859,121 @@ fn the_journal_records_the_surface_and_the_cause_of_a_request_and_not_its_presen
         assert_eq!(ChangeSurface::from(of_a_request), of_the_journal);
         assert_eq!(Form(of_a_request).json(), Form(of_the_journal).json());
     }
+}
+
+// Recordings
+
+/// The recording of the specs: the environment `orders-sim`, which started recording at 14:02:11.527 UTC.
+fn recording() -> RecordingId {
+    "orders-sim.2026-11-21T14-02-11.527Z".parse().unwrap()
+}
+
+#[test]
+fn a_recording_starts_and_stops_by_its_environment_and_opens_by_its_id() {
+    Form(AnyOperation::from(StartRecording {
+        environment: "orders-sim".parse().unwrap(),
+    }))
+    .writes(json!({ "operation": "start-recording", "environment": "orders-sim" }));
+    Form(AnyOperation::from(StopRecording {
+        environment: "orders-sim".parse().unwrap(),
+    }))
+    .writes(json!({ "operation": "stop-recording", "environment": "orders-sim" }));
+    Form(AnyOperation::from(ListRecordings {})).writes(json!({ "operation": "list-recordings" }));
+    Form(AnyOperation::from(OpenRecording { recording: recording() }))
+        .writes(json!({ "operation": "open-recording", "recording": "orders-sim.2026-11-21T14-02-11.527Z" }));
+    // A start answers with the ID of the recording, and a list with every ID.
+    Form(recording()).writes(json!("orders-sim.2026-11-21T14-02-11.527Z"));
+    Form(vec![recording()]).writes(json!(["orders-sim.2026-11-21T14-02-11.527Z"]));
+}
+
+#[test]
+fn an_opened_recording_says_what_it_is_how_far_it_goes_and_how_it_ended() {
+    let end = RecordingEnd {
+        ending: RecordingEnding::FellBehind,
+        at: Instant::ZERO + Duration::from_secs(90),
+        entries: 1204,
+        calls: 1180,
+    };
+    Form(RecordingStatus {
+        description: RecordingDescription {
+            recording: recording(),
+            clock: Instant::ZERO + Duration::from_secs(42),
+            mode: RecordingMode::MetadataOnly,
+            backend: BackendKind::Upstream,
+            written_by: "0.1.0".to_owned(),
+            armed: vec!["slow-order-producers".parse().unwrap()],
+            scenario: None,
+            journal_after: Some(JournalEntryId::new(7).unwrap()),
+        },
+        entries: 1204,
+        end: Some(end),
+    })
+    .writes(json!({
+        "description": {
+            "recording": "orders-sim.2026-11-21T14-02-11.527Z",
+            "clock": 42_000_000_000_u64,
+            "mode": "metadata-only",
+            "backend": "upstream",
+            "written-by": "0.1.0",
+            "armed": ["slow-order-producers"],
+            "journal-after": 7,
+        },
+        "entries": 1204,
+        "end": { "ending": "fell-behind", "at": 90_000_000_000_u64, "entries": 1204, "calls": 1180 },
+    }));
+}
+
+#[test]
+fn the_live_stream_says_that_a_recording_started_and_why_it_stopped_by_itself() {
+    Form(StreamMessage::RecordingStarted {
+        environment: "orders-sim".parse().unwrap(),
+        recording: recording(),
+    })
+    .writes(json!({
+        "message": "recording-started",
+        "environment": "orders-sim",
+        "recording": "orders-sim.2026-11-21T14-02-11.527Z",
+    }));
+    Form(StreamMessage::RecordingStopped {
+        environment: "orders-sim".parse().unwrap(),
+        recording: recording(),
+        why: Some(RecordingStopCause::FellBehind),
+    })
+    .writes(json!({
+        "message": "recording-stopped",
+        "environment": "orders-sim",
+        "recording": "orders-sim.2026-11-21T14-02-11.527Z",
+        "why": "fell-behind",
+    }));
+    // Someone stopped the recording, or its environment: the message says no why.
+    Form(StreamMessage::RecordingStopped {
+        environment: "orders-sim".parse().unwrap(),
+        recording: recording(),
+        why: None,
+    })
+    .writes(json!({
+        "message": "recording-stopped",
+        "environment": "orders-sim",
+        "recording": "orders-sim.2026-11-21T14-02-11.527Z",
+    }));
+}
+
+#[test]
+fn an_error_of_a_recording_names_its_variant() {
+    Form(StartRecordingError::Recording {
+        environment: "orders-sim".parse().unwrap(),
+        recording: recording(),
+    })
+    .writes(json!({
+        "error": "recording",
+        "environment": "orders-sim",
+        "recording": "orders-sim.2026-11-21T14-02-11.527Z",
+    }));
+    Form(StopRecordingError::NotRecording {
+        environment: "orders-sim".parse().unwrap(),
+    })
+    .writes(json!({ "error": "not-recording", "environment": "orders-sim" }));
+    Form(OpenRecordingError::NotFound { recording: recording() })
+        .writes(json!({ "error": "not-found", "recording": "orders-sim.2026-11-21T14-02-11.527Z" }));
+    Form::<OpenRecording>::rejects(json!({ "recording": "orders-sim" }), "is no recording ID");
 }

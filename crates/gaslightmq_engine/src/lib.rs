@@ -13,11 +13,14 @@
 //! | [`OpenSession`], [`SessionEvent`] | A session that is open, and what happens to a session: it opens, says who its client is, and closes. |
 //! | [`EngineEvent`] | What a session hands over: the record of a call, or an incident that a rule fired. Also an entry of the journal. |
 //! | [`Journal`] | The journal of the proxy: what changed in its environment, with the recent entries in memory. |
+//! | [`Recordings`], [`StoredRecording`] | The storage of recordings that the engine holds, whichever layout it has, and a recording as it holds it. |
+//! | [`Recorder`], [`RecordingStart`], [`RecorderConfiguration`] | The recorder of the proxy, what whoever starts a recording says about it, and what the recorder is configured with. |
 //! | [`LiveEvents`], [`EveryEvent`] | The events as a listener receives them: one that watches and may miss the oldest, and one that keeps every event. |
 //! | [`EventBacklog`] | How many events an engine keeps for a live listener that falls behind. |
 //! | [`EngineStartError`], [`EndpointOpenError`] | Why an engine did not start, and why an endpoint has no listener. |
 //! | [`ArmError`], [`DisarmError`], [`RetuneError`], [`LiveEventsError`] | Why a rule was not armed, disarmed or retuned, and why a live listener has no next event. |
 //! | [`NotOpenError`] | No session is open on the connection that someone asked to close. |
+//! | [`RecorderStartError`], [`RecorderStopError`], [`ListRecordingsError`], [`OpenRecordingError`] | Why a recording did not start, did not stop in order, and why the recordings were not listed or one did not open. |
 //!
 //! The [`prelude`] holds all of them.
 //!
@@ -35,6 +38,7 @@
 //! use gaslightmq_kernel::prelude::*;
 //! use gaslightmq_lie::prelude::*;
 //! use gaslightmq_lie_api::prelude::*;
+//! use gaslightmq_recording_conformance::MemoryStorage;
 //! use gaslightmq_rule::prelude::*;
 //! use gaslightmq_selector::prelude::*;
 //! use gaslightmq_wire::messages::HeartbeatResponse;
@@ -85,7 +89,9 @@
 //!     "localhost".parse().expect("a host"),
 //! );
 //! let configuration = EngineConfiguration::new(listeners.expect("listeners that do not meet"));
-//! let engine = Engine::start(configuration, Calm, WallClock::new(), Lies::of_every_build()).await?;
+//! // The recordings of this proxy stay in memory.
+//! let recordings = Recordings::new(MemoryStorage::new());
+//! let engine = Engine::start(configuration, Calm, WallClock::new(), Lies::of_every_build(), recordings).await?;
 //! let bootstrap = engine.address_of(Endpoint::Bootstrap).expect("the backend opened the endpoint");
 //!
 //! // Someone arms a rule: "answer every Heartbeat 20 ms late".
@@ -152,7 +158,7 @@
 //! | Send bytes | Writes them to the transport, and waits until the system took them. |
 //! | Set a timer | Keeps it, and waits on the clock for the one that ends first. |
 //! | Close | Closes the transport once the outputs are performed, so the client reads what was sent before. |
-//! | Emit a call record | Hands it over as [`EngineEvent::CallRecorded`], and disarms a rule that the call used up. |
+//! | Emit a call record | Hands it over as [`EngineEvent::CallRecorded`], with its frames to the recording that runs, and disarms a rule that the call used up. |
 //! | Fire an incident | Hands it over as [`EngineEvent::IncidentFired`]. |
 //!
 //! The session ends when its transport closes, whoever closed it.
@@ -225,12 +231,14 @@
 //! | The listener | Asks for | When it falls behind |
 //! |---|---|---|
 //! | Watches what happens now: a traffic view, a UI. | [`Engine::live_events`] | Misses the oldest events, and learns how many. The engine keeps a [backlog](EngineConfiguration::event_backlog) for it. |
-//! | Keeps what happened: a recorder. | [`Engine::every_event`] | Misses nothing. The engine keeps every event until the listener took it. |
+//! | Keeps what happened: whoever counts the traffic. | [`Engine::every_event`] | Misses nothing. The engine keeps every event until the listener took it. |
+//! | Writes what happened: the recorder of the recording that runs. | [`Recorder::start`] | Stops the recording, once its queue is full. |
 //!
 //! A listener that misses nothing costs memory, and no time.
 //! What it did not take yet stays in the engine, without a limit,
-//! so a recorder that stops taking events ends with a process that has no memory left.
-//! It never costs a client anything: a slow disk does not change when an answer leaves.
+//! so a listener that stops taking events ends with a process that has no memory left.
+//! The recorder has a queue with bounds instead, because it waits for a disk.
+//! Neither costs a client anything: a slow disk does not change when an answer leaves.
 //!
 //! # The journal
 //!
@@ -244,6 +252,31 @@
 //!   [`recent_journal`](EngineConfiguration::recent_journal) says, and lets go of the oldest one after that.
 //! - **Every entry leaves with the events**, as an [`EngineEvent::Journaled`], in the order of the entries.
 //!   A listener of [every event](Engine::every_event) gets the entries between the calls.
+//!
+//! # Recordings
+//!
+//! The engine holds a storage of [`Recordings`], and names no layout: whoever puts the process together picks one.
+//! Its [`Recorder`] starts a recording of the environment, and stops it.
+//! An environment writes one recording at a time.
+//!
+//! - **A session never waits for the disk.** While a recording runs, every call that arrives keeps hold of its frames
+//!   until it ends, and hands them over with its record: the request, the truth and the response that the client
+//!   received, each the buffer that the session holds already. While nothing records, a call keeps none.
+//! - **The recorder runs on a thread of its own.** It takes the events of the sessions, the calls with their frames
+//!   and the entries of the journal from a queue, in the order of the events, and does what costs time there:
+//!   what a recording must not keep, the encoding, the compression and the wait for the storage.
+//! - **The queue has bounds**: [`queue_entries`](RecorderConfiguration::queue_entries) entries, and frames of
+//!   [`queue_size`](RecorderConfiguration::queue_size) bytes. A queue that is full stops the recording:
+//!   the journal records why, which is the last entry of the recording, and what the recording holds up to there is
+//!   a complete recording.
+//! - **It commits** every [`commit_interval`](RecorderConfiguration::commit_interval), on the time of the system,
+//!   when what waits for a commit reaches [`commit_size`](RecorderConfiguration::commit_size), and before someone
+//!   [opens](Recordings::open) the recording that runs.
+//! - **A recording holds the calls whose request arrived after it started and that ended before it stopped.**
+//!   It begins with an `opened` event for every session that is open, and the entries of the journal follow from
+//!   the last one that its description names, without a gap.
+//! - **A recorder that cannot write** stops the recording, which holds what its last commit covers.
+//!   The journal of the environment says so, and the recording does not.
 //!
 //! # Time
 //!
@@ -260,14 +293,14 @@
 //!
 //! # What is not here yet
 //!
-//! The scenario runner, the traffic window, the index, the recorder and the workspace arrive
-//! with their crates. Until then:
+//! The scenario runner, the traffic window, the index and the workspace arrive with their crates. Until then:
 //!
 //! - Nobody applies an incident. The engine hands it over, and whoever listens passes it to the backend.
 //! - The armed rules are a live set alone: the rule that was armed last wins, and every die rolls from the
 //!   [seed](EngineConfiguration::seed) of the configuration.
 //! - The record of a call does not keep what the real cluster answered next to a truth that an overlay changed.
-//!   The pipeline takes the truth alone.
+//!   The pipeline takes the truth alone, so a recording holds no frame in the slot of that answer.
+//! - A recording names no active scenario in its description: no scenario runs yet.
 //! - A proxy that stops ends its sessions without a word to their pipelines, which have no input for it.
 //!   A call that is in flight then gets no record.
 //!
@@ -310,18 +343,23 @@ mod error;
 mod events;
 mod journal;
 mod open_sessions;
+mod recorder;
+mod recordings;
 mod rules;
 mod session;
 mod timers;
 
-pub use configuration::{EngineConfiguration, EventBacklog, EventBacklogError};
+pub use configuration::{EngineConfiguration, EventBacklog, EventBacklogError, RecorderConfiguration};
 pub use engine::Engine;
 pub use error::{
-    ArmError, DisarmError, EndpointOpenError, EngineStartError, LiveEventsError, NotOpenError, RetuneError,
+    ArmError, DisarmError, EndpointOpenError, EngineStartError, ListRecordingsError, LiveEventsError, NotOpenError,
+    OpenRecordingError, RecorderStartError, RecorderStopError, RetuneError,
 };
 pub use events::{EngineEvent, EveryEvent, LiveEvents};
 pub use journal::Journal;
 pub use open_sessions::{OpenSession, SessionEvent};
+pub use recorder::{Recorder, RecordingStart};
+pub use recordings::{Recordings, StoredRecording};
 pub use rules::{ArmedRules, RuleChanges};
 
 /// Every item of this crate.
@@ -341,7 +379,8 @@ pub mod prelude {
     #[doc(no_inline)]
     pub use crate::{
         ArmError, ArmedRules, DisarmError, EndpointOpenError, Engine, EngineConfiguration, EngineEvent,
-        EngineStartError, EventBacklog, EventBacklogError, EveryEvent, Journal, LiveEvents, LiveEventsError,
-        NotOpenError, OpenSession, RetuneError, RuleChanges, SessionEvent,
+        EngineStartError, EventBacklog, EventBacklogError, EveryEvent, Journal, ListRecordingsError, LiveEvents,
+        LiveEventsError, NotOpenError, OpenRecordingError, OpenSession, RecorderConfiguration, RecorderStartError,
+        RecorderStopError, RecordingStart, Recordings, RetuneError, RuleChanges, SessionEvent, StoredRecording,
     };
 }

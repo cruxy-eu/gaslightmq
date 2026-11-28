@@ -1567,3 +1567,110 @@ async fn an_undo_that_arms_a_rule_again_is_an_entry_of_the_journal_with_its_caus
     host.stop_all().await;
     Ok(())
 }
+
+#[tokio::test]
+async fn a_recording_started_through_the_control_plane_keeps_the_calls_until_it_stops() -> anyhow::Result<()> {
+    let cluster = KafkaCluster::plaintext().start().await?;
+    let orders = cluster.topics().create("orders").await?;
+    let host = Arc::new(Host::new(
+        HostConfiguration::default(),
+        MemoryContext::new(),
+        Lies::of_every_build(),
+        RUN.parse()?,
+    ));
+    let any = ListenAddress::new(LOCALHOST, ANY_PORT);
+    let brokers = BrokerListeners::any_port(LOCALHOST);
+    let staging = Environment::new(
+        "staging-proxy".parse()?,
+        Instances::ProxyInFrontOfCluster {
+            proxy: ProxyDefinition::new(Listeners::new(any, brokers, LOCALHOST.into())?),
+            upstream: Upstream::new(cluster.brokers()[0].address().to_string().parse()?),
+        },
+    );
+    host.create(staging.clone(), ChangeSurface::Test).await?;
+    let mut configuration = ControlServerConfiguration::default();
+    configuration.listen = SocketAddr::new(LOCALHOST, ANY_PORT);
+    configuration.stats_interval = StatsInterval::new(QUIET)?;
+    let server = ControlServer::start(configuration, Arc::clone(&host)).await?;
+    let client = ControlClient::new(ControlClientConfiguration::new(server.address().into()));
+    client
+        .send(StartEnvironment {
+            environment: staging.name().clone(),
+        })
+        .await??;
+    let mut stream = Watched {
+        stream: client.live_stream().await?,
+    };
+    stream.next_change().await?;
+    let produces = Subscription::Calls {
+        environment: staging.name().clone(),
+        selector: SelectorRef::Inline(Conditions::from(Condition::is(ApiKey::PRODUCE))),
+    };
+    stream.stream.follow(produces.clone()).await;
+    assert_eq!(
+        stream.next_change().await?,
+        StreamMessage::Following { subscription: produces }
+    );
+
+    let recording = client
+        .send(StartRecording {
+            environment: staging.name().clone(),
+        })
+        .await??;
+    let started = stream.next_change().await?;
+    let bootstrap = host
+        .address_of(staging.name(), Endpoint::Bootstrap)?
+        .context("the bootstrap endpoint of the staging proxy is open")?;
+    KafkaProducer::from(bootstrap)
+        .send(orders.name().as_str(), Partition::new(0), &[Record::new("placed")])
+        .await?;
+    // The call reaches the stream once the proxy handed its record over, to the recording too.
+    stream
+        .next_where(|message| matches!(message, StreamMessage::Call { .. }))
+        .await?;
+    let end = client
+        .send(StopRecording {
+            environment: staging.name().clone(),
+        })
+        .await??;
+    let stopped = stream.next_change().await?;
+
+    assert_eq!(
+        started,
+        StreamMessage::RecordingStarted {
+            environment: staging.name().clone(),
+            recording: recording.clone(),
+        }
+    );
+    assert_eq!(
+        stopped,
+        StreamMessage::RecordingStopped {
+            environment: staging.name().clone(),
+            recording: recording.clone(),
+            why: None,
+        }
+    );
+    assert_eq!(end.ending, RecordingEnding::Stopped);
+    assert!(end.calls >= 1, "the recording holds the Produce: {end:?}");
+    assert_eq!(client.send(ListRecordings {}).await??, std::slice::from_ref(&recording));
+    let opened = client
+        .send(OpenRecording {
+            recording: recording.clone(),
+        })
+        .await??;
+    assert_eq!(opened.description.recording, recording);
+    assert_eq!(opened.end, Some(end));
+    assert_eq!(
+        client
+            .send(StopRecording {
+                environment: staging.name().clone(),
+            })
+            .await?,
+        Err(StopRecordingError::NotRecording {
+            environment: staging.name().clone(),
+        })
+    );
+    server.stop().await;
+    host.stop_all().await;
+    Ok(())
+}

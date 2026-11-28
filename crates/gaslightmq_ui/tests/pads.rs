@@ -90,6 +90,7 @@ impl OrderDesk {
             },
             rules,
             sessions: Vec::new(),
+            recording: None,
         }
     }
 }

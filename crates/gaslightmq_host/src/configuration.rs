@@ -6,7 +6,7 @@ use std::fmt;
 
 use gaslightmq_backend_upstream::UpstreamBackendConfiguration;
 use gaslightmq_engine::EngineConfiguration;
-use gaslightmq_environment::{Environment, EnvironmentName, Instances};
+use gaslightmq_environment::{Environment, EnvironmentName, Instances, RecordingMode};
 use gaslightmq_quick_inject::QuickInjectConfiguration;
 use gaslightmq_surface::EncoderMapping;
 use gaslightmq_traffic::TrafficConfiguration;
@@ -254,6 +254,12 @@ pub struct EnvironmentConfiguration {
     /// The backend of the proxy: the real cluster behind it, the host clients see, and its waits and limits.
     /// [`new`](Self::new) takes the cluster from the environment, and the host clients see from its listeners.
     pub upstream: UpstreamBackendConfiguration,
+    /// Ours. Default: what the proxy of the environment says, or `metadata-only` in front of a real cluster.
+    ///
+    /// How much of a call a recording of the environment keeps.
+    /// A real cluster can carry production-like data, so a recording in front of one drops the keys, the values and
+    /// the headers of records until someone says otherwise.
+    pub recording: RecordingMode,
 }
 
 impl EnvironmentConfiguration {
@@ -272,6 +278,7 @@ impl EnvironmentConfiguration {
                     name: environment.name().clone(),
                     engine: EngineConfiguration::new(listeners),
                     upstream: UpstreamBackendConfiguration::new(upstream.clone(), advertised_host),
+                    recording: proxy.recording().unwrap_or(RecordingMode::MetadataOnly),
                 })
             }
             Instances::ProxyInFrontOfBroker { .. } | Instances::BrokerAlone { .. } => {

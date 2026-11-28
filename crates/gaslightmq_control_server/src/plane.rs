@@ -5,13 +5,13 @@ use std::sync::Arc;
 
 use gaslightmq_control_api::environment::{Environment, EnvironmentName, ListenAddress};
 use gaslightmq_control_api::field::ConnectionNumber;
-use gaslightmq_control_api::journal::{ChangeSource, JournalEntry, JournalEntryId};
+use gaslightmq_control_api::journal::{ChangeSource, JournalEntry, JournalEntryId, RecordingId};
 use gaslightmq_control_api::prelude::*;
 use gaslightmq_control_api::rule::{Preset, Rule, RuleName};
 use gaslightmq_control_api::selector::Selector;
 use gaslightmq_control_api::surface::{Intent, PadLayout, PresenceId};
 use gaslightmq_definition_api::WriteBack as StoreWriteBack;
-use gaslightmq_engine::OpenSession;
+use gaslightmq_engine::{OpenSession, StoredRecording};
 use gaslightmq_host::{
     ArmRuleError, CallSubscription, DisarmRuleError, EnvironmentConfiguration, EnvironmentConfigurationError,
     EnvironmentRule, EnvironmentRulesError, EnvironmentStartError, Host, ReadSentenceError, Unsaved,
@@ -182,6 +182,14 @@ impl<C: WorkspaceContext + 'static> ControlPlane<C> {
                 Reply::of::<ReloadWorkspace>(self.reload(reload.discard_unsaved).await)
             }
             AnyOperation::SaveWorkspace(_) => Reply::of::<SaveWorkspace>(self.save().await),
+            AnyOperation::StartRecording(start) => {
+                Reply::of::<StartRecording>(self.start_recording(start.environment, from).await)
+            }
+            AnyOperation::StopRecording(stop) => {
+                Reply::of::<StopRecording>(self.stop_recording(stop.environment).await)
+            }
+            AnyOperation::ListRecordings(_) => Reply::of::<ListRecordings>(self.list_recordings().await),
+            AnyOperation::OpenRecording(open) => Reply::of::<OpenRecording>(self.open_recording(&open.recording).await),
         }
     }
 
@@ -755,6 +763,51 @@ impl<C: WorkspaceContext + 'static> ControlPlane<C> {
             .map_err(|_| EnvironmentNotRunning { environment })
     }
 
+    // Recordings
+
+    async fn start_recording(
+        &self,
+        environment: EnvironmentName,
+        from: ChangeSource,
+    ) -> Result<RecordingId, StartRecordingError> {
+        use gaslightmq_host::StartRecordingError as Host;
+        self.host
+            .start_recording(&environment, from)
+            .await
+            .map_err(|error| match error {
+                Host::NotRunning { environment } => StartRecordingError::NotRunning { environment },
+                Host::Recording { environment, recording } => StartRecordingError::Recording { environment, recording },
+                Host::NotStarted { environment, reason } => StartRecordingError::NotStarted { environment, reason },
+            })
+    }
+
+    async fn stop_recording(&self, environment: EnvironmentName) -> Result<RecordingEnd, StopRecordingError> {
+        use gaslightmq_host::StopRecordingError as Host;
+        match self.host.stop_recording(&environment).await {
+            Ok(end) => Ok(recording_end(end)),
+            Err(Host::NotRunning { environment }) => Err(StopRecordingError::NotRunning { environment }),
+            Err(Host::NotRecording { environment }) => Err(StopRecordingError::NotRecording { environment }),
+            Err(Host::NotFinished { recording, reason }) => Err(StopRecordingError::NotFinished { recording, reason }),
+        }
+    }
+
+    async fn list_recordings(&self) -> Result<Vec<RecordingId>, ListRecordingsError> {
+        use gaslightmq_engine::ListRecordingsError as Engine;
+        self.host.recordings().await.map_err(|error| match error {
+            Engine::NotListed { reason } => ListRecordingsError::NotListed { reason },
+        })
+    }
+
+    async fn open_recording(&self, recording: &RecordingId) -> Result<RecordingStatus, OpenRecordingError> {
+        use gaslightmq_engine::OpenRecordingError as Engine;
+        let stored = self.host.open_recording(recording).await.map_err(|error| match error {
+            Engine::NotFound { recording } => OpenRecordingError::NotFound { recording },
+            Engine::NotReadable { recording, reason } => OpenRecordingError::NotReadable { recording, reason },
+            Engine::NotRead { recording, reason } => OpenRecordingError::NotRead { recording, reason },
+        })?;
+        Ok(recording_status(stored))
+    }
+
     // What runs in an environment
 
     fn backend(&self, environment: &EnvironmentName) -> Result<BackendStatus, EnvironmentNotRunning> {
@@ -797,7 +850,9 @@ impl<C: WorkspaceContext + 'static> ControlPlane<C> {
             Err(EnvironmentRulesError::NotRunning { .. }) => return Ok(None),
             Err(EnvironmentRulesError::StoreFailed { reason, .. }) => return Err(reason),
         };
-        let (Ok(backend), Ok(sessions)) = (self.backend(name), self.host.sessions(name)) else {
+        let (Ok(backend), Ok(sessions), Ok(recording)) =
+            (self.backend(name), self.host.sessions(name), self.host.recording(name))
+        else {
             return Ok(None);
         };
         Ok(Some(RunningEnvironment {
@@ -805,6 +860,7 @@ impl<C: WorkspaceContext + 'static> ControlPlane<C> {
             backend,
             rules: rules.into_iter().map(status).collect(),
             sessions: sessions.iter().map(session_status).collect(),
+            recording,
         }))
     }
 
@@ -953,5 +1009,50 @@ const fn word_kind(kind: CompletionKind) -> WordKind {
         CompletionKind::Group => WordKind::Group,
         CompletionKind::Client => WordKind::Client,
         CompletionKind::ErrorCode => WordKind::ErrorCode,
+    }
+}
+
+/// The end of a recording, as the control plane says it.
+const fn recording_end(end: gaslightmq_recording::End) -> RecordingEnd {
+    use gaslightmq_recording::Ending;
+    let ending = match end.ending {
+        Ending::Stopped => RecordingEnding::Stopped,
+        Ending::EnvironmentStopped => RecordingEnding::EnvironmentStopped,
+        Ending::FellBehind => RecordingEnding::FellBehind,
+    };
+    RecordingEnd {
+        ending,
+        at: end.at,
+        entries: end.entries,
+        calls: end.calls,
+    }
+}
+
+/// A recording as its storage holds it, as the control plane says it.
+fn recording_status(stored: StoredRecording) -> RecordingStatus {
+    use gaslightmq_recording::RecordedBackend;
+    let StoredRecording { description, extent } = stored;
+    let recording = description.id();
+    let backend = match description.backend {
+        RecordedBackend::Upstream => BackendKind::Upstream,
+        RecordedBackend::Simulated => BackendKind::Simulated,
+    };
+    let scenario = description.scenario.map(|active| RecordedScenario {
+        scenario: active.scenario,
+        step: active.step,
+    });
+    RecordingStatus {
+        description: RecordingDescription {
+            recording,
+            clock: description.clock,
+            mode: description.mode,
+            backend,
+            written_by: description.written_by,
+            armed: description.armed,
+            scenario,
+            journal_after: description.journal_after,
+        },
+        entries: extent.entries,
+        end: extent.end.map(recording_end),
     }
 }

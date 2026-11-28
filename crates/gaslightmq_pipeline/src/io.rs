@@ -7,7 +7,7 @@ use gaslightmq_call::{Call, CallId};
 use gaslightmq_clock::Instant;
 use gaslightmq_incident::Incident;
 use gaslightmq_rule::Snapshot;
-use gaslightmq_wire::{Request, Response};
+use gaslightmq_wire::{Frame, Request, Response};
 
 use crate::TimerId;
 
@@ -73,7 +73,7 @@ pub enum Input<'a> {
 /// | [`Send`](Self::Send) | Writes the bytes to the transport. |
 /// | [`SetTimer`](Self::SetTimer) | Waits on its clock until the instant, and reports the timer. |
 /// | [`Close`](Self::Close) | Closes the transport, which ends the session. |
-/// | [`Emit`](Self::Emit) | Publishes the call record on the event bus. |
+/// | [`Emit`](Self::Emit) | Publishes the call record on the event bus, and hands its frames to the recorder when they come with it. |
 /// | [`Fire`](Self::Fire) | Passes the incident to the scenario runner. |
 #[derive(Debug, Clone)]
 pub enum Output {
@@ -90,9 +90,34 @@ pub enum Output {
     /// Close the connection to the client. The session has ended, and the pipeline takes no further input.
     Close,
     /// Publish the record of a call that ended.
-    Emit(Box<Call>),
+    ///
+    /// `frames` holds the frames of the call when a recording ran as its request arrived:
+    /// see [`Pipeline::record_frames`](crate::Pipeline::record_frames). It is `None` otherwise.
+    Emit {
+        /// The record of the call.
+        record: Box<Call>,
+        /// The frames of the call as they were on the wire, while a recording runs.
+        frames: Option<WireFrames>,
+    },
     /// Pass an incident that a rule fired to the scenario runner. It takes effect after the call that fired it.
     Fire(Incident),
+}
+
+/// The frames of one call as they were on the wire, which the pipeline hands out with its record while a recording
+/// runs.
+///
+/// A frame is the buffer that the session read from its socket, or the buffer of the response that it wrote to it.
+/// The pipeline holds each of them while the call is in flight anyway, and handing them out shares the buffers:
+/// it copies nothing and encodes nothing.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WireFrames {
+    /// The request as the client sent it.
+    pub request: Frame,
+    /// The truth: the response of the backend with the correlation ID of the client, when the request reached the
+    /// backend and it answered with a response to it.
+    pub truth: Option<Frame>,
+    /// The response that the client received, when it received one.
+    pub delivered: Option<Frame>,
 }
 
 /// What one [`handle`](crate::Pipeline::handle) asks for, in the order the engine performs it.

@@ -11,6 +11,7 @@
 //! | [`Input`] | What happened: bytes of the client, an answer or a failure of the backend, a timer, a new snapshot, a close. |
 //! | [`Output`] | What should happen: forward, send, set a timer, close, emit a call record, fire an incident. |
 //! | [`Outputs`] | What one input leads to, in the order the engine performs it. |
+//! | [`WireFrames`] | The frames of a call as they were on the wire, which come with its record while a recording runs. |
 //! | [`TimerId`] | Which wait a timer ends: the call that waits, and the stage it waits at. |
 //! | [`SharedBySessions`] | What every session of one proxy shares, as the engine passes it in. |
 //! | [`KnownTopics`] | The topics that the cluster named with their ID, shared by the sessions of a proxy. |
@@ -82,7 +83,7 @@
 //! let outputs = pipeline.handle(Input::BackendAnswered { call: *call, response }, clock.now());
 //!
 //! // The client gets one response for both partitions, and the record of the call says what happened and why.
-//! let [Output::Send(_), Output::Emit(record)] = outputs.as_slice() else {
+//! let [Output::Send(_), Output::Emit { record, .. }] = outputs.as_slice() else {
 //!     panic!("the answer leaves, and its record follows");
 //! };
 //! assert_eq!(record.verdict().to_string(), "NOT_LEADER_OR_FOLLOWER on orders.eu/3");
@@ -115,7 +116,7 @@
 //! | 8 · Backend | Hands out what is left of the request as [`Output::Forward`], and waits for [`Input::BackendAnswered`]. |
 //! | 9 · After the response | Reads the truth, evaluates the response pass, and deals with the lies that act now. |
 //! | 10 · Send | Hands out the bytes of the answer as [`Output::Send`], in the order of the requests. |
-//! | 11 · Emit | Hands out the [record](gaslightmq_call::Call) of the call as [`Output::Emit`]. |
+//! | 11 · Emit | Hands out the [record](gaslightmq_call::Call) of the call as [`Output::Emit`], with its [frames](WireFrames) while a recording runs. |
 //!
 //! A call uses one snapshot from start to finish.
 //! [`Input::SnapshotPublished`] only changes the rules of the calls that arrive after it.
@@ -197,6 +198,15 @@
 //! the engine cannot avoid every race, such as an answer for a call whose session just closed.
 //! Only [`Input::BackendFailed`] ends the session whichever call it names.
 //!
+//! # Frames for a recording
+//!
+//! A call record holds no frame. A recording keeps the frames of a call next to its record, and the pipeline holds
+//! them anyway while the call is in flight: the request it read, the truth, and the response that leaves.
+//! While a recording runs, the engine says so with [`Pipeline::record_frames`], and every call that arrives from
+//! then on hands its frames out with its record, as [`WireFrames`] in [`Output::Emit`].
+//! A frame is a shared buffer, so handing it out copies nothing.
+//! While nothing records, no call hands out a frame, and a call costs what it costs without a recording.
+//!
 //! # What the engine does
 //!
 //! - It numbers connections, and counts the [ordinal](gaslightmq_session::ConnectionOrdinals) of each one.
@@ -225,7 +235,7 @@ mod shared;
 mod timer;
 mod untold;
 
-pub use io::{Input, Output, Outputs};
+pub use io::{Input, Output, Outputs, WireFrames};
 pub use pipeline::Pipeline;
 pub use shared::{KnownTopics, SharedBySessions};
 pub use timer::TimerId;
@@ -244,5 +254,5 @@ pub use timer::TimerId;
 /// ```
 pub mod prelude {
     #[doc(no_inline)]
-    pub use crate::{Input, KnownTopics, Output, Outputs, Pipeline, SharedBySessions, TimerId};
+    pub use crate::{Input, KnownTopics, Output, Outputs, Pipeline, SharedBySessions, TimerId, WireFrames};
 }

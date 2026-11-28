@@ -2,7 +2,8 @@
 
 use gaslightmq_engine::SessionEvent;
 use gaslightmq_environment::EnvironmentName;
-use gaslightmq_journal::JournalEntry;
+use gaslightmq_journal::{JournalEntry, RecordingStopCause};
+use gaslightmq_recording::RecordingId;
 use gaslightmq_rule::RuleName;
 use gaslightmq_workspace::DefinitionName;
 use tokio::sync::broadcast;
@@ -13,7 +14,8 @@ use tokio::sync::broadcast::error::RecvError;
 /// A change names what changed, and no more: whoever follows the host asks it for the state of what it names.
 /// A change can therefore come after a later one changed the same thing again,
 /// and the state it finds is the newest. Applying it twice changes nothing.
-/// What happened is no state, so it comes whole: what happened to a session, and an entry of a journal.
+/// What happened is no state, so it comes whole: what happened to a session, an entry of a journal, and the start
+/// and the end of a recording.
 ///
 /// | Change | Comes when |
 /// |---|---|
@@ -23,6 +25,7 @@ use tokio::sync::broadcast::error::RecvError;
 /// | [`RuleRemoved`](Self::RuleRemoved) | A live rule left its environment: someone deleted or kept it. |
 /// | [`Session`](Self::Session) | A session of an environment opened, said who its client is, or closed. |
 /// | [`Journaled`](Self::Journaled) | The journal of an environment got an entry: something changed there, or a definition of the workspace changed. |
+/// | [`RecordingStarted`](Self::RecordingStarted), [`RecordingStopped`](Self::RecordingStopped) | A recording of an environment began, or ended, and why it ended when nobody stopped it. |
 /// | [`WorkspaceChanged`](Self::WorkspaceChanged) | What the workspace holds unsaved may be other: a definition changed in a workspace that writes on save, someone saved, or a reload let go of what nobody saved. |
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum HostChange {
@@ -59,6 +62,20 @@ pub enum HostChange {
     /// on save, someone saved, or a reload let go of what nobody saved.
     /// It comes after the change of the definition, and only from a workspace that writes on save.
     WorkspaceChanged,
+    /// A recording of the environment started.
+    RecordingStarted {
+        environment: EnvironmentName,
+        recording: RecordingId,
+    },
+    /// A recording of the environment ended. Its end is written, unless the recorder could not write.
+    ///
+    /// `why` says why it stopped by itself: the recorder fell behind, or it could not write.
+    /// It is `None` when someone stopped it, or its environment stopped.
+    RecordingStopped {
+        environment: EnvironmentName,
+        recording: RecordingId,
+        why: Option<RecordingStopCause>,
+    },
 }
 
 /// The changes of a host from the moment it was made, for one follower.

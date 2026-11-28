@@ -12,6 +12,7 @@ use gaslightmq_kafka_client_api::{ProtocolConsumer, RawKafkaClient};
 use gaslightmq_kernel::prelude::*;
 use gaslightmq_lie::prelude::*;
 use gaslightmq_lie_api::prelude::*;
+use gaslightmq_recording_conformance::MemoryStorage;
 use gaslightmq_rule::prelude::*;
 use gaslightmq_selector::prelude::*;
 use gaslightmq_session::ClosedBy;
@@ -28,7 +29,14 @@ async fn an_engine_does_not_start_on_an_address_that_is_taken() -> anyhow::Resul
     configuration.listeners = Listeners::new(address.into(), brokers, "localhost".parse()?)?;
     let backend = ScriptedBackend::with_three_brokers();
 
-    let started = Engine::start(configuration, backend, SteppedClock::new(), Lies::of_every_build()).await;
+    let started = Engine::start(
+        configuration,
+        backend,
+        SteppedClock::new(),
+        Lies::of_every_build(),
+        Recordings::new(MemoryStorage::new()),
+    )
+    .await;
 
     let Err(error) = started else {
         anyhow::bail!("the engine started on an address that another socket holds");
@@ -58,7 +66,14 @@ async fn an_engine_does_not_start_when_the_listeners_do_not_hold_the_brokers() -
     let configuration = EngineConfiguration::new(listeners);
     let backend = ScriptedBackend::with_three_brokers();
 
-    let started = Engine::start(configuration, backend, SteppedClock::new(), Lies::of_every_build()).await;
+    let started = Engine::start(
+        configuration,
+        backend,
+        SteppedClock::new(),
+        Lies::of_every_build(),
+        Recordings::new(MemoryStorage::new()),
+    )
+    .await;
 
     let Err(error) = started else {
         anyhow::bail!("the engine started with a broker that has no listener");
@@ -116,7 +131,14 @@ async fn stopping_an_engine_ends_its_sessions_and_frees_its_addresses() -> anyho
     let brokers = configuration.listeners.brokers().clone();
     configuration.listeners = Listeners::new(address.into(), brokers, "localhost".parse()?)?;
     let backend = ScriptedBackend::with_three_brokers();
-    let again = Engine::start(configuration, backend, SteppedClock::new(), Lies::of_every_build()).await?;
+    let again = Engine::start(
+        configuration,
+        backend,
+        SteppedClock::new(),
+        Lies::of_every_build(),
+        Recordings::new(MemoryStorage::new()),
+    )
+    .await?;
     assert_eq!(again.address_of(Endpoint::Bootstrap), Some(address));
     Ok(())
 }
@@ -225,7 +247,14 @@ async fn the_sessions_of_one_client_share_what_they_learned_until_the_context_li
 async fn an_engine_runs_on_the_wall_clock_too() -> anyhow::Result<()> {
     let configuration = EngineUnderTest::configuration()?;
     let backend = ScriptedBackend::with_three_brokers();
-    let engine = Engine::start(configuration, backend, WallClock::new(), Lies::of_every_build()).await?;
+    let engine = Engine::start(
+        configuration,
+        backend,
+        WallClock::new(),
+        Lies::of_every_build(),
+        Recordings::new(MemoryStorage::new()),
+    )
+    .await?;
     let late = Rule::new(
         "late-heartbeat".parse()?,
         Conditions::from(Condition::is(ApiKey::HEARTBEAT)),

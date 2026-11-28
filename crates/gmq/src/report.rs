@@ -12,12 +12,16 @@ use gaslightmq_environment::{EnvironmentName, ServerAddress};
 use gaslightmq_host::RunId;
 use gaslightmq_workspace_fs::Access;
 
-/// The files that a process holds its definitions in, or memory.
+/// The files that a process holds its definitions and its recordings in, or memory.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum Holding {
-    /// The files of the workspace in this directory.
-    Files { directory: PathBuf, access: Access },
-    /// Memory: nothing is written to disk.
+    /// The files of the workspace in `directory`, and the recordings in `recordings`.
+    Files {
+        directory: PathBuf,
+        access: Access,
+        recordings: PathBuf,
+    },
+    /// Memory: nothing is written to disk, a recording neither.
     Memory,
 }
 
@@ -26,7 +30,7 @@ pub(crate) enum Holding {
 ///
 /// ```text
 /// run 4be0643f1d98573b97cdca98a65347dd
-/// no workspace: every definition lives in memory
+/// no workspace: every definition and every recording lives in memory
 /// environment "proxy" in front of kafka-1.staging:9092
 /// bootstrap on 0.0.0.0:9092
 /// broker 1 on 0.0.0.0:19092
@@ -49,15 +53,20 @@ impl fmt::Display for Running {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         writeln!(f, "run {}", self.run)?;
         match &self.holding {
-            Holding::Files { directory, access } => {
+            Holding::Files {
+                directory,
+                access,
+                recordings,
+            } => {
                 let access = match access {
                     Access::ReadWrite => "each change written back",
                     Access::WriteOnSave => "written back on save",
                     Access::ReadOnly => "read-only",
                 };
                 writeln!(f, "workspace {}, {access}", directory.display())?;
+                writeln!(f, "recordings in {}", recordings.display())?;
             }
-            Holding::Memory => writeln!(f, "no workspace: every definition lives in memory")?,
+            Holding::Memory => writeln!(f, "no workspace: every definition and every recording lives in memory")?,
         }
         writeln!(
             f,
@@ -139,6 +148,7 @@ mod tests {
             holding: Holding::Files {
                 directory: "gaslight".into(),
                 access: Access::ReadOnly,
+                recordings: "gaslight/recordings".into(),
             },
             environment: "proxy".parse().unwrap(),
             upstream: "kafka-1.staging:9092".parse().unwrap(),
@@ -153,6 +163,7 @@ mod tests {
             running.to_string(),
             "run 4be0643f1d98573b97cdca98a65347dd\n\
              workspace gaslight, read-only\n\
+             recordings in gaslight/recordings\n\
              environment \"proxy\" in front of kafka-1.staging:9092\n\
              bootstrap on 0.0.0.0:9092\n\
              broker 1 on 0.0.0.0:19092\n\
@@ -173,7 +184,10 @@ mod tests {
         };
 
         let lines: Vec<String> = running.to_string().lines().map(str::to_owned).collect();
-        assert_eq!(lines[1], "no workspace: every definition lives in memory");
+        assert_eq!(
+            lines[1],
+            "no workspace: every definition and every recording lives in memory"
+        );
         assert_eq!(lines[3], "no control plane");
     }
 

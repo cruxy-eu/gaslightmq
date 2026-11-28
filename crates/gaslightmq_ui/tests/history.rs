@@ -70,6 +70,7 @@ fn an_undo_after_another_tab_changed_the_rule_is_refused_and_changes_nothing() {
             },
             rules: vec![disarmed.clone()],
             sessions: Vec::new(),
+            recording: None,
         }],
         workspace: WorkspaceStatus::default(),
     });

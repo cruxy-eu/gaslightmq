@@ -13,13 +13,15 @@ use gaslightmq_backend_upstream::UpstreamBackend;
 use gaslightmq_clock::Clock;
 use gaslightmq_clock_waitable::WallClock;
 use gaslightmq_definition_api::{Definition, Store, StoreReadError, WriteBack};
-use gaslightmq_engine::{ArmError, DisarmError, Engine, EveryEvent, LiveEvents, NotOpenError, OpenSession};
-use gaslightmq_environment::{EnvironmentName, Listeners};
+use gaslightmq_engine::{ArmError, DisarmError, Engine, EveryEvent, LiveEvents, NotOpenError, OpenSession, Recordings};
+use gaslightmq_environment::{EnvironmentName, Listeners, RecordingMode};
 use gaslightmq_field::{ConnectionNumber, Endpoint};
 use gaslightmq_incident::{IncidentSupport, Support};
 use gaslightmq_journal::{Change, ChangeSource, JournalEntry, JournalEntryId};
 use gaslightmq_lie_api::Lies;
 use gaslightmq_quick_inject::{KnownNames, QuickInject, Sentence};
+use gaslightmq_recording::UtcInstant;
+use gaslightmq_recording_segments::{MemoryBacking, SegmentConfiguration, SegmentStorage};
 use gaslightmq_rule::{HandFiring, Preset, PresetSet, ResolvedRule, Rule, RuleError, RuleName, Snapshot};
 use gaslightmq_selector::{Selector, SelectorRef, SelectorSet};
 use gaslightmq_surface::{EncoderMapping, PresenceId};
@@ -44,6 +46,7 @@ use crate::{
 mod follow;
 mod live;
 mod pads;
+mod recordings;
 mod reload;
 mod watch;
 
@@ -57,6 +60,7 @@ mod watch;
 /// | Quick inject | Reads a ⌘K sentence with the names of the workspace, and those that the traffic of an environment has seen. |
 /// | The [run](Self::run) | The ID of this life of the process, which the host is handed when it is made. |
 /// | The presences that are open | The clients of a control surface that are there. The holds of a presence end with it. |
+/// | The [recordings](Self::with_recordings) | Where every environment keeps its recordings: a storage that whoever puts the process together picks. |
 ///
 /// # Environments
 ///
@@ -187,6 +191,8 @@ pub struct Host<C: WorkspaceContext> {
     /// The presences that are open: the clients of a control surface that are there, whose holds end with them.
     /// Whoever takes it holds the environments already, or needs them for nothing.
     presences: Mutex<BTreeSet<PresenceId>>,
+    /// Where the recordings of every environment are kept.
+    recordings: Recordings,
 }
 
 /// One environment that runs: its proxy, the backend behind it, the listeners it was started with, and what lives in
@@ -206,6 +212,10 @@ struct Running {
     traffic: Arc<Mutex<Watched>>,
     /// The task that watches the environment, which ends a moment after its proxy stopped.
     watching: JoinHandle<()>,
+    /// How much of a call a recording of the environment keeps.
+    recording: RecordingMode,
+    /// The instant the last recording of the environment started, so that the next one has another ID.
+    last_recording: Option<UtcInstant>,
 }
 
 impl Running {
@@ -240,7 +250,19 @@ impl<C: WorkspaceContext> Host<C> {
             call_backlog: configuration.call_backlog,
             holds_given: AtomicU64::new(0),
             presences: Mutex::new(BTreeSet::new()),
+            recordings: Recordings::new(SegmentStorage::new(MemoryBacking::new(), SegmentConfiguration::new())),
         }
+    }
+
+    /// The same host, whose environments keep their recordings in `recordings` from now on.
+    ///
+    /// Whoever puts the process together picks the storage, before an environment starts: `gmq` picks the segment
+    /// layout on files. A host that is handed none keeps its recordings in the segment layout in memory, for as long
+    /// as the process runs.
+    #[must_use]
+    pub fn with_recordings(mut self, recordings: Recordings) -> Self {
+        self.recordings = recordings;
+        self
     }
 
     /// The workspace, to read.
@@ -519,7 +541,12 @@ impl<C: WorkspaceContext> Host<C> {
     /// Nothing of the environment runs then.
     pub async fn start(&self, configuration: EnvironmentConfiguration) -> Result<(), EnvironmentStartError> {
         let _changing = self.changing.lock().await;
-        let EnvironmentConfiguration { name, engine, upstream } = configuration;
+        let EnvironmentConfiguration {
+            name,
+            engine,
+            upstream,
+            recording,
+        } = configuration;
         self.check_listeners(&name, &engine.listeners)?;
 
         let backend = match UpstreamBackend::start(upstream).await {
@@ -527,7 +554,15 @@ impl<C: WorkspaceContext> Host<C> {
             Err(error) => return Err(EnvironmentStartError::BackendNotStarted { name, error }),
         };
         let listeners = engine.listeners.clone();
-        let started = Engine::start(engine, Arc::clone(&backend), WallClock::new(), Arc::clone(&self.lies)).await;
+        let lies = Arc::clone(&self.lies);
+        let started = Engine::start(
+            engine,
+            Arc::clone(&backend),
+            WallClock::new(),
+            lies,
+            self.recordings.clone(),
+        )
+        .await;
         let engine = match started {
             Ok(engine) => engine,
             Err(error) => return Err(EnvironmentStartError::ProxyNotStarted { name, error }),
@@ -554,6 +589,8 @@ impl<C: WorkspaceContext> Host<C> {
                 revisions,
                 traffic,
                 watching,
+                recording,
+                last_recording: None,
             },
         );
         self.publish(HostChange::EnvironmentStarted { environment: name });

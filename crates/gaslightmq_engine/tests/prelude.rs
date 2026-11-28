@@ -47,6 +47,7 @@ mod next_to_the_others {
     use gaslightmq_lie_refusal::prelude::*;
     use gaslightmq_listener::prelude::*;
     use gaslightmq_pipeline::prelude::*;
+    use gaslightmq_recording_conformance::MemoryStorage;
     use gaslightmq_rule::prelude::*;
     use gaslightmq_selector::prelude::*;
     use gaslightmq_session::prelude::*;
@@ -104,10 +105,27 @@ mod next_to_the_others {
         let backlog: EventBacklog = EventBacklog::new(16).unwrap();
         configuration.event_backlog = backlog;
 
-        let engine: Engine<Mute, SteppedClock> =
-            Engine::start(configuration.clone(), Mute, SteppedClock::new(), Lies::of_every_build())
-                .await
-                .unwrap();
+        let recorder: RecorderConfiguration = configuration.recorder;
+        let recordings: Recordings = Recordings::new(MemoryStorage::new());
+        let engine: Engine<Mute, SteppedClock> = Engine::start(
+            configuration.clone(),
+            Mute,
+            SteppedClock::new(),
+            Lies::of_every_build(),
+            recordings.clone(),
+        )
+        .await
+        .unwrap();
+        let start: RecordingStart = RecordingStart {
+            environment: "orders-sim".parse().unwrap(),
+            started: "2026-11-21T14:02:11.527Z".parse().unwrap(),
+            mode: gaslightmq_environment::RecordingMode::Full,
+            backend: gaslightmq_recording::RecordedBackend::Upstream,
+            from: ChangeSurface::Test.into(),
+        };
+        let recording = engine.recorder().start(start).await.unwrap();
+        let stored: StoredRecording = recordings.open(&recording).await.unwrap();
+        engine.recorder().stop().await.unwrap();
         let rules: &ArmedRules = engine.rules();
         let silence = Rule::new("blackhole".parse().unwrap(), Conditions::new(), LieDefinition::Silence);
         let resolved = silence.resolve(&SelectorSet::default(), &PresetSet::default()).unwrap();
@@ -128,6 +146,8 @@ mod next_to_the_others {
             format!("{watching:?} {keeping:?}"),
             format!("{fired:?}"),
             format!("{journal:?} {size}"),
+            format!("{recorder:?} {recordings:?}"),
+            stored.description.id().to_string(),
         ];
         engine.stop().await;
         items
@@ -150,6 +170,15 @@ mod next_to_the_others {
             rule: "blackhole".parse().unwrap(),
         };
         let stopped: LiveEventsError = LiveEventsError::EngineStopped;
+        let recording: gaslightmq_recording::RecordingId = "orders-sim.2026-11-21T14-02-11.527Z".parse().unwrap();
+        let running: RecorderStartError = RecorderStartError::Recording {
+            recording: recording.clone(),
+        };
+        let not_recording: RecorderStopError = RecorderStopError::NotRecording;
+        let not_listed: ListRecordingsError = ListRecordingsError::NotListed {
+            reason: "permission denied".to_owned(),
+        };
+        let not_found: OpenRecordingError = OpenRecordingError::NotFound { recording };
         // A message says everything, so no error has a source.
         assert!(std::error::Error::source(&backlog).is_none());
         assert!(std::error::Error::source(&not_opened).is_none());
@@ -157,6 +186,10 @@ mod next_to_the_others {
         assert!(std::error::Error::source(&armed).is_none());
         assert!(std::error::Error::source(&not_armed).is_none());
         assert!(std::error::Error::source(&stopped).is_none());
+        assert!(std::error::Error::source(&running).is_none());
+        assert!(std::error::Error::source(&not_recording).is_none());
+        assert!(std::error::Error::source(&not_listed).is_none());
+        assert!(std::error::Error::source(&not_found).is_none());
         vec![
             backlog.to_string(),
             not_opened.to_string(),
@@ -164,6 +197,10 @@ mod next_to_the_others {
             armed.to_string(),
             not_armed.to_string(),
             stopped.to_string(),
+            running.to_string(),
+            not_recording.to_string(),
+            not_listed.to_string(),
+            not_found.to_string(),
         ]
     }
 }
@@ -172,11 +209,12 @@ mod next_to_the_others {
 async fn the_prelude_names_every_item_next_to_the_other_preludes() {
     let items = next_to_the_others::every_item().await;
 
-    assert_eq!(items.len(), 8);
+    assert_eq!(items.len(), 10);
     assert!(items.iter().all(|item| !item.is_empty()));
     assert_eq!(items[1], "16 events");
     assert_eq!(items[4], "blackhole");
     assert_eq!(items[7], "Journal { entries: 0, .. } 1000 entries");
+    assert_eq!(items[9], "orders-sim.2026-11-21T14-02-11.527Z");
 }
 
 #[test]
@@ -190,6 +228,10 @@ fn the_prelude_names_the_error_of_every_type() {
             "rule \"blackhole\" is armed already",
             "rule \"blackhole\" is not armed",
             "the engine stopped",
+            "recording orders-sim.2026-11-21T14-02-11.527Z runs already",
+            "no recording runs",
+            "the recordings were not listed: permission denied",
+            "no recording orders-sim.2026-11-21T14-02-11.527Z is there",
         ]
     );
 }

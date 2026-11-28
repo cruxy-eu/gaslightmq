@@ -3,7 +3,7 @@
 //! | Type | Is |
 //! |---|---|
 //! | [`ScriptedBackend`] | The backend of an engine under test: a cluster of three brokers in memory, which does what a test tells it. |
-//! | [`EngineUnderTest`] | An engine in front of such a backend, with the clock that the test steps and the events it handed over. |
+//! | [`EngineUnderTest`] | An engine in front of such a backend, with the clock that the test steps, the events it handed over, and the storage in memory that its recordings go to. |
 //!
 //! The client of every test is a real one, which the test starts itself:
 //! the `RawKafkaClient` of `gaslightmq_kafka_client_api`, which sends one request at a fixed version.
@@ -27,6 +27,7 @@ use gaslightmq_incident::prelude::*;
 use gaslightmq_kernel::prelude::*;
 use gaslightmq_lie_api::prelude::*;
 use gaslightmq_lie_refusal::prelude::*;
+use gaslightmq_recording_conformance::MemoryStorage;
 use gaslightmq_rule::prelude::*;
 use gaslightmq_selector::prelude::*;
 use gaslightmq_wire::messages::produce_response::{PartitionProduceResponse, TopicProduceResponse};
@@ -325,6 +326,7 @@ pub struct EngineUnderTest {
     engine: Engine<ScriptedBackend, SteppedClock>,
     clock: SteppedClock,
     events: EveryEvent,
+    storage: MemoryStorage,
 }
 
 impl EngineUnderTest {
@@ -385,9 +387,16 @@ impl EngineUnderTest {
         backend: ScriptedBackend,
     ) -> Result<Self, EngineStartError> {
         let clock = SteppedClock::new();
-        let engine = Engine::start(configuration, backend, clock.clone(), lies).await?;
+        let storage = MemoryStorage::new();
+        let recordings = Recordings::new(storage.clone());
+        let engine = Engine::start(configuration, backend, clock.clone(), lies, recordings).await?;
         let events = engine.every_event();
-        Ok(Self { engine, clock, events })
+        Ok(Self {
+            engine,
+            clock,
+            events,
+            storage,
+        })
     }
 
     /// Looks for three ports in a row that are free now, and returns the configuration of an engine whose brokers
@@ -410,6 +419,11 @@ impl EngineUnderTest {
     /// The engine itself.
     pub fn engine(&self) -> &Engine<ScriptedBackend, SteppedClock> {
         &self.engine
+    }
+
+    /// The storage in memory that the recordings of the engine go to, for the test to read them.
+    pub fn storage(&self) -> &MemoryStorage {
+        &self.storage
     }
 
     /// The backend of the engine, for the test to tell it what to do and to ask it what it saw.

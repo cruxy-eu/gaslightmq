@@ -18,6 +18,8 @@ gaslightmq_definition_api.workspace = true
 gaslightmq_engine.workspace = true
 gaslightmq_host.workspace = true
 gaslightmq_quick_inject.workspace = true
+# What a recording is and how it ended, which the server says in the words of the control plane.
+gaslightmq_recording.workspace = true
 gaslightmq_session.workspace = true
 gaslightmq_workspace.workspace = true
 axum.workspace = true
