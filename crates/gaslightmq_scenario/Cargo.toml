@@ -19,9 +19,14 @@ serde = [
 ]
 
 [dependencies]
+# The runner counts the calls of a step by their IDs and their fields.
+gaslightmq_call.workspace = true
 gaslightmq_clock.workspace = true
 gaslightmq_definition_api.workspace = true
 gaslightmq_definition_memory = { workspace = true, optional = true }
+gaslightmq_field.workspace = true
+# What the backend of an environment must support: the incidents that the rules of a scenario fire.
+gaslightmq_incident.workspace = true
 gaslightmq_resource.workspace = true
 gaslightmq_rule.workspace = true
 gaslightmq_selector.workspace = true
@@ -34,6 +39,5 @@ serde_json.workspace = true
 # What the rules of the tests are made of.
 gaslightmq_kernel.workspace = true
 gaslightmq_lie.workspace = true
-# The preludes that code imports next to this one. `tests/prelude.rs` checks that no name clashes.
-gaslightmq_field.workspace = true
-gaslightmq_incident.workspace = true
+# The preludes that code imports next to this one. `tests/prelude.rs` checks that no name clashes:
+# `gaslightmq_field` and `gaslightmq_incident` are dependencies already.

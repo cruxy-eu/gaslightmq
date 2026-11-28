@@ -2045,6 +2045,7 @@ dependencies = [
 name = "gaslightmq_scenario"
 version = "0.1.0"
 dependencies = [
+ "gaslightmq_call",
  "gaslightmq_clock",
  "gaslightmq_definition_api",
  "gaslightmq_definition_memory",
