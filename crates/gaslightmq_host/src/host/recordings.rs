@@ -1,23 +1,23 @@
 //! The recordings of the environments: starting and stopping one, listing them, and opening one.
 
-use std::time::{SystemTime, UNIX_EPOCH};
-
+use gaslightmq_clock::UtcInstant;
 use gaslightmq_engine::{
-    ListRecordingsError, OpenRecordingError, RecorderStartError, RecorderStopError, RecordingStart, StoredRecording,
+    ListRecordingsError, OpenRecordingError, RecordingStart, StartRecordingError, StopRecordingError, StoredRecording,
 };
 use gaslightmq_environment::EnvironmentName;
 use gaslightmq_journal::ChangeSource;
-use gaslightmq_recording::{End, RecordedBackend, RecordingId, UtcInstant};
+use gaslightmq_recording::{End, RecordedBackend, RecordingId};
 use gaslightmq_workspace::WorkspaceContext;
 
 use super::Host;
-use crate::{NotRunningError, StartRecordingError, StopRecordingError, journaling};
+use crate::{NotRunningError, RecordingStartError, RecordingStopError, journaling};
 
 impl<C: WorkspaceContext> Host<C> {
     /// Starts a recording of an environment, and returns its ID.
     ///
-    /// The ID is the environment and the instant on the wall clock of the system, to the millisecond. A recording
-    /// that would start at the millisecond of the one before it in the environment starts at the next one.
+    /// The ID is the environment and the instant of the [`UtcClock`](gaslightmq_clock::UtcClock) of the host, to the millisecond: the wall clock
+    /// of the system, unless someone hands it [another](Self::with_utc_clock). A recording that would start at the
+    /// millisecond of the one before it in the environment, or before it, starts at the millisecond after it.
     /// The recording keeps as much of a call as the [configuration](crate::EnvironmentConfiguration::recording) of
     /// the environment says. It runs until someone [stops](Self::stop_recording) it, its environment stops, or it
     /// stops by itself: its recorder fell behind, or could not write. The journal of the environment records the
@@ -27,32 +27,36 @@ impl<C: WorkspaceContext> Host<C> {
     ///
     /// # Errors
     ///
-    /// - [`StartRecordingError::NotRunning`] when no environment of that name runs.
-    /// - [`StartRecordingError::Recording`] when the environment records already.
-    /// - [`StartRecordingError::NotStarted`] when the storage did not keep the recording, or its recorder did not
+    /// - [`RecordingStartError::NotRunning`] when no environment of that name runs.
+    /// - [`RecordingStartError::AlreadyRecording`] when the environment records already.
+    /// - [`RecordingStartError::StorageFailed`] when the storage did not keep the recording, or its recorder did not
     ///   start.
     pub async fn start_recording(
         &self,
         environment: &EnvironmentName,
         from: impl Into<ChangeSource>,
-    ) -> Result<RecordingId, StartRecordingError> {
-        let not_started = |reason: String| StartRecordingError::NotStarted {
+    ) -> Result<RecordingId, RecordingStartError> {
+        let not_started = |reason: String| RecordingStartError::StorageFailed {
             environment: environment.clone(),
             reason,
         };
-        let since_1970 = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default();
-        let now = u64::try_from(since_1970.as_millis()).unwrap_or(u64::MAX);
+        let now = self.utc.utc_now();
         let (recorder, start) = {
             let mut environments = self.environments();
             let Some(running) = environments.get_mut(environment) else {
-                return Err(StartRecordingError::NotRunning {
+                return Err(RecordingStartError::NotRunning {
                     environment: environment.clone(),
                 });
             };
-            let after_the_last = running
-                .last_recording
-                .map_or(0, |last| last.unix_millis().saturating_add(1));
-            let started = UtcInstant::new(now.max(after_the_last)).map_err(|error| not_started(error.to_string()))?;
+            // No two recordings of an environment share their instant: a start in the millisecond of the one before it,
+            // or before that one, takes the millisecond after it.
+            let after_the_last = running.last_recording.map(|last| last.unix_millis().saturating_add(1));
+            let started = match after_the_last {
+                Some(after) if after > now.unix_millis() => {
+                    UtcInstant::new(after).map_err(|error| not_started(error.to_string()))?
+                }
+                _ => now,
+            };
             running.last_recording = Some(started);
             let start = RecordingStart {
                 environment: journaling::environment(environment),
@@ -64,13 +68,11 @@ impl<C: WorkspaceContext> Host<C> {
             (running.engine.recorder().clone(), start)
         };
         recorder.start(start).await.map_err(|error| match error {
-            RecorderStartError::Recording { recording } => StartRecordingError::Recording {
+            StartRecordingError::AlreadyRecording { recording } => RecordingStartError::AlreadyRecording {
                 environment: environment.clone(),
                 recording,
             },
-            RecorderStartError::IdTaken { .. } | RecorderStartError::NotStarted { .. } => {
-                not_started(error.to_string())
-            }
+            StartRecordingError::StorageFailed { reason, .. } => not_started(reason),
         })
     }
 
@@ -78,21 +80,19 @@ impl<C: WorkspaceContext> Host<C> {
     ///
     /// # Errors
     ///
-    /// - [`StopRecordingError::NotRunning`] when no environment of that name runs.
-    /// - [`StopRecordingError::NotRecording`] when the environment records nothing.
-    /// - [`StopRecordingError::NotFinished`] when the recorder could not write: the recording stopped all the same,
+    /// - [`RecordingStopError::NotRunning`] when no environment of that name runs.
+    /// - [`RecordingStopError::NotRecording`] when the environment records nothing.
+    /// - [`RecordingStopError::CutShort`] when the recorder could not write: the recording stopped all the same,
     ///   and it holds what its last commit covers.
-    pub async fn stop_recording(&self, environment: &EnvironmentName) -> Result<End, StopRecordingError> {
+    pub async fn stop_recording(&self, environment: &EnvironmentName) -> Result<End, RecordingStopError> {
         let recorder = self
             .with_running(environment, |running| running.engine.recorder().clone())
-            .map_err(|NotRunningError { name }| StopRecordingError::NotRunning { environment: name })?;
+            .map_err(|NotRunningError { name }| RecordingStopError::NotRunning { environment: name })?;
         recorder.stop().await.map_err(|error| match error {
-            RecorderStopError::NotRecording => StopRecordingError::NotRecording {
+            StopRecordingError::NotRecording => RecordingStopError::NotRecording {
                 environment: environment.clone(),
             },
-            RecorderStopError::NotFinished { recording, reason } => {
-                StopRecordingError::NotFinished { recording, reason }
-            }
+            StopRecordingError::CutShort { recording, reason } => RecordingStopError::CutShort { recording, reason },
         })
     }
 
@@ -110,7 +110,7 @@ impl<C: WorkspaceContext> Host<C> {
     ///
     /// # Errors
     ///
-    /// [`ListRecordingsError::NotListed`] when the storage did not answer.
+    /// [`ListRecordingsError::StorageUnavailable`] when the storage did not answer.
     pub async fn recordings(&self) -> Result<Vec<RecordingId>, ListRecordingsError> {
         self.recordings.list().await
     }

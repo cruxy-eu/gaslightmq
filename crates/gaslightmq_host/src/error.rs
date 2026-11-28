@@ -730,7 +730,7 @@ pub enum CloseSessionError {
 /// ```
 /// use gaslightmq_host::prelude::*;
 ///
-/// let error = StartRecordingError::Recording {
+/// let error = RecordingStartError::AlreadyRecording {
 ///     environment: "staging-proxy".parse().expect("an environment name"),
 ///     recording: "staging-proxy.2026-11-21T14-02-11.527Z".parse().expect("a recording ID"),
 /// };
@@ -740,19 +740,19 @@ pub enum CloseSessionError {
 /// );
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-pub enum StartRecordingError {
+pub enum RecordingStartError {
     /// No environment of this name runs.
     #[error("environment {:?} does not run", .environment.as_str())]
     NotRunning { environment: EnvironmentName },
     /// The environment records already. It writes one recording at a time, so whoever wants another stops it.
     #[error("environment {:?} records already, into {recording}", .environment.as_str())]
-    Recording {
+    AlreadyRecording {
         environment: EnvironmentName,
         recording: RecordingId,
     },
     /// The storage did not keep the recording, or its recorder did not start. `reason` says what stood in the way.
     #[error("environment {:?} did not start a recording: {reason}", .environment.as_str())]
-    NotStarted {
+    StorageFailed {
         environment: EnvironmentName,
         reason: String,
     },
@@ -763,11 +763,11 @@ pub enum StartRecordingError {
 /// ```
 /// use gaslightmq_host::prelude::*;
 ///
-/// let error = StopRecordingError::NotRecording { environment: "staging-proxy".parse().expect("an environment name") };
+/// let error = RecordingStopError::NotRecording { environment: "staging-proxy".parse().expect("an environment name") };
 /// assert_eq!(error.to_string(), "environment \"staging-proxy\" records nothing");
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-pub enum StopRecordingError {
+pub enum RecordingStopError {
     /// No environment of this name runs.
     #[error("environment {:?} does not run", .environment.as_str())]
     NotRunning { environment: EnvironmentName },
@@ -777,7 +777,7 @@ pub enum StopRecordingError {
     /// The recording stopped, and its recorder could not write what waited, or its end.
     /// It holds what its last commit covers, and opens as a recording that was cut short.
     #[error("recording {recording} stopped without its end: {reason}")]
-    NotFinished { recording: RecordingId, reason: String },
+    CutShort { recording: RecordingId, reason: String },
 }
 
 /// Why a host did not [follow the calls](crate::Host::follow_calls) of an environment.

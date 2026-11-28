@@ -10,7 +10,7 @@ use gaslightmq_call::{Call, CallId};
 use gaslightmq_clock::Clock;
 use gaslightmq_environment::RecordingMode;
 use gaslightmq_journal::{Change, ChangeSource, JournalEntry, RecordedName, RecordingStopCause};
-use gaslightmq_pipeline::WireFrames;
+use gaslightmq_pipeline as pipeline;
 use gaslightmq_recording::{
     CallFrames, Closer, Description, End, Ending, Entry, RecordedBackend, RecordingId, SessionChange,
     SessionEvent as RecordedSessionEvent, StartError, UtcInstant,
@@ -22,8 +22,8 @@ use crate::events::EventBus;
 use crate::open_sessions::OpenSessions;
 use crate::recordings::Writer;
 use crate::{
-    ArmedRules, EngineEvent, Journal, OpenSession, RecorderConfiguration, RecorderStartError, RecorderStopError,
-    Recordings, SessionEvent,
+    ArmedRules, EngineEvent, Journal, OpenSession, RecorderConfiguration, Recordings, SessionEvent,
+    StartRecordingError, StopRecordingError,
 };
 
 mod queue;
@@ -167,15 +167,14 @@ impl Recorder {
     ///
     /// # Errors
     ///
-    /// - [`RecorderStartError::Recording`] when a recording runs already.
-    /// - [`RecorderStartError::IdTaken`] when the storage has a recording with the ID of this one.
-    /// - [`RecorderStartError::NotStarted`] when the storage did not keep it, the recorder did not start, or the
-    ///   engine stopped.
-    pub async fn start(&self, start: RecordingStart) -> Result<RecordingId, RecorderStartError> {
+    /// - [`StartRecordingError::AlreadyRecording`] when a recording runs already.
+    /// - [`StartRecordingError::StorageFailed`] when the storage has a recording with its ID or did not keep it, the
+    ///   recorder did not start, or the engine stopped.
+    pub async fn start(&self, start: RecordingStart) -> Result<RecordingId, StartRecordingError> {
         let state = &self.state;
         let _changing = state.changing.lock().await;
         if let Some(recording) = self.recording() {
-            return Err(RecorderStartError::Recording { recording });
+            return Err(StartRecordingError::AlreadyRecording { recording });
         }
         let armed = self.rules.snapshot();
         let RecordingStart {
@@ -200,17 +199,18 @@ impl Recorder {
         };
         let recording = description.id();
         let writer = state.recordings.start(description).await.map_err(|error| match error {
-            StartError::AlreadyThere => RecorderStartError::IdTaken {
+            StartError::AlreadyThere => StartRecordingError::StorageFailed {
                 recording: recording.clone(),
+                reason: error.to_string(),
             },
-            StartError::NotStarted { reason } => RecorderStartError::NotStarted {
+            StartError::NotStarted { reason } => StartRecordingError::StorageFailed {
                 recording: recording.clone(),
                 reason,
             },
         })?;
 
         let Some(events) = self.events.upgrade() else {
-            return Err(RecorderStartError::NotStarted {
+            return Err(StartRecordingError::StorageFailed {
                 recording,
                 reason: "the engine stopped".to_owned(),
             });
@@ -267,7 +267,7 @@ impl Recorder {
             events.detach(&queue);
             state.stopped_by_itself(&recording);
             state.recordings.ended(&recording);
-            return Err(RecorderStartError::NotStarted { recording, reason });
+            return Err(StartRecordingError::StorageFailed { recording, reason });
         }
         events.publish(EngineEvent::RecordingStarted(recording.clone()));
         Ok(recording)
@@ -279,10 +279,10 @@ impl Recorder {
     ///
     /// # Errors
     ///
-    /// - [`RecorderStopError::NotRecording`] when no recording runs.
-    /// - [`RecorderStopError::NotFinished`] when the recorder could not write: the recording stopped all the same,
+    /// - [`StopRecordingError::NotRecording`] when no recording runs.
+    /// - [`StopRecordingError::CutShort`] when the recorder could not write: the recording stopped all the same,
     ///   and it holds what its last commit covers.
-    pub async fn stop(&self) -> Result<End, RecorderStopError> {
+    pub async fn stop(&self) -> Result<End, StopRecordingError> {
         self.state.stop(Ending::Stopped, &self.events).await
     }
 
@@ -301,9 +301,13 @@ impl Recorder {
         &self.open
     }
 
-    /// Whether a recording runs at this moment.
-    pub(crate) fn runs(&self) -> bool {
-        self.state.runs.load(Ordering::SeqCst)
+    /// Whether a recording runs at this moment, as a session tells its pipeline.
+    pub(crate) fn runs(&self) -> pipeline::Recording {
+        if self.state.runs.load(Ordering::SeqCst) {
+            pipeline::Recording::Running
+        } else {
+            pipeline::Recording::Idle
+        }
     }
 
     /// The engine stops: the recording that runs ends with it, once every session has ended.
@@ -324,10 +328,10 @@ impl fmt::Debug for Recorder {
 
 impl RecorderState {
     /// Stops the recording that runs in `ending`, and waits until its recorder wrote what the queue holds and its end.
-    async fn stop(&self, ending: Ending, events: &Weak<EventBus>) -> Result<End, RecorderStopError> {
+    async fn stop(&self, ending: Ending, events: &Weak<EventBus>) -> Result<End, StopRecordingError> {
         let _changing = self.changing.lock().await;
         let Some(running) = self.running().take() else {
-            return Err(RecorderStopError::NotRecording);
+            return Err(StopRecordingError::NotRecording);
         };
         let Running { recording, queue, done } = running;
         if let Some(events) = events.upgrade() {
@@ -337,8 +341,8 @@ impl RecorderState {
         queue.end(ending);
         match done.await {
             Ok(Ok(end)) => Ok(end),
-            Ok(Err(reason)) => Err(RecorderStopError::NotFinished { recording, reason }),
-            Err(_) => Err(RecorderStopError::NotFinished {
+            Ok(Err(reason)) => Err(StopRecordingError::CutShort { recording, reason }),
+            Err(_) => Err(StopRecordingError::CutShort {
                 recording,
                 reason: "the recorder ended before it wrote the end".to_owned(),
             }),
@@ -433,21 +437,17 @@ fn opened(sessions: &[OpenSession]) -> Vec<RecordedSessionEvent> {
 }
 
 /// The frames of a call as a recording takes them.
-fn frames_of(frames: WireFrames) -> CallFrames {
-    let WireFrames {
+fn frames_of(frames: pipeline::CallFrames) -> CallFrames {
+    let pipeline::CallFrames {
         request,
+        upstream,
         truth,
         delivered,
     } = frames;
     let frames = CallFrames::new(request);
-    let frames = match truth {
-        Some(truth) => frames.with_truth(truth),
-        None => frames,
-    };
-    match delivered {
-        Some(delivered) => frames.with_delivered(delivered),
-        None => frames,
-    }
+    let frames = upstream.into_iter().fold(frames, CallFrames::with_upstream);
+    let frames = truth.into_iter().fold(frames, CallFrames::with_truth);
+    delivered.into_iter().fold(frames, CallFrames::with_delivered)
 }
 
 /// What the thread of one recording writes with.

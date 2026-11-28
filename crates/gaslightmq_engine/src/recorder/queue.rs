@@ -4,7 +4,7 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use gaslightmq_call::Call;
 use gaslightmq_journal::JournalEntry;
-use gaslightmq_pipeline::WireFrames;
+use gaslightmq_pipeline as pipeline;
 use gaslightmq_recording::{Ending, SessionEvent};
 use tokio::sync::{Notify, mpsc, oneshot};
 
@@ -14,7 +14,7 @@ pub(crate) enum Waiting {
     /// An event of a session, with the instant it happened.
     Session(SessionEvent),
     /// A call that ended, with its frames as they were on the wire.
-    Call(Arc<Call>, WireFrames),
+    Call(Arc<Call>, pipeline::CallFrames),
     /// An entry of the journal.
     Journal(JournalEntry),
     /// Someone reads the recording: the recorder commits what it took before, and says so.
@@ -169,7 +169,7 @@ impl State {
 }
 
 /// The bytes of the frames of a call, which wait in memory with it.
-fn frame_bytes(frames: &WireFrames) -> u64 {
+fn frame_bytes(frames: &pipeline::CallFrames) -> u64 {
     let length = |frame: &gaslightmq_wire::Frame| frame.payload().len() as u64;
     length(&frames.request) + frames.truth.as_ref().map_or(0, length) + frames.delivered.as_ref().map_or(0, length)
 }

@@ -51,6 +51,9 @@ const DAYS_PER_ERA: u64 = 146_097;
 const END_OF_YEAR_9999: u64 = 253_402_300_800_000;
 
 impl UtcInstant {
+    /// The last instant that the text of an instant writes: `9999-12-31T23:59:59.999Z`.
+    pub const LAST: UtcInstant = UtcInstant(END_OF_YEAR_9999 - 1);
+
     /// The instant `unix_millis` milliseconds after 1970-01-01T00:00:00.000Z.
     ///
     /// # Errors

@@ -1,7 +1,7 @@
 //! A recording keeps the sessions, the calls with their frames and the journal entries, from its start to its stop.
 //!
 //! The recordings of these tests go to the storage in memory of `gaslightmq_recording_conformance`, which keeps
-//! every batch as it was written, and the tests read them back through the contract of a storage.
+//! every batch as it was written, and hands every entry back as its type.
 
 use gaslightmq_call::prelude::*;
 use gaslightmq_clock::Clock;
@@ -10,67 +10,30 @@ use gaslightmq_field::prelude::*;
 use gaslightmq_journal::prelude::*;
 // The engine names a session event of its own, so its items come by name next to the prelude of a recording.
 use gaslightmq_clock_waitable::SteppedClock;
-use gaslightmq_engine::{Engine, EngineEvent, RecorderStartError, RecorderStopError, RecordingStart, Recordings};
+use gaslightmq_engine::{Engine, EngineEvent, RecordingStart, Recordings, StartRecordingError, StopRecordingError};
 use gaslightmq_kafka_client_api::{Producer, RawClientConfiguration, RawKafkaClient};
 use gaslightmq_kernel::prelude::*;
 use gaslightmq_lie_api::prelude::*;
 use gaslightmq_recording::prelude::*;
-use gaslightmq_recording_conformance::{MemoryReader, MemoryStorage};
+use gaslightmq_recording_conformance::{MemoryReader, StoredEntry};
 use gaslightmq_wire::{Partition, Record};
 
 use crate::support::{EngineUnderTest, ScriptedBackend};
 
-/// What a test reads of one entry of a recording.
-#[derive(Debug, Clone, PartialEq)]
-enum Read {
-    Session(SessionEvent),
-    Call { call: Call, frames: [FrameState; 4] },
-    Journal(JournalEntry),
-}
-
-/// Every entry of `recording`, in order, each read through its view and built as its type.
-async fn read(storage: &MemoryStorage, recording: &RecordingId) -> anyhow::Result<Vec<Read>> {
-    let reader = storage.open(recording).await?;
-    let mut entries = reader
-        .read(Place::Start, Direction::Forwards, Everything, Frames::Without)
-        .await?;
-    let mut read = Vec::new();
-    while let Some(batch) = entries.next().await? {
-        for (_, entry) in batch.entries() {
-            read.push(match entry? {
-                EntryView::Session(event) => Read::Session(event.to_session_event()?),
-                EntryView::Call(call) => {
-                    let mut frames = [FrameState::None; 4];
-                    for (state, slot) in frames.iter_mut().zip(FrameSlot::ALL) {
-                        *state = call.frame(slot)?.state();
-                    }
-                    Read::Call {
-                        call: call.to_call()?,
-                        frames,
-                    }
-                }
-                EntryView::Journal(entry) => Read::Journal(entry.to_journal_entry()?),
-            });
-        }
-    }
-    Ok(read)
-}
-
-/// The start of a recording of the environment `orders-sim`, which keeps every call whole.
-fn start_of_a_full_recording() -> anyhow::Result<RecordingStart> {
-    Ok(RecordingStart {
-        environment: "orders-sim".parse()?,
-        started: "2026-11-21T14:02:11.527Z".parse()?,
-        mode: RecordingMode::Full,
-        backend: RecordedBackend::Upstream,
-        from: ChangeSurface::Test.into(),
-    })
-}
+/// When the recordings of these tests start, as whoever starts them reads it on the wall clock.
+const STARTED: &str = "2026-11-21T14:02:11.527Z";
 
 #[tokio::test]
 async fn a_recording_holds_the_calls_that_arrive_while_it_runs_with_their_frames() -> anyhow::Result<()> {
     let mut proxy = EngineUnderTest::start(ScriptedBackend::with_three_brokers()).await?;
-    let recording = proxy.engine().recorder().start(start_of_a_full_recording()?).await?;
+    let start = RecordingStart {
+        environment: "orders-sim".parse()?,
+        started: STARTED.parse()?,
+        mode: RecordingMode::Full,
+        backend: RecordedBackend::Upstream,
+        from: ChangeSurface::Test.into(),
+    };
+    let recording = proxy.engine().recorder().start(start).await?;
     let producer = RawKafkaClient::new(proxy.address_of(Endpoint::Bootstrap)?);
 
     producer
@@ -80,11 +43,11 @@ async fn a_recording_holds_the_calls_that_arrive_while_it_runs_with_their_frames
     let end = proxy.engine().recorder().stop().await?;
 
     assert_eq!((end.ending, end.calls), (Ending::Stopped, 1));
-    let read = read(proxy.storage(), &recording).await?;
-    let opened = |read: &Read| {
+    let read = proxy.storage().entries(&recording).await;
+    let opened = |read: &StoredEntry| {
         matches!(
             read,
-            Read::Session(SessionEvent {
+            StoredEntry::Session(SessionEvent {
                 change: SessionChange::Opened { .. },
                 ..
             })
@@ -94,20 +57,22 @@ async fn a_recording_holds_the_calls_that_arrive_while_it_runs_with_their_frames
         opened(&read[0]),
         "the session of the producer opened while the recording ran: {read:?}"
     );
-    let calls: Vec<&Read> = read.iter().filter(|read| matches!(read, Read::Call { .. })).collect();
-    let every_frame_on_the_wire = [
+    let calls: Vec<(&Call, [FrameState; 4])> = read
+        .iter()
+        .filter_map(|read| match read {
+            StoredEntry::Call { call, frames } => Some((&**call, frames.clone().map(|frame| frame.state()))),
+            _ => None,
+        })
+        .collect();
+    // The request, the truth and the response that the client received were on the wire, and stay whole.
+    // No overlay changed an answer of the real cluster, so the slot of that answer holds no frame.
+    let request_truth_and_delivered = [
         FrameState::Whole,
         FrameState::None,
         FrameState::Whole,
         FrameState::Whole,
     ];
-    assert_eq!(
-        calls,
-        [&Read::Call {
-            call: Call::clone(&record),
-            frames: every_frame_on_the_wire
-        }]
-    );
+    assert_eq!(calls, [(&*record, request_truth_and_delivered)]);
     assert_eq!(read.len() as u64, end.entries);
     Ok(())
 }
@@ -120,7 +85,14 @@ async fn a_call_whose_request_arrived_before_the_recording_started_is_no_part_of
     let asked = client.send_metadata().await?;
     proxy.backend().calls_taken(1).await?;
 
-    proxy.engine().recorder().start(start_of_a_full_recording()?).await?;
+    let start = RecordingStart {
+        environment: "orders-sim".parse()?,
+        started: STARTED.parse()?,
+        mode: RecordingMode::Full,
+        backend: RecordedBackend::Upstream,
+        from: ChangeSurface::Test.into(),
+    };
+    proxy.engine().recorder().start(start).await?;
     proxy.backend().release_answers();
     EngineUnderTest::soon(client.receive_response(&asked)).await??;
     proxy.next_record().await?;
@@ -140,11 +112,18 @@ async fn a_recording_begins_with_the_sessions_that_are_open_and_what_they_learne
     let heartbeat = member.send_heartbeat(&group).await?;
     member.receive_response(&heartbeat).await?;
 
-    let recording = proxy.engine().recorder().start(start_of_a_full_recording()?).await?;
+    let start = RecordingStart {
+        environment: "orders-sim".parse()?,
+        started: STARTED.parse()?,
+        mode: RecordingMode::Full,
+        backend: RecordedBackend::Upstream,
+        from: ChangeSurface::Test.into(),
+    };
+    let recording = proxy.engine().recorder().start(start).await?;
     proxy.engine().recorder().stop().await?;
 
-    let read = read(proxy.storage(), &recording).await?;
-    let [Read::Session(opened)] = read.as_slice() else {
+    let read = proxy.storage().entries(&recording).await;
+    let [StoredEntry::Session(opened)] = read.as_slice() else {
         panic!("the recording holds the session that was open, and nothing else: {read:?}");
     };
     let [session] = proxy.engine().sessions().try_into().expect("one session is open");
@@ -167,7 +146,14 @@ async fn a_full_queue_stops_the_recording_and_its_last_entry_says_why() -> anyho
     // The queue is full at its first entry, so the recording falls behind with the first event of a session.
     configuration.recorder.queue_entries = 0;
     let mut proxy = EngineUnderTest::start_with(configuration, ScriptedBackend::with_three_brokers()).await?;
-    let recording = proxy.engine().recorder().start(start_of_a_full_recording()?).await?;
+    let start = RecordingStart {
+        environment: "orders-sim".parse()?,
+        started: STARTED.parse()?,
+        mode: RecordingMode::Full,
+        backend: RecordedBackend::Upstream,
+        from: ChangeSurface::Test.into(),
+    };
+    let recording = proxy.engine().recorder().start(start).await?;
     let client = RawKafkaClient::new(proxy.address_of(Endpoint::Bootstrap)?);
 
     client.send_metadata().await?;
@@ -179,8 +165,8 @@ async fn a_full_queue_stops_the_recording_and_its_last_entry_says_why() -> anyho
     };
     assert_eq!(stopped, (recording.clone(), Some(RecordingStopCause::FellBehind)));
     assert_eq!(proxy.engine().recorder().recording(), None);
-    let read = read(proxy.storage(), &recording).await?;
-    let Some(Read::Journal(last)) = read.last() else {
+    let read = proxy.storage().entries(&recording).await;
+    let Some(StoredEntry::Journal(last)) = read.last() else {
         panic!("the last entry of the recording says why it ends: {read:?}");
     };
     let fell_behind = Change::RecordingStopped {
@@ -196,7 +182,14 @@ async fn a_full_queue_stops_the_recording_and_its_last_entry_says_why() -> anyho
 #[tokio::test]
 async fn opening_a_recording_that_runs_commits_what_its_engine_handed_over() -> anyhow::Result<()> {
     let mut proxy = EngineUnderTest::start(ScriptedBackend::with_three_brokers()).await?;
-    let recording = proxy.engine().recorder().start(start_of_a_full_recording()?).await?;
+    let start = RecordingStart {
+        environment: "orders-sim".parse()?,
+        started: STARTED.parse()?,
+        mode: RecordingMode::Full,
+        backend: RecordedBackend::Upstream,
+        from: ChangeSurface::Test.into(),
+    };
+    let recording = proxy.engine().recorder().start(start).await?;
     let client = RawKafkaClient::new(proxy.address_of(Endpoint::Bootstrap)?);
 
     let asked = client.send_metadata().await?;
@@ -206,24 +199,39 @@ async fn opening_a_recording_that_runs_commits_what_its_engine_handed_over() -> 
 
     assert_eq!(stored.description.id(), recording);
     assert_eq!(stored.extent.end, None, "the recording runs");
-    let read = read(proxy.storage(), &recording).await?;
+    let read = proxy.storage().entries(&recording).await;
     assert_eq!(read.len() as u64, stored.extent.entries);
-    assert!(read.iter().any(|read| matches!(read, Read::Call { .. })), "{read:?}");
+    assert!(
+        read.iter().any(|read| matches!(read, StoredEntry::Call { .. })),
+        "{read:?}"
+    );
     Ok(())
 }
 
 #[tokio::test]
 async fn an_environment_writes_one_recording_at_a_time() -> anyhow::Result<()> {
     let proxy = EngineUnderTest::start(ScriptedBackend::with_three_brokers()).await?;
-    let recording = proxy.engine().recorder().start(start_of_a_full_recording()?).await?;
+    let start = RecordingStart {
+        environment: "orders-sim".parse()?,
+        started: STARTED.parse()?,
+        mode: RecordingMode::Full,
+        backend: RecordedBackend::Upstream,
+        from: ChangeSurface::Test.into(),
+    };
+    let recording = proxy.engine().recorder().start(start).await?;
 
-    let mut later = start_of_a_full_recording()?;
-    later.started = "2026-11-21T14:05:00.000Z".parse()?;
+    let later = RecordingStart {
+        environment: "orders-sim".parse()?,
+        started: "2026-11-21T14:05:00.000Z".parse()?,
+        mode: RecordingMode::Full,
+        backend: RecordedBackend::Upstream,
+        from: ChangeSurface::Test.into(),
+    };
     let second = proxy.engine().recorder().start(later).await;
 
     assert_eq!(
         second,
-        Err(RecorderStartError::Recording {
+        Err(StartRecordingError::AlreadyRecording {
             recording: recording.clone()
         })
     );
@@ -231,7 +239,7 @@ async fn an_environment_writes_one_recording_at_a_time() -> anyhow::Result<()> {
     proxy.engine().recorder().stop().await?;
     assert_eq!(
         proxy.engine().recorder().stop().await,
-        Err(RecorderStopError::NotRecording)
+        Err(StopRecordingError::NotRecording)
     );
     Ok(())
 }
@@ -239,7 +247,14 @@ async fn an_environment_writes_one_recording_at_a_time() -> anyhow::Result<()> {
 #[tokio::test]
 async fn a_recording_ends_with_its_environment() -> anyhow::Result<()> {
     let proxy = EngineUnderTest::start(ScriptedBackend::with_three_brokers()).await?;
-    let recording = proxy.engine().recorder().start(start_of_a_full_recording()?).await?;
+    let start = RecordingStart {
+        environment: "orders-sim".parse()?,
+        started: STARTED.parse()?,
+        mode: RecordingMode::Full,
+        backend: RecordedBackend::Upstream,
+        from: ChangeSurface::Test.into(),
+    };
+    let recording = proxy.engine().recorder().start(start).await?;
     let recordings = proxy.engine().recorder().recordings().clone();
 
     proxy.stop().await;
@@ -270,7 +285,14 @@ async fn the_description_says_what_was_armed_and_the_last_entry_of_the_journal()
         Some(Revision::new(2)),
     );
 
-    let recording = proxy.engine().recorder().start(start_of_a_full_recording()?).await?;
+    let start = RecordingStart {
+        environment: "orders-sim".parse()?,
+        started: STARTED.parse()?,
+        mode: RecordingMode::Full,
+        backend: RecordedBackend::Upstream,
+        from: ChangeSurface::Test.into(),
+    };
+    let recording = proxy.engine().recorder().start(start).await?;
 
     let stored = proxy.engine().recorder().recordings().open(&recording).await?;
     let description = stored.description;
@@ -343,7 +365,14 @@ async fn a_recorder_that_cannot_write_stops_the_recording_and_the_journal_says_w
     )
     .await?;
     let mut events = engine.every_event();
-    let recording = engine.recorder().start(start_of_a_full_recording()?).await?;
+    let start = RecordingStart {
+        environment: "orders-sim".parse()?,
+        started: STARTED.parse()?,
+        mode: RecordingMode::Full,
+        backend: RecordedBackend::Upstream,
+        from: ChangeSurface::Test.into(),
+    };
+    let recording = engine.recorder().start(start).await?;
     let client = RawKafkaClient::new(
         engine
             .address_of(Endpoint::Bootstrap)

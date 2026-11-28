@@ -10,7 +10,7 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use futures::future::join_all;
 use gaslightmq_backend::Backend;
 use gaslightmq_backend_upstream::UpstreamBackend;
-use gaslightmq_clock::Clock;
+use gaslightmq_clock::{Clock, UtcClock};
 use gaslightmq_clock_waitable::WallClock;
 use gaslightmq_definition_api::{Definition, Store, StoreReadError, WriteBack};
 use gaslightmq_engine::{ArmError, DisarmError, Engine, EveryEvent, LiveEvents, NotOpenError, OpenSession, Recordings};
@@ -193,6 +193,8 @@ pub struct Host<C: WorkspaceContext> {
     presences: Mutex<BTreeSet<PresenceId>>,
     /// Where the recordings of every environment are kept.
     recordings: Recordings,
+    /// What names a recording: the instant in UTC at which it starts.
+    utc: Box<dyn UtcClock + Send + Sync>,
 }
 
 /// One environment that runs: its proxy, the backend behind it, the listeners it was started with, and what lives in
@@ -251,7 +253,16 @@ impl<C: WorkspaceContext> Host<C> {
             holds_given: AtomicU64::new(0),
             presences: Mutex::new(BTreeSet::new()),
             recordings: Recordings::new(SegmentStorage::new(MemoryBacking::new(), SegmentConfiguration::new())),
+            utc: Box::new(WallClock::new()),
         }
+    }
+
+    /// The same host, which names a recording by the instants of `clock` from now on, and not by the wall clock of
+    /// the system: a test hands an instant, which is a clock that stands still, and knows the ID of its recording.
+    #[must_use]
+    pub fn with_utc_clock(mut self, clock: impl UtcClock + Send + Sync + 'static) -> Self {
+        self.utc = Box::new(clock);
+        self
     }
 
     /// The same host, whose environments keep their recordings in `recordings` from now on.

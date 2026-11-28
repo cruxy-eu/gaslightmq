@@ -339,7 +339,7 @@ impl<'a, B: Backend, C: WaitableClock> Session<'a, B, C> {
     /// Hands one input to the pipeline, with the instant of the clock, and tells what the input said about the client.
     fn handle(&mut self, input: Input<'_>) -> Outputs {
         // While a recording runs, every call that arrives keeps hold of its frames until it ends.
-        self.pipeline.record_frames(self.of.recorder.runs());
+        self.pipeline.set_recording(self.of.recorder.runs());
         let outputs = self.pipeline.handle(input, self.of.clock.now());
         self.tell_identity();
         outputs

@@ -23,7 +23,7 @@ use crate::call_fields::{Answers, CallFields};
 use crate::explain::UnexplainedRule;
 use crate::rules::{RuleLines, Slot};
 use crate::untold::{StageFailure, UntoldLie};
-use crate::{Output, SharedBySessions, WireFrames};
+use crate::{CallFrames, Output, SharedBySessions};
 
 /// A lie that asked to forward what it left of the request, with the target it holds.
 /// The pipeline asks it again after the response, so it makes the response fit the request of the client.
@@ -533,8 +533,10 @@ impl CallInFlight {
     /// `None` when the call was recorded before.
     pub(crate) fn emitted(&mut self, id: CallId, delivered: Delivered) -> Option<Output> {
         let record = self.record(id, delivered)?;
-        let frames = self.kept.take().map(|kept| WireFrames {
+        let frames = self.kept.take().map(|kept| CallFrames {
             request: self.request.frame().clone(),
+            // The backend hands over the truth alone.
+            upstream: None,
             truth: self.truth.as_ref().map(|(truth, _)| truth.frame().clone()),
             delivered: kept.delivered,
         });

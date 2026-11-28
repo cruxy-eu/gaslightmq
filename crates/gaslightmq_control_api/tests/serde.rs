@@ -1960,12 +1960,12 @@ fn the_live_stream_says_that_a_recording_started_and_why_it_stopped_by_itself() 
 
 #[test]
 fn an_error_of_a_recording_names_its_variant() {
-    Form(StartRecordingError::Recording {
+    Form(StartRecordingError::AlreadyRecording {
         environment: "orders-sim".parse().unwrap(),
         recording: recording(),
     })
     .writes(json!({
-        "error": "recording",
+        "error": "already-recording",
         "environment": "orders-sim",
         "recording": "orders-sim.2026-11-21T14-02-11.527Z",
     }));

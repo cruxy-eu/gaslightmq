@@ -133,6 +133,62 @@ impl MemoryStorage {
     }
 }
 
+/// One entry of a recording, built as its type: what a test that reads a recording back compares.
+///
+/// [`MemoryStorage::entries`] hands them out. A call comes with what the recording holds of each of its four frames,
+/// in the order of [`FrameSlot::ALL`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum StoredEntry {
+    /// An event of a session.
+    Session(SessionEvent),
+    /// A call, and what the recording holds of each of its frames.
+    Call {
+        call: Box<gaslightmq_call::Call>,
+        frames: [RecordedFrame; 4],
+    },
+    /// An entry of the journal.
+    Journal(gaslightmq_journal::JournalEntry),
+}
+
+impl MemoryStorage {
+    /// Every entry of `recording` that a commit covers, in the order of their positions, each read through its view
+    /// and built as its type, with the frames of every call.
+    ///
+    /// # Panics
+    ///
+    /// When the storage has no such recording, or an entry does not read: the test that asked fails.
+    pub async fn entries(&self, recording: &RecordingId) -> Vec<StoredEntry> {
+        let reader = self.open(recording).await.expect("the storage has the recording");
+        let mut stream = reader
+            .read(Place::Start, Direction::Forwards, Everything, Frames::With)
+            .await
+            .expect("a storage in memory always answers");
+        let mut entries = Vec::new();
+        while let Some(batch) = stream.next().await.expect("a storage in memory loses nothing") {
+            for (_, entry) in batch.entries() {
+                entries.push(match entry.expect("an entry that a storage kept passes the check") {
+                    EntryView::Session(event) => StoredEntry::Session(
+                        event
+                            .to_session_event()
+                            .expect("a session event that a storage kept builds its type"),
+                    ),
+                    EntryView::Call(call) => StoredEntry::Call {
+                        call: Box::new(call.to_call().expect("a call that a storage kept builds its type")),
+                        frames: FrameSlot::ALL
+                            .map(|slot| call.frame(slot).expect("a frame lies inside the frames of its batch")),
+                    },
+                    EntryView::Journal(entry) => StoredEntry::Journal(
+                        entry
+                            .to_journal_entry()
+                            .expect("a journal entry that a storage kept builds its type"),
+                    ),
+                });
+            }
+        }
+        entries
+    }
+}
+
 impl Default for MemoryStorage {
     fn default() -> Self {
         Self::new()

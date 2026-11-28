@@ -11,7 +11,7 @@ use gaslightmq_wire::{DecodeError, FrameDecoder, FrameError, Request, Response};
 
 use crate::in_flight::{AtRequestGate, CallInFlight, Leaving, Settled};
 use crate::untold::StageFailure;
-use crate::{Input, Output, Outputs, SharedBySessions, TimerId};
+use crate::{Input, Output, Outputs, Recording, SharedBySessions, TimerId};
 
 /// The request pipeline of one connection: a state machine that decides what happens to each call.
 ///
@@ -78,7 +78,7 @@ pub struct Pipeline {
     /// The bytes of the client that are no whole request yet.
     frames: FrameDecoder,
     /// Whether a recording runs, so that every call that arrives hands its frames out with its record.
-    recording: bool,
+    recording: Recording,
 }
 
 impl Pipeline {
@@ -105,7 +105,7 @@ impl Pipeline {
             snapshot,
             shared,
             frames: FrameDecoder::new(),
-            recording: false,
+            recording: Recording::Idle,
         }
     }
 
@@ -115,7 +115,7 @@ impl Pipeline {
     /// record in [`Output::Emit`]: the request as the client sent it, the truth, and the response that the client
     /// received. A call that arrived before keeps none, and neither does one that arrives while nothing records.
     /// The engine says it before every input, and a pipeline opens while nothing records.
-    pub fn record_frames(&mut self, recording: bool) {
+    pub fn set_recording(&mut self, recording: Recording) {
         self.recording = recording;
     }
 
@@ -214,7 +214,7 @@ impl Pipeline {
             // so nothing happens to it: no rule is evaluated, the session takes no identity from it,
             // and the client context learns nothing from it.
             let mut call = CallInFlight::parked(request, &self.session, snapshot, &self.shared, now);
-            if self.recording {
+            if self.recording == Recording::Running {
                 call.keep_frames();
             }
             let id = self.session.calls_mut().arrive(call, now);
@@ -223,7 +223,7 @@ impl Pipeline {
         }
 
         let mut call = CallInFlight::arrived(request, &mut self.session, snapshot, &self.shared, now);
-        if self.recording {
+        if self.recording == Recording::Running {
             call.keep_frames();
         }
         let arrival = call.evaluate(self.session.counters_mut(), &self.shared, now);

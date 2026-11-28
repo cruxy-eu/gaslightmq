@@ -23,7 +23,7 @@
 //! | [`Reloaded`], [`ReloadWorkspaceError`], [`Unsaved`] | What a reload of the workspace took in from its files, why a reload changed nothing, and what it does with changes that nobody saved. |
 //! | [`CreateLiveRuleError`], [`UpdateLiveRuleError`], [`DeleteLiveRuleError`], [`KeepRuleError`] | Why a live rule was not made, changed, removed or kept. |
 //! | [`EnvironmentRulesError`], [`IntentError`], [`CloseSessionError`], [`HostChangesError`], [`FollowCallsError`] | Why the rules of an environment were not read, a pad was not acted on, a session was not closed, a follower has no next change, and the calls of an environment were not followed. |
-//! | [`StartRecordingError`], [`StopRecordingError`] | Why a recording of an environment did not start, and why one did not stop in order. |
+//! | [`RecordingStartError`], [`RecordingStopError`] | Why a recording of an environment did not start, and why one did not stop in order. |
 //!
 //! The [`prelude`] holds all of them.
 //!
@@ -214,8 +214,8 @@ pub use configuration::{
 pub use error::{
     ArmRuleError, CloseSessionError, CreateDefinitionError, CreateLiveRuleError, DeleteDefinitionError,
     DeleteLiveRuleError, DisarmRuleError, EnvironmentRulesError, EnvironmentStartError, FireRuleError,
-    FollowCallsError, IntentError, KeepRuleError, NotRunningError, ReadSentenceError, ReloadWorkspaceError, RuleHolder,
-    StartRecordingError, StopRecordingError, UpdateDefinitionError, UpdateLiveRuleError,
+    FollowCallsError, IntentError, KeepRuleError, NotRunningError, ReadSentenceError, RecordingStartError,
+    RecordingStopError, ReloadWorkspaceError, RuleHolder, UpdateDefinitionError, UpdateLiveRuleError,
 };
 pub use host::Host;
 pub use reloaded::{Reloaded, Unsaved};
@@ -244,7 +244,7 @@ pub mod prelude {
         DisarmRuleError, EnvironmentConfiguration, EnvironmentConfigurationError, EnvironmentRule,
         EnvironmentRulesError, EnvironmentStartError, Expects, FireRuleError, FollowCallsError, Host, HostChange,
         HostChanges, HostChangesError, HostConfiguration, IntentEffect, IntentError, KeepRuleError, NotRunningError,
-        ReadSentenceError, ReloadWorkspaceError, Reloaded, RuleHolder, RunId, RunIdError, StartRecordingError,
-        StopRecordingError, Unsaved, UpdateDefinitionError, UpdateLiveRuleError,
+        ReadSentenceError, RecordingStartError, RecordingStopError, ReloadWorkspaceError, Reloaded, RuleHolder, RunId,
+        RunIdError, Unsaved, UpdateDefinitionError, UpdateLiveRuleError,
     };
 }

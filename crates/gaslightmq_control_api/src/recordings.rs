@@ -1,8 +1,8 @@
 //! The recordings of the environments: starting and stopping one, listing them, and opening one.
 
-use gaslightmq_clock::Instant;
+use gaslightmq_clock::{Instant, UtcInstant};
 use gaslightmq_environment::{EnvironmentName, RecordingMode};
-use gaslightmq_journal::{JournalEntryId, RecordedName, RecordingId, UtcInstant};
+use gaslightmq_journal::{JournalEntryId, RecordedName, RecordingId};
 use serde::{Deserialize, Serialize};
 
 use crate::{BackendKind, Operation};
@@ -154,7 +154,7 @@ pub enum RecordingEnding {
 /// ```
 /// use gaslightmq_control_api::prelude::*;
 ///
-/// let error = StartRecordingError::Recording {
+/// let error = StartRecordingError::AlreadyRecording {
 ///     environment: "orders-sim".parse().expect("an environment name"),
 ///     recording: "orders-sim.2026-11-21T14-02-11.527Z".parse().expect("a recording ID"),
 /// };
@@ -171,13 +171,13 @@ pub enum StartRecordingError {
     NotRunning { environment: EnvironmentName },
     /// The environment records already. Whoever wants another recording stops this one first.
     #[error("environment {:?} records already, into {recording}", .environment.as_str())]
-    Recording {
+    AlreadyRecording {
         environment: EnvironmentName,
         recording: RecordingId,
     },
     /// The storage did not keep the recording, or its recorder did not start. `reason` says what stood in the way.
     #[error("environment {:?} did not start a recording: {reason}", .environment.as_str())]
-    NotStarted {
+    StorageFailed {
         environment: EnvironmentName,
         reason: String,
     },
@@ -203,7 +203,7 @@ pub enum StopRecordingError {
     /// The recording stopped, and its recorder could not write what waited, or its end.
     /// It holds what its last commit covers, and opens as a recording that was cut short.
     #[error("recording {recording} stopped without its end: {reason}")]
-    NotFinished { recording: RecordingId, reason: String },
+    CutShort { recording: RecordingId, reason: String },
 }
 
 /// Why the process did not [list its recordings](ListRecordings).
@@ -211,15 +211,16 @@ pub enum StopRecordingError {
 /// ```
 /// use gaslightmq_control_api::prelude::*;
 ///
-/// let error = ListRecordingsError::NotListed { reason: "permission denied".to_owned() };
+/// let error = ListRecordingsError::StorageUnavailable { reason: "permission denied".to_owned() };
 /// assert_eq!(error.to_string(), "the recordings were not listed: permission denied");
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error, Serialize, Deserialize)]
 #[serde(tag = "error", rename_all = "kebab-case", deny_unknown_fields)]
 pub enum ListRecordingsError {
-    /// The storage of the recordings did not answer. `reason` says what stood in the way.
+    /// The storage of the recordings did not answer, and the recordings can be listed again.
+    /// `reason` says what stood in the way.
     #[error("the recordings were not listed: {reason}")]
-    NotListed { reason: String },
+    StorageUnavailable { reason: String },
 }
 
 /// Why the process did not [open a recording](OpenRecording).
@@ -237,10 +238,10 @@ pub enum OpenRecordingError {
     #[error("no recording {recording} is there")]
     NotFound { recording: RecordingId },
     /// What is there is no recording that this build of the process reads: a later version wrote it, or it is no
-    /// recording. `reason` says which.
+    /// recording. It will not open, however often someone asks. `reason` says which.
     #[error("recording {recording} does not open: {reason}")]
-    NotReadable { recording: RecordingId, reason: String },
+    Unreadable { recording: RecordingId, reason: String },
     /// The storage did not answer, and the recording can be opened again.
     #[error("recording {recording} was not read: {reason}")]
-    NotRead { recording: RecordingId, reason: String },
+    StorageUnavailable { recording: RecordingId, reason: String },
 }

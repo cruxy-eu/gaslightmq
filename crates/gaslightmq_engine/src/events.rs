@@ -6,7 +6,7 @@ use gaslightmq_call::{Call, CallId};
 use gaslightmq_clock::Clock;
 use gaslightmq_incident::Incident;
 use gaslightmq_journal::{JournalEntry, RecordingStopCause};
-use gaslightmq_pipeline::WireFrames;
+use gaslightmq_pipeline as pipeline;
 use gaslightmq_recording::RecordingId;
 use tokio::sync::broadcast;
 use tokio::sync::broadcast::error::RecvError;
@@ -156,11 +156,11 @@ impl EventBus {
 
     /// Hands the record of a call to every listener, and to the recording that runs with its frames, when it has them.
     /// It never waits for one.
-    pub fn publish_call(&self, call: Arc<Call>, frames: Option<WireFrames>) {
+    pub fn publish_call(&self, call: Arc<Call>, frames: Option<pipeline::CallFrames>) {
         self.hand_over(EngineEvent::CallRecorded(call), frames);
     }
 
-    fn hand_over(&self, event: EngineEvent, frames: Option<WireFrames>) {
+    fn hand_over(&self, event: EngineEvent, frames: Option<pipeline::CallFrames>) {
         let mut keeping = self.keeping();
         if let Some((queue, clock)) = &keeping.recording {
             match (&event, frames) {

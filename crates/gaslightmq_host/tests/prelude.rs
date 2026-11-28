@@ -189,11 +189,11 @@ mod next_to_the_others {
     /// One error of every type of the prelude about recordings, each named without a path.
     pub fn every_error_of_a_recording() -> Vec<String> {
         let staging: EnvironmentName = "staging-proxy".parse().unwrap();
-        let not_started: StartRecordingError = StartRecordingError::NotStarted {
+        let not_started: RecordingStartError = RecordingStartError::StorageFailed {
             environment: staging.clone(),
             reason: "disk full".to_owned(),
         };
-        let not_recording: StopRecordingError = StopRecordingError::NotRecording { environment: staging };
+        let not_recording: RecordingStopError = RecordingStopError::NotRecording { environment: staging };
         assert!(std::error::Error::source(&not_started).is_none());
         assert!(std::error::Error::source(&not_recording).is_none());
         vec![not_started.to_string(), not_recording.to_string()]

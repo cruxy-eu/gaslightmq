@@ -18,7 +18,7 @@ use std::fs;
 use std::net::{IpAddr, Ipv4Addr, TcpListener};
 
 use anyhow::Context;
-use gaslightmq_clock::{Duration, TimeSpan};
+use gaslightmq_clock::{Duration, TimeSpan, UtcInstant};
 use gaslightmq_definition_api::prelude::*;
 use gaslightmq_engine::prelude::*;
 use gaslightmq_environment::prelude::*;
@@ -2411,12 +2411,15 @@ async fn a_recording_of_an_environment_keeps_its_calls_and_whoever_follows_the_h
 {
     let cluster = KafkaCluster::plaintext().start().await?;
     let orders = cluster.topics().create("orders").await?;
+    // The wall clock stands still for the test, so it knows the ID of every recording.
+    let started: UtcInstant = "2026-11-21T14:02:11.527Z".parse()?;
     let host = Host::new(
         HostConfiguration::default(),
         MemoryContext::new(),
         Lies::of_every_build(),
         RUN,
-    );
+    )
+    .with_utc_clock(started);
     let listen = Listeners::new(
         ListenAddress::new(LOCALHOST, 0),
         BrokerListeners::any_port(LOCALHOST),
@@ -2437,6 +2440,7 @@ async fn a_recording_of_an_environment_keeps_its_calls_and_whoever_follows_the_h
         .context("the bootstrap endpoint of the staging proxy is open")?;
 
     let recording = host.start_recording(staging.name(), ChangeSurface::Test).await?;
+    assert_eq!(recording.to_string(), "staging-proxy.2026-11-21T14-02-11.527Z");
     let placed = Record::new("placed").with_key("o-1").with_timestamp(PLACED_AT);
     KafkaProducer::from(through_staging)
         .send(orders.name().as_str(), Partition::new(0), std::slice::from_ref(&placed))
@@ -2467,7 +2471,7 @@ async fn a_recording_of_an_environment_keeps_its_calls_and_whoever_follows_the_h
         "a recording in front of a real cluster drops what the records hold, until someone says otherwise"
     );
     assert_eq!(stored.extent.end, Some(end));
-    let started = HostChange::RecordingStarted {
+    let began = HostChange::RecordingStarted {
         environment: staging.name().clone(),
         recording: recording.clone(),
     };
@@ -2486,7 +2490,11 @@ async fn a_recording_of_an_environment_keeps_its_calls_and_whoever_follows_the_h
             told.push(change);
         }
     }
-    assert_eq!(told, [started, stopped]);
+    assert_eq!(told, [began, stopped]);
+
+    // A start in the millisecond of the recording before it takes the next millisecond, so the IDs differ.
+    let again = host.start_recording(staging.name(), ChangeSurface::Test).await?;
+    assert_eq!(again.to_string(), "staging-proxy.2026-11-21T14-02-11.528Z");
     host.stop_all().await;
     Ok(())
 }

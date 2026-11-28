@@ -171,11 +171,11 @@ mod next_to_the_others {
         };
         let stopped: LiveEventsError = LiveEventsError::EngineStopped;
         let recording: gaslightmq_recording::RecordingId = "orders-sim.2026-11-21T14-02-11.527Z".parse().unwrap();
-        let running: RecorderStartError = RecorderStartError::Recording {
+        let running: StartRecordingError = StartRecordingError::AlreadyRecording {
             recording: recording.clone(),
         };
-        let not_recording: RecorderStopError = RecorderStopError::NotRecording;
-        let not_listed: ListRecordingsError = ListRecordingsError::NotListed {
+        let not_recording: StopRecordingError = StopRecordingError::NotRecording;
+        let not_listed: ListRecordingsError = ListRecordingsError::StorageUnavailable {
             reason: "permission denied".to_owned(),
         };
         let not_found: OpenRecordingError = OpenRecordingError::NotFound { recording };

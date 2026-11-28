@@ -64,10 +64,10 @@ impl Recordings {
     ///
     /// # Errors
     ///
-    /// [`ListRecordingsError::NotListed`] when the storage did not answer.
+    /// [`ListRecordingsError::StorageUnavailable`] when the storage did not answer.
     pub async fn list(&self) -> Result<Vec<RecordingId>, ListRecordingsError> {
         self.inner.storage.recordings().await.map_err(|error| match error {
-            ListError::NotListed { reason } => ListRecordingsError::NotListed { reason },
+            ListError::NotListed { reason } => ListRecordingsError::StorageUnavailable { reason },
         })
     }
 
@@ -79,8 +79,8 @@ impl Recordings {
     /// # Errors
     ///
     /// - [`OpenRecordingError::NotFound`] when the storage has no recording with that ID.
-    /// - [`OpenRecordingError::NotReadable`] when this build cannot read what is there.
-    /// - [`OpenRecordingError::NotRead`] when the storage did not answer, and the recording can be opened again.
+    /// - [`OpenRecordingError::Unreadable`] when this build cannot read what is there.
+    /// - [`OpenRecordingError::StorageUnavailable`] when the storage did not answer, and the recording can be opened again.
     pub async fn open(&self, recording: &RecordingId) -> Result<StoredRecording, OpenRecordingError> {
         let running = self.running().get(recording).cloned();
         if let Some(queue) = running
@@ -93,17 +93,17 @@ impl Recordings {
             OpenError::NotFound => OpenRecordingError::NotFound {
                 recording: recording.clone(),
             },
-            OpenError::EncodingNotRead { error } => OpenRecordingError::NotReadable {
+            OpenError::EncodingNotRead { error } => OpenRecordingError::Unreadable {
                 recording: recording.clone(),
                 reason: error.to_string(),
             },
-            OpenError::LayoutNotRead { .. } | OpenError::NotReadable { .. } => OpenRecordingError::NotReadable {
+            OpenError::LayoutNotRead { .. } | OpenError::NotReadable { .. } => OpenRecordingError::Unreadable {
                 recording: recording.clone(),
                 reason: error.to_string(),
             },
         })?;
         let extent = reader.extent().await.map_err(|error| match error {
-            ExtentError::NotRead { reason } => OpenRecordingError::NotRead {
+            ExtentError::NotRead { reason } => OpenRecordingError::StorageUnavailable {
                 recording: recording.clone(),
                 reason,
             },

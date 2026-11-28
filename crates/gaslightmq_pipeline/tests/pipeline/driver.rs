@@ -204,7 +204,7 @@ impl Seen {
     }
 
     /// The frames that came with each call record, in order.
-    pub fn frames(&self) -> Vec<Option<WireFrames>> {
+    pub fn frames(&self) -> Vec<Option<CallFrames>> {
         let frames = |output: &Output| match output {
             Output::Emit { frames, .. } => Some(frames.clone()),
             _ => None,
@@ -213,7 +213,7 @@ impl Seen {
     }
 
     /// The frames that came with the one call record that the pipeline emitted.
-    pub fn emitted_frames(&self) -> WireFrames {
+    pub fn emitted_frames(&self) -> CallFrames {
         let [frames] = self.frames().try_into().unwrap();
         frames.expect("the call arrived while a recording ran")
     }

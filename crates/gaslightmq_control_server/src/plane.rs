@@ -770,31 +770,35 @@ impl<C: WorkspaceContext + 'static> ControlPlane<C> {
         environment: EnvironmentName,
         from: ChangeSource,
     ) -> Result<RecordingId, StartRecordingError> {
-        use gaslightmq_host::StartRecordingError as Host;
+        use gaslightmq_host::RecordingStartError as Host;
         self.host
             .start_recording(&environment, from)
             .await
             .map_err(|error| match error {
                 Host::NotRunning { environment } => StartRecordingError::NotRunning { environment },
-                Host::Recording { environment, recording } => StartRecordingError::Recording { environment, recording },
-                Host::NotStarted { environment, reason } => StartRecordingError::NotStarted { environment, reason },
+                Host::AlreadyRecording { environment, recording } => {
+                    StartRecordingError::AlreadyRecording { environment, recording }
+                }
+                Host::StorageFailed { environment, reason } => {
+                    StartRecordingError::StorageFailed { environment, reason }
+                }
             })
     }
 
     async fn stop_recording(&self, environment: EnvironmentName) -> Result<RecordingEnd, StopRecordingError> {
-        use gaslightmq_host::StopRecordingError as Host;
+        use gaslightmq_host::RecordingStopError as Host;
         match self.host.stop_recording(&environment).await {
             Ok(end) => Ok(recording_end(end)),
             Err(Host::NotRunning { environment }) => Err(StopRecordingError::NotRunning { environment }),
             Err(Host::NotRecording { environment }) => Err(StopRecordingError::NotRecording { environment }),
-            Err(Host::NotFinished { recording, reason }) => Err(StopRecordingError::NotFinished { recording, reason }),
+            Err(Host::CutShort { recording, reason }) => Err(StopRecordingError::CutShort { recording, reason }),
         }
     }
 
     async fn list_recordings(&self) -> Result<Vec<RecordingId>, ListRecordingsError> {
         use gaslightmq_engine::ListRecordingsError as Engine;
         self.host.recordings().await.map_err(|error| match error {
-            Engine::NotListed { reason } => ListRecordingsError::NotListed { reason },
+            Engine::StorageUnavailable { reason } => ListRecordingsError::StorageUnavailable { reason },
         })
     }
 
@@ -802,8 +806,10 @@ impl<C: WorkspaceContext + 'static> ControlPlane<C> {
         use gaslightmq_engine::OpenRecordingError as Engine;
         let stored = self.host.open_recording(recording).await.map_err(|error| match error {
             Engine::NotFound { recording } => OpenRecordingError::NotFound { recording },
-            Engine::NotReadable { recording, reason } => OpenRecordingError::NotReadable { recording, reason },
-            Engine::NotRead { recording, reason } => OpenRecordingError::NotRead { recording, reason },
+            Engine::Unreadable { recording, reason } => OpenRecordingError::Unreadable { recording, reason },
+            Engine::StorageUnavailable { recording, reason } => {
+                OpenRecordingError::StorageUnavailable { recording, reason }
+            }
         })?;
         Ok(recording_status(stored))
     }

@@ -92,32 +92,47 @@ pub enum Output {
     /// Publish the record of a call that ended.
     ///
     /// `frames` holds the frames of the call when a recording ran as its request arrived:
-    /// see [`Pipeline::record_frames`](crate::Pipeline::record_frames). It is `None` otherwise.
+    /// see [`Pipeline::set_recording`](crate::Pipeline::set_recording). It is `None` otherwise.
     Emit {
         /// The record of the call.
         record: Box<Call>,
         /// The frames of the call as they were on the wire, while a recording runs.
-        frames: Option<WireFrames>,
+        frames: Option<CallFrames>,
     },
     /// Pass an incident that a rule fired to the scenario runner. It takes effect after the call that fired it.
     Fire(Incident),
 }
 
 /// The frames of one call as they were on the wire, which the pipeline hands out with its record while a recording
-/// runs.
+/// runs: the four frames that a recording keeps of a call.
 ///
 /// A frame is the buffer that the session read from its socket, or the buffer of the response that it wrote to it.
 /// The pipeline holds each of them while the call is in flight anyway, and handing them out shares the buffers:
 /// it copies nothing and encodes nothing.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct WireFrames {
+pub struct CallFrames {
     /// The request as the client sent it.
     pub request: Frame,
+    /// The response of the real cluster, when the overlay of the backend changed it into the truth.
+    ///
+    /// The backend hands the pipeline the truth alone today, so the pipeline has no such frame, and this is `None`.
+    pub upstream: Option<Frame>,
     /// The truth: the response of the backend with the correlation ID of the client, when the request reached the
     /// backend and it answered with a response to it.
     pub truth: Option<Frame>,
     /// The response that the client received, when it received one.
     pub delivered: Option<Frame>,
+}
+
+/// Whether a recording runs, as the engine tells a pipeline before every input:
+/// see [`Pipeline::set_recording`](crate::Pipeline::set_recording).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+pub enum Recording {
+    /// No recording runs, so a call that arrives keeps none of its frames beyond what it needs itself.
+    #[default]
+    Idle,
+    /// A recording runs, so a call that arrives keeps its frames until it ends, and hands them out with its record.
+    Running,
 }
 
 /// What one [`handle`](crate::Pipeline::handle) asks for, in the order the engine performs it.

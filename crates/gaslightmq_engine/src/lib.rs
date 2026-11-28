@@ -20,7 +20,7 @@
 //! | [`EngineStartError`], [`EndpointOpenError`] | Why an engine did not start, and why an endpoint has no listener. |
 //! | [`ArmError`], [`DisarmError`], [`RetuneError`], [`LiveEventsError`] | Why a rule was not armed, disarmed or retuned, and why a live listener has no next event. |
 //! | [`NotOpenError`] | No session is open on the connection that someone asked to close. |
-//! | [`RecorderStartError`], [`RecorderStopError`], [`ListRecordingsError`], [`OpenRecordingError`] | Why a recording did not start, did not stop in order, and why the recordings were not listed or one did not open. |
+//! | [`StartRecordingError`], [`StopRecordingError`], [`ListRecordingsError`], [`OpenRecordingError`] | Why a recording did not start, did not stop in order, and why the recordings were not listed or one did not open. |
 //!
 //! The [`prelude`] holds all of them.
 //!
@@ -353,7 +353,7 @@ pub use configuration::{EngineConfiguration, EventBacklog, EventBacklogError, Re
 pub use engine::Engine;
 pub use error::{
     ArmError, DisarmError, EndpointOpenError, EngineStartError, ListRecordingsError, LiveEventsError, NotOpenError,
-    OpenRecordingError, RecorderStartError, RecorderStopError, RetuneError,
+    OpenRecordingError, RetuneError, StartRecordingError, StopRecordingError,
 };
 pub use events::{EngineEvent, EveryEvent, LiveEvents};
 pub use journal::Journal;
@@ -380,7 +380,7 @@ pub mod prelude {
     pub use crate::{
         ArmError, ArmedRules, DisarmError, EndpointOpenError, Engine, EngineConfiguration, EngineEvent,
         EngineStartError, EventBacklog, EventBacklogError, EveryEvent, Journal, ListRecordingsError, LiveEvents,
-        LiveEventsError, NotOpenError, OpenRecordingError, OpenSession, RecorderConfiguration, RecorderStartError,
-        RecorderStopError, RecordingStart, Recordings, RetuneError, RuleChanges, SessionEvent, StoredRecording,
+        LiveEventsError, NotOpenError, OpenRecordingError, OpenSession, RecorderConfiguration, RecordingStart,
+        Recordings, RetuneError, RuleChanges, SessionEvent, StartRecordingError, StopRecordingError, StoredRecording,
     };
 }
