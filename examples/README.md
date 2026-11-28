@@ -4,8 +4,8 @@ Each example shows one capability of GaslightMQ, with as few files as possible.
 The number in the name orders them from easy to complex.
 Every example is a workspace of its own: change into its directory and run the command in its README.
 
-These examples show the target design.
-The commands and the file formats are not implemented yet.
+Examples 01 to 11 show the target design: not all of their commands and file formats are implemented yet.
+Examples 12 and 13 run today, and CI runs their tests.
 
 | Example | Level | Shows |
 |---|---|---|
@@ -20,6 +20,17 @@ The commands and the file formats are not implemented yet.
 | [`09-proxy-in-front-of-real-kafka`](09-proxy-in-front-of-real-kafka/README.md) | Medium | The same lies in front of a real cluster, with secrets kept in files. |
 | [`10-several-environments`](10-several-environments/README.md) | Complex | A fake cluster and a real one side by side in one process, with one UI. |
 | [`11-complete-orders-setup`](11-complete-orders-setup/README.md) | Complex | Everything together, with Docker Compose, Kubernetes and CI files. |
+
+## Testing your application
+
+Each of these two is a Rust project as yours would be: an orders service, and the tests that check how it handles a
+cluster that lies to it. Each test starts GaslightMQ in front of a real Kafka cluster, arms a rule through
+the control plane, and asserts what the service did. The tests run side by side, each with GaslightMQ of its own.
+
+| Example | Level | Shows |
+|---|---|---|
+| [`12-test-in-process`](12-test-in-process/README.md) | Medium | GaslightMQ inside the process of each test, with `gaslightmq_test`, and a test that asserts on a recording. |
+| [`13-test-with-a-container`](13-test-with-a-container/README.md) | Complex | The image of GaslightMQ in a container next to each test, with `gaslightmq_testcontainers`, on a network of containers that the test names, with rules from files of the project. |
 
 ## The two halves
 

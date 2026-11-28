@@ -1,8 +1,8 @@
 # The orders service of this example, a project of its own.
 [workspace]
 
-# Your project names a release instead, once one is published: `gaslightmq_testcontainers = "0.1"`.
-# This example builds against the crates of this repository instead, so it always tests what they are now.
+# The crates of this repository, by their paths, so the example always tests what they are now.
+# Your project names a release of them instead, once one is published: `gaslightmq_testcontainers = "0.1"`.
 [workspace.dependencies]
 gaslightmq_control_api = { path = "../../crates/gaslightmq_control_api" }
 gaslightmq_kafka_client_api = { path = "../../crates/gaslightmq_kafka_client/api" }
