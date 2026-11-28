@@ -76,6 +76,7 @@ gaslightmq_control_server = { path = "crates/gaslightmq_control_server" }
 gaslightmq_definition_api = { path = "crates/gaslightmq_definition/api" }
 gaslightmq_definition_conformance = { path = "crates/gaslightmq_definition/conformance" }
 gaslightmq_definition_memory = { path = "crates/gaslightmq_definition/memory" }
+gaslightmq_definition_text = { path = "crates/gaslightmq_definition/text" }
 gaslightmq_engine = { path = "crates/gaslightmq_engine" }
 gaslightmq_environment = { path = "crates/gaslightmq_environment" }
 gaslightmq_environment_conformance = { path = "crates/gaslightmq_environment/conformance" }

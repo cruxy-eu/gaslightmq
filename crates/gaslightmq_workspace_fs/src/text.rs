@@ -60,28 +60,11 @@ struct Misread {
     message: String,
 }
 
-/// Reads one item alone, with the lines and the columns it has in its file.
+/// Reads one item alone, with the lines and the columns it has in its file, as every text of a definition is read.
 fn read_item<D: FileDefinition>(text: &str, item: &Item) -> Result<D, Misread> {
-    let alone = item.alone(text);
-    // YAML 1.2 knows `true` and `false`, so a selector named `on` stays a name.
-    let options = serde_saphyr::options! {
-        strict_booleans: true,
-        with_snippet: false,
-    };
-    let mut path = None;
-    serde_saphyr::with_deserializer_from_str_with_options(&alone, options, |deserializer| {
-        serde_path_to_error::deserialize(deserializer).map_err(|error| {
-            path = Some(error.path().to_string());
-            error.into_inner()
-        })
-    })
-    .map_err(|error| Misread {
-        path,
-        message: match error {
-            // What the type of the value said, without where the reader was: the path says that.
-            serde_saphyr::Error::Message { msg, .. } => msg,
-            other => other.to_string(),
-        },
+    gaslightmq_definition_text::read(&item.alone(text)).map_err(|error| Misread {
+        path: error.path,
+        message: error.reason,
     })
 }
 
@@ -89,8 +72,7 @@ fn read_item<D: FileDefinition>(text: &str, item: &Item) -> Result<D, Misread> {
 ///
 /// `at` is the place of the item in its list. A path that names no key, as `.` for the whole value, adds nothing.
 fn located(at: Option<&str>, path: Option<&str>, message: &str) -> String {
-    let key = path.filter(|path| !matches!(*path, "." | "?"));
-    match (at, key) {
+    match (at, path) {
         (Some(at), Some(key)) => format!("{at}.{key}: {message}"),
         (Some(at), None) => format!("{at}: {message}"),
         (None, Some(key)) => format!("{key}: {message}"),

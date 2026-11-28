@@ -1,0 +1,20 @@
+[package]
+name = "gaslightmq_definition_text"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+serde.workspace = true
+# Reads the text of a definition, as the files of a workspace hold it, and writes a definition as that text.
+serde-saphyr = { workspace = true, features = ["serialize"] }
+# The path of the key that failed, in the error of a reading.
+serde_path_to_error.workspace = true
+# A value of the code that writes a definition, in its `serde` form, which a YAML map holds as it stands.
+serde_json.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
