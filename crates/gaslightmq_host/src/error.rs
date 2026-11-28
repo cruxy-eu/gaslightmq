@@ -2,7 +2,7 @@
 
 use gaslightmq_backend::IncidentRejection;
 use gaslightmq_backend_upstream::UpstreamBackendError;
-use gaslightmq_engine::EngineStartError;
+use gaslightmq_engine::{EngineStartError, QueryRecordingError};
 use gaslightmq_environment::{EnvironmentName, ListenAddress};
 use gaslightmq_field::ConnectionNumber;
 use gaslightmq_incident::UnsupportedIncidents;
@@ -783,6 +783,54 @@ pub enum RecordingStopError {
     /// It holds what its last commit covers, and opens as a recording that was cut short.
     #[error("recording {recording} stopped without its end: {reason}")]
     CutShort { recording: RecordingId, reason: String },
+}
+
+/// Why a host did not [query a recording](crate::Host::query_recording), or did not give its
+/// [index](crate::Host::recording_index).
+///
+/// ```
+/// use gaslightmq_host::prelude::*;
+///
+/// let error = RecordingQueryError::NotFound { recording: "staging-proxy.2026-11-21T14-02-11.527Z".parse().expect("an ID") };
+/// assert_eq!(error.to_string(), "no recording staging-proxy.2026-11-21T14-02-11.527Z is there");
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum RecordingQueryError {
+    /// The storage has no recording with that ID.
+    #[error("no recording {recording} is there")]
+    NotFound { recording: RecordingId },
+    /// What is there is no recording that this build reads: a later version wrote it, or it is no recording.
+    /// It will not open, however often someone asks.
+    #[error("recording {recording} does not open: {reason}")]
+    Unreadable { recording: RecordingId, reason: String },
+    /// The storage did not answer, and the recording can be read again.
+    #[error("recording {recording} was not read: {reason}")]
+    StorageUnavailable { recording: RecordingId, reason: String },
+    /// The readers of the process hold as much memory as a budget allows, so the reading was refused, and nothing
+    /// waited. Whoever asked asks again a moment later. `reason` names the budget, and the property that sets it.
+    #[error("recording {recording} was not read, because the engine is busy reading: {reason}")]
+    Busy { recording: RecordingId, reason: String },
+    /// The store of the selectors could not be read. `reason` says what it said.
+    #[error("the recording was not read: {reason}")]
+    StoreFailed { reason: String },
+    /// The selector does not resolve against the selectors of the workspace and the draft: it names one that does not
+    /// exist, or the selectors include each other in a circle. Its error says which.
+    #[error("{error}")]
+    Unresolved { error: SelectorSetError },
+}
+
+impl RecordingQueryError {
+    /// What a reading of the storage said, in the words of the host.
+    pub(crate) fn from_reading(error: QueryRecordingError) -> Self {
+        match error {
+            QueryRecordingError::NotFound { recording } => Self::NotFound { recording },
+            QueryRecordingError::Unreadable { recording, reason } => Self::Unreadable { recording, reason },
+            QueryRecordingError::StorageUnavailable { recording, reason } => {
+                Self::StorageUnavailable { recording, reason }
+            }
+            QueryRecordingError::Busy { recording, reason } => Self::Busy { recording, reason },
+        }
+    }
 }
 
 /// Why a host did not [follow the calls](crate::Host::follow_calls) of an environment.

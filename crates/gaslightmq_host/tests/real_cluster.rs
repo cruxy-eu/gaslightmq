@@ -2507,6 +2507,106 @@ async fn a_recording_of_an_environment_keeps_its_calls_and_whoever_follows_the_h
 }
 
 #[tokio::test]
+async fn a_recording_answers_a_query_with_a_saved_selector_or_a_draft_and_gives_its_index() -> anyhow::Result<()> {
+    let cluster = KafkaCluster::plaintext().start().await?;
+    let orders = cluster.topics().create("orders").await?;
+    let payments = cluster.topics().create("payments").await?;
+    let host = Host::new(
+        HostConfiguration::default(),
+        MemoryContext::new(),
+        Lies::of_every_build(),
+        RUN,
+    );
+    let listen = Listeners::new(
+        ListenAddress::new(LOCALHOST, 0),
+        BrokerListeners::any_port(LOCALHOST),
+        LOCALHOST.into(),
+    )?;
+    let staging = Environment::new(
+        "staging-proxy".parse()?,
+        Instances::ProxyInFrontOfCluster {
+            proxy: ProxyDefinition::new(listen),
+            upstream: Upstream::new(cluster.brokers()[0].address().to_string().parse()?),
+        },
+    );
+    let order_producers = Selector::new(
+        "order-producers".parse()?,
+        Conditions::new()
+            .with(Condition::is(ApiKey::PRODUCE))
+            .with(Condition::is(orders.name().clone())),
+    );
+    host.create(order_producers.clone(), ChangeSurface::Test).await?;
+    host.start(EnvironmentConfiguration::new(&staging)?).await?;
+    let mut events = host.live_events(staging.name())?;
+    let through_staging = host
+        .address_of(staging.name(), Endpoint::Bootstrap)?
+        .context("the bootstrap endpoint of the staging proxy is open")?;
+    let recording = host.start_recording(staging.name(), ChangeSurface::Test).await?;
+    let producer = KafkaProducer::from(through_staging);
+    let placed = Record::new("placed").with_key("o-1").with_timestamp(PLACED_AT);
+    for topic in [&orders, &orders, &payments] {
+        producer
+            .send(topic.name().as_str(), Partition::new(0), std::slice::from_ref(&placed))
+            .await?;
+    }
+    // The record of each Produce leaves the proxy a moment after the producer got its answer.
+    let produce = EffectiveSelector::from(Condition::is(ApiKey::PRODUCE));
+    let mut produces_recorded = 0;
+    while produces_recorded < 3 {
+        let event = tokio::time::timeout(PATIENCE, events.next()).await??;
+        if let EngineEvent::CallRecorded(record) = event
+            && produce.evaluate(record.fields()).is_matched()
+        {
+            produces_recorded += 1;
+        }
+    }
+    host.stop_recording(staging.name()).await?;
+
+    // The selector of the workspace, by its name.
+    let saved = SelectorRef::Named(order_producers.name().clone());
+    let queried = host.query_recording(&recording, &saved, None, 0).await?;
+    assert_eq!(queried.matched, 2);
+    let of_order_producers = EffectiveSelector::from(order_producers.conditions().clone());
+    assert!(
+        queried
+            .calls
+            .iter()
+            .all(|call| of_order_producers.evaluate(call.fields()).is_matched()),
+        "{queried:?}"
+    );
+    // Someone edits it to the payments, and tests the draft before saving it. The workspace keeps what it had.
+    let draft = Selector::new(
+        order_producers.name().clone(),
+        Conditions::new()
+            .with(Condition::is(ApiKey::PRODUCE))
+            .with(Condition::is(payments.name().clone())),
+    );
+    let drafted = host.query_recording(&recording, &saved, Some(&draft), 0).await?;
+    assert_eq!(drafted.matched, 1);
+    assert_eq!(host.query_recording(&recording, &saved, None, 0).await?.matched, 2);
+    // The index of the produced calls groups them by topic.
+    let every_produce = SelectorRef::Inline(Conditions::from(Condition::is(ApiKey::PRODUCE)));
+    let indexed = host.recording_index(&recording, &every_produce).await?;
+    let topics = indexed.facets.get(Field::Topic).map(|topics| {
+        topics
+            .values()
+            .iter()
+            .map(|value| (value.value().to_string(), value.calls()))
+            .collect::<Vec<_>>()
+    });
+    assert_eq!(topics, Some(vec![("orders".to_owned(), 2), ("payments".to_owned(), 1)]));
+    // A selector that the workspace does not have resolves to nothing.
+    let unknown = SelectorRef::Named("payment-producers".parse()?);
+    let unresolved = host.query_recording(&recording, &unknown, None, 0).await;
+    assert!(
+        matches!(unresolved, Err(RecordingQueryError::Unresolved { .. })),
+        "{unresolved:?}"
+    );
+    host.stop_all().await;
+    Ok(())
+}
+
+#[tokio::test]
 async fn a_sequence_advances_by_itself_when_its_rule_spent_the_firings_of_the_step() -> anyhow::Result<()> {
     let cluster = KafkaCluster::plaintext().with_brokers(3).start().await?;
     let orders = cluster.topics().create("orders").await?;

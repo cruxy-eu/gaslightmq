@@ -1,16 +1,19 @@
-//! The recordings of the environments: starting and stopping one, listing them, and opening one.
+//! The recordings of the environments: starting and stopping one, listing them, opening one, and querying one.
 
 use gaslightmq_clock::UtcInstant;
+use gaslightmq_definition_api::Store;
 use gaslightmq_engine::{
-    ListRecordingsError, OpenRecordingError, RecordingStart, StartRecordingError, StopRecordingError, StoredRecording,
+    ListRecordingsError, OpenRecordingError, QueriedCalls, RecordingFacets, RecordingStart, StartRecordingError,
+    StopRecordingError, StoredRecording,
 };
 use gaslightmq_environment::EnvironmentName;
 use gaslightmq_journal::ChangeSource;
 use gaslightmq_recording::{End, RecordedBackend, RecordingId};
-use gaslightmq_workspace::WorkspaceContext;
+use gaslightmq_selector::{EffectiveSelector, Selector, SelectorRef, SelectorSet};
+use gaslightmq_workspace::{Stores, WorkspaceContext};
 
-use super::Host;
-use crate::{NotRunningError, RecordingStartError, RecordingStopError, journaling};
+use super::{Host, unread};
+use crate::{NotRunningError, RecordingQueryError, RecordingStartError, RecordingStopError, journaling};
 
 impl<C: WorkspaceContext> Host<C> {
     /// Starts a recording of an environment, and returns its ID.
@@ -126,5 +129,86 @@ impl<C: WorkspaceContext> Host<C> {
     /// did not answer.
     pub async fn open_recording(&self, recording: &RecordingId) -> Result<StoredRecording, OpenRecordingError> {
         self.recordings.open(recording).await
+    }
+
+    /// The calls of a recording that a selector matches: how many the whole recording holds, and those behind the
+    /// first `skip` of them, as many as the [reading configuration](gaslightmq_engine::ReadingConfiguration) of the
+    /// storage lets one answer hold.
+    ///
+    /// The selector is one of the workspace by its name, or inline conditions. `draft` is a selector definition that
+    /// nobody saved yet: it stands in the workspace for the selector of its name while the query resolves, so a
+    /// selector that someone edits is tested before it is saved, and so is every selector that includes it.
+    /// Nothing changes: no file, no rule and no live state.
+    ///
+    /// A recording that an environment writes is committed first, so the query sees everything that its environment
+    /// handed over until the call.
+    ///
+    /// # Errors
+    ///
+    /// - [`RecordingQueryError::StoreFailed`] when the store of the selectors could not be read.
+    /// - [`RecordingQueryError::Unresolved`] when the selector does not resolve.
+    /// - [`RecordingQueryError::NotFound`], [`Unreadable`](RecordingQueryError::Unreadable) and
+    ///   [`StorageUnavailable`](RecordingQueryError::StorageUnavailable) when the recording is not there, this build
+    ///   cannot read it, or the storage did not answer.
+    /// - [`RecordingQueryError::Busy`] when the readers of the process hold as much memory as they may.
+    pub async fn query_recording(
+        &self,
+        recording: &RecordingId,
+        selector: &SelectorRef,
+        draft: Option<&Selector>,
+        skip: u64,
+    ) -> Result<QueriedCalls, RecordingQueryError> {
+        let selector = self.resolve_for_recording(selector, draft).await?;
+        self.recordings
+            .query(recording, &selector, skip)
+            .await
+            .map_err(RecordingQueryError::from_reading)
+    }
+
+    /// The facets of the calls of a recording under a filter: the values of each field with the calls that have
+    /// them, and the patterns that they suggest, under every condition of the filter but those on the field itself.
+    ///
+    /// The filter is a selector of the workspace by its name, or inline conditions: the values that someone clicked.
+    /// The index is built from the recording when someone first asks for it, and reads on with every later ask.
+    ///
+    /// # Errors
+    ///
+    /// The same as [`query_recording`](Self::query_recording).
+    pub async fn recording_index(
+        &self,
+        recording: &RecordingId,
+        filter: &SelectorRef,
+    ) -> Result<RecordingFacets, RecordingQueryError> {
+        let filter = self.resolve_for_recording(filter, None).await?;
+        self.recordings
+            .index(recording, &filter)
+            .await
+            .map_err(RecordingQueryError::from_reading)
+    }
+
+    /// What `selector` resolves to against the selectors of the workspace, with `draft` in place of the selector of
+    /// its name.
+    async fn resolve_for_recording(
+        &self,
+        selector: &SelectorRef,
+        draft: Option<&Selector>,
+    ) -> Result<EffectiveSelector, RecordingQueryError> {
+        if let (SelectorRef::Inline(conditions), None) = (selector, draft) {
+            return Ok(conditions.clone().into());
+        }
+        let saved = {
+            let workspace = self.workspace.lock().await;
+            workspace.stores().selectors().list().await
+        };
+        let saved = saved.map_err(|error| RecordingQueryError::StoreFailed {
+            reason: unread::<Selector>(error),
+        })?;
+        let selectors = saved
+            .into_iter()
+            .filter(|saved| draft.is_none_or(|draft| draft.name() != saved.name()))
+            .chain(draft.cloned());
+        SelectorSet::new(selectors)
+            .and_then(|selectors| selectors.resolve(selector))
+            .map_err(|error| RecordingQueryError::Unresolved { error })
     }
 }
