@@ -5,7 +5,7 @@ use std::path::PathBuf;
 use gaslightmq_control_api::{ReloadWorkspaceError, Unhealthy};
 use gaslightmq_control_client::SendError;
 use gaslightmq_control_server::ControlServerError;
-use gaslightmq_environment::{EnvironmentName, ListenersError};
+use gaslightmq_environment::{AdvertisedListenersError, EnvironmentName, ListenersError};
 use gaslightmq_host::EnvironmentStartError;
 use gaslightmq_workspace_fs::OpenError;
 
@@ -17,6 +17,13 @@ pub(crate) enum ProxyError {
     /// The bootstrap listener of the flags takes a port of the brokers.
     #[error("{error}")]
     ListenersMeet { error: ListenersError },
+    /// The standard input, which `--advertised-listeners -` names, ended or could not be read before it named the
+    /// advertised listeners. `reason` says why.
+    #[error("the advertised listeners did not come from the standard input: {reason}")]
+    AdvertisedListenersUnread { reason: String },
+    /// The line of the standard input names no advertised listeners.
+    #[error("the advertised listeners of the standard input: {error}")]
+    InvalidAdvertisedListeners { error: AdvertisedListenersError },
     /// The files of the workspace do not read. `error` holds every file that does not, which the command prints one
     /// per line.
     #[error("{}: {error}", .directory.display())]

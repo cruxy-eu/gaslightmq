@@ -4,6 +4,7 @@
 //! |---|---|
 //! | [`KafkaCluster`] | A cluster of real brokers, which runs for as long as the value lives. |
 //! | [`KafkaClusterConfiguration`] | What a cluster is configured with: its image, its number of brokers and its timeouts. |
+//! | [`ContainerNetwork`], [`NetworkListener`] | A network of containers that the cluster joins, and the listener of its brokers for the clients there. |
 //! | [`KafkaImage`] | The image the brokers run: Apache Kafka as a native binary, at the version the workspace tests against. |
 //! | [`Broker`] | One broker of a cluster: its ID, and the address a client reaches it at. |
 //! | [`Topics`] | The topics of a cluster: create one, look one up, list them, delete one. |
@@ -82,6 +83,7 @@ mod docker;
 mod error;
 mod image;
 mod metadata;
+mod network;
 mod partition;
 mod properties;
 mod request;
@@ -91,7 +93,7 @@ mod transaction;
 use gaslightmq_clock::TimeSpan;
 
 pub use cluster::{Broker, KafkaCluster};
-pub use configuration::KafkaClusterConfiguration;
+pub use configuration::{ContainerNetwork, KafkaClusterConfiguration, NetworkListener};
 pub use error::KafkaClusterError;
 pub use image::{KafkaImage, KafkaImageError};
 pub use partition::PartitionLog;

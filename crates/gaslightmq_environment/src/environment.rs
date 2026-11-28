@@ -1,6 +1,7 @@
 use std::fmt;
 
 use crate::address::ListenAddress;
+use crate::advertised::AdvertisedListeners;
 use crate::host::HostName;
 use crate::listeners::Listeners;
 use crate::name::{EnvironmentName, WorldName};
@@ -314,6 +315,16 @@ impl Environment {
     pub fn with_advertised_host(mut self, advertise: HostName) -> Self {
         let listeners = self.instances.listeners_mut();
         *listeners = listeners.clone().with_advertised_host(advertise);
+        self
+    }
+
+    /// The same environment, whose clients reach its broker listeners under the addresses of `advertised`.
+    ///
+    /// A command that starts an environment can name them, and they then win over the ones in the file.
+    #[must_use]
+    pub fn with_advertised_listeners(mut self, advertised: AdvertisedListeners) -> Self {
+        let listeners = self.instances.listeners_mut();
+        *listeners = listeners.clone().with_advertised_listeners(advertised);
         self
     }
 

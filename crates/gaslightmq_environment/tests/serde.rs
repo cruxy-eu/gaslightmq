@@ -104,6 +104,31 @@ fn a_proxy_in_front_of_a_real_cluster_writes_its_upstream_and_its_listeners() {
 }
 
 #[test]
+fn a_proxy_whose_clients_reach_its_brokers_under_other_ports_writes_its_advertised_listeners() {
+    // listen:
+    //   bootstrap: 0.0.0.0:9092
+    //   brokers: 0.0.0.0:19092-19093
+    //   advertise: localhost
+    //   advertised_listeners:
+    //     19092: localhost:55002
+    //     19093: localhost:55003
+    let listeners = listen("0.0.0.0:9092", "0.0.0.0:19092-19093", "localhost")
+        .with_advertised_listeners("19092=localhost:55002,19093=localhost:55003".parse().unwrap());
+
+    writes(
+        &listeners,
+        concat!(
+            r#"{"bootstrap":"0.0.0.0:9092","brokers":"0.0.0.0:19092-19093","advertise":"localhost","#,
+            r#""advertised_listeners":{"19092":"localhost:55002","19093":"localhost:55003"}}"#,
+        ),
+    );
+    rejects::<Listeners>(
+        r#"{"bootstrap":"0.0.0.0:9092","brokers":"0.0.0.0:19092-19093","advertise":"localhost","advertised_listeners":{"0":"localhost:55002"}}"#,
+        "names port 0",
+    );
+}
+
+#[test]
 fn a_proxy_in_front_of_a_broker_writes_the_broker_and_the_proxy() {
     // name: orders-sim
     // broker:

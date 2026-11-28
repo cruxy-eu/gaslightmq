@@ -75,6 +75,80 @@ pub struct KafkaClusterConfiguration {
     ///
     /// How many of the last lines the brokers logged an error shows, when the cluster does not start.
     pub log_lines_in_errors: usize,
+    /// Ours. Default: none.
+    ///
+    /// The network of containers that the cluster joins, so that containers next to the test reach its brokers:
+    /// a [network listener](Self::network_listener) serves them.
+    /// The cluster creates the network when it is missing, and removes it again when it ends, if it created it.
+    pub network: Option<String>,
+    /// Ours. Default: none.
+    ///
+    /// The listener of every broker for the clients on the [network](Self::network), as the listener of Kafka's
+    /// `listeners` and `advertised.listeners` that such a client connects to. It needs a network.
+    pub network_listener: Option<NetworkListener>,
+}
+
+/// The listener of the brokers of a cluster for the clients on its network: `kafka:19092`.
+///
+/// The cluster is known on the network under `alias`. Broker 1 listens on `port`, and each broker after it on the
+/// port after the one before it, and each one advertises `alias` with its port.
+///
+/// ```
+/// use gaslightmq_test_kafka::NetworkListener;
+///
+/// let listener = NetworkListener::new("kafka", 19092);
+/// assert_eq!(listener.to_string(), "kafka:19092");
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct NetworkListener {
+    /// The name that the cluster is known under on the network.
+    pub alias: String,
+    /// The port of broker 1. The broker with ID `n` listens on the `n - 1`th port after it.
+    pub port: u16,
+}
+
+impl NetworkListener {
+    /// A listener under `alias`, from `port` on.
+    pub fn new(alias: impl Into<String>, port: u16) -> Self {
+        Self {
+            alias: alias.into(),
+            port,
+        }
+    }
+}
+
+/// A network of containers, by its name: the cluster and the containers next to the test that reach it join it.
+///
+/// ```
+/// use gaslightmq_test_kafka::ContainerNetwork;
+///
+/// let network = ContainerNetwork::named("orders-test");
+/// assert_eq!(network.name(), "orders-test");
+///
+/// // A network of its own, for a test that runs beside others.
+/// assert_ne!(ContainerNetwork::unique("orders-test"), ContainerNetwork::unique("orders-test"));
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct ContainerNetwork {
+    name: String,
+}
+
+impl ContainerNetwork {
+    /// The network named `name`.
+    pub fn named(name: impl Into<String>) -> Self {
+        Self { name: name.into() }
+    }
+
+    /// The name of the network, which the container runtime knows it by.
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+}
+
+impl std::fmt::Display for NetworkListener {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}:{}", self.alias, self.port)
+    }
 }
 
 impl KafkaClusterConfiguration {
@@ -90,6 +164,8 @@ impl KafkaClusterConfiguration {
             retry_backoff: TimeSpan::from_millis(100),
             transaction_timeout: TimeSpan::from_secs(60),
             log_lines_in_errors: 40,
+            network: None,
+            network_listener: None,
         }
     }
 
@@ -104,6 +180,14 @@ impl KafkaClusterConfiguration {
     #[must_use]
     pub fn with_brokers(mut self, brokers: u8) -> Self {
         self.brokers = brokers;
+        self
+    }
+
+    /// Join the network of containers `network`, and serve its clients on `listener`.
+    #[must_use]
+    pub fn with_network(mut self, network: &ContainerNetwork, listener: NetworkListener) -> Self {
+        self.network = Some(network.name().to_owned());
+        self.network_listener = Some(listener);
         self
     }
 
@@ -132,6 +216,22 @@ mod tests {
         assert_eq!(configuration.retry_backoff, TimeSpan::from_millis(100));
         assert_eq!(configuration.transaction_timeout, TimeSpan::from_millis(60_000));
         assert_eq!(configuration.log_lines_in_errors, 40);
+        assert_eq!(configuration.network, None);
+        assert_eq!(configuration.network_listener, None);
+    }
+
+    #[test]
+    fn a_cluster_on_a_network_serves_its_clients_on_a_listener_of_its_own() {
+        let configuration = KafkaClusterConfiguration::plaintext().with_network(
+            &ContainerNetwork::named("orders-test"),
+            NetworkListener::new("kafka", 19092),
+        );
+
+        assert_eq!(configuration.network.as_deref(), Some("orders-test"));
+        assert_eq!(
+            configuration.network_listener.map(|listener| listener.to_string()),
+            Some("kafka:19092".to_owned())
+        );
     }
 
     #[test]

@@ -124,6 +124,7 @@ The standard output holds what the command did, one thing per line, and no log l
 | `--listen` | `GMQ_LISTEN` | `0.0.0.0:9092` | The bootstrap listener, where clients connect first. |
 | `--brokers` | `GMQ_BROKERS` | `0.0.0.0:19092-19191` | The listeners of the [brokers](#brokers): a range of ports; port 0, `127.0.0.1:0`, for a free port for each broker; or a pin for every broker, `1=0.0.0.0:19092,2=0.0.0.0:19093`. |
 | `--advertise` | `GMQ_ADVERTISE` | `localhost` | The host that clients see in Metadata. |
+| `--advertised-listeners` | `GMQ_ADVERTISED_LISTENERS` | None. | Kafka's `advertised.listeners`: the address that clients see in Metadata for a broker whose listener they reach through another port, by the port it listens on, `19092=localhost:55002,19093=localhost:55003`. A broker whose port it does not name is seen under `--advertise` and the port of its listener. `-` reads them from the first line of the standard input, and the proxy waits for that line before it starts: a container learns where its ports are published only once it runs. |
 | `--workspace` | `GMQ_WORKSPACE` | None: memory. | The directory of the [workspace](#workspace). |
 | `--read-only` | `GMQ_READ_ONLY` | Off. | The workspace is [read-only](#read-only-workspaces). It needs `--workspace`. |
 | `--write-back` | `GMQ_WRITE_BACK` | `each-change` | When an edit of the UI reaches the files: `each-change` or `on-save`, as [writing back](#writing-back) says. `write_back` of `gaslight.yaml`. It needs `--workspace`, and a read-only workspace takes none. |
@@ -550,6 +551,21 @@ Nobody knows the port before the listener is open, so the engine tells the backe
 and clients learn it from Metadata.
 A broker keeps its listener while it stays in the cluster, whichever brokers join or leave.
 The ports change when the proxy starts again, so this suits a test, and not ports that are published.
+
+A broker whose clients reach its listener through another port, such as a port that a container publishes, has an
+advertised listener: the address that Metadata names for the port it listens on, as `advertised.listeners` of Kafka does.
+
+```yaml
+listen:
+  bootstrap: 0.0.0.0:9092
+  brokers: 0.0.0.0:19092-19094
+  advertise: localhost
+  advertised_listeners:
+    19092: localhost:55002
+    19093: localhost:55003
+```
+
+A broker whose port has none is named under `advertise` and the port of its listener.
 
 An environment can pin a broker to a port when the ports are published one by one:
 

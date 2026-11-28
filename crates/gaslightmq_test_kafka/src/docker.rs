@@ -13,6 +13,12 @@
 //! The cluster reads the ports, writes the `server.properties` of every broker to the input of the container,
 //! and the script then sets up and starts the brokers.
 //!
+//! # A network of containers
+//!
+//! A cluster that a configuration puts on a network joins it under its alias, so containers on that network reach
+//! its brokers. The cluster creates the network when Docker does not know it, and removes it once its container
+//! is gone, when it created it. A network that other containers still use stays.
+//!
 //! # The container ends with its input
 //!
 //! The script ends when the input of the container closes, and the container ends with it.
@@ -191,9 +197,31 @@ pub(crate) fn require_image(image: &KafkaImage) -> Result<(), KafkaClusterError>
     }
 }
 
+/// Create the network `network` when Docker does not know it. `Some` with its name when this call created it.
+fn require_network(network: &str) -> Result<Option<String>, KafkaClusterError> {
+    let known = || docker(&["network", "inspect", "--format", "{{.Id}}", network]).map(|known| known.status.success());
+    if known()? {
+        return Ok(None);
+    }
+    let created = docker(&["network", "create", "--label", LABEL, network])?;
+    if created.status.success() {
+        return Ok(Some(network.to_owned()));
+    }
+    // Another cluster may have created it in the meantime.
+    if known()? {
+        return Ok(None);
+    }
+    Err(KafkaClusterError::not_started(format!(
+        "the network {network} is not there and could not be created: {}",
+        said(&created)
+    )))
+}
+
 /// One running container, which holds every broker of a cluster.
 pub(crate) struct Container {
     name: String,
+    /// The network that the cluster created, and removes once the container is gone.
+    created_network: Option<String>,
     /// The `docker run` that started the container, and stays attached to it.
     attached: Child,
     /// The input of the container. The container ends when this closes.
@@ -204,13 +232,26 @@ pub(crate) struct Container {
 impl Container {
     /// Start a container of `image` that waits for the configuration of its brokers.
     /// Docker publishes each of `ports` on a free port of the host.
+    /// The container joins `network` under its alias, when there is one: `(network, alias)`.
     /// An error shows the last `log_lines` lines the container wrote.
-    pub fn run(image: &KafkaImage, ports: &[u16], log_lines: usize) -> Result<Self, KafkaClusterError> {
+    pub fn run(
+        image: &KafkaImage,
+        ports: &[u16],
+        network: Option<(&str, &str)>,
+        log_lines: usize,
+    ) -> Result<Self, KafkaClusterError> {
         let number = STARTED.fetch_add(1, Ordering::Relaxed) + 1;
         let name = format!("gaslightmq-test-kafka-{}-{number}", std::process::id());
+        let created_network = match network {
+            Some((network, _)) => require_network(network)?,
+            None => None,
+        };
         let mut run = Command::new(DOCKER);
         run.args(["run", "--rm", "--interactive", "--name", &name, "--label", LABEL])
             .args(["--env", &format!("CLUSTER_ID={CLUSTER_ID}")]);
+        if let Some((network, alias)) = network {
+            run.args(["--network", network, "--network-alias", alias]);
+        }
         for port in ports {
             run.args(["--publish", &format!("127.0.0.1::{port}")]);
         }
@@ -218,7 +259,15 @@ impl Container {
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
-        let mut attached = run.spawn().map_err(|error| not_there(&error))?;
+        let mut attached = match run.spawn() {
+            Ok(attached) => attached,
+            Err(error) => {
+                if let Some(network) = &created_network {
+                    let _ = docker(&["network", "rm", network]);
+                }
+                return Err(not_there(&error));
+            }
+        };
         let following = Arc::new(Following {
             lines: Mutex::default(),
             keep: log_lines,
@@ -232,6 +281,7 @@ impl Container {
         }
         Ok(Self {
             name,
+            created_network,
             input: attached.stdin.take(),
             attached,
             following,
@@ -311,6 +361,9 @@ impl Drop for Container {
         drop(self.input.take());
         let _ = docker(&["rm", "--force", "--volumes", &self.name]);
         let _ = self.attached.wait();
+        if let Some(network) = &self.created_network {
+            let _ = docker(&["network", "rm", network]);
+        }
     }
 }
 
@@ -336,7 +389,7 @@ mod tests {
         require_engine().unwrap_or_else(|error| panic!("{error}"));
         require_image(&image).unwrap_or_else(|error| panic!("{error}"));
 
-        let container = Container::run(&image, &[19_001], 10).unwrap();
+        let container = Container::run(&image, &[19_001], None, 10).unwrap();
         container
             .reaches(|progress| progress.awaiting_configuration, Duration::from_secs(60))
             .await

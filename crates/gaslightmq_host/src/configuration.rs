@@ -274,10 +274,12 @@ impl EnvironmentConfiguration {
             Instances::ProxyInFrontOfCluster { proxy, upstream } => {
                 let listeners = proxy.listen().clone();
                 let advertised_host = listeners.advertised_host().clone();
+                let mut upstream = UpstreamBackendConfiguration::new(upstream.clone(), advertised_host);
+                upstream.advertised_listeners = listeners.advertised_listeners().clone();
                 Ok(Self {
                     name: environment.name().clone(),
                     engine: EngineConfiguration::new(listeners),
-                    upstream: UpstreamBackendConfiguration::new(upstream.clone(), advertised_host),
+                    upstream,
                     recording: proxy.recording().unwrap_or(RecordingMode::MetadataOnly),
                 })
             }

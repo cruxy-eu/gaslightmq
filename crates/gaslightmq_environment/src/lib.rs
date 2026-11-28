@@ -175,6 +175,7 @@
 //! An address is a value here: nothing listens, connects or resolves a name.
 
 mod address;
+mod advertised;
 mod environment;
 mod host;
 mod listeners;
@@ -193,6 +194,7 @@ mod title;
 mod upstream;
 
 pub use address::{ListenAddress, ListenAddressError, ServerAddress, ServerAddressError};
+pub use advertised::{AdvertisedListeners, AdvertisedListenersError};
 pub use environment::{BrokerDefinition, Environment, EnvironmentError, Instances, ProxyDefinition};
 pub use host::{HostName, HostNameError};
 pub use listeners::{BrokerListeners, BrokerListenersError, Listeners, ListenersError};
@@ -225,13 +227,13 @@ pub use upstream::{Sasl, SaslMechanism, SaslMechanismError, SaslUsername, SaslUs
 pub mod prelude {
     #[doc(no_inline)]
     pub use crate::{
-        BrokerDefinition, BrokerListeners, BrokerListenersError, EffectiveSetting, Environment, EnvironmentError,
-        EnvironmentName, EnvironmentNameError, EnvironmentSet, EnvironmentSetError, EnvironmentStore, EnvironmentTitle,
-        EnvironmentTitleError, FilePath, FilePathError, HostName, HostNameError, Instances, ListenAddress,
-        ListenAddressError, Listeners, ListenersError, PortRange, PortRangeError, ProxyDefinition, RecordingMode,
-        RecordingModeError, Sasl, SaslMechanism, SaslMechanismError, SaslUsername, SaslUsernameError, SchemaRegistry,
-        SchemaRegistryError, SchemaRegistryUrl, SchemaRegistryUrlError, SecretRef, SecretRefError, ServerAddress,
-        ServerAddressError, Setting, SettingSource, SettingSourceError, Tls, Upstream, VariableName, VariableNameError,
-        WorldName, WorldNameError,
+        AdvertisedListeners, AdvertisedListenersError, BrokerDefinition, BrokerListeners, BrokerListenersError,
+        EffectiveSetting, Environment, EnvironmentError, EnvironmentName, EnvironmentNameError, EnvironmentSet,
+        EnvironmentSetError, EnvironmentStore, EnvironmentTitle, EnvironmentTitleError, FilePath, FilePathError,
+        HostName, HostNameError, Instances, ListenAddress, ListenAddressError, Listeners, ListenersError, PortRange,
+        PortRangeError, ProxyDefinition, RecordingMode, RecordingModeError, Sasl, SaslMechanism, SaslMechanismError,
+        SaslUsername, SaslUsernameError, SchemaRegistry, SchemaRegistryError, SchemaRegistryUrl,
+        SchemaRegistryUrlError, SecretRef, SecretRefError, ServerAddress, ServerAddressError, Setting, SettingSource,
+        SettingSourceError, Tls, Upstream, VariableName, VariableNameError, WorldName, WorldNameError,
     };
 }
