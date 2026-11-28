@@ -47,6 +47,7 @@ mod next_to_the_others {
     use gaslightmq_lie_refusal::prelude::*;
     use gaslightmq_listener::prelude::*;
     use gaslightmq_pipeline::prelude::*;
+    use gaslightmq_recording::prelude::*;
     use gaslightmq_recording_conformance::MemoryStorage;
     use gaslightmq_rule::prelude::*;
     use gaslightmq_selector::prelude::*;
@@ -120,7 +121,7 @@ mod next_to_the_others {
             environment: "orders-sim".parse().unwrap(),
             started: "2026-11-21T14:02:11.527Z".parse().unwrap(),
             mode: gaslightmq_environment::RecordingMode::Full,
-            backend: gaslightmq_recording::RecordedBackend::Upstream,
+            backend: RecordedBackend::Upstream,
             from: ChangeSurface::Test.into(),
         };
         let recording = engine.recorder().start(start).await.unwrap();
@@ -170,7 +171,7 @@ mod next_to_the_others {
             rule: "blackhole".parse().unwrap(),
         };
         let stopped: LiveEventsError = LiveEventsError::EngineStopped;
-        let recording: gaslightmq_recording::RecordingId = "orders-sim.2026-11-21T14-02-11.527Z".parse().unwrap();
+        let recording: RecordingId = "orders-sim.2026-11-21T14-02-11.527Z".parse().unwrap();
         let running: StartRecordingError = StartRecordingError::AlreadyRecording {
             recording: recording.clone(),
         };

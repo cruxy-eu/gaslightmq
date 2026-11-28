@@ -28,7 +28,7 @@ use crate::{Direction, Entry, EntryError, Position};
 /// use gaslightmq_field::ConnectionNumber;
 /// use gaslightmq_recording::prelude::*;
 ///
-/// let closed = SessionEvent {
+/// let closed = RecordedSessionEvent {
 ///     connection: ConnectionNumber::new(7),
 ///     at: Instant::ZERO,
 ///     change: SessionChange::Closed { by: Closer::Client },

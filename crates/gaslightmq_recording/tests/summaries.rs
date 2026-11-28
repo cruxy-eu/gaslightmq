@@ -66,7 +66,7 @@ fn a_summary_holds_the_ranges_the_counts_and_the_values_of_its_stretch() -> anyh
             rule: "leader-flap".parse()?,
         },
     };
-    let closed = SessionEvent {
+    let closed = RecordedSessionEvent {
         connection: ConnectionNumber::new(7),
         at: Instant::ZERO + Duration::from_secs(2),
         change: SessionChange::Closed { by: Closer::Client },
@@ -153,7 +153,7 @@ fn a_field_with_more_values_than_a_summary_lists_says_any() -> anyhow::Result<()
 #[test]
 fn two_summaries_add_up_to_the_summary_of_both_stretches() -> anyhow::Result<()> {
     let listed = 256;
-    let closed_at = |millis: u64, connection: u64| SessionEvent {
+    let closed_at = |millis: u64, connection: u64| RecordedSessionEvent {
         connection: ConnectionNumber::new(connection),
         at: Instant::ZERO + Duration::from_millis(millis),
         change: SessionChange::Closed { by: Closer::Client },

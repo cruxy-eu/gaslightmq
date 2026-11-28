@@ -68,7 +68,7 @@ use crate::stream::FileStream;
 ///
 /// let mut writer = storage.start(description.clone()).await?;
 /// writer
-///     .append(Entry::session(&SessionEvent {
+///     .append(Entry::session(&RecordedSessionEvent {
 ///         connection: ConnectionNumber::new(7),
 ///         at: Instant::ZERO,
 ///         change: SessionChange::Closed { by: Closer::Client },

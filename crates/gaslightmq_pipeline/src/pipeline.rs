@@ -127,7 +127,11 @@ impl Pipeline {
         }
         match input {
             Input::ClientBytes(bytes) => self.receive(bytes, now, &mut outputs),
-            Input::BackendAnswered { call, response } => self.backend_answered(call, response, now, &mut outputs),
+            Input::BackendAnswered {
+                call,
+                response,
+                upstream,
+            } => self.backend_answered(call, response, upstream, now, &mut outputs),
             Input::BackendAnswerUnreadable { call, reason } => {
                 self.backend_answered_unreadably(call, reason, now, &mut outputs);
             }
@@ -248,11 +252,21 @@ impl Pipeline {
     }
 
     /// Stage 9 begins for the call that the backend answered.
-    fn backend_answered(&mut self, call: CallId, response: Response, now: Instant, outputs: &mut Outputs) {
+    fn backend_answered(
+        &mut self,
+        call: CallId,
+        response: Response,
+        upstream: Option<Response>,
+        now: Instant,
+        outputs: &mut Outputs,
+    ) {
         let (calls, counters) = self.session.calls_and_counters_mut();
         let Some(in_flight) = calls.get_mut(call) else {
             return;
         };
+        if let Some(upstream) = upstream {
+            in_flight.content_mut().answered_upstream(upstream);
+        }
         let Some(settled) = in_flight.content_mut().answered(response, now, counters, &self.shared) else {
             return;
         };

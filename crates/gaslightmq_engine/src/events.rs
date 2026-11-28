@@ -156,11 +156,11 @@ impl EventBus {
 
     /// Hands the record of a call to every listener, and to the recording that runs with its frames, when it has them.
     /// It never waits for one.
-    pub fn publish_call(&self, call: Arc<Call>, frames: Option<pipeline::CallFrames>) {
+    pub fn publish_call(&self, call: Arc<Call>, frames: Option<pipeline::KeptFrames>) {
         self.hand_over(EngineEvent::CallRecorded(call), frames);
     }
 
-    fn hand_over(&self, event: EngineEvent, frames: Option<pipeline::CallFrames>) {
+    fn hand_over(&self, event: EngineEvent, frames: Option<pipeline::KeptFrames>) {
         let mut keeping = self.keeping();
         if let Some((queue, clock)) = &keeping.recording {
             match (&event, frames) {

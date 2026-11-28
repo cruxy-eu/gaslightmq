@@ -37,7 +37,7 @@ use crate::backing::{ByteStream, FetchError, Listed, ListingError, Object, Objec
 ///     scenario: None,
 ///     journal_after: None,
 /// };
-/// let closed = SessionEvent {
+/// let closed = RecordedSessionEvent {
 ///     connection: ConnectionNumber::new(7),
 ///     at: Instant::ZERO,
 ///     change: SessionChange::Closed { by: Closer::Client },

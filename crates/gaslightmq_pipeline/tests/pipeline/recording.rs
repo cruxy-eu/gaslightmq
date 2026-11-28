@@ -17,7 +17,7 @@ fn a_call_that_arrives_while_a_recording_runs_hands_out_its_frames() {
 
     let frames = answered.emitted_frames();
     assert_eq!(frames.request, *request.frame());
-    assert_eq!(frames.upstream, None, "the backend hands over the truth alone");
+    assert_eq!(frames.upstream, None, "no overlay changed the answer of the cluster");
     assert_eq!(frames.truth.as_ref(), Some(truth.frame()));
     assert_eq!(frames.delivered, Some(answered.sent(&request).frame().clone()));
 }
@@ -74,4 +74,25 @@ fn a_call_that_a_lie_answers_before_forwarding_has_no_truth() {
     assert_eq!(frames.request, *request.frame());
     assert_eq!(frames.truth, None, "the backend never saw the request");
     assert_eq!(frames.delivered, Some(answered.sent(&request).frame().clone()));
+}
+
+#[test]
+fn a_call_keeps_what_the_real_cluster_answered_when_the_overlay_changed_it() {
+    let mut driver = Driver::with([]);
+    driver.pipeline.set_recording(Recording::Running);
+    let request = metadata(5, &["orders.eu"]);
+
+    let (call, forwarded) = driver.send(&request).forwarded();
+    // The cluster named a broker that an incident took down, and the overlay of the backend hid it.
+    let of_the_cluster = truth(&forwarded);
+    let with_the_overlay = truth(&forwarded);
+    let answered = driver.handle(Input::BackendAnswered {
+        call,
+        response: with_the_overlay.clone(),
+        upstream: Some(of_the_cluster.clone()),
+    });
+
+    let frames = answered.emitted_frames();
+    assert_eq!(frames.upstream.as_ref(), Some(of_the_cluster.frame()));
+    assert_eq!(frames.truth.as_ref(), Some(with_the_overlay.frame()));
 }

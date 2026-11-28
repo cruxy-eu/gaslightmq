@@ -25,7 +25,7 @@ const RECORD_VALUE: usize = 1024;
 /// One thing that the check writes into a recording, as its type: what a reader gets back.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) enum Sample {
-    Session(SessionEvent),
+    Session(RecordedSessionEvent),
     Call { call: Box<Call>, frames: CallFrames },
     Journal(JournalEntry),
 }
@@ -79,7 +79,7 @@ fn at(number: u64) -> Instant {
 }
 
 fn opened() -> Sample {
-    Sample::Session(SessionEvent {
+    Sample::Session(RecordedSessionEvent {
         connection: ConnectionNumber::new(CONNECTION),
         at: at(0),
         change: SessionChange::Opened {
@@ -92,7 +92,7 @@ fn opened() -> Sample {
 }
 
 fn closed(number: u64) -> Sample {
-    Sample::Session(SessionEvent {
+    Sample::Session(RecordedSessionEvent {
         connection: ConnectionNumber::new(CONNECTION),
         at: at(number),
         change: SessionChange::Closed { by: Closer::Client },

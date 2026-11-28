@@ -28,7 +28,7 @@ fn a_recording_cut_short_inside_its_last_commit_opens_up_to_the_commit_before() 
     let recording = description.id();
     let segment = Object::segment(Position::FIRST);
     let closed = |connection| {
-        Entry::session(&SessionEvent {
+        Entry::session(&RecordedSessionEvent {
             connection: ConnectionNumber::new(connection),
             at: Instant::ZERO,
             change: SessionChange::Closed { by: Closer::Client },
@@ -115,7 +115,7 @@ fn a_recording_without_its_manifest_opens_from_its_segments() -> anyhow::Result<
     block_on(async {
         let mut writer = storage.start(description.clone()).await?;
         for connection in connections {
-            let event = SessionEvent {
+            let event = RecordedSessionEvent {
                 connection: ConnectionNumber::new(connection),
                 at: Instant::ZERO,
                 change: SessionChange::Closed { by: Closer::Client },
@@ -160,7 +160,7 @@ fn a_recording_without_its_index_chunk_reads_the_footers_of_its_segments() -> an
     };
     let recording = description.id();
     let closed = |connection| {
-        Entry::session(&SessionEvent {
+        Entry::session(&RecordedSessionEvent {
             connection: ConnectionNumber::new(connection),
             at: Instant::ZERO,
             change: SessionChange::Closed { by: Closer::Client },
@@ -224,7 +224,7 @@ fn a_reader_reads_an_item_that_a_crash_tore_again_from_the_footer_of_its_segment
     };
     let recording = description.id();
     let closed = |connection| {
-        Entry::session(&SessionEvent {
+        Entry::session(&RecordedSessionEvent {
             connection: ConnectionNumber::new(connection),
             at: Instant::ZERO,
             change: SessionChange::Closed { by: Closer::Client },
@@ -290,7 +290,7 @@ fn a_damaged_chunk_loses_the_rest_of_its_block_and_the_stream_goes_on_with_the_n
     let recording = description.id();
     let segment = Object::segment(Position::FIRST);
     let closed = |connection| {
-        Entry::session(&SessionEvent {
+        Entry::session(&RecordedSessionEvent {
             connection: ConnectionNumber::new(connection),
             at: Instant::ZERO,
             change: SessionChange::Closed { by: Closer::Client },

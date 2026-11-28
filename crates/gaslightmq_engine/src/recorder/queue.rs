@@ -5,16 +5,16 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use gaslightmq_call::Call;
 use gaslightmq_journal::JournalEntry;
 use gaslightmq_pipeline as pipeline;
-use gaslightmq_recording::{Ending, SessionEvent};
+use gaslightmq_recording::{Ending, RecordedSessionEvent};
 use tokio::sync::{Notify, mpsc, oneshot};
 
 /// One thing that waits for the recorder.
 #[derive(Debug)]
 pub(crate) enum Waiting {
     /// An event of a session, with the instant it happened.
-    Session(SessionEvent),
+    Session(RecordedSessionEvent),
     /// A call that ended, with its frames as they were on the wire.
-    Call(Arc<Call>, pipeline::CallFrames),
+    Call(Arc<Call>, pipeline::KeptFrames),
     /// An entry of the journal.
     Journal(JournalEntry),
     /// Someone reads the recording: the recorder commits what it took before, and says so.
@@ -169,7 +169,7 @@ impl State {
 }
 
 /// The bytes of the frames of a call, which wait in memory with it.
-fn frame_bytes(frames: &pipeline::CallFrames) -> u64 {
+fn frame_bytes(frames: &pipeline::KeptFrames) -> u64 {
     let length = |frame: &gaslightmq_wire::Frame| frame.payload().len() as u64;
     length(&frames.request) + frames.truth.as_ref().map_or(0, length) + frames.delivered.as_ref().map_or(0, length)
 }
@@ -184,7 +184,7 @@ mod tests {
     use super::*;
 
     fn closed(connection: u64) -> Waiting {
-        Waiting::Session(SessionEvent {
+        Waiting::Session(RecordedSessionEvent {
             connection: ConnectionNumber::new(connection),
             at: Instant::ZERO,
             change: SessionChange::Closed { by: Closer::Client },

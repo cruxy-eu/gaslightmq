@@ -67,7 +67,7 @@ pub enum SessionChange {
 /// a recording starts with an [`Opened`](SessionChange::Opened) event for every session that is open at that moment,
 /// whose instant is when the session really opened.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct SessionEvent {
+pub struct RecordedSessionEvent {
     /// The number of the connection, which every call of the session names.
     pub connection: ConnectionNumber,
     /// When it happened, on the clock of the environment.
@@ -242,7 +242,7 @@ pub struct Entry {
 
 impl Entry {
     /// The entry of an event of a session.
-    pub fn session(event: &SessionEvent) -> Entry {
+    pub fn session(event: &RecordedSessionEvent) -> Entry {
         Entry {
             message: Framed::archive(Kind::Session, &write::session_event(event)),
             frames: Vec::new(),

@@ -17,7 +17,7 @@ fn a_batch_hands_out_the_entries_that_the_reader_asked_for_in_the_order_of_the_r
     let mut batch_encoder = BatchEncoder::new();
     let mut encoded = Vec::new();
     for connection in 0..5 {
-        let closed = SessionEvent {
+        let closed = RecordedSessionEvent {
             connection: ConnectionNumber::new(connection),
             at: Instant::ZERO + Duration::from_millis(connection),
             change: SessionChange::Closed { by: Closer::Client },
@@ -62,7 +62,7 @@ fn an_entry_that_fails_the_check_is_left_out_and_the_others_are_read() -> anyhow
     let mut batch_encoder = BatchEncoder::new();
     let mut encoded = Vec::new();
     for connection in 0..3 {
-        let closed = SessionEvent {
+        let closed = RecordedSessionEvent {
             connection: ConnectionNumber::new(connection),
             at: Instant::ZERO,
             change: SessionChange::Closed { by: Closer::Proxy },
@@ -108,7 +108,7 @@ fn a_head_that_fails_ends_the_walk_and_the_batch_holds_the_entries_before_it() {
     let mut batch_encoder = BatchEncoder::new();
     let mut encoded = Vec::new();
     for connection in 0..3 {
-        let closed = SessionEvent {
+        let closed = RecordedSessionEvent {
             connection: ConnectionNumber::new(connection),
             at: Instant::ZERO,
             change: SessionChange::Closed { by: Closer::Lie },
@@ -132,7 +132,7 @@ fn a_head_that_fails_ends_the_walk_and_the_batch_holds_the_entries_before_it() {
 
 #[test]
 fn a_copy_of_an_entry_keeps_no_other_buffer_in_memory() -> anyhow::Result<()> {
-    let closed = SessionEvent {
+    let closed = RecordedSessionEvent {
         connection: ConnectionNumber::new(7),
         at: Instant::ZERO + Duration::from_secs(90),
         change: SessionChange::Closed { by: Closer::Client },

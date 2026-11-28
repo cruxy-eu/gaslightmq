@@ -445,6 +445,7 @@ fn answered(call: CallId, answer: BackendAnswer) -> Option<Input<'static>> {
     match answer {
         BackendAnswer::Truth(truth) => Some(Input::BackendAnswered {
             call,
+            upstream: truth.upstream().cloned(),
             response: truth.into_response(),
         }),
         // The request has no response, and the pipeline expects none.

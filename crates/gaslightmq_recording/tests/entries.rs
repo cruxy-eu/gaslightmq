@@ -191,9 +191,9 @@ fn a_session_event_of_every_kind_comes_back_as_it_went_in() -> anyhow::Result<()
     let named = SessionChange::SoftwareNamed { software };
     let closed = SessionChange::Closed { by: Closer::Backend };
     let changes = [opened, identified, named, closed];
-    let events: Vec<SessionEvent> = (0u64..)
+    let events: Vec<RecordedSessionEvent> = (0u64..)
         .zip(changes)
-        .map(|(millis, change)| SessionEvent {
+        .map(|(millis, change)| RecordedSessionEvent {
             connection,
             at: Instant::ZERO + Duration::from_millis(millis),
             change,
@@ -222,7 +222,7 @@ fn a_session_event_of_every_kind_comes_back_as_it_went_in() -> anyhow::Result<()
         assert_eq!(view.connection(), connection);
         read.push((position, view.to_session_event()?));
     }
-    let expected: Vec<(Position, SessionEvent)> = (40..).map(Position::new).zip(events).collect();
+    let expected: Vec<(Position, RecordedSessionEvent)> = (40..).map(Position::new).zip(events).collect();
     assert_eq!(read, expected);
     Ok(())
 }

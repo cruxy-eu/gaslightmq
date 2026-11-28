@@ -5,12 +5,11 @@
 
 use gaslightmq_call::prelude::*;
 use gaslightmq_clock::Clock;
+use gaslightmq_clock_waitable::SteppedClock;
+use gaslightmq_engine::{Engine, EngineEvent, RecordingStart, Recordings, StartRecordingError, StopRecordingError};
 use gaslightmq_environment::RecordingMode;
 use gaslightmq_field::prelude::*;
 use gaslightmq_journal::prelude::*;
-// The engine names a session event of its own, so its items come by name next to the prelude of a recording.
-use gaslightmq_clock_waitable::SteppedClock;
-use gaslightmq_engine::{Engine, EngineEvent, RecordingStart, Recordings, StartRecordingError, StopRecordingError};
 use gaslightmq_kafka_client_api::{Producer, RawClientConfiguration, RawKafkaClient};
 use gaslightmq_kernel::prelude::*;
 use gaslightmq_lie_api::prelude::*;
@@ -47,7 +46,7 @@ async fn a_recording_holds_the_calls_that_arrive_while_it_runs_with_their_frames
     let opened = |read: &StoredEntry| {
         matches!(
             read,
-            StoredEntry::Session(SessionEvent {
+            StoredEntry::Session(RecordedSessionEvent {
                 change: SessionChange::Opened { .. },
                 ..
             })

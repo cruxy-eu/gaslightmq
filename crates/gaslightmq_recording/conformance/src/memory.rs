@@ -42,7 +42,7 @@ use gaslightmq_recording::prelude::*;
 ///     scenario: None,
 ///     journal_after: None,
 /// };
-/// let closed = SessionEvent {
+/// let closed = RecordedSessionEvent {
 ///     connection: ConnectionNumber::new(7),
 ///     at: Instant::ZERO,
 ///     change: SessionChange::Closed { by: Closer::Client },
@@ -140,7 +140,7 @@ impl MemoryStorage {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum StoredEntry {
     /// An event of a session.
-    Session(SessionEvent),
+    Session(RecordedSessionEvent),
     /// A call, and what the recording holds of each of its frames.
     Call {
         call: Box<gaslightmq_call::Call>,

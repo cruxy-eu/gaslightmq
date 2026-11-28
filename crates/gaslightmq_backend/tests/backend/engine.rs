@@ -80,6 +80,7 @@ impl<'a, B: Backend> Session<'a, B> {
                     let input = match self.backend.call(request).await {
                         BackendAnswer::Truth(truth) => Input::BackendAnswered {
                             call,
+                            upstream: truth.upstream().cloned(),
                             response: truth.into_response(),
                         },
                         BackendAnswer::NoResponse => continue,

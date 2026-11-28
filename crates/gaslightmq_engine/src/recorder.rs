@@ -12,8 +12,8 @@ use gaslightmq_environment::RecordingMode;
 use gaslightmq_journal::{Change, ChangeSource, JournalEntry, RecordedName, RecordingStopCause};
 use gaslightmq_pipeline as pipeline;
 use gaslightmq_recording::{
-    CallFrames, Closer, Description, End, Ending, Entry, RecordedBackend, RecordingId, SessionChange,
-    SessionEvent as RecordedSessionEvent, StartError, UtcInstant,
+    CallFrames, Closer, Description, End, Ending, Entry, RecordedBackend, RecordedSessionEvent, RecordingId,
+    SessionChange, StartError, UtcInstant,
 };
 use gaslightmq_session::{CallIds, ClosedBy};
 use tokio::sync::{mpsc, oneshot};
@@ -437,8 +437,8 @@ fn opened(sessions: &[OpenSession]) -> Vec<RecordedSessionEvent> {
 }
 
 /// The frames of a call as a recording takes them.
-fn frames_of(frames: pipeline::CallFrames) -> CallFrames {
-    let pipeline::CallFrames {
+fn frames_of(frames: pipeline::KeptFrames) -> CallFrames {
+    let pipeline::KeptFrames {
         request,
         upstream,
         truth,

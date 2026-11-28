@@ -23,7 +23,7 @@ use crate::call_fields::{Answers, CallFields};
 use crate::explain::UnexplainedRule;
 use crate::rules::{RuleLines, Slot};
 use crate::untold::{StageFailure, UntoldLie};
-use crate::{CallFrames, Output, SharedBySessions};
+use crate::{KeptFrames, Output, SharedBySessions};
 
 /// A lie that asked to forward what it left of the request, with the target it holds.
 /// The pipeline asks it again after the response, so it makes the response fit the request of the client.
@@ -156,12 +156,13 @@ pub(crate) struct CallInFlight {
     failures: Vec<StageFailure>,
     recorded: bool,
     /// What the call keeps of its frames, when a recording ran as its request arrived.
-    kept: Option<KeptFrames>,
+    kept: Option<Kept>,
 }
 
 /// What a call keeps for a recording, beyond what it holds anyway: the response that the client received.
 #[derive(Debug, Default)]
-struct KeptFrames {
+struct Kept {
+    upstream: Option<Frame>,
     delivered: Option<Frame>,
 }
 
@@ -523,9 +524,17 @@ impl CallInFlight {
         }
     }
 
+    /// The real cluster answered `upstream`, and the overlay of the backend changed it into the truth.
+    /// A call that keeps its frames keeps that one too.
+    pub(crate) fn answered_upstream(&mut self, upstream: Response) {
+        if let Some(kept) = &mut self.kept {
+            kept.upstream = Some(upstream.into_frame());
+        }
+    }
+
     /// A recording ran as the request arrived: the call keeps hold of its frames, and hands them out with its record.
     pub(crate) fn keep_frames(&mut self) {
-        self.kept = Some(KeptFrames::default());
+        self.kept = Some(Kept::default());
     }
 
     /// Stage 11 as the engine gets it: the record of the call, once, with its frames when it keeps them.
@@ -533,10 +542,9 @@ impl CallInFlight {
     /// `None` when the call was recorded before.
     pub(crate) fn emitted(&mut self, id: CallId, delivered: Delivered) -> Option<Output> {
         let record = self.record(id, delivered)?;
-        let frames = self.kept.take().map(|kept| CallFrames {
+        let frames = self.kept.take().map(|kept| KeptFrames {
             request: self.request.frame().clone(),
-            // The backend hands over the truth alone.
-            upstream: None,
+            upstream: kept.upstream,
             truth: self.truth.as_ref().map(|(truth, _)| truth.frame().clone()),
             delivered: kept.delivered,
         });

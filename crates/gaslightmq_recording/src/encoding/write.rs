@@ -18,8 +18,8 @@ use gaslightmq_lie::{LieDefinition, Stage, TargetedLie};
 
 use super::v1 as stored;
 use crate::{
-    ActiveScenario, CallEntryError, Closer, Description, End, Ending, FrameState, RecordedBackend, SessionChange,
-    SessionEvent, Summary, SummaryValues,
+    ActiveScenario, CallEntryError, Closer, Description, End, Ending, FrameState, RecordedBackend,
+    RecordedSessionEvent, SessionChange, Summary, SummaryValues,
 };
 
 fn instant(instant: Instant) -> u64 {
@@ -420,8 +420,8 @@ fn closer(by: Closer) -> stored::Closer {
     }
 }
 
-pub(crate) fn session_event(event: &SessionEvent) -> stored::SessionEvent {
-    let SessionEvent { connection, at, change } = event;
+pub(crate) fn session_event(event: &RecordedSessionEvent) -> stored::SessionEvent {
+    let RecordedSessionEvent { connection, at, change } = event;
     let change = match change {
         SessionChange::Opened {
             address,

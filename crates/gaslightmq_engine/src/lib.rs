@@ -298,8 +298,8 @@
 //! - Nobody applies an incident. The engine hands it over, and whoever listens passes it to the backend.
 //! - The armed rules are a live set alone: the rule that was armed last wins, and every die rolls from the
 //!   [seed](EngineConfiguration::seed) of the configuration.
-//! - The record of a call does not keep what the real cluster answered next to a truth that an overlay changed.
-//!   The pipeline takes the truth alone, so a recording holds no frame in the slot of that answer.
+//! - The record of a call does not sum up what the real cluster answered next to a truth that an overlay changed.
+//!   A recording keeps the frame of that answer all the same: the session hands it to the pipeline with the truth.
 //! - A recording names no active scenario in its description: no scenario runs yet.
 //! - A proxy that stops ends its sessions without a word to their pipelines, which have no input for it.
 //!   A call that is in flight then gets no record.

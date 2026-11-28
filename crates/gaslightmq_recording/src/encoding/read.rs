@@ -22,7 +22,7 @@ use rkyv::string::ArchivedString;
 
 use super::v1 as stored;
 use crate::{
-    ActiveScenario, Closer, Description, End, Ending, FrameState, RecordedBackend, SessionChange, SessionEvent,
+    ActiveScenario, Closer, Description, End, Ending, FrameState, RecordedBackend, RecordedSessionEvent, SessionChange,
     Summary, SummaryValues, UtcInstant,
 };
 
@@ -508,7 +508,7 @@ fn client_id(id: &ArchivedOption<ArchivedString>) -> Result<Option<ClientId>, Fl
     text(id).map(|id| ClientId::new(id).map_err(flaw)).transpose()
 }
 
-pub(crate) fn session_event(stored: &stored::ArchivedSessionEvent) -> Result<SessionEvent, Flaw> {
+pub(crate) fn session_event(stored: &stored::ArchivedSessionEvent) -> Result<RecordedSessionEvent, Flaw> {
     use stored::ArchivedSessionChange as Stored;
     let change = match &stored.change {
         Stored::Opened {
@@ -541,7 +541,7 @@ pub(crate) fn session_event(stored: &stored::ArchivedSessionEvent) -> Result<Ses
             },
         },
     };
-    Ok(SessionEvent {
+    Ok(RecordedSessionEvent {
         connection: ConnectionNumber::new(stored.connection.to_native()),
         at: instant(stored.at),
         change,

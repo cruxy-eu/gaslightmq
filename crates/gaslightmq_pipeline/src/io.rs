@@ -33,7 +33,14 @@ pub enum Input<'a> {
     ///
     /// The response answers the request as it was forwarded.
     /// The pipeline gives it the API and the correlation ID of the client's request before anything reads it.
-    BackendAnswered { call: CallId, response: Response },
+    ///
+    /// `upstream` is what the real cluster answered, when the overlay of the backend changed that answer into
+    /// `response`. The pipeline keeps it for a recording alone.
+    BackendAnswered {
+        call: CallId,
+        response: Response,
+        upstream: Option<Response>,
+    },
     /// The backend answered the request under `call` with something that it cannot hand over as a response.
     /// `reason` says why, in one line.
     ///
@@ -97,25 +104,23 @@ pub enum Output {
         /// The record of the call.
         record: Box<Call>,
         /// The frames of the call as they were on the wire, while a recording runs.
-        frames: Option<CallFrames>,
+        frames: Option<KeptFrames>,
     },
     /// Pass an incident that a rule fired to the scenario runner. It takes effect after the call that fired it.
     Fire(Incident),
 }
 
-/// The frames of one call as they were on the wire, which the pipeline hands out with its record while a recording
-/// runs: the four frames that a recording keeps of a call.
+/// The frames that one call kept for a recording, as they were on the wire: the four frames that a recording keeps
+/// of a call. The pipeline hands them out with the record of the call while a recording runs.
 ///
 /// A frame is the buffer that the session read from its socket, or the buffer of the response that it wrote to it.
 /// The pipeline holds each of them while the call is in flight anyway, and handing them out shares the buffers:
 /// it copies nothing and encodes nothing.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct CallFrames {
+pub struct KeptFrames {
     /// The request as the client sent it.
     pub request: Frame,
     /// The response of the real cluster, when the overlay of the backend changed it into the truth.
-    ///
-    /// The backend hands the pipeline the truth alone today, so the pipeline has no such frame, and this is `None`.
     pub upstream: Option<Frame>,
     /// The truth: the response of the backend with the correlation ID of the client, when the request reached the
     /// backend and it answered with a response to it.

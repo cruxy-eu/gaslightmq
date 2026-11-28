@@ -102,7 +102,11 @@ impl Driver {
     }
 
     pub fn answer_with(&mut self, call: CallId, response: Response) -> Seen {
-        self.handle(Input::BackendAnswered { call, response })
+        self.handle(Input::BackendAnswered {
+            call,
+            response,
+            upstream: None,
+        })
     }
 
     /// The clock reaches `at`, and the timer runs out.
@@ -204,7 +208,7 @@ impl Seen {
     }
 
     /// The frames that came with each call record, in order.
-    pub fn frames(&self) -> Vec<Option<CallFrames>> {
+    pub fn frames(&self) -> Vec<Option<KeptFrames>> {
         let frames = |output: &Output| match output {
             Output::Emit { frames, .. } => Some(frames.clone()),
             _ => None,
@@ -213,7 +217,7 @@ impl Seen {
     }
 
     /// The frames that came with the one call record that the pipeline emitted.
-    pub fn emitted_frames(&self) -> CallFrames {
+    pub fn emitted_frames(&self) -> KeptFrames {
         let [frames] = self.frames().try_into().unwrap();
         frames.expect("the call arrived while a recording ran")
     }
