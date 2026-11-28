@@ -1113,11 +1113,12 @@ impl<C: WorkspaceContext + 'static> ControlPlane<C> {
             Err(EnvironmentRulesError::NotRunning { .. }) => return Ok(None),
             Err(EnvironmentRulesError::StoreFailed { reason, .. }) => return Err(reason),
         };
-        let (Ok(backend), Ok(sessions), Ok(recording), Some(scenario)) = (
+        let (Ok(backend), Ok(sessions), Ok(recording), Some(scenario), Ok(capturing)) = (
             self.backend(name),
             self.host.sessions(name),
             self.host.recording(name),
             self.scenario_status(name),
+            self.host.capturing(name),
         ) else {
             return Ok(None);
         };
@@ -1128,6 +1129,7 @@ impl<C: WorkspaceContext + 'static> ControlPlane<C> {
             sessions: sessions.iter().map(session_status).collect(),
             scenario,
             recording,
+            capturing,
         }))
     }
 

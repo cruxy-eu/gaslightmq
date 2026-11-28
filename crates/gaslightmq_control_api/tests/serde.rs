@@ -1445,6 +1445,7 @@ fn a_client_that_connects_gets_the_state_of_the_process() {
                 revision: SEEN,
             },
             recording: None,
+            capturing: false,
         }],
         workspace: WorkspaceStatus::default(),
     };
@@ -1518,6 +1519,8 @@ fn an_environment_with_brokers_travels_inside_a_message() {
         },
         // The environment records, so a client that connects knows it.
         recording: Some("staging-proxy.2026-11-21T14-02-11.527Z".parse().unwrap()),
+        // A capture runs there too.
+        capturing: true,
     };
     let staging_json = json!({
         "name": "staging-proxy",
@@ -1541,6 +1544,7 @@ fn an_environment_with_brokers_travels_inside_a_message() {
         "sessions": [],
         "scenario": { "revision": NOW.number() },
         "recording": "staging-proxy.2026-11-21T14-02-11.527Z",
+        "capturing": true,
     });
 
     assert_eq!(Form(&staging).json(), staging_json);

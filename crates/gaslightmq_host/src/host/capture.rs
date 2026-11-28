@@ -10,7 +10,9 @@ use gaslightmq_workspace::{CreateError, DefinitionName, Revision, Stores, Worksp
 
 use super::live::{Kept, Unkept};
 use super::{Host, unread};
-use crate::{CaptureSaveError, CaptureStartError, CaptureStopError, CreateDefinitionError, HostChange};
+use crate::{
+    CaptureSaveError, CaptureStartError, CaptureStopError, CreateDefinitionError, HostChange, NotRunningError,
+};
 
 impl<C: WorkspaceContext> Host<C> {
     /// Starts a capture of an environment: from here on, its journal marks every arm and disarm of the live set,
@@ -55,6 +57,15 @@ impl<C: WorkspaceContext> Host<C> {
             running.captured = None;
             Ok(())
         })
+    }
+
+    /// Whether a capture of an environment runs.
+    ///
+    /// # Errors
+    ///
+    /// [`NotRunningError`] when no environment of that name runs.
+    pub fn capturing(&self, environment: &EnvironmentName) -> Result<bool, NotRunningError> {
+        self.with_running(environment, |running| running.engine.journal().capturing())
     }
 
     /// Stops the capture of an environment, and returns what it captured: a step for the live set as the capture

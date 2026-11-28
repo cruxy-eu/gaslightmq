@@ -79,6 +79,7 @@ fn an_undo_after_another_tab_changed_the_rule_is_refused_and_changes_nothing() {
                 revision: STARTED,
             },
             recording: None,
+            capturing: false,
         }],
         workspace: WorkspaceStatus::default(),
     });

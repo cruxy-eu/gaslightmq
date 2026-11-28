@@ -437,7 +437,8 @@ Three operations name the environment, which runs one capture at a time.
 - **A start and a stop leave no revision and have no inverse.**
   The journal records each, as `capture-started` and `capture-stopped` with the surface of the request,
   and every client learns of them from the `journal-entry` of the live stream.
-  The snapshot does not say whether an environment captures.
+  The snapshot says of every environment whether it captures, as `"capturing": true`, which it leaves out while none runs,
+  so a client that connects during a capture knows of it.
 - **A save is several changes.**
   It checks the name of the scenario first, then keeps every live rule of the capture that the environment still holds as it was armed,
   creates the others, and creates the scenario last, each with a revision and a journal entry of its own.
@@ -634,7 +635,7 @@ The WebSocket streams:
 | Message | Carries |
 |---|---|
 | **Present** | The ID of the [presence](#presence) of this client. It is the first message, and comes once. |
-| **Snapshot** | The full state, sent when a client connects: the [run ID](identity.md#run), every definition of the workspace, the workspace as a whole (when it [writes back](storage.md#saving), whether it is [read-only](storage.md#read-only-workspaces), and what waits for a save), and every environment that runs with its backend, its rules, its sessions, its scenario and the recording that it writes. Whatever has a revision comes with it. It holds no [journal](#the-journal). |
+| **Snapshot** | The full state, sent when a client connects: the [run ID](identity.md#run), every definition of the workspace, the workspace as a whole (when it [writes back](storage.md#saving), whether it is [read-only](storage.md#read-only-workspaces), and what waits for a save), and every environment that runs with its backend, its rules, its sessions, its scenario, the recording that it writes and whether it captures. Whatever has a revision comes with it. It holds no [journal](#the-journal). |
 | **Call** | One call event: request summary, verdict and explanation. |
 | **Stats** | Matches, firings and remaining budget per rule, and calls per API, at a fixed interval. |
 | **Rule changed, removed** | A rule of an environment changed state, or a live rule was made or changed its definition, with its revision. A live rule left its environment: someone deleted or kept it. |

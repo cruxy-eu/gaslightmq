@@ -5,7 +5,7 @@ use std::num::NonZeroUsize;
 
 use gaslightmq_control_api::environment::{Environment, EnvironmentName};
 use gaslightmq_control_api::field::{ClientSoftware, ConnectionNumber};
-use gaslightmq_control_api::journal::RecordingId;
+use gaslightmq_control_api::journal::{Change, JournalEntry, RecordingId};
 use gaslightmq_control_api::prelude::*;
 use gaslightmq_control_api::rule::{Preset, Rule, RuleName, RuleState};
 use gaslightmq_control_api::scenario::Scenario;
@@ -275,13 +275,25 @@ impl Process {
             } => self.recording_stopped(environment, recording),
             StreamMessage::WorkspaceChanged { workspace } => self.workspace = workspace.clone(),
             StreamMessage::WorkspaceInvalid { reason } => self.workspace_invalid = Some(reason.clone()),
-            // No view shows the journal yet, so the state keeps no entry of it.
-            StreamMessage::JournalEntry { .. }
-            | StreamMessage::Present { .. }
+            StreamMessage::JournalEntry { environment, entry } => self.journaled(environment, entry),
+            StreamMessage::Present { .. }
             | StreamMessage::Snapshot(_)
             | StreamMessage::Call { .. }
             | StreamMessage::Following { .. }
             | StreamMessage::SubscriptionRefused { .. } => {}
+        }
+    }
+
+    /// The journal of the environment got `entry`. The start and the stop of a capture come that way. No view shows
+    /// the journal yet, so the state keeps no entry of it.
+    fn journaled(&mut self, environment: &EnvironmentName, entry: &JournalEntry) {
+        let capturing = match entry.change {
+            Change::CaptureStarted => true,
+            Change::CaptureStopped => false,
+            _ => return,
+        };
+        if let Some(running) = self.running(environment) {
+            running.capturing = capturing;
         }
     }
 

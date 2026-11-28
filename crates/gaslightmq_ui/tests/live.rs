@@ -19,7 +19,9 @@ use gaslightmq_control_api::environment::{
 };
 use gaslightmq_control_api::field::{ClientSoftware, ConnectionNumber, Endpoint, FieldValue, Fields};
 use gaslightmq_control_api::incident::IncidentSupport;
-use gaslightmq_control_api::journal::{RecordingId, RecordingStopCause};
+use gaslightmq_control_api::journal::{
+    Change, ChangeSurface, RecentJournal, RecentJournalSize, RecordingId, RecordingStopCause,
+};
 use gaslightmq_control_api::kernel::{ApiKey, ClientId};
 use gaslightmq_control_api::prelude::*;
 use gaslightmq_control_api::rule::{PresetName, Rule, RuleState};
@@ -70,6 +72,7 @@ impl Workspace {
                 revision: STARTED,
             },
             recording: None,
+            capturing: false,
         }
     }
 
@@ -472,6 +475,24 @@ mod process {
             why: Some(RecordingStopCause::FellBehind),
         });
         assert_eq!(recording_of(&live), None);
+    }
+
+    #[test]
+    fn an_environment_captures_from_the_entry_of_its_start_to_the_entry_of_its_stop() {
+        let mut live = Live::new(&UiConfiguration::default());
+        live.opened();
+        live.apply(Workspace::snapshot(&["staging-proxy"]));
+        let capturing = |live: &Live| live.process().unwrap().environments()[0].capturing;
+        let mut journal = RecentJournal::new(RecentJournalSize::default());
+
+        for (change, after) in [(Change::CaptureStarted, true), (Change::CaptureStopped, false)] {
+            let entry = journal.record(Instant::ZERO, change, ChangeSurface::Ui, None);
+            live.apply(StreamMessage::JournalEntry {
+                environment: "staging-proxy".parse().unwrap(),
+                entry,
+            });
+            assert_eq!(capturing(&live), after);
+        }
     }
 }
 
