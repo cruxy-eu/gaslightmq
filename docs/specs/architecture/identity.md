@@ -67,7 +67,7 @@ See [scenarios](../domains/scenarios.md).
 | Entity   | Type                   | Name           | ID                        | Title           |
 |----------|------------------------|----------------|---------------------------|-----------------|
 | Scenario | User-defined           | `ScenarioName` | —                         | `ScenarioTitle` |
-| Rule, in a scenario | Part of a scenario | `RuleName`, unique among all rules | — | `RuleTitle` |
+| Rule, in a scenario or a step | Part of a scenario | `RuleName`, unique among all rules | — | `RuleTitle` |
 | Step     | Part of a scenario     | `StepName`, unique within its scenario | — | `StepTitle`     |
 | Condition that ends a step | Part of a step | —    | —                         | —               |
 | Live set | Part of an environment | —              | Its environment           | —               |
@@ -169,6 +169,19 @@ A name is a slug, like the name of a Kubernetes object.
   A selector and a rule can share a name, because every reference says which kind it means.
 
 A name is a name and nothing else.
+
+A rule and a step are the two that someone may write without a name, and each still has one:
+
+- **A rule has the [name of what it says](../domains/rules.md#the-name-of-what-a-rule-says).**
+  What it says is its identity then: a rule that says something else is another rule.
+  It is the same name wherever the rule stands, in a file of rules, in a scenario, in a step or as a live rule,
+  so a rule that a file and a request each hold without a name is one rule.
+- **A step has the name of its place**: `step-3` is the third step of its scenario.
+  Its place is its identity within the scenario, as its name would be.
+
+Every other kind of definition needs a name, because something refers to it by that name:
+a scenario is activated by it, and a selector, a preset and an environment are named by what uses them.
+The name of what something says would change with every edit, and so would every reference.
 
 ### Revision
 

@@ -37,9 +37,9 @@ rules:
     trigger: { first: 2, per: session }
 ```
 
-A rule that the scenario owns is a map, as a rule of the workspace is.
+A rule that the scenario owns is a map, as a rule of the workspace is, and it needs no name.
 A rule that it references is its name.
-A scenario holds a rule of one name once.
+A scenario holds a rule of one name once: a rule that it owns and that stands the same in two steps is one rule.
 
 Rule names are unique among all rules,
 whether a scenario owns the rule or the workspace does.
@@ -129,12 +129,33 @@ steps:
 
 A step has a name, which is a slug and unique among the steps of its scenario.
 The journal and the UI name a step by it.
+A step that someone writes without a name is `step-` and its place among the steps, from 1, as [capture](#capture) names the steps it makes:
+the third step of a scenario is `step-3`.
 A step can have a title too.
 
-A step arms rules of the workspace, by name, each once.
-It arms none of the scenario's own `rules`: those are armed for the whole run already,
+A step arms rules, each once: rules of the workspace by name, and rules of its own as maps.
+A rule of the step's own belongs to the scenario, as one of its `rules` does, and the step arms it while it runs.
+It needs no name: it has the [name of what it says](rules.md#the-name-of-what-a-rule-says).
+A step arms none of the scenario's own `rules`: those are armed for the whole run already,
 and the end of the step would disarm them.
 A scenario in Live or Chain mode has no steps.
+
+The whole story can stand in one file, without a name but its own:
+
+```yaml
+name: orders-survive-leader-churn
+mode: sequence
+seed: 7
+steps:
+  - until: { calls: 1, selector: { api: Produce } }
+  - arm:
+      - selector: { api: Produce }
+        action: { lie: refusal, error: NOT_LEADER_OR_FOLLOWER }
+    until: { firings: 2 }
+  - title: Recovery
+```
+
+Its steps are `step-1`, `step-2` and `step-3`, and its one rule is `refuse-with-not-leader-or-follower-on-produce`.
 
 A step ends when its `until` condition holds.
 Then the next step starts, and the rules the previous step armed disarm.
@@ -143,7 +164,7 @@ After the last step no step runs: the scenario stays active, and its own `rules`
 | `until` | The step ends |
 |---|---|
 | `calls`, with a selector | After that many calls matched the selector: a selector of the workspace by name, or conditions of the step's own. |
-| `firings`, with a rule | After that rule's action applied that many times. The rule is armed during the step: the step arms it, or it is one of the scenario's `rules`. |
+| `firings`, with a rule | After that rule's action applied that many times. The rule is armed during the step: the step arms it, or it is one of the scenario's `rules`. Without a `rule`, it is the one rule that the step arms; a step that arms none or several names the rule. |
 | `after` | After that much time on the [engine's clock](../architecture/README.md#clock), measured from the start of the step. |
 | *(none)* | When someone advances or deactivates the scenario. |
 
