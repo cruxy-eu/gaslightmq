@@ -5,7 +5,7 @@ use std::sync::Arc;
 use gaslightmq_control_server::{ControlServer, ControlServerConfiguration};
 use gaslightmq_definition_api::Store;
 use gaslightmq_engine::Recordings;
-use gaslightmq_environment::Environment;
+use gaslightmq_environment::{AdvertisedListeners, Environment};
 use gaslightmq_host::{EnvironmentConfiguration, Host, HostConfiguration, RunId};
 use gaslightmq_lie_api::Lies;
 use gaslightmq_recording_segments::{SegmentConfiguration, SegmentStorage};
@@ -13,6 +13,9 @@ use gaslightmq_recording_segments_fs::{FileBacking, FileConfiguration};
 use gaslightmq_workspace::{MemoryContext, Stores, WorkspaceContext};
 use gaslightmq_workspace_fs::{FileContext, FileStores};
 
+use tokio::io::{AsyncBufReadExt, BufReader};
+
+use crate::advertised::AdvertisedListenersFlag;
 use crate::cli::ProxyFlags;
 use crate::error::ProxyError;
 use crate::report::{Holding, Running};
@@ -33,6 +36,12 @@ pub(crate) async fn proxy(flags: ProxyFlags) -> Result<(), ProxyError> {
     let environment = flags
         .environment()
         .map_err(|error| ProxyError::ListenersMeet { error })?;
+    let environment = match flags.advertised_listeners {
+        AdvertisedListenersFlag::Given(_) => environment,
+        AdvertisedListenersFlag::FromTheInput => {
+            environment.with_advertised_listeners(advertised_of_the_input().await?)
+        }
+    };
     let control = flags.control.configuration();
     match flags.workspace.workspace.clone() {
         Some(directory) => {
@@ -144,6 +153,25 @@ async fn serve<C: WorkspaceContext + 'static>(
     }
     host.stop_all().await;
     Ok(())
+}
+
+/// The advertised listeners that the first line of the standard input names.
+async fn advertised_of_the_input() -> Result<AdvertisedListeners, ProxyError> {
+    let mut line = String::new();
+    let read = BufReader::new(tokio::io::stdin())
+        .read_line(&mut line)
+        .await
+        .map_err(|error| ProxyError::AdvertisedListenersUnread {
+            reason: error.to_string(),
+        })?;
+    if read == 0 {
+        return Err(ProxyError::AdvertisedListenersUnread {
+            reason: "it ended before its first line".to_owned(),
+        });
+    }
+    line.trim()
+        .parse()
+        .map_err(|error| ProxyError::InvalidAdvertisedListeners { error })
 }
 
 /// A run ID from the randomness of the system.

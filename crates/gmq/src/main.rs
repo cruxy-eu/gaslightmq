@@ -37,6 +37,7 @@
     reason = "a command of the command line tells whoever runs it what it did, and why it failed"
 )]
 
+mod advertised;
 mod brokers;
 mod cli;
 mod error;

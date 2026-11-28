@@ -35,6 +35,7 @@ impl WatchedCluster {
         let cluster = Cluster::new(
             configuration.upstream.bootstrap(),
             configuration.advertised_host.clone(),
+            configuration.advertised_listeners.clone(),
         );
         Self {
             configuration,

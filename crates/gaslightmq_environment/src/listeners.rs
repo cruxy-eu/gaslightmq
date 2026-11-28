@@ -6,6 +6,7 @@ use std::str::FromStr;
 use gaslightmq_kernel::BrokerId;
 
 use crate::address::{ListenAddress, split_port};
+use crate::advertised::AdvertisedListeners;
 use crate::host::HostName;
 use crate::ports::{PortRange, PortRangeError, Taken};
 
@@ -285,6 +286,7 @@ pub enum BrokerListenersError {
 /// | [`bootstrap`](Self::bootstrap) | The address clients connect to first. |
 /// | [`brokers`](Self::brokers) | One listener per broker of the cluster behind. |
 /// | [`advertised_host`](Self::advertised_host) | The host that Metadata names to clients, under which they reach every listener. |
+/// | [`advertised_listeners`](Self::advertised_listeners) | The address that Metadata names for a broker listener whose clients reach it under another port: none until someone names one. |
 ///
 /// The bootstrap listener and the broker listeners take different ports.
 ///
@@ -320,6 +322,7 @@ pub struct Listeners {
     bootstrap: ListenAddress,
     brokers: BrokerListeners,
     advertise: HostName,
+    advertised: AdvertisedListeners,
 }
 
 impl Listeners {
@@ -341,6 +344,7 @@ impl Listeners {
             bootstrap,
             brokers,
             advertise,
+            advertised: AdvertisedListeners::none(),
         })
     }
 
@@ -357,6 +361,19 @@ impl Listeners {
     /// The host that clients see in Metadata.
     pub fn advertised_host(&self) -> &HostName {
         &self.advertise
+    }
+
+    /// The address that Metadata names for each broker listener whose clients reach it under another port, by the
+    /// port it listens on: Kafka's `advertised.listeners`.
+    pub fn advertised_listeners(&self) -> &AdvertisedListeners {
+        &self.advertised
+    }
+
+    /// The same listeners, with the broker listeners of `advertised` named under those addresses.
+    #[must_use]
+    pub fn with_advertised_listeners(mut self, advertised: AdvertisedListeners) -> Self {
+        self.advertised = advertised;
+        self
     }
 
     /// The same listeners, which clients reach under another host.

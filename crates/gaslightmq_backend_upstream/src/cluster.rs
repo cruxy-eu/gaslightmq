@@ -5,7 +5,7 @@ use std::fmt;
 use std::net::SocketAddr;
 
 use gaslightmq_backend::{BackendAnswer, BackendFailure, Endpoints, ListenerRejection};
-use gaslightmq_environment::{HostName, ServerAddress};
+use gaslightmq_environment::{AdvertisedListeners, HostName, ServerAddress};
 use gaslightmq_field::Endpoint;
 use gaslightmq_kernel::BrokerId;
 use gaslightmq_overlay::{
@@ -97,16 +97,23 @@ pub(crate) struct Cluster {
     bootstrap: ClusterAddress,
     /// The host under which clients reach every listener of the proxy.
     advertised_host: HostName,
+    /// The address under which clients reach a listener through another port than the one it listens on.
+    advertised_listeners: AdvertisedListeners,
     overlay: Overlay,
     endpoints: Endpoints,
 }
 
 impl Cluster {
     /// The cluster behind `bootstrap`, of which nothing is known yet. No endpoint accepts connections.
-    pub(crate) fn new(bootstrap: &ServerAddress, advertised_host: HostName) -> Self {
+    pub(crate) fn new(
+        bootstrap: &ServerAddress,
+        advertised_host: HostName,
+        advertised_listeners: AdvertisedListeners,
+    ) -> Self {
         Self {
             bootstrap: ClusterAddress::from(bootstrap),
             advertised_host,
+            advertised_listeners,
             overlay: Overlay::new(AdvertisedAddresses::new()),
             endpoints: Endpoints::none(),
         }
@@ -161,7 +168,7 @@ impl Cluster {
     }
 
     /// The engine listens for `endpoint` on `address`, so clients are told that address from now on:
-    /// the advertised host, and the port of the listener.
+    /// the advertised listener of its port, or the advertised host and the port of the listener.
     ///
     /// The bootstrap endpoint has no address that an answer tells.
     /// An endpoint that accepts no connections takes none: its broker left, and the engine closes the listener.
@@ -183,8 +190,11 @@ impl Cluster {
             address,
             reason,
         };
-        let advertised = BrokerAddress::new(self.advertised_host.as_str(), address.port())
-            .map_err(|error| unadvertisable(error.to_string()))?;
+        let advertised = match self.advertised_listeners.of_port(address.port()) {
+            Some(listener) => BrokerAddress::new(listener.host().as_str(), listener.port()),
+            None => BrokerAddress::new(self.advertised_host.as_str(), address.port()),
+        }
+        .map_err(|error| unadvertisable(error.to_string()))?;
         self.overlay
             .advertise(broker, advertised)
             .map_err(|error| unadvertisable(error.to_string()))
@@ -292,6 +302,7 @@ mod tests {
         Cluster::new(
             &"kafka.staging:9092".parse().unwrap(),
             "gaslight.staging".parse().unwrap(),
+            AdvertisedListeners::none(),
         )
     }
 
@@ -480,6 +491,28 @@ mod tests {
         assert_eq!(told(&mut cluster, [1, 2]), []);
         listening(&mut cluster, 2, 50_200).unwrap();
         assert_eq!(told(&mut cluster, [1, 2]), [(2, "gaslight.staging:50200".to_owned())]);
+    }
+
+    #[test]
+    fn a_listener_whose_clients_reach_it_through_another_port_is_told_under_its_advertised_listener() {
+        // A container runtime publishes the port of broker 1 as 55002, and the port of broker 2 is reached as it is.
+        let mut cluster = Cluster::new(
+            &"kafka.staging:9092".parse().unwrap(),
+            "gaslight.staging".parse().unwrap(),
+            "19092=localhost:55002".parse().unwrap(),
+        );
+        cluster.named(&naming([1, 2])).unwrap();
+
+        listening(&mut cluster, 1, 19_092).unwrap();
+        listening(&mut cluster, 2, 19_093).unwrap();
+
+        assert_eq!(
+            told(&mut cluster, [1, 2]),
+            [
+                (1, "localhost:55002".to_owned()),
+                (2, "gaslight.staging:19093".to_owned())
+            ]
+        );
     }
 
     #[test]

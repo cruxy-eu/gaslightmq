@@ -9,11 +9,12 @@ use clap::{Args, Parser, Subcommand, ValueEnum};
 use gaslightmq_control_client::ControlPlaneAddress;
 use gaslightmq_control_server::ControlServerConfiguration;
 use gaslightmq_environment::{
-    BrokerListeners, Environment, EnvironmentName, HostName, Instances, ListenAddress, Listeners, ListenersError,
-    ProxyDefinition, ServerAddress, Upstream,
+    AdvertisedListeners, BrokerListeners, Environment, EnvironmentName, HostName, Instances, ListenAddress, Listeners,
+    ListenersError, ProxyDefinition, ServerAddress, Upstream,
 };
 use gaslightmq_workspace_fs::Access;
 
+use crate::advertised::{AdvertisedListenersFlag, advertised_listeners};
 use crate::brokers::broker_listeners;
 
 /// GaslightMQ: a Kafka proxy that lies to its clients on purpose.
@@ -90,6 +91,19 @@ pub(crate) struct ProxyFlags {
     /// The host that clients see in Metadata, under which they reach the brokers of the proxy.
     #[arg(long, env = "GMQ_ADVERTISE", value_name = "HOST", default_value = "localhost")]
     pub(crate) advertise: HostName,
+    /// Kafka's `advertised.listeners`: the address that clients see in Metadata for a broker whose listener they
+    /// reach through another port, by the port it listens on, such as a port that a container publishes:
+    /// `19092=localhost:55002,19093=localhost:55003`. A broker whose port it does not name is seen under
+    /// `--advertise` and the port of its listener. `-` reads them from the first line of the standard input, and the
+    /// proxy waits for it before it starts.
+    #[arg(
+        long,
+        env = "GMQ_ADVERTISED_LISTENERS",
+        value_name = "PORT=HOST:PORT,...",
+        default_value = "",
+        value_parser = advertised_listeners
+    )]
+    pub(crate) advertised_listeners: AdvertisedListenersFlag,
     #[command(flatten)]
     pub(crate) workspace: WorkspaceFlags,
     #[command(flatten)]
@@ -98,12 +112,18 @@ pub(crate) struct ProxyFlags {
 
 impl ProxyFlags {
     /// The environment that the flags describe: a proxy in front of the real cluster.
+    /// Its brokers are advertised under the listeners that the flag names, and under none when it names the input.
     ///
     /// # Errors
     ///
     /// [`ListenersError`] when the bootstrap listener takes a port of the brokers.
     pub(crate) fn environment(&self) -> Result<Environment, ListenersError> {
-        let listeners = Listeners::new(self.listen, self.brokers.clone(), self.advertise.clone())?;
+        let advertised = match &self.advertised_listeners {
+            AdvertisedListenersFlag::Given(advertised) => advertised.clone(),
+            AdvertisedListenersFlag::FromTheInput => AdvertisedListeners::none(),
+        };
+        let listeners = Listeners::new(self.listen, self.brokers.clone(), self.advertise.clone())?
+            .with_advertised_listeners(advertised);
         Ok(Environment::new(
             self.name.clone(),
             Instances::ProxyInFrontOfCluster {
@@ -244,11 +264,36 @@ mod tests {
         assert_eq!(listeners.bootstrap(), "0.0.0.0:9092".parse().unwrap());
         assert_eq!(listeners.brokers(), &"0.0.0.0:19092-19191".parse().unwrap());
         assert_eq!(listeners.advertised_host(), &"localhost".parse::<HostName>().unwrap());
+        assert!(listeners.advertised_listeners().is_empty());
         assert_eq!(flags.workspace.workspace, None);
         assert_eq!(flags.workspace.access(), Access::ReadWrite);
         assert_eq!(
             flags.control.configuration(),
             Some(ControlServerConfiguration::default())
+        );
+    }
+
+    #[test]
+    fn a_proxy_whose_ports_are_published_advertises_the_published_ones() {
+        let gmq = Gmq::try_parse_from([
+            "gmq",
+            "proxy",
+            "--upstream",
+            "kafka:9092",
+            "--brokers",
+            "0.0.0.0:19092-19093",
+            "--advertised-listeners",
+            "19092=localhost:55002,19093=localhost:55003",
+        ])
+        .unwrap();
+
+        let Command::Proxy(flags) = gmq.command else {
+            panic!("gmq proxy is the proxy");
+        };
+        let environment = flags.environment().unwrap();
+        assert_eq!(
+            environment.listeners().advertised_listeners(),
+            &"19092=localhost:55002,19093=localhost:55003".parse().unwrap()
         );
     }
 

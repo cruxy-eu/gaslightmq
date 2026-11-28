@@ -9,7 +9,7 @@ workspace = true
 
 # The modules that hold values and never wait: `cargo xtask sans-io` holds them to that.
 [package.metadata.gaslightmq]
-sans_io_modules = ["brokers", "cli", "error", "report"]
+sans_io_modules = ["advertised", "brokers", "cli", "error", "report"]
 
 # One feature per crate of a lie kind, so a build can leave a kind out.
 # The one backend, in front of a real cluster, comes with the host, so it has no feature yet.
@@ -39,7 +39,7 @@ clap.workspace = true
 # The ID of the run.
 getrandom.workspace = true
 thiserror.workspace = true
-tokio = { workspace = true, features = ["rt-multi-thread", "macros", "signal"] }
+tokio = { workspace = true, features = ["rt-multi-thread", "macros", "signal", "io-std", "io-util"] }
 # The log output: what the engine, the listener and the backend log, on the standard error.
 tracing-subscriber.workspace = true
 

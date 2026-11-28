@@ -8,7 +8,7 @@
 use std::fmt;
 
 use gaslightmq_clock::TimeSpan;
-use gaslightmq_environment::{HostName, Upstream};
+use gaslightmq_environment::{AdvertisedListeners, HostName, Upstream};
 use gaslightmq_kernel::ClientId;
 use gaslightmq_wire::Frame;
 
@@ -48,6 +48,12 @@ pub struct UpstreamBackendConfiguration {
     /// and the port on which the engine [listens](gaslightmq_backend::Backend::listens) for that broker.
     /// A broker of Kafka has `advertised.listeners` for this, which names a port for each listener too.
     pub advertised_host: HostName,
+    /// Kafka: `advertised.listeners`. Default: none.
+    ///
+    /// The address that clients are told for a broker whose listener they reach through another port than the one
+    /// it listens on, by that port: a port that a container runtime publishes, for one.
+    /// A broker whose port it does not name is told under the advertised host and the port of its listener.
+    pub advertised_listeners: AdvertisedListeners,
     /// Kafka: `client.id`. Default: empty.
     ///
     /// The name the backend sends with its own requests, which ask the cluster for its brokers.
@@ -92,6 +98,7 @@ impl UpstreamBackendConfiguration {
         Self {
             upstream,
             advertised_host,
+            advertised_listeners: AdvertisedListeners::none(),
             client_id: no_client_id(),
             socket_connection_setup_timeout: TimeSpan::from_secs(10),
             request_timeout: TimeSpan::from_secs(30),

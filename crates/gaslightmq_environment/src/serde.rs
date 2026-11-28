@@ -14,9 +14,10 @@ use serde::ser::SerializeMap;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use crate::{
-    BrokerDefinition, BrokerListeners, Environment, EnvironmentError, EnvironmentName, EnvironmentTitle, FilePath,
-    HostName, Instances, ListenAddress, Listeners, ListenersError, ProxyDefinition, RecordingMode, SchemaRegistry,
-    SchemaRegistryError, SchemaRegistryUrl, SecretRef, SecretRefError, Upstream, VariableName, WorldName,
+    AdvertisedListeners, BrokerDefinition, BrokerListeners, Environment, EnvironmentError, EnvironmentName,
+    EnvironmentTitle, FilePath, HostName, Instances, ListenAddress, Listeners, ListenersError, ProxyDefinition,
+    RecordingMode, SchemaRegistry, SchemaRegistryError, SchemaRegistryUrl, SecretRef, SecretRefError, Upstream,
+    VariableName, WorldName,
 };
 
 /// The key of a secret reference that names a file.
@@ -286,6 +287,8 @@ pub(crate) struct ListenersForm {
     bootstrap: ListenAddress,
     brokers: BrokerListeners,
     advertise: HostName,
+    #[serde(default, skip_serializing_if = "AdvertisedListeners::is_empty")]
+    advertised_listeners: AdvertisedListeners,
 }
 
 impl TryFrom<ListenersForm> for Listeners {
@@ -293,6 +296,7 @@ impl TryFrom<ListenersForm> for Listeners {
 
     fn try_from(form: ListenersForm) -> Result<Self, Self::Error> {
         Listeners::new(form.bootstrap, form.brokers, form.advertise)
+            .map(|listeners| listeners.with_advertised_listeners(form.advertised_listeners))
     }
 }
 
@@ -302,6 +306,7 @@ impl From<Listeners> for ListenersForm {
             bootstrap: listeners.bootstrap(),
             brokers: listeners.brokers().clone(),
             advertise: listeners.advertised_host().clone(),
+            advertised_listeners: listeners.advertised_listeners().clone(),
         }
     }
 }
