@@ -14,7 +14,7 @@
 //! | [`Until`] | The condition that ends a step: a number of calls, a number of firings, or a time. |
 //! | [`ScenarioStore`] | What keeps the scenarios: the store contract, and which scenarios name a rule, a selector or a preset. |
 //! | [`ResolvedScenario`], [`ResolvedStep`], [`ResolvedUntil`] | A scenario as an environment runs it: its rules and the rules and conditions of its steps, resolved against the workspace. |
-//! | [`ScenarioRun`], [`ScenarioPosition`], [`StepAdvance`] | A scenario that runs: the step where it stands, what ends that step, and the order in which its rules win a conflict. |
+//! | [`ScenarioRun`], [`ScenarioPosition`], [`StepAdvance`], [`StepBudget`] | A scenario that runs: the step where it stands, what ends that step, and the order in which its rules win a conflict. |
 //!
 //! The [`prelude`] holds all of them, and the error of each.
 //!
@@ -149,7 +149,7 @@ pub use name::{
     StepTitleError,
 };
 pub use resolved::{ResolveScenarioError, ResolvedScenario, ResolvedStep, ResolvedUntil};
-pub use run::{ScenarioPosition, ScenarioRun, StepAdvance};
+pub use run::{ScenarioPosition, ScenarioRun, StepAdvance, StepBudget};
 pub use scenario::{Scenario, ScenarioError, ScenarioRule};
 pub use step::{Step, Until};
 pub use store::ScenarioStore;
@@ -172,6 +172,6 @@ pub mod prelude {
     pub use crate::{
         Mode, ResolveScenarioError, ResolvedScenario, ResolvedStep, ResolvedUntil, Scenario, ScenarioError,
         ScenarioName, ScenarioNameError, ScenarioPosition, ScenarioRule, ScenarioRun, ScenarioStore, ScenarioTitle,
-        ScenarioTitleError, Step, StepAdvance, StepName, StepNameError, StepTitle, StepTitleError, Until,
+        ScenarioTitleError, Step, StepAdvance, StepBudget, StepName, StepNameError, StepTitle, StepTitleError, Until,
     };
 }

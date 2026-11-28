@@ -20,7 +20,7 @@
 //! | [`EventBacklog`] | How many events an engine keeps for a live listener that falls behind. |
 //! | [`EngineStartError`], [`EndpointOpenError`] | Why an engine did not start, and why an endpoint has no listener. |
 //! | [`ArmError`], [`DisarmError`], [`RetuneError`], [`LiveEventsError`] | Why a rule was not armed, disarmed or retuned, and why a live listener has no next event. |
-//! | [`ActivateError`], [`DeactivateError`], [`AdvanceError`] | Why a scenario was not activated, deactivated or advanced to its next step. |
+//! | [`ActivateScenarioError`], [`DeactivateScenarioError`], [`StepScenarioError`] | Why a scenario was not activated, deactivated or advanced to its next step. |
 //! | [`NotOpenError`] | No session is open on the connection that someone asked to close. |
 //! | [`StartRecordingError`], [`StopRecordingError`], [`ListRecordingsError`], [`OpenRecordingError`] | Why a recording did not start, did not stop in order, and why the recordings were not listed or one did not open. |
 //!
@@ -329,9 +329,9 @@
 //! | Opening an endpoint, when the engine starts and when its backend opens one later | [`EndpointOpenError`] | The address did not take a listener, or the backend rejected the listener. |
 //! | [`ArmedRules::arm`] | [`ArmError`] | The rule is armed already. |
 //! | [`ArmedRules::disarm`] | [`DisarmError`] | The rule is not armed. |
-//! | [`ArmedRules::activate`] | [`ActivateError`] | A scenario is active already. |
-//! | [`ArmedRules::deactivate`] | [`DeactivateError`] | No scenario is active. |
-//! | [`ArmedRules::advance`] | [`AdvanceError`] | No scenario is active, or it runs no step. |
+//! | [`ArmedRules::activate_scenario`] | [`ActivateScenarioError`] | A scenario is active already. |
+//! | [`ArmedRules::deactivate_scenario`] | [`DeactivateScenarioError`] | No scenario is active. |
+//! | [`ArmedRules::step_scenario`] | [`StepScenarioError`] | No scenario is active, or it runs no step. |
 //! | [`LiveEvents::next`] | [`LiveEventsError`] | The listener missed events, or the engine stopped. |
 //! | [`EventBacklog`] | [`EventBacklogError`] | The number of events is zero, or more than an engine can keep. |
 //!
@@ -370,9 +370,9 @@ mod timers;
 pub use configuration::{EngineConfiguration, EventBacklog, EventBacklogError, RecorderConfiguration};
 pub use engine::Engine;
 pub use error::{
-    ActivateError, AdvanceError, ArmError, DeactivateError, DisarmError, EndpointOpenError, EngineStartError,
+    ActivateScenarioError, ArmError, DeactivateScenarioError, DisarmError, EndpointOpenError, EngineStartError,
     ListRecordingsError, LiveEventsError, NotOpenError, OpenRecordingError, RetuneError, StartRecordingError,
-    StopRecordingError,
+    StepScenarioError, StopRecordingError,
 };
 pub use events::{EngineEvent, EveryEvent, LiveEvents};
 pub use journal::Journal;
@@ -397,10 +397,10 @@ pub use rules::{ArmedRules, RuleChanges, ScenarioChange, StepsTaken};
 pub mod prelude {
     #[doc(no_inline)]
     pub use crate::{
-        ActivateError, AdvanceError, ArmError, ArmedRules, DeactivateError, DisarmError, EndpointOpenError, Engine,
+        ActivateScenarioError, ArmError, ArmedRules, DeactivateScenarioError, DisarmError, EndpointOpenError, Engine,
         EngineConfiguration, EngineEvent, EngineStartError, EventBacklog, EventBacklogError, EveryEvent, Journal,
         ListRecordingsError, LiveEvents, LiveEventsError, NotOpenError, OpenRecordingError, OpenSession,
         RecorderConfiguration, RecordingStart, Recordings, RetuneError, RuleChanges, ScenarioChange, SessionEvent,
-        StartRecordingError, StepsTaken, StopRecordingError, StoredRecording,
+        StartRecordingError, StepScenarioError, StepsTaken, StopRecordingError, StoredRecording,
     };
 }

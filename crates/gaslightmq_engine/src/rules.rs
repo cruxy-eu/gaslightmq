@@ -8,12 +8,12 @@ use gaslightmq_call::Call;
 use gaslightmq_clock::{Clock, Instant};
 use gaslightmq_clock_waitable::WaitableClock;
 use gaslightmq_rule::{ArmedRule, ResolvedRule, RuleName, Snapshot};
-use gaslightmq_scenario::{ResolvedScenario, ScenarioPosition, ScenarioRun};
+use gaslightmq_scenario::{ResolvedScenario, ScenarioPosition, ScenarioRun, StepBudget};
 use gaslightmq_session::CallIds;
 use gaslightmq_trigger::Seed;
 use tokio::sync::watch;
 
-use crate::{ActivateError, AdvanceError, ArmError, DeactivateError, DisarmError, RetuneError};
+use crate::{ActivateScenarioError, ArmError, DeactivateScenarioError, DisarmError, RetuneError, StepScenarioError};
 
 /// The armed rules of one proxy, in the order in which they win a conflict: the live set, and the scenario that is
 /// active.
@@ -31,7 +31,7 @@ use crate::{ActivateError, AdvanceError, ArmError, DeactivateError, DisarmError,
 ///
 /// - **The live set** holds the rules that someone [arms](Self::arm) by hand. The rule that was armed last wins
 ///   a conflict, and every live rule wins a conflict with a rule of the scenario.
-/// - **The scenario** that is [active](Self::activate) holds its rules, as its mode orders them: see
+/// - **The scenario** that is [active](Self::activate_scenario) holds its rules, as its mode orders them: see
 ///   [`ScenarioRun::armed_in_order`]. Its rules stay armed for the whole run, and the rules of a step from its start
 ///   to its end.
 ///
@@ -43,8 +43,8 @@ use crate::{ActivateError, AdvanceError, ArmError, DeactivateError, DisarmError,
 ///
 /// At most one scenario is active at a time. Activating it arms its rules, and the rules of its first step, with the
 /// seed of the scenario. A step ends when its condition holds, on the call that makes it hold or at the instant that
-/// it names, or when someone [advances](Self::advance) the scenario: the rules of the step disarm, and the rules of
-/// the next one arm. [Deactivating](Self::deactivate) it disarms every rule that it armed.
+/// it names, or when someone [advances](Self::step_scenario) the scenario: the rules of the step disarm, and the rules of
+/// the next one arm. [Deactivating](Self::deactivate_scenario) it disarms every rule that it armed.
 ///
 /// A step that ends by itself is a change that nobody asked for. The handle keeps it until whoever counts the
 /// changes of the environment [takes it](Self::take_steps), with the snapshot after it.
@@ -182,22 +182,21 @@ impl Sets {
             active.armed.insert(rule.name().clone(), rule.clone().arm(seed, now));
             armed.push(rule.name().clone());
         }
-        if let Some((rule, budget)) = active.run.step_budget() {
-            let (rule, budget) = (rule.clone(), budget.clone());
+        if let Some(StepBudget { rule, budget }) = active.run.step_budget() {
             self.replace(&rule, |armed| armed.with_step_budget(Some(budget)));
         }
         armed
     }
 
     /// Ends the step that runs, disarms its rules, and starts the next one at `now`.
-    fn advance(&mut self, now: Instant, calls_before: u64) -> Result<ScenarioChange, AdvanceError> {
-        let active = self.scenario.as_mut().ok_or(AdvanceError::NotActive)?;
+    fn advance(&mut self, now: Instant, calls_before: u64) -> Result<ScenarioChange, StepScenarioError> {
+        let active = self.scenario.as_mut().ok_or(StepScenarioError::NotActive)?;
         let Some(step) = active.run.step() else {
             let scenario = active.run.scenario().name().clone();
-            return Err(AdvanceError::NoStep { scenario });
+            return Err(StepScenarioError::NoStep { scenario });
         };
         let of_the_step: Vec<RuleName> = step.arm().iter().map(|rule| rule.name().clone()).collect();
-        let ending_on = active.run.step_budget().map(|(rule, _)| rule.clone());
+        let ending_on = active.run.step_budget().map(|step| step.rule);
         let mut disarmed = Vec::new();
         for rule in &of_the_step {
             if active
@@ -214,7 +213,7 @@ impl Sets {
             self.replace(&rule, |armed| armed.with_step_budget(None));
         }
         let armed = self.arm_the_scenario(now);
-        let position = self.position().ok_or(AdvanceError::NotActive)?;
+        let position = self.position().ok_or(StepScenarioError::NotActive)?;
         Ok(ScenarioChange {
             position,
             disarmed,
@@ -343,13 +342,13 @@ impl ArmedRules {
     ///
     /// # Errors
     ///
-    /// [`ActivateError::AlreadyActive`] when a scenario is active: at most one is.
-    pub fn activate(&self, scenario: ResolvedScenario) -> Result<ScenarioChange, ActivateError> {
+    /// [`ActivateScenarioError::AlreadyActive`] when a scenario is active: at most one is.
+    pub fn activate_scenario(&self, scenario: ResolvedScenario) -> Result<ScenarioChange, ActivateScenarioError> {
         let now = self.inner.clock.now();
         let mut sets = self.sets();
         if let Some(active) = &sets.scenario {
             let scenario = active.run.scenario().name().clone();
-            return Err(ActivateError::AlreadyActive { scenario });
+            return Err(ActivateScenarioError::AlreadyActive { scenario });
         }
         sets.sweep(now);
         let run = ScenarioRun::start(scenario, now, self.inner.call_ids.assigned());
@@ -376,12 +375,12 @@ impl ArmedRules {
     ///
     /// # Errors
     ///
-    /// [`DeactivateError::NotActive`] when no scenario is active.
-    pub fn deactivate(&self) -> Result<ScenarioChange, DeactivateError> {
+    /// [`DeactivateScenarioError::NotActive`] when no scenario is active.
+    pub fn deactivate_scenario(&self) -> Result<ScenarioChange, DeactivateScenarioError> {
         let now = self.inner.clock.now();
         let mut sets = self.sets();
         let Some(active) = sets.scenario.take() else {
-            return Err(DeactivateError::NotActive);
+            return Err(DeactivateScenarioError::NotActive);
         };
         let position = active.run.position();
         let in_order = active.run.armed_in_order();
@@ -392,8 +391,7 @@ impl ArmedRules {
             .map(|rule| rule.name().clone())
             .collect();
         // A rule of the live set takes from no budget of a step any more.
-        if let Some((rule, _)) = active.run.step_budget() {
-            let rule = rule.clone();
+        if let Some(StepBudget { rule, .. }) = active.run.step_budget() {
             sets.replace(&rule, |armed| armed.with_step_budget(None));
         }
         sets.sweep(now);
@@ -413,9 +411,9 @@ impl ArmedRules {
     ///
     /// # Errors
     ///
-    /// - [`AdvanceError::NotActive`] when no scenario is active.
-    /// - [`AdvanceError::NoStep`] when the scenario runs no step: it is no Sequence, or it ran its last step.
-    pub fn advance(&self) -> Result<ScenarioChange, AdvanceError> {
+    /// - [`StepScenarioError::NotActive`] when no scenario is active.
+    /// - [`StepScenarioError::NoStep`] when the scenario runs no step: it is no Sequence, or it ran its last step.
+    pub fn step_scenario(&self) -> Result<ScenarioChange, StepScenarioError> {
         let now = self.inner.clock.now();
         let calls_before = self.inner.call_ids.assigned();
         let mut sets = self.sets();
@@ -831,7 +829,7 @@ mod tests {
             &["blackhole-half", "refuse-half"],
         );
 
-        let activated = rules.activate(chain).unwrap();
+        let activated = rules.activate_scenario(chain).unwrap();
 
         assert_eq!(activated.armed, [name("blackhole-half"), name("refuse-half")]);
         assert_eq!(armed(&rules), ["leader-flap", "blackhole-half", "refuse-half"]);
@@ -848,21 +846,24 @@ mod tests {
         let rules = armed_rules(&SteppedClock::new());
         rules.arm(resolved(&rule("leader-flap"))).unwrap();
         let chain = || scenario("jitter", Mode::Chain, &["background-jitter"], &["background-jitter"]);
-        rules.activate(chain()).unwrap();
+        rules.activate_scenario(chain()).unwrap();
 
-        let again = rules.activate(chain());
-        let deactivated = rules.deactivate().unwrap();
+        let again = rules.activate_scenario(chain());
+        let deactivated = rules.deactivate_scenario().unwrap();
 
         assert_eq!(
             again.unwrap_err(),
-            ActivateError::AlreadyActive {
+            ActivateScenarioError::AlreadyActive {
                 scenario: "jitter".parse().unwrap()
             }
         );
         assert_eq!(deactivated.disarmed, [name("background-jitter")]);
         assert_eq!(armed(&rules), ["leader-flap"]);
         assert_eq!(rules.scenario(), None);
-        assert_eq!(rules.deactivate().unwrap_err(), DeactivateError::NotActive);
+        assert_eq!(
+            rules.deactivate_scenario().unwrap_err(),
+            DeactivateScenarioError::NotActive
+        );
     }
 
     #[test]
@@ -871,8 +872,8 @@ mod tests {
         rules.arm(resolved(&rule("background-jitter"))).unwrap();
         let chain = scenario("jitter", Mode::Chain, &["background-jitter"], &["background-jitter"]);
 
-        let activated = rules.activate(chain).unwrap();
-        let deactivated = rules.deactivate().unwrap();
+        let activated = rules.activate_scenario(chain).unwrap();
+        let deactivated = rules.deactivate_scenario().unwrap();
 
         assert_eq!(activated.armed, Vec::<RuleName>::new());
         assert_eq!(deactivated.disarmed, Vec::<RuleName>::new());
@@ -890,21 +891,21 @@ mod tests {
             &["background-jitter"],
             &["background-jitter", "refuse-with-not-leader", "slow-order-producers"],
         );
-        rules.activate(sequence).unwrap();
+        rules.activate_scenario(sequence).unwrap();
         assert_eq!(armed(&rules), ["refuse-with-not-leader", "background-jitter"]);
 
-        let advanced = rules.advance().unwrap();
+        let advanced = rules.step_scenario().unwrap();
 
         assert_eq!(advanced.disarmed, [name("refuse-with-not-leader")]);
         assert_eq!(advanced.armed, [name("slow-order-producers")]);
         assert_eq!(advanced.position.step.unwrap(), "slow-recovery");
         assert_eq!(armed(&rules), ["slow-order-producers", "background-jitter"]);
         // After the last step, the rules of the scenario stay armed, and no step is left to end.
-        rules.advance().unwrap();
+        rules.step_scenario().unwrap();
         assert_eq!(armed(&rules), ["background-jitter"]);
         assert_eq!(
-            rules.advance().unwrap_err(),
-            AdvanceError::NoStep {
+            rules.step_scenario().unwrap_err(),
+            StepScenarioError::NoStep {
                 scenario: "churn".parse().unwrap()
             }
         );
@@ -928,7 +929,7 @@ mod tests {
             &[],
             &["refuse-with-not-leader"],
         );
-        rules.activate(sequence).unwrap();
+        rules.activate_scenario(sequence).unwrap();
         let arming = rules.snapshot().get(&name("refuse-with-not-leader")).unwrap().clone();
         let mut session = SessionCounters::new(CounterKey::new("10.0.4.27 broker 2 #1").unwrap());
 
@@ -974,7 +975,7 @@ mod tests {
             &[],
             &["slow-order-producers"],
         );
-        rules.activate(sequence).unwrap();
+        rules.activate_scenario(sequence).unwrap();
         tokio::task::yield_now().await;
         session.borrow_and_update();
 

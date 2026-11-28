@@ -162,7 +162,9 @@ then the scenario's rules in their order.
 ## The live set
 
 At most one scenario is active at a time.
-Whoever wants another deactivates the active one first.
+Activating a scenario while another one is active is refused: whoever wants another deactivates the active one first.
+A scenario runs the definition that it had when someone activated it.
+An update or a delete of it in the workspace leaves the run as it is, until someone deactivates it.
 On top of the active scenario sits the **live set**:
 rules that someone arms by hand while the scenario runs.
 

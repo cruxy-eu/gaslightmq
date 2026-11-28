@@ -139,8 +139,8 @@ fn a_step_that_ends_on_firings_hands_out_a_budget_of_that_many_and_ends_once_it_
     let resolved = scenario.resolve(&workspace, &SelectorSet::default(), &PresetSet::default());
     let run = ScenarioRun::start(resolved.unwrap(), Instant::ZERO, 0);
 
-    let (rule, budget) = run.step_budget().unwrap();
-    assert_eq!(rule, refuse.name());
+    let StepBudget { rule, budget } = run.step_budget().unwrap();
+    assert_eq!(&rule, refuse.name());
     assert_eq!(budget.limit(), three);
     for _ in 0..three.value() {
         assert!(!run.step_is_over(Instant::ZERO));

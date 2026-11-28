@@ -76,6 +76,8 @@ mod next_to_the_others {
         let resolved_until: Option<&ResolvedUntil> = resolved_step.until();
         let mut run: ScenarioRun = ScenarioRun::start(resolved.clone(), Instant::ZERO, 0);
         let position: ScenarioPosition = run.position();
+        // The step ends after a time, so it hands out no budget of firings.
+        let budget: Option<StepBudget> = run.step_budget();
         let advanced: StepAdvance = run.advance(Instant::ZERO, 0).unwrap();
 
         vec![
@@ -92,6 +94,7 @@ mod next_to_the_others {
             format!("{resolved_until:?}"),
             format!("{position:?}"),
             advanced.ended.to_string(),
+            format!("{budget:?}"),
         ]
     }
 
@@ -150,7 +153,7 @@ mod next_to_the_others {
 fn the_prelude_names_every_item_next_to_the_other_preludes() {
     let items = next_to_the_others::every_item();
 
-    assert_eq!(items.len(), 13);
+    assert_eq!(items.len(), 14);
     assert!(items.iter().all(|item| !item.is_empty()));
 }
 

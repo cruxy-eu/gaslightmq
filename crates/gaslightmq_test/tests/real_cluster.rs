@@ -24,6 +24,9 @@ use gaslightmq_wire::{Offset, Partition, Record, ResponseError};
 /// A record with a timestamp of its own reads back as it was written.
 const PLACED_AT: i64 = 1_700_000_000_000;
 
+/// How many Produce calls the first step of a scenario refuses before the scenario moves on to its next step.
+const REFUSED_PRODUCES: Count = Count::ONE;
+
 #[tokio::test]
 async fn a_rule_armed_through_the_control_plane_refuses_the_produce_of_a_real_client() -> anyhow::Result<()> {
     let cluster = KafkaCluster::plaintext().start().await?;
@@ -139,7 +142,7 @@ async fn a_scenario_refuses_the_first_produce_of_a_real_client_and_then_lets_it_
     let refuse_once = Step::new("refuse-once".parse()?)
         .arming([refuse.name().clone()])
         .ending_on(Until::Firings {
-            count: Count::ONE,
+            count: REFUSED_PRODUCES,
             rule: refuse.name().clone(),
         });
     let back_to_normal = Step::new("back-to-normal".parse()?);

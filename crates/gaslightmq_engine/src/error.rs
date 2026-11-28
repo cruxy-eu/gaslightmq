@@ -132,11 +132,11 @@ pub enum RetuneError {
 /// ```
 /// use gaslightmq_engine::prelude::*;
 ///
-/// let error = ActivateError::AlreadyActive { scenario: "leader-election".parse().expect("a scenario name") };
+/// let error = ActivateScenarioError::AlreadyActive { scenario: "leader-election".parse().expect("a scenario name") };
 /// assert_eq!(error.to_string(), "scenario \"leader-election\" is active already");
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-pub enum ActivateError {
+pub enum ActivateScenarioError {
     /// A scenario is active, and at most one is active at a time. Whoever wants another deactivates this one first.
     #[error("scenario {:?} is active already", .scenario.as_str())]
     AlreadyActive { scenario: ScenarioName },
@@ -147,10 +147,10 @@ pub enum ActivateError {
 /// ```
 /// use gaslightmq_engine::prelude::*;
 ///
-/// assert_eq!(DeactivateError::NotActive.to_string(), "no scenario is active");
+/// assert_eq!(DeactivateScenarioError::NotActive.to_string(), "no scenario is active");
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
-pub enum DeactivateError {
+pub enum DeactivateScenarioError {
     /// No scenario is active, so none deactivates.
     #[error("no scenario is active")]
     NotActive,
@@ -161,11 +161,11 @@ pub enum DeactivateError {
 /// ```
 /// use gaslightmq_engine::prelude::*;
 ///
-/// let error = AdvanceError::NoStep { scenario: "steady-jitter".parse().expect("a scenario name") };
+/// let error = StepScenarioError::NoStep { scenario: "steady-jitter".parse().expect("a scenario name") };
 /// assert_eq!(error.to_string(), "scenario \"steady-jitter\" runs no step that could end");
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-pub enum AdvanceError {
+pub enum StepScenarioError {
     /// No scenario is active.
     #[error("no scenario is active")]
     NotActive,

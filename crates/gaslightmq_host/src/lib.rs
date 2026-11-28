@@ -25,7 +25,7 @@
 //! | [`EnvironmentRulesError`], [`IntentError`], [`CloseSessionError`], [`HostChangesError`], [`FollowCallsError`] | Why the rules of an environment were not read, a pad was not acted on, a session was not closed, a follower has no next change, and the calls of an environment were not followed. |
 //! | [`RecordingStartError`], [`RecordingStopError`] | Why a recording of an environment did not start, and why one did not stop in order. |
 //! | [`EnvironmentScenario`] | The scenario of an environment: where the active one stands, and its revision there. |
-//! | [`ActivateScenarioError`], [`DeactivateScenarioError`], [`StepScenarioError`] | Why a scenario was not activated or deactivated in an environment, and why it did not advance a step. |
+//! | [`ScenarioActivationError`], [`ScenarioDeactivationError`], [`ScenarioStepError`] | Why a scenario was not activated or deactivated in an environment, and why it did not advance a step. |
 //!
 //! The [`prelude`] holds all of them.
 //!
@@ -187,9 +187,9 @@
 //! | [`Host::save`] | [`SaveError`](gaslightmq_workspace::SaveError) | Someone changed a file that the save would write, or a store could not write. |
 //! | [`Host::keep`] | [`KeepRuleError`] | The environment does not run, it has no live rule of the name, it changed since, a live rule of another environment has the name, or the workspace did not take it. |
 //! | [`Host::send_intent`], [`Host::send_intent_from`] | [`IntentError`] | The environment does not run, the layout does not exist, a store could not read, or the host cannot act on the intent: a hold of a presence that is not open is one such intent. An intent that finds the state it wants changes nothing, and is no error. |
-//! | [`Host::activate_scenario`] | [`ActivateScenarioError`] | The change expects another run, the environment does not run, the scenario does not exist or does not fit the workspace, a store could not read, the scenario of the environment changed since, a scenario is active already, or the backend does not support an incident of it. |
-//! | [`Host::deactivate_scenario`] | [`DeactivateScenarioError`] | The change expects another run, the environment does not run, its scenario changed since, or no scenario is active. |
-//! | [`Host::step_scenario`] | [`StepScenarioError`] | The change expects another run, the environment does not run, its scenario changed since, no scenario is active, or it runs no step. |
+//! | [`Host::activate_scenario`] | [`ScenarioActivationError`] | The change expects another run, the environment does not run, the scenario does not exist or does not resolve against the workspace, a store could not read, the scenario of the environment changed since, a scenario is active already, or the backend does not support an incident of it. |
+//! | [`Host::deactivate_scenario`] | [`ScenarioDeactivationError`] | The change expects another run, the environment does not run, its scenario changed since, or no scenario is active. |
+//! | [`Host::step_scenario`] | [`ScenarioStepError`] | The change expects another run, the environment does not run, its scenario changed since, no scenario is active, or it runs no step. |
 //! | [`Host::close_session`] | [`CloseSessionError`] | The environment does not run, or no session is open on the connection. |
 //! | [`Host::follow_calls`] | [`FollowCallsError`] | The environment does not run, the selectors could not be read, or the selector does not resolve. |
 //! | [`CallBacklog::new`] | [`CallBacklogError`] | The backlog is zero, or larger than the largest. |
@@ -233,11 +233,11 @@ pub use configuration::{
     EnvironmentConfigurationError, HostConfiguration,
 };
 pub use error::{
-    ActivateScenarioError, ArmRuleError, CloseSessionError, CreateDefinitionError, CreateLiveRuleError,
-    DeactivateScenarioError, DeleteDefinitionError, DeleteLiveRuleError, DisarmRuleError, EnvironmentRulesError,
-    EnvironmentStartError, FireRuleError, FollowCallsError, IntentError, KeepRuleError, NotRunningError,
-    ReadSentenceError, RecordingStartError, RecordingStopError, ReloadWorkspaceError, RuleHolder, StepScenarioError,
-    UpdateDefinitionError, UpdateLiveRuleError,
+    ArmRuleError, CloseSessionError, CreateDefinitionError, CreateLiveRuleError, DeleteDefinitionError,
+    DeleteLiveRuleError, DisarmRuleError, EnvironmentRulesError, EnvironmentStartError, FireRuleError,
+    FollowCallsError, IntentError, KeepRuleError, NotRunningError, ReadSentenceError, RecordingStartError,
+    RecordingStopError, ReloadWorkspaceError, RuleHolder, ScenarioActivationError, ScenarioDeactivationError,
+    ScenarioStepError, UpdateDefinitionError, UpdateLiveRuleError,
 };
 pub use host::Host;
 pub use reloaded::{Reloaded, Unsaved};
@@ -262,13 +262,13 @@ pub use scenario::EnvironmentScenario;
 pub mod prelude {
     #[doc(no_inline)]
     pub use crate::{
-        ActivateScenarioError, ArmRuleError, CallBacklog, CallBacklogError, CallSubscription, ChangeBacklog,
-        ChangeBacklogError, CloseSessionError, CreateDefinitionError, CreateLiveRuleError, DeactivateScenarioError,
-        DeleteDefinitionError, DeleteLiveRuleError, DisarmRuleError, EnvironmentConfiguration,
-        EnvironmentConfigurationError, EnvironmentRule, EnvironmentRulesError, EnvironmentStartError, Expects,
-        FireRuleError, FollowCallsError, Host, HostChange, HostChanges, HostChangesError, HostConfiguration,
-        IntentEffect, IntentError, KeepRuleError, NotRunningError, ReadSentenceError, RecordingStartError,
-        RecordingStopError, ReloadWorkspaceError, Reloaded, RuleHolder, RunId, RunIdError, StepScenarioError, Unsaved,
+        ArmRuleError, CallBacklog, CallBacklogError, CallSubscription, ChangeBacklog, ChangeBacklogError,
+        CloseSessionError, CreateDefinitionError, CreateLiveRuleError, DeleteDefinitionError, DeleteLiveRuleError,
+        DisarmRuleError, EnvironmentConfiguration, EnvironmentConfigurationError, EnvironmentRule,
+        EnvironmentRulesError, EnvironmentStartError, Expects, FireRuleError, FollowCallsError, Host, HostChange,
+        HostChanges, HostChangesError, HostConfiguration, IntentEffect, IntentError, KeepRuleError, NotRunningError,
+        ReadSentenceError, RecordingStartError, RecordingStopError, ReloadWorkspaceError, Reloaded, RuleHolder, RunId,
+        RunIdError, ScenarioActivationError, ScenarioDeactivationError, ScenarioStepError, Unsaved,
         UpdateDefinitionError, UpdateLiveRuleError,
     };
 }

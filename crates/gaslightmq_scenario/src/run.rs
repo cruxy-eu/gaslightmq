@@ -166,10 +166,13 @@ impl ScenarioRun {
     ///
     /// Whoever holds the armed rules hands the budget to the arming of the rule while the step runs:
     /// see [`ArmedRule::with_step_budget`](gaslightmq_rule::ArmedRule::with_step_budget).
-    pub fn step_budget(&self) -> Option<(&RuleName, &Budget)> {
+    pub fn step_budget(&self) -> Option<StepBudget> {
         let budget = self.step.as_ref()?.budget.as_ref()?;
         match self.step()?.until()? {
-            ResolvedUntil::Firings { rule, .. } => Some((rule, budget)),
+            ResolvedUntil::Firings { rule, .. } => Some(StepBudget {
+                rule: rule.clone(),
+                budget: budget.clone(),
+            }),
             ResolvedUntil::Calls { .. } | ResolvedUntil::After(_) => None,
         }
     }
@@ -246,6 +249,18 @@ pub struct ScenarioPosition {
     /// The step that runs, or `None` when the scenario has no step, or ran its last one.
     #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Option::is_none"))]
     pub step: Option<StepName>,
+}
+
+/// The firings that the step that runs allows the rule it ends on: a step that ends after `firings: 3` of a rule.
+///
+/// The budget is a handle, and a clone takes from the same firings. Whoever holds the armed rules hands it to the
+/// arming of the rule while the step runs, so every session takes from it, and the step is over once it is spent.
+#[derive(Debug, Clone)]
+pub struct StepBudget {
+    /// The rule that the step ends on.
+    pub rule: RuleName,
+    /// The firings that the step allows it.
+    pub budget: Budget,
 }
 
 /// What [advancing](ScenarioRun::advance) a scenario did: the step that ended, and the one that started.

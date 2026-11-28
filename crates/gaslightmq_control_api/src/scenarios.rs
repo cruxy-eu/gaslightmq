@@ -141,10 +141,11 @@ pub enum ActivateScenarioError {
     /// The workspace has no scenario of the name.
     #[error("scenario {:?} does not exist", .scenario.as_str())]
     NotFound { scenario: ScenarioName },
-    /// The scenario does not resolve against the workspace: a rule that it names is not there, a rule does not
-    /// resolve, or the selectors and the presets do not hold together. `reason` says what is wrong.
-    #[error("scenario {:?} does not fit the workspace: {reason}", .scenario.as_str())]
-    DoesNotFit { scenario: ScenarioName, reason: String },
+    /// The scenario does not resolve against the rules, the selectors and the presets of the workspace: a rule that it
+    /// names is not there, a rule or the selector of a step does not resolve, or the definitions of the workspace do
+    /// not hold together. Whoever wants it to run fixes the workspace. `reason` says what is wrong.
+    #[error("scenario {:?} does not resolve against the workspace: {reason}", .scenario.as_str())]
+    Unresolved { scenario: ScenarioName, reason: String },
     /// A store could not read its definitions. `reason` is what the store said.
     #[error("scenario {:?} was not activated: {reason}", .scenario.as_str())]
     StoreFailed { scenario: ScenarioName, reason: String },

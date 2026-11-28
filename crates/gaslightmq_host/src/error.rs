@@ -815,7 +815,7 @@ pub enum FollowCallsError {
 /// | [`NotRunning`](Self::NotRunning) | No environment of that name runs. |
 /// | [`NotFound`](Self::NotFound) | The workspace has no scenario of that name. |
 /// | [`StoreFailed`](Self::StoreFailed) | A store of the workspace could not be read. |
-/// | [`DoesNotFit`](Self::DoesNotFit) | The scenario does not resolve against the workspace. |
+/// | [`Unresolved`](Self::Unresolved) | The scenario does not resolve against the rules, the selectors and the presets of the workspace. |
 /// | [`Changed`](Self::Changed) | The scenario of the environment has another revision than the change expects. |
 /// | [`AlreadyActive`](Self::AlreadyActive) | A scenario is active in the environment. |
 /// | [`Unsupported`](Self::Unsupported) | The backend of the environment can neither apply nor emulate an incident that the scenario fires. |
@@ -825,7 +825,7 @@ pub enum FollowCallsError {
 /// ```
 /// use gaslightmq_host::prelude::*;
 ///
-/// let error = ActivateScenarioError::AlreadyActive {
+/// let error = ScenarioActivationError::AlreadyActive {
 ///     environment: "staging-proxy".parse().expect("an environment name"),
 ///     scenario: "leader-election".parse().expect("a scenario name"),
 /// };
@@ -835,7 +835,7 @@ pub enum FollowCallsError {
 /// );
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-pub enum ActivateScenarioError {
+pub enum ScenarioActivationError {
     /// The change expects a revision of another run than the run of the host, which is `run`.
     #[error("the change expects a revision of another run than {run}, which is the run of the process")]
     OtherRun { run: RunId },
@@ -848,10 +848,11 @@ pub enum ActivateScenarioError {
     /// A store of the workspace could not be read. `reason` says which store, and what it said.
     #[error("scenario {:?} is not activated: {reason}", .scenario.as_str())]
     StoreFailed { scenario: ScenarioName, reason: String },
-    /// The scenario does not resolve against the workspace: a rule it names is not there, a rule does not resolve,
-    /// or the selectors and the presets of the workspace do not hold together. `reason` says what is wrong.
-    #[error("scenario {:?} does not fit the workspace: {reason}", .scenario.as_str())]
-    DoesNotFit { scenario: ScenarioName, reason: String },
+    /// The scenario does not resolve against the rules, the selectors and the presets of the workspace: a rule that
+    /// it names is not there, a rule or the selector of a step does not resolve, or the definitions of the workspace
+    /// do not hold together. Whoever wants it to run fixes the workspace. `reason` says what is wrong.
+    #[error("scenario {:?} does not resolve against the workspace: {reason}", .scenario.as_str())]
+    Unresolved { scenario: ScenarioName, reason: String },
     /// The scenario of the environment has another revision than the change expects: someone activated,
     /// deactivated or advanced it since. `revision` is the one it has now.
     #[error(
@@ -891,11 +892,11 @@ pub enum ActivateScenarioError {
 /// ```
 /// use gaslightmq_host::prelude::*;
 ///
-/// let error = DeactivateScenarioError::NotActive { environment: "staging-proxy".parse().expect("an environment name") };
+/// let error = ScenarioDeactivationError::NotActive { environment: "staging-proxy".parse().expect("an environment name") };
 /// assert_eq!(error.to_string(), "environment \"staging-proxy\" runs no scenario");
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-pub enum DeactivateScenarioError {
+pub enum ScenarioDeactivationError {
     /// The change expects a revision of another run than the run of the host, which is `run`.
     #[error("the change expects a revision of another run than {run}, which is the run of the process")]
     OtherRun { run: RunId },
@@ -921,7 +922,7 @@ pub enum DeactivateScenarioError {
 /// ```
 /// use gaslightmq_host::prelude::*;
 ///
-/// let error = StepScenarioError::NoStep {
+/// let error = ScenarioStepError::NoStep {
 ///     environment: "staging-proxy".parse().expect("an environment name"),
 ///     scenario: "steady-jitter".parse().expect("a scenario name"),
 /// };
@@ -931,7 +932,7 @@ pub enum DeactivateScenarioError {
 /// );
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-pub enum StepScenarioError {
+pub enum ScenarioStepError {
     /// The change expects a revision of another run than the run of the host, which is `run`.
     #[error("the change expects a revision of another run than {run}, which is the run of the process")]
     OtherRun { run: RunId },

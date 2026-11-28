@@ -616,7 +616,7 @@ impl<C: WorkspaceContext + 'static> ControlPlane<C> {
         activate: ActivateScenario,
         from: ChangeSource,
     ) -> Result<Revised, ActivateScenarioError> {
-        use gaslightmq_host::ActivateScenarioError as Host;
+        use gaslightmq_host::ScenarioActivationError as Host;
         let ActivateScenario {
             environment,
             scenario,
@@ -634,7 +634,7 @@ impl<C: WorkspaceContext + 'static> ControlPlane<C> {
             Host::NotRunning { environment } => ActivateScenarioError::NotRunning { environment },
             Host::NotFound { scenario } => ActivateScenarioError::NotFound { scenario },
             Host::StoreFailed { scenario, reason } => ActivateScenarioError::StoreFailed { scenario, reason },
-            Host::DoesNotFit { scenario, reason } => ActivateScenarioError::DoesNotFit { scenario, reason },
+            Host::Unresolved { scenario, reason } => ActivateScenarioError::Unresolved { scenario, reason },
             Host::Changed {
                 environment,
                 revision: now,
@@ -662,7 +662,7 @@ impl<C: WorkspaceContext + 'static> ControlPlane<C> {
         deactivate: DeactivateScenario,
         from: ChangeSource,
     ) -> Result<Revised, DeactivateScenarioError> {
-        use gaslightmq_host::DeactivateScenarioError as Host;
+        use gaslightmq_host::ScenarioDeactivationError as Host;
         let DeactivateScenario { environment, expects } = deactivate;
         if let Some(run) = self.other_run(expects) {
             return Err(DeactivateScenarioError::OtherRun { run });
@@ -683,7 +683,7 @@ impl<C: WorkspaceContext + 'static> ControlPlane<C> {
     }
 
     fn step_scenario(&self, step: StepScenario, from: ChangeSource) -> Result<Revised, StepScenarioError> {
-        use gaslightmq_host::StepScenarioError as Host;
+        use gaslightmq_host::ScenarioStepError as Host;
         let StepScenario { environment, expects } = step;
         if let Some(run) = self.other_run(expects) {
             return Err(StepScenarioError::OtherRun { run });

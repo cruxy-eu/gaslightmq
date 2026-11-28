@@ -60,6 +60,12 @@ const DANS_TAB: PresenceId = PresenceId::from_random_bits(0xd);
 /// The address that the listeners of a test listen on, and that its clients connect to.
 const LOCALHOST: IpAddr = IpAddr::V4(Ipv4Addr::LOCALHOST);
 
+/// How long the slow rule of a scenario holds a Produce: long enough to tell, short enough for a test.
+const SLOW_PRODUCE: TimeSpan = TimeSpan::from_millis(20);
+
+/// How many Produce calls the slow step of a scenario holds before the scenario moves on to its next step.
+const SLOW_PRODUCES: Count = Count::ONE;
+
 /// The run of the host of a test. A test names its own, and `gmq` makes one from the randomness of the system.
 const RUN: RunId = RunId::from_random_bits(0x4be0_643f_1d98_573b_97cd_ca98_a653_47dd);
 
@@ -2520,16 +2526,16 @@ async fn a_sequence_advances_by_itself_when_its_rule_spent_the_firings_of_the_st
         },
     );
     host.start(EnvironmentConfiguration::new(&staging)?).await?;
-    // "Hold every Produce 20 ms", for one Produce of the step "slow-produce", and then nothing.
+    // "Hold every Produce a moment", for one Produce of the step "slow-produce", and then nothing.
     let slow = Rule::new(
         "slow-produce".parse()?,
         Conditions::from(Condition::is(ApiKey::PRODUCE)),
-        TimingLie::new().with_delay(TimeSpan::from_millis(20)),
+        TimingLie::new().with_delay(SLOW_PRODUCE),
     );
     let slow_once = Step::new("slow-produce".parse()?)
         .arming([slow.name().clone()])
         .ending_on(Until::Firings {
-            count: Count::ONE,
+            count: SLOW_PRODUCES,
             rule: slow.name().clone(),
         });
     let back_to_normal = Step::new("back-to-normal".parse()?);
@@ -2645,7 +2651,7 @@ async fn a_scenario_activates_only_where_the_backend_supports_its_incidents() ->
         .activate_scenario(staging.name(), scenario.name(), None, ChangeSurface::Test)
         .await;
 
-    let Err(ActivateScenarioError::Unsupported { error, .. }) = refused else {
+    let Err(ScenarioActivationError::Unsupported { error, .. }) = refused else {
         anyhow::bail!("the activation is refused for its incident, and not {refused:?}");
     };
     let kinds: Vec<IncidentKind> = error.incidents().iter().map(Requirement::kind).collect();
@@ -2694,7 +2700,7 @@ async fn a_step_by_hand_expects_the_scenario_as_its_sender_saw_it() -> anyhow::R
 
     assert_eq!(
         second,
-        Err(StepScenarioError::Changed {
+        Err(ScenarioStepError::Changed {
             environment: staging.name().clone(),
             revision: first,
         })
@@ -2707,7 +2713,7 @@ async fn a_step_by_hand_expects_the_scenario_as_its_sender_saw_it() -> anyhow::R
     host.step_scenario(staging.name(), None, ChangeSurface::Test)?;
     assert_eq!(
         host.step_scenario(staging.name(), None, ChangeSurface::Test),
-        Err(StepScenarioError::NoStep {
+        Err(ScenarioStepError::NoStep {
             environment: staging.name().clone(),
             scenario: scenario.name().clone(),
         })
