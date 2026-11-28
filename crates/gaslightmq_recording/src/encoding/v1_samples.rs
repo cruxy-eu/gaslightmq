@@ -659,6 +659,8 @@ fn changes() -> Vec<Change> {
         Change::RecordingStopped { .. } => Change::RecordingStopped {
             why: RecordingStopCause::FellBehind,
         },
+        Change::CaptureStarted => Change::CaptureStarted,
+        Change::CaptureStopped => Change::CaptureStopped,
     });
     // Every parameter, every kind of definition, every incident and every reason for a recording to stop.
     changes.extend(parameters.into_iter().map(|parameter| Change::ParameterChanged {

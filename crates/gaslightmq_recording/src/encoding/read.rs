@@ -647,6 +647,8 @@ fn change(change: &stored::ArchivedChange) -> Result<Change, Flaw> {
                 stored::ArchivedRecordingStopCause::CouldNotWrite => RecordingStopCause::CouldNotWrite,
             },
         },
+        Stored::CaptureStarted => Change::CaptureStarted,
+        Stored::CaptureStopped => Change::CaptureStopped,
     })
 }
 

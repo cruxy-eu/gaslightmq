@@ -10,7 +10,7 @@
 //! |---|---|
 //! | [`JournalEntry`] | One entry: what changed, when, at which revision, and where the change came from. |
 //! | [`JournalEntryId`] | Which entry of its journal this is: one number. |
-//! | [`Change`] | What changed: a rule armed, a parameter changed, a definition was created, an incident was applied, a recording stopped. |
+//! | [`Change`] | What changed: a rule armed, a parameter changed, a definition was created, an incident was applied, a recording stopped, a capture started. |
 //! | [`RecordingStopCause`] | Why a recording stopped by itself: the recorder fell behind, or it could not write. |
 //! | [`RecordingId`] | Which recording this is: its environment and the instant it started, in UTC, to the millisecond. |
 //! | [`Parameter`] | One parameter of a rule, which a turn of an encoder changes. |

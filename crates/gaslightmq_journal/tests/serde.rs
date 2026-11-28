@@ -237,6 +237,8 @@ fn a_change_names_itself_in_its_change_key() {
         },
         r#"{"change":"recording-stopped","why":"could-not-write"}"#,
     );
+    writes(&Change::CaptureStarted, r#"{"change":"capture-started"}"#);
+    writes(&Change::CaptureStopped, r#"{"change":"capture-stopped"}"#);
 }
 
 #[test]
