@@ -9,10 +9,10 @@ use gaslightmq_control_api::clock::TimeSpan;
 use gaslightmq_control_api::environment::{EnvironmentName, ServerAddress};
 use gaslightmq_control_api::journal::JournalEntry;
 use gaslightmq_control_api::rule::RuleName;
-use gaslightmq_control_api::{CheckHealth, EnvironmentNotRunning, RequestSurface, RunId, ScenarioStatus};
+use gaslightmq_control_api::{CheckHealth, RequestSurface, RunId, ScenarioStatus};
 use gaslightmq_control_client::{
     ActiveScenario, ControlClient, ControlClientConfiguration, ControlPlaneAddress, ControlledEnvironment,
-    EnvironmentRule, EnvironmentStateError, FollowError, FollowedCalls, OperationError, Prepared, Recordings, Rules,
+    EnvironmentRule, EnvironmentStateError, FollowError, FollowedCalls, JournalError, Prepared, Recordings, Rules,
     Scenarios, SelectorToMatch,
 };
 use testcontainers::bollard::Docker;
@@ -128,7 +128,7 @@ impl GaslightMqContainer {
     /// # Errors
     ///
     /// The errors of [`ControlledEnvironment::journal`].
-    pub async fn journal(&self) -> Result<Vec<JournalEntry>, OperationError<EnvironmentNotRunning>> {
+    pub async fn journal(&self) -> Result<Vec<JournalEntry>, JournalError> {
         self.environment.journal().await
     }
 
@@ -364,7 +364,7 @@ impl GaslightMqContainerConfiguration {
         configuration.surface = RequestSurface::Test;
         let control = ControlClient::new(configuration);
         let reason = match control.send(CheckHealth {}).await {
-            Ok(_) => {
+            Ok(Ok(_)) => {
                 return Ok(Ready {
                     control,
                     bootstrap,
@@ -372,7 +372,8 @@ impl GaslightMqContainerConfiguration {
                     run,
                 });
             }
-            Err(failed) => failed.to_string(),
+            Ok(Err(unhealthy)) => unhealthy.to_string(),
+            Err(unanswered) => unanswered.to_string(),
         };
         Err(not_ready(reason, printed).await)
     }

@@ -9,7 +9,7 @@ use gaslightmq_control_api::{Operation, RequestSource};
 
 use crate::exchange::{OPERATIONS_PATH, RequestText, read_presence, stream_path};
 use crate::transport::{self, Http, Socket};
-use crate::{ControlClientConfiguration, LiveStream, OperationError, SendError, StreamError};
+use crate::{ControlClientConfiguration, LiveStream, SendError, StreamError};
 
 /// A client of one control plane: it sends operations and opens live streams.
 ///
@@ -45,12 +45,11 @@ impl ControlClient {
     ///
     /// # Errors
     ///
-    /// - [`OperationError::Refused`] with the error of the operation, when the control plane refused it.
-    /// - [`OperationError::Unanswered`] when no answer of its own came: [`SendError::Unreachable`] when none came
-    ///   within the [request timeout](ControlClientConfiguration::request_timeout), [`SendError::Rejected`] when the
-    ///   control plane did not take the request, and [`SendError::Unreadable`] when the answer is no answer of the
-    ///   control plane to the operation.
-    pub async fn send<O: Operation>(&self, operation: O) -> Result<O::Answer, OperationError<O::Error>> {
+    /// [`SendError::Unreachable`] when no answer came within the
+    /// [request timeout](ControlClientConfiguration::request_timeout),
+    /// [`SendError::Rejected`] when the control plane did not take the request,
+    /// and [`SendError::Unreadable`] when the answer is no answer of the control plane to the operation.
+    pub async fn send<O: Operation>(&self, operation: O) -> Result<Result<O::Answer, O::Error>, SendError> {
         self.send_from(self.configuration.surface, operation).await
     }
 
@@ -62,14 +61,14 @@ impl ControlClient {
     ///
     /// ```no_run
     /// use gaslightmq_control_api::prelude::*;
-    /// use gaslightmq_control_client::{ControlClient, OperationError};
+    /// use gaslightmq_control_client::{ControlClient, SendError};
     ///
-    /// # async fn press_and_take_back(client: ControlClient, press: SendIntent, disarm: DisarmRule) -> Result<(), OperationError<RuleCommandError>> {
+    /// # async fn press_and_take_back(client: ControlClient, press: SendIntent, disarm: DisarmRule) -> Result<(), SendError> {
     /// // The UI is one client, and a press comes from its pads.
-    /// let _ = client.send_from(RequestSurface::Pad, press).await;
+    /// let _ = client.send_from(RequestSurface::Pad, press).await?;
     /// // ⌘Z takes the press back: the rule disarms, and the request says why.
     /// let undo = RequestSource::new(RequestSurface::Ui).with_cause(RequestCause::Undo);
-    /// client.send_from(undo, disarm).await?;
+    /// let _ = client.send_from(undo, disarm).await?;
     /// # Ok(())
     /// # }
     /// ```
@@ -81,23 +80,18 @@ impl ControlClient {
         &self,
         from: impl Into<RequestSource>,
         operation: O,
-    ) -> Result<O::Answer, OperationError<O::Error>> {
+    ) -> Result<Result<O::Answer, O::Error>, SendError> {
         let request = RequestText::of(from.into(), operation);
         let url = self.configuration.address.http(OPERATIONS_PATH);
         let timeout = self.configuration.request_timeout;
-        let unanswered = |error| OperationError::Unanswered { error };
         let reply = within(timeout, self.http.post(&url, request.body.clone()))
             .await
             .unwrap_or_else(|| {
                 Err(SendError::Unreachable {
                     reason: no_answer(timeout),
                 })
-            })
-            .map_err(unanswered)?;
-        request
-            .read::<O>(&reply)
-            .map_err(unanswered)?
-            .map_err(|error| OperationError::Refused { error })
+            })?;
+        request.read::<O>(&reply)
     }
 
     /// Opens a live stream, and returns once the control plane took it and named the presence of the client.

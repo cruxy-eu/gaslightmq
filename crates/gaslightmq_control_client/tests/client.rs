@@ -11,7 +11,7 @@ use gaslightmq_control_api::prelude::*;
 use gaslightmq_control_api::selector::{Conditions, SelectorRef};
 use gaslightmq_control_api::surface::PresenceId;
 use gaslightmq_control_client::{
-    ControlClient, ControlClientConfiguration, ControlPlaneAddress, OperationError, SendError, StreamError,
+    ControlClient, ControlClientConfiguration, ControlPlaneAddress, SendError, StreamError,
 };
 use serde::Serialize;
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
@@ -56,11 +56,9 @@ mod operations {
         );
 
         assert_eq!(
-            answer,
-            Err(OperationError::Refused {
-                error: RuleCommandError::NotRunning {
-                    environment: "orders-sim".parse()?
-                }
+            answer?,
+            Err(RuleCommandError::NotRunning {
+                environment: "orders-sim".parse()?
             })
         );
         let request = request?;
@@ -135,7 +133,7 @@ mod operations {
 
         let (answer, request) = tokio::join!(client.send(arm), control_plane.answer(LEFT));
 
-        assert_eq!(answer?, LEFT);
+        assert_eq!(answer?, Ok(LEFT));
         assert_eq!(
             serde_json::from_str::<serde_json::Value>(&request?.body)?,
             serde_json::json!({
@@ -173,8 +171,8 @@ mod operations {
         let (started_again, _) = tokio::join!(client.send(disarm), control_plane.refuse(other_run.clone()));
 
         // Each is an answer of the operation, which the caller decides on: read the rule again, or the snapshot.
-        assert_eq!(moved_on, Err(OperationError::Refused { error: changed }));
-        assert_eq!(started_again, Err(OperationError::Refused { error: other_run }));
+        assert_eq!(moved_on?, Err(changed));
+        assert_eq!(started_again?, Err(other_run));
         Ok(())
     }
 
@@ -190,7 +188,7 @@ mod operations {
             control_plane.answer(Vec::<SessionStatus>::new()),
         );
 
-        assert_eq!(answer?, Vec::new());
+        assert_eq!(answer?, Ok(Vec::new()));
         request?;
         Ok(())
     }
@@ -203,15 +201,7 @@ mod operations {
         let (answer, request) = tokio::join!(client.send(ListEnvironments {}), control_plane.answer_with_a_web_page(),);
 
         let error = answer.expect_err("no answer of list-environments");
-        assert!(
-            matches!(
-                error,
-                OperationError::Unanswered {
-                    error: SendError::Unreadable { .. }
-                }
-            ),
-            "{error}"
-        );
+        assert!(matches!(error, SendError::Unreadable { .. }), "{error}");
         request?;
         Ok(())
     }
@@ -223,15 +213,7 @@ mod operations {
 
         let error = client.send(ListEnvironments {}).await.expect_err("nothing listens");
 
-        assert!(
-            matches!(
-                error,
-                OperationError::Unanswered {
-                    error: SendError::Unreachable { .. }
-                }
-            ),
-            "{error}"
-        );
+        assert!(matches!(error, SendError::Unreachable { .. }), "{error}");
         Ok(())
     }
 
@@ -254,11 +236,9 @@ mod operations {
 
         assert_eq!(
             answer.expect_err("the control plane does not keep rules yet"),
-            OperationError::Unanswered {
-                error: SendError::Rejected {
-                    error: RequestError::NotServed {
-                        operation: "keep-rule".to_owned()
-                    }
+            SendError::Rejected {
+                error: RequestError::NotServed {
+                    operation: "keep-rule".to_owned()
                 }
             }
         );
@@ -277,10 +257,8 @@ mod operations {
 
         assert_eq!(
             answer.expect_err("no answer"),
-            OperationError::Unanswered {
-                error: SendError::Unreachable {
-                    reason: "no answer within 50ms".to_owned()
-                }
+            SendError::Unreachable {
+                reason: "no answer within 50ms".to_owned()
             }
         );
         drop(connection?);

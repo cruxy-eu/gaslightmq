@@ -9,10 +9,10 @@ use gaslightmq_control_api::environment::{EnvironmentName, ServerAddress};
 use gaslightmq_control_api::field::Endpoint;
 use gaslightmq_control_api::journal::{ChangeSurface, JournalEntry};
 use gaslightmq_control_api::rule::RuleName;
-use gaslightmq_control_api::{EnvironmentNotRunning, RequestSurface, RunId, ScenarioStatus};
+use gaslightmq_control_api::{RequestSurface, RunId, ScenarioStatus};
 use gaslightmq_control_client::{
     ActiveScenario, ControlClient, ControlClientConfiguration, ControlPlaneAddress, ControlledEnvironment,
-    EnvironmentRule, EnvironmentStateError, FollowError, FollowedCalls, OperationError, Prepared, Recordings, Rules,
+    EnvironmentRule, EnvironmentStateError, FollowError, FollowedCalls, JournalError, Prepared, Recordings, Rules,
     Scenarios, SelectorToMatch,
 };
 use gaslightmq_control_server::ControlServer;
@@ -115,7 +115,7 @@ impl<C: WorkspaceContext + 'static> GaslightMq<C> {
     /// # Errors
     ///
     /// The errors of [`ControlledEnvironment::journal`].
-    pub async fn journal(&self) -> Result<Vec<JournalEntry>, OperationError<EnvironmentNotRunning>> {
+    pub async fn journal(&self) -> Result<Vec<JournalEntry>, JournalError> {
         self.environment.journal().await
     }
 

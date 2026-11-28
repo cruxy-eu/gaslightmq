@@ -1,4 +1,5 @@
-//! Why an operation did not do what it asked, why it got no answer of its own, and why a live stream ended.
+//! Why an operation got no answer of its own, why a live stream ended, and why each call of an environment did not
+//! do what it asked.
 
 use gaslightmq_control_api::RequestError;
 use gaslightmq_control_api::clock::TimeSpan;
@@ -6,58 +7,10 @@ use gaslightmq_control_api::environment::EnvironmentName;
 use gaslightmq_control_api::prelude::*;
 use gaslightmq_definition_text::ReadDefinitionError;
 
-/// Why an operation did not answer: the control plane refused it, or no answer of its own came.
-///
-/// A caller decides on the error of the operation, which [`Refused`](Self::Refused) holds as the control plane
-/// answered it: it starts an environment that does not run, or picks another name for a rule.
-///
-/// ```
-/// use gaslightmq_control_api::prelude::*;
-/// use gaslightmq_control_client::{OperationError, SendError};
-///
-/// let refused: OperationError<StopRecordingError> = OperationError::Refused {
-///     error: StopRecordingError::NotRecording { environment: "orders-sim".parse().expect("an environment name") },
-/// };
-/// assert_eq!(refused.to_string(), "environment \"orders-sim\" records nothing");
-///
-/// let unanswered: OperationError<StopRecordingError> =
-///     OperationError::Unanswered { error: SendError::Unreachable { reason: "connection refused".to_owned() } };
-/// assert_eq!(unanswered.to_string(), "the control plane is unreachable: connection refused");
-/// ```
-#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-pub enum OperationError<E> {
-    /// The control plane refused the operation, and `error` is the error of the operation that it answered with.
-    #[error("{error}")]
-    Refused { error: E },
-    /// No answer of its own came: `error` says why. The control plane may have done the operation.
-    #[error("{error}")]
-    Unanswered { error: SendError },
-}
-
-impl<E> OperationError<E> {
-    /// The error of the operation, when the control plane refused it, or `None` when no answer of its own came.
-    ///
-    /// ```
-    /// use gaslightmq_control_api::environment::EnvironmentName;
-    /// use gaslightmq_control_api::prelude::*;
-    /// use gaslightmq_control_client::OperationError;
-    ///
-    /// let environment: EnvironmentName = "orders-sim".parse().expect("an environment name");
-    /// let refused = OperationError::Refused { error: StopRecordingError::NotRecording { environment: environment.clone() } };
-    /// assert_eq!(refused.refusal(), Some(StopRecordingError::NotRecording { environment }));
-    /// ```
-    pub fn refusal(self) -> Option<E> {
-        match self {
-            OperationError::Refused { error } => Some(error),
-            OperationError::Unanswered { .. } => None,
-        }
-    }
-}
-
 /// Why an operation got no answer of its own: neither its answer nor its error.
 ///
-/// An operation that the control plane answered with its own error is [refused](OperationError::Refused) instead,
-/// so a caller decides on that error: see [`ControlClient::send`](crate::ControlClient::send).
+/// An operation that the control plane answered returns its own error instead, as itself,
+/// so a caller decides on it: see [`ControlClient::send`](crate::ControlClient::send).
 ///
 /// ```
 /// use gaslightmq_control_client::SendError;
@@ -120,12 +73,51 @@ pub enum ArmError {
     /// The rule does not read: `error` names the key that failed.
     #[error("the rule does not read: {error}")]
     Unreadable { error: ReadDefinitionError },
-    /// The environment did not create the rule as a live rule, and `error` says why.
+    /// No answer of its own came: `error` says why. The control plane may have done what the call asked.
     #[error("{error}")]
-    NotCreated { error: OperationError<CreateLiveRuleError> },
-    /// The environment did not arm the rule of that name, and `error` says why.
+    Unanswered { error: SendError },
+    /// The environment did not create the rule as a live rule, and `error` is the error that the control plane refused with.
     #[error("{error}")]
-    NotArmed { error: OperationError<RuleCommandError> },
+    NotCreated { error: CreateLiveRuleError },
+    /// The environment did not arm the rule of that name, and `error` is the error that the control plane refused with.
+    #[error("{error}")]
+    NotArmed { error: RuleCommandError },
+}
+
+/// Why a rule did not [disarm](crate::EnvironmentRule::disarm).
+///
+/// ```
+/// use gaslightmq_control_client::{DisarmError, SendError};
+///
+/// let error = DisarmError::Unanswered { error: SendError::Unreachable { reason: "connection refused".to_owned() } };
+/// assert_eq!(error.to_string(), "the control plane is unreachable: connection refused");
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum DisarmError {
+    /// No answer of its own came: `error` says why. The control plane may have done what the call asked.
+    #[error("{error}")]
+    Unanswered { error: SendError },
+    /// The environment did not disarm the rule, and `error` is the error that the control plane refused with.
+    #[error("{error}")]
+    Refused { error: RuleCommandError },
+}
+
+/// Why a rule did not [fire](crate::EnvironmentRule::fire) by hand.
+///
+/// ```
+/// use gaslightmq_control_client::{FireError, SendError};
+///
+/// let error = FireError::Unanswered { error: SendError::Unreachable { reason: "connection refused".to_owned() } };
+/// assert_eq!(error.to_string(), "the control plane is unreachable: connection refused");
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum FireError {
+    /// No answer of its own came: `error` says why. The control plane may have done what the call asked.
+    #[error("{error}")]
+    Unanswered { error: SendError },
+    /// The environment did not fire the rule, and `error` is the error that the control plane refused with.
+    #[error("{error}")]
+    Refused { error: FireRuleError },
 }
 
 /// Why a scenario did not [activate](crate::Scenarios::activate) in an environment.
@@ -143,16 +135,51 @@ pub enum ActivateError {
     /// The scenario does not read: `error` names the key that failed.
     #[error("the scenario does not read: {error}")]
     Unreadable { error: ReadDefinitionError },
-    /// The workspace did not take the scenario, and `error` says why.
+    /// No answer of its own came: `error` says why. The control plane may have done what the call asked.
     #[error("{error}")]
-    NotCreated {
-        error: OperationError<CreateDefinitionError>,
-    },
-    /// The environment did not activate the scenario, and `error` says why.
+    Unanswered { error: SendError },
+    /// The workspace did not take the scenario, and `error` is the error that the control plane refused with.
     #[error("{error}")]
-    NotActivated {
-        error: OperationError<ActivateScenarioError>,
-    },
+    NotCreated { error: CreateDefinitionError },
+    /// The environment did not activate the scenario, and `error` is the error that the control plane refused with.
+    #[error("{error}")]
+    NotActivated { error: ActivateScenarioError },
+}
+
+/// Why the scenario of an environment did not [step](crate::ActiveScenario::step).
+///
+/// ```
+/// use gaslightmq_control_client::{StepError, SendError};
+///
+/// let error = StepError::Unanswered { error: SendError::Unreachable { reason: "connection refused".to_owned() } };
+/// assert_eq!(error.to_string(), "the control plane is unreachable: connection refused");
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum StepError {
+    /// No answer of its own came: `error` says why. The control plane may have done what the call asked.
+    #[error("{error}")]
+    Unanswered { error: SendError },
+    /// The environment did not step its scenario, and `error` is the error that the control plane refused with.
+    #[error("{error}")]
+    Refused { error: StepScenarioError },
+}
+
+/// Why a scenario did not [deactivate](crate::ActiveScenario::deactivate).
+///
+/// ```
+/// use gaslightmq_control_client::{DeactivateError, SendError};
+///
+/// let error = DeactivateError::Unanswered { error: SendError::Unreachable { reason: "connection refused".to_owned() } };
+/// assert_eq!(error.to_string(), "the control plane is unreachable: connection refused");
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum DeactivateError {
+    /// No answer of its own came: `error` says why. The control plane may have done what the call asked.
+    #[error("{error}")]
+    Unanswered { error: SendError },
+    /// The environment did not deactivate its scenario, and `error` is the error that the control plane refused with.
+    #[error("{error}")]
+    Refused { error: DeactivateScenarioError },
 }
 
 /// Why the workspace did not get a [definition](crate::Definitions).
@@ -168,11 +195,48 @@ pub enum DefineError {
     /// The definition does not read: `error` names the key that failed.
     #[error("the definition does not read: {error}")]
     Unreadable { error: ReadDefinitionError },
-    /// The workspace did not create the definition, and `error` says why.
+    /// No answer of its own came: `error` says why. The control plane may have done what the call asked.
     #[error("{error}")]
-    NotCreated {
-        error: OperationError<CreateDefinitionError>,
-    },
+    Unanswered { error: SendError },
+    /// The workspace did not create the definition, and `error` is the error that the control plane refused with.
+    #[error("{error}")]
+    NotCreated { error: CreateDefinitionError },
+}
+
+/// Why a recording did not [start](crate::Recordings::start).
+///
+/// ```
+/// use gaslightmq_control_client::{RecordingStartError, SendError};
+///
+/// let error = RecordingStartError::Unanswered { error: SendError::Unreachable { reason: "connection refused".to_owned() } };
+/// assert_eq!(error.to_string(), "the control plane is unreachable: connection refused");
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum RecordingStartError {
+    /// No answer of its own came: `error` says why. The control plane may have done what the call asked.
+    #[error("{error}")]
+    Unanswered { error: SendError },
+    /// The environment did not start a recording, and `error` is the error that the control plane refused with.
+    #[error("{error}")]
+    Refused { error: StartRecordingError },
+}
+
+/// Why a recording did not [stop](crate::Recording::stop) in order.
+///
+/// ```
+/// use gaslightmq_control_client::{RecordingStopError, SendError};
+///
+/// let error = RecordingStopError::Unanswered { error: SendError::Unreachable { reason: "connection refused".to_owned() } };
+/// assert_eq!(error.to_string(), "the control plane is unreachable: connection refused");
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum RecordingStopError {
+    /// No answer of its own came: `error` says why. The control plane may have done what the call asked.
+    #[error("{error}")]
+    Unanswered { error: SendError },
+    /// The environment did not stop its recording in order, and `error` is the error that the control plane refused with.
+    #[error("{error}")]
+    Refused { error: StopRecordingError },
 }
 
 /// Why a [recording](crate::Recording) was not queried.
@@ -180,17 +244,38 @@ pub enum DefineError {
 /// ```
 /// use gaslightmq_control_client::{QueryError, ReadDefinitionError};
 ///
-/// let error = QueryError::Unreadable { error: ReadDefinitionError { path: Some("api".to_owned()), reason: "unknown API key: \"Nope\"".to_owned() } };
-/// assert_eq!(error.to_string(), "the selector does not read: api: unknown API key: \"Nope\"");
+/// let error = QueryError::Unreadable { error: ReadDefinitionError { path: Some("api".to_owned()), reason: "unknown API key: Nope".to_owned() } };
+/// assert_eq!(error.to_string(), "the selector does not read: api: unknown API key: Nope");
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum QueryError {
     /// The selector does not read: `error` names the key that failed.
     #[error("the selector does not read: {error}")]
     Unreadable { error: ReadDefinitionError },
-    /// The control plane did not query the recording, and `error` says why.
+    /// No answer of its own came: `error` says why. The control plane may have done what the call asked.
     #[error("{error}")]
-    NotQueried { error: OperationError<QueryRecordingError> },
+    Unanswered { error: SendError },
+    /// The control plane did not query the recording, and `error` is the error that the control plane refused with.
+    #[error("{error}")]
+    Refused { error: QueryRecordingError },
+}
+
+/// Why the [journal](crate::ControlledEnvironment::journal) of an environment was not read.
+///
+/// ```
+/// use gaslightmq_control_client::{JournalError, SendError};
+///
+/// let error = JournalError::Unanswered { error: SendError::Unreachable { reason: "connection refused".to_owned() } };
+/// assert_eq!(error.to_string(), "the control plane is unreachable: connection refused");
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum JournalError {
+    /// No answer of its own came: `error` says why. The control plane may have done what the call asked.
+    #[error("{error}")]
+    Unanswered { error: SendError },
+    /// The environment does not run, and `error` is the error that the control plane refused with.
+    #[error("{error}")]
+    Refused { error: EnvironmentNotRunning },
 }
 
 /// Why the calls of an environment are not [followed](crate::ControlledEnvironment::follow).
@@ -293,8 +378,28 @@ pub enum PrepareError {
     NotArmed { error: ArmError },
     /// The recording from the start did not start, and `error` says why.
     #[error("{error}")]
-    NotRecording { error: OperationError<StartRecordingError> },
+    NotRecording { error: RecordingStartError },
     /// The scenario did not activate, and `error` says why.
     #[error("{error}")]
     NotActivated { error: ActivateError },
+}
+
+/// Why the [firings](crate::EnvironmentRule::firings) of a rule are not known.
+///
+/// ```
+/// use gaslightmq_control_api::clock::TimeSpan;
+/// use gaslightmq_control_client::FiringsError;
+///
+/// let error = FiringsError::TimedOut { timeout: TimeSpan::from_secs(30) };
+/// assert_eq!(error.to_string(), "no statistics came within 30s");
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum FiringsError {
+    /// The live stream that would say did not open, or it ended first, and `error` says why.
+    #[error("{error}")]
+    Unreachable { error: StreamError },
+    /// No statistics of the environment came within the
+    /// [follow timeout](crate::ControlClientConfiguration::follow_timeout).
+    #[error("no statistics came within {timeout}")]
+    TimedOut { timeout: TimeSpan },
 }

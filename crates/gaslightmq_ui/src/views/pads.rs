@@ -9,7 +9,7 @@ use gaslightmq_control_api::surface::{
     Column, Encoder, Hold, Intent, Layer, LayoutName, Pad, PadState, PlayMode, Row, Steps,
 };
 use gaslightmq_control_api::trigger::Chance;
-use gaslightmq_control_client::{OperationError, SendError};
+use gaslightmq_control_client::SendError;
 
 use crate::app::Ui;
 use crate::browser;
@@ -306,17 +306,17 @@ fn hold(ui: &Ui, pad: Pad, send: SendIntent) {
     let ui = ui.clone();
     spawn(async move {
         let hold = match ui.client.send_from(from, send).await {
-            Ok(effect) => {
+            Ok(Ok(effect)) => {
                 // A press that made the rule of the pad is one step with its release.
                 let mut live = ui.live;
                 live.write().history_mut().held(&effect);
                 effect.hold
             }
-            Err(OperationError::Refused { error: refused }) => {
+            Ok(Err(refused)) => {
                 ui.notify(refused.to_string(), true);
                 None
             }
-            Err(OperationError::Unanswered { error }) => {
+            Err(error) => {
                 ui.notify(error.to_string(), true);
                 if !matches!(error, SendError::Rejected { .. }) {
                     ui.let_go_of_presence();
@@ -362,7 +362,7 @@ fn release(ui: &Ui, release: SendIntent) {
                 .send_from(ui.source(RequestSurface::Pad), release.clone())
                 .await;
             match sent {
-                Ok(effect) => {
+                Ok(Ok(effect)) => {
                     if let Intent::Release { hold, .. } = &release.intent {
                         let mut live = ui.live;
                         live.write()
@@ -371,10 +371,8 @@ fn release(ui: &Ui, release: SendIntent) {
                     }
                     return;
                 }
-                Err(OperationError::Refused { error: refused }) => return ui.notify(refused.to_string(), true),
-                Err(OperationError::Unanswered {
-                    error: SendError::Unreachable { reason },
-                }) => {
+                Ok(Err(refused)) => return ui.notify(refused.to_string(), true),
+                Err(SendError::Unreachable { reason }) => {
                     if !told {
                         ui.notify(
                             format!("The release of a pad did not arrive, and goes out again: {reason}"),

@@ -12,9 +12,10 @@ use gaslightmq_definition_text::DefinitionText;
 use crate::client::within;
 use crate::written::{Given, Written};
 use crate::{
-    ActivateError, ArmError, ControlClient, CurrentRecordingError, DefineError, EnvironmentStateError, FollowError,
-    LiveStream, OperationError, QueryError, RuleToArm, ScenarioToActivate, SelectorToMatch, StreamError,
-    WaitForCallsError,
+    ActivateError, ArmError, ControlClient, CurrentRecordingError, DeactivateError, DefineError, DisarmError,
+    EnvironmentStateError, FireError, FiringsError, FollowError, JournalError, LiveStream, QueryError,
+    RecordingStartError, RecordingStopError, RuleToArm, ScenarioToActivate, SelectorToMatch, SendError, StepError,
+    StreamError, WaitForCallsError,
 };
 
 /// The name of a scenario that a caller hands over without one, before it is numbered: `scenario`, `scenario-2`.
@@ -160,14 +161,19 @@ impl ControlledEnvironment {
     ///
     /// # Errors
     ///
-    /// The [`EnvironmentNotRunning`] that the control plane refused with, or why no answer came.
-    pub async fn journal(&self) -> Result<Vec<JournalEntry>, OperationError<EnvironmentNotRunning>> {
-        self.client
-            .send(QueryJournal {
-                environment: self.environment.clone(),
-                after: None,
-            })
-            .await
+    /// [`JournalError`] when the environment does not run, or no answer came.
+    pub async fn journal(&self) -> Result<Vec<JournalEntry>, JournalError> {
+        let query = QueryJournal {
+            environment: self.environment.clone(),
+            after: None,
+        };
+        answered(
+            &self.client,
+            query,
+            |error| JournalError::Refused { error },
+            |error| JournalError::Unanswered { error },
+        )
+        .await
     }
 
     /// The entries of the journal of the environment after `entry`, which the caller read last.
@@ -175,16 +181,18 @@ impl ControlledEnvironment {
     /// # Errors
     ///
     /// As for [`journal`](Self::journal).
-    pub async fn journal_after(
-        &self,
-        entry: JournalEntryId,
-    ) -> Result<Vec<JournalEntry>, OperationError<EnvironmentNotRunning>> {
-        self.client
-            .send(QueryJournal {
-                environment: self.environment.clone(),
-                after: Some(entry),
-            })
-            .await
+    pub async fn journal_after(&self, entry: JournalEntryId) -> Result<Vec<JournalEntry>, JournalError> {
+        let query = QueryJournal {
+            environment: self.environment.clone(),
+            after: Some(entry),
+        };
+        answered(
+            &self.client,
+            query,
+            |error| JournalError::Refused { error },
+            |error| JournalError::Unanswered { error },
+        )
+        .await
     }
 
     /// Where the scenario of the environment stands: the scenario that is active and the step that runs, and its
@@ -241,7 +249,7 @@ impl Rules {
         let written = match rule.into().given() {
             Given::Named(name) => {
                 let rule = self.environment.rule(name.clone());
-                rule.arm().await.map_err(|error| ArmError::NotArmed { error })?;
+                rule.arm().await?;
                 return Ok(rule);
             }
             Given::Written(written) => written.clone(),
@@ -266,11 +274,10 @@ impl Rules {
                 })
                 .await;
             match created {
-                Ok(_) => return Ok(self.environment.rule(name)),
-                Err(OperationError::Refused {
-                    error: CreateLiveRuleError::NameTaken { .. },
-                }) if numbered => number += 1,
-                Err(error) => return Err(ArmError::NotCreated { error }),
+                Ok(Ok(_)) => return Ok(self.environment.rule(name)),
+                Ok(Err(CreateLiveRuleError::NameTaken { .. })) if numbered => number += 1,
+                Ok(Err(error)) => return Err(ArmError::NotCreated { error }),
+                Err(error) => return Err(ArmError::Unanswered { error }),
             }
         }
     }
@@ -296,47 +303,95 @@ impl EnvironmentRule {
     ///
     /// # Errors
     ///
-    /// The [`RuleCommandError`] that the control plane refused with, or why no answer came.
-    pub async fn arm(&self) -> Result<Revised, OperationError<RuleCommandError>> {
-        self.environment
-            .client
-            .send(ArmRule {
-                environment: self.environment.environment.clone(),
-                rule: self.name.clone(),
-                expects: None,
-            })
-            .await
+    /// [`ArmError::NotArmed`] with the [`RuleCommandError`] that the control plane refused with, or
+    /// [`ArmError::Unanswered`].
+    pub async fn arm(&self) -> Result<Revised, ArmError> {
+        let arm = ArmRule {
+            environment: self.environment.environment.clone(),
+            rule: self.name.clone(),
+            expects: None,
+        };
+        answered(
+            &self.environment.client,
+            arm,
+            |error| ArmError::NotArmed { error },
+            |error| ArmError::Unanswered { error },
+        )
+        .await
     }
 
     /// Disarms the rule.
     ///
     /// # Errors
     ///
-    /// The [`RuleCommandError`] that the control plane refused with, or why no answer came.
-    pub async fn disarm(&self) -> Result<Revised, OperationError<RuleCommandError>> {
-        self.environment
-            .client
-            .send(DisarmRule {
-                environment: self.environment.environment.clone(),
-                rule: self.name.clone(),
-                expects: None,
-            })
-            .await
+    /// [`DisarmError`] with the [`RuleCommandError`] that the control plane refused with, or why no answer came.
+    pub async fn disarm(&self) -> Result<Revised, DisarmError> {
+        let disarm = DisarmRule {
+            environment: self.environment.environment.clone(),
+            rule: self.name.clone(),
+            expects: None,
+        };
+        answered(
+            &self.environment.client,
+            disarm,
+            |error| DisarmError::Refused { error },
+            |error| DisarmError::Unanswered { error },
+        )
+        .await
     }
 
     /// Fires the rule by hand: it skips its trigger once.
     ///
     /// # Errors
     ///
-    /// The [`FireRuleError`] that the control plane refused with, or why no answer came.
-    pub async fn fire(&self) -> Result<(), OperationError<FireRuleError>> {
-        self.environment
-            .client
-            .send(FireRule {
-                environment: self.environment.environment.clone(),
-                rule: self.name.clone(),
-            })
-            .await
+    /// [`FireError`] with the [`FireRuleError`] that the control plane refused with, or why no answer came.
+    pub async fn fire(&self) -> Result<(), FireError> {
+        let fire = FireRule {
+            environment: self.environment.environment.clone(),
+            rule: self.name.clone(),
+        };
+        answered(
+            &self.environment.client,
+            fire,
+            |error| FireError::Refused { error },
+            |error| FireError::Unanswered { error },
+        )
+        .await
+    }
+}
+
+impl EnvironmentRule {
+    /// On how many calls the action of the rule took effect, as the next statistics of the environment say: the
+    /// firings that count for a lifetime of firings. A rule that did nothing yet has fired on none.
+    ///
+    /// The environment sends its statistics at an interval, so the count is the one of that moment, and it waits as
+    /// long as the [follow timeout](crate::ControlClientConfiguration::follow_timeout) at most.
+    ///
+    /// # Errors
+    ///
+    /// - [`FiringsError::Unreachable`] when the live stream did not open, or ended first.
+    /// - [`FiringsError::TimedOut`] when no statistics came within the follow timeout.
+    pub async fn firings(&self) -> Result<u64, FiringsError> {
+        let unreachable = |error| FiringsError::Unreachable { error };
+        let mut stream = self.environment.client.live_stream().await.map_err(unreachable)?;
+        let timeout = self.environment.client.configuration().follow_timeout;
+        let waiting = async {
+            loop {
+                if let StreamMessage::Stats { environment, stats } = stream.next().await?
+                    && environment == self.environment.environment
+                {
+                    let firings = stats.rules.get(&self.name).map_or(0, |rule| rule.firings);
+                    return Ok::<u64, StreamError>(firings);
+                }
+            }
+        };
+        let counted = within(timeout, waiting).await;
+        stream.close().await;
+        match counted {
+            Some(Ok(firings)) => Ok(firings),
+            Some(Err(error)) => Err(FiringsError::Unreachable { error }),
+            None => Err(FiringsError::TimedOut { timeout }),
+        }
     }
 }
 
@@ -376,18 +431,22 @@ impl Scenarios {
                 .await
                 .map_err(|error| match error {
                     DefineError::Unreadable { error } => ActivateError::Unreadable { error },
+                    DefineError::Unanswered { error } => ActivateError::Unanswered { error },
                     DefineError::NotCreated { error } => ActivateError::NotCreated { error },
                 })?,
         };
-        self.environment
-            .client
-            .send(ActivateScenario {
-                environment: self.environment.environment.clone(),
-                scenario: name.clone(),
-                expects: None,
-            })
-            .await
-            .map_err(|error| ActivateError::NotActivated { error })?;
+        let activate = ActivateScenario {
+            environment: self.environment.environment.clone(),
+            scenario: name.clone(),
+            expects: None,
+        };
+        answered(
+            &self.environment.client,
+            activate,
+            |error| ActivateError::NotActivated { error },
+            |error| ActivateError::Unanswered { error },
+        )
+        .await?;
         Ok(ActiveScenario {
             environment: self.environment.clone(),
             name,
@@ -412,30 +471,39 @@ impl ActiveScenario {
     ///
     /// # Errors
     ///
-    /// The [`StepScenarioError`] that the control plane refused with, or why no answer came.
-    pub async fn step(&self) -> Result<Revised, OperationError<StepScenarioError>> {
-        self.environment
-            .client
-            .send(StepScenario {
-                environment: self.environment.environment.clone(),
-                expects: None,
-            })
-            .await
+    /// [`StepError`] with the [`StepScenarioError`] that the control plane refused with, or why no answer came.
+    pub async fn step(&self) -> Result<Revised, StepError> {
+        let step = StepScenario {
+            environment: self.environment.environment.clone(),
+            expects: None,
+        };
+        answered(
+            &self.environment.client,
+            step,
+            |error| StepError::Refused { error },
+            |error| StepError::Unanswered { error },
+        )
+        .await
     }
 
     /// Deactivates the scenario: every rule that it armed disarms.
     ///
     /// # Errors
     ///
-    /// The [`DeactivateScenarioError`] that the control plane refused with, or why no answer came.
-    pub async fn deactivate(self) -> Result<Revised, OperationError<DeactivateScenarioError>> {
-        self.environment
-            .client
-            .send(DeactivateScenario {
-                environment: self.environment.environment.clone(),
-                expects: None,
-            })
-            .await
+    /// [`DeactivateError`] with the [`DeactivateScenarioError`] that the control plane refused with, or why no answer
+    /// came.
+    pub async fn deactivate(self) -> Result<Revised, DeactivateError> {
+        let deactivate = DeactivateScenario {
+            environment: self.environment.environment.clone(),
+            expects: None,
+        };
+        answered(
+            &self.environment.client,
+            deactivate,
+            |error| DeactivateError::Refused { error },
+            |error| DeactivateError::Unanswered { error },
+        )
+        .await
     }
 }
 
@@ -451,8 +519,9 @@ impl Recordings {
     ///
     /// # Errors
     ///
-    /// The [`StartRecordingError`] that the control plane refused with, or why no answer came.
-    pub async fn start(&self) -> Result<Recording, OperationError<StartRecordingError>> {
+    /// [`RecordingStartError`] with the [`StartRecordingError`] that the control plane refused with, or why no answer
+    /// came.
+    pub async fn start(&self) -> Result<Recording, RecordingStartError> {
         self.started(self.environment.recording).await
     }
 
@@ -461,7 +530,7 @@ impl Recordings {
     /// # Errors
     ///
     /// As for [`start`](Self::start).
-    pub async fn start_with(&self, mode: RecordingMode) -> Result<Recording, OperationError<StartRecordingError>> {
+    pub async fn start_with(&self, mode: RecordingMode) -> Result<Recording, RecordingStartError> {
         self.started(Some(mode)).await
     }
 
@@ -493,15 +562,18 @@ impl Recordings {
         }
     }
 
-    async fn started(&self, mode: Option<RecordingMode>) -> Result<Recording, OperationError<StartRecordingError>> {
-        let id = self
-            .environment
-            .client
-            .send(StartRecording {
-                environment: self.environment.environment.clone(),
-                mode,
-            })
-            .await?;
+    async fn started(&self, mode: Option<RecordingMode>) -> Result<Recording, RecordingStartError> {
+        let start = StartRecording {
+            environment: self.environment.environment.clone(),
+            mode,
+        };
+        let id = answered(
+            &self.environment.client,
+            start,
+            |error| RecordingStartError::Refused { error },
+            |error| RecordingStartError::Unanswered { error },
+        )
+        .await?;
         Ok(self.recording(id))
     }
 }
@@ -524,14 +596,19 @@ impl Recording {
     ///
     /// # Errors
     ///
-    /// The [`StopRecordingError`] that the control plane refused with, or why no answer came.
-    pub async fn stop(&self) -> Result<RecordingEnd, OperationError<StopRecordingError>> {
-        self.environment
-            .client
-            .send(StopRecording {
-                environment: self.environment.environment.clone(),
-            })
-            .await
+    /// [`RecordingStopError`] with the [`StopRecordingError`] that the control plane refused with, or why no answer
+    /// came.
+    pub async fn stop(&self) -> Result<RecordingEnd, RecordingStopError> {
+        let stop = StopRecording {
+            environment: self.environment.environment.clone(),
+        };
+        answered(
+            &self.environment.client,
+            stop,
+            |error| RecordingStopError::Refused { error },
+            |error| RecordingStopError::Unanswered { error },
+        )
+        .await
     }
 
     /// The calls of the recording that `selector` matches: their count over the whole recording, and the first page
@@ -540,23 +617,26 @@ impl Recording {
     /// # Errors
     ///
     /// - [`QueryError::Unreadable`] when the selector does not read.
-    /// - [`QueryError::NotQueried`] with the [`QueryRecordingError`] that the control plane refused with, or why no
-    ///   answer came.
+    /// - [`QueryError::Refused`] with the [`QueryRecordingError`] that the control plane refused with.
+    /// - [`QueryError::Unanswered`] when no answer came.
     pub async fn query(&self, selector: impl Into<SelectorToMatch>) -> Result<RecordedCalls, QueryError> {
         let selector = selector
             .into()
             .read()
             .map_err(|error| QueryError::Unreadable { error })?;
-        self.environment
-            .client
-            .send(QueryRecording {
-                recording: self.id.clone(),
-                selector,
-                draft: None,
-                skip: 0,
-            })
-            .await
-            .map_err(|error| QueryError::NotQueried { error })
+        let query = QueryRecording {
+            recording: self.id.clone(),
+            selector,
+            draft: None,
+            skip: 0,
+        };
+        answered(
+            &self.environment.client,
+            query,
+            |error| QueryError::Refused { error },
+            |error| QueryError::Unanswered { error },
+        )
+        .await
     }
 
     /// How many calls of the whole recording `selector` matches.
@@ -629,10 +709,13 @@ impl Definitions {
     pub async fn rule(&self, rule: impl Into<DefinitionText<Rule>>) -> Result<RuleName, DefineError> {
         let rule: Rule = rule.into().read().map_err(|error| DefineError::Unreadable { error })?;
         let name = rule.name().clone();
-        self.client
-            .send(CreateDefinition { definition: rule })
-            .await
-            .map_err(|error| DefineError::NotCreated { error })?;
+        answered(
+            &self.client,
+            CreateDefinition { definition: rule },
+            |error| DefineError::NotCreated { error },
+            |error| DefineError::Unanswered { error },
+        )
+        .await?;
         Ok(name)
     }
 
@@ -664,11 +747,10 @@ impl Definitions {
             };
             let named = definition.name().clone();
             match self.client.send(CreateDefinition { definition }).await {
-                Ok(_) => return Ok(named),
-                Err(OperationError::Refused {
-                    error: CreateDefinitionError::NameTaken { .. },
-                }) if numbered => number += 1,
-                Err(error) => return Err(DefineError::NotCreated { error }),
+                Ok(Ok(_)) => return Ok(named),
+                Ok(Err(CreateDefinitionError::NameTaken { .. })) if numbered => number += 1,
+                Ok(Err(error)) => return Err(DefineError::NotCreated { error }),
+                Err(error) => return Err(DefineError::Unanswered { error }),
             }
         }
     }
@@ -694,5 +776,20 @@ impl From<&str> for ScenarioText {
 impl From<Scenario> for ScenarioText {
     fn from(scenario: Scenario) -> Self {
         Self(Written::Value(scenario))
+    }
+}
+
+/// What `operation` answered, or the error of the call that `refused` makes of its error, and that `unanswered` makes
+/// of a [`SendError`].
+async fn answered<O: Operation, E>(
+    client: &ControlClient,
+    operation: O,
+    refused: impl FnOnce(O::Error) -> E,
+    unanswered: impl FnOnce(SendError) -> E,
+) -> Result<O::Answer, E> {
+    match client.send(operation).await {
+        Ok(Ok(answer)) => Ok(answer),
+        Ok(Err(error)) => Err(refused(error)),
+        Err(error) => Err(unanswered(error)),
     }
 }
