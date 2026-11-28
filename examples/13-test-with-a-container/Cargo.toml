@@ -1,0 +1,38 @@
+# The orders service of this example, a project of its own.
+[workspace]
+
+# Your project names a release instead, once one is published: `gaslightmq_testcontainers = "0.1"`.
+# This example builds against the crates of this repository instead, so it always tests what they are now.
+[workspace.dependencies]
+gaslightmq_control_api = { path = "../../crates/gaslightmq_control_api" }
+gaslightmq_kafka_client_api = { path = "../../crates/gaslightmq_kafka_client/api" }
+gaslightmq_kafka_client_native = { path = "../../crates/gaslightmq_kafka_client/native" }
+gaslightmq_test_kafka = { path = "../../crates/gaslightmq_test_kafka" }
+gaslightmq_testcontainers = { path = "../../crates/gaslightmq_testcontainers" }
+gaslightmq_wire = { path = "../../crates/gaslightmq_wire" }
+anyhow = "1"
+thiserror = "2"
+tokio = "1"
+
+[package]
+name = "orders"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+# The Kafka client that the service writes its orders with. Yours may be another one: the proxy speaks Kafka.
+gaslightmq_kafka_client_api.workspace = true
+gaslightmq_kafka_client_native.workspace = true
+gaslightmq_wire.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+anyhow.workspace = true
+# The rules that a test arms.
+gaslightmq_control_api.workspace = true
+# The real cluster behind the proxy, on a network of containers. In your project, the Kafka that your tests already start.
+gaslightmq_test_kafka.workspace = true
+# GaslightMQ in a container next to the test: the image runs a proxy in front of the cluster, and its control plane.
+gaslightmq_testcontainers.workspace = true
+tokio = { workspace = true, features = ["rt", "rt-multi-thread", "macros"] }
