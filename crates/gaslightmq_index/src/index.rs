@@ -17,7 +17,7 @@ use crate::{Facet, Facets, IndexConfiguration};
 ///
 /// | To | Call |
 /// |---|---|
-/// | Index a call. | [`add`](Self::add), or [`extend`](Extend::extend) for many. |
+/// | Index a call. | [`add`](Self::add), or [`extend`](Extend::extend) for many. [`add_fields`](Self::add_fields) for the fields alone, as a reader of a recording builds them. |
 /// | Group the calls that a filter leaves. | [`facets`](Self::facets), or [`facet`](Self::facet) for one field. |
 /// | Count the calls that a selector matches. | [`count`](Self::count) |
 ///
@@ -116,6 +116,12 @@ impl CallIndex {
     /// Indexes one call.
     pub fn add(&mut self, call: &Call) {
         self.calls.push(call.fields().clone());
+    }
+
+    /// Indexes the fields of one call: what a reader of a recording builds of a call that it reads,
+    /// without the rest of its record.
+    pub fn add_fields(&mut self, fields: Fields) {
+        self.calls.push(fields);
     }
 
     /// How many calls the index holds.

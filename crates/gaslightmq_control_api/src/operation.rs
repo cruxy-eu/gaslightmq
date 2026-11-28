@@ -11,10 +11,10 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     ActivateScenario, ArmRule, CheckHealth, CloseSession, CreateDefinition, CreateLiveRule, DeactivateScenario,
-    DeleteDefinition, DeleteLiveRule, DisarmRule, FireRule, GetBackend, GetDefinition, GetEnvironment, KeepRule,
-    ListDefinitions, ListEnvironmentRules, ListEnvironments, ListRecordings, ListSessions, OpenRecording,
-    ParseSentence, QueryJournal, ReloadWorkspace, SaveWorkspace, SendIntent, StartEnvironment, StartRecording,
-    StepScenario, StopEnvironment, StopRecording, UpdateDefinition, UpdateLiveRule,
+    DeleteDefinition, DeleteLiveRule, DisarmRule, FireRule, GetBackend, GetDefinition, GetEnvironment,
+    GetRecordingIndex, KeepRule, ListDefinitions, ListEnvironmentRules, ListEnvironments, ListRecordings, ListSessions,
+    OpenRecording, ParseSentence, QueryJournal, QueryRecording, ReloadWorkspace, SaveWorkspace, SendIntent,
+    StartEnvironment, StartRecording, StepScenario, StopEnvironment, StopRecording, UpdateDefinition, UpdateLiveRule,
 };
 
 /// One thing that a client asks of the control plane, with what it gets back.
@@ -165,6 +165,10 @@ pub enum AnyOperation {
     ListRecordings(ListRecordings),
     /// [Open a recording](OpenRecording).
     OpenRecording(OpenRecording),
+    /// [Query the calls of a recording with a selector](QueryRecording).
+    QueryRecording(QueryRecording),
+    /// [Get the index of a recording](GetRecordingIndex).
+    GetRecordingIndex(GetRecordingIndex),
 }
 
 impl AnyOperation {
@@ -231,6 +235,8 @@ impl AnyOperation {
             AnyOperation::StopRecording(_) => "stop-recording",
             AnyOperation::ListRecordings(_) => "list-recordings",
             AnyOperation::OpenRecording(_) => "open-recording",
+            AnyOperation::QueryRecording(_) => "query-recording",
+            AnyOperation::GetRecordingIndex(_) => "get-recording-index",
         }
     }
 }
@@ -330,4 +336,6 @@ requests! {
     StopRecording => StopRecording;
     ListRecordings => ListRecordings;
     OpenRecording => OpenRecording;
+    QueryRecording => QueryRecording;
+    GetRecordingIndex => GetRecordingIndex;
 }

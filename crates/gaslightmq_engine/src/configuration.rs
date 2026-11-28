@@ -11,6 +11,7 @@ use std::net::SocketAddr;
 use gaslightmq_clock::TimeSpan;
 use gaslightmq_environment::Listeners;
 use gaslightmq_field::Endpoint;
+use gaslightmq_index::IndexConfiguration;
 use gaslightmq_journal::RecentJournalSize;
 use gaslightmq_listener::{FrameSizeLimit, ListenerConfiguration};
 use gaslightmq_trigger::Seed;
@@ -165,6 +166,57 @@ impl RecorderConfiguration {
 
 /// The defaults.
 impl Default for RecorderConfiguration {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// What the [recordings](crate::Recordings) of a process are configured with when someone reads them:
+/// how many stay open, how many calls a query answers with, and what the index of a recording groups by.
+///
+/// ```
+/// use gaslightmq_engine::prelude::*;
+///
+/// let mut reading = ReadingConfiguration::new();
+/// assert_eq!(reading.open_recordings, 4);
+/// assert_eq!(reading.query_calls, 100);
+///
+/// // A test that pages through the calls of a recording two at a time.
+/// reading.query_calls = 2;
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct ReadingConfiguration {
+    /// `recordings.open_recordings`. Ours. Default: 4 recordings.
+    ///
+    /// How many recordings stay open for their readers, each with what its storage holds in memory of it, such as
+    /// the manifest of the segment layout, and with its index.
+    /// A query or an index of a recording that is open reads no description of it again.
+    /// A recording that opens when as many are open closes the one that someone read longest ago.
+    /// With none, every query opens its recording again, and the index is built again for every ask.
+    pub open_recordings: usize,
+    /// `recordings.query_calls`. Ours. Default: 100 calls.
+    ///
+    /// How many calls one answer to a query holds at most. The query counts every call that it matches over the
+    /// whole recording, and whoever wants the calls behind the first answer asks again, and skips those it has.
+    pub query_calls: usize,
+    /// Ours. What the index of a recording groups the calls by, and when its values suggest a pattern.
+    pub index: IndexConfiguration,
+}
+
+impl ReadingConfiguration {
+    /// The defaults.
+    pub fn new() -> Self {
+        Self {
+            open_recordings: 4,
+            query_calls: 100,
+            index: IndexConfiguration::new(),
+        }
+    }
+}
+
+/// The defaults.
+impl Default for ReadingConfiguration {
     fn default() -> Self {
         Self::new()
     }

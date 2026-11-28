@@ -534,6 +534,7 @@ Blocks of 4 MiB cost 7 MiB and 38 MiB.
   A reader streams an [index chunk](#an-index-chunk) record by record, and keeps of it the place of each segment that can hold what it wants: a few numbers for each.
   It takes the records of the spans of a segment from the [footer](#a-data-segment) of that segment, and keeps the rows of the spans that can hold what it wants, for one segment at a time: about 0.1 MiB for a segment of a gibibyte.
   The manifest stays in memory for as long as the recording is open: about 2 KiB for every index chunk.
+  The engine keeps the recordings that someone read last open, as many as `recordings.open_recordings` says, so a query that someone sends with every key reads no manifest again.
 - **A block of an older version, twice.**
   The [conversion](#an-older-version-is-converted) holds the block that it reads and the block that it writes, and both count.
 
@@ -572,7 +573,7 @@ Nothing waits for memory.
   The consumer that holds the bytes may be the one that asks, and then nothing ever lets go.
   A test with two streams over one recording is such a consumer.
 - **A refusal says what is wrong, and a wait says nothing.**
-  A query from the UI that is refused says that the engine is busy reading, and the UI asks again.
+  A query from the UI that is refused says that the engine is busy reading, and the UI asks again: the control plane answers it with `busy`, whose reason is the message of the budget.
   A query that waits looks like a recording that is slow.
 - **A stream counts what it holds, and at least the room it set aside.**
   All readers together hold the sum of that, so a stream that holds less than one block still counts one.
@@ -1621,8 +1622,8 @@ The control plane sends a call from a recording in the encoding it sends every c
 | Reader | Streams | The storage gives it |
 |---|---|---|
 | [Replay](crates.md#the-pipeline-is-sans-io) | Every entry in order, with the request and the truth of every call. | The rules that were armed at the start, the journal entries that changed them, the sessions, and the frames as slices, which go into a pipeline without a copy. The view of every call holds the verdict and the explanation to compare with. |
-| The [index](../domains/observation.md#index), which the engine rebuilds when it opens a recording | The fields of every call, once. | The entries of every block in order, and no frame: it neither fetches nor unpacks one. The index of the engine is not stored. |
-| A [query with a selector](control-plane.md#drafts), saved or draft, from the UI, the CLI or a test | The entries of the spans that can match. | `Wanted`, which skips at every level. The manifest stays in memory while the recording is open. A draft that changes with every key streams the index chunks again, which on files come from the cache of the system. |
+| The [index](../domains/observation.md#index), which the engine builds when someone first asks for the index of a recording that it opened | The fields of every call, once, and what later commits added with every later ask. | The entries of every block in order, and no frame: it neither fetches nor unpacks one. The index of the engine is not stored, and stays in memory while the recording is open. |
+| A [query with a selector](control-plane.md#querying-a-recording), saved or draft, from the UI, the CLI or a test | The entries of the spans that can match, and no frame. | `Wanted`, which skips at every level: a stretch without a call, and a stretch whose values the check of `selector` rules out. The manifest stays in memory while the recording is open. A draft that changes with every key streams the index chunks again, which on files come from the cache of the system. The engine decides every call with the selector, and copies out the calls of one page with `to_call`. |
 | A [test](control-plane.md#tests) that asserts on verdicts and explanations | The same. | The explanation is a part of every call. |
 | The UI that shows the latest calls | The last blocks, backwards. | A stream from the end. |
 | [Seeding a World](../domains/world.md#seeding) | The entries, and the frames of the calls that describe the cluster or carry records. | `Wanted` for `Metadata`, Produce and Fetch calls, and a stream with frames. |
@@ -1686,11 +1687,17 @@ recordings:
   all_readers_memory: 256MiB  # the unpacked blocks that all readers of the process hold together at most
   read_size: 256KiB         # the bytes that one read of a file that grows asks for at least
   read_ahead: 8MiB          # how far ahead of a stream over a sealed file the system reads from the disk
+  open_recordings: 4        # the recordings that stay open for their readers, each with its manifest and its index; the one read longest ago closes
+  query_calls: 100          # the calls that one answer to a query holds at most; the count covers the whole recording
 ```
 
 A size is a number of bytes with its unit.
 `queue_entries`, `queue_size`, `commit_interval` and `commit_size` are the recorder's, whatever the layout is.
 `directory`, `read_size` and `read_ahead` are the backing on files'.
+`open_recordings` and `query_calls` are the engine's, which reads recordings for the control plane, whatever the layout is.
+`open_recordings` bounds what the engine holds of the recordings it read: a description of each, such as the manifest, and its index, which takes memory for every call.
+`query_calls` bounds the calls that one answer copies out.
+What the index groups by and when it suggests a pattern are the index's own, and no size: they bound nothing.
 The others are the segment layout's.
 `reader_memory` and `all_readers_memory` are the only two that a reader needs: a recording says its codec and its versions itself, and its objects say their sizes.
 

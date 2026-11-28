@@ -66,6 +66,11 @@
 //!   however many the cluster has.
 //! - **Recordings in memory.**
 //!   The host of the test keeps every recording in the segment layout in memory, for as long as the test runs.
+//! - **Assertions on the recording.**
+//!   A test starts and stops a recording, and [queries](gaslightmq_control_api::QueryRecording) it with a selector:
+//!   the answer holds the calls that it matches, each with its verdict and its explanation, and their count over the
+//!   whole recording. A test asserts that a rule applied to exactly the calls it should have, and not merely that
+//!   its client saw an error.
 //! - **A workspace in memory.**
 //!   It holds nothing but the environment of the proxy, until the test creates definitions through the control
 //!   plane. A test that wants other stores, or stores that hold definitions already, hands over their
@@ -81,10 +86,6 @@
 //!
 //! - **Brokers.** GaslightMQ runs no broker yet, so a test starts a proxy in front of a real cluster alone.
 //!   A broker, and a proxy in front of one, arrive with the crate `broker`.
-//! - **The calls of a recording.** A test arms its rules one by one, or creates a scenario and activates it, through
-//!   the control plane. It starts, stops and opens a recording, which the control plane keeps in memory, and
-//!   asserting on the calls of a recording arrives with the query of a recording. Until then a test asserts on what
-//!   its clients saw, on what the cluster holds, and on where the scenario stands.
 //!
 //! # IO
 //!

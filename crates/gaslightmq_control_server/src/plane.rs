@@ -10,13 +10,14 @@ use gaslightmq_control_api::journal::{ChangeSource, JournalEntry, JournalEntryId
 use gaslightmq_control_api::prelude::*;
 use gaslightmq_control_api::rule::{Preset, Rule, RuleName};
 use gaslightmq_control_api::scenario::Scenario;
-use gaslightmq_control_api::selector::Selector;
+use gaslightmq_control_api::selector::{Selector, SelectorRef};
 use gaslightmq_control_api::surface::{Intent, PadLayout, PresenceId};
 use gaslightmq_definition_api::WriteBack as StoreWriteBack;
 use gaslightmq_engine::{OpenSession, StoredRecording};
 use gaslightmq_host::{
     ArmRuleError, CallSubscription, DisarmRuleError, EnvironmentConfiguration, EnvironmentConfigurationError,
-    EnvironmentRule, EnvironmentRulesError, EnvironmentStartError, Host, ReadSentenceError, Unsaved,
+    EnvironmentRule, EnvironmentRulesError, EnvironmentStartError, Host, ReadSentenceError, RecordingQueryError,
+    Unsaved,
 };
 use gaslightmq_quick_inject::{CompletionKind, Sentence};
 use gaslightmq_workspace::{CreateError, DefinitionChange as Changed, ReloadError, SaveError, WorkspaceContext};
@@ -214,6 +215,10 @@ impl<C: WorkspaceContext + 'static> ControlPlane<C> {
             }
             AnyOperation::ListRecordings(_) => Reply::of::<ListRecordings>(self.list_recordings().await),
             AnyOperation::OpenRecording(open) => Reply::of::<OpenRecording>(self.open_recording(&open.recording).await),
+            AnyOperation::QueryRecording(query) => Reply::of::<QueryRecording>(self.query_recording(query).await),
+            AnyOperation::GetRecordingIndex(get) => {
+                Reply::of::<GetRecordingIndex>(self.recording_index(&get.recording, &get.filter).await)
+            }
         }
     }
 
@@ -942,6 +947,60 @@ impl<C: WorkspaceContext + 'static> ControlPlane<C> {
         Ok(recording_status(stored))
     }
 
+    async fn query_recording(&self, query: QueryRecording) -> Result<RecordedCalls, QueryRecordingError> {
+        let queried = self
+            .host
+            .query_recording(&query.recording, &query.selector, query.draft.as_ref(), query.skip)
+            .await
+            .map_err(query_error)?;
+        Ok(RecordedCalls {
+            matched: queried.matched,
+            calls: queried.calls,
+            unreadable: queried.unreadable,
+        })
+    }
+
+    async fn recording_index(
+        &self,
+        recording: &RecordingId,
+        filter: &SelectorRef,
+    ) -> Result<RecordingIndex, QueryRecordingError> {
+        let indexed = self
+            .host
+            .recording_index(recording, filter)
+            .await
+            .map_err(query_error)?;
+        let facets = indexed
+            .facets
+            .iter()
+            .map(|facet| IndexFacet {
+                field: facet.field(),
+                values: facet
+                    .values()
+                    .iter()
+                    .map(|value| IndexValue {
+                        value: value.value().clone(),
+                        calls: value.calls(),
+                    })
+                    .collect(),
+                patterns: facet
+                    .patterns()
+                    .iter()
+                    .map(|pattern| IndexPattern {
+                        pattern: pattern.pattern().clone(),
+                        values: u64::try_from(pattern.values()).unwrap_or(u64::MAX),
+                        calls: pattern.calls(),
+                    })
+                    .collect(),
+            })
+            .collect();
+        Ok(RecordingIndex {
+            calls: indexed.facets.calls(),
+            facets,
+            unreadable: indexed.unreadable,
+        })
+    }
+
     // What runs in an environment
 
     fn backend(&self, environment: &EnvironmentName) -> Result<BackendStatus, EnvironmentNotRunning> {
@@ -1163,6 +1222,22 @@ const fn recording_end(end: gaslightmq_recording::End) -> RecordingEnd {
         at: end.at,
         entries: end.entries,
         calls: end.calls,
+    }
+}
+
+/// Why a recording was not queried, in the words of the control plane.
+fn query_error(error: RecordingQueryError) -> QueryRecordingError {
+    match error {
+        RecordingQueryError::NotFound { recording } => QueryRecordingError::NotFound { recording },
+        RecordingQueryError::Unreadable { recording, reason } => QueryRecordingError::Unreadable { recording, reason },
+        RecordingQueryError::StorageUnavailable { recording, reason } => {
+            QueryRecordingError::StorageUnavailable { recording, reason }
+        }
+        RecordingQueryError::Busy { recording, reason } => QueryRecordingError::Busy { recording, reason },
+        RecordingQueryError::StoreFailed { reason } => QueryRecordingError::StoreFailed { reason },
+        RecordingQueryError::Unresolved { error } => QueryRecordingError::DoesNotFit {
+            reason: error.to_string(),
+        },
     }
 }
 

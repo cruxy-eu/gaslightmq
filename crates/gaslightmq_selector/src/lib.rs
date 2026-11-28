@@ -17,6 +17,7 @@
 //! | [`Pass`] | The evaluation pass that can decide a selector: request or response. |
 //! | [`ApiIndex`] | Selectors by API, so a call only tests the selectors that can match its API. |
 //! | [`SelectorStore`] | What keeps the selectors: the store contract, and who includes a selector. |
+//! | [`StretchValues`] | What the calls of a stretch of a recording have for one field, so a reader knows whether a selector can match there. |
 //!
 //! ```
 //! use gaslightmq_field::prelude::*;
@@ -175,6 +176,7 @@ mod selector;
 mod serde;
 mod set;
 mod store;
+mod stretch;
 mod text;
 mod title;
 
@@ -187,6 +189,7 @@ pub use name::{SelectorName, SelectorNameError};
 pub use selector::{Selector, SelectorRef};
 pub use set::{SelectorSet, SelectorSetError};
 pub use store::SelectorStore;
+pub use stretch::StretchValues;
 pub use title::{SelectorTitle, SelectorTitleError};
 
 /// Every item of this crate.
@@ -208,6 +211,6 @@ pub mod prelude {
     pub use crate::{
         ApiIndex, Apis, Condition, ConditionError, Conditions, EffectiveSelector, Glob, GlobError, Match, Operator,
         OperatorError, Pass, Scope, ScopeError, Selector, SelectorName, SelectorNameError, SelectorRef, SelectorSet,
-        SelectorSetError, SelectorStore, SelectorTitle, SelectorTitleError, ValueSet, ValueSetError,
+        SelectorSetError, SelectorStore, SelectorTitle, SelectorTitleError, StretchValues, ValueSet, ValueSetError,
     };
 }

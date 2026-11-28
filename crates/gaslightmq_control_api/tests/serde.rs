@@ -2083,3 +2083,114 @@ fn an_error_of_a_recording_names_its_variant() {
         .writes(json!({ "error": "not-found", "recording": "orders-sim.2026-11-21T14-02-11.527Z" }));
     Form::<OpenRecording>::rejects(json!({ "recording": "orders-sim" }), "is no recording ID");
 }
+
+#[test]
+fn a_query_of_a_recording_names_its_selector_saved_or_with_a_draft_and_what_it_skips() {
+    Form(AnyOperation::from(QueryRecording {
+        recording: recording(),
+        selector: SelectorRef::Named("order-producers".parse().unwrap()),
+        draft: None,
+        skip: 0,
+    }))
+    .writes(json!({
+        "operation": "query-recording",
+        "recording": "orders-sim.2026-11-21T14-02-11.527Z",
+        "selector": "order-producers",
+    }));
+    // The second page of what a draft of the selector matches.
+    let draft = Selector::new(
+        "order-producers".parse().unwrap(),
+        Conditions::from(Condition::is(ApiKey::PRODUCE)),
+    );
+    Form(AnyOperation::from(QueryRecording {
+        recording: recording(),
+        selector: SelectorRef::Named("order-producers".parse().unwrap()),
+        draft: Some(draft),
+        skip: 100,
+    }))
+    .writes(json!({
+        "operation": "query-recording",
+        "recording": "orders-sim.2026-11-21T14-02-11.527Z",
+        "selector": "order-producers",
+        "draft": { "name": "order-producers", "match": { "api": "Produce" } },
+        "skip": 100,
+    }));
+}
+
+#[test]
+fn a_query_answers_with_the_count_and_the_calls_and_says_what_it_lost() {
+    Form(RecordedCalls {
+        matched: 1204,
+        calls: Vec::new(),
+        unreadable: 0,
+    })
+    .writes(json!({ "matched": 1204, "calls": [] }));
+    Form(RecordedCalls {
+        matched: 0,
+        calls: Vec::new(),
+        unreadable: 12,
+    })
+    .writes(json!({ "matched": 0, "calls": [], "unreadable": 12 }));
+}
+
+#[test]
+fn the_index_of_a_recording_is_asked_under_a_filter_and_answers_with_its_facets() {
+    Form(AnyOperation::from(GetRecordingIndex {
+        recording: recording(),
+        filter: SelectorRef::Inline(Conditions::new()),
+    }))
+    .writes(json!({ "operation": "get-recording-index", "recording": "orders-sim.2026-11-21T14-02-11.527Z" }));
+    Form(AnyOperation::from(GetRecordingIndex {
+        recording: recording(),
+        filter: SelectorRef::Inline(Conditions::from(Condition::is(ApiKey::PRODUCE))),
+    }))
+    .writes(json!({
+        "operation": "get-recording-index",
+        "recording": "orders-sim.2026-11-21T14-02-11.527Z",
+        "filter": { "api": "Produce" },
+    }));
+    Form(RecordingIndex {
+        calls: 3,
+        facets: vec![IndexFacet {
+            field: Field::Topic,
+            values: vec![IndexValue {
+                value: "orders.eu"
+                    .parse::<gaslightmq_control_api::kernel::TopicName>()
+                    .unwrap()
+                    .into(),
+                calls: 3,
+            }],
+            patterns: vec![IndexPattern {
+                pattern: "orders.*".parse().unwrap(),
+                values: 2,
+                calls: 3,
+            }],
+        }],
+        unreadable: 0,
+    })
+    .writes(json!({
+        "calls": 3,
+        "facets": [{
+            "field": "topic",
+            "values": [{ "value": { "topic": "orders.eu" }, "calls": 3 }],
+            "patterns": [{ "pattern": "orders.*", "values": 2, "calls": 3 }],
+        }],
+    }));
+}
+
+#[test]
+fn an_error_of_a_query_names_its_variant() {
+    Form(QueryRecordingError::Busy {
+        recording: recording(),
+        reason: "`recordings.all_readers_memory` is spent".to_owned(),
+    })
+    .writes(json!({
+        "error": "busy",
+        "recording": "orders-sim.2026-11-21T14-02-11.527Z",
+        "reason": "`recordings.all_readers_memory` is spent",
+    }));
+    Form(QueryRecordingError::DoesNotFit {
+        reason: "no selector is named \"order-producers\"".to_owned(),
+    })
+    .writes(json!({ "error": "does-not-fit", "reason": "no selector is named \"order-producers\"" }));
+}

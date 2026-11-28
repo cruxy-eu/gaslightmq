@@ -100,6 +100,8 @@ recordings:
   summary_values: 256           # the values of one field that a summary lists
   reader_memory: 16MiB          # the unpacked blocks that one reader holds at most, with what it read ahead
   all_readers_memory: 256MiB    # the unpacked blocks that all readers of the process hold together at most
+  open_recordings: 4            # the recordings that stay open for their readers, each with its manifest and its index
+  query_calls: 100              # the calls that one answer to a query holds at most; the count covers the whole recording
 ```
 
 Nothing reads `gaslight.yaml` yet: until it does, a setting comes from a flag, a variable or its default.

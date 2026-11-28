@@ -23,7 +23,7 @@
 //! | [`Reloaded`], [`ReloadWorkspaceError`], [`Unsaved`] | What a reload of the workspace took in from its files, why a reload changed nothing, and what it does with changes that nobody saved. |
 //! | [`CreateLiveRuleError`], [`UpdateLiveRuleError`], [`DeleteLiveRuleError`], [`KeepRuleError`] | Why a live rule was not made, changed, removed or kept. |
 //! | [`EnvironmentRulesError`], [`IntentError`], [`CloseSessionError`], [`HostChangesError`], [`FollowCallsError`] | Why the rules of an environment were not read, a pad was not acted on, a session was not closed, a follower has no next change, and the calls of an environment were not followed. |
-//! | [`RecordingStartError`], [`RecordingStopError`] | Why a recording of an environment did not start, and why one did not stop in order. |
+//! | [`RecordingStartError`], [`RecordingStopError`], [`RecordingQueryError`] | Why a recording of an environment did not start, why one did not stop in order, and why one was not queried or gave no index. |
 //! | [`EnvironmentScenario`] | The scenario of an environment: where the active one stands, and its revision there. |
 //! | [`ScenarioActivationError`], [`ScenarioDeactivationError`], [`ScenarioStepError`] | Why a scenario was not activated or deactivated in an environment, and why it did not advance a step. |
 //!
@@ -132,6 +132,10 @@
 //! - **A recording that stops by itself** records why in the journal of its environment, with the surface of its
 //!   start. Whoever follows the host learns of every start and every end.
 //! - **Whoever opens a recording that runs** sees every entry that its environment handed over until then.
+//! - **A recording is queried with a selector**, saved or a draft that nobody saved yet: [`Host::query_recording`]
+//!   answers with the calls that it matches and their count over the whole recording, and
+//!   [`Host::recording_index`] with the facets of its calls under a filter. Each resolves its selector against the
+//!   selectors of the workspace, and reads the recording through the storage of the host. Neither changes anything.
 //!
 //! # Presences
 //!
@@ -235,9 +239,9 @@ pub use configuration::{
 pub use error::{
     ArmRuleError, CloseSessionError, CreateDefinitionError, CreateLiveRuleError, DeleteDefinitionError,
     DeleteLiveRuleError, DisarmRuleError, EnvironmentRulesError, EnvironmentStartError, FireRuleError,
-    FollowCallsError, IntentError, KeepRuleError, NotRunningError, ReadSentenceError, RecordingStartError,
-    RecordingStopError, ReloadWorkspaceError, RuleHolder, ScenarioActivationError, ScenarioDeactivationError,
-    ScenarioStepError, UpdateDefinitionError, UpdateLiveRuleError,
+    FollowCallsError, IntentError, KeepRuleError, NotRunningError, ReadSentenceError, RecordingQueryError,
+    RecordingStartError, RecordingStopError, ReloadWorkspaceError, RuleHolder, ScenarioActivationError,
+    ScenarioDeactivationError, ScenarioStepError, UpdateDefinitionError, UpdateLiveRuleError,
 };
 pub use host::Host;
 pub use reloaded::{Reloaded, Unsaved};
@@ -267,8 +271,8 @@ pub mod prelude {
         DisarmRuleError, EnvironmentConfiguration, EnvironmentConfigurationError, EnvironmentRule,
         EnvironmentRulesError, EnvironmentStartError, Expects, FireRuleError, FollowCallsError, Host, HostChange,
         HostChanges, HostChangesError, HostConfiguration, IntentEffect, IntentError, KeepRuleError, NotRunningError,
-        ReadSentenceError, RecordingStartError, RecordingStopError, ReloadWorkspaceError, Reloaded, RuleHolder, RunId,
-        RunIdError, ScenarioActivationError, ScenarioDeactivationError, ScenarioStepError, Unsaved,
-        UpdateDefinitionError, UpdateLiveRuleError,
+        ReadSentenceError, RecordingQueryError, RecordingStartError, RecordingStopError, ReloadWorkspaceError,
+        Reloaded, RuleHolder, RunId, RunIdError, ScenarioActivationError, ScenarioDeactivationError, ScenarioStepError,
+        Unsaved, UpdateDefinitionError, UpdateLiveRuleError,
     };
 }
