@@ -470,6 +470,7 @@ The engine keeps its recent entries in memory, and the control plane hands them 
 | `live-rule-made`, `live-rule-changed`, `live-rule-kept`, `live-rule-deleted` | `rule`. |
 | `definition-created`, `definition-changed`, `definition-deleted` | `definition`: the kind and the name, such as `{ "rule": "slow-order-producers" }`. |
 | `incident-applied`, `incident-emulated` | `incident`: the incident, with its `consequences`. |
+| `recording-stopped` | `why`: `fell-behind` or `could-not-write`. The recording of the environment stopped, and nobody stopped it. It has the surface of the start of the recording, and no revision. |
 
 - **A query answers with the entries that the engine keeps, the oldest first.**
   With `after`, it answers with the entries that came after the entry of that ID.
@@ -516,7 +517,7 @@ The WebSocket streams:
 | Message | Carries |
 |---|---|
 | **Present** | The ID of the [presence](#presence) of this client. It is the first message, and comes once. |
-| **Snapshot** | The full state, sent when a client connects: the [run ID](identity.md#run), every definition of the workspace, the workspace as a whole (when it [writes back](storage.md#saving), whether it is [read-only](storage.md#read-only-workspaces), and what waits for a save), and every environment that runs with its backend, its rules and its sessions. Whatever has a revision comes with it. It holds no [journal](#the-journal). |
+| **Snapshot** | The full state, sent when a client connects: the [run ID](identity.md#run), every definition of the workspace, the workspace as a whole (when it [writes back](storage.md#saving), whether it is [read-only](storage.md#read-only-workspaces), and what waits for a save), and every environment that runs with its backend, its rules, its sessions and the recording that it writes. Whatever has a revision comes with it. It holds no [journal](#the-journal). |
 | **Call** | One call event: request summary, verdict and explanation. |
 | **Stats** | Matches, firings and remaining budget per rule, and calls per API, at a fixed interval. |
 | **Rule changed, removed** | A rule of an environment changed state, or a live rule was made or changed its definition, with its revision. A live rule left its environment: someone deleted or kept it. |
@@ -655,6 +656,7 @@ A change whose subject is gone again by then sends nothing, because a later mess
 | A live rule left its environment. | `rule-removed`. Keeping a live rule sends `rule-removed`, `definition-changed` and `rule-changed`, in that order. |
 | A session opened, was identified, named its software, or closed. | The message of the session. |
 | The journal of an environment got an entry. | `journal-entry` with the entry, as the journal holds it. It comes beside the messages of the change that it records, before or after them. |
+| A recording of an environment started, or ended. | `recording-started` with the ID of the recording, or `recording-stopped` with its ID and, when it stopped by itself, `why`. The end of a recording that the stop of its environment ends comes before `environment-stopped`. |
 
 A rule of the workspace that someone creates sends `definition-changed` alone: every environment holds it, disarmed.
 `stats` comes for every environment that runs, at the interval of the server's configuration.
@@ -666,11 +668,18 @@ Every operation of `control_api` is served, so no answer is `501` today.
 `RequestError::NotServed` stays for a process that knows fewer operations than its client:
 an older process, or one built without a part.
 
+No operation queries the calls of a recording with a selector, saved or draft, or gets its index yet: those arrive
+with the index. A recording starts, stops, is listed and opens: `start-recording` and `stop-recording` name an
+environment, `list-recordings` lists every recording of the process, and `open-recording` names one by its ID and
+answers with what it is, how many entries it holds and how it ended.
+
 No operation lists, gets, creates, updates or deletes a scenario yet.
 So nothing refuses yet a scenario that owns a rule with the name of a live rule: that check arrives with those operations.
 The snapshot holds every scenario of the workspace, and a change of one is a `definition-changed` or a `definition-deleted` message, as for every kind.
 
-The journal has no entry of the activation of a scenario, of a step or of a recording yet: those arrive with their operations.
+The journal has no entry of the activation of a scenario or of a step yet: those arrive with their operations.
+Of a recording, the journal records the stop that nobody asked for, and neither a start nor a stop by request:
+what was recorded has happened, and the live stream tells both.
 No backend applies or emulates an incident yet, so no journal has an entry of one.
 No change has the surface `step` yet.
 

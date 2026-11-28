@@ -80,7 +80,9 @@ There are three seams, and each has a contract:
 its rules are plain functions over bytes, and the one part that is async hands bytes to the backing and takes bytes from it.
 
 The engine holds a storage and names no layout.
-Whoever puts a process together picks one: `gmq` picks the segment layout on files with Zstandard, and a test picks it in memory.
+Whoever puts a process together picks one: `gmq` picks the segment layout on files with Zstandard, under the
+`recordings.directory` of its workspace. A test, and `gmq proxy` without a workspace, keep the segment layout in
+memory, which the host holds when nobody hands it a storage.
 
 ## What a recording holds
 
@@ -625,6 +627,37 @@ The recorder commits when `recordings.commit_interval` has passed since the last
 when the entries and frames since the last commit reach `recordings.commit_size`, which is `16MiB`,
 and before someone reads the recording that runs.
 The interval says how much a crash can lose, and it runs on the time of the system: a virtual clock can stand still, and a crash does not.
+
+- **A call decides when its request arrives.**
+  The session tells its pipeline before every input whether a recording runs, and a call that arrives while one runs
+  keeps its handles until it ends: the request, the truth, and the response that the client received.
+  The pipeline holds each of them while the call is in flight anyway, so the handles are the same buffers, shared.
+  A call that arrived before the recording started keeps none, and is no part of it.
+- **The queue takes the events in the order of the engine.**
+  The events of the sessions, the calls with their handles and the entries of the journal enter the queue where the
+  engine hands them to every listener, under one lock, so the recording holds them in the order that every listener sees.
+  A call without handles, and a call whose ID is lower than the first ID after the start, stay out.
+- **A recording begins whole.**
+  It starts with an `opened` event for every session that is open, and with the entries of the journal after the
+  one that its description names. The engine takes both while no change is recorded and no event is handed over,
+  so no entry of the journal is missing, and none comes twice. A session that opens or closes meanwhile may be
+  handed over twice: the recorder keeps the first `opened` of a connection, and nothing of a connection that it never opened.
+- **A full queue stops the recording, and says so last.**
+  The entry that finds the queue full stays out, and from there the queue takes entries of the journal alone.
+  The recorder records `recording-stopped` with the cause `fell-behind` in the journal at once, and the queue ends
+  behind that entry before any other change is recorded.
+  So the entry is the last of the recording, the journal entries of the recording have no gap, and the recording
+  ends with the end `fell-behind`.
+- **A recorder that cannot write stops the recording**, which ends at its last commit without an end.
+  The journal of its environment records `recording-stopped` with the cause `could-not-write`, and the recording does not.
+- **A recording that stops by itself names the surface of its start.**
+  Nobody asked for the stop, and none of the surfaces of the journal is the recorder.
+  The entry takes the surface of the start, as a hold that ends with its presence keeps the surface `pad`.
+- **The stop of the environment ends the recording last.**
+  Once every session has ended, the queue ends with the end `environment-stopped`, so the recording holds every call
+  that got its record.
+- **Whoever reads a recording that runs asks for a commit through the queue.**
+  The commit comes behind everything that the engine handed over before the read, so the reader sees it.
 
 ## What a recording must not keep
 

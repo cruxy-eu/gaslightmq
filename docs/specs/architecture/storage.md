@@ -131,8 +131,11 @@ The standard output holds what the command did, one thing per line, and no log l
 The environment of the flags is no definition of the workspace, and no file holds it.
 The workspace holds no environment of its name, or the proxy does not start.
 Everything else of the proxy, the control plane and the host starts at its default.
+With `--workspace`, the recordings are files below `recordings` of the workspace, which is `recordings.directory`
+until `gaslight.yaml` is read; without it, they live in memory.
+No flag sets a property `recordings.*` yet, so each is its default until `gaslight.yaml` is read.
 
-The proxy prints a line for each thing once it runs: its run, its workspace, its environment,
+The proxy prints a line for each thing once it runs: its run, its workspace and where its recordings are, its environment,
 each endpoint that accepts connections with its address, and where the control plane listens.
 `ready` comes last, so a script or a test waits for it.
 `SIGINT` and `SIGTERM` stop the control plane and then the proxy.
@@ -433,6 +436,7 @@ Without `--workspace`, its workspace is in memory.
 
 Everything is then live state:
 rules are live rules, and nothing is written to disk.
+A recording lives in memory too, and goes with the process.
 The UI offers to save the session as a new workspace.
 
 ### Read-only workspaces
