@@ -1,5 +1,5 @@
 //! A test of a Kafka client starts GaslightMQ in its own process, in front of a real cluster, and arms a rule through
-//! the control plane that makes the client's produce fail.
+//! the control plane that makes the client's produce fail, or activates a scenario that plays a failure out over time.
 //!
 //! This is how a user of GaslightMQ writes such a test.
 //! The cluster is the one of `gaslightmq_test_kafka`, so the tests need Docker.
@@ -11,7 +11,9 @@ use gaslightmq_control_api::kernel::{ApiKey, ErrorCode};
 use gaslightmq_control_api::lie::RefusalLie;
 use gaslightmq_control_api::prelude::*;
 use gaslightmq_control_api::rule::Rule;
+use gaslightmq_control_api::scenario::{Mode, Scenario, ScenarioPosition, Step, Until};
 use gaslightmq_control_api::selector::{Condition, Conditions};
+use gaslightmq_control_api::trigger::{Count, Seed};
 use gaslightmq_kafka_client_api::ClientError;
 use gaslightmq_kafka_client_native::KafkaProducer;
 use gaslightmq_test::GaslightMq;
@@ -114,6 +116,84 @@ async fn a_proxy_in_front_of_several_brokers_runs_in_the_run_that_the_test_names
     let running: Vec<&EnvironmentName> = state.environments.iter().map(|running| &running.environment).collect();
     assert_eq!(running, [gaslight.environment()]);
     assert_eq!(written, [Ok(Offset::new(0)), Ok(Offset::new(0)), Ok(Offset::new(0))]);
+    stream.close().await;
+    gaslight.stop().await;
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_scenario_refuses_the_first_produce_of_a_real_client_and_then_lets_it_write() -> anyhow::Result<()> {
+    let cluster = KafkaCluster::plaintext().start().await?;
+    let orders = cluster.topics().create("orders").await?;
+    let gaslight = GaslightMq::proxy_in_front_of(cluster.bootstrap_servers().parse()?)
+        .start()
+        .await?;
+    let producer = KafkaProducer::from(gaslight.bootstrap());
+    let placed = Record::new("placed").with_key("o-1").with_timestamp(PLACED_AT);
+    // The first step refuses one Produce, and ends with it. The step after it lets every call through.
+    let refuse = Rule::new(
+        "refuse-order-producers".parse()?,
+        Conditions::from(Condition::is(ApiKey::PRODUCE)),
+        RefusalLie::new(ErrorCode::TOPIC_AUTHORIZATION_FAILED),
+    );
+    let refuse_once = Step::new("refuse-once".parse()?)
+        .arming([refuse.name().clone()])
+        .ending_on(Until::Firings {
+            count: Count::ONE,
+            rule: refuse.name().clone(),
+        });
+    let back_to_normal = Step::new("back-to-normal".parse()?);
+    let scenario = Scenario::new(
+        "one-refused-produce".parse()?,
+        Mode::Sequence(vec![refuse_once, back_to_normal.clone()]),
+        Seed::new(7),
+        [],
+    )?;
+    let control = gaslight.control();
+    control.send(CreateDefinition { definition: refuse }).await??;
+    control
+        .send(CreateDefinition {
+            definition: scenario.clone(),
+        })
+        .await??;
+    control
+        .send(ActivateScenario {
+            environment: gaslight.environment().clone(),
+            scenario: scenario.name().clone(),
+            expects: None,
+        })
+        .await??;
+
+    let refused = producer
+        .send(orders.name().as_str(), Partition::new(0), std::slice::from_ref(&placed))
+        .await;
+    let written = producer
+        .send(orders.name().as_str(), Partition::new(0), std::slice::from_ref(&placed))
+        .await;
+
+    assert_eq!(
+        refused,
+        Err(ClientError::Refused {
+            error: ResponseError::TopicAuthorizationFailed
+        })
+    );
+    assert_eq!(written, Ok(Offset::new(0)));
+    // The refusal spent the firing of the first step, so the scenario stands at the step after it.
+    let mut stream = control.live_stream().await?;
+    let StreamMessage::Snapshot(state) = stream.next().await? else {
+        anyhow::bail!("the stream started with another message than the snapshot");
+    };
+    let running = state
+        .environments
+        .first()
+        .map(|running| running.scenario.active.clone());
+    assert_eq!(
+        running,
+        Some(Some(ScenarioPosition {
+            scenario: scenario.name().clone(),
+            step: Some(back_to_normal.name().clone()),
+        }))
+    );
     stream.close().await;
     gaslight.stop().await;
     Ok(())

@@ -145,8 +145,10 @@ The revision orders the entries of every environment of one run, because one cou
   Its entry comes when the engine [counts the change](../architecture/control-plane.md#revisions), with the revision and the time of that moment.
 - **The start and the stop of an environment are no entries.**
   A journal begins and ends with its environment.
-- **The entries of scenarios arrive with them.**
-  Until a scenario runs, no journal has an entry of a scenario or a step.
+- **A change of the scenario is several entries, with one revision.**
+  An activation is the activation and every rule that it armed, a deactivation every rule that it disarmed and the
+  deactivation, and a step every rule of the step that ended, the step that starts and every rule of that step.
+  A step that its condition ended has the surface `step`.
 - **A recording that stops by itself has an entry; its start and its stop by request have none.**
   The entry says why: the recorder could not keep up, or it could not write.
   It names the surface of the start of the recording, because nobody asked for the stop.

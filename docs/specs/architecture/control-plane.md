@@ -68,6 +68,8 @@ Rule names are also unique among all rules, so no rule has the name of a rule th
 - **Creating a rule of the workspace refuses a name that a live rule has**, in any environment that runs,
   **or a rule of a scenario.**
 - **Keep refuses a name that a live rule of another environment, or a rule of a scenario, has.**
+- **Creating or updating a scenario refuses a rule that it owns under the name of a live rule**, in any environment
+  that runs. The error names that rule, and the environment as its holder.
 
 Each error is `name-taken`, and each names what holds the other rule in the same way:
 `{ "holder": { "environment": "canary-proxy" } }` for a live rule of that environment,
@@ -81,6 +83,29 @@ The check and the write are one step, so a live rule never gets the name in betw
 Activating a scenario asks the backend of the environment whether it supports the incidents that the scenario uses.
 The activation fails with the list of those it does not.
 See [portability](../domains/scenarios.md#portability).
+
+```json
+{ "from": { "surface": "test" }, "operation": "activate-scenario", "environment": "staging-proxy", "scenario": "leader-election" }
+```
+
+```json
+{ "error": "unsupported", "environment": "staging-proxy", "scenario": "leader-election", "incidents": ["leader-moves"] }
+```
+
+`activate-scenario` names the environment and the scenario, and `deactivate-scenario` and `step-scenario` name the
+environment, whose one active scenario they mean.
+
+- **One scenario is active at a time.** An activation while a scenario is active fails with `already-active`, which
+  names the active one. Whoever wants another deactivates it first, so the undo of an activation is a deactivation and
+  nothing else.
+- **A scenario runs as it was activated.** An update or a delete of the scenario leaves the run as it is, until
+  someone deactivates it.
+- **A step by hand ends the step that runs**, whatever its condition says, and starts the next one. After the last
+  step no step runs, and the rules of the scenario stay armed until someone deactivates it. A step of a scenario
+  without a step that runs fails with `no-step`.
+- **A rule that someone armed by hand stays in the live set.** The scenario does not arm it again, and its
+  deactivation does not disarm it. A disarm by hand takes a rule of the scenario away, until the scenario arms it
+  again.
 
 *Fire* skips a rule's trigger once.
 An incident fires immediately.
@@ -469,6 +494,8 @@ The engine keeps its recent entries in memory, and the control plane hands them 
 | `parameter-changed` | `rule`, `parameter`, `old` and `new`. The parameter is `chance`, `every`, `delay`, `jitter`, `throttle`, `error` or `lifetime`, and both values are text. |
 | `live-rule-made`, `live-rule-changed`, `live-rule-kept`, `live-rule-deleted` | `rule`. |
 | `definition-created`, `definition-changed`, `definition-deleted` | `definition`: the kind and the name, such as `{ "rule": "slow-order-producers" }`. |
+| `scenario-activated`, `scenario-deactivated` | `scenario`: the name of the scenario, and `step`: the step it starts at or stood at, when a step runs. |
+| `step-advanced` | `scenario`, and `step`: the step that starts, which the key leaves out after the last step. |
 | `incident-applied`, `incident-emulated` | `incident`: the incident, with its `consequences`. |
 | `recording-stopped` | `why`: `fell-behind` or `could-not-write`. The recording of the environment stopped, and nobody stopped it. It has the surface of the start of the recording, and no revision. |
 
@@ -486,6 +513,11 @@ The engine keeps its recent entries in memory, and the control plane hands them 
   A client that gets an entry whose ID is not the next one knows that the engine let go of the entries in between.
 - **The revision ties an entry to an answer.**
   A change answers with the revision it left, and the entry of that change holds the same one.
+- **A change of the scenario is several entries with one revision.**
+  An activation is `scenario-activated` and a `rule-armed` for every rule that it armed. A deactivation is a
+  `rule-disarmed` for every rule that it disarmed and `scenario-deactivated`. A step is a `rule-disarmed` for every rule
+  of the step that ended, `step-advanced` and a `rule-armed` for every rule of the next one.
+  A step that its condition ended has the surface `step`, and a step by hand the surface of its request.
 
 ## Drafts
 
@@ -517,13 +549,13 @@ The WebSocket streams:
 | Message | Carries |
 |---|---|
 | **Present** | The ID of the [presence](#presence) of this client. It is the first message, and comes once. |
-| **Snapshot** | The full state, sent when a client connects: the [run ID](identity.md#run), every definition of the workspace, the workspace as a whole (when it [writes back](storage.md#saving), whether it is [read-only](storage.md#read-only-workspaces), and what waits for a save), and every environment that runs with its backend, its rules, its sessions and the recording that it writes. Whatever has a revision comes with it. It holds no [journal](#the-journal). |
+| **Snapshot** | The full state, sent when a client connects: the [run ID](identity.md#run), every definition of the workspace, the workspace as a whole (when it [writes back](storage.md#saving), whether it is [read-only](storage.md#read-only-workspaces), and what waits for a save), and every environment that runs with its backend, its rules, its sessions, its scenario and the recording that it writes. Whatever has a revision comes with it. It holds no [journal](#the-journal). |
 | **Call** | One call event: request summary, verdict and explanation. |
 | **Stats** | Matches, firings and remaining budget per rule, and calls per API, at a fixed interval. |
 | **Rule changed, removed** | A rule of an environment changed state, or a live rule was made or changed its definition, with its revision. A live rule left its environment: someone deleted or kept it. |
 | **Definition changed, deleted** | Someone created, updated or deleted a definition of the workspace, through the control plane or with a [reload](storage.md#reloading). A change holds the revision of the definition. |
 | **Workspace changed** | What waits for a [save](#saving) changed: an edit of a workspace that writes on save, a save, or a reload. It holds the workspace as the snapshot does. |
-| **Scenario changed** | The active scenario changed, or advanced a step, with its revision. |
+| **Scenario changed** | The active scenario changed, or advanced a step, with its revision: `{ "active": { "scenario": "leader-election", "step": "warm-up" }, "revision": 12 }`, which leaves `active` out while no scenario is active. |
 | **Recording started, stopped** | A recording of an environment began or ended, and why it ended when nobody stopped it. |
 | **World changed** | An incident changed the World, or the Upstream backend's overlay. |
 | **Session opened, identified, software named, closed** | Session lifecycle. The client software comes with the identification, or later with the first `ApiVersions` request that names it. |
@@ -653,6 +685,7 @@ A change whose subject is gone again by then sends nothing, because a later mess
 | A definition changed through the host, or went. | `definition-changed` with the definition, or `definition-deleted`. |
 | A reload changed definitions. | `definition-changed` or `definition-deleted` for each of them, and `rule-changed` for every armed rule that follows its definition. |
 | A rule armed or disarmed in an environment, or a live rule was made or changed. | `rule-changed` with the rule and its state. |
+| The scenario of an environment was activated or deactivated, or advanced a step. | `scenario-changed` with where the scenario stands, and its revision. Every rule that the change armed or disarmed is a `rule-changed` too. |
 | A live rule left its environment. | `rule-removed`. Keeping a live rule sends `rule-removed`, `definition-changed` and `rule-changed`, in that order. |
 | A session opened, was identified, named its software, or closed. | The message of the session. |
 | The journal of an environment got an entry. | `journal-entry` with the entry, as the journal holds it. It comes beside the messages of the change that it records, before or after them. |
@@ -673,18 +706,14 @@ with the index. A recording starts, stops, is listed and opens: `start-recording
 environment, `list-recordings` lists every recording of the process, and `open-recording` names one by its ID and
 answers with what it is, how many entries it holds and how it ended.
 
-No operation lists, gets, creates, updates or deletes a scenario yet.
-So nothing refuses yet a scenario that owns a rule with the name of a live rule: that check arrives with those operations.
-The snapshot holds every scenario of the workspace, and a change of one is a `definition-changed` or a `definition-deleted` message, as for every kind.
+The scenarios are served: `list-scenarios`, `get-scenario`, `create-scenario`, `update-scenario` and
+`delete-scenario`, as for every kind, and `activate-scenario`, `deactivate-scenario` and `step-scenario`.
+No operation captures a scenario yet: capture comes next.
 
-The journal has no entry of the activation of a scenario or of a step yet: those arrive with their operations.
 Of a recording, the journal records the stop that nobody asked for, and neither a start nor a stop by request:
 what was recorded has happened, and the live stream tells both.
-No backend applies or emulates an incident yet, so no journal has an entry of one.
-No change has the surface `step` yet.
-
-The scenario of an environment has no revision yet: no operation activates a scenario or steps one.
-Its revision, and the `expects` of those operations, arrive with them.
+No backend applies or emulates an incident yet, so no journal has an entry of one, and a scenario whose rules fire
+one activates nowhere.
 
 The UI sends no `expects` yet.
 It keeps the run and every revision that the stream tells, and sends them with its changes once it keeps an undo history.

@@ -24,8 +24,10 @@ use gaslightmq_control_api::prelude::*;
 // The revision of the control plane, and not the one of the workspace behind it, whose prelude names its own.
 use gaslightmq_control_api::Revision;
 use gaslightmq_control_api::rule::{Preset, PresetName, Rule};
+use gaslightmq_control_api::scenario::{Mode, Scenario, Step};
 use gaslightmq_control_api::selector::{Condition, Conditions, Selector, SelectorRef};
 use gaslightmq_control_api::surface::{Column, Intent, Layer, Pad, Row};
+use gaslightmq_control_api::trigger::Seed;
 use gaslightmq_control_client::{ControlClient, ControlClientConfiguration, StreamError};
 use gaslightmq_control_server::prelude::*;
 use gaslightmq_host::{EnvironmentConfiguration, Host, HostConfiguration};
@@ -248,6 +250,74 @@ async fn a_command_on_an_environment_that_does_not_run_fails_as_its_operation_sa
         })
     );
     assert_eq!(journal, Err(EnvironmentNotRunning { environment: staging }));
+    server.stop().await;
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_scenario_is_kept_in_the_workspace_and_runs_only_in_an_environment_that_runs() -> anyhow::Result<()> {
+    let host = Arc::new(Host::new(
+        HostConfiguration::default(),
+        MemoryContext::new(),
+        Lies::of_every_build(),
+        RUN.parse()?,
+    ));
+    let mut configuration = ControlServerConfiguration::default();
+    configuration.listen = SocketAddr::new(LOCALHOST, ANY_PORT);
+    let server = ControlServer::start(configuration, Arc::clone(&host)).await?;
+    let client = ControlClient::new(ControlClientConfiguration::new(server.address().into()));
+    let staging: EnvironmentName = "staging-proxy".parse()?;
+    let steps = vec![Step::new("warm-up".parse()?), Step::new("back-to-normal".parse()?)];
+    let scenario = Scenario::new("by-hand".parse()?, Mode::Sequence(steps), Seed::new(7), [])?;
+
+    let created = client
+        .send(CreateDefinition {
+            definition: scenario.clone(),
+        })
+        .await??;
+    let got = client
+        .send(GetDefinition::<Scenario> {
+            name: scenario.name().clone(),
+        })
+        .await??;
+    let activated = client
+        .send(ActivateScenario {
+            environment: staging.clone(),
+            scenario: scenario.name().clone(),
+            expects: None,
+        })
+        .await?;
+    let stepped = client
+        .send(StepScenario {
+            environment: staging.clone(),
+            expects: None,
+        })
+        .await?;
+    let deactivated = client
+        .send(DeactivateScenario {
+            environment: staging.clone(),
+            expects: None,
+        })
+        .await?;
+
+    assert_eq!(got.definition, scenario);
+    assert_eq!(got.revision, created.revision);
+    assert_eq!(
+        activated,
+        Err(ActivateScenarioError::NotRunning {
+            environment: staging.clone()
+        })
+    );
+    assert_eq!(
+        stepped,
+        Err(StepScenarioError::NotRunning {
+            environment: staging.clone()
+        })
+    );
+    assert_eq!(
+        deactivated,
+        Err(DeactivateScenarioError::NotRunning { environment: staging })
+    );
     server.stop().await;
     Ok(())
 }
