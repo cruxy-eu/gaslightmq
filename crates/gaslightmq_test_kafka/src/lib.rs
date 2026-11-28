@@ -91,7 +91,7 @@ mod transaction;
 use gaslightmq_clock::TimeSpan;
 
 pub use cluster::{Broker, KafkaCluster};
-pub use configuration::KafkaClusterConfiguration;
+pub use configuration::{KafkaClusterConfiguration, NetworkListener};
 pub use error::KafkaClusterError;
 pub use image::{KafkaImage, KafkaImageError};
 pub use partition::PartitionLog;

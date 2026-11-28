@@ -10,7 +10,7 @@ use gaslightmq_kernel::BrokerId;
 use gaslightmq_wire::protocol::Request as KafkaRequest;
 use tokio::time::Instant;
 
-use crate::configuration::KafkaClusterConfiguration;
+use crate::configuration::{KafkaClusterConfiguration, NetworkListener};
 use crate::docker::{self, Container, Stalled};
 use crate::error::KafkaClusterError;
 use crate::image::KafkaImage;
@@ -120,6 +120,7 @@ impl KafkaCluster {
                 "broker property `{name}` is no single line of a properties file"
             )));
         }
+        let network = network_of(&configuration)?;
         let image = match &configuration.image {
             Some(image) => image.clone(),
             None => image_of_the_environment()?,
@@ -130,7 +131,10 @@ impl KafkaCluster {
         let ids: Vec<u8> = (1..=configuration.brokers).collect();
         let ports: Vec<u16> = ids.iter().map(|broker| properties::client_port(*broker)).collect();
         let deadline = Instant::now() + configuration.start_timeout.duration();
-        let mut container = Container::run(&image, &ports, configuration.log_lines_in_errors)?;
+        let joins = network
+            .as_ref()
+            .map(|(network, listener)| (network.as_str(), listener.alias.as_str()));
+        let mut container = Container::run(&image, &ports, joins, configuration.log_lines_in_errors)?;
         let not_ready = format!(
             "the brokers were not ready within {} ms",
             configuration.start_timeout.as_millis()
@@ -156,8 +160,16 @@ impl KafkaCluster {
                     "the container runtime did not say where clients reach broker {broker}"
                 ))
             })?;
-            let of_broker =
-                properties::of_broker(broker, configuration.brokers, address, &configuration.broker_properties);
+            let on_network = network.as_ref().and_then(|(_, listener)| {
+                properties::network_port(listener, broker).map(|port| (listener.alias.as_str(), port))
+            });
+            let of_broker = properties::of_broker(
+                broker,
+                configuration.brokers,
+                address,
+                on_network,
+                &configuration.broker_properties,
+            );
             broker_properties.insert(broker, properties::lines(&of_broker));
             brokers.push(Broker {
                 id: BrokerId::from(u16::from(broker)),
@@ -216,6 +228,18 @@ impl KafkaCluster {
     pub fn bootstrap_servers(&self) -> String {
         let addresses: Vec<String> = self.brokers.iter().map(|broker| broker.address.to_string()).collect();
         addresses.join(",")
+    }
+
+    /// The addresses of every broker for the clients on the [network](KafkaClusterConfiguration::network) of the
+    /// cluster, in the text form of Kafka's `bootstrap.servers`: `kafka:19092,kafka:19093`.
+    /// `None` for a cluster on no network.
+    pub fn network_bootstrap_servers(&self) -> Option<String> {
+        let listener = self.configuration.network_listener.as_ref()?;
+        self.configuration.network.as_ref()?;
+        let addresses: Option<Vec<String>> = (1..=self.configuration.brokers)
+            .map(|broker| properties::network_port(listener, broker).map(|port| format!("{}:{port}", listener.alias)))
+            .collect();
+        addresses.map(|addresses| addresses.join(","))
     }
 
     /// The topics of the cluster: create one, look one up, list them, delete one.
@@ -296,6 +320,50 @@ impl fmt::Debug for KafkaCluster {
             .field("brokers", &self.brokers)
             .finish_non_exhaustive()
     }
+}
+
+/// The network of the cluster and its listener there, when the configuration names both.
+///
+/// # Errors
+///
+/// [`KafkaClusterError::NotStarted`] when it names one without the other, or the listener takes a port that a broker
+/// listens on already, or a port after the last one.
+fn network_of(
+    configuration: &KafkaClusterConfiguration,
+) -> Result<Option<(String, NetworkListener)>, KafkaClusterError> {
+    let (network, listener) = match (&configuration.network, &configuration.network_listener) {
+        (None, None) => return Ok(None),
+        (Some(network), Some(listener)) => (network.clone(), listener.clone()),
+        (Some(network), None) => {
+            return Err(KafkaClusterError::not_started(format!(
+                "the cluster joins the network {network}, and has no listener for its clients there"
+            )));
+        }
+        (None, Some(listener)) => {
+            return Err(KafkaClusterError::not_started(format!(
+                "the listener {listener} is for the clients of a network, and the cluster joins none"
+            )));
+        }
+    };
+    let brokers = 1..=configuration.brokers;
+    let mut taken: Vec<u16> = brokers.clone().flat_map(properties::ports_of).collect();
+    taken.push(properties::controller_port());
+    for broker in brokers {
+        match properties::network_port(&listener, broker) {
+            Some(port) if !taken.contains(&port) => {}
+            Some(port) => {
+                return Err(KafkaClusterError::not_started(format!(
+                    "the listener {listener} gives broker {broker} port {port}, which the cluster listens on already"
+                )));
+            }
+            None => {
+                return Err(KafkaClusterError::not_started(format!(
+                    "the listener {listener} has no port left for broker {broker}"
+                )));
+            }
+        }
+    }
+    Ok(Some((network, listener)))
 }
 
 /// The time that is left until `deadline`.
